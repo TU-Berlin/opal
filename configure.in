@@ -1,5 +1,5 @@
 # Process this file with autoconf to produce a configure script.
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.9 1999-10-03 16:31:49 kd Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.10 1999-10-03 20:01:27 kd Exp $
 
 AC_INIT(ocs-version)
 
@@ -150,12 +150,23 @@ AC_DEFUN(OCS_SET_WITH,[
   AC_SUBST(ocs_cv_with_$1)
 ])
 
-dnl if library is not used add make target
+dnl if library is not used do not make target
 dnl library/make-target
 AC_DEFUN(OCS_CHECK_LIB,[
   if test "[$]ocs_cv_with_$1_lib" = "no" -o "[$]ocs_cv_with_$1_incl" = "no"
   then
     AC_MSG_CHECKING(disabling $1 library)
+  else
+    ocs_std_packages="[$]ocs_std_packages $2"
+  fi
+])
+
+dnl clear variable (third argument) if lib not used
+AC_DEFUN(OCS_CHECK_LIB_X,[
+  if test "[$]ocs_cv_with_$1_lib" = "no" -o "[$]ocs_cv_with_$1_incl" = "no"
+  then
+    AC_MSG_CHECKING(disabling $1 library)
+    $3=
   else
     ocs_std_packages="[$]ocs_std_packages $2"
   fi
@@ -258,7 +269,7 @@ OCS_CHECK_WITH(lddynamic, lddynamic, "",
 OCS_CHECK_WITH(readline-lib, readline_lib, "yes",
   [  --with-readline-lib=LIBFLAGS    how to link readline library])
 
-OCS_CHECK_WITH(readline_incl, readline_incl, "yes",
+OCS_CHECK_WITH(readline-incl, readline_incl, "yes",
   [  --with-readline-incl=INCLFLAGS  how to include readline/readline.h])
 
 # tcl library
@@ -280,58 +291,62 @@ OCS_CHECK_WITH(java-lib, java_lib, "yes",
   [  --with-java-lib=LIBFLAGS        how to link Java library])
 
 OCS_CHECK_WITH(java-incl, java_incl, "yes",
-  [  --with-java-incl=INCLFLAGS  h   how to include jni.h])
+  [  --with-java-incl=INCLFLAGS      how to include jni.h])
 
 
 ## Check which packages are included
 AC_SUBST(ocs_std_packages)
 ocs_std_packages=lib.opal_parserlight
 
-OCS_CHECK_LIB(readline, lib.opal_readline)
-OCS_CHECK_LIB(java, lib.opal_java)
-OCS_CHECK_LIB(tcl, lib.opal_tcl)
-OCS_CHECK_LIB(tk, lib.opal_tk)
+ocs_lib_readline=X
+ocs_lib_java=X
+ocs_lib_tcl=X
+ocs_lib_tk=X
 
+OCS_CHECK_LIB_X(readline, lib.opal_readline, ocs_lib_readline)
+OCS_CHECK_LIB_X(java, lib.opal_java, ocs_lib_java)
+OCS_CHECK_LIB_X(tcl, lib.opal_tcl, ocs_lib_tcl)
+OCS_CHECK_LIB_X(tk, lib.opal_tk, ocs_lib_tk)
 
 AC_SUBST(ocs_lib_win)
 ocs_lib_win=lib.opal_win
 OCS_CHECK_DEP(ocs_lib_win, ocs_lib_tcl, Opal Windows)
 OCS_CHECK_DEP(ocs_lib_win, ocs_lib_tk, Opal Windows)
-
-AC_SUBST(ocs_pkg_reflections)
-if test "$ocs_cv_feature_reflections" = "no"
+if test -n "$ocs_lib_win"
 then
-ocs_pkg_reflections=
-else
-ocs_pkg_reflections="pkg.dynamite lib.oc_reflections"
+  ocs_std_packages="$ocs_std_packages lib.opal_win"
 fi
 
-AC_SUBST(ocs_pkg_dosfop)
-if test "$ocs_cv_feature_dosfop" = "no"
+AC_SUBST(ocs_pkg_reflections)
+if test "$ocs_cv_feature_reflections" != "no"
 then
-ocs_pkg_dosfop=
-else
-ocs_pkg_dosfop=pkg.dosfop
+  ocs_std_packages="$ocs_std_packages pkg.dynamite lib.oc_reflections"
+fi
+
+ocs_std_packages="$ocs_std_packages pkg.browser pkg.emacs"
+
+AC_SUBST(ocs_pkg_dosfop)
+if test "$ocs_cv_feature_dosfop" != "no"
+then
+ocs_std_packages="$ocs_std_packages pkg.dosfop"
 fi
 
 AC_SUBST(ocs_pkg_doc)
-if test "$ocs_cv_feature_doc" = "no"
+if test "$ocs_cv_feature_doc" != "no"
 then
-ocs_pkg_doc=
-else
-  if test -z "$ocs_pkg_dosfop" 
+  if test "$ocs_cv_feature_dosfop" = "no"
   then
     AC_MSG_ERROR("cannot install documentation without dosfop")
   else
-    ocs_pkg_doc=pkg.doc
+    ocs_std_packages="$ocs_std_packages pkg.doc"
   fi
 fi
 
+ocs_std_packages="$ocs_std_packages pkg.ordinatrice"
+
 AC_SUBST(ocs_pkg_oasys)
-if test "$ocs_cv_feature_oasys" = "no"
+if test "$ocs_cv_feature_oasys" != "no"
 then
-ocs_pkg_oasys=
-else
   if test "$ocs_cv_feature_dynamic" = "no"
   then
     AC_MSG_ERROR(Oasys needs dynamic linking)
@@ -342,12 +357,16 @@ dnl  OCS_CHECK_DEP_ERR(ocs_lib_readline, "Oasys depends on readline")
     AC_MSG_WARN(disabling fancy input for Oasys)
   fi
   OCS_CHECK_DEP_ERR(ocs_lib_tcl, Oasys depends on Tcl)
-  ocs_pkg_oasys=pkg.oasys
+  ocs_std_packages="$ocs_std_packages pkg.oasys"
 fi
 
 AC_SUBST(ocs_pkg_tivi2)
 ocs_pkg_tivi2=pkg.tivi2
 OCS_CHECK_DEP(ocs_pkg_tivi2, ocs_lib_win, tivi2)
+if test -n "$ocs_pkg_tivi2"
+then
+  ocs_std_packages="$ocs_std_packages pkg.tivi2"
+fi
 
 # -------------------------------------------------------------------------
 # Checks for C compiler characteristics and general configuration
@@ -1131,9 +1150,6 @@ AC_CONFIG_HEADER(src/lib/Internal/Compiler/unixconfig.h)
 
 ocs_output_files="Makefile src/om/specs/Specs.basic"
 
-echo "creating src/om/specs/ShSpecs.basic"
-SED=$ac_cv_path_SED src/om/etc/gmake2sh < src/om/specs/Specs.basic > src/om/specs/ShSpecs.basic
-
 if test "$ocs_cv_with_readline_lib" != "no" -a "$ocs_cv_with_readline_incl" != "no"
 then
   OCS_OUTPUT(src/om/specs/Specs.lib.opal_readline)
@@ -1174,4 +1190,8 @@ OCS_OUTPUT(doc/index/index.html
           doc/minitutorial/mintut_oasys.html)
 fi
 
+
 AC_OUTPUT($ocs_output_files)
+echo "creating src/om/specs/ShSpecs.basic"
+SED=$ac_cv_path_SED src/om/etc/gmake2sh < src/om/specs/Specs.basic > src/om/specs/ShSpecs.basic
+
