@@ -1,4 +1,4 @@
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/filehelp.tcl,v 1.1.1.1 1998-06-16 16:00:30 wg Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/filehelp.tcl,v 1.2 2000-06-09 22:04:34 kd Exp $
 source $env(DOSFOP)/tcl/global.tcl
 source $env(DOSFOP)/tcl/regexprs.tcl
 
@@ -391,7 +391,8 @@ proc constructSubsystemConfig {path subsystemList} {
    
     set actSubsystemStructuresNames \
    	  [getNameList "$path/DOSFOP/$actSubsystemName.structures.names"]
-    set actSubsystemStructuresConfig \
+
+     set actSubsystemStructuresConfig \
    	  [constructStructuresConfig $path $actSubsystemStructuresNames]
   
     set subSubsystemNames [getNameList "$path/DOSFOP/$actSubsystemName.subsystems.names"]
@@ -438,8 +439,9 @@ proc getNameList {filename} {
     set fd [open $filename r]
     while {[eof $fd] != 1} {  
       gets $fd name
+	set name [string trim $name]
       if {[string length $name] != 0} then {
-        lappend list $name
+	  lappend list $name
       }
     }
     close $fd

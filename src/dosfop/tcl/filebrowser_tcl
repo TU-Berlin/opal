@@ -1,5 +1,5 @@
 #!/usr/local/bin/wish -f
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/filebrowser_tcl,v 1.1.1.1 1998-06-16 16:00:30 wg Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/filebrowser_tcl,v 1.2 2000-06-09 22:04:34 kd Exp $
 # Parameter : Name of calling tcl-application 
 
 # Create a scrollbar on the right side of the main window and a listbox
@@ -31,11 +31,19 @@ bind all <Control-x> {destroy .}
 label .currdir -textvariable dir 
 bind .currdir <Double-Button-1> {
   catch "send $sendDestName set newSubsystemEntryLocation $dir"
+  catch "send $sendDestName set newSubsystemEntry [file tail $dir]"
 }
 
 frame .listFrame
 scrollbar .scroll -command ".list yview"
-listbox .list -yscroll ".scroll set" -width 45 -height 20 -setgrid yes
+listbox .list -yscroll ".scroll set" -width 45 -height 20 -setgrid yes -selectforeground red
+
+frame .allOpal
+button .allOpal.b -text "Insert all Opal structures" -command insertAll -anchor w
+frame .allOpal.d
+pack .allOpal.b -side left -anchor w
+pack .allOpal.d -side left -expand 1 -fill x
+
 
 frame   .msgFrame 
 message .notice -width 500 \
@@ -45,6 +53,7 @@ pack .mbar -side top -fill x
 pack .currdir -in .all -side top -fill x -padx 2m -pady 2m
 pack .notice -in .msgFrame
 pack .msgFrame -in .all -side bottom -fill x -padx 2m -pady 2m
+pack .allOpal -in .all  -side bottom -expand 1 -fill x
 pack .scroll -in .listFrame -side right -fill y 
 pack .list -in .listFrame -side left -fill both -expand yes
 pack .listFrame -in .all -side bottom -fill x -padx 2m -pady 2m
@@ -55,6 +64,12 @@ wm title . "File-Browser"
 
 
 proc browse file {
+
+    set file [string range $file 2 end]
+    ibrowse $file
+}
+
+proc ibrowse file {
     global env
     global dir
     global sendDestName
@@ -84,17 +99,40 @@ proc browse file {
     }
 }
 
+# Fill the listbox with a list of all the files in the directory (run
+# the "ls" command to get that information).
+
 proc updateListbox {} {
   global dir
 
   .list delete 0 end 
   foreach i [exec ls -a $dir] {
+      if [file isdirectory $i] { set i "D $i" 
+      } else {
+	  set ftype [file extension $i]
+	  if {($ftype == ".sign") || ($ftype == ".impl") || \
+		  ($ftype == ".extp") || ($ftype == ".intp")} {
+	      set i "> $i" 
+	  } else {
+	      set i "? $i"
+	  }
+      }
       .list insert end $i
   }
 }
 
-# Fill the listbox with a list of all the files in the directory (run
-# the "ls" command to get that information).
+proc insertAll { } {
+    
+    foreach i [ .list get 0 end ] {
+	set fname [string range $i 2 end]
+	set ftype [file extension $fname]
+	if {($ftype == ".sign")} {
+	    ibrowse $fname
+	}
+    }
+}
+	
+
 
 # Set up bindings for the browser.
 

@@ -1,0 +1,78 @@
+IMPLEMENTATION BlackBox
+
+IMPORT RepoAbsy COMPLETELY
+       RepoObjectAccess ONLY fct impl kind object
+       Seq ONLY seq <> % ft <>? :: 
+       SeqZip ONLY zip
+       Pair ONLY pair &
+       DefEqnHandling ONLY lVars
+       RepoAn ONLY none
+       RepoDiag ONLY !! freeRef limit ref mode ok
+       SeqFilter ONLY |
+       SeqMap ONLY *
+       PredefEntities ONLY true and
+       SeqOfSeq ONLY combinations
+       SortHandling ONLY freeTV? variants
+       AbsySC ONLY apply1 ! tuple1
+       String ONLY string
+       Denotation ONLY ++
+       DEBUG ONLY PRINT
+       FormulaHandling ONLY propertyS
+       Set ONLY exist?
+
+FUN dbBlackBox? : bool
+DEF dbBlackBox? == false
+
+DEF allConstructors(R, oN) ==
+  LET fc2 == kind(oN)(R)
+  IN
+  IF sort?(fc2) THEN 
+    okay(<>, (limit, freeRef("allConstructors")) !!
+             "called with :SORT")
+  IF other?(fc2) THEN
+    okay(<>, (limit, freeRef("allConstructors")) !!
+             "called with OTHER:" ++ id(fc2))
+  ELSE
+    LET fc1 == dom(fct(fc2))
+        fc == IF cart?(fc1) THEN elems(fc1) ELSE %(fc1) FI
+        i == impl(oN)(R)
+    IN
+    IF ~(i def?) THEN
+      okay(<>, (limit, freeRef("allConstructors")) !!
+           "need an implementation to get variables")
+    ELSE
+      LET mkLambda == \\ e. lambda(none, sign(ft(eqns(i))),
+                                   lVars(lhs(ft(eqns(i)))), e)
+          VS == PRINT(dbBlackBox?, "VS", zip(&)(lVars(lhs(ft(eqns(i)))), fc))
+          VS1 == PRINT(dbBlackBox?, "VS1", freeType?(R) | VS)
+          VS2 == PRINT(dbBlackBox?, "VS2", mkDiscrPred(R) * VS1)
+      IN
+      IF VS2 <>? THEN okay(%(mkLambda(true(R))), ok)
+      ELSE
+        okay(mkLambda * and(R) * combinations(VS2), ok)
+      FI
+    FI
+  FI
+
+-- % true, iff fct is a single sort which has a free type
+FUN freeType?: repo -> pair[objectName, fct] -> bool
+DEF freeType?(R)(_ & fc) ==
+  IF fc name? THEN 
+    LET props == properties(object(sort(fc))(R))
+    IN
+    exist?(\\ pN. freeType?(propertyS(pN)(R)), props)
+  ELSE false
+  FI    
+    
+/* % fct must be a single sort with a free type; returns sequence of 
+     discriminator expressions */
+FUN mkDiscrPred: repo -> pair[objectName, fct] -> seq[expr]
+DEF mkDiscrPred(R)(varName & fc) ==
+  LET vs == variants(sort(fc), R)
+  IN
+  apply1(_, varName) * test * vs 
+
+/* % combine with and */
+FUN and: repo -> seq[expr] -> expr
+DEF and(_)(ex :: <>) == ex
+DEF and(R)(ex1 :: E) == apply(none, !(and(R)), tuple1(%(ex1, and(R)(E))))
