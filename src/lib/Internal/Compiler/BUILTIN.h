@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.1.1.1 1998-06-16 16:00:15 wg Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.2 1998-06-23 11:42:51 maeder Exp $
  */
     
 
@@ -427,43 +427,43 @@ typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
 	       OBJ c8; OBJ c9; OBJ c10; OBJ c11;} TUP11;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12;} TUP12;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12;} TUP12;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13;} TUP13;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13;} TUP13;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;} TUP14;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;} TUP14;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
 	       OBJ c15; } TUP15;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
 	       OBJ c15; OBJ c16; } TUP16;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
 	       OBJ c15; OBJ c16; OBJ c17; } TUP17;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
-	       OBJ c15; OBJ c16; OBJ c18; } TUP18;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c15; OBJ c16; OBJ c17; OBJ c18; } TUP18;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
-	       OBJ c15; OBJ c16; OBJ c18; OBJ c19; } TUP19;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c15; OBJ c16; OBJ c17; OBJ c18; OBJ c19; } TUP19;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
-	       OBJ c15; OBJ c16; OBJ c18; OBJ c19; OBJ c20; } TUP20;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c15; OBJ c16; OBJ c17; OBJ c18; OBJ c19; OBJ c20; } TUP20;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
-	       OBJ c15; OBJ c16; OBJ c18; OBJ c19; OBJ c20; OBJ c21; } TUP21;
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c15; OBJ c16; OBJ c17; OBJ c18; OBJ c19; OBJ c20; OBJ c21; } TUP21;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
-	       OBJ c15; OBJ c16; OBJ c18; OBJ c19; OBJ c20; OBJ c21; 
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c15; OBJ c16; OBJ c17; OBJ c18; OBJ c19; OBJ c20; OBJ c21; 
 	       OBJ c22; } TUP22;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
-	       OBJ c15; OBJ c16; OBJ c18; OBJ c19; OBJ c20; OBJ c21; 
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c15; OBJ c16; OBJ c17; OBJ c18; OBJ c19; OBJ c20; OBJ c21; 
 	       OBJ c22; OBJ c23; } TUP23;
 typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
-	       OBJ c8; OBJ c9; OBJ c10; OBJ c12; OBJ c13; OBJ c14;
-	       OBJ c15; OBJ c16; OBJ c18; OBJ c19; OBJ c20; OBJ c21; 
+	       OBJ c8; OBJ c9; OBJ c10; OBJ c11; OBJ c12; OBJ c13; OBJ c14;
+	       OBJ c15; OBJ c16; OBJ c17; OBJ c18; OBJ c19; OBJ c20; OBJ c21; 
 	       OBJ c22; OBJ c23; OBJ c24; } TUP24;
 
 
