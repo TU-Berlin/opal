@@ -1,6 +1,6 @@
 ;; ----------------------------------------------------------------------
 
-(provide `opal-diag-messages)
+(provide 'opal-diag-messages)
 
 
 ;; the data for the extended diagnostic information
