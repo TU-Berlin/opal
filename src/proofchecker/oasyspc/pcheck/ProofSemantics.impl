@@ -95,11 +95,12 @@ DEF proofSemantics(uN)(R0) ==
       succeed({} & set({}, uN)(R3))
       ))
     ELSE
-      LET (R2, imports, asserts, assumes,
+      LET (R2, _imports, asserts, assumes,
            indirectAsserts, indirectAssumes) == obligationPart(uN, R1)
+          cImports == checkImportedUnits(uN)(R1)
       IN
       progress(2, \\ . "import relations ...")(R2) & (\\ R2a.
-      (relationSemantic(uN, import), R2a) *& asSeq(imports) && (\\ R3, e1.
+      (relationSemantic(uN, import), R2a) *& asSeq(cImports) && (\\ R3, e1.
       progress(2, \\ . "assert relations ...")(R3) & (\\ R4.
       (relationSemantic(uN, assert), R4) *& asSeq(asserts) && (\\ R5, e2.
       progress(2, \\ . "assume relations ...")(R5) & (\\ R5a.
@@ -324,10 +325,14 @@ DEF realizationSemantic(uN)(R0) ==
         auto? == \\ lN. IF source?(lN) THEN includable?(name(lN), uN)(R)
                         ELSE false
                         FI
-        autolaw == \\lN, e. (axm(none, copy(none, (lN))),
-                              pHead(none, %(copy(none, lN)),
-                                    restrict(R)(uN, sorts)(lN)),
-                              axiom(none)) incl e
+        autolaw == \\lN, e. IF restr?(restrict(R)(uN, sorts)(lN)) THEN
+                              (axm(none, copy(none, (lN))),
+                               pHead(none, %(copy(none, lN)),
+                                     restrict(R)(uN, sorts)(lN)),
+                               axiom(none)) incl e
+                            ELSE
+                              e
+                            FI
         (autoLaws, nonAutoLaws) == partition(auto?, laws(pce))
         hintsNonAuto == (incl, {}) /
                         mkNonAutoHint(uN)(R) * source? | asSeq(nonAutoLaws)

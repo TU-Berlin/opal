@@ -69,7 +69,7 @@ IMPORT
 IMPORT INLINE ONLY INLINE
        Char ONLY char ! digit? |=
        RepoFocus ONLY focus?
-       Option ONLY nil? option cont avail?
+       Option ONLY nil? option cont avail? avail
        RepoDiag ONLY <+ fmtDiag ok freeRef ref
        StringFilter ONLY split
        RepoAdmin ONLY path
@@ -88,7 +88,7 @@ IMPORT INLINE ONLY INLINE
        RepoObjectAccess ONLY objects symbol
        SetReduce ONLY /
        SetFilter ONLY |
-       Nat ONLY 1 2 256
+       Nat ONLY 1 2 256 = 10000
        Stopwatch ONLY now
        Real ONLY real -
        RealConv ONLY ``
@@ -98,6 +98,17 @@ IMPORT INLINE ONLY INLINE
        FmtSeq ONLY fmtSeq
        AbsySC ONLY !
        ProofCommon ONLY sendRepo
+       PrettyInfo ONLY prettyInfo
+       RepoSource COMPLETELY
+       RepoInternData COMPLETELY
+       IdTab ONLY idtab !
+       IdMap ONLY idmap
+       RepoAbsy ONLY pragma pragmaComp
+       SetMap ONLY *
+       IdMapReduce ONLY /
+       Id ONLY id < no
+       SeqMap ONLY *
+       UnitHandling ONLY sourceImports checkSourceImports checkImportedUnits
 
 FUN compileTime: denotation
 DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
@@ -131,6 +142,7 @@ DEF pcheckerCmdtable ==
          |(lit("addFormula") o *(var("formula")) & 2nd @ pcheckAddFormula)
          |(lit("known-objects") o var("name") & 2nd @ pcheckKnownObjects)
          |(lit("fulness") o var("origin") & 2nd o var("instance") @ pcheckV)
+         |(lit("sourceImports") o unitNameSpec & 2nd @ pcheckSourceImports)
         ) & 2nd,
         "execute internal commands: \n" ++
         "fulness ORIGIN INSTANCE  (use t and d): control printing of terms")
@@ -246,6 +258,21 @@ DEF pcheckProofSem(uN) ==
 FUN pcheckResetPCE: unitName -> com[denotation]
 DEF pcheckResetPCE(uN) ==
   upd(reset(uN)) & succeed("reset pce")
+
+FUN pcheckSourceImports: unitName -> com[denotation]
+DEF pcheckSourceImports(uN) ==
+  query(sourceImports(uN)) & (\\ uNSet.
+  query(\\R. fmtSet(fmtUnitNameLong(R))(uNSet)) & (\\ f.
+  dumpFmt(lit("source imports:"); f) & (\\ _ .
+  query(checkSourceImports(uN)) & (\\ uNSet2.
+  query(\\R. fmtSet(fmtUnitNameLong(R))(uNSet2)) & (\\ f2.
+  dumpFmt(brk; lit("checked source imports:"); f2) & (\\ _ .
+  query(checkImportedUnits(uN, true)) & (\\ uNSet3.
+  query(\\R. fmtSet(fmtUnitNameLong(R))(uNSet3)) & (\\ f3.
+  dumpFmt(brk; lit("checked imports:"); f3) 
+  ))))))))
+      
+
 
 -- %$Verbosity commands$
 FUN pcheckSetLevel: nat -> com[denotation]

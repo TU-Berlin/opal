@@ -20,7 +20,7 @@ IMPLEMENTATION GlobSigInit
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 2000-04-14 21:20:57 $ ($Revision: 1.8 $)
+-- % $Date: 2000-08-30 22:10:53 $ ($Revision: 1.9 $)
 
 IMPORT  Objects         COMPLETELY
         DeclPrep        COMPLETELY
@@ -33,8 +33,7 @@ IMPORT  Objects         COMPLETELY
         GlobSigImpl     ONLY impl:SORT data none
         ImpExpEntry     ONLY instAppl:SORT impDeclE:SORT instE:SORT
                              toInstAppl applied instOf applied?
-        InterOpal       ONLY interOpal:SORT ioTypeKey origin:SORT main:origin
-                                struct:SORT symbol:struct -> denotation
+        InterOpal       COMPLETELY
         InterOpalAccess       COMPLETELY
         InterOpalModifier     COMPLETELY
         PartNameEntry   COMPLETELY
@@ -47,7 +46,7 @@ IMPORT  Objects         COMPLETELY
         -- absy, etc.
         PartName        COMPLETELY
         Rep             COMPLETELY
-        OcPos             ONLY pos firstPos
+        OcPos           COMPLETELY
         Fct             ONLY fct
         Impl ONLY law:SORT ide
        GlobPragma ONLY prag lexem globPragma
@@ -85,7 +84,7 @@ IMPORT  Objects         COMPLETELY
         Quadruple       COMPLETELY
         Pair            COMPLETELY
         Denotation      ONLY ++ # =
-
+        Map             ONLY map def !
         OcExit          ONLY languageError ioError
 
 
@@ -263,7 +262,7 @@ DEF extStructHead(gS, orig) ==
         (finGS, formPNS) == *(convMatchPartName(false), gS, paramS(orig))
         formParamS == zip(+++)(formPNS, paramS(orig))
 
-FUN +++ : pN ** partName -> pair[onlyPNE:SORT,pragma:SORT]
+FUN +++ : pN ** partName -> pair[onlyPNE:SORT,pragma'Pragma:SORT]
 DEF +++(pN, partName) == 
         (onlyPNE(pN, errInfo(partName)) & 
          pragma'PartName:partName->pragma(partName))
@@ -353,48 +352,80 @@ DEF readImports(_, <>)(ErrSignS) == yield(okay(ErrSignS))
 DEF readImports(Options, FtImpS :: Rt)(Err & SignS) ==
 /* % Die Instanzenliste d"urfte niemals leer sein nach "merge"
 also ist  FtImpS ::?  erfuellt */
-        LET Origin == origin(1st(ft(FtImpS)))
-            ImpStructName == lexem(structIde(Origin))
-            ExpFileName == IF extp?(Options) or intp?(Options) 
-                        THEN extpExpFile(ImpStructName, Options)        
-                        ELSE expFile(ImpStructName, Options)
-                        FI
-        IN
-                IF #(ExpFileName) 0? THEN
-                    readImports(Options, Rt)((Err + 
-                            err(error,
-                                "imported structure '%s' not in command line", 
-                                ImpStructName, pos(Origin)))
-                        & SignS)
-                ELSE
-                optread[interOpal](Options, ExpFileName, ioTypeKey) & (\\OptSign.
-                  (IF OptSign avail? THEN 
-                                readImports(Options, Rt)
-                                    (Err & ((cont(OptSign) & FtImpS) :: SignS))
-                  IF OptSign nil? THEN 
-                    IF extp?(Options) or intp?(Options) THEN
+  LET Origin == origin(1st(ft(FtImpS)))
+      ImpStructName == lexem(structIde(Origin))
+      ExpFileName == IF extp?(Options) or intp?(Options) 
+                     THEN extpExpFile(ImpStructName, Options)        
+                     ELSE expFile(ImpStructName, Options)
+                     FI
+  IN
+  IF #(ExpFileName) 0? THEN
+    readImports(Options, Rt)
+               ((Err + err(error,
+                           "imported structure '%s' not in command line", 
+                           ImpStructName, pos(Origin)))
+                & SignS)
+  ELSE
+    optread[interOpal](Options, ExpFileName, ioTypeKey) & (\\OptSign0.
+    LET OptSign == setPos(pos(Origin), OptSign0)
+    IN
+    (IF OptSign avail? THEN readImports(Options, Rt)
+                                       (Err & 
+                                        ((cont(OptSign) & FtImpS) :: SignS))
+     IF OptSign nil? THEN 
+       IF extp?(Options) or intp?(Options) THEN
 -- %try to get normal exp-file 
-           optread[interOpal](Options, expFile(ImpStructName, Options), 
-                                ioTypeKey) & (\\OptsSign.
-                      readImports(Options, Rt)
-                        (IF OptsSign avail? THEN &(Err +
-                                err(warning, nofile 
+         optread[interOpal](Options, expFile(ImpStructName, Options), 
+                            ioTypeKey) & (\\OptsSign0.
+         LET OptsSign == setPos(pos(Origin), OptsSign0)
+         IN
+         readImports(Options, Rt)
+                    (IF OptsSign avail? THEN 
+                       &(Err + err(warning, nofile 
                                    ++ (": only 'signature export' imported"), 
-                                        ExpFileName, pos(Origin)), 
-                                    (cont(OptSign) & FtImpS) :: SignS)
-                        IF OptsSign nil? THEN &(Err +
-                                err(error, nofile, ExpFileName, pos(Origin)), 
-                                    SignS)
-                        FI))
+                                   ExpFileName, pos(Origin)), 
+                         (cont(OptSign) & FtImpS) :: SignS)
+                     IF OptsSign nil? THEN 
+                       &(Err + err(error, nofile, ExpFileName, pos(Origin)), 
+                         SignS)
+                     FI))
 -- %end of try
-                    ELSE 
-                           readImports(Options, Rt)(&(Err +
-                                err(error, nofile, ExpFileName, pos(Origin)), 
-                                    SignS))
-                    FI
-                  FI))
-                FI              
+       ELSE 
+         readImports(Options, Rt)
+                    (&(Err + err(error, nofile, ExpFileName, pos(Origin)), 
+                       SignS))
+       FI
+     FI))
+  FI       
 
+/* change pos of main struct to given pos */
+FUN setPos: pos'OcPos ** option[interOpal] -> option[interOpal]
+DEF setPos(_, nil) == nil
+DEF setPos(p, avail(IO)) == avail(setPos(p, IO))
+
+FUN setPos: pos'OcPos ** interOpal -> interOpal
+DEF setPos(p, interOpal(P,S)) ==
+  interOpal(P, def(main, setPos(p@, S!main), S))
+
+FUN setPos: pos'InterOpal ** struct'InterOpal -> struct'InterOpal
+DEF setPos(p, struct(_, o, s, i, on, ob, pp, pg)) ==
+  struct(p%, o, s, i, on, ob, pp, pg)
+
+FUN @ : pos'OcPos -> pos'InterOpal
+DEF @(p) == IF unknown?(p) THEN unknown
+            ELSE
+              LET P == IF signature?(p) THEN signature
+                       IF implementation?(p) THEN implementation
+                       ELSE signature -- unknown
+                       FI
+              IN
+              IF region?(p) THEN
+                region(P, lin(p), col(p), eLin(p), eCol(p))
+              ELSE
+                pos(P, lin(p), col(p))
+              FI
+            FI
+  
 /* %nur korrespondierende Listen seq[interOpal] und seq..[import..]
 ist die seq[interOpal] k"urzer, dann ist die Position ggf. unklar (firstPos?)
 */

@@ -2,7 +2,7 @@ IMPLEMENTATION UnitHandling
 
 
 IMPORT RepoUnitAccess COMPLETELY
-       Set ONLY set {} + exist? - incl * % {<} arb
+       Set ONLY set {} + exist? - incl * % {<} arb in <=
        RepoName COMPLETELY
        SetFilter ONLY partition |
        Predicate ONLY ~ or and
@@ -10,9 +10,9 @@ IMPORT RepoUnitAccess COMPLETELY
        Denotation ONLY = < ++
        RepoAbsy COMPLETELY
        IdTab ONLY idtab
-       Id ONLY id:SORT
+       Id ONLY id:SORT <
        Seq ONLY seq :: <> exist?
-       RepoInternData ONLY pragmas unitInfo:SORT unitInfo:unitName -> repo -> unitInfo
+       RepoInternData COMPLETELY
        FormulaHandling ONLY codedProperty?
        RepoObjectAccess COMPLETELY
        SeqMapEnv ONLY *
@@ -37,6 +37,11 @@ IMPORT RepoUnitAccess COMPLETELY
        RepoAn ONLY none
        SetMapEnv ONLY *
        SeqFilter ONLY |
+       IdMap ONLY {}
+       RepoSource COMPLETELY
+       Nat ONLY 10000 =
+       IdMapReduce ONLY /
+       SetMap ONLY *
 
 
 -- %$Relations$
@@ -278,6 +283,56 @@ DEF trueImportedUnits(uN)(R) ==
         rbns == check | bns
     IN (rbns + dns)
 
+DEF sourceImports(uN0)(R) ==
+  LET uN == baseName(uN0)
+      addI == \\i, uI1, S. IF checkL(an(uI1)) THEN incl(i, S) ELSE S FI
+      sImports == (addI, {}[id,<]) / imports(unitInfo(uN)(R))
+  IN
+  internUnitName * sImports
+
+FUN checkL: an -> bool
+DEF checkL(a) ==
+  IF avail?(locator?(a)) THEN
+    LET l == cont(locator?(a)) 
+    IN
+    IF unspecified?(l) THEN false
+    IF pos?(l) THEN line(pos(l)) = 10000
+    IF region?(l) THEN false
+    FI
+  ELSE
+    false
+  FI
+
+DEF checkSourceImports(uN)(R) ==
+  LET units0 == sourceImports(uN)(R)
+      base0 == basicUnitName? | units0
+      f == \\ RR . (\\ uNN. uNN in base0 and
+                            ~(iproof?(RR)(uNN))  and ~(ireflexion?(RR)(uNN)))
+  IN
+  (internalCheck(f)(R) | units0) +
+  (IF impl?(part(uN)) THEN checkSourceImports(uN :=_part sign)(R) ELSE {} FI)
+
+DEF checkImportedUnits(uN) == checkImportedUnits(uN, false)
+
+DEF checkImportedUnits(uN, debug?)(R) == 
+  LET start0 == (\\ uNN. ~(iproof?(R)(uNN))  and
+                         ~(ireflexion?(R)(uNN))) | checkSourceImports(uN)(R)
+      start == PRINT(debug?, \\ . "start: " ++
+                     pretty(fmtSet(fmtUnitNameLong(R))(start0)), start0)
+  IN
+  iterate(R)(\\uNN. checkSourceImports(uNN)(R), start, debug?)
+
+FUN iterate: repo -> 
+              (unitName -> set[unitName, <]) ** set[unitName, <] ** bool ->
+              set[unitName, <]
+DEF iterate(R)(f, uNs, debug?) ==
+  LET new0 == flat(f * uNs)
+      new == PRINT(debug?, \\ . "new: " ++
+                   pretty(fmtSet(fmtUnitNameLong(R))(new0)), new0)
+  IN
+  IF new <= uNs THEN uNs ELSE iterate(R)(f, uNs + new, debug?) FI
+    
+
 DEF impObjects(main, sub)(R) ==
   IF theory?(R)(sub) THEN
     (deriveLike(main), R) * objects(baseName(sub))(R)
@@ -298,7 +353,7 @@ DEF theory?(pragma(_,token(x) :: _)) == x = "THEORY"
 DEF theory?(_) == false -- else
 
 
-/* %try to exclude Structures which are included because they are 
+/* %try to exclude structures which are included because they are 
     used by PROOF/REFLEXION */
 
 DEF proof? == internalCheck(iproof?)

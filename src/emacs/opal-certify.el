@@ -34,8 +34,8 @@
 
 (defvar opal-certify-menu 
   (list "Certify"
-	["Sign this proof" opal-certify-sign-proof t]
-	["Check signature" opal-certify-check-proof t]
+	["Certify this lemma" opal-certify-sign-proof t]
+	["Check certification" opal-certify-check-proof t]
 	)
   )
 
@@ -107,11 +107,18 @@ by the Opal compiler and return name of property"
 (defun opal-certify-check-for-proofhead ()
   "throw error message if not in line which starts a proof head"
   
-  (save-excursion
-    (beginning-of-line)
-    (if (not (looking-at ".*\\(PROOF\\|PROP\\|LEMMA\\|GOAL\\)[ \t]+.*:"))
-	(error "must be at line with proof head / proposition")
+  (let (fd)
+    (setq fd 0)
+    (save-excursion
+      (beginning-of-line)
+      (cond ((looking-at ".*PGP SIGNATURE") (setq fd -2))
+	    ((looking-at ".*\\(JUSTF\\|JSTF\\)") (setq fd -1))
+	    ((looking-at ".*\\(PROOF\\|PROP\\|LEMMA\\|GOAL\\)[ \t]+.*:")
+	     (setq fd 0))
+	    (t (error "must be at line with proof head / proposition"))
+	    )
       )
+    (forward-line fd)
     )
   )
 
@@ -155,7 +162,7 @@ by the Opal compiler and return name of property"
     (let (mybuf result)
       (setq mybuf (generate-new-buffer "*GPG*"))
       (set-buffer mybuf)
-      (insert "Signature for justification `" propname "'  ")
+      (insert "certificate for justification `" propname "'  ")
       (call-process "date" nil t)
       (goto-char (point-max))
       (delete-char -1)
@@ -225,7 +232,7 @@ opal-certify-password to hold your GPG password:
 	(set-buffer opal-certify-tmp-buffer)
 	(insert (buffer-substring startsign endsign procbuf))
 	(goto-char (point-min))
-	(insert (concat "JSTF " propname " ==\n" "  signed(\x22"))
+	(insert (concat "JUSTF " propname " == CERTIFICATION\n  (\x22"))
 	(while (search-forward "\n" nil t)
 	  (replace-match "\\\\n")
 	  )
@@ -233,7 +240,7 @@ opal-certify-password to hold your GPG password:
 	(insert "\x22)\n")
 	(set-buffer thisbuf)
 	(goto-char end)
-	(forward-line)
+        (if (eolp) (insert "\n"))
 	(insert (buffer-string nil nil opal-certify-tmp-buffer))
 	(kill-buffer procbuf)
 	(goto-char end)
@@ -250,7 +257,7 @@ opal-certify-password to hold your GPG password:
     )
   )
 
-(defun opal-certify-check-proof ()
+(defun opal-certify-check-proof (&optional balloon)
   "check signature of current proof"
 
   (interactive)
@@ -262,13 +269,13 @@ opal-certify-password to hold your GPG password:
       (write-file ".proof")
       (set-buffer thisbuf)
       (goto-char (point-min))
-      (if (not (re-search-forward (concat "^[ \t]*\\(JSTF\\|PROOF\\)[ \t]*"
+      (if (not (re-search-forward (concat "^[ \t]*\\(JUSTF\\|LEMMA\\|JSTF\\|PROOF\\)[ \t]*"
 					  (regexp-quote propname)
-					  "[ \t]*==")))
+					  "[ \t]*== CERTIFICATION")))
 	  (error "No justification for `%s' found" propname)
 	)
       (forward-line)
-      (if (not (looking-at "[ \t]*signed(\x22\\(.*\\)\x22)"))
+      (if (not (looking-at "[ \t]*(\x22\\(.*\\)\x22)"))
 	  (error "No (standard ?) certification found")
 	)
       (setq cert (buffer-substring (match-beginning 1) (match-end 1)))
@@ -284,7 +291,7 @@ opal-certify-password to hold your GPG password:
       (opal-certify-clear-tmp)
       (setq result 
 	    (call-process "gpg" nil opal-certify-tmp-buffer nil 
-			  "--verify" ".signature" ".proof"))
+			   "--verify" ".signature" ".proof"))
       (delete-file ".proof")
       (delete-file ".signature")
       (setq ok nil)
@@ -301,13 +308,25 @@ opal-certify-password to hold your GPG password:
 	     (setq okstring ["INVALID SIGNATURE" 'opal-info-nil t])
 	     (message "Signature not verified (%s)" result))
 	    )
-      (popup-dialog-box 
-       (list (concat "GPG output\n\n" 
+      (if balloon
+	  (progn
+	    (show-balloon-help 
+	     (concat "GPG output\n\n" 
 		     (buffer-string (point-min opal-certify-tmp-buffer) 
 				    (point-max opal-certify-tmp-buffer) 
-				    opal-certify-tmp-buffer))
-	     okstring)
-       )
+				    opal-certify-tmp-buffer)))
+	    (start-itimer "certify-timer" 'hide-balloon-help 10)
+	    )
+	(progn
+	  (popup-dialog-box 
+	   (list (concat "GPG output\n\n" 
+			 (buffer-string (point-min opal-certify-tmp-buffer) 
+					(point-max opal-certify-tmp-buffer) 
+					opal-certify-tmp-buffer))
+		 okstring)
+	   )
+	  )
+	)
       )
     )
   )
@@ -319,17 +338,17 @@ opal-certify-password to hold your GPG password:
     (let (pname)
       (mouse-set-point event)
       (beginning-of-line)
-      (forward-line -1)
+      (forward-line -2)
       (if (not (re-search-forward
-		"[ \t]*\\(JSTF\\|PROOF\\)[ \t]+\\(.*\\)[ \t]+==" nil t))
+		"[ \t]*\\(JUSTF\\|JSTF\\|PROOF\\)[ \t]+\\(.*\\)[ \t]+==" nil t))
 	  (error "non standard GPG comment ?!? cannot determine name")
 	(setq pname (buffer-substring (match-beginning 2) (match-end 2)))
 	(goto-char (point-min))
 	(if (not (re-search-forward 
 		  (concat "[ \t]*\\(PROP\\|PROOF\\|LEMMA\\|GOAL\\)[ \t]+"
 			  (regexp-quote pname) "[ \t]*:") nil t))
-	    (error "cannot find associated proofhead `%s' ?!?" pname)
-	  (opal-certify-check-proof)
+	    (error "cannot find associated lemma `%s' ?!?" pname)
+	  (opal-certify-check-proof t)
 	  )
 	)
       )

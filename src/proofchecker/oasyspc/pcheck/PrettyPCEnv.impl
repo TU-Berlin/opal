@@ -15,7 +15,7 @@ IMPORT Fmt ONLY lit ; inc dec fmt none brk  spc
        String ONLY string
        Predicate ONLY or
        SetFilter ONLY |
-       FmtSeq ONLY fmtSeq
+       FmtSeq ONLY fmtSeq list
        RepoAbsy COMPLETELY
        SeqMap ONLY *
        RepoDiag ONLY fmtDiag
@@ -24,6 +24,7 @@ IMPORT Fmt ONLY lit ; inc dec fmt none brk  spc
        Compose ONLY o
        MapFilter ONLY |
        SetMap ONLY *
+       SetConv ONLY asSeq
 
 -- %$Very long variant$
 
@@ -54,45 +55,6 @@ DEF pretty(level)(e)(R) ==
      inc(2); fmtSet(pretty(R))(resolved(e)); dec(2)); brk
   FI
 
-/* %We don't include the freetype laws as proof obligations because 
-    they are added only internally.
-*/
-DEF prettyInfo(level)(e)(main)(R) ==
-  -- %- can't use getAxioms'PCEFunctions here due to cycle in import relation
-  LET rawAxioms == law * dom((\\ pN, _ . axm?(pN)) | pBodies(e))
-      rawObs == laws(e) - rawAxioms
-      obligations == (~ o (freetypeLaws? or datatypeLaws?)) | rawObs
-      axioms == IF level <= 2 THEN
-                  ((~ o datatype?) | rawAxioms) +
-                  (freetypeLaws? or datatypeLaws?) | rawObs
-                ELSE
-                  rawAxioms
-                FI
-      tProofNh == \\ pN, _ :pHead . true -- ~(axm?(pN))
-      tProofNb == \\ pN, _ :pBody . true -- ~(axm?(pN))
-  IN
-  prompt(lit("Axioms: ")); brk;
-  (inc(2); fmtSet(pretty(R, main))(axioms); dec(2); brk);
-  prompt(lit("Proof obligations: ")); brk;
-  (inc(2); fmtSet(pretty(R, main))(obligations); dec(2); brk);
-  prompt(lit("Lemmas: ")); brk;
-  (inc(2); 
-   pretty1(R, main)(tProofNh | pHeads(e), tProofNb | pBodies(e)); dec(2));
-  (IF level >= 4 THEN
-     prompt(lit("Extra laws:")); brk;
-     inc(2); fmtSet(pretty(R, main))(extraLaws(e)); dec(2)
-   ELSE
-     none
-   FI)
-
--- %- can' use datatype?'PCEFunctions either
-FUN datatype? : lawName -> bool -- freetype? or cdfd?
-FUN freetype? : lawName -> bool
-
-DEF datatype? == freetype? or cdfd? or datatypeLaws?
-DEF freetype? == gen? or ind? or discr? or sel? or equiv? or
-                    ddfd? or sdfd? or freetypeLaws?
- 
 
 FUN pretty: repo -> lawName -> fmt
 DEF pretty(R)(ordinary(_, pN)) == fmtPropertyNameLong(R)(pN)
@@ -157,7 +119,8 @@ DEF pretty1(R, bodies)(pN, pH, f) ==
 
 FUN pretty: repo -> pHead -> fmt
 DEF pretty(R)(pHead(_, prems, concl)) ==
-  fmtSet(pretty(R))(prems); spc(1); lit("|-"); spc(1); pretty(R)(concl)
+  list(pretty(R), lit("<"), (lit(",");spc(1)), lit(">"), asSeq(prems)); 
+  spc(1); lit("==>"); spc(1); pretty(R)(concl)
 
 FUN pretty: repo -> option[pBody] -> fmt
 DEF pretty(_)(nil) == lit("?? not available ??")
@@ -275,7 +238,9 @@ DEF pretty1(R, uN, bodies)(pN, pH, f) ==
 
 FUN pretty: repo ** unitName -> pHead -> fmt
 DEF pretty(R, uN)(pHead(_, prems, concl)) ==
-  fmtSet(pretty(R, uN))(prems); spc(1); lit("|-"); spc(1); pretty(R, uN)(concl)
+  list(pretty(R, uN), lit("<"), (lit(",");spc(1)), lit(">"), asSeq(prems)); 
+  spc(1); lit("==>"); 
+  spc(1); pretty(R, uN)(concl)
 
 FUN pretty: repo ** unitName -> option[pBody] -> fmt
 DEF pretty(_, _)(nil) == lit("?? not available ??")
