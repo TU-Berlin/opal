@@ -3,7 +3,7 @@ IMPLEMENTATION GenMake
 
 -- generate make or shape file for OPAL program or library system
 -- wg 23.8.92, 6.10.92, 4.7.93    
--- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/GenMake.impl,v 1.4 1999-04-26 13:42:28 wg Exp $
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/GenMake.impl,v 1.5 1999-05-31 08:42:39 kd Exp $
 
 
 IMPORT  Compose         COMPLETELY
@@ -79,11 +79,12 @@ DEF `(sub(Opts,S,Ss)) == format("sub(%s,%s,%s)",
 FUN shape om keep subsys gen rules hidden open defs verb verbS warn warnS
     opt optS debug debugS oc1 oc2 cc recur system selfDebug 
     deps list selfVerb optDep version cinter ctmpl noopt prop 
-    depfiles : denotation
+    depfiles andshared: denotation
 DEF version     == "-version"
 DEF shape       == "-shape"
 DEF om          == "-OM"
 DEF keep        == "-keep"
+DEF andshared   == "-andshared"
 DEF gen         == "-gen %d"
 DEF defs        == "-defs %d"
 DEF rules       == "-rules %d"
@@ -137,6 +138,7 @@ DEF optSpecs ==
     debug :: (
     cinter :: (
     ctmpl :: (
+    andshared :: (              
     keep  :: (
     gen   :: (
     rules :: (
@@ -147,7 +149,7 @@ DEF optSpecs ==
     noopt       :: (
     prop        :: (
     depfiles    ::
-        <> ))))))))))))))))))))))))))))))
+        <> )))))))))))))))))))))))))))))))
 
 
 -- -------------------------------------------------------------------------
@@ -1260,8 +1262,10 @@ DEF genTopDefs(S,SysInfo,Out) ==
     )                                                   & (\\ _ .
     genLdDefs(S,SysInfo,Out)                            & (\\ _ .
     genFlagDefs(S,SysInfo,Out)                          & (\\ _ .
-    genCompDefs(S,SysInfo,Out)
-    )))
+    genCompDefs(S,SysInfo,Out)                          & (\\ _ .
+    genSoDefs(S,SysInfo,Out)
+    ))))
+
 
     
 
@@ -1270,8 +1274,9 @@ DEF genSysDefs(S,SysInfo,Out) ==
     write(Out,"SYSTEM = %s\n",system(SysInfo) u)        & (\\ _ .
     genLdDefs(S,SysInfo,Out)                            & (\\ _ .
     genFlagDefs(S,SysInfo,Out)                          & (\\ _ .
-    genCompDefs(S,SysInfo,Out)
-    )))
+    genCompDefs(S,SysInfo,Out)                          & (\\ _ .
+    genSoDefs(S,SysInfo,Out)
+    ))))
 
 FUN genLdDefs : state ** sysinfo ** file -> com[void]
 DEF genLdDefs(S,SysInfo,Out) ==
@@ -1908,6 +1913,24 @@ DEF genPropDeps(S,Info::Infos,xFile) ==
         genDeps(S,Infos,xFile)
     FI
 DEF genPropDeps(_,<>,_) == empty
+-- ----------------------------------------------------------------------
+-- add rules to create shread objects and nmu - files
+FUN genSoDefs: state ** sysinfo ** file -> com[void]
+DEF genSoDefs(S, _, Make) ==
+  IF andshared def? options(args(S)) THEN
+    write(Make, 
+          "\n\nSOS = $(patsubst %.o, %.so, $(OS))\n" ++
+          "NMUS = $(patsubst %.o, %.nmu, $(OS))\n" ++
+          "$(SOS) : OCS/%.so : OCS/%.o\n" ++
+          "\t@$(ECHO) \"Generating shared object file for $* ...\" "++
+          "&& $(DLD) -o $@ $<\n\n" ++
+          "$(NMUS) : OCS/%.nmu : OCS/%.so\n" ++
+          "\t@$(ECHO) \"Generating list of unknown names for $* ...\" && " ++
+          "$(NMU) $< > $@\n\n" ++
+          "_all: $(SOS) $(NMUS)\n")
+  ELSE
+    write(Make, "")
+  FI                  
 
 -- ----------------------------------------------------------------------
 -- write formatted
