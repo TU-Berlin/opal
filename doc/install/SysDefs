@@ -1,0 +1,149 @@
+# Definitions for: doc/$(NODENAME)
+#
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/doc/install/SysDefs,v 1.1 1999-10-04 14:19:07 kd Exp $
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Fundamental system definitions (please fill out)
+
+# Name of the subdirectory and (!) document 
+
+NODENAME = install
+
+DOCNAME = install
+
+# The names of the direct subdirectories of this node 
+
+SUBNODES  = 
+
+
+# Sources of the system included into a release
+#  only onlinebib included
+
+SOURCES = 
+
+
+# Manuals attached to this system included into a release
+
+MANUALS = 
+
+
+# All components of this system. Add here auxiliary
+# files which shall not be included into a release.
+
+COMPONENTS = $(SOURCES) $(MANUALS) $(DOCNAME).texi SysDefs
+
+
+# Include this statement to deactivate the derived object cache. 
+.BPOOL:
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Fundamental system rules (please fill out)
+
+
+# The default target
+
+_default: all
+
+
+# The action on this node associated with 'all'
+
+_all: $(DOCNAME).ps $(DOCNAME).html
+
+## need to redefine TEXI2DVI
+TEXI2DVI = MAKEINFO='$(PERL) $(DOSFOP)/bin/dosfopMacroExpander' \
+	   TEXINPUTS=$(DOSFOP)/tex:$(TEXINPUTS) \
+	   $(DOSFOP)/bin/texi2dvi
+
+#just in case the rule is not predefined
+%.dvi: %.texi
+	$(TEXI2DVI) $<
+
+%.expanded: %.texi
+	$(PERL) $(DOSFOP)/bin/dosfopMacroExpander -E $@ $<
+
+%.html %_toc.html %_body.html %_indices.html %_title.html: %.expanded
+	mv $*.texi $*.texi.old
+	cp $*.expanded $*.texi
+	$(PERL) $(DOSFOP)/bin/texi2html -menu  -toc_name "Table of Contents" -verbose $*.texi
+	mv $*.texi.old $*.texi
+
+%.ps: %.dvi
+	dvips $<
+	
+
+# The action on this node associated with 'clean'
+
+_clean:
+	$(RM) -f *.aux *.log *.toc $(DOCNAME).dvi *.ps *.cp *.fn *.ky *.pg *.tp *.tps *.vr
+
+# The action associated with 'install' 
+
+_install: $(INSTALLDOCPATH)/html/$(DOCNAME).html $(INSTALLDOCPATH)/ps/$(DOCNAME).ps
+
+$(INSTALLDOCPATH)/html/$(DOCNAME).html: $(DOCNAME).html $(DOCNAME)_toc.html $(DOCNAME)_body.html $(DOCNAME)_indices.html 
+	@if [ -z $(INSTALLDOCPATH) ] ; \
+	then $(ECHO) "You must define the variable INSTALLDOCPATH and INSTALLDOCFLAGS."; \
+	else $(ECHO) "Installing document $(DOCNAME).html in $(INSTALLDOCPATH)/html"; \
+	     $(OCSOM)/etc/xinstall $(INSTALLDOCFLAGS) $^ \
+                  $(INSTALLDOCPATH)/html || exit 1; \
+        fi
+
+$(INSTALLDOCPATH)/ps/$(DOCNAME).ps: $(DOCNAME).ps
+	@if [ -z $(INSTALLDOCPATH) ] ; \
+	then $(ECHO) "You must define the variable INSTALLDOCPATH and INSTALLDOCFLAGS."; \
+	else $(ECHO) "Installing document $(DOCNAME).ps in $(INSTALLDOCPATH)/ps"; \
+	     $(OCSOM)/etc/xinstall $(INSTALLDOCFLAGS) $^ \
+                  $(INSTALLDOCPATH)/ps || exit 1; \
+        fi
+
+
+
+# The action on this node associated with 'check'
+
+_check: $(DOCNAME).texi
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Release management definitions (fill out if required)
+
+
+# Path to this node relative to the root of the release tree
+
+RELEASENODEPATH = doc
+
+# Derived objects which shall be included into the release
+
+RELEASEOBJECTS =  $(DOCNAME).ps $(DOCNAME).dvi $(HTMLS)
+
+
+# Path to the boot area for this node relative to the release tree
+
+RELEASEBOOTPATH = 
+
+# Sources which shall be included into the boot area of a release
+
+BOOTSOURCES =
+
+# Derived objects which shall be included into the boot area of a release
+
+BOOTOBJECTS =
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Release management rules (fill out if required)
+
+
+# The action to derive the release objects
+
+_releaseobjects: $(RELEASEOBJECTS)
+
+# The action to derive the boot objects
+
+_bootobjects:
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Include generic rules (do not change)
+
+include $(OMLIBPATH)/GlobalRules
