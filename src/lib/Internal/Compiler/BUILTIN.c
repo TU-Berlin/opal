@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.4 1999-05-04 07:54:37 kd Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.5 1999-09-13 22:10:51 kd Exp $
  */
 
 /* FIXME: stub for strdup() */
@@ -489,6 +489,32 @@ static OBJ lazymethod(OBJ cls, OBJ unit) {
 CODE _lmttab[] = {(CODE)lazymethod};
 
 
+/* ============================================================ 
+stopping time
+*/
+#if 0
+#include <sys/time.h>
+static struct timeval start;
+static struct timezone timezoneFoo;
+
+static void startTimer(void) {
+  gettimeofday(&start, &timezoneFoo);
+}
+
+static double stopTimer(void) {
+  struct timeval ende;
+
+  gettimeofday(&ende, &timezoneFoo);
+  return (double) ende.tv_sec + ende.tv_usec / 1000000.0 -
+    (start.tv_sec + start.tv_usec / 1000000.0);
+}
+
+#define TIMER(stm) {stm;}
+#else
+#define TIMER(stm)
+#endif
+
+
 /* =========================================================================
  * dynamic linking 
  */
@@ -508,6 +534,7 @@ static char * (*dl_error)(void);
 
 static char * object_map_suffix = ".tso";
 static char * object_file_suffix = ".o";
+static char * sh_object_file_suffix = ".so";
 
 
 static void * dl_default_resolve(char *sym){
@@ -629,7 +656,7 @@ typedef struct sOBJMAP {
 } * OBJMAP;
 
 /* literature says prime numbers not too near a power of two are best */
-#define OBJMAP_HASHSIZE 199 
+#define OBJMAP_HASHSIZE 199  
 
 /* structure names often have common prefixes; the hash function 
    therefore looks at the whole string */
@@ -647,8 +674,7 @@ static int ocs_calc_object_hash(char * stru) {
   };
   return h;
 }
-
-/* old has method - fast but prone to collisions
+/* old has method - fast but prone to collisions 
 #define OBJMAP_HASHCODE(struct) \
    (((struct[0]) + (struct[1])) % OBJMAP_HASHSIZE)
 */
@@ -664,6 +690,8 @@ static void load_object_map_dir(char *);
 static void load_object_map_file(char *, char *);
 static void load_object_map_direct(char *, char *);
 static int check_object(char *dirname, char *structure,
+			char *fname, int fnamemaxlen);
+static int check_sh_object(char *dirname, char *structure,
 			char *fname, int fnamemaxlen);
 static int check_object_in_path(char *path, char *structure,
 				char *fname, int fnamemaxlen);
@@ -716,6 +744,18 @@ static char *lookup_object_map(char *structure){
     return NULL;
 }
 
+static char *lookup_set_object_map(char *structure, char *fname){
+    OBJMAP p;
+    for (p = object_map[OBJMAP_HASHCODE(structure)]; p != NULL; p = p->next){
+	if (strcmp(p->structure, structure) == 0){
+	    free(p->filename);
+	    p->filename = fname;
+	    return p->filename;
+	}
+    }
+    return NULL;
+}
+
 static void *lookup_dl_map(char *structure){
     OBJMAP p;
     for (p = object_map[OBJMAP_HASHCODE(structure)]; p != NULL; p = p->next){
@@ -761,6 +801,8 @@ static int check_object_in_path(char *var, char *structure,
 	buf = strdup(path);
 	dirname = strtok(buf,":");
 	while (dirname != NULL){
+	    if (check_sh_object(dirname, structure, fname, fnamemaxlen)) 
+		return 1;
 	    if (check_object(dirname, structure, fname, fnamemaxlen)) 
 		return 1;
 	    dirname = strtok(NULL,":");
@@ -778,14 +820,28 @@ static int check_object(char *dirname, char *structure,
     strncpy(fname, dirname, fnamemaxlen-4);
     strcat(fname, "/");
     strncat(fname, structure, fnamemaxlen-4-strlen(dirname));
-    strcat(fname, ".o");
+    strcat(fname, object_file_suffix);
     return stat(fname, &statbuf) == 0;
 }
 
+static int check_sh_object(char *dirname, char *structure,
+			char *fname, int fnamemaxlen){
+    struct stat statbuf;
+    strncpy(fname, dirname, fnamemaxlen-4);
+    strcat(fname, "/");
+    strncat(fname, structure, fnamemaxlen-4-strlen(dirname));
+    strcat(fname, sh_object_file_suffix);
+    return stat(fname, &statbuf) == 0;
+}
+
+
+#include <sys/time.h>
 static void load_object_map(){
     /* load object mapping */
     char *path, *buf, *dirname;
     int i;
+
+    TIMER(startTimer());
     for (i = 0; i < OBJMAP_HASHSIZE; i++){
     	object_map[i] = NULL;
     }
@@ -804,6 +860,7 @@ static void load_object_map(){
 	free(buf);
     }
     object_map_loaded = 1;
+    TIMER(fprintf(stderr, "load_object_map %f sec\n", stopTimer()));	    
 }
 
 static void load_object_map_dir(char * dirname){
@@ -816,6 +873,8 @@ static void load_object_map_dir(char * dirname){
 	    if (suffix != NULL){
 		if (strcmp(suffix, object_map_suffix) == 0){
 		    load_object_map_file(dirname,ent->d_name);
+		} else if (strcmp(suffix, sh_object_file_suffix) == 0){
+		    load_object_map_direct(dirname,ent->d_name);
 		} else if (strcmp(suffix, object_file_suffix) == 0){
 		    load_object_map_direct(dirname,ent->d_name);
 		}
@@ -860,7 +919,7 @@ static void load_object_map_file(char * dirname, char * fname){
 static void load_object_map_direct(char *dirname, char *fname){
     char structure[512];
     char buf[512];
-    char *s;
+    char *s, *bufdup;
     
     s = strrchr(fname, '.');
     if (s != NULL){
@@ -868,11 +927,12 @@ static void load_object_map_direct(char *dirname, char *fname){
 	i = i > sizeof(structure)-1 ? sizeof(structure)-1 : i;
 	strncpy(structure, fname, i);
 	structure[i] = 0;
-	if (lookup_object_map(structure) == NULL){
-	    strcpy(buf, dirname);
-	    strcat(buf, "/");
-	    strcat(buf,fname);
-	    insert_object_map(strdup(structure), strdup(buf));
+	strcpy(buf, dirname);
+	strcat(buf, "/");
+	strcat(buf,fname);
+	bufdup = strdup(buf);
+	if (lookup_set_object_map(structure, bufdup) == NULL){
+	    insert_object_map(strdup(structure), bufdup);
 	}
     }
 }
@@ -970,10 +1030,107 @@ static void * dl_dlopen_resolve(char * sym){
     return res;
 }
 
+/* return a file, from which the unknown symbols can be read;
+   IN: objfile the (shared) object file (name must contain a '.'), 
+   OUT: if transientfnam is not NULL, caller should unlink this file
+*/
+static FILE *dl_dlopen_nmu(char *structure, char *objfile, 
+			   char *transientfnam, int *transient) {
+  char outbuf[256];
+  char cmdbuf[512];
+  FILE *symfile;
+  char *s;
+  struct stat statbuf;
+
+  strncpy(outbuf, objfile, sizeof(outbuf) - 1);
+  s = strrchr(outbuf, '.');
+  strcpy(s, ".nmu");
+  if (0 == stat(outbuf, &statbuf)) {
+    symfile = fopen(outbuf, "r");
+    if (symfile != NULL) {
+      *transient = 0;
+      return symfile;
+    }
+  }
+
+  /* no nmu file found */
+  tmpnam(outbuf);
+  /* get undefined symbols of this object file */
+  strcpy(cmdbuf, "${NMU} ");
+  strcat(cmdbuf, objfile);
+  strcat(cmdbuf, " > ");
+  strcat(cmdbuf, outbuf);
+  DLDDEBUG(fprintf(stderr, "retrieving undefined symbols with `%s'\n", 
+		   cmdbuf));
+  if (system(cmdbuf) != 0 || (symfile = fopen(outbuf, "r")) == NULL){
+    sprintf(dlopen_error_buf,
+	    "cannot retrieve symbols of `%s'", 
+	    charbuf);
+    return NULL;
+  }
+  *transient = 1;
+  strcpy(transientfnam, outbuf);
+  return symfile;
+}
+
+/* recursively link structures referred to by symbols in symfile */
+static int dl_link_referred(FILE *symfile) {
+  char cmdbuf[512];
+  char refstruct[128];
+
+  while (fgets(cmdbuf, sizeof(cmdbuf)-1, symfile)){
+    int i = strlen(cmdbuf);
+    char *s = cmdbuf;
+    while (i > 0 && (cmdbuf[i-1] == '\n' || cmdbuf[i-1] == ' ')){
+      cmdbuf[i-1] = 0;
+    }
+    while (*s == ' ') s++;
+    if (ocs_dl_parse_init_entry(s, refstruct, 
+				sizeof(refstruct)-1)){
+      if (!ocs_dl_link(refstruct)){
+	return 0;
+      }
+    } else {
+      DLDDEBUG(fprintf(stderr," symbol `%s' not an init entry\n",
+		       s));
+    }
+  };
+  return 1;
+}
+
+/* create shared object file for input object file; sz is sizeof of fname */
+static int dl_dlopen_create_so(char *fname, int sz){
+  char outbuf[256];
+  char cmdbuf[512];
+
+  tmpnam(outbuf);
+  strcat(outbuf, ".so");
+  strcpy(cmdbuf, "${DLD} -o ");
+  strcat(cmdbuf, outbuf);
+  strcat(cmdbuf, " ");
+  strcat(cmdbuf, fname);
+  DLDDEBUG(fprintf(stderr, "linking transient shared object with `%s'\n",
+		   cmdbuf));
+  if (system(cmdbuf) != 0){
+    sprintf(dlopen_error_buf,
+	    "cannot create transient shared object `%s' for `%s'", 
+	    outbuf, fname);
+    return 0;
+  }
+  strncpy(fname, outbuf, sz);
+  return 1;
+}
+
 static int dl_dlopen_link(char * structure){
     
     char charbuf[512];    
     int transient = 0;
+    static double total = 0.0;
+    static double totalu = 0.0;
+    static double totalL = 0.0;
+    static double totaln = 0.0;
+    double t, n;
+    int library = 0, shared = 0;
 
     DLDDEBUG(fprintf(stderr, "linking structure %s\n", structure));
 
@@ -990,65 +1147,47 @@ static int dl_dlopen_link(char * structure){
 	return 0;
     }
 
-    /* if object is not a shared object, create a transient one. */
-    if (strstr(charbuf, ".so") == NULL) { /* FIMXE: better detection */
-	char outbuf[128];
-	char refstruct[128];
-	static char cmdbuf[512];
+    DLDDEBUG(fprintf(stderr, "object file: %s\n", charbuf));
+
+    library = (strncmp(charbuf, "lib", 3) == 0);
+    shared = (strstr(charbuf, sh_object_file_suffix) != NULL);
+    /* FIXME: better detection */
+    if (!library) {
+	char outbuf[256];
+	int transNMU;
 	FILE * symfile;
-	tmpnam(outbuf);
+
+	double u;
+
+	TIMER(startTimer());
 	/* get undefined symbols of this object file */
-	strcpy(cmdbuf, "${NMU} ");
-	strcat(cmdbuf, charbuf);
-	strcat(cmdbuf, " > ");
-	strcat(cmdbuf, outbuf);
-	DLDDEBUG(fprintf(stderr, "retrieving undefined symbols with `%s'\n",
-			 cmdbuf));
-	if (system(cmdbuf) != 0 || (symfile = fopen(outbuf, "r")) == NULL){
-	    sprintf(dlopen_error_buf,
-		    "cannot retrieve symbols of `%s'", 
-		    charbuf);
-	    return 0;
-	}
+	symfile = dl_dlopen_nmu(structure, charbuf, outbuf, &transNMU);
+	if (symfile == NULL) return 0;
+	TIMER(n = stopTimer());
+
 	/* recursively link referred structures */
-	while (fgets(cmdbuf, sizeof(cmdbuf)-1, symfile)){
-	    int i = strlen(cmdbuf);
-	    char *s = cmdbuf;
-	    while (i > 0 && (cmdbuf[i-1] == '\n' || cmdbuf[i-1] == ' ')){
-		cmdbuf[i-1] = 0;
-	    }
-	    while (*s == ' ') s++;
-	    if (ocs_dl_parse_init_entry(s, refstruct, 
-					sizeof(refstruct)-1)){
-		if (!ocs_dl_link(refstruct)){
-		    return 0;
-		}
-	    } else {
-		DLDDEBUG(fprintf(stderr," symbol `%s' not an init entry\n",
-				 s));
-	    }
-	}
+	TIMER(startTimer());
+	if (!dl_link_referred(symfile)) return 0;
+	TIMER(u = stopTimer());
+	TIMER(startTimer());
 	fclose(symfile);
-	unlink(outbuf);
-	/* create shared object */
-	strcat(outbuf, ".so");
-	strcpy(cmdbuf, "${DLD} -o ");
-	strcat(cmdbuf, outbuf);
-	strcat(cmdbuf, " ");
-	strcat(cmdbuf, charbuf);
-	DLDDEBUG(fprintf(stderr, "linking transient shared object with `%s'\n",
-			 cmdbuf));
-	if (system(cmdbuf) != 0){
-	    sprintf(dlopen_error_buf,
-		    "cannot create transient shared object `%s' for `%s'", 
-		    outbuf,
-		    charbuf);
-	    return 0;
-	}
-	strncpy(charbuf, outbuf, sizeof(charbuf)-1);
-	transient = 1;
+	if (transNMU) unlink(outbuf);
+	if (!shared) {
+  	  /* create shared object */
+	  if (!(dl_dlopen_create_so(charbuf, sizeof(charbuf)))) return 0;
+	  transient = 1;
+	};
+	handle_counter ++;
+	TIMER(t = stopTimer());
+	TIMER(total += t);
+	TIMER(totalu += u);
+	TIMER(totaln += n);
+	TIMER(fprintf(stderr, "%13s", structure ));
+	TIMER(fprintf(stderr, " #%d nm:%.3f|%.3f so:%.3f|%.3f rec:%.3f|%.3f",
+		      handle_counter, n, totaln, t, total, u, totalu));
     }
 
+    TIMER(startTimer());
     /* Now lookup and initialize structure. */
     {
 	void *handle;
@@ -1073,7 +1212,6 @@ static int dl_dlopen_link(char * structure){
 	  return 0;
 	}
 
-	DLDDEBUG(fprintf(stderr, "defined handle #%d\n", handle_counter));
 	init = dlsym(handle, initsym);
 	if ((error = dlerror()) != NULL){
 	    sprintf(dlopen_error_buf,
@@ -1085,6 +1223,9 @@ static int dl_dlopen_link(char * structure){
 	(*init)();
     }
     if (transient) unlink(charbuf);
+    TIMER(t = stopTimer());
+    TIMER(totalL += t);
+    TIMER(fprintf(stderr, " dl:%.3f|%.3f\n", t, totalL));
     return 1;
 }
 

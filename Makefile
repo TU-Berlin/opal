@@ -32,7 +32,7 @@ STDPACKAGES =  lib.opal_parserlight lib.opal_readline \
 ## don't change anything beyond this line ##############################
 
 #.. Version of the Opal distribution
-VERSION=2.3d.gamma
+VERSION=2.3d.delta
 
 #.. name of the distribution archives
 SRCDISTR=ocs-$(VERSION)-src
