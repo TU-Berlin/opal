@@ -3,14 +3,14 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 15:59:58 $ ($Revision: 1.1.1.1 $)
+   $Date: 2001-05-30 17:48:01 $ ($Revision: 1.2 $)
 */
   /* representation */
 
-typedef unsigned char CHAR;
+typedef unsigned char OCSCHAR;
 
-#define pack_char(x)   ((OBJ)(((CHAR)(x)<<1)+1))
-#define unpack_char(x) ((CHAR)((WORD)(x)>>1))
+#define pack_char(x)   ((OBJ)(((OCSCHAR)(x)<<1)+1))
+#define unpack_char(x) ((OCSCHAR)((WORD)(x)>>1))
 #define convert2char(x) ((WORD)(x))
 
 
@@ -46,12 +46,12 @@ typedef unsigned char CHAR;
 #define AChar_Aprintable_(x1,x2) {x2=pack_bool(isprint(unpack_char(x1)));}
 
 #define AChar_Alower(x1,x2){\
-  CHAR __t = unpack_char(x1);\
+  OCSCHAR __t = unpack_char(x1);\
   x2 = isupper(__t) ? pack_char(tolower(__t)) : x1;\
 }
 
 #define AChar_Aupper(x1,x2){\
-  CHAR __t = unpack_char(x1);\
+  OCSCHAR __t = unpack_char(x1);\
   x2 = islower(__t) ? pack_char(toupper(__t)) : x1;\
 }
 

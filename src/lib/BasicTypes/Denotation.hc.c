@@ -4,7 +4,7 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 15:59:58 $ ($Revision: 1.1.1.1 $)
+   $Date: 2001-05-30 17:48:01 $ ($Revision: 1.2 $)
 */
 #include <unixconfig.h>
 #include "Nat.h"
@@ -22,7 +22,7 @@ extern OBJ dup_denotation(OBJ d){
   
 extern OBJ _ADenotation_Ainit(OBJ x1,OBJ x2) /* init */{
     NAT l = unpack_nat(x1);
-    CHAR c = unpack_char(x2);
+    OCSCHAR c = unpack_char(x2);
     OBJ r = alloc_denotation(l);
     while (l > 0){
 	data_denotation(r)[--l] = c;

@@ -3,11 +3,13 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 16:00:20 $ ($Revision: 1.1.1.1 $)
+   $Date: 2001-05-30 17:48:01 $ ($Revision: 1.2 $)
 */
   /* errno and creating failure answers */
 
-extern int errno;
+#include <unixconfig.h>
+/* überflüssig 
+extern int errno; */
 
 #define cached_unix_failure_codes 128		 
 extern OBJ unix_failure_cache[cached_unix_failure_codes];
