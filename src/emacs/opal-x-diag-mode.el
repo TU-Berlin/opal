@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-x-diag-mode.el,v 1.2 1998-10-12 18:27:02 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-x-diag-mode.el,v 1.3 1998-10-30 14:25:09 kd Exp $
 
 ;;; This file is written for XEmacs and may not work with other Emacsen.
 ;;; Use the original opal-diag-mode.el in this case.
@@ -398,15 +398,18 @@ skipping sub errors."
 	(error "No current diagnostic")
 	)
     (let (src-ext err-ext pop-up-windows err-window)
-      (setq pop-up-windows t)
+      (setq pop-up-windows nil)
       (setq src-ext (opal-diag-src-of (opal-diag-get-current-diag)))
       (setq err-ext (opal-diag-err-of (opal-diag-get-current-diag)))
-      (opal-diag-set-windows (extent-object src-ext) (extent-object err-ext))
+      (opal-diag-set-windows (extent-object src-ext) (extent-object err-ext) t)
       ;; show extended help, if flag set
       (if opal-diag-extended-flag (opal-diag-extended-show err-ext))
       ;; show error in source code
       (switch-to-buffer (extent-object src-ext))
-      (goto-char (extent-start-position src-ext))
+      (if (extent-start-position src-ext)
+	  (goto-char (extent-start-position src-ext))
+	(message "this diagnostic is no longer present in source")
+	)
       ;; show error message
       (setq err-window (display-buffer (extent-object err-ext)))
       (set-window-point err-window (extent-start-position err-ext))
@@ -420,13 +423,14 @@ skipping sub errors."
     )
   )
 
-(defun opal-diag-set-windows (src-buf err-buf)
+(defun opal-diag-set-windows (src-buf err-buf &optional new)
   "create windows / buffers as necessary for displaying this error"
   (if (and (or (not opal-diag-extended-flag)
 	       (and (get-buffer opal-diag-info-buffer)
 		    (get-buffer-window opal-diag-info-buffer)))
 	   (get-buffer-window err-buf)
-	   (get-buffer-window src-buf))
+	   (get-buffer-window src-buf)
+	   (not new))
       () ; do nothing if diag-info-buffer exists and all buffers are displayed
     (let (dw nw)
       (switch-to-buffer src-buf)
@@ -453,12 +457,14 @@ skipping sub errors."
   "Update diagnostics buffer."
   (interactive)
   (opal-diag-find-diag)
+  (opal-diag-set-windows opal-diag-source opal-diag-buffer t)
   (setq opal-diag-hide nil)
   (setq opal-diag-buffer-may-kill t)
   (opal-diag-parse)
   (if opal-diag-errors
       (progn 
-	(setq opal-diag-curr-error 0)
+	(setq opal-diag-curr-error nil)
+	(opal-diag-next-error)
 	(opal-diag-show-error)
 	)
     (setq opal-diag-curr-error nil)
@@ -475,6 +481,7 @@ skipping sub errors."
   (setq opal-diag-buffer-may-kill t)
   (opal-diag-parse)
   (switch-to-buffer opal-diag-source)
+  (delete-other-windows)
   (goto-char (point-min))
   )
 
@@ -516,7 +523,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 				     (get-buffer opal-diag-buffer))))
 		   (opal-diag-clear-diags)
 		 ))
-	   (setq buf (find-file fn))
+	   (setq buf (find-file-other-window fn))
 	   (setq opal-diag-buffer buf)
 	   ))
 	)
@@ -606,7 +613,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 	  (opal-diag-handle-suberror))
 	 ((looking-at "Checking Signature of \\(.*\\) \\.\\.\\.")
 	  (opal-diag-handle-checking))
-	 ((looking-at "Compiling Implementation of \\(.*\\) \\.\\.\\.")
+	 ((looking-at "\\(Compiling\\|Checking\\) Implementation of \\(.*\\) \\.\\.\\.")
 	  (opal-diag-handle-compiling))
 	 (t (setq true-error nil))
 	 )
@@ -662,8 +669,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 (defun opal-diag-handle-oasys ()
   (setq src (opal-diag-find-source (opal-diag-match 2)))
   (if (not src) 
-      (setq unknown-src
-	    (concat unknown-src "\n" (opal-diag-match 2)))
+      (opal-diag-handle-oasys-unknown-src-list (opal-diag-match 2))
     (setq curr-src-buf src)
     )
   (setq line (string-to-int (opal-diag-match 3)))
@@ -675,8 +681,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 (defun opal-diag-handle-oasys-unknown ()
   (setq src (opal-diag-find-source (opal-diag-match 2)))
   (if (not src) 
-      (setq unknown-src
-	    (concat unknown-src "\n" (opal-diag-match 2)))
+      (opal-diag-handle-oasys-unknown-src-list (opal-diag-match 2))
     (setq curr-src-buf src)
     )
   (setq line 0)
@@ -685,6 +690,13 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   (setq is-suberror nil)
   (setq true-error t)
 )
+
+(defun opal-diag-handle-oasys-unknown-src-list (unit)
+  (if (string-match (concat "- " unit) (concat unknown-src " "))
+      ()
+    (setq unknown-src (concat unknown-src "\n- " unit))
+    )
+  )
 
 (defun opal-diag-handle-oasys-eval ()
   (setq src eval-buf)
@@ -717,13 +729,13 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 (defun opal-diag-handle-compiling ()
   (setq curr-src-buf (opal-diag-find-source
-		      (concat (opal-diag-match 1) ".impl")))
+		      (concat (opal-diag-match 2) ".impl")))
   (if (not curr-src-buf) (setq unknown-src
-			       (concat unknown-src "\n"
+			       (concat unknown-src "\'opal-diag-source-error-face)n"
 				       (concat (opal-diag-match 1) ".impl"))))
   (set-extent-face (make-extent err-start err-end
-				(get-buffer opal-diag-buffer)
-				'opal-diag-source-error-face))
+				(get-buffer opal-diag-buffer))
+				'opal-diag-source-error-face)
   (setq true-error nil)
   )
 
@@ -863,7 +875,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.2 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.3 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (err-ext)
@@ -988,7 +1000,10 @@ match 1 to this word"
 
   (interactive)
   (save-excursion
-    (opal-diag-find-diag)
+    (if (not opal-diag-buffer)
+	(opal-diag-find-diag)
+      )
+    (set-buffer opal-diag-buffer)
 					;    (goto-char (window-start))
     (cond ((opal-diag-insert-missing-item-str-existp)
 	   (let ((it (substring (opal-current-line) 
@@ -1033,8 +1048,11 @@ match 1 to this word"
 	     (insert it)
 	     ))
 	  (t (message "%s" (opal-current-line)))
-    )
+	  )
   )
+    ;(pop-to-buffer (opal-diag-select-source))
+;  (opal-diag-next-main-error)
+  (opal-diag-show-error)
 )
 
 (defun opal-diag-ask-compare (&optional sort)

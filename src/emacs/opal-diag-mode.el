@@ -1,157 +1,147 @@
-;; emacs mode for processing opal diag files
-;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.5 1998-09-23 12:14:18 kd Exp $
-;; Author: wg, changed by ralfi
+;;; emacs mode for processing Opal diagnostics
+
+;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
+;;; See OCSHOME/etc/LICENSE or 
+;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.6 1998-10-30 14:25:04 kd Exp $
+
 
 (provide 'opal-diag-mode)
 
-;; buffer-local variables of opal-diag-mode 
+;;; $User Variables$
 
-(defvar opal-diag-hidden-diag t
-  "*if non-nil use hidden opal-diag-files.")
+(defvar opal-diag-extended-flag t  "*if t then show extended help")
 
+;;; $Error List$
 (defvar opal-diag-errors nil
-  "Vector of tripels (mark-in-diag-buf,is-suberror,mark-in-src-buf).")
+  "Vector of diags (type src-overlay diag-overlay).")
 
-(defvar opal-diag-extended-flag t
-  "*if t then show extended help")
-
-(defconst opal-diag-show-all 0 "show all diags")
-(defconst opal-diag-show-errors-and-warns 1 "show all but hints")
-(defconst opal-diag-show-errors 2 "show only errors.")
-
-(defun opal-diag-error-enable ()
-  (if (= opal-diag-show-what opal-diag-show-errors) nil t))
-
-(defun opal-diag-error-warn-enable ()
-  (if (= opal-diag-show-what opal-diag-show-errors-and-warns) nil t))
-
-(defun opal-diag-all-enable ()
-  (if (= opal-diag-show-what opal-diag-show-all) nil t))
-
-(defun opal-diag-curr-error-enable ()
-  (and opal-diag-number-errors
-       (>= opal-diag-curr-error 0)
-       (< opal-diag-curr-error opal-diag-number-errors)))
-
-(defun opal-diag-next-main-error-enable ()
-  (if opal-diag-number-errors
-      (cond ((and opal-diag-number-errors (>= opal-diag-curr-error 0) ; Anfang/Mitte
-		  (< (+ 1 opal-diag-curr-error) opal-diag-number-errors)) t)
-	    ((and opal-diag-number-errors (>= opal-diag-curr-error 0) ; Ende
-		  (< opal-diag-curr-error opal-diag-number-errors)) nil)
-	    (t (opal-diag-delete-current-diag-buffer) nil) ; sonst
-	    )
-    nil
-    )
-)
-
-(defun opal-diag-prev-main-error-enable ()
-  (if opal-diag-number-errors
-      (cond ((and opal-diag-number-errors (> opal-diag-curr-error 0)) t) ; Mitte/Ende
-	    ((and opal-diag-number-errors (>= opal-diag-curr-error 0)) nil) ; Anfang
-	    (t (opal-diag-delete-current-diag-buffer) nil) ; sonst
-	    )
-    nil
-    )
-)
-
-;;; (defun opal-diag-curr-error-enable ()
-;;;   (save-window-excursion
-;;;     (save-excursion
-;;;       (opal-diag-find-diag)
-;;;       (if (not opal-diag-number-errors) (opal-diag-parse))
-;;;       (if (and opal-diag-number-errors (>= opal-diag-curr-error 0) 
-;;; 	       (< opal-diag-curr-error opal-diag-number-errors)) t
-;;; 	(opal-diag-delete-current-diag-buffer) nil
-;;; 	))))
-;;; 
-;;; (defun opal-diag-next-main-error-enable ()
-;;;   (save-window-excursion
-;;;     (save-excursion
-;;;       (opal-diag-find-diag)
-;;;       (if (not opal-diag-number-errors) (opal-diag-parse))
-;;;       (cond ((and opal-diag-number-errors (>= opal-diag-curr-error 0) ; Anfang/Mitte
-;;; 		  (< (+ 1 opal-diag-curr-error) opal-diag-number-errors)) t)
-;;; 	    ((and opal-diag-number-errors (>= opal-diag-curr-error 0) ; Ende
-;;; 		  (< opal-diag-curr-error opal-diag-number-errors)) nil)
-;;; 	    (t (opal-diag-delete-current-diag-buffer) nil) ; sonst
-;;; 	    ))))
-;;; 
-;;; (defun opal-diag-prev-main-error-enable ()
-;;;   (save-window-excursion
-;;;     (save-excursion
-;;;       (opal-diag-find-diag)
-;;;       (if (not opal-diag-number-errors) (opal-diag-parse))
-;;;       (cond ((and opal-diag-number-errors (> opal-diag-curr-error 0)) t) ; Mitte/Ende
-;;; 	    ((and opal-diag-number-errors (>= opal-diag-curr-error 0)) nil) ; Anfang
-;;; 	    (t (opal-diag-delete-current-diag-buffer) nil) ; sonst
-;;; 	    ))))
-;;; 
-
-;;; Diese Funktionen laufen nur im diag-mode und nicht im opal-mode 
-;;; (put 'opal-diag-next-main-error 'menu-enable 
-;;;      '(opal-diag-next-main-error-enable))
-;;; (put 'opal-diag-prev-main-error 'menu-enable 
-;;;      '(opal-diag-prev-main-error-enable))
-;;; 
-;;; (put 'opal-diag-show 'menu-enable '(opal-diag-curr-error-enable))
-;;; (put 'opal-diag-kill-error 'menu-enable '(opal-diag-curr-error-enable))
-;;; (put 'opal-diag-next-error 'menu-enable '(opal-diag-next-main-error-enable))
-;;; (put 'opal-diag-prev-error 'menu-enable '(opal-diag-prev-main-error-enable))
-
-
-(defvar opal-diag-show-what opal-diag-show-all "show what diagnostics.")
-(setq opal-diag-all-enable nil)
-
-(defconst opal-diag-number-errors nil
-  "Number of errors.")
+(defun opal-diag-make-diag (type src err) (list type src err))
+(defun opal-diag-type-of (diag)  (car diag))
+(defun opal-diag-src-of  (diag)  (car (cdr diag)))
+(defun opal-diag-err-of  (diag)  (car (cdr (cdr diag))))
 
 (defvar opal-diag-curr-error nil
   "Current position in opal-diag-errors.")
 
-;; global key-bindings
-(defun opal-diag-xemacs-menu ()
-  "Set the opal-diag-mode menu fur XEmacs"
-  (setq opal-diag-menu 
-	(list "Diag"
-	      ["Show all diagnostics" opal-diag-show-all 
-	       :style radio :selected (null (opal-diag-all-enable))]
-	      ["Show only errors and warnings" 
-	       opal-diag-show-errors-and-warns :style radio
-	       :selected (null (opal-diag-error-warn-enable))]
-	      ["Show only errors"  opal-diag-show-errors 
-	       :style radio :selected (null (opal-diag-error-enable))]
-	      "---"
-	      ["Show previous (sub)error"  opal-diag-prev-error 
-	       :active t ;(opal-diag-prev-main-error-enable)
-	       :included (not opal-novice)]
-	      ["Show next (sub)error" opal-diag-next-error 
-	       :active t ; (opal-diag-next-main-error-enable)
-	       :included (not opal-novice) ]
-	      ["Kill current error" opal-diag-kill-error 
-	       :active t ; (opal-diag-curr-error-enable) 
-	       :included (not opal-novice)]
-	      ["Show current error" opal-diag-show 
-	       :active t ; (opal-diag-curr-error-enable) 
-	       ]
-	      "---"
-	      ["Import item from diagnostic" opal-diag-insert-missing-item
-	       :active t 
-	       :included (not opal-novice)]
-	      "---"
-	      ["Extended help" opal-diag-toggle-extended-flag 
-	       :style toggle :selected opal-diag-extended-flag]
-	      ["Update diagnostics buffer"  opal-diag-update t]
-	      "---"
-	      ["Show previous main error"  opal-diag-prev-main-error 
-	       :active t ; (opal-diag-prev-main-error-enable) 
-	       ]
-	      ["Show next main error" opal-diag-next-main-error
-	       :active t ; (opal-diag-next-main-error-enable) 
-	       ]
-	      ))
+(defun opal-diag-get-current-diag ()
+  "return current diagnostic or nil, if none is current"
+  (if opal-diag-curr-error
+      (aref opal-diag-errors opal-diag-curr-error)
+    nil
+    )
+  )
+
+(defun opal-diag-next-diag (&optional suberror)
+  "increment pointer and get next diagnostic or nil, honors show-what"
+
+  (let ((error-number (length opal-diag-errors)))
+    (if opal-diag-curr-error
+	(setq opal-diag-curr-error (+ opal-diag-curr-error 1))
+      (setq opal-diag-curr-error 0)
+      )
+    (while (and (< opal-diag-curr-error error-number)
+		(not (opal-diag-err-enabled-p
+		      (opal-diag-type-of (opal-diag-get-current-diag))
+		      suberror)))
+      (setq opal-diag-curr-error (+ opal-diag-curr-error 1))
+      )
+    (if (>= opal-diag-curr-error error-number)
+	(setq opal-diag-curr-error nil)
+      )
+    )
+  (opal-diag-get-current-diag)
+  )
+
+(defun opal-diag-prev-diag (&optional suberror)
+  "decrement pointer and get previous diagnostic or nil, honors show-what"
+
+  (if opal-diag-curr-error
+      (setq opal-diag-curr-error (- opal-diag-curr-error 1))
+    (setq opal-diag-curr-error (- (length opal-diag-errors) 1))
+    )
+  (while (and (<= 0 opal-diag-curr-error) 
+	      (not (opal-diag-err-enabled-p
+		    (opal-diag-type-of (opal-diag-get-current-diag))
+		    suberror)))
+    (setq opal-diag-curr-error (- opal-diag-curr-error 1))
+    )
+  (if (< opal-diag-curr-error 0)
+      (setq opal-diag-curr-error nil)
+    )
+  (opal-diag-get-current-diag)
+  )
+
+(defun opal-diag-clear-errors ()
+  "clear all information in current error list"
+
+  (if (> (length opal-diag-errors) 0)
+      (progn 
+	(setq opal-diag-curr-error (- (length opal-diag-errors) 1))
+	(while (>= opal-diag-curr-error 0)
+	  (delete-overlay (opal-diag-src-of (opal-diag-get-current-diag)))
+	  (delete-overlay (opal-diag-err-of (opal-diag-get-current-diag)))
+	  (setq opal-diag-curr-error (- opal-diag-curr-error 1))
+	  )
+	)
+    )
+  (setq opal-diag-errors nil)
+  (setq opal-diag-curr-error nil)
 )
 
+;;; $Selective Display of Errors$
+(defvar opal-diag-show-what 'all "what errors to show (error, warning, all)")
+
+(defun opal-diag-err-enabled-p (type &optional suberror)
+  "t, if type is to be shown according to show-what; if suberror is t, show these"
+  (or (and suberror (equal 'suberror type))
+      (and (not (equal 'suberror type))
+	   (or (equal 'all opal-diag-show-what)
+	       (and (equal 'warning opal-diag-show-what)
+		    (or (equal 'warning type)
+			(equal 'error type)
+			)
+		    )
+	       (and (equal 'error opal-diag-show-what)
+		    (equal 'error type)
+		    )
+	       )
+	   )
+      )
+  )
+
+(defun opal-diag-show-all ()
+  "Show all diagnostics."
+  (interactive)
+;  (let ((x (opal-diag-find-diag t)))
+  (setq opal-diag-show-what 'all)
+;  (setq opal-diag-number-errors nil)
+;  (if x (opal-diag-show-error))
+;)
+)
+
+(defun opal-diag-show-errors-and-warns ()
+  "Show only errors and warnings."
+  (interactive)
+;  (let ((x (opal-diag-find-diag t)))
+  (setq opal-diag-show-what 'warning)
+;  (setq opal-diag-number-errors nil)
+;  (if x (opal-diag-show-error))
+;)
+)
+
+(defun opal-diag-show-errors ()
+  "Show only errors."
+  (interactive)
+;  (let ((x (opal-diag-find-diag t)))
+  (setq opal-diag-show-what 'error)
+;  (setq opal-diag-number-errors nil)
+;  (if x (opal-diag-show-error))
+;)
+)
+
+;;; $Menus and Keybindings$
+;; global key-bindings
 (defun opal-diag-fsfemacs-menu ()
   "Set the opal-diag-mode menu for FSF Emacs"
 
@@ -166,6 +156,10 @@
     '("Show previous main error" . opal-diag-prev-main-error))
   (define-key opal-mode-map [menu-bar diag t4]
     '("" . nil))
+  (define-key opal-mode-map [menu-bar diag opal-diag-clear-diags]
+    '("Clear diagnostics" . opal-diag-clear-diags))
+  (define-key opal-mode-map [menu-bar diag opal-diag-update-silent]
+    '("Silently update diagnostics buffer" . opal-diag-update-silent))
   (define-key opal-mode-map [menu-bar diag opal-diag-update]
     '("Update diagnostics buffer" . opal-diag-update))
   (define-key opal-mode-map [menu-bar diag opal-diag-toggle-extended-flag]
@@ -185,8 +179,6 @@
     '("Show current error" . opal-diag-show))
   (if (not opal-novice)
       (progn
-	(define-key opal-mode-map [menu-bar diag opal-diag-kill-error]
-	  '("Kill current error" . opal-diag-kill-error))
 	(define-key opal-mode-map [menu-bar diag opal-diag-next-error]
 	  '("Show next (sub)error" . opal-diag-next-error))
 	(define-key opal-mode-map [menu-bar diag opal-diag-prev-error]
@@ -202,11 +194,15 @@
   (define-key opal-mode-map [menu-bar diag opal-diag-show-all]
     '("Show all diagnostics" . opal-diag-show-all)) 
    
-  (put 'opal-diag-show-errors 'menu-enable '(opal-diag-error-enable))
+  (put 'opal-diag-show-errors 'menu-enable
+       '(not (equal 'error opal-diag-show-what)))
   (put 'opal-diag-show-errors-and-warns 'menu-enable 
-       '(opal-diag-error-warn-enable))
-  (put 'opal-diag-show-all 'menu-enable '(opal-diag-all-enable))
+       '(not (equal 'warning opal-diag-show-what)))
+  (put 'opal-diag-show-all 'menu-enable
+       '(not (equal 'all opal-diag-show-what)))
   )
+
+
 
 (defun opal-mode-diag-keymap ()
   "Set the opal-mode diag keymap."
@@ -215,36 +211,97 @@
   (define-key opal-mode-map "\M-n" 'opal-diag-next-main-error)
   (define-key opal-mode-map "\M-p" 'opal-diag-prev-main-error)
   (define-key opal-mode-map "\M-u" 'opal-diag-update)
+  (define-key opal-mode-map "\M-v" 'opal-diag-update-silent)
   (define-key opal-mode-map "\M-h" 'opal-diag-toggle-extended-flag)
   (define-key opal-mode-map "\M-m" 'opal-diag-insert-missing-item)
+  (define-key opal-mode-map "\M-0" 'opal-diag-clear-diags)
 ;;longkeys
   (define-key opal-mode-map "\C-c\C-d\C-n" 'opal-diag-next-main-error)
   (define-key opal-mode-map "\C-c\C-d\C-p" 'opal-diag-prev-main-error)
   (define-key opal-mode-map "\C-c\C-d\C-u" 'opal-diag-update)
-  (define-key opal-mode-map "\C-c\C-d\C-c" 'opal-diag-show)
-  (define-key opal-mode-map "\C-c\C-d\C-k" 'opal-diag-kill-error)
-  (define-key opal-mode-map "\C-c\C-dn" 'opal-diag-next-error)
-  (define-key opal-mode-map "\C-c\C-dp" 'opal-diag-prev-error)
+  (define-key opal-mode-map "\C-c\C-d\C-v" 'opal-diag-update-silent)
+  (define-key opal-mode-map "\C-c\C-d\C-c" 'opal-diag-show-current)
+  (define-key opal-mode-map "\C-c\C-d\C-f" 'opal-diag-next-error)
+  (define-key opal-mode-map "\C-c\C-d\C-b" 'opal-diag-prev-error)
   (define-key opal-mode-map "\C-c\C-d\C-e" 'opal-diag-show-errors)
   (define-key opal-mode-map "\C-c\C-d\C-w" 'opal-diag-show-errors-and-warns)
   (define-key opal-mode-map "\C-c\C-d\C-a" 'opal-diag-show-all)
   (define-key opal-mode-map "\C-c\C-d\C-h" 'opal-toggle-extended-flag)
   (define-key opal-mode-map "\C-c\C-d\C-m" 'opal-diag-insert-missing-item)
+;  (define-key opal-mode-map "\C-c\C-d\C-0" 'opal-diag-clear-diags)
+  (define-key opal-mode-map [S-mouse-1] 'opal-diag-mouse-select-error)
+  (define-key opal-mode-map [S-mouse-2] 'opal-diag-mouse-hide-diags)
+  (define-key opal-mode-map [S-mouse-3] 'opal-diag-mouse-help)
 
-  (if opal-running-xemacs
-      (progn
-	(opal-diag-xemacs-menu)
-      )
-      (opal-diag-fsfemacs-menu)
-  )
+  (opal-diag-fsfemacs-menu)
   )
 
+(defun opal-diag-mouse-select-error (event)
+  "set point to position where event occurred. if event occurred 
+over an overlay which has err-no set, select that error"
+  (interactive "e")
+  (let (ovl this errno)
+    (mouse-set-point event)
+    (setq ovl (overlays-at (point)))
+    (while ovl
+      (setq this (car ovl))
+      (setq ovl (cdr ovl))
+      (setq errno (overlay-get this 'err-no))
+      (if errno
+	  (progn
+	    (if (>= errno 0)
+		(opal-diag-show-this-error errno)
+	      (opal-diag-not-found)
+	      )
+	    (setq ovl nil)
+	    ))))
+  )
+
+(defun opal-diag-mouse-hide-diags (event)
+  "set point to position where event occurred. if event occurred 
+over an overlay which has err-no set, hide-diagnostics"
+  (interactive "e")
+  (let (ovl this errno)
+    (mouse-set-point event)
+    (setq ovl (overlays-at (point)))
+    (while ovl
+      (setq this (car ovl))
+      (setq ovl (cdr ovl))
+      (setq errno (overlay-get this 'err-no))
+      (if errno
+	  (progn
+	    (if (>= errno 0)
+		(opal-diag-hide-diag-buffer)
+	      (opal-diag-not-found)
+	      )
+	    (setq ovl nil)
+	    )))))
+
+(defun opal-diag-mouse-help (event)
+  "set point to position where event occurred. if event occurred 
+over an overlay which has err-no set, toggle extended help"
+  (interactive "e")
+  (let (ovl this errno)
+    (mouse-set-point event)
+    (setq ovl (overlays-at (point)))
+    (while ovl
+      (setq this (car ovl))
+      (setq ovl (cdr ovl))
+      (setq errno (overlay-get this 'err-no))
+      (if errno
+	  (progn
+	    (if (>= errno 0)
+		(progn
+		  (opal-diag-show-this-error errno)
+		  (opal-diag-toggle-extended-flag)
+		  )
+	      (opal-diag-not-found)
+	      )
+	    (setq ovl nil)
+	    )))))
+
+;;; $Diag Mode$
 ;; colors for diag-mode
-(defconst opal-diag-font-lock-keywords
-  (list
-   '("\\(ERROR\\|WARNING\\|HINT\\)" (0 'font-lock-function-name-face t t))
-   )
-)
 
 (defun opal-diag-hilit19 ()
   "setup regexps for opal-diag-mode for hilit19"
@@ -257,6 +314,12 @@
      )
    )
  )
+
+(defconst opal-diag-font-lock-keywords
+  (list
+   '("\\(ERROR\\|WARNING\\|HINT\\)" (0 'font-lock-function-name-face t t))
+   )
+)
 
 (put 'opal-diag-mode 'font-lock-defaults 
        '(opal-diag-font-lock-keywords nil nil nil 'beginning-of-buffer)
@@ -283,9 +346,6 @@ the source buffer becomes selected.
           prepares to visit only errors and warnings
 \\[opal-diag-show-errors] = 'opal-diag-show-errors
           prepares to visit only errors
-\\[opal-diag-kill-error] = 'opal-diag-kill-error
-          kills the current error (and all its suberrors) and steps
-          to the next error (see note below)
 \\[opal-diag-next-main-error] = 'opal-diag-next-main-error
           steps to the next main error 
 \\[opal-diag-prev-main-error] = 'opal-diag-prev-main-error
@@ -298,288 +358,299 @@ the source buffer becomes selected.
           updates the diag buffer (useful after recompiling the 
           source visited)
 
-Note that this mode is implemented using GNU lisp markers, and that the
-GNU lisp reference manual recommends to delete markers as soon as
-possible since they might slow down the editing process. I'am not sure
-if this is only paranoid on modern workstations; if you feel editing
-is slowed down use \\[opal-diag-kill-error] to step through errors, and
-kill diag buffers as soon as they are no longer required."
+"
 
   (interactive)
   (kill-all-local-variables)
   (setq major-mode 'opal-diag-mode)
-  (setq mode-name "OC diagnostics")
+  (setq mode-name "Opal diagnostics")
   (use-local-map opal-mode-map)         ; This provides the local keymap
 
-  (make-local-variable 'opal-diag-errors)
-  (make-local-variable 'opal-diag-number-errors) 
-  (make-local-variable 'opal-diag-curr-error)
-;  (make-local-variable 'opal-diag-show-what)  ;; global gemacht (ralfi)
-  (make-local-variable 'opal-diag-hidden-diag)
   (setq buffer-read-only t)
-  (opal-toolbar-install)
+;  (opal-toolbar-install)  ; no toolbar for FSF Emacs :-(
 
   (run-hooks 'opal-diag-mode-hook))
 
+(defvar opal-diag-buffer nil "buffer in which current diagnostics are found")
+(defvar opal-diag-source nil "buffer in which source is located by default")
+(defvar opal-diag-hide nil "buffer which is shown when hiding - if nil, opal-diag-source is used")
+(defvar opal-diag-buffer-may-kill t "may kill diag buffer")
 
-;; interactions
+;;; $Displaying Errors$
 
-(defun opal-diag-delete-current-diag-buffer (&optional delete-diag)
-  "Delete current diag buffer and pop up the source code buffer, and ask to save all opal files."
-  
-  (let ((opal-diag-tmp (substring (buffer-name (current-buffer)) 0 -5)))
-    (if (string= ".diag" (substring (buffer-name (current-buffer)) -5 nil))
-	(progn
-	  (if delete-diag (kill-buffer (current-buffer)))
-	  (delete-other-windows)
-	  (switch-to-buffer  opal-diag-tmp))
-      ))
-					;  (opal-ask-save-opal-buffers)
+(defun opal-diag-my-diag-p (&optional noerror)
+  "check whether current error list might concern this buffer.
+Signal error, if not. Don't signal error if noerror is t"
+  (interactive)
+  (let (ok)
+    (setq ok (or (equal major-mode 'opal-diag-mode)
+		 (not opal-diag-source)
+		 (and (equal major-mode 'opal-mode)
+		      (equal opal-diag-source (current-buffer)))))
+    (if (and (not ok) (not noerror))
+	(error "current error list belongs to buffer %s"
+	       (buffer-name opal-diag-source)))
+    ok
+)
+)
+
+(defun opal-diag-hide-diag-buffer ()
+  "hide diag buffer, but do not clear the error list"
+  (interactive)
+  (if opal-diag-buffer
+      (progn
+	(set-buffer opal-diag-buffer)
+	(delete-other-windows)
+	(cond (opal-diag-hide (switch-to-buffer opal-diag-hide))
+	      (opal-diag-source (switch-to-buffer opal-diag-source))
+	      (opal-diag-errors (switch-to-buffer
+				 (overlay-buffer (opal-diag-src-of
+						  (aref opal-diag-errors 0)))))
+	      (t nil)
+	      )
+	)
+    )
   )
 
-(defun opal-diag-next-main-error (n)
+(defun opal-diag-clear-diags ()
+  (interactive)
+  (opal-diag-hide-diag-buffer)
+  (opal-diag-clear-errors)
+  (if (and opal-diag-buffer opal-diag-buffer-may-kill)
+      (kill-buffer opal-diag-buffer)
+    )
+  (setq opal-diag-buffer nil)
+)
+
+(defun opal-diag-next-main-error ()
   "Visit next compilation error and corresponding source code, skipping
 sub errors."
-  (interactive "p")
-  (opal-diag-find-diag)
-  (let ((i opal-diag-curr-error)
-	(j 0))
-    (while (< j n)
-      (setq i (+ i 1) j (+ j 1))
-      (while (and (< i opal-diag-number-errors) (car (cdr (aref opal-diag-errors i))))
-	(setq i (+ i 1))))
-    (if (>= i opal-diag-number-errors)
-	(progn 
-	  (setq opal-diag-curr-error opal-diag-number-errors)
-	  (opal-diag-delete-current-diag-buffer)
-	  (message "No more diagnostics."))
-      (setq opal-diag-curr-error i)
+  (interactive)
+  (opal-diag-my-diag-p)
+  (opal-diag-next-diag)
+  (if opal-diag-curr-error
       (opal-diag-show-error)
-      )))
+    (opal-diag-hide-diag-buffer)
+    (message "No more diagnostics")
+    )
+  )
 
-(defun opal-diag-prev-main-error (n)
+(defun opal-diag-prev-main-error ()
   "Visit previous compilation error and corresponding source code,
 skipping sub errors."
-  (interactive "p")
-  (opal-diag-find-diag)
-  (let ((i opal-diag-curr-error)
-	(j 0))
-    (while (< j n)
-      (setq i (- i 1) j (+ j 1))
-      (while (and (>= i 0) (car (cdr (aref opal-diag-errors i))))
-	(setq i (- i 1))))
-    (if (< i 0)
-	(progn
-	  (setq opal-diag-curr-error -1)
-	  (opal-diag-delete-current-diag-buffer)
-	  (message "No more diagnostics."))
-      (setq opal-diag-curr-error i)
-      (opal-diag-show-error))))
+  (interactive)
+  (opal-diag-my-diag-p)
+  (opal-diag-prev-diag)
+  (if opal-diag-curr-error
+      (opal-diag-show-error)
+    (opal-diag-hide-diag-buffer)
+    (message "No more diagnostics")
+    )
+  )
 
-(defun opal-diag-next-error (n)
+(defun opal-diag-next-error ()
   "Visit next compilation error and corresponding source code."
-  (interactive "p")
-  (opal-diag-find-diag)
-  (let ((i (+ opal-diag-curr-error n)))
-    (if (>= i opal-diag-number-errors)
-	(progn (opal-diag-delete-current-diag-buffer)
-	       (message "No more diagnostics."))
-      (setq opal-diag-curr-error i)
-      (opal-diag-show-error))))
+  (interactive)
+  (opal-diag-my-diag-p)
+  (opal-diag-next-diag t)
+  (if opal-diag-curr-error
+      (opal-diag-show-error)
+    (opal-diag-hide-diag-buffer)
+    (message "No more diagnostics")
+    )
+  )
 
-(defun opal-diag-prev-error (n)
+(defun opal-diag-prev-error ()
   "Visit previous compilation error and corresponding source code."
-  (interactive "p")
-  (opal-diag-find-diag)
-  (let ((i (- opal-diag-curr-error n)))
-    (if (< i 0)
-	(progn (opal-diag-delete-current-diag-buffer)
-	  (message "No more diagnostics."))
-      (setq opal-diag-curr-error i)
-      (opal-diag-show-error))))
+  (interactive)
+  (opal-diag-my-diag-p)
+  (opal-diag-prev-diag t)
+  (if opal-diag-curr-error
+      (opal-diag-show-error)
+    (opal-diag-hide-diag-buffer)
+    (message "No more diagnostics")
+    )
+  )
+
+(defun opal-diag-show-current ()
+  "show current diagnostic"
+  (interactive)
+  (opal-diag-my-diag-p)
+  (if opal-diag-curr-error
+      (opal-diag-show-error)
+    (error "No current diagnostic")
+    )
+  )
+
+(defun opal-diag-show-this-error (n)
+  "show error with specified number"
+
+  (setq opal-diag-curr-error n)
+  (opal-diag-show-error)
+)
+
+(defun opal-diag-show-error ()
+  "Make current error and corresponding source visible."
+
+  (if (not opal-diag-curr-error)
+      (if (= (length opal-diag-errors) 0)
+	  (error "No diagnostics")
+	(error "No current diagnostic")
+	)
+    (let (src-ext err-ext pop-up-windows err-window)
+      (setq pop-up-windows nil)
+      (setq src-ext (opal-diag-src-of (opal-diag-get-current-diag)))
+      (setq err-ext (opal-diag-err-of (opal-diag-get-current-diag)))
+      (opal-diag-set-windows (overlay-buffer src-ext) (overlay-buffer err-ext) t)
+      ;; show extended help, if flag set
+      (if opal-diag-extended-flag (opal-diag-extended-show err-ext))
+      ;; show error in source code
+      (switch-to-buffer (overlay-buffer src-ext))
+      (if (overlay-start src-ext)
+	  (goto-char (overlay-start src-ext))
+	(message "this diagnostic is no longer present in source")
+	)
+      ;; show error message
+      (setq err-window (display-buffer (overlay-buffer err-ext)))
+      (set-window-point err-window (overlay-start err-ext))
+      (set-window-start err-window (overlay-start err-ext))
+      ;; print message for certain error
+      (if (buffer-file-name opal-diag-source)
+	  (opal-diag-show-std-info err-ext)
+	)
+      (switch-to-buffer (overlay-buffer src-ext))
+      )
+    )
+  )
+
+(defun opal-diag-set-windows (src-buf err-buf &optional new)
+  "create windows / buffers as necessary for displaying this error"
+  (if (and (or (not opal-diag-extended-flag)
+	       (and (get-buffer opal-diag-info-buffer)
+		    (get-buffer-window opal-diag-info-buffer)))
+	   (get-buffer-window err-buf)
+	   (get-buffer-window src-buf)
+	   (not new))
+      () ; do nothing if diag-info-buffer exists and all buffers are displayed
+    (let (dw nw)
+      (switch-to-buffer src-buf)
+      (delete-other-windows)
+      (setq dw (split-window))
+      (other-window 1)
+      (set-window-buffer dw err-buf)
+      (if opal-diag-extended-flag
+	  (progn
+	    (select-window dw)
+	    (setq nw (split-window))
+	    (set-window-buffer nw (get-buffer-create opal-diag-info-buffer))
+	    (other-window 2)
+	    )
+	(other-window 1)
+	)
+      )
+    )
+)
+
+;;; $File Handling$
 
 (defun opal-diag-update ()
   "Update diagnostics buffer."
   (interactive)
-;  (delete-other-windows)
-  (opal-diag-clear-errors)
   (opal-diag-find-diag)
-  (find-alternate-file (buffer-file-name))
-  (if opal-diag-curr-error
-      (setq opal-diag-curr-error 
-	    (max 0 (min opal-diag-curr-error 
-			(- opal-diag-number-errors 1))))
+  (opal-diag-set-windows opal-diag-source opal-diag-buffer t)
+  (setq opal-diag-hide nil)
+  (setq opal-diag-buffer-may-kill t)
+  (opal-diag-parse)
+  (if opal-diag-errors
+      (progn 
+	(setq opal-diag-curr-error nil)
+	(opal-diag-next-error)
+	(opal-diag-show-error)
+	)
+    (setq opal-diag-curr-error nil)
+    (switch-to-buffer opal-diag-source)
+    (error "No diagnostics")
+    )
   )
+
+(defun opal-diag-update-silent ()
+  "Update diagnostics buffer without immediately showing diagnostics buffer."
+  (interactive)
+  (setq opal-diag-hide nil)
+  (opal-diag-find-diag)
+  (setq opal-diag-buffer-may-kill t)
+  (opal-diag-parse)
+  (switch-to-buffer opal-diag-source)
+  (delete-other-windows)
+  (goto-char (point-min))
+  )
+
+(defun opal-diag-from-current-buffer ()
+  "parse current buffer as diagnostics buffer"
+
+  (interactive)
+  (setq opal-diag-buffer (current-buffer))
+  (setq opal-diag-buffer-may-kill t)
+  (setq opal-diag-source nil)
+  (opal-diag-parse)
+  (setq opal-diag-curr-error 0)
   (opal-diag-show-error)
   )
 
-(defun opal-diag-show ()
-  "Show current error."
-  (interactive)
-  (let ((x (opal-diag-find-diag t)))
-  (if x (opal-diag-show-error))
-))
-
-(defun opal-diag-show-all ()
-  "Show all diagnostics."
-  (interactive)
-  (let ((x (opal-diag-find-diag t)))
-  (setq opal-diag-show-what opal-diag-show-all)
-  (setq opal-diag-number-errors nil)
-  (if x (opal-diag-show-error))
-))
-
-(defun opal-diag-show-errors-and-warns ()
-  "Show only errors and warnings."
-  (interactive)
-  (let ((x (opal-diag-find-diag t)))
-  (setq opal-diag-show-what opal-diag-show-errors-and-warns)
-  (setq opal-diag-number-errors nil)
-  (if x (opal-diag-show-error))
-))
-
-(defun opal-diag-show-errors ()
-  "Show only errors."
-  (interactive)
-  (let ((x (opal-diag-find-diag t)))
-  (setq opal-diag-show-what opal-diag-show-errors)
-  (setq opal-diag-number-errors nil)
-  (if x (opal-diag-show-error))
-))
-
-(defun opal-diag-kill-error ()
-  "Kill current error."
-  (interactive)
-  (opal-diag-find-diag)
-  (if (= opal-diag-number-errors 0)
-      (progn (opal-diag-delete-current-diag-buffer)
-	     (error "No more diagnostics.")))
-  ;; walk back to main error
-  (while (and (> opal-diag-curr-error 0) 
-	      (car (cdr (aref opal-diag-errors opal-diag-curr-error))))
-    (setq opal-diag-curr-error (- opal-diag-curr-error 1)))
-  (let (spos epos error-list (del-cnt 1) (i 0))
-     ;; copy until current error
-     (while (< i opal-diag-curr-error)
-       (setq error-list (cons (aref opal-diag-errors i) error-list))
-       (setq i (+ i 1)))
-     ;; delete main & sub errors
-     (setq spos (marker-position (car (aref opal-diag-errors i))))
-     (set-marker (car (aref opal-diag-errors i)) nil)
-     (set-marker (car (cdr (cdr (aref opal-diag-errors i)))) nil)
-     (setq i (+ i 1))
-     (while (and (< i opal-diag-number-errors)
-		 (car (cdr (aref opal-diag-errors i))))
-       (set-marker (car (aref opal-diag-errors i)) nil)
-       (set-marker (car (cdr (cdr (aref opal-diag-errors i)))) nil)
-       (setq del-cnt (+ del-cnt 1))
-       (setq i (+ i 1)))
-     ;; copy rest errors
-     (if (< i opal-diag-number-errors)
-	 (progn
-	   (setq opal-diag-curr-error (- i del-cnt))
-	   (setq epos (marker-position (car (aref opal-diag-errors i))))
-	   (while (< i opal-diag-number-errors)
-	     (setq error-list (cons (aref opal-diag-errors i) error-list))
-	     (setq i (+ i 1))))
-       (setq opal-diag-curr-error (- opal-diag-number-errors del-cnt 1))
-       (setq epos (point-max)))
-     (setq opal-diag-number-errors (- opal-diag-number-errors del-cnt))
-     (setq opal-diag-errors (vconcat (reverse error-list)))
-     (toggle-read-only)
-     (delete-region spos epos)
-     (toggle-read-only)
-     (set-buffer-modified-p nil))
-  (opal-diag-show-error))
-       
       
 (defun opal-diag-find-diag (&optional noerror)
   "From information about the current buffer, find a corresponding
-diag buffer and select it. if diagnostics from interpreter exist, 
-these are selected"
-  (if (eq major-mode 'opal-diag-mode)
-      ;; diag buffer already selected
-      (if (not opal-diag-number-errors)
-	  (opal-diag-parse))
-    (let* ((fn (file-name-nondirectory buffer-file-name))
-	   (diagfn (concat fn ".diag"))
-	   )
-      (if opal-diag-hidden-diag
-	  (setq diagfn (concat "OCS/" diagfn)))
-      (if (and fn
-	       (string-match ".*\\.\\(sign\\|impl\\|extp\\|intp\\)$" fn))
-	  (if (file-readable-p diagfn)
-	      (progn
-		(if (setq buf (get-file-buffer diagfn))
-		    (set-buffer buf)
-		  (find-file diagfn))
-		(if (not opal-diag-number-errors)
-		    (opal-diag-parse))
-		t)
-	    (if noerror
-		nil
-	      (error (concat "No corresponding diagnostics " diagfn))))
-	(if noerror nil (error "No Opal file."))
+diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source "
+  ; called from either opal-diag-mode or opal-mode
+  (cond ((eq major-mode 'opal-diag-mode)
+	 (setq opal-diag-buffer (current-buffer))
+	 (let (sn fn)
+	   (setq sn (buffer-file-name))
+	   (string-match "\\(.*\\)/OCS\\(.*\\)\\.diag" sn)
+	   (setq fn (concat (substring sn (match-beginning 1) (match-end 1))
+			    (substring sn (match-beginning 2) (match-end 2))))
+	   (setq opal-diag-source (find-file-noselect fn))
+	   ))
+	((eq major-mode 'opal-mode)
+	 (setq opal-diag-source (current-buffer))
+	 (let (sn fn buf revert-without-query)
+	   (setq revert-without-query (list ".*"))
+	   (setq sn (buffer-file-name))
+	   (setq fn (concat (file-name-directory sn) "OCS/"
+			    (file-name-nondirectory sn) ".diag"))
+	   (if opal-diag-buffer
+	       (if (not (string= fn (buffer-file-name
+				     (get-buffer opal-diag-buffer))))
+		   (opal-diag-clear-diags)
+		 ))
+	   (setq buf (find-file-other-window fn))
+	   (setq opal-diag-buffer buf)
+	   ))
 	)
-      )))
-
-(defun opal-diag-show-error ()
-  "Make current error and corresponding source visible."
-  (if (not opal-diag-number-errors)
-      (opal-diag-parse))
-  (if (and opal-diag-number-errors 
-	   (>= opal-diag-curr-error 0) 
-	   (< opal-diag-curr-error opal-diag-number-errors))
-      (let* ((err (aref opal-diag-errors opal-diag-curr-error))
-	     (err-mark (car err))
-	     (src-mark (car (cdr (cdr err))))
-	     (pop-up-windows t))
-	;; show extended help, if flag set
-	(switch-to-buffer (marker-buffer src-mark))
-	(cond (opal-diag-extended-flag 
-  	         (opal-diag-extended-show err-mark src-mark)
-	     )
-	)
-	;; show error in source code
-	(switch-to-buffer (marker-buffer src-mark))
-	(goto-char src-mark)
-	(let ((window (display-buffer (marker-buffer err-mark))))
-	  (set-window-point window err-mark)
-	  (set-window-start window err-mark))
-	;; print message for certain error
-	(switch-to-buffer (marker-buffer err-mark))
-	(goto-char err-mark)
-	(let ((type-msg (substitute-command-keys 
-		     "type \\[opal-diag-insert-missing-item]")))
-	  (cond 
-	   ((opal-diag-insert-missing-item-str-existp)
-	    (message "%s to import %s from %s" type-msg
-		     (substring (opal-current-line) 
-				(match-beginning 1) (match-end 1))
-		     (substring (opal-current-line) 
-				(match-beginning 2) (match-end 2))))
-	   ((opal-diag-insert-missing-item-multi-str-existp)
-	    (message "%s to import missing items" type-msg))
-	   ((opal-diag-insert-missing-item-existp)
-	    (message "%s to import %s" type-msg
-		     (substring (opal-current-line) 
-				(match-beginning 1) (match-end 1))))
-	   ((opal-diag-replace-underscorep)
-	    (message "%s to replace %s by _" type-msg
-		     (substring (opal-current-line) 
-				(match-beginning 1) (match-end 1))))
-	   ((opal-diag-expected-p)
-	    (message "%s to insert %s" type-msg
-		     (substring (opal-current-line) 
-				(match-beginning 1) (match-end 1))))
-	   (t (message nil))
-	   )
-	  )
-	(switch-to-buffer (marker-buffer src-mark))
-	 )
-    (opal-diag-delete-current-diag-buffer t)
-    (error "No diagnostics."))
   )
+
+(defun opal-diag-find-source (unit)
+  "return buffer which contains this unit"
+  (let (fn)
+    (setq fn (opal-find-structure unit))
+    (if fn
+	(find-file-noselect fn)
+      nil ; (error "cannot find Opal unit %s" unit)
+      )
+    )
+  )
+	  
+
+
+(defun opal-diag-select-source (&optional diag)
+  "Find and select source corresponding to diag buffer."
+  (if opal-diag-source 
+      (set-buffer opal-diag-source)
+    (error "No source for diag buffer set")
+    )
+  )
+
+;;; $Parsing$
 
 (defconst opal-diag-parse-ocs-regexp 
   "<\\([0-9]+\\),\\([0-9]+\\)>\\(ERROR\\|WARNING\\|HINT\\)"
@@ -592,6 +663,10 @@ these are selected"
 (defconst opal-diag-parse-oasys-unknown-regexp
   "\\(ERROR\\|WARNING\\|HINT\\) \\[\\(.*\\) at unknown location"
   "regexp to match oasys diagnostics at unknown locations")
+
+(defconst opal-diag-parse-oasys-eval-regexp
+  "\\(ERROR\\|WARNING\\|HINT\\) \\[at \\([0-9]+\\)\\.\\([0-9]+\\)"
+  "regexp to match oasys diagnostics for evaluated expressions")
 
 (defconst opal-diag-parse-suberror-regexp
   " *[0-9]+\\. *<\\([0-9]+\\),\\([0-9]+\\)>\\( \\)"
@@ -607,137 +682,294 @@ these are selected"
     (buffer-substring (match-beginning no) (match-end no))
 )
 
-(defun opal-diag-parse ()
+(defun opal-diag-parse (&optional silent eval-buf)
   "Parse current diagnostic buffer und setup diagnostic variables. "
-  (message "Parsing diagnostics ...")
-  (let*((error-list nil) 
-	(curr-src (opal-diag-find-source))
-	src
-       )
+  (if (not silent) (message "Parsing diagnostics ..."))
+  (opal-diag-clear-errors)
+  (let (end-reached err-start err-end line col type curr-src-buf src 
+		    true-error src-start src-end new-src-ext new-err-ext
+		    signal-error-on-buffer-boundary error-list
+		    num-hint num-warn num-error i ext-keymap unknown-src)
+    (setq signal-error-on-buffer-boundary nil)
     (save-excursion
+      (set-buffer opal-diag-buffer)
       (goto-char (point-min))
-      (while (re-search-forward opal-diag-error-regexp nil t)
-	(let (line colum error-mark src-mark is-suberror type limit true-error)
-	  (beginning-of-line)
-	  (setq error-mark (point-marker))
-	  (save-excursion
-	    (forward-line)
-	    (setq limit (point))
-	  )
-	  (cond
-	   ((looking-at opal-diag-parse-ocs-regexp)
-	    (setq src curr-src)
-	    (setq line (string-to-int (opal-diag-match 1)))
-	    (setq colum (- (string-to-int (opal-diag-match 2)) 1))
-	    (setq type (opal-diag-match 3))
-	    (setq is-suberror nil)
-	    (setq true-error t)
-	    (forward-line)
-	   )
-	   ((looking-at opal-diag-parse-oasys-regexp)
-	    (setq src (opal-diag-match 2))
-	    (setq line (string-to-int (opal-diag-match 3)))
-	    (setq colum (- (string-to-int (opal-diag-match 4)) 1))
-	    (setq type (opal-diag-match 1))
-	    (setq is-suberror nil)
-	    (setq curr-src src)
-	    (setq true-error t)
-	    (forward-line)
-	   )
-	   ((looking-at opal-diag-parse-oasys-unknown-regexp)
-	    (setq src (opal-diag-match 2))
-	    (setq line 0)
-	    (setq colum 0)
-	    (setq type (opal-diag-match 1))
-	    (setq is-suberror nil)
-	    (setq curr-src src)
-	    (setq true-error t)
-	    (forward-line)
-	   )
-	   ((looking-at opal-diag-parse-suberror-regexp)
-	    (setq src curr-src)
-	    (setq line (string-to-int (opal-diag-match 1)))
-	    (setq colum (- (string-to-int (opal-diag-match 2)) 1))
-	    (setq type "subdiag")
-	    (setq is-suberror t)
-	    (setq true-error t)
-	    (forward-line)
-	   )
-	   (t
-;;	    (error "opal-diag-parse: unknown type of diagnostic: %s" (opal-current-line))
-	    (setq true-error nil)
-	    (forward-line)
-	   )
-	  )
-	  (if (and true-error
-		   (or (= opal-diag-show-what opal-diag-show-all)
-		       (string= type "ERROR") 
-		       is-suberror
-		       (and (= opal-diag-show-what
-			       opal-diag-show-errors-and-warns)
-			    (string= type "WARNING"))
-		       )
-		   )
-	      (progn
-		(save-excursion
-		  (opal-diag-set-buffer src)
-		  (goto-line line)
-		  (move-to-column colum)
-		  (setq src-mark (point-marker)))
-		(setq error-list 
-		      (cons (list error-mark is-suberror src-mark) error-list)))
-	    (set-marker error-mark nil)))))
-    (setq opal-diag-errors (vconcat (reverse error-list)))
-    (setq opal-diag-number-errors (length opal-diag-errors))
-    (setq opal-diag-curr-error 0))
-  (message "Parsing diagnostics done."))
-
-(defun opal-diag-set-buffer (name)
-  "set buffer name. If no such buffer exists, we try to load it via opal-find-structure. If this fails, we ask explicitly."
-  (if (get-buffer name)
-      (set-buffer name)
-    (let ((fn (opal-find-structure name))
+      (setq end-reached nil)
+      (setq curr-src-buf opal-diag-source)
+      (setq num-hint 0) (setq num-warn 0) (setq num-error 0)
+      (setq i 0) (setq unknown-src nil)
+      (while (not end-reached)
+	(beginning-of-line)
+	(setq err-start (point))
+	(save-excursion (forward-line) (setq err-end (point)))
+	(cond
+	 ((looking-at opal-diag-parse-ocs-regexp) (opal-diag-handle-ocs))
+	 ((looking-at opal-diag-parse-oasys-regexp) (opal-diag-handle-oasys))
+	 ((looking-at opal-diag-parse-oasys-unknown-regexp)
+	  (opal-diag-handle-oasys-unknown))
+	 ((looking-at opal-diag-parse-oasys-eval-regexp)
+	  (opal-diag-handle-oasys-eval))
+	 ((looking-at opal-diag-parse-suberror-regexp) 
+	  (opal-diag-handle-suberror))
+	 ((looking-at "Checking Signature of \\(.*\\) \\.\\.\\.")
+	  (opal-diag-handle-checking))
+	 ((looking-at "\\(Compiling\\|Checking\\) Implementation of \\(.*\\) \\.\\.\\.")
+	  (opal-diag-handle-compiling))
+	 (t (setq true-error nil))
 	 )
-      (if fn
-	  (set-buffer (find-file-noselect fn))
-	(set-buffer (find-file-noselect
-		     (read-file-name (concat "Where is Opal unit " name "? ")
-				     nil nil t name)))
+	(if true-error (opal-diag-parse-error-found) ) 
+	(setq end-reached (> (forward-line) 0))
+	); while
+      ); save-excursion
+    (if error-list
+	(setq opal-diag-errors (vconcat (reverse error-list)))
+      (setq opal-diag-errors nil)
       )
+    (setq opal-diag-curr-error nil)
+    (if (not silent)
+	(message "%3d error(s), %3d warning(s), %3d hint(s) found"
+		 num-error num-warn num-hint)
+      )
+; no popup-dialog-box in FSF-Emacs :-(
+;    (if unknown-src
+;	(popup-dialog-box (list (concat "* WARNING *\nThe following source files could not be found:\n" unknown-src)
+;			      [ "OK" '(lambda () (interactive)) t]))
+;      )
+  ;; return: car is t, iff ERRORS are found, 
+  ;;         cdr is t, iff user wants to see errors
+    (cons (> num-error 0) 
+	  (or (and (equal opal-diag-show-what 'all)
+		   (> (+ num-error num-warn num-hint) 0))
+	      (and (equal opal-diag-show-what 'warning)
+		   (> (+ num-error num-warn) 0))
+	      (and (equal opal-diag-show-what 'error)
+		   (> num-error 0))))
     )
   )
+
+
+(defun opal-diag-parse-type (string)
+  "parse error type and return symbol"
+  (cond ((string= "ERROR" string) 'error)
+	((string= "WARNING" string) 'warning)
+	((string= "HINT" string) 'hint)
+	((string= "suberror" string) 'suberror)
+	(t 'unknown)
+	)
+  )
+
+(defun opal-diag-handle-ocs ()
+
+  (setq src curr-src-buf)
+  (setq line (string-to-int (opal-diag-match 1)))
+  (setq col (string-to-int (opal-diag-match 2)))
+  (setq type (opal-diag-match 3))
+  (setq true-error t)
 )
 
-(defun opal-diag-clear-errors ()
-  "Clear markers in opal-diag-errors."
-  (if opal-diag-number-errors
-      (let ((i 0))
-	(while (< i opal-diag-number-errors)
-	  (let ((err (aref opal-diag-errors i)))
-	    (set-marker (car err) nil)
-	    (set-marker (car (cdr (cdr err))) nil))
-	  (setq i (+ i 1)))))
-;  (setq opal-diag-number-errors nil)
+(defun opal-diag-handle-oasys ()
+  (setq src (opal-diag-find-source (opal-diag-match 2)))
+  (if (not src) 
+      (opal-diag-handle-oasys-unknown-src-list (opal-diag-match 2))
+    (setq curr-src-buf src)
+    )
+  (setq line (string-to-int (opal-diag-match 3)))
+  (setq col (string-to-int (opal-diag-match 4)))
+  (setq type (opal-diag-match 1))
+  (setq true-error t)
 )
-	   
 
-(defun opal-diag-find-source (&optional diag)
-  "Find source corresponding to diag buffer."
-  (if (not diag) (setq diag (current-buffer)))
-  (let* ( (fn-diag (file-name-nondirectory (buffer-file-name diag)))
-	  (fn-src  (substring fn-diag 0 (- (length fn-diag) 5))))
-    (if opal-diag-hidden-diag
-	(setq fn-src (concat "../" fn-src)))
-    (find-file-noselect fn-src)))
+(defun opal-diag-handle-oasys-unknown ()
+  (setq src (opal-diag-find-source (opal-diag-match 2)))
+  (if (not src) 
+      (opal-diag-handle-oasys-unknown-src-list (opal-diag-match 2))
+    (setq curr-src-buf src)
+    )
+  (setq line 0)
+  (setq col 1)
+  (setq type (opal-diag-match 1))
+  (setq is-suberror nil)
+  (setq true-error t)
+)
 
-(defun opal-diag-select-source (&optional diag)
-  "Find and select source corresponding to diag buffer."
-  (if (not diag) (setq diag (current-buffer)))
-  (let* ( (fn-diag (file-name-nondirectory (buffer-file-name diag)))
-	  (fn-src  (substring fn-diag 0 (- (length fn-diag) 5))))
-    (if opal-diag-hidden-diag
-	(setq fn-src (concat "../" fn-src)))
-    (find-file fn-src)))
+(defun opal-diag-handle-oasys-unknown-src-list (unit)
+  (if (string-match (concat "- " unit) (concat unknown-src " "))
+      ()
+    (setq unknown-src (concat unknown-src "\n- " unit))
+    )
+  )
+
+(defun opal-diag-handle-oasys-eval ()
+  (setq src eval-buf)
+  (setq line (+ 1 (string-to-int (opal-diag-match 2))))
+  (setq col (string-to-int (opal-diag-match 3)))
+  (setq type (opal-diag-match 1))
+  (setq is-suberror nil)
+  (setq true-error t)
+)
+
+(defun opal-diag-handle-suberror ()
+  (setq src curr-src-buf)
+  (setq line (string-to-int (opal-diag-match 1)))
+  (setq col (string-to-int (opal-diag-match 2)))
+  (setq type "suberror")
+  (setq true-error t)
+)
+
+(defun opal-diag-handle-checking ()
+  (setq curr-src-buf (opal-diag-find-source
+		      (concat (opal-diag-match 1) ".sign")))
+  (if (not curr-src-buf) (setq unknown-src
+			       (concat unknown-src "\n"
+				       (concat (opal-diag-match 1) ".sign"))))
+  (overlay-put (make-overlay err-start err-end (get-buffer opal-diag-buffer))
+	       'face 'opal-diag-source-error-face)
+  (setq true-error nil)
+)
+
+(defun opal-diag-handle-compiling ()
+  (setq curr-src-buf (opal-diag-find-source
+		      (concat (opal-diag-match 2) ".impl")))
+  (if (not curr-src-buf) (setq unknown-src
+			       (concat unknown-src "\'opal-diag-source-error-face)n"
+				       (concat (opal-diag-match 1) ".impl"))))
+  (overlay-put (make-overlay err-start err-end (get-buffer opal-diag-buffer))
+	       'face 'opal-diag-source-error-face)
+  (setq true-error nil)
+  )
+
+(defun opal-diag-parse-counter (silent)
+  (cond ((equal 'hint (opal-diag-parse-type type))
+	 (setq num-hint (+ num-hint 1)))
+	((equal 'warning (opal-diag-parse-type type))
+	 (setq num-warn (+ num-warn 1)))
+	((equal 'error (opal-diag-parse-type type))
+	 (setq num-error (+ num-error 1))))
+  (if (not silent)
+      (message "%3d error(s), %3d warning(s), %3d hint(s)"
+	       num-error num-warn num-hint)
+    )
+  )
+
+(defun opal-diag-parse-set-start-position ()
+  (if src
+      (save-excursion
+	(set-buffer src)
+	(goto-line line)
+	(move-to-column col)
+	(backward-char)
+	(setq src-start (point))
+	(forward-char 1)
+	(setq src-end (point))
+	(if (equal 'suberror (opal-diag-parse-type type))
+	    (setq src-end (+ src-end 1)))
+	)
+    )
+  )
+
+(defun opal-diag-parse-ext-for-unknown ()
+ ; (define-key ext-keymap [(button1)] 'opal-diag-not-found)
+ ; (define-key ext-keymap [(button2)] 'opal-diag-not-found)
+ ; (define-key ext-keymap [(button3)] 'opal-diag-not-found)
+  (setq new-err-ext
+	(make-overlay err-start err-end
+		     (get-buffer opal-diag-buffer)))
+;  (set-extent-keymap new-err-ext ext-keymap) 
+  (overlay-put new-err-ext 'face 'opal-diag-source-error-face)
+  (overlay-put new-err-ext 'mouse-face 'default)
+)
+
+(defun opal-diag-parse-ext-keymap ()
+;  (define-key ext-keymap [(button1)]
+;    `(lambda () (interactive) (opal-diag-show-this-error ,i)))
+;  (define-key ext-keymap [(button2)]
+;    'opal-diag-hide-diag-buffer)
+;  (define-key ext-keymap [(button3)]
+;    `(lambda () (interactive) (opal-diag-show-this-error ,i)
+;       (opal-diag-toggle-extended-flag)))
+  )
+
+(defun opal-diag-parse-src-ext ()
+  (setq new-src-ext
+	(make-overlay src-start src-end (get-buffer src)))
+  (overlay-put new-src-ext 'mouse-face 'opal-diag-source-error-face)
+;  (set-extent-keymap new-src-ext ext-keymap)
+  (cond ((equal 'hint (opal-diag-parse-type type))
+	 (overlay-put new-src-ext 'face 'opal-diag-mouse-hint-face))
+	((equal 'warning (opal-diag-parse-type type))
+	 (overlay-put new-src-ext 'face 'opal-diag-mouse-warning-face))
+	(t
+	 (overlay-put new-src-ext 'face 'opal-diag-mouse-error-face))
+	)
+  )
+
+(defun opal-diag-parse-err-ext ()
+  (setq new-err-ext (make-overlay err-start err-end
+				  (get-buffer opal-diag-buffer)))
+  (cond ((equal 'hint (opal-diag-parse-type type))
+	 (overlay-put new-err-ext 'face 'opal-diag-error-hint-face)
+	 (overlay-put new-err-ext 'mouse-face 'opal-diag-mouse-hint-face))
+	 ((equal 'warning (opal-diag-parse-type type))
+	  (overlay-put new-err-ext 'face 'opal-diag-error-warning-face)
+	  (overlay-put new-err-ext 'mouse-face 'opal-diag-mouse-warning-face))
+	 (t
+	  (overlay-put new-err-ext 'face 'opal-diag-error-error-face)
+	  (overlay-put new-err-ext 'mouse-face 'opal-diag-mouse-error-face))
+	 )
+;  (set-extent-keymap new-err-ext ext-keymap)
+  )
+
+(defun opal-diag-parse-error-found ()
+  (opal-diag-parse-counter silent)
+  (opal-diag-parse-set-start-position)
+  (setq ext-keymap (make-sparse-keymap))
+  (if (not src)
+      (progn
+	(opal-diag-parse-ext-for-unknown)
+	(overlay-put new-src-ext 'err-no -1)
+	(overlay-put new-err-ext 'err-no -1)
+	)
+    (opal-diag-parse-ext-keymap)
+    (opal-diag-parse-src-ext)
+    (opal-diag-parse-err-ext)
+    (overlay-put new-src-ext 'err-no i)
+    (overlay-put new-err-ext 'err-no i)
+    (setq error-list 
+	  (cons (opal-diag-make-diag (opal-diag-parse-type type)
+		 new-src-ext new-err-ext) 
+		error-list))
+    (setq i (+ i 1))
+    )
+  )
+
+
+(make-face 'opal-diag-source-error-face)
+(set-face-foreground 'opal-diag-source-error-face "black")
+(set-face-background 'opal-diag-source-error-face "gold")
+
+(make-face 'opal-diag-mouse-error-face)
+(set-face-foreground 'opal-diag-mouse-error-face "white")
+(set-face-background 'opal-diag-mouse-error-face "red")
+(make-face 'opal-diag-error-error-face)
+(set-face-foreground 'opal-diag-error-error-face "red")
+
+(make-face 'opal-diag-mouse-warning-face)
+(set-face-foreground 'opal-diag-mouse-warning-face "white")
+(set-face-background 'opal-diag-mouse-warning-face "magenta")
+(make-face 'opal-diag-error-warning-face)
+(set-face-foreground 'opal-diag-error-warning-face "magenta")
+
+(make-face 'opal-diag-mouse-hint-face)
+(set-face-foreground 'opal-diag-mouse-hint-face "white")
+(set-face-background 'opal-diag-mouse-hint-face "SteelBlue")
+(make-face 'opal-diag-error-hint-face)
+(set-face-foreground 'opal-diag-error-hint-face "SteelBlue")
+
+(defun opal-diag-not-found ()
+  (interactive)
+  (message "source file for this diagnostic could not be found.")
+)
+
 
 (defun opal-diag-read-int ()
   (let ((s nil))
@@ -746,25 +978,23 @@ these are selected"
       (forward-char 1))
     (string-to-int s)))
 
-;; -- support for extended help
+;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.5 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.6 $*"
   "name of buffer to display extended information" )
 
-(defun opal-diag-extended-show (errmark srcmark)
+(defun opal-diag-extended-show (err-ext)
   "show information for current diagnostic" 
 
 ;  (interactive)
-  (switch-to-buffer (marker-buffer errmark))
-  (goto-char errmark)
+  (switch-to-buffer (overlay-buffer err-ext))
+  (goto-char (overlay-start err-ext))
   (setq acterror (opal-current-line))
-  (opal-diag-check-extended-buffer (marker-buffer errmark) 
-				   (marker-buffer srcmark))
   (set-buffer opal-diag-info-buffer)
   (erase-buffer)
   (insert acterror)
   (goto-char (point-min))
-  (if (re-search-forward "\\( *[0-9]+\\. \\)?\\(<[0-9]+,[0-9]+>\\)\\(ERROR: \\|WARNING: \\|HINT: \\| \\)?" nil t)
+  (if (re-search-forward "^[^:]*:" nil t)
       (replace-match "")
   )
   (let ((el opal-diag-extended-doku-alist)
@@ -789,41 +1019,6 @@ these are selected"
   ); let
 )
 
-(defun opal-diag-check-extended-buffer 
-  (opal-diag-buffer  source-buffer)
-  "create buffer for diag info, if necessary; then split diagnostices window if necessary for display of this buffer"
-
-;  (interactive)
-  (if (and
-       (get-buffer opal-diag-info-buffer)
-       (get-buffer-window opal-diag-info-buffer)
-       (get-buffer-window opal-diag-buffer)
-       (get-buffer-window source-buffer))
-      () ; do nothing if diag-info-buffer exists and all buffers are displayed
-    (let ((bn (get-buffer-create opal-diag-info-buffer))
-	  )
-      (cond ;((get-buffer-window bn) (switch-to-buffer diag-buffer))
-       (t 
-	(if source-buffer
-	    (switch-to-buffer source-buffer)
-	  (switch-to-buffer (opal-diag-find-source))
-	  )
-	(delete-other-windows)
-	(let ((dw (split-window))
-	      )
-	  (set-window-buffer dw opal-diag-buffer)
-	  (select-window dw)
-	  (let ((nw (split-window))
-		)
-	    (set-window-buffer nw bn)
-	    (other-window 2)
-	    )
-	  )
-	)
-       )
-      ) 
-    )
-)
 
 (defun opal-diag-toggle-extended-flag ()
   "toggle current-value of extended-flag with appropriate action"
@@ -838,10 +1033,12 @@ these are selected"
         )
 	(t 
 	 (setq opal-diag-extended-flag t)
-	 (opal-diag-show)
+	 (opal-diag-show-current)
 	)
   )
 )
+
+;;; $Standard reaction on some Opal errors$
 
 (defun opal-diag-insert-missing-item-str-existp ()
   "t, if current diagnostic contains an item which may be imported from a missing structure; sets match 1 to this item and match to this structure"
@@ -908,7 +1105,10 @@ match 1 to this word"
 
   (interactive)
   (save-excursion
-    (opal-diag-find-diag)
+    (if (not opal-diag-buffer)
+	(opal-diag-find-diag)
+      )
+    (set-buffer opal-diag-buffer)
 					;    (goto-char (window-start))
     (cond ((opal-diag-insert-missing-item-str-existp)
 	   (let ((it (substring (opal-current-line) 
@@ -953,8 +1153,11 @@ match 1 to this word"
 	     (insert it)
 	     ))
 	  (t (message "%s" (opal-current-line)))
-    )
+	  )
   )
+    ;(pop-to-buffer (opal-diag-select-source))
+;  (opal-diag-next-main-error)
+  (opal-diag-show-error)
 )
 
 (defun opal-diag-ask-compare (&optional sort)
@@ -1004,8 +1207,41 @@ match 1 to this word"
     )
   )
 
-      
-  
+   
+(defun opal-diag-show-std-info (err-ext)
+  "show information on standard reaction for error at given position"
+  (save-excursion
+    (switch-to-buffer (overlay-buffer err-ext))
+    (goto-char (overlay-start err-ext))
+    (let ((type-msg (substitute-command-keys 
+		     "type \\[opal-diag-insert-missing-item]")))
+      (cond 
+       ((opal-diag-insert-missing-item-str-existp)
+	(message "%s to import %s from %s" type-msg
+		 (substring (opal-current-line) 
+			    (match-beginning 1) (match-end 1))
+		 (substring (opal-current-line) 
+			    (match-beginning 2) (match-end 2))))
+       ((opal-diag-insert-missing-item-multi-str-existp)
+	(message "%s to import missing items" type-msg))
+       ((opal-diag-insert-missing-item-existp)
+	(message "%s to import %s" type-msg
+		 (substring (opal-current-line) 
+			    (match-beginning 1) (match-end 1))))
+       ((opal-diag-replace-underscorep)
+	(message "%s to replace %s by _" type-msg
+		 (substring (opal-current-line) 
+			    (match-beginning 1) (match-end 1))))
+       ((opal-diag-expected-p)
+	(message "%s to insert %s" type-msg
+		 (substring (opal-current-line) 
+			    (match-beginning 1) (match-end 1))))
+       (t (message nil))
+       )
+      )
+    )
+)
+
     
 
 (defun opal-current-line ()
@@ -1065,7 +1301,8 @@ used or exported for further use.
 This can happen in a DATA declaration, if you did not export the corresponding 
 free type. Otherwise you can remove the declaration and the definition of 
 \\1 without affecting the usefulness of this structure.
-")
+
+Note that you cannot use this function in the oasys evaluator, because the optimizer will remove it. The simplest way to keep the optimizer from removing it is to export this function.")
 
 ("unused sort \\(.*\\)" .
              "The sort \\1 was declared at the indicated place but never used nor exported.")

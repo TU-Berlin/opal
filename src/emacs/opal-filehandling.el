@@ -312,8 +312,11 @@
 )
 
 (defun opal-add-load-path (path)
-  "add path to opal-load-path, if not already contained"
+  "add path to opal-load-path, if not already contained. (Trailing slash is removed)"
   (interactive "sPath:")
+  (if (string-match "\\(.*\\)/$" path)
+      (setq path (substring path (match-beginning 1) (match-end 1)))
+    )
   (if (not (member path opal-hook-path))
       (setq opal-hook-path (cons path opal-hook-path))
   )

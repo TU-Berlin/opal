@@ -15,6 +15,7 @@
   (define-key opal-trace-mode-map "\M-p" 'opal-trace-previous-trace)
   (define-key opal-trace-mode-map "\C-f" 'opal-trace-next-subgoal)
   (define-key opal-trace-mode-map "\C-b" 'opal-trace-previous-subgoal)
+  (define-key opal-trace-mode-map "\C-c\C-l" 'opal-trace-reload)
   (define-key opal-trace-mode-map "\C-c\C-r" 'opal-trace-find-source)
   (define-key opal-trace-mode-map "\C-c\C-f" 'opal-trace-fontify-proofstate)
   (if running-xemacs
@@ -46,6 +47,7 @@
 			    ["fontify current proofstate"
 			     opal-trace-fontify-proofstate t]
 			    "-----"
+			    ["reread trace" opal-trace-reload t]
 			    ["back to Opal source" opal-trace-find-source t]
 			    ))
 	 )

@@ -40,10 +40,10 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (require 'opal-switch)
 (require 'opal-import)
 (require 'opal-defs-mode)
+(require 'opal-toolbar)
 (if opal-running-xemacs
     (progn
       (require 'opal-oasys)
-      (require 'opal-toolbar)
       (require 'oasys-mode)
       (if opal-pchecker
 	  (require 'opal-trace-mode)
@@ -423,13 +423,14 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
         ("/\\*" "\\*/" string)
         ("--.*$" nil string)
 
-        ("\\<\\(IMPORT\\|SORT\\)\\>" nil highlight)
-        ("\\<FUN\\>" nil highlight)
-        ("\\<FUN.*$" nil underline)
-        ("\\<\\(TYPE\\|LAW\\)\\>" "==" highlight)
-        ("\\<\\(DEF\\|DATA\\)\\>" "==" secondary-selection)
+        ("\\<\\(IMPORT\\|SORT\\)\\>" nil keyword)
+        ("\\<FUN\\|DEF\\|LAW\\|TYPE\\|DATA\\>" nil keyword)
+        ("\\<\\(FUN\\).*$" nil bold)
+        ("\\<\\(\\(DEF\\|LAW\\|TYPE\\|DATA\\).*\\) *==" 1 bold)
+;        ("\\<\\(TYPE\\|LAW\\)\\>" "==" highlight)
+;        ("\\<\\(DEF\\|DATA\\)\\>" "==" secondary-selection)
 
-        ("\\<\\(ALL\\|AND\\|ANDIF\\|AS\\|COMPLETELY\\|DFD\\|ELSE\\|EX\\|FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|THEN\\|WHERE\\|_\\|===\\|<<=\\|==>\\|<=>\\|\\\\\\\\\\)\\>" nil keyword)
+        ("\\<\\(SPC\\|PRE\\|POST\\|ASSERT\\|ASSUME\\|ALL\\|AND\\|ANDIF\\|AS\\|COMPLETELY\\|DFD\\|ELSE\\|EX\\|FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|THEN\\|WHERE\\|_\\|===\\|<<=\\|==>\\|<=>\\|\\\\\\\\\\)\\>" nil keyword)
         ("^\.*\\(EXTERNAL\\|IMPLEMENTATION\\|INTERNAL\\|SIGNATURE\\).*$" nil modeline)
        )
      )
@@ -679,6 +680,10 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 ;  (setq auto-fill-function 'opal-mode-auto-fill)
   (setq opal-compile-projectdefsfile (getenv "OCSPROJECT"))
   (opal-toolbar-install)
+  (if opal-running-xemacs
+      nil
+    (opal-misc-hilit-all)
+    )
   (run-hooks 'opal-mode-hook)
   (run-hooks 'opal-mode-hooks)  ; for backwards compatibility
   )

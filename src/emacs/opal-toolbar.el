@@ -2,7 +2,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.1 1998-09-23 12:14:35 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.2 1998-10-30 14:25:07 kd Exp $
 
 ;;; This file is written for XEmacs and may not work with other Emacsen.
 
@@ -34,6 +34,8 @@
 	
 
 ;;; $Button Definitions$
+	(if opal-running-xemacs
+        (progn	    
 	(defun opal-toolbar-make-file (fn)
 	  (concat opal-toolbar-dir "/opal-toolbar-" fn)
 	  )
@@ -171,7 +173,8 @@
 		opal-toolbar-sequent-button
 		)
 	  )			       
-	
+	  ); progn 
+	  ); running-xemacs
 ;;; $Installing the Toolbar$
 	(defun opal-toolbar-install ()
 	  "install Opal toolbar in current frame"
@@ -197,7 +200,7 @@
 		  )
 	    )
 	  )
-	
+
 ;;; $Button Functions$
 	(defun opal-toolbar-opal ()
 	  "print message in echo area"
@@ -260,3 +263,38 @@
     )
   ) ; opal-toolbar-position
 
+(if (not opal-running-xemacs)
+    (progn
+	; FSF Emacs
+	(defun opal-toolbar-ersatz-menu ()
+	  "ersatz menu for toolbar in XEmacs"
+	  (interactive)
+	  (setq opal-ersatz-keymap (make-sparse-keymap "Opal Mode"))
+	  (define-key opal-ersatz-keymap [opal-ersatz-info]
+	    '("toggle extended help" . opal-diag-toggle-extended-flag))
+	  (define-key opal-ersatz-keymap [opal-ersatz-prev-diag]
+	    '("previous error" . opal-diag-prev-main-error))
+	  (define-key opal-ersatz-keymap [opal-ersatz-next-diag]
+	    '("next error" . opal-diag-next-main-error))
+	  (define-key opal-ersatz-keymap [opal-ersatz-update]
+	    '("update diagnostics" . opal-diag-update))
+	  (define-key opal-ersatz-keymap [opal-ersatz-save]
+	    '("save changed Opal sources" . opal-toolbar-save))
+	  (fset 'opal-toolbar-ersatz-menu opal-ersatz-keymap)
+	  )
+
+	(defun opal-ersatz-enabled-p () (interactive)
+	  (and opal-diag-curr-error (opal-diag-my-diag-p t)))
+
+	(defun opal-toolbar-install ()
+           "install toolbar ersatz - click mouse1 on toolbar"
+	   (interactive)
+	   (opal-toolbar-ersatz-menu)
+	   (define-key opal-mode-map [mode-line mouse-1]
+	     'opal-toolbar-ersatz-menu)
+	   )
+	(put 'opal-diag-toggle-extended-flag 'menu-enable '(opal-ersatz-enabled-p))
+	(put 'opal-diag-prev-main-error 'menu-enable '(opal-ersatz-enabled-p))
+	(put 'opal-diag-next-main-error 'menu-enable '(opal-ersatz-enabled-p))
+
+)); not running-xemacs
