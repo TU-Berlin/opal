@@ -11,7 +11,7 @@ IMPLEMENTATION PostParser
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-11 15:02:51 $ ($Revision: 1.4 $)
+-- % $Date: 2000-02-10 18:04:01 $ ($Revision: 1.5 $)
 
 IMPORT  ZOpts           COMPLETELY
         -- absy
@@ -25,7 +25,7 @@ IMPORT  ZOpts           COMPLETELY
         Rep             COMPLETELY
         RepTab          COMPLETELY
         -- lib
-        Pos             ONLY pos firstPos
+        Pos             ONLY pos firstPos unknown
         Seq             COMPLETELY
         Pair            COMPLETELY
         SeqMapEnv       ONLY *
@@ -39,6 +39,7 @@ IMPORT  ZOpts           COMPLETELY
        SeqOfSeq ONLY flat
        SeqZip COMPLETELY
        GlobPragma[partName] COMPLETELY
+       GlobPragma ONLY globPragma
 
 -- %- ------------------------------------------------------------------------
 
@@ -391,9 +392,10 @@ DEF doProofHeads((ST AS mkstruct(hd, im, sig, specs, sortIm, funIm, freeT,
                                  laws, prg, pH, pB, rels, p, part)) & RT) ==
     LET (nRT, nSig1) == (proofFun1, RT) * pH
         nSig2 == proofFun2(nRT) * pH
+        (nRT2, nPrags) == (proofPragma, nRT) * pH
     IN
     mkstruct(hd, im, nSig1 ++ nSig2 ++ sig, specs, sortIm, funIm, freeT,
-             laws, prg, pH, pB, rels, p, part) & nRT
+             laws, nPrags ++ prg, pH, pB, rels, p, part) & nRT2
 
 -- % PROOF P: n1 n2 .. |- nC ==> FUN PROOF%P: LAW%n1 ** ... -> LAW%nC
 FUN proofFun1: repTab ** proofHead -> repTab ** partName
@@ -405,6 +407,7 @@ DEF proofFun1(RT, proofHead(ide, prems, concl, pos)) ==
   IN
   (nRT3, partName(newIde, nil, <>, firstPos, K, noPragma, pos))
 
+
 -- % PROOF P: n1 n2 .. |- nC ==> FUN PROOF%P: proofscript'PROOFSCRIPT
 FUN proofFun2: repTab -> proofHead -> partName
 DEF proofFun2(RT)(proofHead(ide, _, _, pos)) ==
@@ -412,6 +415,21 @@ DEF proofFun2(RT)(proofHead(ide, _, _, pos)) ==
   WHERE K == op(sort(partName(proofscript, avail(PROOFSCRIPT), <>, firstPos, 
                               sort, noPragma, firstPos)))
         (_, newIde) == codeP(RT, ide)  -- schon eingetragen
+
+-- % PROOF P: n1 n2 .. |- nC ==> /$ PRAGMA PROOFSOURCE P ... $/
+FUN proofPragma: repTab ** proofHead -> repTab ** globPragma
+DEF proofPragma(RT, proofHead(ide, prems, concl, pos)) ==
+  LET (RT1, proofsourceRep) == insert(RT, "PROOFSOURCE")
+      markerItem == lexem(proofsourceRep, unknown)
+      ideItem == lexem(ide, unknown)
+      pN2Rep == \\rt, pn. insert(rt, ``(pn))
+      pN2Lex == \\rt, pn. LET (rt1, rp) == pN2Rep(rt, pn)
+                          IN (rt1, lexem(rp, unknown))
+      (RT2, premItems) == (pN2Lex, RT1) * prems
+      (RT3, conclItem) == pN2Lex(RT2, concl)
+  IN
+  (RT3, prag(markerItem :: ideItem :: (premItems +% conclItem)))
+      
 
 -- %$ProofBody einsortieren$
 FUN doProofBodies: pair[struct, repTab] -> pair[struct, repTab]

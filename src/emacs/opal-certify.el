@@ -2,6 +2,13 @@
 
 (provide 'opal-certify)
 
+(if (file-readable-p (expand-file-name "~/.opal-password.el"))
+    (load-file "~/.opal-password.el")
+  )
+
+;; make defualt definition
+(defvar opal-certify-password nil)
+
 (defconst opal-certify-extent-keymap nil)
 
 (defun opal-certify-keymap ()
@@ -160,11 +167,26 @@ by the Opal compiler and return name of property"
   )
 
 
-(defun opal-certify-sign-proof (passwd)
+(defun opal-certify-sign-proof ()
   "assumes that point is in a line which contains a 
    (single) proof head (proposition). computes a certification and
    inserts it in the following line"
-  (interactive "sPassword:")
+  (interactive)
+
+  (if (not opal-certify-password)
+      (progn
+	(popup-dialog-box 
+	 (list "No Password defined
+
+Set up a file ~/.opal-password.el which defines a variable 
+opal-certify-password to hold your GPG password:
+
+(defvar opal-certify-password \"MY-PASSWORD\")
+"
+[ "ok" 'opal-info-nil t ])) 
+        (error "cannot certify without password")
+      )
+  )
 
   (save-excursion
     (let (start end thisbuf proc procbuf result
@@ -179,7 +201,7 @@ by the Opal compiler and return name of property"
 		  "-a" "--output" "-" "--passphrase-fd" "0"
 		  "--comment" (opal-certify-comment propname thisbuf)
 		  ))
-      (process-send-string proc (concat passwd "\n"))
+      (process-send-string proc (concat opal-certify-password "\n"))
       (process-send-region proc (point-min) (point-max))
       (process-send-eof proc)
       (while (eq 'run (process-status proc))
@@ -293,7 +315,23 @@ by the Opal compiler and return name of property"
 (defun opal-certify-check-proof-mouse (event)
   (interactive "e")
 
-  (mouse-set-point event)
-  (forward-line -2)
-  (opal-certify-check-proof)
-)
+  (save-excursion
+    (let (pname)
+      (mouse-set-point event)
+      (beginning-of-line)
+      (forward-line -1)
+      (if (not (re-search-forward
+		"[ \t]*\\(JSTF\\|PROOF\\)[ \t]+\\(.*\\)[ \t]+==" nil t))
+	  (error "non standard GPG comment ?!? cannot determine name")
+	(setq pname (buffer-substring (match-beginning 2) (match-end 2)))
+	(goto-char (point-min))
+	(if (not (re-search-forward 
+		  (concat "[ \t]*\\(PROP\\|PROOF\\)[ \t]+"
+			  (regexp-quote pname) "[ \t]*:") nil t))
+	    (error "cannot find associated proofhead `%s' ?!?" pname)
+	  (opal-certify-check-proof)
+	  )
+	)
+      )
+    )
+  )

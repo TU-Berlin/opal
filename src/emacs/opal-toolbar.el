@@ -2,7 +2,7 @@
 ;;; Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.7 1999-05-31 08:32:11 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.8 2000-02-10 17:56:52 kd Exp $
 
 
 (provide 'opal-toolbar)
@@ -122,6 +122,21 @@
            (and opal-diag-curr-error (opal-diag-my-diag-p t))
            "show or hide additional information on current diagnostic"])
 
+	(defvar opal-toolbar-certify-icon
+	  (toolbar-make-button-list (opal-toolbar-make-file "certify.gif")))
+	(defvar opal-toolbar-certify-button
+	  [opal-toolbar-certify-icon opal-toolbar-certify 
+          (equal major-mode 'opal-mode)
+          "certify current proposition"])
+
+	(defvar opal-toolbar-check-icon
+	  (toolbar-make-button-list (opal-toolbar-make-file "check.gif")))
+	(defvar opal-toolbar-check-button
+	  [opal-toolbar-check-icon opal-toolbar-check
+          (equal major-mode 'opal-mode)
+          "check signature of current proposition"])
+	
+
 	(defvar opal-toolbar-sequent-q-icon
 	  (toolbar-make-button-list (opal-toolbar-make-file "sequent-q.gif")))
 	(defvar opal-toolbar-sequent-q-button
@@ -179,6 +194,8 @@
 		opal-toolbar-prev-diag-button
 		opal-toolbar-info-button
 		nil
+		opal-toolbar-certify-button
+		opal-toolbar-check-button
 		opal-toolbar-sequent-q-button
 		opal-toolbar-sequent-button
 		)
@@ -216,7 +233,7 @@
 	  "print message in echo area"
 	  
 	  (interactive)
-	  (message "OCS system 2.3d.beta")
+	  (message "OCS system 2.3e.alpha")
 	  )
 	
 	(defun opal-toolbar-sign-impl ()
@@ -261,6 +278,18 @@
 	  (oasys-add-path (file-name-directory (buffer-file-name)))
 	  (oasys-focus (file-name-nondirectory (buffer-file-name)))
 	  (oasys-cmd "pc")
+	  )
+	
+	(defun opal-toolbar-certify ()
+	  "certify current proposition"
+	  (interactive)
+	  (opal-certify-sign-proof)
+	  )
+
+	(defun opal-toolbar-check ()
+	  "check signature of current proof"
+	  (interactive)
+	  (opal-certify-check-proof)
 	  )
 
 
