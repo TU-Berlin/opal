@@ -1,0 +1,178 @@
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION Translation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-22 12:37:06 $ ($Revision: 1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Quadruple	COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqZip		COMPLETELY
+	Compose		COMPLETELY
+	String		ONLY string
+
+	Stream		ONLY output stdOut write:output**denotation->com[void]
+
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+--	ComEnv		ONLY localTime
+
+	DEBUG		ONLY PRINT
+	Error		COMPLETELY
+
+	Error		ONLY err:SORT errors
+	Options		ONLY options myAnaFile cop?
+	Verbose		COMPLETELY
+
+	OcExit		ONLY ioError
+	NatMap		ONLY natMap {} extend
+
+	TypeAn		COMPLETELY
+	SourceAn	ONLY sourceAn version
+	PragmaAn	ONLY pragma:SORT pragmaAn pragmas
+	An		ONLY an none:an set:an**typeAn->an set:an**sourceAn->an
+					set:an**pragmaAn->an
+	Ide		ONLY origin:SORT target ide:SORT local
+			     # : ide -> nat # : origin -> nat
+	Ac		COMPLETELY
+	AcDump		ONLY dump
+	AcIO		ONLY readUnit writeUnit
+	DumpToFile	ONLY dumpToFile
+	PreparedOptions	ONLY options popts prepareOptions
+	InterOpal	COMPLETELY
+        Map		COMPLETELY
+
+	InterOpal	COMPLETELY
+	InterOpalAccess	COMPLETELY
+/*			ONLY interOpal name sort? op? fct
+			     actStructIde actStructParams
+			     treatInternalNames freeInternal
+			     pragmas:interOpal->seq[pragma]
+*/
+	ParameterTranslation	ONLY info sortInfo fullInfo
+	FctTranslation		ONLY type:interOpal**info->fct->type
+	ImportTranslation	ONLY importUnits
+	DefinitionTranslation	ONLY typeDecNops dec
+	NameTranslation		ONLY ide
+	PragmaTranslation	ONLY pragma
+
+-- ----------------------------------------------------------------------------
+
+FUN acTranslate: options -> interOpal -> com[void]
+DEF acTranslate(opts)(IO) ==
+   unit(opts)(IO) &
+   (\\ac.LET ac2 == PRINT(cop?(printAcOption,opts),dump(ac),ac)
+         IN writeUnit(opts,myAnaFile(opts))(ac2))
+
+-- ----------------------------------------------------------------------------
+
+FUN printAcOption: denotation
+
+DEF printAcOption == "printAc"
+
+-- ----------------------------------------------------------------------------
+
+FUN inter2ac: interOpal -> unit
+DEF inter2ac(IO) ==
+	LET (unit, _) == addInternals(IO, importUnits(IO))
+        IN unit
+
+FUN addInternals: interOpal ** seq[unit] -> unit ** err
+DEF addInternals(IO, units) ==
+	LET info == actualParameterInfo(IO)    
+           (sorts, ops, hints) == internals(IO, info) 
+           sortIndices == (# o ide) * sorts
+           opIndices == (# o ide) * ops
+           unitIndices == (# o origin) * units
+	   prgms == pragma(IO, info, _) * pragmas(IO)
+	   an == ((none set typeDecs(extend({},sortIndices,sorts)))
+		        set version(""))
+ 			set pragmas(prgms)
+	IN (unit(an, symbol(IO), target,
+                          extend({},unitIndices,units),
+                          extend({},opIndices,ops)), hints)
+
+FUN unit: options -> interOpal -> com[unit]
+DEF unit(opts)(IO) ==
+  verb(opts,subphase,"translating imports ..."); (\\ _ .
+  succeed(importUnits(IO)) & (\\units.
+  verb(opts,subphase,"translating internal names ..."); (\\ _ .
+  LET (unit, hints) == addInternals(IO, units)
+  IN errors(opts,hints);
+          (\\ _ .succeed(unit))
+  )))
+
+-- ----------------------------------------------------------------------------
+
+FUN freeInternal: interOpal -> nat
+-- beyond maximal ident-number
+DEF freeInternal(Inter) == succ(\(max, 0)((no o ident) * objects(Inter)))
+
+FUN pragmas: interOpal -> seq[pragma'InterOpal]
+-- pragmas of main structure 
+DEF pragmas(Inter) == pragmas(structs(Inter) ! main)
+
+-- ----------------------------------------------------------------------------
+FUN treatInternalNames: interOpal -> 
+	(name**nat -> option[typeDec]**seq[dec]**err**nat) ** 
+	(name -> option[dec]**err) -> nat -> seq[typeDec]**seq[dec]**err
+
+DEF treatInternalNames(IO)(FSort, FOp)(Start) ==
+  LET X == \ (FInternalName(FSort,FOp),&(<>[typeDec],<>[dec],ok,Start))
+                (objects(IO))
+  IN (1st(X), 2nd(X), 3rd(X))
+
+FUN FInternalName: (name**nat->option[typeDec]**seq[dec]**err**nat)**
+                   (name->option[dec]**err)
+			-> object**quad[seq[typeDec],seq[dec],err,nat]
+				-> quad[seq[typeDec],seq[dec],err,nat]
+DEF FInternalName(FSort, FOp)(Obj, 
+	Quad AS &(prevTypeDecs,prevDecs,oldErr,oldNo)) ==
+  LET 
+      Name == name(ident(Obj), main, none) 
+  IN
+  IF sort?(kind(Obj)) THEN
+    LET (optTypeDec,newDecs,newErr,newNo) == FSort(Name,oldNo)
+        newTypeDecs == IF optTypeDec nil? THEN prevTypeDecs
+                       IF optTypeDec avail? THEN cont(optTypeDec)::prevTypeDecs
+                       FI
+    IN &(newTypeDecs,newDecs++prevDecs,oldErr+newErr,newNo)
+  IF fct?(kind(Obj)) THEN
+    LET (optDec,newErr) == FOp(Name)
+        newDecs == IF optDec nil? THEN prevDecs
+                   IF optDec avail? THEN cont(optDec)::prevDecs
+                   FI
+    IN &(prevTypeDecs,newDecs,oldErr+newErr,oldNo)
+  ELSE Quad
+  FI
+
+-- ----------------------------------------------------------------------------
+
+FUN internals: interOpal ** info -> seq[typeDec] ** seq[dec] ** err
+DEF internals(IO, info) ==
+        treatInternalNames(IO) 
+        	(typeDecNops(IO,info),dec(IO,info))
+                (freeInternal(IO))
+
+FUN actualParameterInfo: interOpal -> info
+
+DEF actualParameterInfo(IO) ==
+  LET actParams == #(formParams(IO))
+      (sortParams,opParams) == typeOpParams(IO)
+      sortIdes == ide(IO)*sortParams
+      opIdes == ide(IO)*opParams
+      sortTypes == ide*sortIdes
+      dummyInfo == sortInfo(actParams,sortIdes,sortTypes)
+      opTypes == (\\N.type(IO,dummyInfo)(fct(IO,N))) * opParams
+      opDecs == zip(\\i,t.variable(none set typing(t),i))(opIdes,opTypes)
+  IN fullInfo(actParams,sortIdes,sortTypes,opIdes,opTypes,opDecs)

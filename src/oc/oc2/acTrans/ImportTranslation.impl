@@ -1,0 +1,130 @@
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION ImportTranslation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-22 12:36:59 $ ($Revision: 1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Map		COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqFilter	ONLY | partition
+	SeqZip		COMPLETELY
+	Compose		COMPLETELY
+	Denotation	ONLY =
+
+	DEBUG		COMPLETELY
+
+	NatMap		ONLY natMap {} extend
+
+	SourceAn	ONLY sourceAn symbol:denotation->sourceAn
+	TypeAn		COMPLETELY
+	An		COMPLETELY
+	Ide		COMPLETELY
+	Ac		COMPLETELY
+
+	InterOpal	COMPLETELY
+	InterOpalAccess COMPLETELY
+/*			ONLY interOpal name struct
+			     treatImportedStructs
+			     treatExternalNames:interOpal**struct
+			                        ->(name->typeDec)
+			                          **(name**kind->dec)
+			                        ->seq[typeDec]**seq[dec]
+				rep ide no:interOpal**struct->nat formParamKinds
+*/
+	ParameterTranslation	COMPLETELY
+	NameTranslation		ONLY externalIde ide
+	FctTranslation		ONLY type:interOpal**info->fct->type optGen optFun
+
+-- ----------------------------------------------------------------------------
+
+FUN treatImportedStructs: interOpal -> (struct->unit) -> seq[unit]
+-- bearbeitet alle importierten Strukturen
+DEF treatImportedStructs(IO)(F) == F * transStructs(IO)
+-- ----------------------------------------------------------------------------
+
+FUN importUnits: interOpal -> seq[unit]
+
+DEF importUnits(IO) == 
+	noBuiltinUnit | treatImportedStructs(IO)(importUnit(IO)) 
+
+    FUN noBuiltinUnit : unit -> bool
+    DEF noBuiltinUnit(U) == 
+	~(symbol(U) = "BOOL" or
+	  symbol(U) = "DENOTATION" or
+	  symbol(U) = "ABORT" or
+	  symbol(U) = "INLINE")
+
+
+-- ----------------------------------------------------------------------------
+FUN treatExternalNames: interOpal**struct ->
+                        (name->typeDec)**(name**fct->dec) ->
+                        seq[typeDec]**seq[dec]
+
+DEF treatExternalNames(_, struct)(typeF, fctF) ==
+LET (Types, NoTypes) == partition(sort? o kind, objects(struct))
+    Fcts == (fct? o kind) | NoTypes -- ignore other kinds
+    Orig == origin(struct)
+    Inst == none
+IN ((\\Obj. typeF(name(ident(Obj), Orig, Inst))) * Types,
+    (\\Obj. fctF(name(ident(Obj), Orig, Inst), fct(kind(Obj)))) * Fcts)
+
+
+-- ----------------------------------------------------------------------------
+
+FUN importUnit: interOpal -> struct -> unit
+
+DEF importUnit(IO)(Struct) ==
+  LET info == importedParameterInfo(IO,Struct)
+      (types,ops) == treatExternalNames(IO,Struct)
+                                       (typeDec(IO,info),opDec(IO,info))
+      typeIndices == (# o ide) * types
+      opIndices == (# o ide) * ops
+  IN unit(none set typeDecs(extend({},typeIndices,types)),
+          symbol(Struct),
+          origin(no(origin(Struct))),
+          {},
+          extend({},opIndices,ops))
+
+-- ----------------------------------------------------------------------------
+
+FUN typeDec: interOpal**info -> name -> typeDec
+
+DEF typeDec(IO,info)(name) ==
+  binding(externalIde(IO)(name),
+          optGen(sortParamIdes(info),some))
+
+-- ----------------------------------------------------------------------------
+
+FUN opDec: interOpal**info -> name**fct -> dec
+
+DEF opDec(IO,info)(name,fct) ==
+  LET baseType == type(IO,info)(fct)
+      symbolAn == symbol(symbol(object(IO,name)))
+      typeAn ==typing(optGen(sortParamIdes(info),
+                              optFun(opParamTypes(info),baseType)))
+  IN hidden((none set symbolAn) set typeAn,externalIde(IO)(name),external)
+
+-- ----------------------------------------------------------------------------
+
+FUN importedParameterInfo: interOpal**struct -> info
+
+DEF importedParameterInfo(IO, struct) ==
+  LET (Types, Ops) == typeOpParams(struct) 
+      sortIdes == ide(IO) * Types
+      sortTypes == ide*sortIdes
+      no == #(formParams(struct))
+      dummyInfo == sortInfo(no,sortIdes,sortTypes)
+      ops == (\\F. type(IO, dummyInfo)(fct(IO, F))) * Ops
+  IN restrictedInfo(no,sortIdes,sortTypes,ops)
+

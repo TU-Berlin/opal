@@ -1,0 +1,64 @@
+IMPLEMENTATION InterOpalVars
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-22 12:37:00 $ ($Revision: 1.1 $)
+
+IMPORT  InterOpal 	COMPLETELY
+	Nat		COMPLETELY
+	NatMap 		COMPLETELY
+	Option		COMPLETELY
+	SeqReduce	ONLY seq \
+
+DATA locSig == locSig(vars: natMap[var], maxVar: nat)
+
+FUN empty: locSig
+DEF empty == locSig({}, 0)
+
+FUN vars: impl -> locSig
+-- pre: def?(Impl)
+DEF vars(Impl:impl) == (vars, empty) \ (eqns(Impl))
+
+FUN fct: ident ** locSig -> fct
+DEF fct(Ident, lSig) == fct(vars(lSig)!no(Ident))
+
+FUN vars: eqn ** locSig -> locSig
+-- ignore perfect fit patterns
+DEF vars(Eqn:eqn, lSig) == vars(rhs(Eqn), vars(lhs(Eqn), lSig))
+
+FUN vars: pattern ** locSig -> locSig
+DEF vars(Pat:pattern, lSig) ==
+	IF var?(Pat) THEN vars(var(Pat), lSig)
+	IF as?(Pat) THEN vars(pattern(Pat), vars(var(Pat), lSig))
+	IF apply?(Pat) THEN vars(arg(Pat), vars(funct(Pat), lSig))
+	IF tuple?(Pat) THEN (vars, lSig) \ (elems(Pat))
+	ELSE lSig -- any?(Pat) or name?(Pat)
+	FI
+
+FUN vars: var ** locSig -> locSig
+-- Let's do some real work
+DEF vars(Var:var, lSig) ==
+	LET Index == no(ident(Var))
+	    NewMax == IF Index > maxVar(lSig) THEN Index ELSE maxVar(lSig) FI
+	IN locSig(def(Index, Var, vars(lSig)), NewMax)	
+
+FUN vars: expr ** locSig -> locSig
+DEF vars(Exp:expr, lSig) ==
+	IF tuple?(Exp) THEN (vars, lSig) \ (elems(Exp))
+	IF apply?(Exp) THEN vars(arg(Exp), vars(funct(Exp), lSig))
+	IF cases?(Exp) THEN 
+		LET GuardsSig ==  (vars, lSig) \ (guards(Exp))
+		IN 	IF nil?(else(Exp)) THEN GuardsSig
+			ELSE vars(cont(else(Exp)), GuardsSig) FI
+	IF lambda?(Exp) THEN 
+		vars(body(Exp), (vars, lSig) \ (vars(Exp)))
+	IF block?(Exp) THEN
+		vars(body(Exp), (vars, lSig) \ (eqns(Exp)))
+	ELSE lSig -- name?(Exp) or den?(Exp)
+	FI 
+		
+
+FUN vars: guard ** locSig -> locSig
+DEF vars(Guard:guard, lSig) == vars(then(Guard), vars(if(Guard), lSig))
+

@@ -1,0 +1,350 @@
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, Jun 23 1993: adapted to new absy
+--		af, Jun 24 1993: code runtime-error for missing pattern
+-- ============================================================================
+
+IMPLEMENTATION ExprTranslation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-22 12:36:56 $ ($Revision: 1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	NatConv		ONLY ` 
+	Option		COMPLETELY
+	Compose		ONLY o
+	Denotation	COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqFilter	ONLY |
+    	SeqZip		COMPLETELY
+	Pair		COMPLETELY
+	Triple		COMPLETELY
+
+	SourceAn	COMPLETELY
+	TypeAn		COMPLETELY
+	An		COMPLETELY
+	Ide		ONLY ide:SORT = :ide**ide->bool local
+	Builtin		ONLY tuple consTuple true denotation
+	Ac		COMPLETELY
+
+
+	InterOpal	COMPLETELY
+	InterOpalAccess	COMPLETELY
+	InterOpalVars	COMPLETELY
+
+	ParameterTranslation	ONLY info:SORT sortParamTypes opParamIdes
+	NameTranslation		COMPLETELY -- ONLY ide nullIde
+	FctTranslation		COMPLETELY
+
+-- ----------------------------------------------------------------------------
+
+FUN exp: interOpal**info**name**locSig**nat -> expr -> triple[exp,type,nat]
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF exp(IO,info,_,lsig,free)(name(p, Name)) ==
+  LET Ident == ide(IO)(Name)
+      thisExp ==
+        IF Name local? THEN ide(posAn(p),Ident)
+        ELSE globalNameExp(IO,info,p)(Name)
+        FI
+      thisType == IF Name local? THEN 
+			type(IO,info)(fct(ident(Name), lsig))
+                  ELSE type(IO,info)(instFct(IO, Name))
+                  FI
+  IN &(thisExp,thisType,free)
+
+FUN optSpec: seq[type] -> typeAn
+
+DEF optSpec(<>) == none
+DEF optSpec     == spec
+
+FUN optApply: an**exp**seq[exp] -> exp
+
+DEF optApply(_,fun,<>) == fun
+DEF optApply            == apply
+
+FUN globalNameExp: interOpal**info**pos'InterOpal -> name -> exp
+
+DEF globalNameExp(IO,info,pos)(name) ==
+  LET ident == ide(IO)(name)
+  IN IF name internal? THEN
+       IF param?(IO,name) THEN ide(posAn(pos),ident)
+       ELSE LET fullAn == posAn(pos) set optSpec(sortParamTypes(info))
+                baseExp == ide(fullAn,ident)
+            IN optApply(posAn(pos),baseExp,
+                             (\\i.ide(posAn(pos),i))*opParamIdes(info))
+       FI
+     IF name external? THEN
+       LET fullAn == posAn(pos) set
+                     (optSpec(type(IO,info)
+                      *((\\n.sort?(IO,n))|origInst(IO,name))))
+           baseExp == ide(fullAn,ident)
+       IN optApply(posAn(pos),baseExp,
+                   globalNameExp(IO,info,pos)
+                    *((\\n.fct?(IO,n))|origInst(IO,name)))
+     FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF exp(_,_,_,_,free)(den(p, Deno)) ==
+  &(deno(posAn(p), Deno),ide(denotation),free)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF exp(_,_,_,_,free)(tuple(p, <>)) ==
+  &(ide(posAn(p),consTuple(0)),ide(tuple(0)),free)
+
+DEF exp(IO,info,target,lsig,free)(tuple(p, elems)) ==
+  LET elemExpsTypesFrees == exp(IO,info,target,lsig,free)*elems
+      maxFree == ((\\t,f.max(3rd(t),f)) \ free)(elemExpsTypesFrees)
+  IN flattenNtuple(IO,info,lsig,maxFree,p)(<>,<>)(elemExpsTypesFrees)
+
+FUN flattenNtuple: interOpal**info**locSig**nat**pos'InterOpal
+                   -> seq[exp]**seq[type]
+                   -> seq[triple[exp,type,nat]] -> triple[exp,type,nat]
+
+DEF flattenNtuple(_,_,_,free,p)(prevElems,prevTypes)(<>) ==
+  LET card == prevTypes#
+      tupleExp == ide(posAn(p) set spec(prevTypes),consTuple(card))
+  IN &(apply(posAn(p),tupleExp,prevElems),
+       spec(ide(tuple(card)),prevTypes),
+       free)
+
+DEF flattenNtuple(IO,info,lsig,free,p)
+                 (prevElems,prevTypes)(&(exp1,type1,_) :: rest) ==
+  LET card1 == cardinality(type1)
+  IN IF card1=1 THEN flattenNtuple(IO,info,lsig,free,p)
+                                  (prevElems+%exp1,prevTypes+%type1)(rest)
+     IF card1>1 THEN
+       LET (locals,newFree) == newLocals(free,card1)
+           innerETF == flattenNtuple(IO,info,lsig,newFree,p)
+                                    (prevElems++((\\i.ide(posAn(p),i))*locals),
+                                     prevTypes++subs(type1))(rest)
+           (innerExp,innerType,innerFree) ==
+             (1st(innerETF),2nd(innerETF),3rd(innerETF))
+           thisMatch == match(consTuple(card1),
+                              zip(\\i,t.variable(none set typing(t),i))
+                                 (locals,subs(type1)),
+                              innerExp)
+       IN &(case(posAn(p),exp1,thisMatch%,tupleDeconstrError(p,innerType)),
+            innerType,innerFree)
+     FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF exp(IO,info,target,lsig,free)(apply(p,funct,arg)) ==
+  LET funETF == exp(IO,info,target,lsig,free)(funct)
+      (funExp,funType,funFree) == (1st(funETF),2nd(funETF),3rd(funETF))
+      argETF == exp(IO,info,target,lsig,free)(arg)
+      (argExp,argType,argFree) == (1st(argETF),2nd(argETF),3rd(argETF))
+      arity == cardinality(argType)
+  IN IF arity<=1 THEN
+       &(apply(posAn(p),funExp,argExp%),res(funType),max(funFree,argFree))
+     IF arity>1 THEN
+       LET justBuiltTuple == IF argExp apply? THEN
+                               IF fun(argExp) ide? THEN
+                                 ide(fun(argExp)) = consTuple(arity)
+                               ELSE false
+                               FI
+                             ELSE false
+                             FI
+       IN IF justBuiltTuple THEN
+		&(apply(posAn(p),funExp,args(argExp)),res(funType),free)
+          ELSE LET (locals,newFree) == newLocals(free,arity)
+                   thisMatch == match(consTuple(arity),
+                                      zip(\\i,t.variable(none set typing(t),i))
+                                         (locals,args(funType)),
+                                      apply(posAn(p),funExp,
+                                            (\\i.ide(posAn(p),i))*locals))
+               IN &(case(posAn(p),argExp,thisMatch%,
+                         tupleDeconstrError(p,res(funType))),
+                    res(funType),newFree)
+          FI
+     FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF exp(IO,info,target,lsig,free)(cases(p,g1::gR,else)) ==
+  LET (posAn,ifExp,thenExp,thenType,guardFree) ==
+        guard(IO,info,target,lsig,free)(g1)
+      elseETF == exp(IO,info,target,lsig,free)(cases(p,gR,else))
+      (elseExp,elseFree) == (1st(elseETF),3rd(elseETF))
+  IN &(case(posAn,ifExp,match(true,<>,thenExp)%,elseExp),
+       thenType,
+       max(guardFree,elseFree))
+
+DEF exp(IO,info,target,lsig,free)(cases(p, g1 :: <>, nil)) ==
+  LET (posAn,ifExp,thenExp,thenType,guardFree) ==
+        guard(IO,info,target,lsig,free)(g1)
+  IN &(case(posAn,ifExp,match(true,<>,thenExp)%,
+            missingElseError(IO,target,p,thenType)),
+       thenType,
+       guardFree)
+
+DEF exp(IO,info,target,lsig,free)(cases(_, <>, avail(Else))) ==
+	exp(IO,info,target,lsig,free)(Else)
+
+FUN guard: interOpal**info**name**locSig**nat
+           -> guard -> an**exp**exp**type**nat
+
+DEF guard(IO,info,target,lsig,free)(guard(gp,if,then)) ==
+  LET ifETF == exp(IO,info,target,lsig,free)(if)
+      (ifExp,ifFree) == (1st(ifETF),3rd(ifETF))
+      thenETF == exp(IO,info,target,lsig,free)(then)
+      (thenExp,thenType,thenFree) == (1st(thenETF),2nd(thenETF),3rd(thenETF))
+  IN (posAn(gp),ifExp,thenExp,thenType,max(ifFree,thenFree))
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF exp(IO,info,target,lsig,free)(lambda(p,<>,body)) ==
+  LET bodyETF == exp(IO,info,target,lsig,free)(body)
+      (bodyExp,bodyType,bodyFree) == (1st(bodyETF),2nd(bodyETF),3rd(bodyETF))
+  IN &(lambda(posAn(p),nullDec%,bodyExp),fun(nullType%,bodyType),bodyFree)
+
+DEF exp(IO,info,target,lsig,free)(lambda(p,vars,body)) ==
+  LET (ldecs,ltypes) == localDecsNtypes(IO,info,lsig)(vars)
+      bodyETF == exp(IO,info,target,lsig,free)(body)
+      (bodyExp,bodyType,bodyFree) == (1st(bodyETF),2nd(bodyETF),3rd(bodyETF))
+  IN &(lambda(posAn(p),ldecs,bodyExp),fun(ltypes,bodyType),bodyFree)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF exp(IO,info,target,lsig,free)(block(p,def1 :: defR,body)) ==
+  LET innerETF == exp(IO,info,target,lsig,free)(block(p,defR,body))
+      (innerExp,innerType,innerFree) ==
+        (1st(innerETF),2nd(innerETF),3rd(innerETF))
+      (thisExp,defFree) ==
+	bind(IO,info,target,lsig,free)(p,def1,innerExp,innerType)
+  IN &(thisExp,innerType,max(innerFree,defFree))
+
+DEF exp(IO,info,target,lsig,free)(block(_,<>,body)) ==
+  exp(IO,info,target,lsig,free)(body)
+
+FUN bind: interOpal**info**name**locSig**nat -> pos'InterOpal**eqn**exp**type
+								-> exp**nat
+DEF bind(IO,info,target,lsig,free)
+  (blockPos,eqn(p,tuple(tp,vals),<>,tuple(rtp,e1::eR)),scope,scopeType) ==
+  LET rightETF == exp(IO,info,target,lsig,free)(e1)
+      (rightExp,rightType,rightFree) ==
+				(1st(rightETF),2nd(rightETF),3rd(rightETF))
+      (vals1,valsR) == split(cardinality(rightType),vals)
+      leftExpr == IF #(vals1)=1 THEN ft(vals1) ELSE tuple(tp,vals1) FI
+      restLeft == IF #(valsR)=1 THEN ft(valsR) ELSE tuple(tp,valsR) FI
+      restRight == IF #(eR)=1   THEN ft(eR)    ELSE tuple(rtp,eR) FI
+      (scopeWithRest,restFree) == bind(IO,info,target,lsig,rightFree)
+                                      (blockPos,eqn(p,restLeft,<>,restRight),
+                                       scope,scopeType)
+  IN (bind(IO,info,lsig)(blockPos,leftExpr,rightExp,scopeWithRest,scopeType),
+      restFree)
+
+DEF bind(IO,info,target,lsig,free)
+        (blockPos,eqn(_,left,_,right),scope,scopeType) ==
+  LET rightETF == exp(IO,info,target,lsig,free)(right)
+      (rightExp,rightFree) == (1st(rightETF),3rd(rightETF))
+  IN (bind(IO,info,lsig)(blockPos,left,rightExp,scope,scopeType),rightFree)
+
+FUN bind: interOpal**info**locSig -> 
+	pos'InterOpal**pattern**exp**exp**type -> exp
+
+DEF bind(IO,info,lsig)(blockPos,var(_,name),rightExp,scope,_) ==
+  LET thisBind == bind(localDec(IO,info,lsig)(name),rightExp)
+  IN block(posAn(blockPos),thisBind%,scope)
+
+DEF bind(IO,info,lsig)(blockPos,tuple(_,vals),rightExp,scope,scopeType) ==
+  LET (ldecs,ltypes) == localDecsNtypes(IO,info,lsig)(var*vals)
+      thisMatch == match(consTuple(ltypes#),ldecs,scope)
+  IN case(posAn(blockPos),rightExp,thisMatch%,
+          tupleDeconstrError(blockPos,scopeType))
+
+FUN bind: dec**exp -> dec
+DEF bind(variable(a,i),e) == binding(a,i,local,e)
+
+-- ----------------------------------------------------------------------------
+
+FUN cardinality: type -> nat
+
+DEF cardinality(ide(i)) == IF i = tuple(0) THEN 0 ELSE 1 FI
+
+DEF cardinality(spec(ide(i),types)) ==
+  IF i = tuple(types#) THEN types# ELSE 1 FI
+
+DEF cardinality(_) == 1
+
+FUN newLocals: nat**nat -> seq[ide]**nat
+
+DEF newLocals(free,0) == (<>,free)
+
+DEF newLocals(free,succ(n)) ==
+  LET new1 == local(free)
+      (newR,newFree) == newLocals(succ(free),n)
+  IN (new1::newR,newFree)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN localDec: interOpal**info**locSig -> var -> dec
+
+DEF localDec(IO,info,lsig)(Var) == 1st(localDecNtype(IO,info,lsig)(Var))
+
+FUN localDecNtype: interOpal**info**locSig -> var -> pair[dec,type]
+
+DEF localDecNtype(IO,info,_)(Var) ==
+  LET thisType == type(IO,info)(fct(Var))
+      an == (none set typing(thisType)) set symbol(symbol(Var))
+  IN variable(an,local(no(ident(Var)))) & thisType
+
+FUN localDecsNtypes: interOpal**info**locSig -> 
+		seq[var] -> seq[dec]**seq[type]
+
+DEF localDecsNtypes(IO,info,lsig)(Vars) ==
+  unzip(unpair)(localDecNtype(IO,info,lsig) * Vars)
+
+FUN nullDec: dec
+
+DEF nullDec == variable(none set typing(nullType),nullIde)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN tupleDeconstrError: pos'InterOpal**type -> exp
+
+DEF tupleDeconstrError(p,type) ==
+  LET sourceAn == error(p`,"tuple deconstruction always succeeds",never)
+      typeAn == typing(type)
+  IN error((none set sourceAn) set typeAn)
+
+FUN message: interOpal ** name ** pos'InterOpal ** denotation ** denotation 
+		-> denotation
+DEF message(IO, target, p, Deno1, Deno2) ==
+	symbol(IO) ++ " at <" ++  `(line(`(p))) ++ 
+	"," ++ `(colum(`(p))) ++ "> : " ++ 
+        Deno1  ++ printFct(IO, target) ++ Deno2
+
+FUN missingElseError: interOpal**name**pos'InterOpal**type -> exp
+
+DEF missingElseError(IO,target,p,type) ==
+  LET msg == message(IO, target, p, "missing else in ", "")
+      sourceAn == error(p`,msg,optional)
+      typeAn == typing(type)
+  IN error((none set sourceAn) set typeAn)
+
+FUN notImplementedError: interOpal**info**name -> exp
+
+DEF notImplementedError(IO,info,target) ==
+  LET p == bestPos(object(IO, target))
+      msg == message(IO, target, p, "", " not implemented")
+      sourceAn == error(p`,msg,always)
+      typeAn == typing(type(IO,info)(fct(IO,target)))
+  IN error((none set sourceAn) set typeAn)
+
+FUN undefinedSelectionError: interOpal**name**pos'InterOpal**type**errorKind -> exp
+
+DEF undefinedSelectionError(IO,sel,p,type,kind) ==
+  LET msg == message(IO, sel, p, "undefined selection ", "")
+      sourceAn == error(p`,msg,kind)
+      typeAn == typing(type)
+  IN error((none set sourceAn) set typeAn)
