@@ -3,19 +3,60 @@
 # This script changes absolute path names as still required by dosfop
 # define the variables below and start the script
 
-$oldManualRoot = "/home/kd/ocs/doc/bibopalicaman";
-$newManualRoot = "/home/shome/kd/doc/bibopalicaman";
+## first try to find the new values
+$newManualRoot = `pwd`;
+chomp $newManualRoot;
+if (!defined($ENV{OCSSRC})) {
+  die "$0: set environment variable OCSSRC to root of Opal source tree";
+};
+ $newLibRoot = $ENV{OCSSRC} . "/lib";
 
-@configFilesMan = ("config", "Toplevel.config");
+## read the old values
+$conf="$newManualRoot/DOSFOP/Toplevel.config";
+open (CONFIG, $conf) or die "$0: could not open $conf";
+while(<CONFIG>) {
+  if (/USER_GLOBAL/) {
+    $_ = <CONFIG>;
+    if (/.*directory *= *(.*)/) {
+      $oldManualRoot = $1;
+      last;
+    } else {
+      die "$0: could not determine \$oldManualRoot from $conf";
+    };
+  };
+}
+close CONFIG;
 
-$oldLibRoot = "/home/kd/ocs/src/lib";
-$newLibRoot = "/home/shome/kd/ocs/src/lib";
+$conf="$newManualRoot/DOSFOP/BasicTypes.subsystems.config";
+open (CONFIG, $conf) or die "$0: could not open $conf";
+while(<CONFIG>) {
+  if (/name =/) {
+    $_ = <CONFIG>;
+    if (m!.*directory *= *(.*/src/lib)!) {
+      $oldLibRoot = $1;
+      last;
+    } else {
+      die "$0: could not determine \$oldLibRoot from $config";
+    };
+  };
+}
+close CONFIG;
 
-@configFilesLib = <*config>;
+# print "oldManualRoot = $oldManualRoot\n";
+# print "newManualRoot = $newManualRoot\n";
+# print "oldLibRoot = $oldLibRoot\n";
+# print "newLibRoot = $newLibRoot\n";
+
+## don't do anything superfluous
+if ($oldManualRoot eq $newManualRoot and $oldLibRoot eq $newLibRoot) {exit 0;};
+
+@configFilesMan = ("$newManualRoot/DOSFOP/config", "$newManualRoot/DOSFOP/Toplevel.config");
+@configFilesLib = <$newManualRoot/DOSFOP/*config>;
 
 foreach $f (@configFilesMan) {
-  open (INFILE, $f) or die "could not open $f";
-  open (OUTFILE, ">$f.bak") or die "could not open $f.bak";
+  if ($f eq "$newManualRoot/DOSFOP/config" and (! -e $f)) {next;};
+  open (INFILE, $f) or die "$0: could not open $f";
+  open (OUTFILE, ">$f.bak") or die "$0: could not open $f.bak";
   while (<INFILE>) {
     s /$oldManualRoot/$newManualRoot/g;
     print OUTFILE
@@ -27,8 +68,8 @@ foreach $f (@configFilesMan) {
 }
 
 foreach $f (@configFilesLib) {
-  open (INFILE, $f) or die "could not open $f";
-  open (OUTFILE, ">$f.bak") or die "could not open $f.bak";
+  open (INFILE, $f) or die "$0: could not open $f";
+  open (OUTFILE, ">$f.bak") or die "$0: could not open $f.bak";
   while (<INFILE>) {
     s /$oldLibRoot/$newLibRoot/g;
     print OUTFILE
