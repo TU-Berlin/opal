@@ -1,5 +1,5 @@
 #! /usr/X11R6/bin/wish 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/opalwizard,v 1.1 2000-06-08 11:56:52 kd Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/opalwizard,v 1.2 2000-08-25 17:49:59 kd Exp $
 
 
 
@@ -23,6 +23,8 @@ set makeTargets {}
 ## set up main window
 
 . configure -background navyblue
+wm iconname . opalwizard
+wm iconbitmap . {@opal.xbm}
 
 ## MENU
 
@@ -36,12 +38,17 @@ pack .mbar -expand 1 -fill both
 
 menu .mbar.file.menu
 .mbar.file.menu add command -label About -command midAbout
-.mbar.file.menu add command -label Quit -command midQuit
+.mbar.file.menu add command -label Quit -command midQuit -accelerator "Ctrl+Q"
 menu .mbar.action.menu
 .mbar.action.menu add command -label "Configure OCS" -command midConfigure
 .mbar.action.menu add command -label "Install OCS" -command midInstall
 menu .mbar.expert.menu
 .mbar.expert.menu add command -label "Select OCS Version" -command midSelectVersion
+.mbar.expert.menu add command -label "Install Some packages" -command midPackages
+.mbar.expert.menu add command -label "Show Output of Last Command" -command midShowLastOutput
+
+
+bind . <Control-q> { midQuit }
 
 
 ## TOP LINE: image + headline
@@ -79,7 +86,7 @@ proc midAbout { } {
 
     frame .about -height 5c -background white -relief ridge -borderwidth 4
     message .about.who -text "Copyright 2000\nby the Opal Group" -font $font2 -aspect 1000 -background white
-    set revision {$Date: 2000-06-08 11:56:52 $#$Revision: 1.1 $}
+    set revision {$Date: 2000-08-25 17:49:59 $#$Revision: 1.2 $}
     regsub -all "\\$" $revision "" revision2
     regsub -all "#" $revision2 "\n" revision
     message .about.revision -text $revision -background white -aspect 1000
@@ -89,6 +96,7 @@ proc midAbout { } {
     replaceWorkFrame .about
 }
 
+
 ### Configure
 proc midConfigure { } {
     global prefix font2 option optionList useCache currentWorkFrame
@@ -97,10 +105,6 @@ proc midConfigure { } {
 
     midConfigureCancel
     # parray option
-
-#    .mid.configure configure -state disabled
-#    toplevel .configure -background white
-#    wm title .configure "Configure OCS"
 
     frame .configure 
     replaceWorkFrame .configure
@@ -120,7 +124,6 @@ proc midConfigure { } {
     button .configure.buttons.do -text "Configure" -command midConfigureDo
     button .configure.buttons.default -text "Default" -command midConfigureDefault
     button .configure.buttons.cancel -text "Cancel" -command midConfigureCancel
-#    button .configure.buttons.quit -text "Quit" -command midConfigureQuit
     pack .configure.buttons.do .configure.buttons.default .configure.buttons.cancel -side left -expand 1 -fill x
     
     pack .configure.headline -expand 1 -fill x
@@ -133,22 +136,15 @@ proc midConfigureDo { } {
 
     midConfigureSave
     .mbar.action.menu entryconfigure 2 -state disabled
-#    .mid.install configure -state disabled
     foreach b {do default cancel} {
 	.configure.buttons.$b configure -state disabled
     }
     frame .configure.progress -relief ridge -borderwidth 4
-    label .configure.progress.l -text "Configuring ...." 
-    message .configure.progress.l2 -text " <output> " -font $fonttt -width 200p -justify left -anchor w
-    pack .configure.progress.l .configure.progress.l2 -expand 1 -fill x 
-    pack .configure.progress -expand 1 -fill x 
-    update
-    set midConfigureProgress 1
-    after 100 midConfigureDoAux2
-
-#    midConfigureSave
-#    parray option
- #   puts "Prefix: $prefix"
+#    label .configure.progress.l -text "Configuring ...." 
+#    message .configure.progress.l2 -text " <output> " -font $fonttt -width 200p -justify left -anchor w
+#    pack .configure.progress.l .configure.progress.l2 -expand 1 -fill x 
+#    pack .configure.progress -expand 1 -fill x 
+#    update
 
     set cmd "./configure"
     set cmd "$cmd --prefix=$prefix"
@@ -164,44 +160,31 @@ proc midConfigureDo { } {
 	}
     }
 
-#    puts "cmd = $cmd"
-    set configError [backExec $cmd]
-    set midConfigureProgress 0
-    if $configError {
-	label .configure.progress.l3 -text "Configure failed!" -fg red
-	button .configure.progress.b -text "See output" -command midConfigureDoAux3
-    } else { 
-	label .configure.progress.l3 -text "Configure succeeded!"
-	button .configure.progress.b -text "OK" -command midConfigureDoAux1
-	.mbar.action.menu entryconfigure 2 -state normal
-    }
-    pack forget .configure.progress.l .configure.progress.l2
-    pack .configure.progress.l3 -expand 1 -fill x  -side left
-    pack .configure.progress.b -side left 
+#    set configError [backExecW $cmd .configure.progress.l2 200]
+    set configError [backExecO $cmd .configure.progress 200 "Configuring ..." "Configure" midConfigureDoAux1 40]
+			 
+#    if $configError {
+#	label .configure.progress.l3 -text "Configure failed!" -fg red
+#	button .configure.progress.b -text "See output" -command midConfigureDoAux3
+#    } else { 
+#	label .configure.progress.l3 -text "Configure succeeded!"
+#	button .configure.progress.b -text "OK" -command midConfigureDoAux1
+#	.mbar.action.menu entryconfigure 2 -state normal
+#    }
+#    pack forget .configure.progress.l .configure.progress.l2
+#    pack .configure.progress.l3 -expand 1 -fill x  -side left
+#    pack .configure.progress.b -side left 
 }
 
-proc midConfigureDoAux1 { } {
+proc midConfigureDoAux1 { result } {
     foreach b {do default cancel} { 
 	.configure.buttons.$b configure -state normal
     } 
-    destroy .configure.progress
-}
-
-proc midConfigureDoAux2 { } {
-    global midConfigureProgress
-
-    if { $midConfigureProgress } {
-	.configure.progress.l2 configure -text [exec tail -1 /tmp/opalconfig.out] -justify left
-	update
-	after 200 midConfigureDoAux2
+    if { ! $result } {
+	.mbar.action.menu entryconfigure 2 -state normal
     }
 }
 
-proc midConfigureDoAux3 { } {
-    
-    midConfigureDoAux1
-    showFile "Configure failed!" "/tmp/opalconfig.out"
-}
 
 proc midConfigureCancel { } {
     global option prefix useCache
@@ -264,11 +247,6 @@ proc midConfigureSave { } {
 proc midInstall { } {
     global font2 makeTargets fontsmall elapsed elapsedCount currentWorkFrame
 
-#    .mid.install configure -state disabled
-
-#    toplevel .tInstall -background white
-#    wm title .tInstall "Install OCS"
-
     if { $currentWorkFrame == ".tInstall"} { return }
 
     frame .tInstall -background white
@@ -299,99 +277,58 @@ proc midInstall { } {
     frame .tInstall.msg
     set n [llength $makeTargets]
     label .tInstall.msg.l1 -text "$n packages" -background white
-#    set elapsed "00:00 min"
-#    set elapsedCount 0
-#    label .tInstall.msg.l2 -textvariable elapsed -anchor e -background white
     pack .tInstall.msg.l1  -side left
-#    pack .tInstall.msg.l2 -side right
     pack .tInstall.msg
-    button .tInstall.b.start -text Install -command midInstallDo
+    button .tInstall.b.start -text Install -command "midInstallDo [list $makeTargets ]"
     pack .tInstall.b.start  -side left -expand 1
     pack .tInstall.b -expand 1 -fill x
 
 }
 
-proc midInstallDo { } { 
-    global makeTargets fonttt tInstallProgress t runTimer
+proc midInstallDo { thisMakeTargets } { 
+    global fonttt tInstallProgress t runTimer
 
     frame .tInstall.progress -relief ridge -borderwidth 4
-    label .tInstall.progress.l -text "Now making <target> ..." 
-    message .tInstall.progress.l2 -text "======================================================================" -font $fonttt -justify left -anchor w -width 5c
-    pack .tInstall.progress.l .tInstall.progress.l2 -expand 1 -fill x 
-    pack .tInstall.progress -expand 1 -fill x 
     .tInstall.b.start configure -state disabled
     button .tInstall.b.cancel -text Cancel -command midInstallCancel
     pack .tInstall.b.cancel
-    update
- #   set runTimer 1
- #   after 1000 midInstallTimer
 
-    set n [llength $makeTargets]
+    backExecOPrep .tInstall.progress 70 "Now making <target> ..."
+
+    set n [llength $thisMakeTargets]
     set i 0
-    foreach t $makeTargets {
+    foreach t $thisMakeTargets {
 	.tInstall.progress.l configure -text "Now making $t ..."
 	regsub -all "\\." $t "_" l
 	.tInstall.$l configure -background green
 	update
-	set tInstallProgress 1
-	after 200 midInstallDoAux
-	set res [backExec "make $t"]
-	set tInstallProgress 0
+	set res [ backExecW "make $t" .tInstall.progress.l2 1000 ]
 	incr i
 	if {$res == 0} {
 	    .tInstall.$l configure -background white
 	    .tInstall.msg.l1 configure -text "installed $i of $n OCS packages"
 	} else {
 	    .tInstall.$l configure -background red
-	    label .tInstall.progress.l3 -text "make $t failed with >$res<!" -fg red
-	    button .tInstall.progress.b -text "See output" -command {midInstallDoAux2 $t}
 	    break
 	}
 	update
     }
     catch {destroy .tInstall.b.cancel}
-#    set runTimer 0
-    if {$res == 0} {
-	label .tInstall.progress.l3 -text "Installation completed successfully"
-	button .tInstall.progress.b -text "OK" -command midInstallDoAux3
-    }
-    pack forget .tInstall.progress.l 
-#    pack forget .tInstall.progress.l2
-    pack .tInstall.progress.l3 -expand 1 -fill x  -side left
-    pack .tInstall.progress.b -side left 
+
+    backExecONotify $res .tInstall.progress midInstallDoAux "Installation completed successfully" "make $t failed with >$res<!"
+
+    backExecOClose .tInstall.progress
     
 }
 
 proc midInstallQuit { } {
 
     .tInstall.b.start configure -state normal
-#    destroy .tInstall
 }
 
-proc midInstallDoAux { } {
-    global tInstallProgress
-
-    if { $tInstallProgress } {
-	.tInstall.progress.l2 configure -text [exec tail -1 /tmp/opalconfig.out] -justify left
-	update
-	after 1000 midInstallDoAux
-    }
-}
-
-proc midInstallDoAux2 { target } {
-    
-    showFile "Make $target failed!" "/tmp/opalconfig.out"
+proc midInstallDoAux { res } {
     .tInstall.b.start configure -state normal
     catch {destroy .tInstall.b.cancel}
-    destroy .tInstall.progress
-#    destroy .tInstall
-}
-
-proc midInstallDoAux3 { } {
-    .tInstall.b.start configure -state normal
-    catch {destroy .tInstall.b.cancel}
-    destroy .tInstall.progress
-#    destroy .tInstall
 }
 
 proc midInstallCancel { } {
@@ -419,7 +356,6 @@ proc midSelectVersion { } {
 
     if {$currentWorkFrame == ".tSelectVersion"} { return }
 
-#    if {"" != [ocsVersionInDir "$prefix/ocs"]} {
 	set currentOCSversion [ocsVersionInDir $prefix/ocs]
 
 	set ocslist { }
@@ -428,10 +364,6 @@ proc midSelectVersion { } {
 	    if {[ocsVersionInDir $f] != ""} { lappend ocslist $f }
 	}
 	
-#	.mid.selectVersion configure -state disabled
-#	toplevel .tSelectVersion -background white
-#        wm title .tSelectVersion "Select OCS Version"
-    
         frame .tSelectVersion
         replaceWorkFrame .tSelectVersion
 	label .tSelectVersion.headline -text "Select OCS Version" -font $font2 -background white
@@ -442,29 +374,27 @@ proc midSelectVersion { } {
 	pack .tSelectVersion.lb.available -expand 1 -fill both -side left
 	pack .tSelectVersion.lb.scroll -side left -fill y 
 	set i 0
+        set j 0
 	foreach f $ocslist {
 	    set v [ocsVersionInDir $f]
 	    if {$v != ""} {
   	      .tSelectVersion.lb.available insert end $v
 	      if {$v == $currentOCSversion} {
 		  .tSelectVersion.lb.available selection set $i
+		  set j $i
 	      }
 	      incr i
 	    }
 	}
+        .tSelectVersion.lb.available yview $j
 	frame .tSelectVersion.b
 	button .tSelectVersion.b.apply -text "Apply" -command midSelectVersionApply
 	pack .tSelectVersion.b.apply -side left -expand 1 -fill x
 	pack .tSelectVersion.headline .tSelectVersion.current  .tSelectVersion.lb .tSelectVersion.b -expand 1 -fill x
-#    } else {
-#	errorMsg "File $prefix/ocs/VERSION could not be found. Change prefix to proper value." 
-#    }
 }
 
 proc midSelectVersionQuit { } {
     midSelectVersionApply
-#    destroy .tSelectVersion
-#    .mid.selectVersion configure -state normal
 }
 
 proc midSelectVersionApply { } {
@@ -472,11 +402,8 @@ proc midSelectVersionApply { } {
 
     set select [ .tSelectVersion.lb.available curselection ]
     if {$select != {} } {
-	#    puts $ocslist
-#	puts "selected : $select"
 	set newOCSversion [ocsVersionInDir [lindex $ocslist $select]]
 	if {$newOCSversion != $currentOCSversion} {
-#	    puts "must change"
 	    set newdir [lindex $ocslist $select]
 	    if {[file exists $prefix/ocs] && [file type $prefix/ocs] == "directory"} {
 		errorMsg "Expected $prefix/ocs to be a link to the current version. Will not remove directory."
@@ -507,6 +434,118 @@ proc ocsVersionInDir fname {
 	return $thisOCSversion
     } else {
 	return ""
+    }
+}
+
+### SELECT PACKAGES
+set midPackagesN 0
+array set midPackagesT { }
+proc midPackages { } {
+    global midPackagesN currentWorkFrame fontsmall midPackagesT makeTargets
+    
+    if {$currentWorkFrame == ".tPackages" } { return }
+    initForMenuEntry .tPackages "Install Some Packages"
+
+    source opalconfig.makeTargets
+    set no 0
+    set fidx 0
+    frame .tPackages.f$fidx
+    foreach t $makeTargets {
+	regsub -all "\\." $t "_" l
+	set midPackagesT($l) 0
+	checkbutton .tPackages.$l -text $t -background grey -anchor w -font $fontsmall -width 30 -variable midPackagesT($l) -command "midPackagesButton $l"
+	pack .tPackages.$l -expand 1 -fill x -in .tPackages.f$fidx -side left
+	incr no
+	if { $no == 3 } {
+	    pack .tPackages.f$fidx
+	    incr fidx
+	    set no 0
+	    frame .tPackages.f$fidx
+	}
+    }
+    if { $no > 0 && $no < 3} {
+	pack .tPackages.f$fidx -anchor w
+    }
+    frame .tPackages.b -width 5c
+    frame .tPackages.msg
+    set midPackagesN 0
+    label .tPackages.msg.l1 -text "selected $midPackagesN packages" -background white
+    pack .tPackages.msg.l1  -side left
+    pack .tPackages.msg
+    button .tPackages.b.start -text Install -command "midPackagesDo "
+    pack .tPackages.b.start  -side left -expand 1
+    pack .tPackages.b -expand 1 -fill x
+
+}
+ 
+proc midPackagesButton { thisButton } {
+    global midPackagesN midPackagesT
+
+    if { $midPackagesT($thisButton) } then {
+	incr midPackagesN 
+	.tPackages.$thisButton configure -background white
+    } else {
+	incr midPackagesN  -1
+	.tPackages.$thisButton configure -background grey
+    }
+    .tPackages.msg.l1 configure -text "selected $midPackagesN packages"    
+}
+
+proc midPackagesDo { } {
+    global midPackagesT midPackagesN makeTargets
+
+    frame .tPackages.progress -relief ridge -borderwidth 4
+    .tPackages.b.start configure -state disabled
+    button .tPackages.b.cancel -text Cancel -command midPackagesCancel
+    pack .tPackages.b.cancel
+
+    backExecOPrep .tPackages.progress 70 "Now making <target> ..."
+
+    set i 0
+    set res 0
+    foreach t $makeTargets {
+	regsub -all "\\." $t "_" l
+	if { $midPackagesT($l) } {
+	    .tPackages.progress.l configure -text "Now making $t ..."
+	    .tPackages.$l configure -background green
+	    update
+	    set res [ backExecW "make $t" .tPackages.progress.l2 1000 ]
+	    incr i
+	    if {$res == 0} {
+		.tPackages.$l configure -background white
+		.tPackages.msg.l1 configure -text "installed $i of $midPackagesN OCS packages"
+	    } else {
+		.tPackages.$l configure -background red
+		break
+	    }
+	    update
+	}
+    }
+    catch {destroy .tPackages.b.cancel}
+
+    backExecONotify $res .tPackages.progress midPackagesDoAux "Installation completed successfully" "make $t failed with >$res<!"
+
+    backExecOClose .tPackages.progress
+    
+}
+
+proc midPackagesDoAux { res } {
+    .tPackages.b.start configure -state normal
+    catch {destroy .tPackages.b.cancel}
+}
+
+proc midPackagesCancel { } {
+    global pid
+
+    set x [catch {exec kill $pid} msg]
+}
+
+### Show Last Output
+proc midShowLastOutput { } {
+    if [file exists "/tmp/opalconfig.out" ] {
+	showFile "Output of Last Command" "/tmp/opalconfig.out"
+    } else {
+	errorMsg "No output file found!"
     }
 }
 
@@ -574,6 +613,72 @@ proc backExec { cmd } {
     return $configError
 }
 
+## additionally accept text widget name which is used to display the last
+## line of the output
+
+proc backExecW { cmd wgt delta } {
+    global backExecProgress
+
+    set backExecProgress 1
+    after $delta backExecWAux $wgt $delta
+    set res [ backExec $cmd ]
+    set backExecProgress 0
+
+    return $res
+}
+
+set backExecProgress 0
+proc backExecWAux { wgt delta } {
+  global backExecProgress
+
+    if { $backExecProgress } {
+	$wgt configure -text [exec tail -1 /tmp/opalconfig.out] -justify left
+	update
+	after $delta backExecWAux $wgt $delta
+    }
+}
+
+## backExecO: put output in given frame
+
+# prepare contents of frame
+proc backExecOPrep { fr wid startmsg} {
+    global fonttt
+
+    label $fr.l -text "$startmsg" 
+    label $fr.l2 -text " <output> " -font $fonttt -width $wid -justify left -anchor w
+    pack $fr.l $fr.l2 -expand 1 -fill x 
+    pack $fr -expand 1 -fill x 
+    update
+}
+
+proc backExecONotify { err fr finally succmsg failmsg } {
+    if $err {
+	label $fr.l3 -text $failmsg -fg red
+	button $fr.b -text "See output" -command "$finally $err; destroy $fr ; showFile { $failmsg } /tmp/opalconfig.out"
+    } else {
+	label $fr.l3 -text "$succmsg" 
+	button $fr.b -text "OK" -command "$finally $err; destroy $fr"
+    }
+}
+
+proc backExecOClose { fr } {
+    pack forget $fr.l $fr.l2
+    pack $fr.l3 -expand 1 -fill x -side left
+    pack $fr.b -side left
+}
+
+## arguments: command to execute; frame where it is shown; milliseconds betwen updates; string displayed above progress line (activity); string used to construct result messages; procedure to call after termination; width in characters
+proc backExecO { cmd fr delta startmsg notmsg finally wid } {
+
+    backExecOPrep $fr $wid $startmsg
+    set err [backExecW $cmd $fr.l2 $delta]
+
+    backExecONotify $err $fr $finally "$notmsg succeeded!" "$notmsg failed!"
+
+    backExecOClose $fr
+    return $err
+}
+
 ## show given file in separate toplevel window
 ## mark last line containing "error"
 ## initially show last line
@@ -617,6 +722,17 @@ proc replaceWorkFrame { new } {
     if { $currentWorkFrame != ""} { destroy $currentWorkFrame }
     pack $new -in . -after .top
     set currentWorkFrame $new
+}
+
+## initialize for menu entry
+proc initForMenuEntry { frameName headline } {
+    global font2 
+
+    frame $frameName -background white
+    replaceWorkFrame $frameName
+
+    label $frameName.headline -text $headline -font $font2 -background white
+    pack $frameName.headline
 }
 
 ######################################################################
