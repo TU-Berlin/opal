@@ -1,5 +1,5 @@
 # Process this file with autoconf to produce a configure script.
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.52 2001-06-05 10:31:59 kd Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.53 2001-06-05 11:03:01 kd Exp $
 
 AC_INIT(ocs-version)
 
@@ -363,24 +363,32 @@ ocs_lib_java=X
 ocs_lib_tcl=X
 ocs_lib_tk=X
 
-OCS_CHECK_LIB_X(readline, lib.opal_readline, ocs_lib_readline)
-
-if test "$ocs_cv_feature_opaljava" = "yes"
+if test -z "$CYGWIN" 
 then
-  ocs_std_packages="$ocs_std_packages pkg.javabind lib.opal_java"
+  OCS_CHECK_LIB_X(readline, lib.opal_readline, ocs_lib_readline)
 fi
 
-
-OCS_CHECK_LIB_X(tcl, lib.opal_tcl, ocs_lib_tcl)
-OCS_CHECK_LIB_X(tk, lib.opal_tk, ocs_lib_tk)
-
-AC_SUBST(ocs_lib_win)
-ocs_lib_win=lib.opal_win
-OCS_CHECK_DEP(ocs_lib_win, ocs_lib_tcl, Opal Windows)
-OCS_CHECK_DEP(ocs_lib_win, ocs_lib_tk, Opal Windows)
-if test -n "$ocs_lib_win"
+if test -z "$CYGWIN" 
 then
-  ocs_std_packages="$ocs_std_packages lib.opal_win"
+  if test "$ocs_cv_feature_opaljava" = "yes"
+  then
+    ocs_std_packages="$ocs_std_packages pkg.javabind lib.opal_java"
+  fi
+fi
+
+if test -z "$CYGWIN"
+then
+  OCS_CHECK_LIB_X(tcl, lib.opal_tcl, ocs_lib_tcl)
+  OCS_CHECK_LIB_X(tk, lib.opal_tk, ocs_lib_tk)
+
+  AC_SUBST(ocs_lib_win)
+  ocs_lib_win=lib.opal_win
+  OCS_CHECK_DEP(ocs_lib_win, ocs_lib_tcl, Opal Windows)
+  OCS_CHECK_DEP(ocs_lib_win, ocs_lib_tk, Opal Windows)
+  if test -n "$ocs_lib_win"
+  then
+    ocs_std_packages="$ocs_std_packages lib.opal_win"
+  fi
 fi
 
 AC_SUBST(ocs_pkg_reflections)
@@ -415,30 +423,36 @@ fi
 
 ocs_std_packages="$ocs_std_packages pkg.ordinatrice"
 
-AC_SUBST(ocs_pkg_oasys)
-if test "$ocs_cv_feature_oasys" != "no"
+if test -z "$CYGWIN"
 then
-  if test "$ocs_cv_feature_dynamic" = "no"
+  AC_SUBST(ocs_pkg_oasys)
+  if test "$ocs_cv_feature_oasys" != "no"
   then
-    AC_MSG_ERROR(Oasys needs dynamic linking)
+    if test "$ocs_cv_feature_dynamic" = "no"
+    then
+      AC_MSG_ERROR(Oasys needs dynamic linking)
+    fi 
+  dnl  OCS_CHECK_DEP_ERR(ocs_lib_readline, "Oasys depends on readline")
+    if test -z "$ocs_lib_readline"
+    then
+      AC_MSG_WARN(disabling fancy input for Oasys)
+    fi
+    OCS_CHECK_DEP_ERR(ocs_lib_tcl, Oasys depends on Tcl)
+    ocs_std_packages="$ocs_std_packages lib.oasys_shared lib.oasys_main pkg.oasys pkg.evaluator"
   fi
-dnl  OCS_CHECK_DEP_ERR(ocs_lib_readline, "Oasys depends on readline")
-  if test -z "$ocs_lib_readline"
-  then
-    AC_MSG_WARN(disabling fancy input for Oasys)
-  fi
-  OCS_CHECK_DEP_ERR(ocs_lib_tcl, Oasys depends on Tcl)
-  ocs_std_packages="$ocs_std_packages lib.oasys_shared lib.oasys_main pkg.oasys pkg.evaluator"
 fi
 
-AC_SUBST(ocs_pkg_tivi2)
-if test "$ocs_cv_feature_tivi2" = "yes"
+if test -z "$CYGWIN"
 then
-  ocs_pkg_tivi2=pkg.tivi2
-  OCS_CHECK_DEP(ocs_pkg_tivi2, ocs_lib_win, tivi2)
-  if test -n "$ocs_pkg_tivi2"
+  AC_SUBST(ocs_pkg_tivi2)
+  if test "$ocs_cv_feature_tivi2" = "yes"
   then
-    ocs_std_packages="$ocs_std_packages pkg.tivi2"
+    ocs_pkg_tivi2=pkg.tivi2
+    OCS_CHECK_DEP(ocs_pkg_tivi2, ocs_lib_win, tivi2)
+    if test -n "$ocs_pkg_tivi2"
+    then
+      ocs_std_packages="$ocs_std_packages pkg.tivi2"
+    fi
   fi
 fi
 
@@ -447,13 +461,16 @@ then
   ocs_std_packages="$ocs_std_packages pkg.oc5"
 fi
 
-if test "$ocs_cv_feature_proofchecker" != "no"
+if test -z "$CYGWIN"
 then
-  if test "$ocs_cv_feature_oasys" != "no"
+  if test "$ocs_cv_feature_proofchecker" != "no"
   then
-    ocs_std_packages="$ocs_std_packages lib.oasys_pc pkg.oasyspc lib.oasys_prooflib"
-  else
-    AC_MSG_ERROR(Proofchecker requires Oasys)
+    if test "$ocs_cv_feature_oasys" != "no"
+    then
+      ocs_std_packages="$ocs_std_packages lib.oasys_pc pkg.oasyspc lib.oasys_prooflib"
+    else
+      AC_MSG_ERROR(Proofchecker requires Oasys)
+    fi
   fi
 fi
 
@@ -1087,7 +1104,7 @@ fi
 
 ## make version available
 AC_SUBST(ocs_version)
-ocs_version=2.3g.gamma-cygwin
+ocs_version=2.3g
 
 ## get absolute path for sourcedir
 ocs_abssrcdir=`pwd`
@@ -1627,7 +1644,7 @@ then
     done
     for part in .c .h 
     do
-o      if test -r ${structdir}/OCS/${structname}${part}
+      if test -r ${structdir}/OCS/${structname}${part}
       then
         echo copying ${structdir}/OCS/${structname}${part} ${structdir}/OCS/${structname}_ocs${part} 
 	sed $sedcmd < ${structdir}/OCS/${structname}${part} > ${structdir}/OCS/${structname}_ocs${part} 
