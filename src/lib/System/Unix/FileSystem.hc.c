@@ -4,7 +4,7 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 16:00:20 $ ($Revision: 1.1.1.1 $)
+   $Date: 2001-05-09 13:24:47 $ ($Revision: 1.2 $)
 */
 
 #include <unixconfig.h>
@@ -23,8 +23,8 @@
 
 /* import Users and Groups */
 #include "UserAndGroup.h"
-/* import Time */
-#include "Time.h"
+/* import SysTime */
+#include "SysTime.h"
 /* import Arrays */
 #include "Array.h"
 /* import Options */
@@ -601,7 +601,7 @@ extern OBJ _AFileSystem_Ahc_Atmpnam(OBJ x1) /* hc_tmpnam */
 static init_const_AFileSystem()
 {
  init_AUserAndGroup();
- init_ATime();
+ init_ASysTime();
  init_AArray();
  init_AOption();
  init_ACom();
