@@ -1,6 +1,0 @@
-SUBNODES  = JavaLib HelloWorld GetURL
-_default: all
-_all: 
-_clean:
-_install: 
-include $(OMLIBPATH)/GlobalRules
