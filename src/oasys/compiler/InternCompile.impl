@@ -35,6 +35,9 @@ IMPORT  Com                     COMPLETELY
         
 IMPORT  -- oc admin
         Options                 COMPLETELY
+		OcBinStream				COMPLETELY
+        InterOpal               COMPLETELY
+		InterOpalDump			COMPLETELY
         Error                   COMPLETELY
         Pos                     COMPLETELY
 
@@ -49,8 +52,7 @@ IMPORT  -- oc1
         ImplementationAnalysis  ONLY implAna
         PatternAnalysis         ONLY pattAna
         InterOpalGeneration     ONLY dumpInterOpal gen
-        Translation             ONLY trans
-        InterOpal               COMPLETELY
+		Translation				COMPLETELY
 
 IMPORT  -- oc2
         PreparedOptions         ONLY popts prepareOptions options
@@ -120,13 +122,8 @@ DEF checkUnit1(Name, Deps, Opts)(R) ==
     implAna(Opts,1st(StructAndTab))
            (SignGlobSig)                        & (\\ ImplGlobSig .
     pattAna(Opts)(ImplGlobSig)                  & (\\ PattGlobSig .
-    dumpInterOpal(Opts)(PattGlobSig)            & (\\ _ .
-    IF impl?(part(Name)) THEN
-        trans(Opts)(PattGlobSig)
-    ELSE
-        succeed(nil)
-    FI
-    ))))))
+    dumpInterOpal(Opts)(PattGlobSig)
+    )))))
 
 
 
@@ -255,17 +252,21 @@ DEF compileUnit(U)(R) ==
 FUN compileUnit1 : unitName ** set[unitName,<] ** options -> repo -> com[void]
 DEF compileUnit1(Name, Deps, DraftOpts)(R) ==
     LET Opts == prepareOptions(DraftOpts)
+		oOpts == options(Opts)
     IN
-    readUnit(options(Opts), myAnaFile(options(Opts)))   & (\\ AnaUnit? .
-    IF avail?(AnaUnit?) THEN
-        optimize(Opts)(cont(AnaUnit?))                  & (\\ OptUnit_+_Err.
+    optread(oOpts,myInterOpalFile(oOpts), ioTypeKey)    & (\\Inter?.
+    IF avail?(Inter?) THEN
+	LET Inter == cont(Inter?)
+	IN dump(Inter) & (\\ _ .
+        unit(oOpts)(Inter) 								& (\\ AnaUnit.
+        optimize(Opts)(AnaUnit)                         & (\\ OptUnit_+_Err.
         failOnError(Opts,2nd(OptUnit_+_Err))            & (\\ _ .
         translate(Opts)(1st(OptUnit_+_Err))             & (\\ TransMod_+_Err .
         failOnError(Opts,2nd(TransMod_+_Err))           & (\\ _ .
         generate(Opts)(1st(OptUnit_+_Err),
                        1st(TransMod_+_Err))             & (\\ GenErr .
         failOnError(Opts,GenErr)                        
-        )))))
+        )))))))
     ELSE
         yield(fail("cannot locate intermediate checking result"))
     FI
