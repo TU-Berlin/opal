@@ -3,7 +3,7 @@ IMPLEMENTATION WhiteBox
 IMPORT DefEqnHandling ONLY lVars
        SeqFold ONLY /
        RepoAbsy COMPLETELY
-       Seq ONLY seq :: <> # ft ++ %
+       Seq ONLY seq :: <> # ft ++ % <>? rt
        SeqOfSeq ONLY flat
        Pair ONLY pair &
        RepoObjectAccess ONLY impl
@@ -19,6 +19,7 @@ IMPORT DefEqnHandling ONLY lVars
        AbsySC ONLY apply1 tuple1
        DEBUG ONLY PRINT
        Denotation ONLY ++
+       OSubstitution ONLY subst def {} <$
 
 
 FUN dbWhiteBox? : bool
@@ -44,7 +45,7 @@ DEF allGuards(R, oN) ==
   FI
 
 FUN unfoldEqn: repo -> eqn -> seq[expr]
-DEF unfoldEqn(R)(eqn(_, lS, lhs, _, rhs)) ==
+DEF unfoldEqn(R)(eqn(a, lS, lhs, pat, rhs)) ==
   IF rhs cases? THEN
     LET iExprs == flat(unfoldGuard(R) * guards(rhs))
         elseExpr == IF else(rhs) avail? THEN
@@ -55,6 +56,8 @@ DEF unfoldEqn(R)(eqn(_, lS, lhs, _, rhs)) ==
                     FI
     IN
       (\\ e. lambda(none, lS, lVars(lhs), e)) * (iExprs ++ elseExpr)
+  IF rhs let? THEN
+    unfoldEqn(R)(eqn(a, lS, lhs, pat, unfoldLet(rhs)))
   ELSE
     %(lambda(none, lS, lVars(lhs), true(R)))
   FI
@@ -86,4 +89,13 @@ DEF unfoldGuard(R)(guard(_, i, t0)) ==
     (iExprs ++ elseExpr)
   ELSE
     %(i)
+  FI
+
+FUN unfoldLet: expr -> expr
+DEF unfoldLet(let(an, eqs, e)) ==
+  IF eqs <>? THEN e
+  ELSE
+    LET oN == oper(lhs(ft(eqs)))
+    IN
+    unfoldLet(def(oN, rhs(ft(eqs)), {}) <$ let(an, rt(eqs), e))
   FI

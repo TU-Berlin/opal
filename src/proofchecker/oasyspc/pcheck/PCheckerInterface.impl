@@ -12,18 +12,18 @@ IMPORT
        ComCompose ONLY & ;
        Denotation ONLY ++ < +/+ =
        File ONLY file writeLine stdOut stdErr write open close
-       Fmt ONLY pretty fmt lit ; spc none
+       Fmt ONLY pretty fmt lit ; spc none brk
        FmtBasicTypes ONLY fmtNat
        FmtSet ONLY fmtSet
        OasysCmdtable ONLY register
-       Pair ONLY pair 2nd &
+       Pair ONLY pair 2nd & unpair
        PrettyFormatting COMPLETELY
        Repo ONLY repo
        RepoAn ONLY an:SORT
        RepoCom ONLY upd
        RepoCom1 ONLY query queryUpd
        RepoName COMPLETELY
-       RepoNameConv ONLY unitNameSpec asUnitName asDeno symbolic style
+       RepoNameConv COMPLETELY
        RepoUnitAccess COMPLETELY
        Set ONLY set {} % incl +
        String ONLY string ::? rt ft ! ++ ::
@@ -69,7 +69,7 @@ IMPORT INLINE ONLY INLINE
        Char ONLY char ! digit? |=
        RepoFocus ONLY focus?
        Option ONLY nil? option cont avail?
-       RepoDiag ONLY <+ fmtDiag ok
+       RepoDiag ONLY <+ fmtDiag ok freeRef ref
        StringFilter ONLY split
        RepoAdmin ONLY path
        FileName ONLY splitSuffix
@@ -92,6 +92,11 @@ IMPORT INLINE ONLY INLINE
        Real ONLY real -
        RealConv ONLY ``
        CheckSignature ONLY delUserId inclUserId userIdSet
+       Testing ONLY doEvalTestCases
+       Triple ONLY 3rd 1st 2nd triple
+       FmtSeq ONLY fmtSeq
+       AbsySC ONLY !
+       ProofCommon ONLY sendRepo
 
 FUN compileTime: denotation
 DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
@@ -190,6 +195,13 @@ DEF pcheckerCmdtable ==
     cmd(lit("pcheck-interactive") o lit("add-formula") o
             *(var("formula")) & 2nd @ pcheckAddFormula,
             "add formula to hypothese of interactive proof")
+    ++ 
+    cmd(lit("pcheck-info") o
+        (lit("testcases") o (objectNameSpec o objectNameSpec) &
+         2nd @ pcheckInfoTestCases
+        ) & 2nd, 
+        "testcases FUN HEUR: show testcases for FUN according to HEUR")
+       
         
 
 -- %$Dump commands$
@@ -382,7 +394,7 @@ DEF pcheckProofIntern(pprefix) == pcheckCheckI(pprefix, false, false)
 FUN pcheckCompile: denotation -> com[denotation]
 DEF pcheckCompile(_) == pcheckCheckI("", true, true)
 
--- %$Interactive Proo$
+-- %$Interactive Proof$
 FUN pcheckStartProof: denotation -> com[denotation]
 DEF pcheckStartProof(proofName) == 
   pcheckInteractiveDo(\\uN. startProof(uN, proofName))
@@ -519,6 +531,44 @@ DEF pcheckV(oD & iD) ==
   upd(\\ R. setFullness(R, o?, i?)) &
   dumpFmt(lit("verbosity: "); lit(IF o? THEN "origin" ELSE "no origin" FI);
           lit(","); spc(1); lit(IF i? THEN "instance" ELSE "no instance" FI))
+
+-- %$Info functions$
+FUN pcheckInfoTestCases: pair[objectName, objectName] -> com[denotation]
+DEF pcheckInfoTestCases(func & heur) ==
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected") 
+  ELSE
+    LET uN == uNv cont 
+    IN
+    checkDo(requireFullAbsy(uN)) & (\\ _ .
+    checkDo(reloadUnits(%(uN))) & (\\ _ .
+    checkDo(checkUnits(%(uN))) & (\\ _ .
+    query(related(transitive, imports)(uN)) & (\\ rel.
+    checkAndCompile(rel) & (\\ _ .
+    ensureClientT & (\\ _ .
+    now & (\\ startReq.
+    require(%(uN :=_part sign, uN :=_part impl)) & (\\ _ .
+    now & (\\ endReq.
+    writeLine(stdOut, "require needed " ++ 
+              ``(endReq - startReq, 2) ++ " sec") & (\\ _ .
+    queryUpd(\\R. sendRepo(R) & (\\ R1.
+                  doEvalTestCases(R1, uN, heur!, func,
+                                  freeRef("pcheck-info testcases")) & (\\ tr.
+                  succeed((2nd(tr) & 3rd(tr)) & 1st(tr))
+             ))) & (\\ p.
+    LET (diags, testcases) == unpair(p)
+    IN
+    checkDo(diag(diags)) & ( \\ _ .
+    query(\\ R. dumpFmt(lit("Test cases for function `");
+                        fmtObjectNameLong(R, uN)(func);
+                        lit("' with heuristic `");
+                        fmtObjectNameLong(R, uN)(heur);
+                        lit("'"); brk;
+                        fmtSeq(prettyExpr(R, uN))(testcases)))
+    ))))))))))))
+  FI
+  )
+    
 
 -- %$Auxiliary functions$
 
