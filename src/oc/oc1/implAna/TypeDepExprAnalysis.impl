@@ -1,5 +1,4 @@
 /* %-
--- LAST EDIT: Wed Aug 30 16:25:49 1995 by Christian Maeder (troilos!maeder) 
 -- ============================================================================
 -- Author:      mija
 -- Project:     OPAL1-Compiler (context analysis)
@@ -21,11 +20,13 @@ IMPLEMENTATION TypeDepExprAnalysis
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-02-25 09:09:21 $ ($Revision: 1.3 $)
+-- % $Date: 1999-10-11 14:57:38 $ ($Revision: 1.4 $)
 
 IMPORT  Nat             COMPLETELY
         String          ONLY string 
         Denotation      ONLY ++
+        Option          COMPLETELY
+        OptionConv      ONLY `
         Pair            COMPLETELY
         Seq             COMPLETELY
         SeqCompare      ONLY eq?
@@ -37,11 +38,11 @@ IMPORT  Nat             COMPLETELY
         SeqZip          COMPLETELY
         SeqIndex        COMPLETELY
         Map             COMPLETELY
+	MapConv		ONLY `
         Array           COMPLETELY
 
         Pos             ONLY pos firstPos +/
         Error           ONLY err errKind error warning hint ok + ok?
-        Options         ONLY infix?:bool lassoc?:bool rassoc?:bool
 
         MySeqFun1       COMPLETELY
 
@@ -65,10 +66,14 @@ IMPORT  Nat             COMPLETELY
         Candidates      COMPLETELY
         NameAnalysis    ONLY matchingOp selectName selectDeclaredName
                                 localNameDef matchingFcts
-        PrioTab ONLY prio rule assumedLAssoc assumedRAssoc prioTab assumedLAssoc? assumedRAssoc?
-
+        PrioTab         COMPLETELY
         DEBUG           ONLY FIELD? PRINT
-       GlobSig COMPLETELY
+        GlobSig         COMPLETELY
+
+FUN infix? lassoc? rassoc?: bool
+DEF rassoc?                 == FIELD?[bool]("-znorassoc") ~
+DEF lassoc?                 == FIELD?[bool]("-zlassoc") and ~(rassoc?)
+DEF infix?                  == FIELD?[bool]("-znoinfix") ~
 
 FUN analyze: expr[partName]**globSig**knowl**nat**nat -> cands**nat**nat
 /* % Für einen Ausdruck, eine globale Signatur, Wissen über die Verwendung
@@ -924,22 +929,6 @@ DEF better(Sig,Var)(left,Arg1,Op1,Arg2,Op2,Arg3,Subst) ==
                        (Op2a,_)  == apply(Subst,Op2)
                    IN
                    prio(Sig)(Op1a, Op2a, prioTab(Sig))
-
-/* %-
-                    IF lassoc? THEN
-                       LET (Op1a,_)  == apply(Subst,Op1)
-                           (Op2a,_)  == apply(Subst,Op2)
-                       IN IF eq(Sig)(Op1a,Op2a) THEN (left,assumedLAssoc)
-                          ELSE (both,none)
-                          FI
-                    IF rassoc? THEN
-                       LET (Op1a,_)  == apply(Subst,Op1)
-                           (Op2a,_) == apply(Subst,Op2)
-                       IN IF eq(Sig)(Op1a,Op2a) THEN (right,assumedRAssoc)
-                          ELSE (both,none)
-                          FI
-                    FI
-*/
                  FI
            FI
      ELSE (both,none) -- there are no other precedences than typing
@@ -976,22 +965,6 @@ DEF better(Sig,Var)(right,Arg1,Op1,Arg2,Op2,Arg3,Subst) ==
                     (Op2a,_)  == apply(Subst,Op2)
                 IN 
                 prio(Sig)(Op1a, Op2a, prioTab(Sig))
-/* %-
-                 IF lassoc? THEN
-                    LET (Op1a,_)  == apply(Subst,Op1)
-                        (Op2a,_)  == apply(Subst,Op2)
-                    IN IF eq(Sig)(Op1a,Op2a) THEN (left,assumedLAssoc)
-                       ELSE (both,none)
-                       FI
-                 IF rassoc? THEN
-                    LET (Op1a,_)  == apply(Subst,Op1)
-                        (Op2a,_)  == apply(Subst,Op2)
-                    IN IF eq(Sig)(Op1a,Op2a) THEN (right,assumedRAssoc)
-                       ELSE (both,none)
-                       FI
-                 ELSE (both,none)
-                 FI
-*/
               FI
         FI
      ELSE (both,none) -- there are no other precedences than typing
@@ -1000,6 +973,29 @@ DEF better(Sig,Var)(right,Arg1,Op1,Arg2,Op2,Arg3,Subst) ==
   OTHERWISE
   IF lassoc? THEN (left,assumedLAssoc)
   IF rassoc? THEN (right,assumedRAssoc)
+  FI
+
+-- %@zoindex debugPrio
+FUN prio : globSig -> name ** name ** prioTab -> prio ** rule
+DEF prio(gS)(n1, n2, pT) == 
+  LET r? == PRINT(FIELD?[bool]("-zdebugPrio"),
+                  \\ . "prio: looking up: " ++ `(gS, standard)(n1) ++
+                       " and " ++ `(gS, standard)(n2) ++
+                       "\nfound: " ++ 
+                       `(`)(pT !? (n1, n2)) ,
+                  pT !? (n1, n2) )
+  IN
+  IF r? nil? THEN
+    IF eq(gS)(n1, n2) THEN
+      IF rassoc? THEN (right, assumed(right))
+      IF lassoc? THEN (left, assumed(left))
+      ELSE (both, none)
+      FI
+    ELSE
+      (both, none)
+    FI
+  ELSE
+    (what(r? cont), r? cont)
   FI
 
 FUN eq: globSig -> name**name -> bool
