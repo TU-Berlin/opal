@@ -3,7 +3,7 @@ IMPLEMENTATION GenMake
 
 -- generate make or shape file for OPAL program or library system
 -- wg 23.8.92, 6.10.92, 4.7.93    
--- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/GenMake.impl,v 1.6 2001-05-09 13:25:17 kd Exp $
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/GenMake.impl,v 1.7 2001-05-23 18:56:26 kd Exp $
 
 
 IMPORT  Compose         COMPLETELY
@@ -42,12 +42,13 @@ IMPORT  Compose         COMPLETELY
         Process         ONLY popen pclose
         File            COMPLETELY
         FileSystem      ONLY filestat:SORT stat mtime
-        SysTime         ONLY time:SORT > : time ** time -> bool
+        Time            ONLY time:SORT > : time ** time -> bool
 
         DEBUG           COMPLETELY
 
 
 IMPORT  OptionScan      COMPLETELY
+        NatConv ONLY asChar
 
         
 FUN versionKey : denotation
@@ -500,8 +501,10 @@ DEF sampleLsStructs(Args,Sys,Inp,Structs) ==
             Suffix == IF frozen in flags(Sys) THEN expSuffix ELSE signSuffix FI
         IN
 	IF #(Base) > #(Suffix) THEN
+      LET trunk == slice(Base,0,(#(Base) - #(Suffix)) - 1)
+      IN
            sampleLsStructs(Args,Sys,Inp,
-              incl(slice(Base,0,(#(Base) - #(Suffix)) - 1),Structs))
+              incl(retranslate(trunk),Structs))
 	ELSE
            sampleLsStructs(Args,Sys,Inp,Structs)
 	FI
@@ -1014,7 +1017,7 @@ DEF verbose(Args,Level,Name,Location) ==
 
 FUN error : args ** denotation ** seq[union] -> com[void]
 DEF error(_,Patt,Vals) ==
-    writeLine(stdErr,format(Patt,Vals))
+    writeLine(stdErr, format(red ++ Patt ++ black,Vals))
 
 -- ======================================================================
 -- generate & analyze flags for the diverse tools 
@@ -1983,5 +1986,61 @@ DEF genmake ==
         FI
     FI
     )))
-
     )
+
+/* %must synchronize the following functions with their counterparts
+in @file{OcOptions} in the @file{src/oc/shared/admin} subsystem */
+
+/* %check, if environment variable @code{OCS_FILENAMES_CASEFOLD} exists
+    and set to "yes" */
+FUN casefold? : bool
+DEF casefold? == 
+  EXEC(env("OCS_FILENAMES_CASEFOLD") ; (\\ ans.
+       IF noSuchEnvVar?(ans) THEN succeed(false)
+       IF fail?(ans) THEN succeed(false)  -- should we abort here?
+       ELSE
+         succeed(data(ans) = "yes")
+       FI
+       )
+      )
+
+FUN retranslate: denotation -> denotation
+DEF retranslate(bn) ==
+  IF casefold? THEN
+    IF bn="Denotation_ocs" THEN "Denotation"
+    IF bn="Time_ocs" THEN "Time"
+    IF bn="Bool_ocs" THEN "Bool"
+    IF bn="Signal_ocs" THEN "Signal"
+    IF bn="Wait_ocs" THEN "Wait"
+    ELSE
+      bn
+    FI
+  ELSE
+    bn
+  FI
+
+/* %Farbe - vgl. OcError */
+/* %Farbe gibt's nur, wenn die Environment-Variable @code{OPAL_COLOR}
+    auf @code{yes} gesetzt wird. Beachte, daß Emacs nicht mit den
+    Escape-Sequenzen zurechtkommt, aber Sub-Prozessen keine Möglichkeit gibt,
+    festzustellen, daß sie tatsächlich im Emacs laufen!! :-( (kd)
+*/
+FUN useColours: bool
+DEF useColours ==
+  EXEC(env("OPAL_COLOR"); (\\r. IF okay?(r) THEN
+                                  IF data(r) = "no" THEN succeed(false)
+                                  IF data(r) = "yes" THEN succeed(true)
+                                  ELSE succeed(false)
+                                  FI
+                                ELSE
+                                  succeed(false)
+                                FI))
+
+FUN red magenta blue black: denotation
+DEF red == IF useColours THEN esc("[31m") ELSE "" FI
+DEF magenta == IF useColours THEN esc("[35m") ELSE "" FI
+DEF blue == IF useColours THEN esc("[34m") ELSE "" FI
+DEF black == IF useColours THEN esc("[0m") ELSE "" FI
+
+FUN esc: denotation -> denotation
+DEF esc(d) == %(asChar(27)) ++ d

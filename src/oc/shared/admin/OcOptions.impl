@@ -4,7 +4,7 @@ IMPLEMENTATION OcOptions
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 2000-04-14 17:15:17 $ ($Revision: 1.1 $)
+-- % $Date: 2001-05-23 18:56:25 $ ($Revision: 1.2 $)
 /* %-
 -- author:      ws/fetti
 -- project:     opal-1/common
@@ -30,7 +30,7 @@ IMPORT
         Com             COMPLETELY
         Stream          COMPLETELY
         ComCompose      COMPLETELY
-        ProcessArgs     ONLY args
+        ProcessArgs     ONLY args env noSuchEnvVar?
         Seq             ONLY seq ft rt <>? <> ::
         SeqMap          ONLY *
         OcExit          ONLY ioError
@@ -568,7 +568,7 @@ DEF expFile(t,o)==
         IF x nil? THEN ""
         ELSE
           LET (bn,dn,h?) == (t,dirname(cont(x)),hidden in access(cont(x))) IN
-                filename(dn,inter,bn,sign++inter,h?)
+                filename(dn,inter,translate(bn),sign++inter,h?)
         FI
 
 DEF extpExpFile(t,o)==
@@ -576,7 +576,7 @@ DEF extpExpFile(t,o)==
         IF x nil? THEN ""
         ELSE
           LET (bn,dn,h?) == (t,dirname(cont(x)),hidden in access(cont(x))) IN
-                  filename(dn,inter,bn,extp++inter,h?)
+                  filename(dn,inter,translate(bn),extp++inter,h?)
         FI
 
 DEF optFile(t,o)==
@@ -584,7 +584,7 @@ DEF optFile(t,o)==
         IF x nil? THEN ""
         ELSE
           LET (bn,dn,h?) == (t,dirname(cont(x)),hidden in access(cont(x))) IN
-          filename(dn,opt,bn,opt,h?)
+          filename(dn,opt,translate(bn),opt,h?)
         FI
 
     FUN filename:denotation**denotation**denotation**denotation**bool
@@ -601,6 +601,36 @@ DEF optFile(t,o)==
          ELSE dn++(`(/)++(bn++bs))
          FI
         FI
+
+/* %check, if environment variable @code{OCS_FILENAMES_CASEFOLD} exists
+    and set to "yes" */
+FUN casefold? : bool
+DEF casefold? == 
+  EXEC(env("OCS_FILENAMES_CASEFOLD") ; (\\ ans.
+       IF noSuchEnvVar?(ans) THEN succeed(false)
+       IF fail?(ans) THEN succeed(false)  -- should we abort here?
+       ELSE
+         succeed(data(ans) = "yes")
+       FI
+       )
+      )
+
+/* %if file names are not case sensitive, we must translate a few 
+basenames */
+FUN translate: denotation -> denotation
+DEF translate(bn) ==
+  IF casefold? THEN
+    IF bn="Time" or bn="Signal" or bn="Denotation" or bn ="Bool" or bn = "Wait" THEN
+      bn ++ "_ocs"
+    ELSE
+      bn
+    FI
+  ELSE
+    bn
+  FI
+
+
+    
 
 DEF file(options(s,p,b,v,w,o,x,t,f,z,_),fn)== options(s,p,b,v,w,o,x,t,f,z,fn)
 
