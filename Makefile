@@ -6,9 +6,9 @@ default: usage
 
 ## define these variables to match your system
 #.. Path to the source of the distribution
-OCSSRC=/home/opaladm/ocs/src
+OCSSRC=/home/shome/kd/ocs/src
 #.. Absolute path to the ProjectDefs file in this directory
-OCSPROJECT=/home/opaladm/ocs/ProjectDefs
+OCSPROJECT=/home/shome/kd/ocs/ProjectDefs
 #.. Path to the place where the distribution is to be installed
 OCSHDIR=ocs-$(VERSION)
 OCSHOME=/usr/local/$(OCSHDIR)
@@ -45,7 +45,6 @@ MINPACKAGES = pkg.opalimports lib.opal_base pkg.genmake \
 MINSRCPACKAGES	=	pkg.examples
 PACKAGES = $(MINPACKAGES) $(STDPACKAGES)
 
-
 OCSADMIN=$(OCSHOME)/bin/ocsadmin -ocshome $(OCSHOME) -ocssrc $(OCSSRC) -ocsspecs $(OCSSRC)/om/specs
 OCSADMININIT=$(OCSSRC)/om/scripts/ocsadmin -ocssrc $(OCSSRC) -ocshome $(OCSHOME) -ocsspecs $(OCSSRC)/om/specs/$(OSARCH)
 
@@ -68,9 +67,33 @@ boot: $(MINPACKAGES)
 
 complete: $(STDPACKAGES)
 
+# distclean:
+# 	$(OCSADMININIT) ocs -command cleanobjall $(MINPACKAGES)
+#	$(OCSADMININIT) ocs -command cleanall $(MINSRCPACKAGES) $(STDPACKAGES)
+
 distclean:
-	$(OCSADMININIT) ocs -command cleanobjall $(MINPACKAGES)
-	$(OCSADMININIT) ocs -command cleanall $(MINSRCPACKAGES) $(STDPACKAGES)
+	(cd $(OCSSRC)/om; ocs cleanobjall)
+	(cd $(OCSSRC)/oc; ocs cleanobjall)
+	(cd $(OCSSRC)/lib; ocs cleanobjall)
+	(cd $(OCSSRC)/oc/dynamite; ocs cleanall)
+	(cd $(OCSSRC)/oc/reflections; ocs cleanall)
+	(cd $(OCSSRC)/lib/Tools/OpalWin; ocs cleanall)
+	(cd $(OCSSRC)/lib/Tools/OpalWinAdditions; ocs cleanall)
+	(cd $(OCSSRC)/lib/Tools/ParserLight; ocs cleanall)
+	(cd $(OCSSRC)/lib/Tools/Readline; ocs cleanall)
+	(cd $(OCSSRC)/lib/Tools/Tcl; ocs cleanall)
+	(cd $(OCSSRC)/lib/Tools/Tk; ocs cleanall)
+	(cd $(OCSSRC)/browser; ocs cleanall)
+	(cd $(OCSSRC)/dosfop; ocs cleanall)
+	(cd $(OCSSRC)/emacs; ocs cleanall)
+	(cd $(OCSSRC)/oasys; ocs cleanall)
+	(cd $(OCSSRC)/ordinatrice; ocs cleanall)
+	(cd $(OCSSRC)/tivi2; ocs cleanall)
+
+preparedist:
+	(cd $(OCSSRC)/lib; ocs cleanall; export OCSSRC=$(OCSSRC); ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
+	(cd $(OCSSRC)/om; ocs cleanall; export OCSSRC=$(OCSSRC); ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
+	(cd $(OCSSRC)/oc; ocs cleanall; export OCSSRC=$(OCSSRC); ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
 
 sourcedistr:
 	cp -f ignore1  /tmp; cp -f ignore2  /tmp; \
