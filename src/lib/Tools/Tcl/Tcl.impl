@@ -3,33 +3,38 @@ IMPLEMENTATION Tcl
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 16:00:25 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-06 15:11:43 $ ($Revision: 1.2 $)
 
-IMPORT	String		ONLY ! 
-	StringConv   	ONLY `
-	StringFormat 	ONLY format
-	Com		COMPLETELY
-	ComCompose	COMPLETELY
-	Void		ONLY  nil
-	
+IMPORT  Seq             ONLY seq
+        String          ONLY string ! 
+        StringConv      ONLY `
+        StringFormat    ONLY format
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        Void            COMPLETELY
+	BTUnion		ONLY union
+        Int             ONLY int
+        Nat             ONLY nat
+        Real            ONLY real
+        
 -- basic Tcl 
 
 DATA interpreter == primitive
-	-- simulate primitive storage class
+        -- simulate primitive storage class
 
-
+/$ handcoded [state:SORT] $/
 -- creating interpreters
 
--- FUN create	: state			-> com[interpreter]
-	-- create a new interpreter
+FUN create      : state                 -> com[interpreter]
+        -- create a new interpreter
 
--- FUN delete	: interpreter		-> com[void]
-	-- delete interpreter
+FUN delete      : interpreter           -> com[void]
+        -- delete interpreter
 
 
 DEF create(State) == call(createIntrp(State)) & 
-		     (\\Interp. Interp @ "set tcl_interactive 0" &
-		     		yield(okay(Interp)))
+                     (\\Interp. Interp @ "set tcl_interactive 0" &
+                                yield(okay(Interp)))
 
 DEF delete(Intrp) == call(deleteIntrp(Intrp))
 
@@ -39,8 +44,8 @@ FUN deleteIntrp : interpreter -> void -> ans[void]
 
 -- accessing the state
 
--- FUN state : interpreter -> state
--- FUN => : interpreter ** (state -> state) -> com[void]
+FUN state : interpreter -> com[state]
+FUN => : interpreter ** (state -> state) -> com[void]
 
 DEF state(Interp) == call(getState(Interp))
 DEF Intrp => Fun == call(updState(Intrp, Fun))
@@ -50,32 +55,32 @@ FUN getState: interpreter -> void -> ans[state]
 
 -- defining commands
 
--- FUN define : interpreter ** denotation 
--- 		     ** (interpreter ** seq[string] -> ans[string]) 
--- 		     -> com[void]
---     define : interpreter ** denotation 
--- 		     ** (interpreter ** seq[string] -> com[string]) 
--- 		     -> com[void]
--- 	-- define a new command in given interpreter
--- 	-- - the first form uses a pure function 
--- 	-- - the second form uses a command which may perform
--- 	--   side-effects
+FUN define : interpreter ** denotation 
+                     ** (interpreter ** seq[string] -> ans[string]) 
+                     -> com[void]
+    define : interpreter ** denotation 
+                     ** (interpreter ** seq[string] -> com[string]) 
+                     -> com[void]
+--      -- define a new command in given interpreter
+--      -- - the first form uses a pure function 
+--      -- - the second form uses a command which may perform
+--      --   side-effects
 
 DEF define(Intrp, Name, Fun) == call(defineFun(Intrp, Name, Fun))
 DEF define(Intrp, Name, Com) == call(defineCom(Intrp, Name, Com))
 
 
-FUN defineFun	: interpreter ** denotation 
-		     ** (interpreter ** seq[string] -> ans[string]) 
-		     -> void -> ans[void]
-    defineCom	: interpreter ** denotation 
-		     ** (interpreter ** seq[string] -> com[string]) 
-		     -> void -> ans[void]
+FUN defineFun   : interpreter ** denotation 
+                     ** (interpreter ** seq[string] -> ans[string]) 
+                     -> void -> ans[void]
+    defineCom   : interpreter ** denotation 
+                     ** (interpreter ** seq[string] -> com[string]) 
+                     -> void -> ans[void]
 
 
 
--- FUN undefine	: interpreter ** denotation -> com[void]
--- 	-- undefine command in interpreter
+FUN undefine    : interpreter ** denotation -> com[void]
+--      -- undefine command in interpreter
 
 DEF undefine(Intrp, Cmd) == call(undefineIntrp(Intrp, Cmd))
 
@@ -85,22 +90,22 @@ FUN undefineIntrp : interpreter ** denotation -> void -> ans[void]
 
 -- evaluating commands
 
--- FUN @	: interpreter ** denotation 			-> com[string]
--- FUN @	: interpreter ** denotation ** seq[union]	-> com[string]
--- FUN @ 	: interpreter ** string 			-> com[string]
--- FUN @	: interpreter ** seq[string] 			-> com[string]
--- 	-- evaluate command in given interpreter
+FUN @   : interpreter ** denotation                     -> com[string]
+FUN @   : interpreter ** denotation ** seq[union]       -> com[string]
+FUN @   : interpreter ** string                         -> com[string]
+FUN @   : interpreter ** seq[string]                    -> com[string]
+--      -- evaluate command in given interpreter
 
 DEF Intrp @ Cmd == call(Intrp evalString !(Cmd))
 DEF Intrp @ (Patt, ArgS) == call(Intrp evalString format(Patt,ArgS))
 DEF Intrp @ Cmd == call(Intrp evalString Cmd)
 DEF Intrp @ CmdS == call(Intrp evalString asString(CmdS))
 
-FUN evalString 	: interpreter ** string -> void -> ans[string]
+FUN evalString  : interpreter ** string -> void -> ans[string]
 
 
-FUN source : interpreter ** denotation	-> com[string]
-	-- evaluate contents of file
+FUN source : interpreter ** denotation  -> com[string]
+        -- evaluate contents of file
 
 DEF Intrp source File == call(Intrp evalFile File)
 
@@ -110,33 +115,33 @@ FUN evalFile : interpreter ** denotation -> void -> ans[string]
 
 -- converting tcl data
 
--- FUN asNat	: string		-> ans[nat]
--- FUN asInt	: string		-> ans[int]
--- FUN asBool 	: string		-> ans[bool]
--- FUN asReal 	: string		-> ans[real]
--- FUN asList	: string		-> ans[seq[string]]
--- FUN asString	: seq[string]		-> string
+FUN asNat       : string                -> ans[nat]
+FUN asInt       : string                -> ans[int]
+FUN asBool      : string                -> ans[bool]
+FUN asReal      : string                -> ans[real]
+FUN asList      : string                -> ans[seq[string]]
+FUN asString    : seq[string]           -> string
 
 DEF commandComplete?(Str) == commandCompleteDen(`(Str))
-    FUN commandCompleteDen : denotation	-> bool
+    FUN commandCompleteDen : denotation -> bool
 
 -- accessing tcl variables
 
--- FUN ! .!	: interpreter ** denotation                     -> com[string]
--- FUN ! .!	: interpreter ** denotation ** denotation       -> com[string]
+FUN ! .!        : interpreter ** denotation                     -> com[string]
+FUN ! .!        : interpreter ** denotation ** denotation       -> com[string]
 --         -- reading variable
 
-DEF Intrp ! Var 	==  yield(Intrp get Var)
-DEF Intrp ! (Var, Key) 	==  yield(Intrp getArr (Var, Key))
-DEF Intrp .! Var 	==  yield(Intrp getGlob Var)
-DEF Intrp .! (Var, Key)	==  yield(Intrp getArrGlob (Var, Key))
+DEF Intrp ! Var         ==  yield(Intrp get Var)
+DEF Intrp ! (Var, Key)  ==  yield(Intrp getArr (Var, Key))
+DEF Intrp .! Var        ==  yield(Intrp getGlob Var)
+DEF Intrp .! (Var, Key) ==  yield(Intrp getArrGlob (Var, Key))
 
 FUN get getGlob: interpreter ** denotation                     -> ans[string]
 FUN getArr getArrGlob: interpreter ** denotation ** denotation -> ans[string]
 
 
--- FUN := .:= : interpreter ** denotation      	        ** string  -> com[void]
--- FUN := .:= : interpreter ** denotation ** denotation ** string  -> com[void]
+FUN := .:= : interpreter ** denotation                  ** string  -> com[void]
+FUN := .:= : interpreter ** denotation ** denotation ** string  -> com[void]
 --         -- assigning to variables
 
 DEF (Intrp, Var) := Val == call((Intrp, Var) set Val)
@@ -146,7 +151,9 @@ DEF (Intrp, Var, Key) .:= Val == call((Intrp, Var, Key) setArrGlob Val)
 
 FUN set setGlob : interpreter ** denotation ** string  -> void -> ans[void]
 FUN setArr setArrGlob : interpreter ** denotation ** denotation ** string  
-						-> void -> ans[void]
+                                                -> void -> ans[void]
 
-
-
+/$ handcoded [setArrGlob, setArr, setGlob, set, getArrGlob, getArr,
+   getGlob, get, commandCompleteDen, evalFile, evalString, undefineIntrp,
+   defineCom, defineFun, getState, updState, deleteIntrp, createIntrp,
+   asString, asList, asReal, asBool, asInt, asNat] $/
