@@ -1,9 +1,62 @@
 #!/bin/sh
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/ocsadmin,v 1.1.1.1 1998-06-16 15:59:51 wg Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/ocsadmin,v 1.2 1998-10-12 18:32:15 kd Exp $
 
+## initialise SHELL
 SHELL=/bin/sh
 export SHELL
 
+## define functions
+
+SourceSpecs() {
+    ok=no
+    for d in $OCSSPECS 
+    do
+#	echo "trying $d/$OSARCH/ShSpecs.$1 $d/$OSARCH/Specs.$1 $d/ShSpecs.$1 $d/Specs.$1"
+	if [ -f "$d/$OSARCH/ShSpecs.$1" ] ; then
+	    . $d/$OSARCH/ShSpecs.$1; ok=yes; break;
+	elif [ -f "$d/$OSARCH/Specs.$1" ] ; then
+	    $OCSHOME/lib/om/etc/gmake2sh < $d/$OSARCH/Specs.$1 > /tmp/gmake2sh.$$
+	    . /tmp/gmake2sh.$$
+	    $RM /tmp/gmake2sh.$$
+	    ok=yes
+	    break
+	elif [ -f "$d/ShSpecs.$1" ]; then
+	    . "$d/ShSpecs.$1"; ok=yes; break;
+	elif [ -f "$d/Specs.$1" ]; then
+	    $OCSHOME/lib/om/etc/gmake2sh < $d/Specs.$1 > /tmp/gmake2sh.$$
+	    . /tmp/gmake2sh.$$
+	    $RM /tmp/gmake2sh.$$
+	    ok=yes
+	    break
+	fi  
+    done
+    if [ $ok = no ]; then
+       echo "+++ cannot find ShSpecs.$1 or Specs.$1 in $OCSSPECS"
+       exit 3
+    fi
+}
+
+CheckRequireds() {
+    ok="yes"
+    for r in $REQUIRED
+    do
+      if [ ! -f "$OCSHOME/packages/$r" ]; then
+        if [ -n "$PKGNAME" ]; then
+	    echo "+++ package $PKGNAME requires $r"
+	fi
+        if [ -n "$LIBNAME" ]; then
+	    echo "+++ library $LIBNAME requires $r"
+	fi
+	ok="no"
+      fi
+    done
+    if [ $ok = "no" ]; then 
+	exit 4;
+    fi
+}
+	
+
+## initialise standard OCS variables
 if [ -z "$OCS" ] 
 then
   OCS=`expr $0 : '\(..*\)/bin/..*$'`  
@@ -28,37 +81,280 @@ then
   export DOSFOP
 fi
 
-. $OCSOM/specs/ShSpecs.basic
+#echo "OCS $OCS; OCSOM $OCSOM; OCSPROJECT $OCSPROJECT; DOSFOP $DOSFOP; $0"
 
+## initialise special ocsadmin variables
 
+# usage info
+usage () {
+echo "usage: ocsadmin <flags> <command>"
+echo ""
+echo "  <flags> are optional"
+echo "  -ocssrc <path>    path to the Opal source directory"
+echo "              defaults to \$OCS/src"
+echo "  -ocshome <path>   path to the root directory of the Opal installation"
+echo "              defaults to \$OCS"
+echo "  -ocsetc <path>    path to the om/etc scripts"
+echo "              defaults to \$OCSSRC/om/etc"
+echo "  -ocsspecs <path>  path to the package and library specifications,"
+echo "              may be repeated"
+echo "  [\$OCS defaults to the path to bin/ocsadmin]"
+echo "   "
+echo "  <command> is one of"
+echo "  init [ -sed <SED> ]          initialise Opal installation,"
+echo "                               SED is filename of sed program to be used"
+echo "                               (default sed)"
+echo "  install <lib-or-pkg-spec>*   install named libraries and packages"
+echo "  info                         show installed libraries and packages"
+echo "  checkdeps <lib-or-pkg-dep>   check dependencies "
+echo "  ocs [ -command <cmd> ]   "
+echo "      <lib-or-pkg-spec>*       do specified ocs command on"
+echo "                               named libraries/packages"
+}
+
+# myself
+OCSADMIN=$0
+
+# OCSSRC the path to Opal sources
 if [ -z "$OCSSRC" ]
 then
   OCSSRC=${OCS}/src
   export OCSSRC
 fi
 
-if [ "$1" = "-ocssrc" ]
+# OCSHOME the place where the Opal installation resides
+if [ -z "$OCSHOME" ]
 then
-  shift
-  OCSSRC="$1"
-  shift
+  OCSHOME=${OCS}
+  export OCSHOME
 fi
 
-case "$1" in
-  installlib)
-    shift 
-    while [ -n "$1" ]
-    do
-      $ECHO "Installing library $1 ..."
-      . $OCSOM/specs/ShSpecs.lib.$1
-      $OCSOM/etc/genshlib -v $LIBVERSION -d "${LIBDEPS}" ${LIBSYSTEMS} ${LIBDIR}
-      eval ${LIBHOOK}
+# OCSETC the place where auxiliary scripts are found
+if [ -z "$OCSETC" ]
+then
+  OCSETC=${OCSOM}/etc
+  export OCSETC
+fi
+
+# OCSSPECS the place where Specs files are looked for
+if [ -z "$OCSSPECS" ]
+then
+  OCSSPECS=". ${OCSOM}/specs"
+  export OCSSPECS
+fi
+
+#echo "SRC $OCSSRC; HOME $OCSHOME; ETC $OCSETC; SPECS $OCSSPECS"
+
+## analyse commandline arguments 
+
+ok=yes
+while [ -n "$ok" ]
+do
+#echo "Checking $1"
+ok=`echo $1 | grep '-'`
+#echo "ok #$ok#"
+if [ -n "$ok" ]; then
+  case $1 in
+    -ocssrc)
+	shift
+	OCSSRC="$1"
+	OCSETC="$OCSSRC/om/etc"
+	shift ;;
+    -ocshome)
+	shift
+	OCSHOME="$1"
+	shift ;;
+    -ocsetc)
+	shift
+	OCSETC="$1"
+	shift ;;
+    -ocsspecs)
+	shift
+	OCSSPECS="$OCSSPECS $1"
+	shift;;
+    *)
+	echo "Unknown option $1" 
+	usage
+	exit 1;;
+  esac
+fi
+done
+
+# echo "SRC $OCSSRC; HOME $OCSHOME; ETC $OCSETC; SPECS $OCSSPECS"
+
+## the init command is special (does not read ShSpecs.basic)
+# therefore it is handled here
+
+if [ "$1" = "init" ]; then
+    shift
+    if [ "$1" = "-sed" ]; then
+      SED=$2
       shift
+      shift ;
+    else
+      SED=sed ;
+    fi
+    export SED
+    mkdir $OCSHOME
+    ok=$?
+    if [ "$ok" != "0" ]; then
+	echo "cannot create $OCSHOME"
+	exit 2
+    fi
+    SpecsDir=no
+    for s in $OCSSPECS
+    do
+	[ -f "$s/Specs.basic" ]
+	if [ -f "$s/Specs.basic" ]; then
+	    SpecsDir=$s
+	fi
     done
-    ;;
-  *)
-    $ECHO "usage: ocsadmin [ -ocssrc <path> ] ( installlib <libname> ... | ... )"
-    exit 1
+    if [ "$SpecsDir" = no ]; then
+	echo "Specs.basic not found in $OCSSPECS"
+	exit 2
+    fi
+    if [ ! -f "$OCSETC/gmake2sh" ]; then
+	echo "cannot find $OCSETC/gmake2sh"
+	exit 2
+    fi
+    mkdir $OCSHOME/bin $OCSHOME/lib $OCSHOME/lib/opal_base $OCSHOME/lib/om $OCSHOME/lib/om/etc $OCSHOME/lib/om/specs $OCSHOME/lib/om/make $OCSHOME/packages
+    cp $OCSADMIN $OCSHOME/bin
+    cp $OCSSRC/lib/System/Commands/_ostart.c $OCSHOME/lib/opal_base
+    cp $OCSETC/gmake2sh $OCSHOME/lib/om/etc
+    cp $SpecsDir/Specs.basic $OCSHOME/lib/om/specs
+    $OCSHOME/lib/om/etc/gmake2sh < $OCSHOME/lib/om/specs/Specs.basic > $OCSHOME/lib/om/specs/ShSpecs.basic
+    echo "$1" > $OCSHOME/VERSION
+
+    echo package: basic administration for Opal installation > $OCSHOME/packages/basic
+    echo version: $1 >> $OCSHOME/packages/basic
+    echo installed `date` >> $OCSHOME/packages/basic
+
+    echo "finished initialising of OCS installation"
+    echo "you may add $OCSHOME/bin to your path"
+    exit 0
+fi
+
+## for all other commands, read first the basic definitions
+
+SpecsDir=no
+for s in $OCSSPECS
+do
+    if [ -f $s/ShSpecs.basic ]; then
+	. $s/ShSpecs.basic
+    fi
+done
+
+## now interpret commands
+
+case "$1" in
+    install)
+	shift
+	INSTALLBINPATH=$OCSHOME/bin; export INSTALLBINPATH
+	INSTALLDOCPATH=$OCSHOME/doc; export INSTALLDOCPATH
+	INSTALLLIBPATH=$OCSHOME/lib; export INSTALLLIBPATH
+	INSTALLMANPATH=$OCSHOME/man; export INSTALLMANPATH
+	INSTALLBINFLAGS="-s -m 0555 -dm 0755"; export INSTALLBINFLAGS
+	INSTALLDOCFLAGS="-m 0444 -dm 0755"; export INSTALLDOCFLAGS
+	INSTALLLIBFLAGS="-m 0444 -dm 0755"; export INSTALLLIBFLAGS
+	INSTALLMANFLAGS="-m 0444 -dm 0755"; export INSTALLMANFLAGS
+	PATH=$OCSHOME/bin:$PATH; export PATH
+	while [ -n "$1" ]
+	do
+	    SourceSpecs $1
+	    CheckRequireds
+	    case "$1" in
+		lib.*)
+		    $ECHO "Installing library $1 ..."
+		    $OCSOM/etc/genshlib -v $LIBVERSION -d "${LIBDEPS}" ${LIBSYSTEMS} ${LIBDIR}
+		    # echo "now evaluating :${LIBHOOK}:"
+		    eval ${LIBHOOK}
+		    echo "ready"
+		    echo library: $LIBDESCR > $OCSHOME/packages/$1
+		    echo version: $LIBVERSION >> $OCSHOME/packages/$1
+		    echo installed `date` >> $OCSHOME/packages/$1
+		    shift 
+		    ;;
+		pkg.*)
+		    $ECHO "Installing package $1 ..."
+		    (   cd $PKGBASE
+			# echo "INSTALLBINPATH is $INSTALLBINPATH"
+			# echo "evaluating >$PKGPREHOOK<"
+			eval $PKGPREHOOK
+			if [ -z "$PKGHOOK" ]; then
+			    echo "PKGHOOK is empty"
+			    ocs $PKGOCSFLAGS install
+			else    
+			    # echo "evaluating PKGHOOK >$PKGHOOK<"
+			    eval $PKGHOOK
+			fi
+			if [ -n "$PKGPOSTHOOK" ]; then
+			    # echo "evaluating PKGPOSTHOOK >$PKGPOSTHOOK<"
+			    eval $PKGPOSTHOOK
+			fi
+		    )
+		    echo package: $PKGDESCR > $OCSHOME/packages/$1
+		    echo version: $PKGVERSION >> $OCSHOME/packages/$1
+		    echo installed `date` >> $OCSHOME/packages/$1
+		    shift
+		    ;;    
+		*)
+		    $ECHO "don't know how to install $1"
+		    exit 1
+	    esac
+	done
+	;;
+    info)
+      echo "The following packages are installed: "
+      echo `$LS $OCSHOME/packages/* | $SED -e s%$OCSHOME/packages/%%g`
+      ;;
+    checkdeps)
+      shift
+      SourceSpecs $1
+      CheckRequireds
+      echo "can be installed"
+      ;;      
+    ocs)
+      shift
+      opaltarget=""
+      if [ "$1" = "-command" ]; then
+        shift
+	opaltarget="$opaltarget $1"
+	shift
+      fi
+      PATH=$OCSHOME/bin:$PATH; export PATH
+      while [ -n "$1" ]
+	do
+	    SourceSpecs $1
+	    CheckRequireds
+	    case "$1" in
+		lib.*)
+		    opalcmd="ocs $opaltarget"
+		    CINCPATH="$CINCPATH $LIBINCLUDES"
+		    export CINCPATH
+		    $ECHO "Doing '$opalcmd' on library $1 ..."
+		    for d in $LIBSYSTEMS
+		    do
+		    echo "now in libsystem $d"
+		    (cd $d; $opalcmd)
+		    done
+		    shift
+		    ;;
+		pkg.*)
+		    opalcmd="ocs $PKGOCSFLAGS $opaltarget"
+		    $ECHO "Doing '$opalcmd' on package $1 ..."
+		    (cd $PKGBASE; $opalcmd)
+		    shift
+		    ;;
+		*)
+		    $ECHO "Don't know how to do '$opalcmd' with $1"
+		    exit 5
+		    ;;
+            esac
+	done
+	;;
+    *)
+	usage
+	exit 1
 esac
   
 exit 0

@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/ocs,v 1.2 1998-06-18 10:01:33 kd Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/ocs,v 1.3 1998-10-12 18:32:14 kd Exp $
 
 SHELL=/bin/sh
 export SHELL
@@ -26,6 +26,12 @@ if [ -z "$DOSFOP" ]
 then
   DOSFOP=$OCS/dosfop
   export DOSFOP
+fi
+
+if [ -z "$ARCH" ]
+then
+    ARCH=`uname -m`
+    export ARCH
 fi
 
 . $OCSOM/specs/ShSpecs.basic
@@ -71,6 +77,12 @@ helpxopts="\
      profile=(no|gprof)               choose profiling configuration
      ocs=(stdocs|expocs)              choose Opal compiler
      <var>=<value>                    overwrite project variable
+     -P <projectdefsfile>             redefine OCSPROJECT variable
+     -P0                              unset OCSPROJECT 
+     -S <sysdefsfile>                 define SysDefs file to be used
+				      (overridden by -top/-sub)
+     -y <target>                      add <target> to make's target
+				      (cleared by other targets!)
 "
 
 helptargets="\
@@ -80,9 +92,11 @@ Target is one of:
      xhelp                            extended help
      info                             information about OCS version and project
      [ all ]        (subnodes)        build system and systems in subnodes
+     doc                              build HTML documentation
+     dvi                              build DVI documentation
      sub            (subsystems)      build system and used subsystems
-     check          (subnodes)        check properties
      clean                            remove all derived objects
+     cleandoc                         remove generated documentation
      gen                              force generating building rules
      sendbug                          send a bug report :-)
 "
@@ -91,7 +105,13 @@ helpxtargets="\
      pack           (subnodes)        pack as <nodename>.tar.gz
      cleanall       (subnodes)        \`clean' on subnodes and this node
      genall         (subnodes)        \`gen' on subnodes and this node
+     cleanobj                         remove derived machine-dependent objects
+     cleanobjall    (subnodes)        \`cleanobj' on subnodes and this node
+     check          (subnodes)        check properties
      install                          install using INSTALL{BIN,LIB,MAN}PATH
+     thisdoc                          rebuild HTML documentation of 
+					current subsystem's structures
+     thisdocall     (subnodes)        \`thisdoc' on subnodes and this node
 
 "
 
@@ -240,59 +260,47 @@ EOI
       makeflags="$makeflags $1"
       shift
       ;;
-    all)
-      target=all
-      shift
-      break
+    -P)
+      OCSPROJECT=$2
+      shift; shift
       ;;
-    sub)
-      target=sub
+    -P0)
+      OCSPROJECT=$OCSOM/specs/empty
       shift
-      break
       ;;
-    clean)
-      target=clean
-      shift
-      break
+    -S)
+      localsysdefs=$2
+      shift; shift
       ;;
-    cleanall)
-      target=cleanall
-      shift
-      break
+    -y)
+      target="$target $2"
+      shift; shift
       ;;
-    gen)
-      target=gen
-      shift
-      break
-      ;;
-    genall)
-      target=genall
-      shift
-      break
-      ;;
+    all | \
+    sub | \
+    check | \
+    clean | \
+    cleanall | \
+    cleandoc | \
+    cleanobj | \
+    cleanobjall | \
+    doc | \
+    dvi | \
+    gen | \
+    genall | \
+    html | \
+    install | \
+    installthis | \
+    thisdoc | \
+    thisdocall | \
     pack)
-      target=pack
+      target=$1
       shift
       break
       ;;
     sendbug)
       $OCSOM/etc/sendbug
       exit 0
-      ;;
-    install)
-      target=install
-      shift
-      break
-      ;;
-    installthis)
-      target=installthis
-      shift
-      break
-      ;;
-    check)
-      target=check
-      shift
-      break
       ;;
     *)
       ${CAT} <<EOI
@@ -340,13 +348,34 @@ then
   fi
 fi
 
+if [ -n "$localsysdefs" ]; then
+    if [ -f $sysdefs ]; then
+	${MV} $sysdefs SysDefs.$$
+	oldsysdefs=$sysdefs
+    fi
+    ${CP} -f $localsysdefs SysDefs
+    sysdefs=SysDefs
+fi
+
+#echo "local $localsysdefs old $oldsysdefs"
+
 if [ -r "$sysdefs" ] 
 then
     (${XGMAKE} -f $OCSOM/make/Makefile.develop \
-	 "SYSDEFS=$sysdefs" $makeflags $target 2>&1 || echo "+++failure+++") \
+	 "SYSDEFS=$sysdefs" $makeflags $target 2>&1 || echo "+++failure+++"; exit 9) \
     | ${OCSOM}/etc/filterocs $target
-    exit $status
 else
   ${ECHO} "No file \`SysDefs' and no system definition on command line"
-  exit 255
+  exit 127
 fi
+
+#echo "local $localsysdefs old $oldsysdefs"
+
+if [ -n "$localsysdefs" ]; then
+    ${RM} SysDefs
+    if [ -n "$oldsysdefs" ]; then
+	${MV} SysDefs.$$ $oldsysdefs
+    fi
+fi
+
+exit $status
