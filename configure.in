@@ -1,0 +1,728 @@
+# Process this file with autoconf to produce a configure script.
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.1 1999-09-16 20:47:38 kd Exp $
+
+AC_INIT(ocs-version)
+
+# -------------------------------------------------------------------------
+# Clearing unwanted defaults
+
+CC=
+CPP=
+CFLAGS=
+CPPFLAGS=
+LDFLAGS=
+LIBS=
+DEFS=
+
+
+# -------------------------------------------------------------------------
+# Macro definitions
+
+dnl
+AC_SUBST(ocs_DEFS)
+AC_DEFUN(OCS_DEFINE_GENERAL, [ocs_DEFS="$ocs_DEFS -D$1"])
+
+
+dnl Try from a sequence of compiler flags the first which is accepted
+AC_DEFUN(OCS_TRY_CC_FLAGS,
+[AC_CACHE_VAL($1,
+  [$1=
+  for ocs_flag in $2
+  do 
+    cat > conftest.c <<EOF
+int main() {return 0;}
+EOF
+    if test -z "`$CC -c $ocs_flag conftest.c 2>&1 1>/dev/null`"
+    then
+      $1="$ocs_flag"
+      break
+    fi
+  done
+  rm -f conftest* a.out
+  if test -n "[$]$1" && test -n "$3"
+  then
+    ocs_act="$3"
+  else
+    if test -z "[$]$1" && test -n "$4"
+    then
+      ocs_act="$4"
+    else
+      ocs_act=":"
+    fi
+  fi
+  $ocs_act]
+)])
+
+dnl Check for a feature
+dnl   external name, internal name, default-value, help-text
+AC_DEFUN(OCS_CHECK_FEATURE,[
+  AC_MSG_CHECKING(feature $1)
+  AC_ARG_ENABLE($1, [$4],
+    ocs_cv_feature_$2=[$]enableval,
+    AC_CACHE_VAL(ocs_cv_feature_$2,ocs_cv_feature_$2=$3)
+  )
+  AC_MSG_RESULT([$]ocs_cv_feature_$2)]
+)
+
+dnl Search for a program depending on feature absolute-pathes
+dnl   variable, list of possible names, action if not found
+AC_DEFUN(OCS_CHECK_PROGS,[
+  if test "[$]ocs_cv_feature_absolute_pathes" = yes
+  then
+     AC_PATH_PROGS([$1], [$2], [$3])
+  else
+     AC_CHECK_PROGS([$1], [$2], [$3])
+  fi]
+)
+
+dnl Search for a program depending on feature absolute-pathes
+dnl   variable, list of possible names, abort message if not found
+AC_DEFUN(OCS_CHECK_PROGS_ABORT,[
+  if test "[$]ocs_cv_feature_absolute_pathes" = yes
+  then
+     AC_PATH_PROGS([$1], [$2], "")
+  else
+     AC_CHECK_PROGS([$1], [$2], "")
+  fi]
+  if test -z "[$]$1" 
+  then	
+  AC_MSG_ERROR($3)
+  fi
+)
+
+dnl Search for a program depending on feature absolute-pathes
+dnl   variable, list of possible names, action if not found
+AC_DEFUN(OCS_CHECK_OPT_PROGS,[
+  if test "[$]ocs_cv_feature_absolute_pathes" = yes
+  then
+     AC_PATH_PROGS([$1], [$2])
+  else
+     AC_CHECK_PROGS([$1], [$2])
+  fi
+  if test -z "$1" 	
+  then
+  AC_MSG_WARN(could not find $2. This restricts the usability of Dosfop.)
+  fi
+]
+)
+
+dnl check for setting of a feature. if not set, but we have GNU CC,
+dnl substitute default. otherwise stop with error message
+AC_DEFUN(OCS_CHECK_FEATURE_GNU,[
+  AC_MSG_CHECKING($3)
+  if test -z "[$]ocs_cv_feature_$1"
+  then
+    if test "[$]GCC" = "yes"
+    then
+      ocs_cv_feature_$1=$2
+    fi
+  fi
+  if test -z "[$]ocs_cv_feature_$1"
+  then
+    AC_MSG_ERROR(cannot figure out $3 - use -enable-$1=XXX)
+  else
+    AC_MSG_RESULT($ocs_cv_feature_$1)
+  fi
+  AC_SUBST(ocs_cv_feature_$1)
+])	
+  	
+
+
+# -------------------------------------------------------------------------
+# Checking features 
+
+
+OCS_CHECK_FEATURE(simple-opal, simple_opal, no, 
+  [  --enable-simple-opal          install just basic library and compiler])
+# this feature needs to be exported
+AC_SUBST(ocs_cv_feature_simple_opal)
+AC_SUBST(ocs_cv_feature_dynamic)
+if test "$ocs_cv_feature_simple_opal" = "yes"
+then
+  ocs_cv_feature_dynamic=no
+else
+  ocs_cv_feature_dynamic=yes
+fi
+
+OCS_CHECK_FEATURE(absolute-pathes, absolute_pathes, yes,
+  [  --enable-absolute-pathes	burn absolute pathes to tools])
+
+OCS_CHECK_FEATURE(cflags, cflags, no,
+  [  --enable-cflags=FLAGS      pass FLAGS on C compilation])
+
+OCS_CHECK_FEATURE(ldflags, ldflags, no,
+  [  --enable-ldflags=FLAGS     pass FLAGS on linkage])
+
+OCS_CHECK_FEATURE(libs, libs, no,
+  [  --enable-libs=LIBS         use LIBS on linkage])
+
+OCS_CHECK_FEATURE(dldflags, dldflags, no,
+  [  --enable-dldlflags=FLAGS   pass FLAGS on linkage of dynamic])
+
+OCS_CHECK_FEATURE(dldlibs, dldlibs, no,
+  [  --enable-dldlibs=LIBS      use LIBS on linkage of dynamic])
+
+
+
+# -------------------------------------------------------------------------
+# Checks for C compiler characteristics and general configuration
+
+AC_SUBST(ocs_CC)
+AC_SUBST(ocs_cv_flag_cc_opt)
+AC_SUBST(ocs_cv_flag_cc_debug)
+AC_SUBST(ocs_cv_flag_cc_profile)
+
+
+# Check for C compiler
+
+CFLAGS=
+
+AC_PROG_CC 
+dnl to add path
+OCS_CHECK_PROGS(ac_cv_path_CC,$ac_cv_prog_CC)
+
+if test "$ocs_cv_feature_cflags" != no
+then
+  ocs_CC="$ac_cv_path_CC  $ocs_cv_feature_cflags"
+else
+  ocs_CC="$ac_cv_path_CC"
+fi
+CC="$ocs_CC"
+CFLAGS=
+
+# Check for POSIX ISC
+
+AC_ISC_POSIX
+
+ocs_CC="$CC"
+
+
+# Check how to run the preprocessor
+
+AC_PROG_CPP
+
+
+
+dnl # Check for POSIX.1
+
+dnl It seems there is no canonical way to enable partial POSIX.1
+dnl support on the diverse systems
+dnl
+dnl	NeXT, SunOS4.1.3	requires	-D_POSIX_SOURCE
+dnl	DECStation (ULTIRX)	requires	-DPOSIX
+
+dnl if test "$ISC" != yes
+dnl then
+dnl   AC_MSG_CHECKING(for POSIX.1 support)
+dnl   AC_CACHE_VAL(ocs_cv_define_posix,
+dnl     save_cppflags="$CPPFLAGS"
+dnl     CPPFLAGS="$CPPFLAGS -D_POSIX_SOURCE"
+dnl     AC_EGREP_CPP(has__POSIX_VERSION, 
+dnl       [#include <unistd.h>
+dnl        #ifdef _POSIX_VERSION
+dnl          has__POSIX_VERSION
+dnl        #endif],
+dnl       ocs_cv_define_posix=yes, ocs_cv_define_posix=no
+dnl     )
+dnl     CPPFLAGS="$save_cppflags"
+dnl   )
+dnl   AC_MSG_RESULT($ocs_cv_define_posix)
+dnl   if test "$ocs_cv_define_posix" = yes
+dnl   then
+dnl     ocs_CC="$ocs_CC -D_POSIX_SOURCE"
+dnl     CC="$ocs_CC"
+dnl     CPPFLAGS="$CPPFLAGS -D_POSIX_SOURCE"
+dnl   fi
+dnl fi
+
+
+
+
+# Check if word sizes are as expected
+
+AC_CHECK_SIZEOF(void *)
+if test "$ac_cv_sizeof_void_p" -lt 4
+then
+   AC_MSG_ERROR(Sorry. You cannot use OCS at the moment
+on systems with less than 32 bits per word.)
+fi
+
+
+# Check for C compiler optimization flags 
+
+AC_MSG_CHECKING(C compiler optimization flags)
+OCS_TRY_CC_FLAGS(ocs_cv_flag_cc_opt, -O2 -O)
+AC_MSG_RESULT($ocs_cv_flag_cc_opt)
+if test -z "$ocs_cv_flag_cc_opt"
+then
+  AC_MSG_WARN(cannot figure out how to optimize with $CC (will be disabled))
+fi
+AC_SUBST(ocs_cv_flag_cc_opt)
+
+
+# Check for C compiler debugging flags 
+
+AC_MSG_CHECKING(C compiler debugging flags)
+OCS_TRY_CC_FLAGS(ocs_cv_flag_cc_debug, -g)
+AC_MSG_RESULT($ocs_cv_flag_cc_debug)
+if test -z "$ocs_cv_flag_cc_debug"
+then
+  AC_MSG_WARN(cannot figure out how to debug with $CC (will be disabled))
+fi
+
+
+# Check for C compiler profiling flags 
+
+AC_MSG_CHECKING(C compiler profiling flags)
+OCS_TRY_CC_FLAGS(ocs_cv_flag_cc_profile, "-g -pg" "-g -p")
+AC_MSG_RESULT($ocs_cv_flag_cc_profile)
+if test -z "$ocs_cv_flag_cc_profile"
+then
+  AC_MSG_WARN(cannot figure out how to profile with $CC (will be disabled))
+fi
+
+
+# Check if we have to align doubles - always set currently
+
+OCS_DEFINE_GENERAL(_ALIGN_DOUBLE_)
+
+
+# -------------------------------------------------------------------------
+# Check linker and libraries
+
+AC_SUBST(ocs_LD)
+AC_SUBST(ocs_LIBS)
+
+if test "$ocs_cv_feature_ldflags" != no
+then
+  ocs_LD="$ac_cv_path_CC $ocs_cv_feature_ldflags"
+  LDFLAGS="$ocs_cv_feature_ldflags"
+else
+  ocs_LD="$ac_cv_path_CC"
+  LDFLAGS=
+fi
+
+if test "$ocs_cv_feature_libs" != no
+then
+  ocs_LIBS="$ocs_cv_feature_libs"
+else
+  AC_CHECK_LIB(m, main, ocs_LIBS="$ocs_LIBS -lm")
+  if test "$ocs_cv_feature_dynamic" = yes
+  then
+      AC_CHECK_LIB(dl, main, ocs_LIBS="$ocs_LIBS -ldl")
+  fi
+fi
+
+case "$ocs_LIBS" in
+  *-lm*)
+    ;;
+  *)
+    AC_MSG_WARN(-lm not provided)
+    ;;
+esac
+
+LIBS="$ocs_LIBS"
+
+if test "$ocs_cv_feature_libs" != no
+then 
+  AC_MSG_CHECKING(whether $ocs_LIBS links)
+  AC_TRY_LINK(,[return 0;],AC_MSG_RESULT(yes), AC_MSG_RESULT(no))
+fi
+
+
+# -------------------------------------------------------------------------
+# Check for dynamic linker
+
+AC_SUBST(ocs_DLD)
+AC_SUBST(ocs_DLDLIBS)
+AC_SUBST(ocs_cv_flag_cc_pic)
+AC_SUBST(ocs_cv_flag_cc_shared)
+AC_SUBST(ocs_LD)
+AC_SUBST(ocs_cv_ldstatic)
+AC_SUBST(ocs_cv_lddynamic)
+AC_SUBST(ocs_cv_ldrpath)
+AC_SUBST(ocs_cv_ldrpathlink)
+AC_SUBST(ocs_cv_soname)
+
+ocs_cv_ldstatic=
+ocs_cv_lddynamic=
+ocs_cv_ldrpath=
+ocs_cv_ldrpathlink=
+ocs_cv_soname=
+
+if test "$ocs_cv_feature_dynamic" = "yes"
+then
+
+AC_MSG_CHECKING(how to produce position-independent code)
+if test "$ac_cv_prog_gcc" = yes
+then
+  OCS_TRY_CC_FLAGS(ocs_cv_flag_cc_pic, -fPIC -fpic)
+else
+  OCS_TRY_CC_FLAGS(ocs_cv_flag_cc_pic, -PIC -pic "-K PIC" "-K pic")
+fi
+AC_MSG_RESULT($ocs_cv_flag_cc_pic)
+if test -z "$ocs_cv_flag_cc_pic"
+then
+  AC_MSG_WARN(cannot figure out how to produce position-independent code (ignored))
+fi
+
+if test "$ocs_cv_feature_dldflags" = no
+then
+  AC_MSG_CHECKING(how to link shared objects)
+  OCS_TRY_CC_FLAGS(ocs_cv_flag_cc_shared, -shared)
+  AC_MSG_RESULT($ocs_cv_flag_cc_shared)
+  if test -z "$ocs_cv_flag_cc_shared"
+  then
+    AC_MSG_WARN(cannot figure out how to link shared objects (ignored))
+  fi
+  ocs_DLD="$ac_cv_path_CC $ocs_LDFLAGS $ocs_cv_flag_cc_shared"
+else
+  ocs_DLD="$ac_cv_path_CC $ocs_LDFLAGS $ocs_cv_feature_dldflags"
+fi
+
+if test "$ocs_cv_feature_dldlibs" != no
+then
+  ocs_DLDLIBS="$ocs_LIBS $ocs_cv_feature_dldlibs"
+else
+  ocs_DLDLIBS="$ocs_LIBS"
+fi
+
+
+OCS_CHECK_FEATURE_GNU(ldrpath,[-Wl,-rpath,],how to add directory to linker's runtime library search path)
+OCS_CHECK_FEATURE_GNU(ldrpathlink, [-Wl,-rpath-link,],how to add direectory to linker's link time library search path)
+OCS_CHECK_FEATURE_GNU(soname,[-Wl,-soname,],how to set internal SONAME field)
+OCS_CHECK_FEATURE_GNU(ldstatic, "-Xlinker -Bstatic", how to mark static link targets)
+OCS_CHECK_FEATURE_GNU(lddynamic, "-Xlinker -Bdynamic", how to mark dynamic link targets)
+
+ocs_LD="$ocs_CC $ocs_cv_feature_ldrpath\${OCSLIBPATH} $ocs_cv_feature_ldrpathlink\${OCSLIBPATH}"
+else
+dnl no dynamic linker
+ocs_LD=$ocs_CC	
+fi
+
+# -------------------------------------------------------------------------
+# Check for basic includes
+
+AC_HEADER_STDC
+if test "$ac_cv_header_stdc" = no
+then
+  AC_MSG_WARN(seem to have no STDC headers (might cause problems))
+fi
+
+AC_CHECK_HEADERS(unistd.h memory.h)
+
+
+# -------------------------------------------------------------------------
+# Check system types
+
+AC_CHECK_HEADERS(sys/types.h limits.h)
+
+AC_TYPE_UID_T
+AC_TYPE_MODE_T
+AC_TYPE_PID_T
+AC_TYPE_SIZE_T
+AC_TYPE_SIGNAL
+AC_TYPE_GETGROUPS
+
+# -------------------------------------------------------------------------
+# Check user and groups
+
+AC_CHECK_HEADERS(pwd.h grp.h)
+
+# -------------------------------------------------------------------------
+# Check process control facilities
+
+AC_HEADER_SYS_WAIT
+
+# -------------------------------------------------------------------------
+# Check time facilities and stat
+
+AC_CHECK_HEADERS(sys/time.h sys/times.h sys/stat.h utime.h)
+AC_HEADER_TIME
+AC_FUNC_UTIME_NULL
+
+# -------------------------------------------------------------------------
+# Check for dirent
+
+AC_HEADER_DIRENT
+
+# -------------------------------------------------------------------------
+# Check for float ranges
+
+AC_MSG_CHECKING(for DBL_MAX et al. in <float.h>)
+AC_EGREP_CPP(has__DBL_MAX, 
+  [#include <stdlib.h>
+#include <float.h>
+#ifdef DBL_MAX 
+  has__DBL_MAX
+#endif
+  ], 
+  [AC_MSG_RESULT(yes)
+  AC_DEFINE(HAVE_DBL_MAX)], 
+  [AC_MSG_RESULT(no)
+  AC_MSG_CHECKING(for MAXDOUBLE et al. in <values.h>)
+  AC_EGREP_CPP(has__MAXDOUBLE, 
+    [#include <stdlib.h>
+#include <values.h>
+#ifdef MAXDOUBLE 
+  has__MAXDOUBLE
+#endif
+    ], 
+    [AC_MSG_RESULT(yes)
+    AC_DEFINE(HAVE_MAXDOUBLE)],
+    AC_MSG_RESULT(no)
+  )]
+)
+
+# -------------------------------------------------------------------------
+# Checks for library functions.
+
+AC_CHECK_FUNCS(getcwd mkdir mkfifo rmdir times clock)
+AC_CHECK_FUNCS(strerror strftime strtod difftime)
+
+if test "$ac_cv_func_strerror" = no
+then
+  AC_CHECK_FUNCS(sys_errlist)
+fi
+
+
+AC_FUNC_MEMCMP
+if test "$ac_cv_func_memcmp" = yes
+then
+  AC_DEFINE(HAVE_CLEAN_MEMCMP)
+fi
+
+AC_FUNC_GETPGRP
+
+
+if test "$ocs_cv_feature_dynamic" = yes
+then
+  AC_CHECK_FUNCS(dlopen)
+  if test "$ac_cv_func_dlopen" = no
+  then
+    AC_MSG_WARN(cannot support runtime linking on this machine)
+  fi
+fi
+
+
+
+# -------------------------------------------------------------------------
+# Check for lex/flex
+
+AC_SUBST(ac_cv_path_LEX)
+AC_SUBST(ocs_cv_flag_cc_lexlib)
+
+if test -z "$ac_cv_path_LEX"
+then
+  AC_PROG_LEX
+  ocs_cv_flag_cc_lexlib="$LEXLIB"
+  if test -z "$LEXLIB"
+  then
+    AC_MSG_WARN(Could not find a library for $ac_cv_prog_LEX. 
+Falling back to lex with -ll.) 
+    ac_cv_prog_LEX=lex
+    ocs_cv_flag_cc_lexlib="-ll"
+  fi
+  OCS_CHECK_PROGS(ac_cv_path_LEX,$ac_cv_prog_LEX)
+fi
+
+
+# -------------------------------------------------------------------------
+# Check for archiver, nm, ranlib and strip
+
+AC_SUBST(ac_cv_path_AR)
+AC_SUBST(ac_cv_path_RANLIB)
+AC_SUBST(ac_cv_path_UPDLIB)
+AC_SUBST(ac_cv_path_STRIP)
+AC_SUBST(ac_cv_path_NM)
+
+OCS_CHECK_PROGS(ac_cv_path_AR,ar,no)
+if test "$ac_cv_path_AR" = no
+then
+  AC_MSG_ERROR(cannot locate the archiver (ar) in your path)
+fi
+
+OCS_CHECK_PROGS(ac_cv_path_RANLIB,ranlib,:)
+ac_cv_path_UPDLIB="$ac_cv_path_RANLIB"
+
+
+OCS_CHECK_PROGS(ac_cv_path_STRIP,strip,:)
+OCS_CHECK_PROGS(ac_cv_path_NM,nm,AC_MSG_ERROR("no nm program found"))
+
+# -------------------------------------------------------------------------
+# Check for gmake
+
+AC_SUBST(ocs_GMAKE)
+
+AC_MSG_CHECKING(for GNU make)
+OCS_CHECK_PROGS(ac_cv_path_GMAKE, gmake make)
+
+if $ac_cv_path_GMAKE --version 2>&1 | grep "GNU" 1>/dev/null 2>&1 
+then
+    if $ac_cv_path_GMAKE --version --no-print-directory 1>/dev/null 2>&1 
+    then
+      ocs_GMAKE="$ac_cv_path_GMAKE --no-print-directory"
+    else
+      ocs_GMAKE="$ac_cv_path_GMAKE"
+    fi
+else
+   AC_MSG_ERROR($ac_cv_path_GMAKE seems not to be GNU make.
+OCS cannot operate without GNU make.)
+fi
+
+
+# -------------------------------------------------------------------------
+# Checks for general UNIX tools
+
+AC_SUBST(ac_cv_path_CD)
+AC_SUBST(ac_cv_path_ECHO)
+AC_SUBST(ac_cv_path_LS)
+AC_SUBST(ac_cv_path_CAT)
+AC_SUBST(ac_cv_path_DATE)
+AC_SUBST(ac_cv_path_MKDIR)
+AC_SUBST(ac_cv_path_CP)
+AC_SUBST(ac_cv_path_RM)
+AC_SUBST(ac_cv_path_MV)
+AC_SUBST(ac_cv_path_XARGS)
+AC_SUBST(ac_cv_path_BASENAME)
+AC_SUBST(ac_cv_path_SED)
+AC_SUBST(ac_cv_path_EXPR)
+AC_SUBST(ac_cv_path_CHMOD)
+AC_SUBST(ac_cv_path_CHGRP)
+AC_SUBST(ac_cv_path_COMPRESS)
+AC_SUBST(ac_cv_path_TAR)
+AC_SUBST(ac_cv_path_CMP)
+
+ac_cv_path_CD=cd
+ac_cv_path_ECHO=echo
+OCS_CHECK_PROGS(ac_cv_path_LS,ls,[echo config error: no ls;exit 1: ])
+OCS_CHECK_PROGS(ac_cv_path_CAT,cat,[echo config error: no cat;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_DATE,date,:)
+OCS_CHECK_PROGS(ac_cv_path_MKDIR,mkdir,[echo config error: no mkdir;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_CP,cp,[echo config error: no cp;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_RM,rm,[echo config error: no rm;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_MV,mv,[echo config error: no mv;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_XARGS,xargs,[echo config error: no xargs;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_BASENAME,basename,[echo config error: no basename;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_SED,gsed sed,[echo config error: no sed;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_EXPR,expr,[echo config error: no expr;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_CHMOD,chmod,:)
+OCS_CHECK_PROGS(ac_cv_path_CHGRP,chgrp,:)
+OCS_CHECK_PROGS(ac_cv_path_COMPRESS,gzip,[echo config error: no gzip;exit 1;: ])
+OCS_CHECK_PROGS(ac_cv_path_TAR,gtar tar,:)
+OCS_CHECK_PROGS(ac_cv_path_CMP,cmp,false)
+
+## special needs for documentation / dosfop
+AC_SUBST(ac_cv_path_PERL)
+AC_SUBST(ac_cv_path_WISH)
+AC_SUBST(ac_cv_path_TEX)
+AC_SUBST(ac_cv_path_LATEX)
+AC_SUBST(ac_cv_path_XDVI)
+AC_SUBST(ac_cv_path_DVIPS)
+AC_SUBST(ac_cv_path_TEXINDEX)
+AC_SUBST(ac_cv_path_MAKEINFO)
+
+OCS_CHECK_PROGS_ABORT(ac_cv_path_PERL,perl,no perl interpreter found)
+OCS_CHECK_PROGS_ABORT(ac_cv_path_WISH,wish,no wish interpreter found)
+OCS_CHECK_PROGS_ABORT(ac_cv_path_TEX,tex,no TeX found)
+OCS_CHECK_PROGS_ABORT(ac_cv_path_LATEX,latex,no LaTeX found)
+OCS_CHECK_PROGS_ABORT(ac_cv_path_DVIPS,dvips,no dvips found)
+OCS_CHECK_OPT_PROGS(ac_cv_path_XDVI,xdvi)
+OCS_CHECK_OPT_PROGS(ac_cv_path_TEXINDEX,texindex)
+OCS_CHECK_OPT_PROGS(ac_cv_path_MAKEINFO,makeinfo)
+
+## make version available
+AC_SUBST(ocs_version)
+ocs_version=2.3d
+
+## get current system
+AC_CANONICAL_HOST
+
+## get absolute path for sourcedir
+ocs_abssrcdir=`pwd`; echo "absolute path: $ocs_abssrcdir"; 
+AC_SUBST(ocs_abssrcdir)
+
+# ----------------------------------------------------------------------
+# check for readline library
+if test "$ocs_cv_feature_simple_opal" = "no"
+then
+  AC_SUBST(ocs_lib_readline)
+  AC_CHECK_LIB(readline, readline,ocs_lib_readline="\${LDSTATIC} -lreadline \${LDSTATIC} -lncurses \${LDDYNAMIC}",,-lncurses)
+  if test -z "$ocs_lib_readline"
+  then
+  AC_ERROR(cannot link readline library)
+  fi
+fi
+
+# ----------------------------------------------------------------------
+# check for tcl library
+if test "$ocs_cv_feature_simple_opal" = "no"
+then
+  AC_SUBST(ocs_lib_tcl)
+  AC_CHECK_LIB(tcl, Tcl_CreateInterp,ocs_lib_tcl="-ltcl")
+  if test -z "$ocs_lib_tcl"
+  then
+  AC_CHECK_LIB(tcl8.0, Tcl_CreateInterp,ocs_lib_tcl="-ltcl8.0")
+  fi		
+  if test -z "$ocs_lib_tcl"
+  then
+  AC_CHECK_LIB(tcl7.6, Tcl_CreateInterp,ocs_lib_tcl="-ltcl7.6")
+  fi		
+  if test -z "$ocs_lib_tcl"
+  then
+  AC_ERROR(cannot link tcl library)
+  fi
+fi
+# ----------------------------------------------------------------------
+# check for tk library
+if test "$ocs_cv_feature_simple_opal" = "no"
+then
+  AC_SUBST(X_CFLAGS)
+  AC_SUBST(X_LIBS)
+  AC_SUBST(X_EXTRA_LIBS)
+  AC_PATH_XTRA
+  if test "$no_x" = "yes"
+  then
+    AC_ERROR("need X for opal_tk library")
+  fi
+  AC_SUBST(ocs_lib_tk)
+  AC_CHECK_LIB(tk, Tk_MainWindow,ocs_lib_tk="-ltk",,$X_LIBS -lX11 $ocs_lib_tcl)
+  if test -z "$ocs_lib_tk"
+  then
+  AC_CHECK_LIB(tk8.0, Tk_MainWindow,ocs_lib_tk="-ltk8.0",,$X_LIBS -lX11 $ocs_lib_tcl)
+  fi		
+  if test -z "$ocs_lib_tk"
+  then
+  AC_CHECK_LIB(tk4.2, Tk_MainWindow,ocs_lib_tk="-ltk4.2",,$X_LIBS -lX11 $ocs_lib_tcl)
+  fi		
+  if test -z "$ocs_lib_tk"
+  then
+  AC_ERROR(cannot link tk library)
+  fi
+fi
+
+## documentation
+AC_SUBST(ocs_doc_new23b)
+AC_SUBST(ocs_doc_new23c)
+AC_SUBST(ocs_doc_new23d)
+dnl beginning space is important!
+ocs_doc_new23b=
+ocs_doc_new23c=
+ocs_doc_new23d=' (<img src="new.gif" alt="new"> in 2.3d)'
+
+# -------------------------------------------------------------------------
+# Output
+
+AC_CONFIG_HEADER(src/lib/Internal/Compiler/unixconfig.h)
+
+AC_OUTPUT(Makefile
+	  src/om/specs/Specs.basic
+	  src/om/specs/Specs.lib.opal_readline
+	  src/om/specs/Specs.lib.opal_tcl
+	  src/om/specs/Specs.lib.opal_tk
+	  doc/index/index.html
+	  doc/index/index_overview.html
+	  doc/minitutorial/mintut_uselb.html
+	  doc/minitutorial/mintut_prep.html
+	  doc/minitutorial/mintut_oasys.html)
+

@@ -279,7 +279,7 @@
 #define GETPGRP_VOID 1 
 
 /* Define if memcmp is 8-bit clean */
-#define HAVE_CLEAN_MEMCMP 1 
+/* #undef HAVE_CLEAN_MEMCMP */ 
 
 #ifndef HAVE_CLEAN_MEMCMP
   extern int ocsmemcmp(const void *, const void *, size_t);
