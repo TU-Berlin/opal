@@ -1,0 +1,64 @@
+IMPLEMENTATION DecodeForm
+
+IMPORT Pair ONLY pair & unpair
+       Com ONLY com succeed 
+       ComCompose ONLY &
+       Option ONLY option nil nil? cont avail
+       RepoDiag ONLY ok error freeRef !! mode ref
+       Loquacity ONLY progress debugMsg
+       Nat ONLY 6 nat
+       Denotation ONLY ++ =
+       ExtendP ONLY extendUnitA
+       InternCompile ONLY failure? diag success? absy extendResult
+       RepoInternAbsy ONLY readAbsy objects readResult:SORT
+       IdMap ONLY find? idmap
+       RepoAbsy COMPLETELY
+       Seq ONLY <>?
+       ReflexTrans ONLY refl formula
+       String ONLY string
+       InterOpal ONLY interOpal:SORT
+       Id ONLY id
+       PCEnv ONLY lawName
+       ComSeqMapEnv ONLY &&
+
+DEF decFormula(uN, preform)(R) ==
+  progress(6, \\ . "compiling formula abbr ...")(R) & (\\ R1.
+  LET newText == "  LEMMA $$ : ==> \n" ++ preform
+  IN
+  debugMsg("decFormula", \\ . "inserted text: " ++ newText)(R1) & (\\ R2.
+  extendUnitA(uN, newText)(R2) && (\\ res, R3.
+  IF failure?(res) THEN
+    debugMsg("decFormula", \\ . "failure extendUnitA")(R3) & (\\ R4:repo.
+    succeed((nil[formula] & diag(res)) & R4)
+    )
+  IF success?(res) THEN
+    LET (absyR, R4) == readAbsy(absy(res), true)(R3)
+        obs == objects(absyR)
+        newObs == find?(\\ o. IF kind(o) oper? THEN symbol(o) = "PROOF%$$"
+                              ELSE false FI, obs)
+    IN
+    IF newObs nil? THEN
+      debugMsg("decFormula", \\ . "no object")(R4) & (\\ R5.
+      succeed((nil & 
+              (error, freeRef("decFormula")) !!
+              ("inserted LEMMA $$ not found")) & R5)
+      )
+    ELSE
+      debugMsg("decFormula", \\ . "found Lemma")(R4) & (\\ R5.
+      LET f == fct(kind(cont(newObs)))
+      IN
+      IF f funct? ANDIF dom(f) cart? ANDIF elems(dom(f)) <>? ANDIF
+        name?(codom(f)) THEN
+        LET (R6, lN) == refl(R5, uN)(sort(codom(f)))
+            (R7, form) == formula(lN, uN)(R6)
+        IN
+        succeed((avail(form) & diag(res)) & R7)
+      ELSE
+        succeed((nil &
+                (error, freeRef("decFormula")) !!
+                ("wrong functionality of internal LEMMA ?!")) & R5)
+      FI
+      )
+    FI
+  FI
+  )))

@@ -109,12 +109,13 @@ IMPORT INLINE ONLY INLINE
        Id ONLY id < no
        SeqMap ONLY *
        UnitHandling ONLY sourceImports checkSourceImports checkImportedUnits
+       DecodeForm ONLY decFormula
 
 FUN compileTime: denotation
 DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
 
 DEF initPChecker == 
-    write(stdOut, title("property checker 2.8a ")) & (\\ _ .
+    write(stdOut, title("justification checker 2.8b ")) & (\\ _ .
     writeLine(stdOut, compileTime) & (\\ _ .
     register(pceHandler) & (\\ _ .
     register(updatePrettyAn) & (\\ _ .
@@ -125,13 +126,13 @@ DEF finitPChecker == upd(storePces) & removeDotTrace
 
 FUN pcheckerCmdtable: cmdtable[denotation]
 DEF pcheckerCmdtable ==
-    cmd(lit("pcheck-dump") o 
+    cmd(lit("jcheck-dump") o 
         ((lit("instances") o unitNameSpec & 2nd @ pcheckDumpInstances)
         |(lit("deps") o unitNameSpec &2nd @ pcheckDumpDeps)
         ) & 2nd,
         "dump known instances of specified unit")
     ++
-    cmd(lit("pcheck-intern") o 
+    cmd(lit("jcheck-intern") o 
         ((lit("requireFullAbsy") o unitNameSpec & 2nd @
           pcheckDo(requireFullAbsy))
          |(lit("proofSemantics") o unitNameSpec & 2nd @ pcheckProofSem)
@@ -147,13 +148,13 @@ DEF pcheckerCmdtable ==
         "execute internal commands: \n" ++
         "fulness ORIGIN INSTANCE  (use t and d): control printing of terms")
     ++
-    cmd(lit("pcheck-verbosity") o
+    cmd(lit("jcheck-verbosity") o
         ( (nat("set", noCompletion) @ pcheckSetLevel)
         | (lit("show")  @ pcheckShowLevel)
         ) & 2nd,
         "set or show verbosity level")
     ++
-    cmd(lit("pcheck-debug") o
+    cmd(lit("jcheck-debug") o
         ( (lit("add") o *(var("debug tag")) & 2nd @ pcheckDebugIncl)
         | (lit("rm") o *(var("debug tag")) & 2nd @ pcheckDebugExcl)
         | (lit("show")  @ pcheckDebugShow)
@@ -161,61 +162,64 @@ DEF pcheckerCmdtable ==
         ) & 2nd, 
         "add, remove, show, reset to default of debug tags")
     ++
-    cmd(lit("pcheck-uid") o
+    cmd(lit("jcheck-uid") o
         ( (lit("add") o *(var("user id")) & 2nd @ pcheckUidIncl)
         | (lit("rm") o *(var("user id")) & 2nd @ pcheckUidExcl)
         | (lit("show")  @ pcheckUidShow)
         ) & 2nd, 
         "add, remove, show uid to set of registered user ids for certification") 
     ++
-    cmd(lit("pcheck-log") o
+    cmd(lit("jcheck-log") o
         ( (lit("on")  @ (\\ _ . loggingOn & succeed("logging on")))
         | (lit("off") @ (\\ _ . loggingOff & succeed("logging off")))
         ) & 2nd,
         "switch logging to file \"oasyslog\" on or off")
     ++
-    cmd(lit("pcheck-obligations") o unitNameSpec & 2nd @ pcheckObligations,
+    cmd(lit("jcheck-obligations") o unitNameSpec & 2nd @ pcheckObligations,
         "print proof obligations for unit")
     ++
-    cmd(lit("pcheck-completeness") o unitNameSpec & 2nd @ pcheckCompleteness,
+    cmd(lit("jcheck-completeness") o unitNameSpec & 2nd @ pcheckCompleteness,
         "check proof completeness of unit")
     ++
-    cmd(lit("pcheck-correctness") o unitNameSpec & 2nd @ pcheckCorrectness,
+    cmd(lit("jcheck-correctness") o unitNameSpec & 2nd @ pcheckCorrectness,
         "check proof correctness of unit")
     ++
-    cmd(lit("pcheck-check") @ pcheckCheck,
+    cmd(lit("jcheck-check") @ pcheckCheck,
         "check and prove current unit")
     ++
-    cmd(lit("pcheck-compile") @ pcheckCompile,
+    cmd(lit("jcheck-compile") @ pcheckCompile,
         "check and prove and compile current unit")
     ++
-    cmd((lit("pcheck-proof") o var("proof-name-prefix") & 2nd) @ pcheckProof,
+    cmd((lit("jcheck-proof") o var("proof-name-prefix") & 2nd) @ pcheckProof,
         "check and prove proofs whose names begin with prefix in current unit")
     ++
-    cmd((lit("pcheck-proof-intern") o
+    cmd((lit("jcheck-proof-intern") o
          var("proof name prefix") & 2nd) @ pcheckProofIntern,
         "check and prove proofs whose names begin with prefix in current unit - dont set unit to interpreted")
     ++
-    cmd(lit("pcheck-interactive") o lit("start") o var("proof-name") & 2nd
+    cmd(lit("jcheck-interactive") o lit("start") o var("proof-name") & 2nd
         @ pcheckStartProof, 
         "start interactive proof of `proof-name' in current unit")
     ++
-    cmd(lit("pcheck-interactive") o lit("show") & 2nd @ pcheckShowProof,
+    cmd(lit("jcheck-interactive") o lit("show") & 2nd @ pcheckShowProof,
         "write trace of current interactive proof to file `.trace'")
     ++
-    cmd(lit("pcheck-interactive") o lit("finish") & 2nd @ pcheckFinishProof,
+    cmd(lit("jcheck-interactive") o lit("finish") & 2nd @ pcheckFinishProof,
         "finish current interactive proof")
     ++
-    cmd(lit("pcheck-interactive") o lit("add-formula") o
+    cmd(lit("jcheck-interactive") o lit("add-formula") o
             *(var("formula")) & 2nd @ pcheckAddFormula,
             "add formula to hypothese of interactive proof")
     ++ 
-    cmd(lit("pcheck-info") o
+    cmd(lit("jcheck-info") o
         (  (lit("testcases") o (objectNameSpec o objectNameSpec) &
             2nd @ pcheckInfoTestCases)
         |  (lit("env") o unitNameSpec & 2nd @ pcheckInfoEnv) 
+        |  (lit("formula") o *(var("formula")) & 2nd & pcheckInfoFormula)
         ) & 2nd, 
-        "testcases FUN HEUR: show testcases for FUN according to HEUR")
+        "testcases FUN HEUR: show testcases for FUN according to HEUR\n" ++
+        "env UNIT: show proof environment for unit\n" ++
+        "formula FORM: expand abbreviated formula\n")
        
         
 
@@ -281,7 +285,7 @@ DEF pcheckSetLevel(n) == setVerbosity(n) & succeed("")
 FUN pcheckShowLevel: denotation -> com[denotation]
 DEF pcheckShowLevel(_) ==
   verbosityLevel & (\\vl.
-  succeed("current pcheck verbosity level is " ++ (vl`))
+  succeed("current jcheck verbosity level is " ++ (vl`))
   )
 
 -- %$Debug commands$
@@ -477,7 +481,7 @@ DEF pcheckInteractiveDo(cmd) ==
     checkDo(checkUnits(%(uN))) & (\\ _ .
     query(related(transitive, imports)(uN)) & (\\ rel.
     query(\\ R. fmtSet(fmtUnitNameLong(R))(rel)) & (\\ debugT.
-    upd(debugMsg("pcheckI", \\ . "rel = " ++ pretty(debugT))) & (\\ _ .
+    upd(debugMsg("jcheckI", \\ . "rel = " ++ pretty(debugT))) & (\\ _ .
     checkAndCompile(rel) & (\\ _ .
     upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
               succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
@@ -586,7 +590,7 @@ DEF pcheckInfoTestCases(func & heur) ==
               ``(endReq - startReq, 2) ++ " sec") & (\\ _ .
     queryUpd(\\R. sendRepo(R) & (\\ R1.
                   doEvalTestCases(R1, uN, heur!, func,
-                                  freeRef("pcheck-info testcases")) & (\\ tr.
+                                  freeRef("jcheck-info testcases")) & (\\ tr.
                   succeed((2nd(tr) & 3rd(tr)) & 1st(tr))
              ))) & (\\ p.
     LET (diags, testcases) == unpair(p)
@@ -618,6 +622,32 @@ DEF pcheckInfoEnv(uN) ==
   dumpFmt(f) 
   ))))))))))
     
+FUN pcheckInfoFormula: seq[denotation] -> com[denotation]
+DEF pcheckInfoFormula(formulaparts) ==
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected")
+  ELSE
+    LET uN == uNv cont
+    IN
+    clearDiag(uN) & (\\ _ .
+    LET form == (+/+(" "), "") / formulaparts
+    IN
+    queryUpd(decFormula(uN, form)) & (\\ res.
+    LET (fv, ds) == unpair(res)
+    IN
+    checkDo(diag(ds)) & (\\ _ .
+    (IF avail?(fv) THEN 
+       query(\\ R. prettyFormula(R, uN)(cont(fv))) & (\\ fout.
+       log(pretty(fout)) & (\\ _ .
+       dumpFmt(fout)
+       ))
+     ELSE
+       dumpFmt(lit("no result"))
+     FI
+    )
+    )))
+  FI
+  )
 
 -- %$Auxiliary functions$
 

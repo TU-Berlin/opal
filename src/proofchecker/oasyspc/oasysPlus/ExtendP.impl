@@ -20,18 +20,32 @@ IMPORT RepoUnitAccess ONLY related transitive implImports symbol relMode relOp
        InterOpal ONLY interOpal:SORT
        RepoSource ONLY locator:SORT
 
-DEF extendUnitP(mainU, newText)(R) ==
+
+DEF extendUnitP == extendUnitP(false)
+DEF extendUnitA == extendUnitP(true)
+
+FUN extendUnitP: bool -> unitName ** denotation -> repo ->
+                  com[pair[extendResult, repo]]
+
+DEF extendUnitP(ass?)(mainU, newText)(R) ==
   LET deps == related(transitive, implImports)(mainU)(R)
-      (_, strs) == partition(theory?(R), deps)
+      (ths, strs) == partition(theory?(R), deps)
       imports == IF strs {}? THEN "" 
                  ELSE "IMPORT " ++ 
                    (+/+(" "), "") /[denotation,<,denotation]
                    ((\\u1. symbol(u1)(R) ++ " COMP" ++ "LETELY") * strs)
                    ++ ""
                  FI
-
+      asserts == IF ass? ANDIF ~(ths {}?) THEN
+                   (+/+(" "), "") /[denotation,<,denotation]
+                   ((\\u1. "ASSERT " ++ symbol(u1)(R) ++ "COMP" ++
+                           "LETELY") * ths)
+                 ELSE
+                   ""
+                 FI
   IN
-  extendUnit(mainU, imports ++ " " ++ newText, deps)(R) & (\\ ER.
+  extendUnit(mainU, imports ++ " " ++ asserts ++
+             " " ++ newText, deps)(R) & (\\ ER.
   LET (E, R1) == unpair(ER)
       ds == transDiag(avail o shift(-(2), 0), diag(E))
   IN
