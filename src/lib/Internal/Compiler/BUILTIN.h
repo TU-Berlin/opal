@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.3 1999-03-09 11:51:31 kd Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.4 2001-04-26 11:32:54 kd Exp $
  */
     
 
@@ -89,7 +89,7 @@ typedef union {				/* header of some cell */
 #define _size(h)	((h).info.size)
 #define _flags(h)	((h).info.flags)
 #define _mkHeader(h,s,r) {(h).info.size=s; (h).info.rc=r; (h).info.flags=0;}
-#define _link(h)	((h).link)
+#define _getLink(h)	((h).link)
 #define _setLink(h,p)	((h).link = (p))
 #define _maxIndex	(unsigned)0xffff
 #define _maxRc		(unsigned)0xffffffff
@@ -238,7 +238,7 @@ extern void _deAllocClos(OBJ);
 #ifndef _MEMSTAT_
 #define _alloc(s,r) {\
 	if (r = (OBJ)_freeList[make_flat_ssize(s)])		\
-	     _freeList[make_flat_ssize(s)] = _link(_header(r)); \
+	     _freeList[make_flat_ssize(s)] = _getLink(_header(r)); \
 	else r = (OBJ)_smallAlloc(s);}
 #define _deAlloc(o) {\
 	int __size = _size(_header(o));\
@@ -252,7 +252,7 @@ extern void _deAllocClos(OBJ);
 #define _alloc(s,r) {\
 	_ms_allocs[s]++; \
 	if (r = (OBJ)_freeList[make_flat_ssize(s)])		\
-	     _freeList[make_flat_ssize(s)] = _link(_header(r)); \
+	     _freeList[make_flat_ssize(s)] = _getLink(_header(r)); \
 	else r = (OBJ)_smallAlloc(s);}
 #define _deAlloc(o) {\
 	int __size = _size(_header(o));\

@@ -505,7 +505,7 @@ static jclass array_type(int dim, jclass clazz){
 static int count_fl(OBJ l){
   int c = 0;
   while (l != NULL){
-    c++; l = _link(_header(l));
+    c++; l = _getLink(_header(l));
   }
   return c;
 }

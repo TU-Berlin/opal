@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.6 1999-10-06 10:49:30 kd Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.7 2001-04-26 11:32:54 kd Exp $
  */
 
 /* FIXME: stub for strdup() */
@@ -93,7 +93,7 @@ CELL _smallAlloc(WORD s) {	/* allocate small cell */
 	    _ms_reallocs[s]++;
         #endif
 
-	_freeList[s] = _link(_header(p));
+	_freeList[s] = _getLink(_header(p));
         { register OBJ *l = _data(p); register OBJ *r = l+s;
 	  while (l < r) { 
 	    if (_isRef(*l)){
@@ -126,7 +126,7 @@ CELL _smallAlloc(WORD s) {	/* allocate small cell */
         /* free all none-flat cells */
 	_forceAllNoneFlats(); 
 	if ( p = _freeList[make_flat_ssize(s)] ){
-	    _freeList[make_flat_ssize(s)] = _link(_header(p));
+	    _freeList[make_flat_ssize(s)] = _getLink(_header(p));
 	    return p;
 	}
     }
@@ -167,7 +167,7 @@ void _forceAllNoneFlats(){ /* force free of all none-flat cells */
     while (s <= big_escape_ssize){
 	WORD nexts = s+1;
 	while (p = _freeList[s]){
-	    _freeList[s] = _link(_header(p));	/* unlink ... */
+	    _freeList[s] = _getLink(_header(p));	/* unlink ... */
 	    _setLink(_header(p),_freeList[make_flat_ssize(s)]);
 	    _freeList[make_flat_ssize(s)] = p;	/* ... link to flat list */
 
@@ -203,7 +203,7 @@ void _forceAllNoneFlats(){ /* force free of all none-flat cells */
     
     /* also force free of foreign cells here */
     while (p = _freeList[foreign_escape_ssize]){
-	_freeList[foreign_escape_ssize] = _link(_header(p));	/* unlink */
+	_freeList[foreign_escape_ssize] = _getLink(_header(p));	/* unlink */
 	foreign_dispose((OBJ)p);
     }
 	
@@ -225,7 +225,7 @@ BCELL _bigAlloc(WORD s){	/* allocate big cell */
     /* search for matching flat-big, on the fly freeing none-matching
        flat-bigs */
     while (p = (BCELL)_freeList[make_flat_ssize(big_escape_ssize)]){
-	_freeList[make_flat_ssize(big_escape_ssize)] = _link(_header(p));
+	_freeList[make_flat_ssize(big_escape_ssize)] = _getLink(_header(p));
 	if (bigWrap(unpack_word(p->size)) == ws){
 	    return p;
 	}
@@ -236,7 +236,7 @@ BCELL _bigAlloc(WORD s){	/* allocate big cell */
        none-flat-bigs */
     while (p = (BCELL)_freeList[big_escape_ssize]){
 	register OBJ *l, *r;
-	_freeList[big_escape_ssize] = _link(_header(p));
+	_freeList[big_escape_ssize] = _getLink(_header(p));
 	l = _bdata(p); r = l + unpack_word(p->size);
 	while (l < r) { 
 	    if (_isRef(*l)){
@@ -272,14 +272,14 @@ void _forceAllBigs(){	/* force free of all big cells */
     #endif
     /* first free all flat bigs */
     while (p = (BCELL)_freeList[make_flat_ssize(big_escape_ssize)]){
-	_freeList[make_flat_ssize(big_escape_ssize)] = _link(_header(p));
+	_freeList[make_flat_ssize(big_escape_ssize)] = _getLink(_header(p));
 	free((void*)p);
     }
 
     /* now free all none-flat bigs */
     while (p = (BCELL)_freeList[big_escape_ssize]){
 	register OBJ *l, *r;
-	_freeList[big_escape_ssize] = _link(_header(p));
+	_freeList[big_escape_ssize] = _getLink(_header(p));
 	l = _bdata(p); r = l + unpack_word(p->size);
 	while (l < r) { 
 	    if (_isRef(*l)){
