@@ -1,0 +1,69 @@
+IMPLEMENTATION ComCheckWinData
+
+IMPORT Com COMPLETELY
+       ComCompose COMPLETELY
+       Seq ONLY seq %
+       Pair COMPLETELY
+       Denotation ONLY =
+       Void ONLY void nil
+       Nat ONLY 1 nat
+       Id ONLY id
+
+       WinWindow COMPLETELY
+       WinView ONLY view <|< ^-^ label frame 
+       WinConfig ONLY bitmap error config with text string union
+       WinEmitter COMPLETELY
+       WinButton ONLY button
+       ComAgent ONLY agent
+    
+DEF check(c) == icheck(errormsg, id)(c)
+DEF check(f, c) == icheck(errormsg, f)(c)
+
+FUN icheck: (denotation ** ans[data] -> com[data]) ** (denotation ->
+                    denotation) -> com[data] -> com[data]
+DEF icheck(genwin, f)(c) ==
+    c ;(\\ansD:ans[data]. 
+    IF okay?(ansD) THEN yield(ansD)
+    IF fail?(ansD) THEN genwin(f(error(ansD)), ansD)
+    FI) 
+
+-- %The possible answers in the error window
+DATA answer == dismiss continue abort
+
+FUN errormsg: denotation ** ans[data] -> com[data]
+DEF errormsg(msg, ans) ==
+    emitter[answer] & (\\answer.
+    LET v == ((label with bitmap(error)) <|< (label with text(msg))) ^-^ Bs
+        Bs == button("Dismiss", emit(answer, dismiss)) <|<
+              button("Continue", emit(answer, continue)) <|<
+              button("Abort", emit(answer, abort))
+    IN
+      window(titleName("ERROR"), v) & (\\ w.
+      focus(w) & (\\ _ .
+      agent(waitForAction(answer, w)) & (\\ _ .
+      yield(ans)
+      )))
+    )
+
+FUN waitForAction: emitter[answer] ** window -> com[void]
+DEF waitForAction(answer, w) ==
+      await(answer) & (\\ a .
+      IF a dismiss? THEN delete(w) 
+      IF a continue? THEN agent(waitForAction(answer, w)) & 
+                                (\\ _ . succeed(nil))
+      IF a abort? THEN exit(1)  
+      FI)
+ 
+FUN errormsgC: denotation -> com[void]
+DEF errormsgC(msg) ==
+    emitter[void] & (\\quit.
+    LET v == ((label with bitmap(error)) <|<
+               (label with text(msg))) ^-^
+             button("OK", emit(quit, nil))
+    IN
+      window(titleName("ERROR"), v) &(\\ w.
+      focus(w) & (\\ _ .
+      await(quit) & (\\ _ .
+      delete(w) 
+      )))
+    )

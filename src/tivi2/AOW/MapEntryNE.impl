@@ -1,0 +1,165 @@
+IMPLEMENTATION MapEntryNE
+
+IMPORT Map[data1, <, data2] ONLY map extend {}
+       MapConv ONLY asSeq asMap
+       Seq ONLY seq :: <>
+       Option ONLY option nil nil? cont avail avail?
+       SeqZip ONLY unzip
+       Pair ONLY pair 1st 2nd unpair &
+       Com ONLY com succeed break
+       ComCompose ONLY &
+       Nat ONLY nat 0 1 2 10 15 pred
+       ComAgent ONLY agent
+       Char ONLY char ! |= =
+       OWmisc ONLY <+
+
+       WinTextEditor COMPLETELY
+       WinText ONLY text wrap wrapStyle none real
+       WinView ONLY view <|< ^-^ frame @< fillX *+ expand
+       WinConfig ONLY config with unitHeight ++ point 
+                        orient vertical horizontal unitWidth state disabled
+       WinEmitter ONLY emitter await emit
+       WinScroller ONLY scroll scroller scrollControl 
+       WinScrollbar ONLY scrollbar
+       WinEvent ONLY event button double 
+                     eventInfo point modifier bind - wconfig
+       WinRegulator ONLY regulator regulate
+       WinSelector ONLY selector set get
+       Option ONLY option nil nil? cont
+       String ONLY string ! <>
+       StringConv ONLY `
+       StringFilter ONLY split drop
+       OptionMap ONLY *
+       SeqConv ONLY `
+       Void ONLY void nil
+       SeqIndex ONLY slice !
+
+-- %$The new entry and its contructors$
+
+DATA mapEntry == mapEntry(data: selector[map[data1, <, data2]],
+                          view: view,
+                          textEditor1: textEditor,
+                          textEditor2: textEditor,
+                          sync: emitter[map[data1, <, data2]],
+                          regulator1: regulator,
+                          regulator2: regulator,
+                          hscroll1: scroller,
+                          hscroll2: scroller,
+                          vscroll2: scroller)
+
+DEF mapEntry(mp) == mapEntry(mp, defaultConfig)
+DEF mapEntry(mp, n1, n2) == mapEntry(mp, unitWidth(n1) ++ unitHeight(n2))
+DEF mapEntry(mp, tC) ==
+    textEditor & (\\tE1.
+    textEditor & (\\tE2.
+    emitter[map[data1, <, data2]] & (\\sy.
+    selector(mp) & (\\dt.
+    LET (S1, S2) == unzip(unpair)(asSeq(mp))
+    IN
+    agent(tE1 insert(!(`("", "\n", "")(print1)(S1)))) & (\\ _ .
+    agent(tE2 insert(!(`("", "\n", "")(print2)(S2)))) & (\\ _ .
+    regulator & (\\r1.
+    regulator & (\\r2.
+    scroller & (\\h1.
+    scroller & (\\h2.
+    scroller & (\\v2.
+    LET
+        tC1 == edit(tE1) ++ scroll(h1, horizontal) ++ regulate(r1) ++ tC 
+                ++ scroll(v2, vertical) ++ wrap(none)
+        tC2 == edit(tE2) ++ scroll(h2, horizontal) ++ regulate(r2) ++ tC
+                ++ scroll(v2, vertical) ++ wrap(none)
+        tV1 == expand(fillX(text with tC1))
+        tV2 == expand(fillX(text with tC2))
+        hV1 == scrollbar with horizontal ++ scrollControl(h1)
+        hV2 == scrollbar with horizontal ++ scrollControl(h2)
+        vV2  == scrollbar with vertical ++ scrollControl(v2)
+        v == (tV1 ^-^ hV1) <|< (tV2 ^-^ hV2) <|< vV2
+    IN
+       succeed(mapEntry(dt, *+(frame @< v), tE1, tE2, sy, r1, r2, h1, h2, v2))
+    )))))))))))
+
+DEF defaultDim == &(10,15)
+DEF defaultConfig == unitWidth(1st(defaultDim)) ++ unitHeight(2nd(defaultDim))
+
+-- FUN view: mapEntry -> view
+-- FUN regulator1: mapEntry -> regulator
+-- FUN regulator2: mapEntry -> regulator
+-- selectors
+
+-- %$access or change contents$
+-- FUN set: mapEntry ** map[data1, <, data2] -> com[void]
+DEF set(mE, M) ==
+    LET (S1, S2) == unzip(unpair)(asSeq(M))
+        tE1 == textEditor1(mE)
+        tE2 == textEditor2(mE)
+    IN
+      tE1 delete range(pos(1,0), end) & (\\ _ .
+      tE2 delete range(pos(1,0), end) & (\\ _ .
+      tE1 insert(!(`("", "\n", "")(print1)(S1))) & (\\ _ .
+      tE2 insert(!(`("", "\n", "")(print2)(S2))) & (\\ _ .
+      sync(mE) emit M & (\\ _ .
+      data(mE) set M
+      )))))
+
+
+/* %get displayed map or selected map; fail if some entry is not
+parsed as data; if  */
+-- FUN get: mapEntry -> com[map[data1, <, data2]]
+DEF get(mE) == get(data(mE))
+
+-- FUN getSelection: mapEntry -> com[map[data1, <, data2]]
+DEF getSelection(mE) ==
+    LET 
+      tE1 == textEditor1(mE) 
+      tE2 == textEditor2(mE) 
+    IN
+    -- %we expand slection to whole lines and therefore expand tags
+    tE1 tag (range(linestart(first(selection)), 
+                 lineend(last(selection))), selection) & (\\ _ .
+    tE2 tag (range(linestart(first(selection)), 
+                 lineend(last(selection))), selection) & (\\ _ .
+    index(tE1, linestart(first(selection))) & (\\start.
+    index(tE1, lineend(last(selection))) & (\\ ende.
+    get(data(mE)) & (\\mp.
+    succeed(asMap(slice(asSeq(mp), pred(line(start)), pred(line(ende)))))
+    )))))
+    
+
+/* %get entry in line which contains point */
+-- FUN get: mapEntry ** point -> com[pair[data1, data2]]
+DEF get(mE, pt) ==
+    LET 
+      tE1 == textEditor1(mE) 
+    IN
+    index(tE1, linestart(point(pt))) & (\\ start.
+    get(data(mE)) & (\\ mp.
+    succeed(asSeq(mp)!pred(line(start)))
+    ))    
+
+-- FUN upd: mapEntry ** 
+--         (map[data1, <, data2] -> map[data1, <, data2]) -> com[void]
+DEF upd(mE, f) ==
+    get(mE) & (\\M.  set(mE, f(M)))
+
+
+-- %$Binding Events$
+DEF bind(mE, ev, cmd) ==  
+    regulator1(mE) <+ bind(ev, \\eI. cmd(mE, eI)) & ( \\ _ .
+    regulator2(mE) <+ bind(ev, \\eI. cmd(mE, eI)))
+
+DEF bind(mE, ev, cmd) == 
+    regulator1(mE) <+ bind(ev, \\ eI. get(mE) & (\\mp. cmd(mE, eI, mp)))
+    & ( \\ _ .
+    regulator2(mE) <+ bind(ev, \\ eI. get(mE) & (\\mp. cmd(mE, eI, mp)))
+    )
+
+-- %$Synchronize with Data Changes$
+
+DEF sync(mE, cmd) == agent(isync(mE, cmd)) & (\\ _ . succeed(nil))
+
+FUN isync: mapEntry ** (map -> com[void]) -> com[void]
+DEF isync(mE, cmd) ==
+    await(sync(mE)) & (\\mp.
+    agent(isync(mE, cmd)) & (\\ _ .
+    cmd(mp)
+    ))

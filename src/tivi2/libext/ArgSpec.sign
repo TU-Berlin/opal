@@ -1,0 +1,118 @@
+SIGNATURE ArgSpec[state]
+
+/* subject:  	argument specification, checking and completion
+   version:  	1.0 (proposed)
+   created:   	wg 5-94
+   modified:    wg@cs.tu-berlin.de Tue Sep 12 18:41:14 1995
+*/
+
+
+SORT state	-- state used by completer functions
+
+
+IMPORT	Nat				ONLY nat <
+	Char				ONLY char 
+	String				ONLY string
+	Seq[string]			ONLY seq
+	Seq[denotation]			ONLY seq
+	Seq[argSpec]			ONLY seq
+	Map[nat,<,seq[denotation]]  	ONLY map
+	Com[seq[denotation]]		ONLY com
+	Com[seq[string]]		ONLY com
+	Com[map]			ONLY com
+
+
+
+TYPE argSpec ==
+    -- primitives
+    lit(
+	token		: nat,
+			-- token used to identify argument
+	value		: denotation
+			-- literal value expected
+    )
+    var(
+	token		: nat,
+			-- token used to identify argument
+	descriptor	: denotation,
+			-- name used in description
+	completer	: state ** denotation -> com[seq[denotation]]
+			-- completer command. 
+    )
+
+    -- compositions
+    o (left: argSpec, right: argSpec)	-- sequential composition
+    | (left: argSpec, right: argSpec) 	-- alternate composition
+    ? (spec	: argSpec)		-- optional
+    * (spec	: argSpec)		-- repetition 0..n
+	
+
+
+FUN var: nat ** denotation -> argSpec
+    -- shortcut for variable without completer
+
+
+
+FUN checkArgs : seq[string]     ** argSpec -> com[map[nat,<,seq[denotation]]]
+    checkArgs : seq[denotation] ** argSpec -> com[map[nat,<,seq[denotation]]]
+
+    /*
+	checks the sequence of arguments according to argument specification
+    	and returns a mapping of argument labels to values. 
+    	values are pushed as scanned from left to right.
+
+	if scanning fails, a failure with a descriptive message 
+	explaining how it should have been is yielded.
+
+	it is intended to let the command name be the first literal
+	in an argument specification.
+
+	example:
+
+		DEF lsArgs == lit(0, "ls") 				o
+			      ?( lit(1,"-a") | lit(2,"-l") )		o
+			      *( var(3, "NAME", nameCompleter) )
+
+	scanArgs for the argument sequence 
+
+		"ls" "-a" "foo" "bar"
+		
+	will yield a mapping:
+
+		{ 0 |-> <"ls">,
+		  1 |-> <"-a">,
+		  3 |-> <"bar","foo"> }
+
+
+    */
+
+
+FUN completeArgs : state ** seq[string]     ** seq[argSpec] 
+							-> com[seq[denotation]]
+    completeArgs : state ** seq[denotation] ** seq[argSpec] 
+							-> com[seq[denotation]]
+
+    /* 
+	attempt to complete the last component of (partial) sequence
+	of arguments. the front of the argument sequence is 
+	matched simultaneously againts the given argument specifications
+	to determinate a completion context. if a context is found, 
+	the sequence of possible completions is yielded, otherwise the
+	command fails.
+
+    */
+
+
+FUN usage : argSpec -> denotation
+
+    /*
+    	give a usage description.
+    */
+
+
+FUN scanArgs : denotation ** (char -> bool) -> seq[denotation]
+    /*
+	scans a denotation according to seperator specification in 2nd
+    	argument.
+    */
+

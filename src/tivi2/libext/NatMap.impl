@@ -1,0 +1,117 @@
+IMPLEMENTATION NatMap[codom] 
+
+-- subject: Mappings from nats to codom
+-- author:  wg
+-- version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/tivi2/libext/NatMap.impl,v 1.1 1998-07-30 11:58:11 kd Exp $
+
+IMPORT  Nat    	COMPLETELY
+	Seq	COMPLETELY
+	SeqReduce COMPLETELY
+	SeqMap	COMPLETELY
+	Set	COMPLETELY
+	SetConv	ONLY asSet
+	Array   COMPLETELY
+	ArrayReduce COMPLETELY
+	ArrayMap COMPLETELY
+	Option  COMPLETELY
+	Pair	COMPLETELY
+	ABORT   COMPLETELY
+
+
+FUN hashSize : nat
+DEF hashSize == !("32")
+
+DATA natMap == abs(tab: array[seq[pair[nat,codom]]], new: nat)
+
+DEF {}     == abs(init(hashSize,\\ _ . <>),0)
+DEF {}?(M) == new(M) = 0
+
+DEF def(I,D,M) == 
+    LET Hash   == I % hashSize
+	NewTab == upd(Hash,\\S.replace(S,I,D),tab(M))
+	NewNew == max(succ(I),new(M))
+    IN
+    abs(NewTab,NewNew)
+
+DEF (M,I):=D == def(I,D,M)
+
+DEF undef(I,M) ==
+    LET Hash   == I % hashSize
+	NewTab == upd(Hash,\\S.delete(S,I),tab(M))
+	NewNew == IF succ(I) < new(M) THEN new(M)
+		  ELSE 
+		   ((\\Ps,M1.((\\P,M2.max(succ(1st(P)),M2))\M1)(Ps))/0)(NewTab)
+		  FI
+    IN
+    abs(NewTab,NewNew)
+
+
+DEF def?(I,M) == avail?(M!?I)
+DEF M!I       == IF avail?(M!?I) THEN cont(M!?I) 
+				 ELSE ABORT("!'NatMap: not in domain") FI
+
+DEF M!?I == search(tab(M)!(I % hashSize),I)
+
+DEF upd(M,I,F) == 
+    abs(upd(I % hashSize,\\S.update(S,I,F),tab(M)),new(M))
+
+DEF <+(M1,M2) == 
+    abs(init(hashSize,\\I. merge(\\ _,V.V)(tab(M1)!I, tab(M2)!I)), 
+		max(new(M1),new(M2)))
+
+DEF extend(M,<>,_) == M
+DEF extend(M,I::Is,D::Ds) == extend(def(I,D,M),Is,Ds)
+
+DEF explode(M)	== ( ++ / <> )(tab(M))
+
+DEF implode(Ps) == ( (\\P,M. def(1st(P),2nd(P),M)) / {} )(Ps)
+
+
+-- auxiliary functions
+
+FUN replace : seq[pair[nat,codom]] ** nat ** codom -> seq[pair[nat,codom]]
+DEF replace(<>,I,D) == %(I&D)
+DEF replace(Ps AS (P AS (I1 & _)) :: Rs,I,D) ==
+    IF I < I1 THEN (I&D) :: Ps
+    IF I > I1 THEN P :: replace(Rs,I,D)
+	      ELSE (I&D) :: Rs FI
+
+FUN update : seq[pair[nat,codom]] ** nat ** (codom -> codom)
+						 -> seq[pair[nat,codom]]
+DEF update(<>,_,_) == 
+    ABORT("upd'NatMap:nat**(codom->codom)**natMap->natMap: not in domain")
+DEF update(_ AS (P AS (I1 & D1)) :: Rs,I,F) ==
+    IF I < I1 THEN 
+       ABORT("upd'NatMap:nat**(codom->codom)**natMap->natMap: not in domain")
+    IF I > I1 THEN P :: update(Rs,I,F)
+	      ELSE (I&F(D1)) :: Rs FI
+
+FUN delete : seq[pair[nat,codom]] ** nat -> seq[pair[nat,codom]]
+DEF delete(<>,_) == <>
+DEF delete(Ps AS (P AS (I1 & _)) :: Rs,I) ==
+    IF I < I1 THEN Ps
+    IF I > I1 THEN P :: delete(Rs,I)
+	      ELSE Rs FI
+
+FUN search : seq[pair[nat,codom]] ** nat -> option[codom]
+DEF search(<>,_) == nil
+DEF search((I1 & D1) :: Rs,I) ==
+    IF I < I1 THEN nil
+    IF I > I1 THEN search(Rs,I)
+	      ELSE avail(D1) FI
+
+FUN merge : (codom ** codom -> codom) -> 
+	seq[pair[nat,codom]] ** seq[pair[nat,codom]] -> seq[pair[nat,codom]]
+DEF merge(_)(<>,<>) == <>
+DEF merge(_)(<>,S2) == S2
+DEF merge(_)(S1,<>) == S1
+DEF merge(F)(S1 AS (E1 AS I1 & D1) :: R1, S2 AS (E2 AS I2 & D2) :: R2) ==
+    IF I1 < I2 THEN E1 :: merge(F)(R1,S2)
+    IF I2 < I1 THEN E2 :: merge(F)(S1,R2)
+               ELSE (I1 & F(D1, D2)) :: merge(F)(R1,R2) FI
+
+DEF merge(F, M1, M2) ==
+    abs(init(hashSize,\\I.merge(F)(tab(M1)!I, tab(M2)!I)), 
+			max(new(M1), new(M2)))
+
+DEF dom(M)	== ((\\Seq,Rt. asSet(1st * Seq) + Rt) / {} )(tab(M))
