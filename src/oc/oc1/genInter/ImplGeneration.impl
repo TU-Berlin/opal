@@ -3,7 +3,7 @@ IMPLEMENTATION ImplGeneration
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-22 13:45:43 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-06 21:32:11 $ ($Revision: 1.3 $)
 -- ============================================================================
 -- Autor:       ralfi
 -- Projekt:     OPAL1-Compiler
@@ -12,7 +12,6 @@ IMPLEMENTATION ImplGeneration
 -- ============================================================================
 IMPORT  InterOpal       COMPLETELY
         EnvIO           COMPLETELY
-        InterOpalOption ONLY    ioImpl? printInterOpal?
         AnalyzedGlobSig ONLY    origIdeNo
         AGSig           ONLY    impl:globSig**name->impl'GlobSigImpl parameter?
                                 paramNo isApplied?
@@ -35,8 +34,6 @@ IMPORT  Denotation      ONLY    ++
         SeqMap          ONLY    *
         Seq             ONLY    seq <> % ft ::
         Map             ONLY    map {} !
-        DEBUG           ONLY    PRINT
-        String          ONLY    string
         Pair            ONLY    pair &
         SeqFilter       ONLY    |
         SeqZip          ONLY    zip
@@ -63,16 +60,15 @@ FUN impl2Impl: globSig ** name'Name ->
 
 DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_),none) ==
         IF Name internal? THEN
-          (EnvIO,PRINT(ioImpl?,"impl2Impl(none)->missing",missing))
+          (EnvIO,missing)
         OTHERWISE
         IF Name external? THEN
                 IF Sig parameter? Name THEN
                   LET   Pos     == pos(Sig,Name,Part) ft
                         No      == paramNo'AGSig(Sig,Name)
-                  IN (EnvIO,PRINT(ioImpl?,"impl2Impl(none)->parameter",
-                        parameter(Pos,No)))
+                  IN (EnvIO,parameter(Pos,No))
                 ELSE
-                  (EnvIO,PRINT(ioImpl?,"impl2Impl(none)->imported",imported))
+                  (EnvIO,imported)
                 FI
         FI
 
@@ -81,16 +77,11 @@ DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_),Parameter) ==
         No      == paramNo'AnalyzedGlobSig(Sig,Name)
    IN   -- Pattern Matching not possible (Namensueberdeckung!) 
         IF Parameter parameter? THEN
-           (EnvIO,PRINT(ioImpl?,"impl2Impl(parameter)",
-                        parameter(Pos,No)))
-        OTHERWISE
-        IF PRINT(true,"Fehler: def not allowed",false) THEN (EnvIO,missing)
--- ELSE -> def-impl
+           (EnvIO,parameter(Pos,No))
         FI
 
 DEF impl2Impl(_,_)(EnvIO AS &(interOpal(Part,_),_),canonical(Pos)) ==
-        (EnvIO,PRINT(ioImpl?,"impl2Impl(canonical)",
-                missing))
+        (EnvIO, missing)
 /* should be figured out correctly, tmp is bad in: induced(pos(Pos,Part),tmp)))
    This entry will be overwritten anyway during ObjGeneration by variant2Variant
 */
@@ -98,32 +89,18 @@ DEF impl2Impl(_,_)(EnvIO AS &(interOpal(Part,_),_),canonical(Pos)) ==
 DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_),
                 data(sortImpl(GSort,Variants,Pos))) ==
   LET   (EnvIO2,SVar)   == (variant2Variant(Sig,GSort))*
-                (PRINT(ioImpl?,"impl2Impl(data)",EnvIO),
+                (EnvIO,
         (\\V. isApplied?(Sig, cons(V))) | Variants)
 -- Property eintragen!??
   IN (EnvIO2,data(SVar))
-
-/*
-DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_&)
-                ,def(GSEqs,Locals,FrLocal)) ==
-  LET   (EnvIO1,SEqs)   == *(defEq2Eq(Sig,locSigComplete(Locals)))
-                (PRINT(ioImpl?,"impl2Impl(def!!!!!!!!!!!!!!!!!!)",EnvIO),GSEqs)
-  IN (EnvIO1,def(SEqs))
-*/
 
 DEF impl2Impl(Sig,_)(EnvIO AS &(interOpal(_,_),_)
                 ,anaDef(GSEqs,Locals,_,GSPatts,NewEq)) ==
 
   LET   (EnvIO1, Eqn)  == defEq2Eq(Sig,locSigComplete(Locals))
-                (PRINT(ioImpl?,"impl2Impl(anaDef)", EnvIO), NewEq & <>)
+                (EnvIO, NewEq & <>)
   IN (EnvIO1, def(Eqn%))
 
-/*
-  LET   (EnvIO1,SEqs)   == (defEq2Eq(Sig,locSigComplete(Locals)))*
-                (PRINT(ioImpl?,"impl2Impl(anaDef)",EnvIO),SeqPair)
-        SeqPair == zip(&)(GSEqs,GSPatts)
-  IN (EnvIO1,def(SEqs))
-*/
 
 FUN variant2Variant : globSig ** name'Name -> envIO ** variant'Impl ->
                         envIO ** variant'InterOpal
@@ -150,8 +127,7 @@ FUN mkInducedObj : globSig ** name'Name ->
         envIO ** name'Name ** pos'InterOpal ** name'InterOpal ->
         envIO
 DEF mkInducedObj(Sig,GSort)(EnvIO,NName,Pos,Name) ==
-  LET   Ident           ==
-                PRINT(ioImpl?,\\ .("mkInducedObj: ")++Symbol,ident(Name))
+  LET   Ident           == ident(Name)
         Symbol          == (rep(Sig,NName))`
         (EnvIO1,Kind)   == kind2Kind(Sig)(EnvIO,NName)
         (EnvIO2,Sort)   == name2Name(Sig)(EnvIO1,GSort)

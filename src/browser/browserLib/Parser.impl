@@ -3,44 +3,38 @@ IMPLEMENTATION Parser
 -- Autor:	ralfi
 -- Projekt:	OPAL1-Compiler
 -- Zweck:       Parser zum Einlesen der Kommandozeile
--- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/browserLib/Parser.impl,v 1.1.1.1 1998-06-16 15:59:55 wg Exp $
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/browserLib/Parser.impl,v 1.2 1999-10-06 21:31:04 maeder Exp $
 -- ============================================================================
 
 IMPORT	Char		ONLY	! = char
-	Lib		ONLY	str2nat
-	Nat		ONLY	+ 1 nat
+	Denotation	COMPLETELY
+	FileName	COMPLETELY
+	Nat		ONLY 0	+ 1 nat !
+	Option		COMPLETELY
 	OptBrowser	COMPLETELY
-/* ONLY	:: argument arguments colCursor colWordBeg
-				colWordEnd command error filename filetyp impl
-				implExt level name nil option rowCursor
-				rowWordBeg rowWordEnd sign signExt intpExt
-				extpExt extp intp
-*/
 	Seq		ONLY	:: <> <>? revert rt seq
 	SeqFilter	ONLY	split
-	String		ONLY	! : denotation -> string = string
-	StringConv	ONLY	explode implode
-	Denotation	ONLY	=
+
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
 
 FUN parseArguments : seq[denotation] -> arguments
 DEF parseArguments (<>) == nil
 DEF parseArguments (Switch::Seq) ==
-	IF Switch = ("Point") THEN parseRow(Seq,rowCursor,colCursor)
-	IF Switch = ("Begin") THEN parseRow(Seq,rowWordBeg,colWordBeg)
-	IF Switch = ("End") THEN parseRow(Seq,rowWordEnd,colWordEnd)
-	IF Switch = ("Command") THEN parseCommand(Seq)
-	IF Switch = ("Option") THEN parseName(Seq,option)
-	IF Switch = ("Name") THEN parseName(Seq,name)
-	IF Switch = ("Level") THEN parseName(Seq,level)
-	IF Switch = ("Filename") THEN parseFilename(Seq)
+	IF Switch = "Point" THEN parseRow(Seq,rowCursor,colCursor)
+	IF Switch = "Begin" THEN parseRow(Seq,rowWordBeg,colWordBeg)
+	IF Switch = "End" THEN parseRow(Seq,rowWordEnd,colWordEnd)
+	IF Switch = "Command" THEN parseCommand(Seq)
+	IF Switch = "Option" THEN parseName(Seq,option)
+	IF Switch = "Name" THEN parseName(Seq,name)
+	IF Switch = "Level" THEN parseName(Seq,level)
+	IF Switch = "Filename" THEN parseFilename(Seq)
 	ELSE error
 	FI
 
 FUN parseCommand : seq[denotation] -> arguments
-DEF parseCommand (Nr::Seq) == command(Nr!,str2nat(Nr!)) :: parseArguments(Seq)
+DEF parseCommand (Nr::Seq) == command(Nr!,!(Nr!)) :: parseArguments(Seq)
 
-FUN parseName : seq[denotation] ** (string -> argument) -> arguments
+FUN parseName : seq[denotation] ** (denotation -> argument) -> arguments
 DEF parseName (Opt::Seq,F) == F(Opt!) :: parseArguments(Seq)
 
 FUN parseFilename : seq[denotation] -> arguments
@@ -48,30 +42,28 @@ DEF parseFilename (Opt::Seq) ==
   LET	(Path,Base,FT)	== splitFilename(Opt)
   IN	filename(Path,Base,FT) :: parseArguments(Seq)
 
-FUN splitFilename : denotation -> string ** string ** filetyp
+FUN splitFilename : denotation -> denotation ** denotation ** filetyp
 DEF splitFilename(Str) == 
-   LET	p?	== \\C. ~(C=("."!))
-	slash?	== \\C. ~(C=("/"!))
-(Ext,BasePath)	== split(p?,revert(explode(Str!)))
-(Base,Path)	== IF BasePath <>? THEN (<>,<>)
-		   ELSE split(slash?,BasePath rt) FI
-	FT	== IF (revert(Ext) implode)=signExt THEN sign
-		   IF (revert(Ext) implode)=implExt THEN impl
-		   IF (revert(Ext) implode)=extpExt THEN extp
-		   IF (revert(Ext) implode)=intpExt THEN intp
+   LET	BaseName == baseName(Str)
+	Path == dirName(Str)
+	(Base, Ext) == splitSuffix(BaseName, ".")
+	FT	== IF Ext=signExt THEN sign
+		   IF Ext=implExt THEN impl
+		   IF Ext=extpExt THEN extp
+		   IF Ext=intpExt THEN intp
 		   ELSE error
 		   FI
-  IN	(implode(Path revert),implode(Base revert),FT)
+  IN	(Path, Base, FT)
 
 
 FUN parseRow : seq[denotation] ** (nat->argument) ** (nat->argument) -> arguments
 DEF parseRow (_,_,_) == error
-DEF parseRow (Nr::Seq,F,FCol) == F(str2nat(Nr!)) :: parseCol(Seq,FCol)
+DEF parseRow (Nr::Seq,F,FCol) == F(!(Nr!)) :: parseCol(Seq,FCol)
 	
 FUN parseCol : seq[denotation] ** (nat->argument) -> arguments
 DEF parseCol (_,_) == error
 -- + 1 muss sein, da emacs bei 0 beginnt!
-DEF parseCol (Nr::Seq,F) == F(str2nat(Nr!)+1) :: parseArguments(Seq)
+DEF parseCol (Nr::Seq,F) == F(!(Nr!)+1) :: parseArguments(Seq)
 
 	
 

@@ -8,29 +8,26 @@ IMPLEMENTATION Translation
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-06-22 13:17:26 $ ($Revision: 1.4 $)
+-- % $Date: 1999-10-06 21:28:27 $ ($Revision: 1.5 $)
 
 IMPORT	Nat		COMPLETELY
 	Option		COMPLETELY
 	Pair		COMPLETELY
-	Quadruple	COMPLETELY
+	Triple		COMPLETELY
 	Seq		COMPLETELY
 	SeqMap		COMPLETELY
 	SeqReduce	COMPLETELY
 	SeqZip		COMPLETELY
 	Compose		COMPLETELY
 	String		ONLY string
+	Void		COMPLETELY
 
 	Stream		ONLY output stdOut write:output**denotation->com[void]
 
 	Com		COMPLETELY
 	ComCompose	COMPLETELY
---	ComEnv		ONLY localTime
 
 	DEBUG		ONLY PRINT
-	Error		COMPLETELY
-
-	Error		ONLY err:SORT errors
 	Options		ONLY options myAnaFile cop?
 	Verbose		COMPLETELY
 
@@ -54,11 +51,7 @@ IMPORT	Nat		COMPLETELY
 
 	InterOpal	COMPLETELY
 	InterOpalAccess	COMPLETELY
-/*			ONLY interOpal name sort? op? fct
-			     actStructIde actStructParams
-			     treatInternalNames freeInternal
-			     pragmas:interOpal->seq[pragma]
-*/
+
 	ParameterTranslation	ONLY info sortInfo fullInfo
 	FctTranslation		ONLY type:interOpal**info->kind->type
 	ImportTranslation	ONLY importUnits
@@ -83,14 +76,12 @@ DEF printAcOption == "printAc"
 -- ----------------------------------------------------------------------------
 
 FUN inter2ac: interOpal -> unit
-DEF inter2ac(IO) ==
-	LET (unit, _) == addInternals(IO, importUnits(IO))
-        IN unit
+DEF inter2ac(IO) == addInternals(IO, importUnits(IO))
 
-FUN addInternals: interOpal ** seq[unit] -> unit ** err
+FUN addInternals: interOpal ** seq[unit] -> unit
 DEF addInternals(IO, units) ==
 	LET info == actualParameterInfo(IO)    
-           (sorts, ops, hints) == internals(IO, info) 
+           (sorts, ops) == internals(IO, info) 
            sortIndices == (# o ide) * sorts
            opIndices == (# o ide) * ops
            unitIndices == (# o origin) * units
@@ -98,19 +89,16 @@ DEF addInternals(IO, units) ==
 	   an == ((none set typeDecs(extend({},sortIndices,sorts)))
 		        set version(""))
  			set pragmas(prgms)
-	IN (unit(an, symbol(IO), target,
+	IN unit(an, symbol(IO), target,
                           extend({},unitIndices,units),
-                          extend({},opIndices,ops)), hints)
+                          extend({},opIndices,ops))
 
 FUN unit: options -> interOpal -> com[unit]
 DEF unit(opts)(IO) ==
   verb(opts,subphase,"translating imports ..."); (\\ _ .
   succeed(importUnits(IO)) & (\\units.
   verb(opts,subphase,"translating internal names ..."); (\\ _ .
-  LET (unit, hints) == addInternals(IO, units)
-  IN errors(opts,hints);
-          (\\ _ .succeed(unit))
-  )))
+  succeed(addInternals(IO, units)))))
 
 -- ----------------------------------------------------------------------------
 
@@ -124,41 +112,41 @@ DEF pragmas(Inter) == pragmas(structs(Inter) ! main)
 
 -- ----------------------------------------------------------------------------
 FUN treatInternalNames: interOpal -> 
-	(name**nat -> option[typeDec]**seq[dec]**err**nat) ** 
-	(name -> option[dec]**err) -> nat -> seq[typeDec]**seq[dec]**err
+	(name**nat -> option[typeDec]**seq[dec]**nat) ** 
+	(name -> option[dec]) -> nat -> seq[typeDec]**seq[dec]
 
 DEF treatInternalNames(IO)(FSort, FOp)(Start) ==
-  LET X == \ (FInternalName(FSort,FOp),&(<>[typeDec],<>[dec],ok,Start))
+  LET X == \ (FInternalName(FSort,FOp),&(<>[typeDec],<>[dec],Start))
                 (objects(IO))
-  IN (1st(X), 2nd(X), 3rd(X))
+  IN (1st(X), 2nd(X))
 
-FUN FInternalName: (name**nat->option[typeDec]**seq[dec]**err**nat)**
-                   (name->option[dec]**err)
-			-> object**quad[seq[typeDec],seq[dec],err,nat]
-				-> quad[seq[typeDec],seq[dec],err,nat]
+FUN FInternalName: (name**nat->option[typeDec]**seq[dec]**nat)**
+                   (name->option[dec])
+			-> object**triple[seq[typeDec],seq[dec],nat]
+				-> triple[seq[typeDec],seq[dec],nat]
 DEF FInternalName(FSort, FOp)(Obj, 
-	Quad AS &(prevTypeDecs,prevDecs,oldErr,oldNo)) ==
+	Quad AS &(prevTypeDecs,prevDecs,oldNo)) ==
   LET 
       Name == name(ident(Obj), main, none) 
   IN
   IF sort?(kind(Obj)) THEN
-    LET (optTypeDec,newDecs,newErr,newNo) == FSort(Name,oldNo)
+    LET (optTypeDec,newDecs,newNo) == FSort(Name,oldNo)
         newTypeDecs == IF optTypeDec nil? THEN prevTypeDecs
                        IF optTypeDec avail? THEN cont(optTypeDec)::prevTypeDecs
                        FI
-    IN &(newTypeDecs,newDecs++prevDecs,oldErr+newErr,newNo)
+    IN &(newTypeDecs,newDecs++prevDecs,newNo)
   IF fct?(kind(Obj)) THEN
-    LET (optDec,newErr) == FOp(Name)
+    LET optDec == FOp(Name)
         newDecs == IF optDec nil? THEN prevDecs
                    IF optDec avail? THEN cont(optDec)::prevDecs
                    FI
-    IN &(prevTypeDecs,newDecs,oldErr+newErr,oldNo)
+    IN &(prevTypeDecs,newDecs,oldNo)
   ELSE Quad
   FI
 
 -- ----------------------------------------------------------------------------
 
-FUN internals: interOpal ** info -> seq[typeDec] ** seq[dec] ** err
+FUN internals: interOpal ** info -> seq[typeDec] ** seq[dec]
 DEF internals(IO, info) ==
         treatInternalNames(IO) 
         	(typeDecNops(IO,info),dec(IO,info))

@@ -3,7 +3,7 @@ IMPLEMENTATION Browser
 -- Autor:       ralfi
 -- Projekt:     OPAL1-Compiler
 -- Zweck:       Top-Level Struktur
--- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/Browser.impl,v 1.2 1999-03-09 11:46:00 kd Exp $
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/Browser.impl,v 1.3 1999-10-06 21:31:04 maeder Exp $
 -- ============================================================================
 
 IMPORT  Com             ONLY    ans com data error fail fail? okay okay? yield
@@ -11,12 +11,8 @@ IMPORT  Com             ONLY    ans com data error fail fail? okay okay? yield
         ProcessArgs     ONLY    args
         Stream          ONLY    output stdErr stdOut writeLine
         Denotation      ONLY    ++
-        DEBUG           ONLY    PRINT
-        Format          ONLY    format write
         InterOpal       ONLY    interOpal:SORT
         InterOpalIO     ONLY    readInterOpal
-        Lib             ONLY    id
-        Lib1            ONLY    seq2StringByNewLine
         Nat             ONLY    - 10 100 20 < = nat
         OptBrowser      ONLY    arguments command: arguments -> option
                                 error? : arguments -> bool error:arguments
@@ -26,41 +22,35 @@ IMPORT  Com             ONLY    ans com data error fail fail? okay okay? yield
         Parser          ONLY    parseArguments
         Seq             ONLY    <> rt seq
         SeqReduce       ONLY    /
-        String          ONLY    ! ++ string
-        StringConv      ONLY    `
-        Switch          ONLY    com com2 comDump
+        SeqConv		ONLY    `
+	String		ONLY	string
+        Switch          ONLY    com com2
         Void            ONLY    nil void
 
-DEF browser == (((writeLine(stdOut,"BROWSER 1.0 : written by Ralf Dziallas 1993"!) &
+DEF browser == (((writeLine(stdOut,"BROWSER 1.1 : written by Ralf Dziallas 1993") &
                 parseOptions) & doCommand) & (\\SeqStr.
-                writeLine(stdOut,seq2StringByNewLine(id)(SeqStr))));
+                writeLine(stdOut,`("", "\n", "")(\\x.x)(SeqStr))));
                 exit
 
-FUN doCommand : arguments -> com[seq[string]]
+FUN doCommand : arguments -> com[seq[denotation]]
 DEF doCommand (Args) == 
   LET   OptPair == command(Args)
   IN    IF OptPair nil? THEN yield(fail("doCommand: no commands found"))
         ELSE
           LET   Pair    == OptPair cont
-          IN PRINT(Args v2?,\\ .("doCommands: "!)++(Pair 1st),
-                IF (Pair 2nd)=10 THEN
-                   readIO(Args)&(\\IO.write(stdOut,comDump(IO,Args),100-20)&
-                        yield(okay(<>)))
+          IN 
                 IF (Pair 2nd)<10 THEN yield(okay(com(Pair 2nd,Args)))
                 ELSE readIO(Args) & (\\IO.yield(okay(com2(IO)(Pair 2nd,Args))))
-                FI)
+                FI
         FI
 
 FUN readIO : arguments -> com[interOpal]
 -- PRE Args # error
 DEF readIO (Args) == 
   LET   OptFilename     == filename(Args)
-        Verbose?        == Args v2?
   IN    IF OptFilename avail? THEN
-          readInterOpal(Verbose?,(cont(OptFilename))`) & (\\OptIO.
-                IF OptIO avail? THEN yield(okay(cont(OptIO)))
-                ELSE yield(fail("readIO: InterOpalfile read error"++""))
-                FI)
+          readInterOpal(false,cont(OptFilename)) & (\\OptIO.
+                yield(okay(cont(OptIO))))
         IF OptFilename nil? THEN
                 yield(fail("readIO: Filename error"))
         FI
@@ -68,7 +58,7 @@ DEF readIO (Args) ==
 FUN exit : ans[void] -> com[void]
 DEF exit(Ans) ==
         IF Ans fail? THEN
-                writeLine(stdOut,("BROWSER: "!)++((error(Ans))!))
+                writeLine(stdOut, "BROWSER: "++ error(Ans))
         IF Ans okay? THEN
                 yield(okay(nil))
         FI
@@ -82,7 +72,7 @@ DEF parseOptions ==
           IN    (IF Args error? THEN
                         yield(fail("readIO: parse error"))
                 IF Args v3? THEN
-                     writeLine(stdOut,(/(\\S1,S2.(S1++("@"))++S2,"")(a data))!)
+                     writeLine(stdOut, `("", "@", "")(\\x.x)(a data))
                 ELSE yield(okay(nil))
                 FI) &
                   yield(okay(Args))

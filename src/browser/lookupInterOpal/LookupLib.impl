@@ -3,28 +3,24 @@ IMPLEMENTATION LookupLib
 -- Autor:	ralfi
 -- Projekt:	OPAL1-Compiler
 -- Zweck:       Library 
--- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/lookupInterOpal/LookupLib.impl,v 1.1.1.1 1998-06-16 15:59:54 wg Exp $
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/lookupInterOpal/LookupLib.impl,v 1.2 1999-10-06 21:31:04 maeder Exp $
 -- ============================================================================
 
-IMPORT	DEBUG[level]	ONLY	PRINT
-	Format		ONLY	format pretty
-	InterOpal	ONLY	extProperties implementation implementation?
-				intProperties interOpal:SORT part pos:SORT
-				pos : (part ** nat ** nat -> pos) signature
-				signature? unknown region
-	InterDumpBase	ONLY	dPos
-	Lib		ONLY	id nl tab
-	Lib1[string]	ONLY	seq2StringBySpace
-	Nat		ONLY	+ - 0 1 15 18 2 30 8 < = > >=  <= nat
+IMPORT	DEBUG		ONLY PRINT
+	Denotation	COMPLETELY
+	InterOpal	COMPLETELY
+	Nat		ONLY	+ - 0 1 15 18 2 30 8 < = > >=  <= nat !
+	NatConv		ONLY	`
 	Int		ONLY	max int
 	IntConv		ONLY	asNat
 	OptBrowser	ONLY	arguments ca? filetyp getFiletyp getPos impl
 				sign extp intp
-	SeqMap[pos,string]
+	SeqMap[pos,denotation]
 			ONLY	*
 	Seq[pos]	ONLY	++ :: <> exist? seq
-	Seq[string]	ONLY	seq
-	String		ONLY	! : denotation -> string  # ++ < = string
+	Seq[denotation]	ONLY	seq
+	SeqConv		COMPLETELY
+	String		ONLY	string
 
 DATA	posArea	== posArea(rb:nat, cb: nat, re:nat, ce:nat)
 -- Dieser Typ gibt den Bereich des Wortes an, nach dem gesucht werden soll
@@ -41,11 +37,12 @@ DATA	level	== complete names inst fct optimize
 -- fct:		es wird eine kurze Funktionalitaet zu jedem Namen angezeigt
 --		(ohne :SORT und Instanzen)
 
-DATA	info	== info(pos:seq[pos],objName:string,origin:string,inst:string,
-			kind:string,gloLo:globalLocal,applDef:applDef)
-		   name(! :string)
+DATA	info	== info(pos:seq[pos],objName:denotation,origin:denotation,
+			inst:denotation,kind:denotation,
+			gloLo:globalLocal,applDef:applDef)
+		   name(! :denotation)
 		   nil
-		   error(msg:string)
+		   error(msg:denotation)
 
 DATA	globalLocal == local global nil
 
@@ -167,14 +164,9 @@ DEF addPos(SeqPos,info(OSeqPos,Name,Orig,Inst,Kind,GL,AD)) ==
 DEF setPos(SeqPos,info(_,Name,Orig,Inst,Kind,GL,AD)) ==
 	info(SeqPos,Name,Orig,Inst,Kind,GL,AD)
 
-FUN setOrig : string ** info -> info
+FUN setOrig : denotation ** info -> info
 DEF setOrig(Orig,info(Pos,Name,_,Inst,Kind,GL,AD)) ==
 	info(Pos,Name,Orig,Inst,Kind,GL,AD)
-
-FUN error name : denotation -> info
-DEF error(Den) == error(Den!)
-DEF name(Den) == name(Den!)
-
 
 FUN setGlobal setLocal : info -> info
 DEF setGlobal(info(SeqPos,Name,Orig,Inst,Kind,_,AD)) ==
@@ -188,12 +180,12 @@ DEF setAppl(info(SeqPos,Name,Orig,Inst,Kind,GL,_)) ==
 DEF setDef(info(SeqPos,Name,Orig,Inst,Kind,GL,_)) ==
 	 info(SeqPos,Name,Orig,Inst,Kind,GL,definition)
 
-FUN mkLevel : string -> level
-DEF mkLevel(Str) ==	IF Str=("names"!)	THEN names
-			IF Str=("inst"!)	THEN inst
-			IF Str=("fct"!)		THEN fct
-			IF Str=("optimize"!)	THEN optimize
-			IF Str=("complete"!)	THEN complete
+FUN mkLevel : denotation -> level
+DEF mkLevel(Str) ==	IF Str="names"	THEN names
+			IF Str="inst"	THEN inst
+			IF Str="fct"		THEN fct
+			IF Str="optimize"	THEN optimize
+			IF Str="complete"	THEN complete
 			ELSE PRINT(true,
 		"mkLevel: error - bad level-name. using complete instead",
 				complete)
@@ -251,50 +243,63 @@ DEF extp = extProperties == true
 DEF intp = intProperties == true
 DEF _ : filetyp = _ :part == false
 
+FUN dPart : part -> denotation
+DEF dPart(signature) == "SIGNATURE"
+DEF dPart(extProperties) == "EXTERNAL PROPERTIES"
+DEF dPart(implementation) == "IMPLEMENTATION"
+DEF dPart(intProperties) == "INTERNAL PROPERTIES"
 
-FUN pos2String : interOpal -> pos -> string
-DEF pos2String(IO)(Pos) == pretty(dPos(IO)(Pos),max asNat)
+FUN pos2Denotation : pos -> denotation
+DEF pos2Denotation(Pos) == 
+	IF unknown?(Pos) THEN "<unknown>"
+	ELSE "<" ++ dPart(part(Pos)) ++
+		(IF part?(Pos) THEN "" 
+		ELSE "," ++ `(row(Pos)) ++ "," ++  `(col(Pos))
+		FI) ++ ">" ++
+		(IF region?(Pos) THEN 
+		"-<" ++ dPart(part(Pos)) ++ "," ++ `(endRow(Pos)) ++ 
+		"," ++ `(endCol(Pos)) ++ ">"
+		ELSE "" FI)
+	FI
 
-FUN info2Str info2Str4 :
-	interOpal -> info -> string
-DEF info2Str(IO)(Info) ==
-	IF Info nil? THEN ""!
+FUN info2Str info2Str4 : info -> denotation
+DEF info2Str(Info) ==
+	IF Info nil? THEN ""
 	IF Info error? THEN Info msg
 	IF Info name? THEN Info!
 	IF Info info? THEN
-	  LET	PosStr	== seq2StringBySpace(id)
-				((\\Pos.pos2String(IO)(Pos))*(Info pos))
-		OptStr	== IF (PosStr#)>15 THEN nl++tab++tab
-			   ELSE tab FI
+	  LET	PosStr	== `("", " ", "")(pos2Denotation)(Info pos)
+		OptStr	== IF (PosStr#)>15 THEN "\n\t\t"
+			   ELSE "\t" FI
 		Name	== (Info objName)++(Info origin)++
 				(Info inst)++(Info kind)
 		Zusatz	== GLStr++ADStr
-		GLStr	== IF (Info gloLo)global? THEN OptTab++("%%global"!)
-			   IF (Info gloLo)local? THEN OptTab++("%%local "!)
+		GLStr	== IF (Info gloLo)global? THEN OptTab++"%%global"
+			   IF (Info gloLo)local? THEN OptTab++"%%local"
 			   IF ((Info gloLo)nil?)and((Info applDef)nil?)THEN
-				""!
+				""
 			   OTHERWISE
-			   IF (Info gloLo)nil? THEN OptTab++("       "!)
+			   IF (Info gloLo)nil? THEN OptTab++"       "
 			   FI
-		ADStr	== IF (Info applDef)application? THEN "&&appl."!
-			   IF (Info applDef)definition? THEN "&&def."!
-			   IF (Info applDef)nil? THEN ""!
+		ADStr	== IF (Info applDef)application? THEN "&&appl."
+			   IF (Info applDef)definition? THEN "&&def."
+			   IF (Info applDef)nil? THEN ""
 			   FI
 		OptTab	== IF (Name#)<48 THEN tabify(Name#)
-			   ELSE nl++tab++tab++(tabify(0)) FI
+			   ELSE "\n\t\t"++(tabify(0)) FI
 	  IN PosStr++OptStr++Name++Zusatz
 	FI
 
 FUN 48 : nat
-DEF 48 == 30+18
+DEF 48 == "48"!
 
-FUN tabify : nat -> string
-DEF tabify(N) == IF N < 48 THEN tab++tabify(N+8)
-		 ELSE ""!
+FUN tabify : nat -> denotation
+DEF tabify(N) == IF N < 48 THEN "\t"++tabify(N+8)
+		 ELSE ""
 		 FI
 
-DEF info2Str4(_)(Info) ==
-	IF Info nil? THEN ""!
+DEF info2Str4(Info) ==
+	IF Info nil? THEN ""
 	IF Info error? THEN Info msg
 	IF Info name? THEN Info!
 	IF Info info? THEN

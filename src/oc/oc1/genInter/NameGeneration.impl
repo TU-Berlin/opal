@@ -3,7 +3,7 @@ IMPLEMENTATION NameGeneration
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-06 21:32:11 $ ($Revision: 1.2 $)
 /* %-
 -- ============================================================================
 -- Autor:       ralfi
@@ -15,7 +15,6 @@ IMPLEMENTATION NameGeneration
 IMPORT
         InterOpal       COMPLETELY
         EnvIO           COMPLETELY
-        InterOpalOption ONLY    ioName? ioInst? ioDebug?
         AGSig           ONLY    formalParams uninst?
                                 parameter? :globSig**name'Name->bool
         BaseGeneration  ONLY    updateStruct updateObjPos updateOnlys
@@ -30,10 +29,6 @@ IMPORT
         Rep             ONLY    rep:SORT `
         SeqMapEnv[envIO,name'Name,name'InterOpal]
                         ONLY    *
-        Format          COMPLETELY
-        FormatFun1      COMPLETELY
-        InterDumpBase   COMPLETELY
-
 -- lib
         Void            ONLY    void
         Pair[interOpal,seq[name'Name]]
@@ -49,7 +44,6 @@ IMPORT
         Set             COMPLETELY
         SetConv         ONLY asSet
         SeqCompare      ONLY    eq?
-        DEBUG           ONLY    PRINT FIELD?
         Pair            ONLY    pair &
 
         SeqReduce       ONLY    /
@@ -57,14 +51,10 @@ IMPORT
 
 FUN local2Name: globSig -> envIO ** name'Name -> envIO ** name'InterOpal
 DEF local2Name(DSig)(EnvIO,Name) ==
-LET EnvIO2 == PRINT(ioName?,\\ .("local2Name:")++(`(DSig,complete)(Name)),EnvIO)
-IN
-        (EnvIO2,name(ident(Name no),local,none))
+        (EnvIO,name(ident(Name no),local,none))
 
 FUN internal2Name: globSig -> envIO ** name'Name -> envIO ** name'InterOpal
-DEF internal2Name(DSig)(EnvIO,Name) ==
-LET Sig == PRINT(ioName?,\\ .("internal2Name:")++(`(DSig,complete)(Name)),DSig)
-IN
+DEF internal2Name(Sig)(EnvIO,Name) ==
            LET  Ident   == ident(no(Sig,Name))
                 Structs == (EnvIO io)structs
                 Inst    == IF insts(Structs!main) {}? THEN none
@@ -73,9 +63,7 @@ IN
            IN   (EnvIO,name(Ident,main,Inst))
 
 FUN param2Name: globSig -> envIO ** name'Name -> envIO ** name'InterOpal
-DEF param2Name(DSig)(EnvIO,Name) ==
-LET Sig == PRINT(ioName?,\\ .("param2Name:")++(`(DSig,complete)(Name)),DSig)
-IN
+DEF param2Name(Sig)(EnvIO,Name) ==
    LET  Ident   == ident(no(Sig,Name))
         Origin  == origin(origIdeNo(Sig,Name))
         EnvIO1  == createOriginStruct(Sig,EnvIO)(Name)
@@ -85,10 +73,7 @@ IN
         (EnvIO2, name(Ident, Origin, none))
 
 FUN external2Name: globSig -> envIO ** name'Name -> envIO ** name'InterOpal
-DEF external2Name(DSig)(EnvIO,Name) ==
---LET Sig       == PRINT(ioName?,\\ .("external2Name:")++(rep(DSig,Name)`),DSig)
-LET Sig == PRINT(ioName?,\\ .("external2Name:")++(`(DSig,complete)(Name)),DSig)
-IN
+DEF external2Name(Sig)(EnvIO,Name) ==
    LET  Ident   == ident(no(Sig,Name))
         Origin  == origin(origIdeNo(Sig,Name))
         EnvIO1  == createOriginStruct(Sig,EnvIO)(Name)
@@ -100,10 +85,7 @@ IN
    IN   (EnvIO3,name(Ident,Origin,Inst))
 
 FUN external0Name: globSig -> envIO ** name'Name -> envIO ** name'InterOpal
-DEF external0Name(DSig)(EnvIO,Name) ==
-  LET Sig == PRINT(ioName?,
-                   \\ .("external0Name:")++(`(DSig,complete)(Name)),DSig)
-  IN
+DEF external0Name(Sig)(EnvIO,Name) ==
   LET Ident   == ident(no(Sig,Name))
       Origin  == origin(origIdeNo(Sig,Name))
       NoName == name(ident(0), local, none)
@@ -129,7 +111,6 @@ DEF external0Name(DSig)(EnvIO,Name) ==
 
 FUN name2Name: globSig -> envIO ** name'Name -> envIO ** name'InterOpal
 DEF name2Name(Sig)(EnvIO,Name) ==
-LET (E,N) ==
         IF Name local? THEN local2Name(Sig)(EnvIO,Name)
         OTHERWISE
         IF Name internal? THEN internal2Name(Sig)(EnvIO,Name)
@@ -138,11 +119,9 @@ LET (E,N) ==
         OTHERWISE
         IF Name external? THEN external2Name(Sig)(EnvIO,Name)
         FI
-  IN (E,PRINT(ioName?,(\\ .("name2Name: ")++ `(Sig,complete)(Name)),N))
 
 FUN name0Name: globSig -> envIO ** name'Name -> envIO ** name'InterOpal
 DEF name0Name(Sig)(EnvIO,Name) ==
-LET (E,N) ==
         IF Name local? THEN local2Name(Sig)(EnvIO,Name)
         OTHERWISE
         IF Name internal? THEN internal2Name(Sig)(EnvIO,Name)
@@ -151,7 +130,6 @@ LET (E,N) ==
         OTHERWISE
         IF Name external? THEN external0Name(Sig)(EnvIO,Name)
         FI
-  IN (E,PRINT(ioName?,(\\ .("name0Name: ")++ `(Sig,complete)(Name)),N))
 
 FUN createOriginStruct: globSig ** envIO -> name'Name -> envIO
 DEF createOriginStruct(Sig,
@@ -180,7 +158,7 @@ DEF createOriginStruct(Sig,
                         (IOLoc,DN2)
                                 == (EnvIO2 io,EnvIO2 dep)
                         Struct  == structs(IOLoc)!Origin
-                  IN &(updateStruct(PRINT(ioInst?,\\ . "cOS/update formal" ++ OSymbol,Origin),
+                  IN &(updateStruct(Origin,
                         updateInst(formal,SName,Struct),IOLoc),
                         DN2+asSet(OSNames))
                 FI
@@ -194,7 +172,7 @@ FUN instOfAdd?: globSig ** envIO ->
 -- traegt sie gegebenfalls in InterOpal ein und
 -- gib alle neuen Namen zurueck
 DEF instOfAdd?(_,EnvIO)(<>,_,_) ==
-        (none,PRINT(ioInst?,"instOfAdd?(_,_)(<>,_)",EnvIO))
+        (none,EnvIO)
 DEF instOfAdd?(Sig,EnvIO)(NNames,Orig,OpInst) ==
   LET   (EnvIO1,IONames)== *(name2Name(Sig),EnvIO,NNames)
         Struct          == structs(EnvIO1 io) ! Orig
@@ -204,12 +182,12 @@ DEF instOfAdd?(Sig,EnvIO)(NNames,Orig,OpInst) ==
   IN IF OpInst avail? THEN
         (OpInst cont,
         &(updateStruct(Orig,updateInst(OpInst cont,IONames,Struct),EnvIO1 io),
-        PRINT(ioInst?,"instOfAdd?->update(avail)",EnvIO1 dep)))
+        EnvIO1 dep))
      OTHERWISE -- OptInst nil?
      IF Exists THEN
-        (Inst,PRINT(ioInst?,"instOfAdd?->lookup",EnvIO1))
+        (Inst,EnvIO1)
      ELSE (Inst,&(updateStruct(Orig,updateInst(Inst,IONames,Struct),EnvIO1 io),
-        PRINT(ioInst?,\\ .(("instOfAdd?->update :")++((IONames#)`))++((Struct symbol)++(pretty(list("["str,","str,"]"str,(EnvIO1 io) dN)(IONames),100))),EnvIO1 dep)))
+        EnvIO1 dep))
      FI
 
 FUN genInst: seq[pair[inst,seq[name'InterOpal]]] **
@@ -233,8 +211,7 @@ FUN instOf?: globSig ** envIO ->
               seq[name'Name] ** origin **     -- origin ist Zeiger auf Insts
               option[inst] ->         -- nur fuer formParMain2IO
               option[inst]
-DEF instOf?(_,EnvIO)(<>,_,_) ==
-        PRINT(ioInst?,"instOfAdd?(_,_)(<>,_)",nil)
+DEF instOf?(_,EnvIO)(<>,_,_) == nil
 DEF instOf?(Sig,EnvIO)(NNames,Orig,OpInst) ==
   LET   (EnvIO1,IONames)== *(name0Name(Sig),EnvIO,NNames)
         Struct          == structs(EnvIO1 io) ! Orig

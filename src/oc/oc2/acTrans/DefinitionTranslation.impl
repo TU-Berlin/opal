@@ -10,7 +10,7 @@ IMPLEMENTATION DefinitionTranslation
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-03-09 11:58:41 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-06 21:28:27 $ ($Revision: 1.3 $)
 
 IMPORT  Nat             COMPLETELY
         Denotation      COMPLETELY
@@ -26,8 +26,6 @@ IMPORT  Nat             COMPLETELY
         MapReduce       COMPLETELY
         MapMap          COMPLETELY
 
-        Error           ONLY ok err:SORT
-
         SourceAn        ONLY sourceAn symbol:denotation->sourceAn
                              errorKind optional never
         TypeAn          COMPLETELY
@@ -40,17 +38,7 @@ IMPORT  Nat             COMPLETELY
         InterOpal       COMPLETELY
         InterOpalAccess COMPLETELY
         InterOpalVars   COMPLETELY
-/*      AnalyzedInterOpal
-                        ONLY interOpal name rep fct ltName pos:interOpal**name->pos
-                             impl:interOpal**name->impl impl:SORT
-                             none? parameter?:impl->bool canonical?
-                             anaDef? locals freeLocal newEq pos:impl->pos
-                             data? impl:impl->sortImpl
-                             locSig locSigComplete
-                             isUsedByUser isUsedForAc isUnusedFreeConstructor
-                             isExported
-                             ` :interOpal**level->name->denotation level minimal
-*/
+
         ParameterTranslation    ONLY info:SORT noParameters sortParamIdes
                                         opParamDecs opParamTypes opParams?
         NameTranslation         COMPLETELY -- ONLY internalIde
@@ -59,60 +47,31 @@ IMPORT  Nat             COMPLETELY
         ExprTranslation         COMPLETELY
                 -- ONLY exp posAn notImplementedError undefinedSelectionError
 
-        DEBUG[bool]             ONLY FIELD?
-       DEBUG ONLY PRINT FIELD?
-       Format ONLY pretty format
-       InterDumpBase ONLY dN
-
-
 FUN isUsedOrForcedForAc : interOpal ** name -> bool
 DEF isUsedOrForcedForAc(_, _) == true
 --    forceUsage? or isUsedForAc(IO, N)
 
 -- ----------------------------------------------------------------------------
 
-FUN dec: interOpal**info -> name -> option[dec]**err
+FUN dec: interOpal**info -> name -> option[dec]
 
 DEF dec(IO,info)(name) ==
   LET im == def(object(IO,name))
-      optDec == IF isUsedOrForcedForAc(IO,name) THEN
+  IN
+        IF isUsedOrForcedForAc(IO,name) THEN
                   IF im missing? THEN
                     LET a == an(IO,info,name,type(IO,info)(fct(IO,name)))
-                        diag == IF const?(IO, name) THEN
-                                  (FIELD?[bool]("-zconstWarn"), 
-                                   \\ . "non implemented constant " ++
-                                   pretty(dN(IO)(name), 100)) PRINT
-                                  notImplementedError(IO, info, name)
-                                ELSE
-                                  (FIELD?[bool]("-zconstWarn"), 
-                                   \\ . "non implemented function " ++
-                                   pretty(dN(IO)(name), 100)) PRINT
-                                  notImplementedError(IO,info,name)
-                                FI
                     IN avail(binding(a,internalIde(IO)(name),
-                                     decMode(IO,name), diag))
+                                     decMode(IO,name),
+                                     notImplementedError(IO,info,name)))
                   IF im def? THEN 
-                    LET lSig == vars(im) 
-                    IN
+                        LET lSig == vars(im) IN
                     avail(dec(IO,info,lSig, succ(maxVar(lSig))) 
-                          (last(eqns(im))))
+                                (last(eqns(im))))
                   ELSE nil
                   FI
-                ELSE nil
-                FI
-      unusedHint == ok
-/*                  IF isUsedByUser(IO,name) THEN
-                      IF (im canonical?)
-                         and isUnusedFreeConstructor(IO,name) THEN
-                        err(hint,"never constructed variant %s",
-                            `(IO,minimal)(name),pos(im))
-                      ELSE ok
-                      FI
-                    ELSE err(hint,"unused operation %s",
-                             `(IO,minimal)(name),pos(IO,name))
-                    FI
-*/
-  IN (optDec,unusedHint)
+        ELSE nil
+        FI
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
@@ -134,7 +93,7 @@ DEF dec(IO,info,lsig,free)(eqn(_,name(tp,target),_,right)) ==
 -- ----------------------------------------------------------------------------
 
 FUN typeDecNops: interOpal**info -> name**nat
-                 -> option[typeDec]**seq[dec]**err**nat
+                 -> option[typeDec]**seq[dec]**nat
 
 DEF typeDecNops(IO,info)(name,free) ==
   LET im == def(object(IO,name))
@@ -151,12 +110,7 @@ DEF typeDecNops(IO,info)(name,free) ==
           FI
         ELSE (nil,<>,free)
         FI
-      unusedHint == ok
-                 /* IF isUsedByUser(IO,name) THEN ok
-                    ELSE err(hint,"unused sort %s",
-                             `(IO,minimal)(name),pos(IO,name))
-                    FI */
-  IN (optTypeDec,opDecs,unusedHint,unused)
+  IN (optTypeDec,opDecs,unused)
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
@@ -437,5 +391,3 @@ FUN optLambda: an**seq[dec]**exp -> exp
 
 DEF optLambda(_,<>,exp) == exp
 DEF optLambda            == lambda
-
-

@@ -7,14 +7,14 @@ IMPLEMENTATION Driver
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-22 12:51:48 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-06 21:28:28 $ ($Revision: 1.3 $)
 
 -- subject: driver
 -- project: acc/driver
 -- author:  ws+wg 2-92
 
-IMPORT	DENOTATION	ONLY denotation
-	Denotation	ONLY  ++
+IMPORT	
+	Denotation	ONLY ++
 	String 		ONLY string
 	StringConv	ONLY `
 	Nat		ONLY nat 0 1
@@ -22,17 +22,17 @@ IMPORT	DENOTATION	ONLY denotation
 	Compose		COMPLETELY
 	Com 		ONLY ans:SORT com data yield exit okay fail okay? error
 	Void		ONLY void nil	
-	DEBUG		ONLY PRINT FIELD?
 	Option		COMPLETELY
 	Pair		COMPLETELY
         Triple		COMPLETELY
 
 IMPORT	File 		ONLY file stdOut writeLine
 
-IMPORT 	Options		ONLY options analyzeOptions myInterOpalFile myStruct cop?
+IMPORT 	Options		ONLY options analyzeOptions myInterOpalFile myStruct
 	Verbose		COMPLETELY
 	ComCompose	COMPLETELY
-	OcStream	ONLY output stdOut stdErr write 
+	Stream		ONLY output stdOut stdErr
+	OcStream	ONLY write 
 	OcBinStream	ONLY optread
 	OcSetup		COMPLETELY
 	OcExit		ONLY ioError languageError exit
@@ -43,7 +43,6 @@ IMPORT	NatMap		ONLY natMap def
 IMPORT	PreparedOptions ONLY popts prepareOptions options
 	Ac		ONLY unit:SORT
 	InterOpal	ONLY interOpal:SORT ioTypeKey
-	InterOpalDump	COMPLETELY
 	AcDump		ONLY dump
 	DumpToFile	ONLY dumpToFile
 	Ic		ONLY mod:SORT
@@ -53,18 +52,10 @@ IMPORT	Optimize	ONLY optimize
 	Translate	ONLY translate
 	Generate	ONLY generate
 	
-	UnitAndErr	ONLY UnitAndErr unitOf errOf
-	ModAndErr	ONLY ModAndErr modOf errOf
-	CommandAsProcess ONLY  callAsProcess phase optim trans gen
-
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 -- The base command
 
 DEF oc2 == (init(oc2) & drive) ; exit'OcExit
-
-FUN seperateProcesses : options -> bool
-DEF seperateProcesses (o)== 
-	cop?("SeparateProcesses", o)
 
 
 FUN drive : options -> com[void]
@@ -75,15 +66,10 @@ DEF drive(DraftOpts) ==
     optread(oOpts,myInterOpalFile(oOpts), ioTypeKey) & (\\Inter?.
     IF avail?(Inter?) THEN
 	LET Inter == cont(Inter?)
-	IN dump(Inter) & (\\ _ .
-        (unit(oOpts)(Inter) ; 
+	IN (unit(oOpts)(Inter) ; 
       	dumpToFile(Opts,"AnaFile",\\U.dump(U)())) & (\\ AnaUnit.
-	(IF seperateProcesses(oOpts) THEN
-           driveSeperateProcs(Opts, AnaUnit) 
-        ELSE  
            driveSingleProc(Opts, AnaUnit)
-        FI)
-	))
+	)
     ELSE
 	yield(fail(ioError)) 
     FI
@@ -110,31 +96,4 @@ DEF failOnError(Opts,Err) ==
     IF Ok? THEN yield(okay(nil)) 
 	   ELSE	finit(options(Opts))(fail(languageError))  FI
     )
-
--- ------------------------------------------------------------
--- seperate Processes
--- ------------------------------------------------------------
-
-
-FUN  driveSeperateProcs : popts ** unit -> com[void]
-DEF driveSeperateProcs(Opts, AnaUnit) == 
-     LET structName == myStruct(options(Opts))
-	IN
-        callAsProcess[pair[popts,unit], UnitAndErr]
-		(optim, 
-                 structName, 
-                 &(Opts, AnaUnit))  			& (\\ OptUnit_+_Err.
-	failOnError(Opts,errOf(OptUnit_+_Err)) 		& (\\ _ .
-	callAsProcess[pair[popts,unit],ModAndErr]
-	  (trans,
-           structName, &(Opts,unitOf(OptUnit_+_Err)))	& (\\ TransMod_+_Err .
-	failOnError(Opts,errOf(TransMod_+_Err))		& (\\ _ .
-	callAsProcess[triple[popts,unit,mod],err]
-	  (gen,
-           structName, 
-           &(Opts, unitOf(OptUnit_+_Err), modOf(TransMod_+_Err))) 
-							& (\\ GenErr .
-	failOnError(Opts,GenErr)			& (\\ _ . 
-	finit(options(Opts))(okay(nil))
-	)))))) 
 

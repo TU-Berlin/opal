@@ -3,15 +3,15 @@ IMPLEMENTATION LookupInterOpal
 -- Autor:	ralfi
 -- Projekt:	OPAL1-Compiler
 -- Zweck:       Library fuer Zugriffe auf InterOpal
--- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/lookupInterOpal/LookupInterOpal.impl,v 1.1.1.1 1998-06-16 15:59:55 wg Exp $
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/lookupInterOpal/LookupInterOpal.impl,v 1.2 1999-10-06 21:31:04 maeder Exp $
 -- ============================================================================
 
 IMPORT	InterOpal	COMPLETELY
+	Denotation	COMPLETELY
 /* ONLY	< : origin ** origin -> bool interOpal
 				origin : struct -> origin origin :SORT origin?
 				part:SORT struct symbol : struct -> denotation
 */
-	Lib1		ONLY	uniq
 	LookupLib	ONLY	< = info:SORT level names? nil:info
 				posArea:SORT
 	LookupStructure	ONLY	getAllImportedNames listAllObjects
@@ -20,12 +20,12 @@ IMPORT	InterOpal	COMPLETELY
 	MapReduce	ONLY	/
 	SeqReduce	ONLY	/
 	SeqMap		ONLY	*
+	SeqOfSeq	ONLY	flat
 	OptBrowser	ONLY	arguments
 	Option		ONLY	avail cont nil nil? option
 	Pair		ONLY	& 1st 2nd pair
 	Seq		ONLY	% ++ :: <> <>? ft seq
-	SeqSort		ONLY	msort
-	String		ONLY	! : denotation -> string = string
+	SetConv[info, <]	COMPLETELY
 
 FUN getFunctionality : interOpal ** arguments -> posArea ** level -> info
 -- liefert den entsprechenden Namen und die Funktionalitaet
@@ -36,7 +36,7 @@ DEF getFunctionality(IO,Args)(PosArea,Level) == nil
 
 FUN getImports : interOpal ** arguments -> posArea ** level ->
 					seq[pair[info,seq[info]]]
-FUN getImports : interOpal ** arguments -> string ** level ->
+FUN getImports : interOpal ** arguments -> denotation ** level ->
 					seq[pair[info,seq[info]]]
 -- liefert alle importierten Funktionen, Typen etc. eines
 -- angegebenden Strukturnames oder Positionsbereiches
@@ -49,7 +49,7 @@ FUN getImports : interOpal ** arguments -> string ** level ->
 -- Bsp:	Void		ONLY	void
 -- ->	<(Void,<void>)>
 DEF getImports(IO,Args)(PosArea:posArea,Level) == <>
-DEF getImports(IO,Args)(Symbol:string,Level) ==
+DEF getImports(IO,Args)(Symbol:denotation,Level) ==
   LET	OptOrig	== getOrigin(IO,Args)(Symbol)
   IN	IF OptOrig nil? THEN <>
 	ELSE 
@@ -57,22 +57,22 @@ DEF getImports(IO,Args)(Symbol:string,Level) ==
 	  IN	IF SeqPair <>? THEN <>
 		OTHERWISE
 		IF Level names? THEN
-		  LET	SeqStrT == /((\\Pair,Seq.(Pair 2nd)++Seq),<>)(SeqPair)
-			SeqStr	== uniq(=)(msort(<)(SeqStrT))
-		  IN  %(&(1st (SeqPair ft),SeqStr))
+		  LET	SeqStrT == flat(2nd * SeqPair)
+			SeqStr	== asSeq(asSet(SeqStrT))
+		  IN  %(&(1st (SeqPair ft), SeqStr))
 		ELSE
-		 LET USeq == (\\Pair. &(Pair 1st,uniq(=)(msort(<)(Pair 2nd))))*
+		 LET USeq == (\\Pair. &(Pair 1st, asSeq(asSet(Pair 2nd)))) *
 								(SeqPair)
 		 IN USeq
 		FI
 	FI
 
-FUN getAllImportedStructures : interOpal ** arguments -> () -> seq[string] 
+FUN getAllImportedStructures : interOpal ** arguments -> () -> seq[denotation] 
 -- liefert alle importierten Strukturen
 DEF getAllImportedStructures(IO AS interOpal(_,Structs),__)() ==
 	/((\\Struct,SeqStr.
 		IF (Struct origin) origin? THEN	
-			((Struct symbol)!)::SeqStr
+			(Struct symbol)::SeqStr
 		ELSE SeqStr
 		FI),<>)(Structs)
 
@@ -96,8 +96,8 @@ DEF getFunktionality(IO AS interOpal(_,Structs),Args)(Level) ==
 -- not exported functions
 --
 
-FUN getOrigin : interOpal ** arguments -> string -> option[origin]
+FUN getOrigin : interOpal ** arguments -> denotation -> option[origin]
 DEF getOrigin(interOpal(_,Structs),Args)(Str)==
 	/((\\Pair,OptOrig.
-	IF ((symbol(Pair 2nd))!) = Str THEN avail(Pair 1st) ELSE OptOrig FI),nil)
+	IF (symbol(Pair 2nd)) = Str THEN avail(Pair 1st) ELSE OptOrig FI),nil)
 		(Structs asSeq)
