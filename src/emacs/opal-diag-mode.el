@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.10 1999-04-28 15:13:39 wg Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.11 1999-05-11 12:23:16 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -11,6 +11,9 @@
 ;;; $User Variables$
 
 (defvar opal-diag-extended-flag t  "*if t then show extended help")
+
+(defvar opal-diag-background "lightyellow"
+  "*colour to use for background of diagnostics")
 
 ;;; $Error List$
 ;; sigh .. again, differences between xemacs and fsf-emacs
@@ -381,6 +384,7 @@
   (define-key opal-mode-map "\C-c\C-d0" 'opal-diag-clear-diags)
 
   (opal-diag-xemacs-menu)
+  (opal-diag-define-faces)
   )
 
 ;; $$Keymap to be used in FSF Emacs
@@ -414,6 +418,7 @@
   (define-key opal-mode-map [mouse-3] 'opal-diag-mouse-help)
 
   (opal-diag-fsfemacs-menu)
+  (opal-diag-define-faces)
   )
 
 (defun opal-diag-mouse-select-error (event)
@@ -1177,7 +1182,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   )
 
 (defun opal-diag-parse-ext-for-unknown ()
-  (define-key ext-keymap [(control button1)] 'opal-diag-not-found)
+  (define-key ext-keymap [(button1)] 'opal-diag-not-found)
   (define-key ext-keymap [(button2)] 'opal-diag-not-found)
   (define-key ext-keymap [(button3)] 'opal-diag-not-found)
   (setq new-err-ext 
@@ -1190,7 +1195,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 (defun opal-diag-parse-ext-keymap ()
   (define-key ext-keymap "\M-n" 'opal-diag-next-main-error)
   (define-key ext-keymap "\M-p" 'opal-diag-prev-main-error)
-  (define-key ext-keymap [(control button1)]
+  (define-key ext-keymap [(button1)]
     `(lambda () (interactive) (opal-diag-show-this-error ,i)))
   (define-key ext-keymap [(button2)]
     'opal-diag-hide-diag-buffer)
@@ -1256,6 +1261,8 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
     )
   )
 
+(defun opal-diag-define-faces ()
+  "define faces to be used for opal diagnostics"
 
 (make-face 'opal-diag-source-error-face)
 (set-face-foreground 'opal-diag-source-error-face "black")
@@ -1263,21 +1270,23 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 (make-face 'opal-diag-mouse-error-face)
 (set-face-foreground 'opal-diag-mouse-error-face "red")
-(set-face-background 'opal-diag-mouse-error-face "lightyellow")
+(set-face-background 'opal-diag-mouse-error-face opal-diag-background)
 (make-face 'opal-diag-error-error-face)
 (set-face-foreground 'opal-diag-error-error-face "red")
 
 (make-face 'opal-diag-mouse-warning-face)
 (set-face-foreground 'opal-diag-mouse-warning-face "magenta")
-(set-face-background 'opal-diag-mouse-warning-face "lightyellow")
+(set-face-background 'opal-diag-mouse-warning-face opal-diag-background)
 (make-face 'opal-diag-error-warning-face)
 (set-face-foreground 'opal-diag-error-warning-face "magenta")
 
 (make-face 'opal-diag-mouse-hint-face)
 (set-face-foreground 'opal-diag-mouse-hint-face "SteelBlue")
-(set-face-background 'opal-diag-mouse-hint-face "lightyellow")
+(set-face-background 'opal-diag-mouse-hint-face opal-diag-background)
 (make-face 'opal-diag-error-hint-face)
 (set-face-foreground 'opal-diag-error-hint-face "SteelBlue")
+
+)
 
 (defun opal-diag-not-found ()
   (interactive)
@@ -1294,7 +1303,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.10 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.11 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)

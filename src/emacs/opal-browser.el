@@ -336,7 +336,8 @@
     (with-output-to-temp-buffer "*browse*"
       (switch-to-buffer "*browse*")
       (toggle-read-only)))
-  (opal-open-window "*browse*")
+;;  (opal-open-window "*browse*")
+  (pop-to-buffer "*browse*")
   (setq browser-use-filename nil)
   (setq browser-use-position nil)
   (setq browser-use-option1 nil)
