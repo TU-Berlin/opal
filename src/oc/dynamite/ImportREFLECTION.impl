@@ -113,6 +113,12 @@ DEF addREFLECTION(Create?, Instances?, DenotationName)(Struct) ==
      addObject(instancesId, "instances", sort)(Struct1) &
      addObject(<>_Id, "<>", fct(<>_Fct)) &
      addObject(sortId, "sort", fct(SortFct)) &
+     addObject(valueId, "value", fct(ValueFct)) &
+     addObject(coreTypeId, "coreType", sort) &
+     addObject(basicId, "basic", fct(BasicFct)) &
+     addObject(<>_typeId, "<>", fct(<>_typeFct)) &
+     addObject(::_typeId, "::", fct(::_typeFct)) &
+     addObject(functionId, "function", fct(FunctionFct)) &
      (IF Instances? THEN
         addObject(::_Id, "::", fct(::_Fct))
       ELSE Done
@@ -127,8 +133,21 @@ DEF addREFLECTION(Create?, Instances?, DenotationName)(Struct) ==
 			      sort(DenotationName) ::
 			      sort(InstancesName) :: <>),
 			 sort(CoreReflectionName))
+	ValueFct == funct(cart(sort(DenotationName) ::
+			       sort(DenotationName) ::
+			       sort(InstancesName) ::
+			       sort(CoreTypeName) :: <>),
+			  sort(CoreReflectionName))
+	BasicFct == funct(sort(CoreReflectionName),
+			  sort(CoreTypeName))
+	<>_typeFct == sort(CoreTypeName)
+	::_typeFct == funct(cart(sort(CoreTypeName) ::
+				 sort(CoreTypeName) :: <>),
+			    sort(CoreTypeName))
+	FunctionFct == ::_typeFct
 	InstancesName == inREFLECTION(Origin)(instancesId)
 	CoreReflectionName == inREFLECTION(Origin)(coreReflectionId)
+	CoreTypeName == inREFLECTION(Origin)(coreTypeId)
 	Origin == origin(Struct)
 	Done == (\\ Result . succeed(Result))
 
@@ -190,27 +209,38 @@ FUN buildITable : map[name, <, interReflection] ->
 DEF buildITable(Refls)(Structs) ==
   IF Refls {}? THEN succeed(itable(Structs, Refls))
   ELSE
-    succeed(itable(Structs, Refls, CoreReflectionName, SortName, AsInstances))
-    WHERE CoreReflectionName == inREFLECTION(Origin)(coreReflectionId)
-	  SortName == inREFLECTION(Origin)(sortId)
-	  AsInstances == asInstances(Origin)
+    succeed(itable(Structs, Refls,
+		   itools(CoreReflectionName, CoreTypeName,
+			  SortName, ValueName,
+			  BasicName, FunctionName,
+			  AsInstances, AsCoreType)))
+    WHERE CoreReflectionName == Name(coreReflectionId)
+          CoreTypeName == Name(coreTypeId)
+	  SortName == Name(sortId)
+	  ValueName == Name(valueId)
+	  BasicName == Name(basicId)
+	  FunctionName == Name(functionId)
+	  AsInstances == foldExpr(Origin, <>_Id, ::_Id)
+	  AsCoreType == foldExpr(Origin, <>_typeId, ::_typeId)
+	  Name == inREFLECTION(Origin)
 	  Origin == cont(findStruct("REFLECTION", Structs))
   FI
 
 
-FUN asInstances : origin -> seq[expr] -> expr
+FUN foldExpr : origin ** ident ** ident -> seq[expr] -> expr
 
-DEF asInstances(Origin) ==
+DEF foldExpr(Origin, <>_ID, ::_ID) ==
   /(::_Expr, <>_Expr)
   WHERE ::_Expr == (\\ Ft, Rt .
 		     apply(unknown, name(unknown, ::_Name),
 			   tuple(unknown, Ft :: Rt :: <>)))
 	<>_Expr == name(unknown, <>_Name)
-	::_Name == inREFLECTION(Origin)(::_Id)
-	<>_Name == inREFLECTION(Origin)(<>_Id)
+	::_Name == inREFLECTION(Origin)(::_ID)
+	<>_Name == inREFLECTION(Origin)(<>_ID)
 
 
-FUN denotationId instancesId <>_Id ::_Id coreReflectionId sortId : ident
+FUN denotationId instancesId <>_Id ::_Id coreReflectionId sortId
+    valueId coreTypeId basicId <>_typeId ::_typeId functionId : ident
 
 DEF denotationId == ident(1)
 DEF instancesId == ident(1)
@@ -218,3 +248,9 @@ DEF <>_Id == ident(2)
 DEF ::_Id == ident(3)
 DEF coreReflectionId == ident(4)
 DEF sortId == ident(5)
+DEF valueId == ident(6)
+DEF coreTypeId == ident(7)
+DEF basicId == ident(8)
+DEF <>_typeId == ident(9)
+DEF ::_typeId == ident(10)
+DEF functionId == ident(11)
