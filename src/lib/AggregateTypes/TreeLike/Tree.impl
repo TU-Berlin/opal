@@ -3,14 +3,15 @@ IMPLEMENTATION Tree
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 16:00:09 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-09-15 14:38:49 $ ($Revision: 1.2 $)
 
 IMPORT Seq ONLY seq <> ++ # %
        SeqMap ONLY *
        SeqOfSeq ONLY flat
        Nat ONLY nat 0 succ max + 1 2
        Compose ONLY o
-       Option ONLY option nil avail avail?
+       Option[data] ONLY option nil avail avail?
+       RelCmp COMPLETELY
        ABORT COMPLETELY
 
 -- %$The Data Type of Trees$
@@ -42,7 +43,6 @@ DEF :=_right(node(1,2,_),new) == node(1,2,new)
 DEF :=_right(nil, _) == ABORT(":=_right'Tree: applied to empty tree")
 
 
-
 FUN swap: tree -> tree
 DEF swap(nil) == nil
 DEF swap(node(d, t1, t2)) == node(d, t2, t1)
@@ -59,38 +59,6 @@ DEF lrotate(_) == ABORT("lrotate'Tree: right child is empty")
 FUN rrotate: tree -> tree
 DEF rrotate(node(y, node(x, A, B), C)) == node(x, A, node(y, B, C))
 DEF rrotate(_) == ABORT("rrotate'Tree: left child is empty")
-
-
-/* %- ich fand die Operationen mal spannend, aber jetzt nicht mehr.
-@code{lrotate} moves the node values like this: left child ->
-parent -> right child -> left child. @code{rrotate} moves the values the
-other way round: right child <- left child <- parent <- right child.
-If one child is an outer leaf, the values of the parent and the other
-child are exchanged. If the tree is a leaf or empty, nothing
-happens.
-FUN lrotate: tree -> tree
-DEF lrotate(node(d1, node(d2, t1, t2), node(d3, t3, t4))) ==
-        node(d3, node(d1, t1, t2), node(d2, t3, t4))
-DEF lrotate(node(d1, nil, node(d3, t3, t4))) ==
-        node(d3, nil, node(d1, t3, t4))
-DEF lrotate(node(d1, node(d2, t1, t2), nil)) ==
-        node(d2, node(d1, t1, t2), nil)
-DEF lrotate(t AS node(_, nil, nil)) == t
-DEF lrotate(nil) == nil
-
-
-FUN rrotate: tree -> tree
-DEF rrotate(node(d1, node(d2, t1, t2), node(d3, t3, t4))) ==
-        node(d2, node(d3, t1, t2), node(d1, t3, t4))
-DEF rrotate(node(d1, nil, node(d3, t3, t4))) ==
-        node(d3, nil, node(d1, t3, t4))
-DEF rrotate(node(d1, node(d2, t1, t2), nil)) ==
-        node(d2, node(d1, t1, t2), nil)
-DEF rrotate(t AS node(_, nil, nil)) == t
-DEF rrotate(nil) == nil
-*/
-
-
 
 -- %$Accessing Datas in a Tree$
 FUN leftmost rightmost     : tree -> data   
@@ -154,40 +122,27 @@ DEF forall?(P,t) == ~(exist?(~ o P,t))
 
 -- %$Comparing trees$
 FUN < : (data ** data -> bool) -> tree ** tree -> bool
-DEF <(<_data)(nil,nil) == false
-DEF <(_)(nil,node(_,_,_)) == true
-DEF <(_)(node(_,_,_),nil) == false
-DEF <(<_data)(node(a,b,c),node(A,B,C)) == IF <_data(a,A) THEN true
-IF <_data(A,a) THEN false
-ELSE
-IF <(<_data)(b,B) THEN true
-IF <(<_data)(B,b) THEN false
-ELSE
-IF <(<_data)(c,C) THEN true
-IF <(<_data)(C,c) THEN false
-ELSE
-false
-FI
-FI
+DEF <(<_data)(t, T) == cmp(<_data)(t, T) <?
+FUN cmp : (data ** data -> bool) -> tree ** tree -> rel
+DEF cmp(_)(nil,nil) == =
+DEF cmp(_)(nil,_) == <
+DEF cmp(_)(_,nil) == >
+DEF cmp(<_data)(node(a,b,c),node(A,B,C)) == 
+IF <_data(a,A) THEN <
+IF <_data(A,a) THEN >
+ELSE LET Cmp == cmp(<_data)(b,B)
+     IN IF Cmp =? THEN cmp(<_data)(c,C)
+        ELSE Cmp
+        FI
 FI
 
 FUN = : (data ** data -> bool) -> tree ** tree -> bool
-DEF =(=_data)(nil,nil) == true
-DEF =(_)(nil,node(_,_,_)) == false
-DEF =(_)(node(_,_,_),nil) == false
-DEF =(=_data)(node(a,b,c),node(A,B,C)) == IF =_data(a,A) THEN IF =(=_data)(b,B) THEN IF =(=_data)(c,C) THEN true
-ELSE
-false
-FI
-ELSE
-false
-FI
-ELSE
-false
-FI
-
--- auxiliaries
--- FUN val: tree -> seq[data]
--- DEF val(nil) == <>
--- DEF val(node(d, _, _)) == %(d)
+DEF =(_)(nil,nil) == true
+DEF =(_)(nil,_) == false
+DEF =(_)(_,nil) == false
+DEF =(=_data)(node(a,b,c),node(A,B,C)) == 
+IF =_data(a,A) THEN 
+        IF =(=_data)(b,B) THEN =(=_data)(c,C)
+        ELSE false FI
+ELSE false FI
 
