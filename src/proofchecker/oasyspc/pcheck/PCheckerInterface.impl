@@ -25,17 +25,17 @@ IMPORT
        RepoName COMPLETELY
        RepoNameConv COMPLETELY
        RepoUnitAccess COMPLETELY
-       Set ONLY set {} % incl +
+       Set ONLY set {} % incl + {}?
        String ONLY string ::? rt ft ! ++ ::
        Void ONLY nil
        Loquacity COMPLETELY
-       Seq ONLY seq <> ::
+       Seq ONLY seq <> :: % ft
        NatConv ONLY `
        RepoMaintain ONLY requireFullAbsy reloadUnits
        ProofSemantics ONLY proofSemantics
        PCEnv ONLY fmtPcEnv pcEnv:SORT diags
        PrettyPCEnv COMPLETELY
-       RepoEvent ONLY clearErrors errors? event:SORT register callback:SORT diag
+       RepoEvent COMPLETELY
        Check ONLY checkUnits
        RepoComAbort ONLY abort
        ComAction ONLY done
@@ -85,7 +85,7 @@ IMPORT INLINE ONLY INLINE
        SeqReduce ONLY /
        FileSystem ONLY unlink
        PrettyAn ONLY updatePrettyAn setFullness origin? instance?
-       RepoObjectAccess ONLY objects symbol
+       RepoObjectAccess ONLY objects symbol newLocalSign updateObject
        SetReduce ONLY /
        SetFilter ONLY |
        Nat ONLY 1 2 256 = 10000
@@ -95,7 +95,7 @@ IMPORT INLINE ONLY INLINE
        CheckSignature ONLY delUserId inclUserId userIdSet
        Testing ONLY doEvalTestCases
        Triple ONLY 3rd 1st 2nd triple
-       FmtSeq ONLY fmtSeq
+       FmtSeq ONLY fmtSeq list
        AbsySC ONLY !
        ProofCommon ONLY sendRepo
        PrettyInfo ONLY prettyInfo
@@ -110,9 +110,10 @@ IMPORT INLINE ONLY INLINE
        SeqMap ONLY *
        UnitHandling COMPLETELY
        DecodeForm ONLY decFormula
-       VarHandling ONLY newTypeVar
+       VarHandling ONLY newTypeVar newVars
        FmtOption ONLY fmtOption
        TypeLaws ONLY getVisible getCong
+       SeqSupplements ONLY sd
 
 FUN compileTime: denotation
 DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
@@ -218,8 +219,9 @@ DEF pcheckerCmdtable ==
     cmd(lit("jcheck-info") o
         (  (lit("testcases") o (objectNameSpec o objectNameSpec) &
             2nd @ pcheckInfoTestCases)
-        |  (lit("env") o unitNameSpec & 2nd @ pcheckInfoEnv) 
-        |  (lit("formula") o *(var("formula")) & 2nd & pcheckInfoFormula)
+        |  (lit("env") @ pcheckInfoEnv) 
+        |  (lit("formula") o *(var("formula")) & 2nd @ pcheckInfoFormula)
+        |  (lit("sorts") @ pcheckInfoSorts)
         ) & 2nd, 
         "testcases FUN HEUR: show testcases for FUN according to HEUR\n" ++
         "env UNIT: show proof environment for unit\n" ++
@@ -627,21 +629,28 @@ DEF pcheckInfoTestCases(func & heur) ==
   FI
   )
 
-FUN pcheckInfoEnv: unitName -> com[denotation]
-DEF pcheckInfoEnv(uN) == 
-  checkDo(requireFullAbsy(uN)) & (\\ _ .
-  checkDo(reloadUnits(%(uN))) & (\\ _ .
-  checkDo(checkUnits(%(uN))) & (\\ _ .
-  query(related(transitive, imports)(uN)) & (\\ rel.
-  upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
-                             succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
-  queryUpd(proofSemantics(uN)) & (\\pce.
-  upd(diag(diags(pce))) & ( \\ _ .
-  verbosityLevel & (\\vl.
-  query(prettyInfo(vl)(pce)(uN)) & (\\ f.
-  log(pretty(f)) & (\\ _ .
-  dumpFmt(f) 
-  ))))))))))
+FUN pcheckInfoEnv: denotation -> com[denotation]
+DEF pcheckInfoEnv(_) == 
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected") 
+  ELSE
+    LET uN == uNv cont 
+    IN  
+    checkDo(requireFullAbsy(uN)) & (\\ _ .
+    checkDo(reloadUnits(%(uN))) & (\\ _ .
+    checkDo(checkUnits(%(uN))) & (\\ _ .
+    query(related(transitive, imports)(uN)) & (\\ rel.
+    upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
+              succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
+    queryUpd(proofSemantics(uN)) & (\\pce.
+    upd(diag(diags(pce))) & ( \\ _ .
+    verbosityLevel & (\\vl.
+    query(prettyInfo(vl)(pce)(uN)) & (\\ f.
+    log(pretty(f)) & (\\ _ .
+    dumpFmt(f) 
+    ))))))))))
+  FI
+  )
     
 FUN pcheckInfoFormula: seq[denotation] -> com[denotation]
 DEF pcheckInfoFormula(formulaparts) ==
@@ -670,6 +679,59 @@ DEF pcheckInfoFormula(formulaparts) ==
   FI
   )
 
+FUN pcheckInfoSorts: denotation -> com[denotation]
+DEF pcheckInfoSorts(_) ==
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected")
+  ELSE
+    LET uN == uNv cont
+    IN
+    IF part(uN) sign? THEN
+      succeed("no info on implemented sorts in signature units")
+    ELSE
+      checkDo(requireFullAbsy(uN)) & (\\ _ .
+      checkDo(reloadUnits(%(uN))) & (\\ _ .
+      checkDo(checkUnits(%(uN))) & (\\ _ .
+      query(related(transitive, imports)(uN)) & (\\ rel.
+      upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
+                succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
+      queryUpd(proofSemantics(uN)) & (\\pce.
+      checkDo(diag(diags(pce))) & ( \\ _ .
+      query(trueSorts(uN)) & (\\ oNs.
+      IF oNs {}? THEN
+        succeed("no sorts implemented in this unit")
+      ELSE
+        query(\\R. list(pIS(R, uN), none, brk, none, asSeq(oNs))) & (\\ f.
+        dumpFmt(f)
+        )
+      FI
+      ))))))))
+    FI
+  FI
+  )
+
+FUN pIS: repo ** unitName -> objectName -> fmt
+DEF pIS(R, uN)(type) ==
+  LET (lS, R1) == newLocalSign(uN)(R)
+      (R2, nvs) == newVars(R1, lS, "")(%(name(type), name(type)))
+      v1 == ft(nvs)
+      v2 == sd(nvs)
+      R3 == updateObject(v1, \\o. o :=_symbol "x")(R2)
+      R4 == updateObject(v2, \\o. o :=_symbol "y")(R3)
+      V == getVisible(type, v1!)(R4)
+      C == getCong(type, v1!, v2!)(R4)
+  IN
+  fmtObjectNameLong(R4, uN)(type); lit(": ");
+  (IF nil?(V) THEN lit("no junk")
+   ELSE lit("visible(x) <=> "); 
+        prettyFormula(R4, uN)(cont(V))
+   FI);
+  lit(","); spc(1);
+  (IF nil?(C) THEN lit("no multiple representations")
+   ELSE lit("x ~ y <=> "); prettyFormula(R4, uN)(cont(C))
+   FI)
+  
+                    
 -- %$Auxiliary functions$
 
 FUN checkDo: (repo -> com[repo]) -> com[void]
