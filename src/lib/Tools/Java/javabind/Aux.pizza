@@ -1,0 +1,270 @@
+/** Class defining some auxiliary statics.
+  *
+  * @author Wolfgang Grieskamp
+  * @version $Id: Aux.pizza,v 1.1 1999-10-16 17:32:05 wg Exp $
+  */
+
+package opal.javabind;
+import java.io.*;
+import java.lang.*;
+import java.lang.reflect.*;
+import pizza.newutil.*;
+
+public class Aux {
+
+  /** A version of System.forName which aborts instead of throwing an
+    * exception. 
+    * @see java.lang.Class#forName 
+    */
+  public static Class forName(String name){
+    try {
+      return Class.forName(name);
+    }
+    catch(Exception e){
+      throw new Error("class not found: " + e.getMessage());
+    }
+  }
+
+  /** Get the base name of a qualified class name. */
+  public static String baseName(String name){
+    int i = name.lastIndexOf(".");
+    if (i >= 0){
+      return name.substring(i+1).replace('$', '_');
+    } else {
+      return name;
+    }
+  }
+
+  /** Get the package name of a qualified class name. */
+  public static String packageName(String name){
+    int i = name.lastIndexOf(".");
+    if (i >= 0){
+      return name.substring(0,i);
+    } else {
+      return name;
+    }
+  }
+
+
+  /** Test structural equality according to public fields 
+    * of the LUB of the classes of argument objects. The field
+    * equality is tested with the equals() method.
+    */
+  public static boolean structuralEquality(Object ob1, Object ob2){
+    if (ob1 == ob2) {
+      return true;
+    } else {
+      try {
+	Class lub;
+	if (ob1.getClass().isInstance(ob2)) {
+	  lub = ob1.getClass();
+	} else 
+	  if (ob2.getClass().isInstance(ob1)){
+	    lub = ob1.getClass();
+	  } else {
+	    return false;
+	  }
+	Field fields[] = lub.getFields();
+	for (int i = 0; i < fields.length; i++){
+	  if (!Modifier.isStatic(fields[i].getModifiers())){
+	    if (!fields[i].get(ob1).equals(fields[i].get(ob2))){
+	      return false;
+	    }
+	  }
+	}
+	return true;
+      }
+      catch (Exception e){
+	throw new Error("internal: structural equality failed: "
+                        + e.getMessage());
+      }
+    }
+  }
+	
+  /** Return the set of superclasses and interfaces of a given class. */
+  public static Set<Class> superClasses(Class clazz){
+    Set<Class> res = new Set();
+    Class c = clazz.getSuperclass();
+    while (c != null){
+      res.put(c);
+      c = c.getSuperclass();
+    }
+    Class[] cs = clazz.getInterfaces();
+    for (int i = 0; i < cs.length; i++){
+      res.put(cs[i]);
+    }
+    return res;
+  }
+
+  /** Return the set of classes used in the signatures of public members. */
+  public static Set<Class> referredClasses(Class clazz){
+    Set<Class> res = new Set();
+    Method[] ms = clazz.getMethods();
+    for (int i = 0; i < ms.length; i++){
+      addClass(res, ms[i].getReturnType());
+      Class[] rs = ms[i].getParameterTypes();
+      for (int j = 0; j < rs.length; j++){
+	addClass(res, rs[j]);
+      }
+    }
+    Field[] fs = clazz.getFields();
+    for (int i = 0; i < fs.length; i++){
+      addClass(res, fs[i].getType());
+    }
+    Constructor[] cs = clazz.getConstructors();
+    for (int i = 0; i < cs.length; i++){
+      Class[] rs = cs[i].getParameterTypes();
+      for (int j = 0; j < rs.length; j++){
+	addClass(res, rs[j]);
+      }
+    }
+    Class[] is = clazz.getClasses();
+    for (int i = 0; i < is.length; i++){
+      addClass(res, is[i]);
+    }
+    // FIXME: exceptions, interfaces?
+    res.put(Void.TYPE);
+    return res;
+  }	
+  
+  private static void addClass(Set<Class> set, Class clazz){
+    set.put(clazz);
+    if (clazz.isArray()){
+      addClass(set, clazz.getComponentType());
+    }
+  }
+
+  /** Get a class containing the given class as member, or null if
+    * given class is not inner. (java.lang.Class.getDeclaringClass()
+    * seems to be broken in JDK 1.1).
+    */
+  private static Hashtable<Class,Class> declaringCache = new Hashtable();
+  public static Class getDeclaringClass(Class clazz){
+    Class declaring = declaringCache.get(clazz);
+    if (declaring == null){
+      String name = clazz.getName();
+      int dollar = name.lastIndexOf("$");
+      if (dollar == -1)
+	// use Aux to represent that their is no declaring
+	// class
+	declaring = Aux.class;
+      else 
+	declaring = forName(name.substring(0, dollar));
+      declaringCache.put(clazz, declaring);
+    }
+    if (declaring == Aux.class)
+      return null;
+    else
+      return declaring;
+  }
+
+  /** Get the classes declared as inner classes of the given
+    * class. (java.lang.Class.getDeclaredClasses() seems to be broken
+    * in JDK 1.1).
+    * This is implemented using a search for class files.
+    */
+  private static Hashtable<Class,Class[]> declaredCache = new Hashtable();
+  public static Class[] getDeclaredClasses(Class clazz){
+    Class[] array = declaredCache.get(clazz);
+    if (array != null) return array;
+
+    String name = clazz.getName();
+    String packageName;
+
+    int i = name.lastIndexOf(".");
+    packageName = name.substring(0,i);
+
+    Enumerator<Class> classes = packageClasses(packageName).elements();
+    Set<Class> inners = new Set();
+    while (classes.hasMoreElements()){
+      Class cand = classes.nextElement();
+      String candName = cand.getName();
+      if (candName.startsWith(name + "$") &&
+	  candName.substring(name.length()+1).indexOf("$") == -1)
+	inners.put(cand);
+    }
+    array = new Class[inners.size()];
+    inners.copyInto(array);
+    declaredCache.put(clazz, array);
+    return array;
+  }
+
+
+  /** Get the classes belonging to a package by searching the class path. */
+  private static Hashtable<String,Set<Class>> packageClassesCache = 
+        new Hashtable();
+  public static Set<Class> packageClasses(String packageName){
+    Set<Class> classes = packageClassesCache.get(packageName);
+
+    if (classes != null) return classes;
+
+    String packageDir = packageName.replace('.', File.separatorChar);
+    String classPath = System.getProperty("java.class.path", ".");
+    while (classPath.length() > 0){
+      String prefix;
+      int i = classPath.indexOf(File.pathSeparatorChar);
+      if (i >= 0){
+	prefix = classPath.substring(0, i);
+	classPath = classPath.substring(i+1);
+      } else {
+	prefix = classPath;
+	classPath = "";
+      }
+      // System.out.println("... searching for " + packageName + " in " + prefix);
+      File dir = new File(prefix, packageDir);
+      if (dir.exists()){
+	String[] classNames = 
+	  dir.list(new FilenameFilter() {
+	    public boolean accept(File dir1, String name1){
+	      // System.out.println("?  " + name1);
+	      return name1.endsWith(".class");
+	    }
+	  });
+	classes = new Set();
+	for (i = 0; i < classNames.length; i++){
+	  try {
+	    Class t = Class.forName(packageName + "." +
+				    classNames[i].
+				    substring(0, classNames[i].length()-6));
+	    classes.put(t);
+	  }
+	  catch (ClassNotFoundException e){
+	    // ignore
+	  }
+	}
+	if (classes.isEmpty()){
+	  System.out.println(
+	    "Warning: package `" + packageName + "' seems to be empty");
+	}
+	packageClassesCache.put(packageName, classes);
+	return classes;
+      }
+    }
+    System.out.println("Warning: didn't found package `" + packageName + "'");
+    packageClassesCache.put(packageName, new Set());
+    return new Set();
+  }
+
+ 
+  /** Write to a file if not already existent or contents has
+    * changed. */
+  public static void writeOnDiff(String cont, File file)
+  throws IOException {
+    if (file.exists() && file.canRead()){
+      FileInputStream in = new FileInputStream(file);
+      byte buf[] = new byte[in.available()];
+      in.read(buf);
+      in.close();
+      if (new String(buf).equals(cont)){
+	return;
+      }
+    }
+    FileWriter out = new FileWriter(file);
+    out.write(cont);
+    out.close();
+  }
+      
+}
+    
+
+

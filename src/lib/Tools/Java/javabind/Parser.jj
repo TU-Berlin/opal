@@ -1,0 +1,170 @@
+options {
+  JAVA_UNICODE_ESCAPE = true;
+  STATIC = false;
+}
+
+
+PARSER_BEGIN(Parser)
+
+package opal.javabind;
+import java.util.Vector;
+import java.io.InputStream;
+
+public class Parser {
+
+  public static Absy parse(InputStream in) throws ParseException {
+    Parser parser = new Parser(in);
+    return parser.spec();
+  }
+
+}
+
+PARSER_END(Parser)
+
+
+/***********************************************************************/
+// Lexical Rules
+
+SKIP :
+{ " "
+| "\t"
+| "\n"
+| "\r"
+| "\f"
+}
+
+SPECIAL_TOKEN :
+{ <SINGLE_LINE_COMMENT: "//" (~["\n","\r"])* ("\n"|"\r"|"\r\n")>
+| <MULTI_LINE_COMMENT: 
+       "/*" (~["*"])* "*" ("*" | (~["*","/"] (~["*"])* "*"))* "/">
+}
+
+TOKEN :
+{ 
+  <SYSTEM: "system"> 
+| <OPTION: "option">
+| <USES: "uses"> 
+| <CLUSTER : "cluster">
+| <BIND: "bind"> 
+| <AS: "as"> 
+| <IN: "in"> 
+| <REFERENCE: "reference"> 
+| <FREETYPE: "freetype"> 
+| <IMMUTABLE: "immutable"> 
+| <VARIANTS: "variants"> 
+| <COMMA: ",">
+| <ARG: "\"" (<LETTER>|<DIGIT>|"/"|"."|"*"|"-")+ "\"">
+| <#LETTER:
+      [
+       "\u0024",
+       "\u0041"-"\u005a",
+       "\u005f",
+       "\u0061"-"\u007a",
+       "\u00c0"-"\u00d6",
+       "\u00d8"-"\u00f6",
+       "\u00f8"-"\u00ff",
+       "\u0100"-"\u1fff",
+       "\u3040"-"\u318f",
+       "\u3300"-"\u337f",
+       "\u3400"-"\u3d2d",
+       "\u4e00"-"\u9fff",
+       "\uf900"-"\ufaff",
+       "_"
+      ]
+  >
+| <#DIGIT:
+      [
+       "\u0030"-"\u0039",
+       "\u0660"-"\u0669",
+       "\u06f0"-"\u06f9",
+       "\u0966"-"\u096f",
+       "\u09e6"-"\u09ef",
+       "\u0a66"-"\u0a6f",
+       "\u0ae6"-"\u0aef",
+       "\u0b66"-"\u0b6f",
+       "\u0be7"-"\u0bef",
+       "\u0c66"-"\u0c6f",
+       "\u0ce6"-"\u0cef",
+       "\u0d66"-"\u0d6f",
+       "\u0e50"-"\u0e59",
+       "\u0ed0"-"\u0ed9",
+       "\u1040"-"\u1049"
+      ]
+  >
+}
+
+
+/***********************************************************************/
+// Syntactic Rules
+
+Absy spec() : 
+{ 
+  String system;
+  String subsys;
+  String option;
+  Vector uses = new java.util.Vector();
+  Vector options = new java.util.Vector();
+  Vector items = new java.util.Vector();
+  String[] classes;
+  String struct;
+  Absy.BindKind kind;
+}
+{ 
+  <SYSTEM> system=arg()
+  (
+    <BIND> classes=classSpec()
+     ( <IN> struct=arg() | { struct = null; } )
+     ( <AS> kind=bindKind() | { kind = Absy.BindKind.Reference; } )
+     { items.addElement(Absy.Item.newBind(classes, struct, kind)); }
+  | <USES> subsys=arg() 
+    { uses.addElement(subsys); }
+  | <CLUSTER> classes=classSpec() <IN> struct=arg()
+     { items.addElement(Absy.Item.newCluster(classes, struct)); }
+  | <OPTION> option=arg()
+    { options.addElement(option); }
+  )*
+  <EOF>
+    {  
+      String[] usesa = new String[uses.size()];
+      uses.copyInto(usesa);
+      String[] optionsa = new String[options.size()];
+      options.copyInto(optionsa);
+      Absy.Item[] itemsa = new Absy.Item[items.size()];
+      items.copyInto(itemsa);
+      return Absy.newAbsy(system, optionsa, usesa, itemsa);
+    }
+}
+    
+String[] classSpec() :
+{
+  Vector specs = new Vector();
+  String spec;
+}
+{
+  (spec=arg() { specs.addElement(spec); })
+  (<COMMA> spec=arg() { specs.addElement(spec); })*
+    {
+      String[] specsa = new String[specs.size()];
+      specs.copyInto(specsa);
+      return specsa;
+    }
+}
+
+Absy.BindKind bindKind():
+{}
+{
+  <IMMUTABLE> { return Absy.BindKind.Immutable; }
+| <REFERENCE> { return Absy.BindKind.Reference; }
+| <FREETYPE>  { return Absy.BindKind.FreeType; }
+}
+
+String arg():
+{ Token t;
+}
+{
+  t=<ARG>
+    {
+      return t.image.substring(1, t.image.length()-1);
+    }
+}
+  

@@ -1,0 +1,490 @@
+/** Class representing writers for JNI C code
+  * @author Wolfgang Grieskamp
+  * @version $Id: JniCodeWriter.pizza,v 1.1 1999-10-16 17:32:05 wg Exp $
+  *
+  */ 
+
+package opal.javabind;
+import java.lang.*;  
+import java.io.*;  
+import pizza.lang.*;  
+import pizza.newutil.*;  
+
+public abstract class JniCodeWriter extends CCodeWriter {
+
+  // CONSTRUCTORS
+
+  /** Construct a JNI code writer which writes to output stream. */
+  protected JniCodeWriter (OutputStream s){
+    super(s);
+  }
+
+  /** Construct a JNI code writer which writes to writer. */
+  protected JniCodeWriter(Writer w){
+    super(w);
+  }
+
+  // ABSTRACT METHODS
+  // to be defined for a specific handcoding interface of the 
+  // functional language
+
+  /** Return mapping of extern function name to C name in
+    * the handcoding interface. */
+  protected abstract String cName(Name name, int version);
+
+  /** Return a unique local (static) C name for name in
+    * the handcoding interface. */
+  protected abstract String cLocalName(Name name, int version);
+
+  /** Generate function definition in the handcoding interface.
+    * The parameter bodyGen generates the body. */
+  protected abstract void defineFun(String cname,
+				    boolean immutable,
+				    List<Type> params,
+				    Type result,
+				    (List<Var>, Var, String)->void bodyGen);
+
+
+  // Public methods to generate JNI bindings
+
+  /** Generate class variable declaration. */
+  public void declareClassVar(Type thisClass){
+    stm("jclass " +  thisClass.classVarName);
+  }
+
+  /** Import class variable declaration. */
+  public void importClassVar(Type thisClass){
+    stm("extern jclass " +  thisClass.classVarName);
+  }
+
+  /** Generate class variable initialization. */
+  public void initClassVar(Type thisClass){
+    stm(assign(thisClass.classVarName,
+	       callJni("FindClass",
+		       quoted(thisClass.clazz.getName().replace('.','/')))));
+  }
+
+  /** Generate constructor id variable declaration. */
+  public void declareConstructorIdVar(Type thisClass,
+				      Name name, int version){
+    stm("static jmethodID " + cConstructorIdName(name, version));
+  }
+
+  /** Generate constructor id variable initialization. */
+  public void initConstructorIdVar(Type thisClass, 
+				   Name name, int version, 
+				   List<Type> params){
+    stm(assign(cConstructorIdName(name, version),
+	       callJni("GetMethodID",
+		       thisClass.classVarName,
+		       quoted("<init>"),
+		       quoted(methodSign(params, Type.fromClass(Void.TYPE)))))); 
+  }
+
+  /** Generate method id variable declaration. */
+  public void declareMethodIdVar(Type thisClass,
+				 Name name, int version){
+    stm("static jmethodID " + cMethodIdName(name, version));
+  }
+
+  /** Generate method id variable initialization. */
+  public void initMethodIdVar(Type thisClass,
+			      Name name, int version, 
+			      String jname, List <Type> params, Type result){
+    stm(assign(cMethodIdName(name, version),
+	       callJni("GetMethodID",
+		       thisClass.classVarName,
+		       quoted(jname),
+		       quoted(methodSign(params.tail(), result)))));
+  }
+
+  /** Generate static method id variable initialization. */
+  public void initStaticMethodIdVar(Type thisClass,
+				    Name name, int version, 
+				    String jname, 
+				    List<Type> params, Type result){
+    stm(assign(cMethodIdName(name, version),
+	       callJni("GetStaticMethodID",
+		       thisClass.classVarName,
+		       quoted(jname),
+		       quoted(methodSign(params, result)))));
+  }
+
+
+  /** Generate field id variable declaration. */
+  public void declareFieldIdVar(Type thisClass,
+				Name name, int version){
+    stm("static jfieldID " + cFieldIdName(name, version));
+  }
+
+  /** Generate field id variable initialization. */
+  public void initFieldIdVar(Type thisClass,
+			     Name name, int version, String jname, Type type){
+    stm(assign(cFieldIdName(name, version),
+	       callJni("GetFieldID",
+		       thisClass.classVarName,
+		       quoted(jname),
+		       quoted(type.jniSign))));
+  }
+
+  /** Generate static field id variable initialization. */
+  public void initStaticFieldIdVar(Type thisClass,
+				   Name name, int version, 
+				   String jname, Type type){
+    stm(assign(cFieldIdName(name, version),
+	       callJni("GetStaticFieldID",
+		       thisClass.classVarName,
+		       quoted(jname),
+		       quoted(type.jniSign))));
+  }
+
+
+  /** Generate binding defining retrieval of field. */
+  public void defineGetField(Type thisClass,
+			     Name name, int version, 
+			     boolean immutable,
+			     Type tobj, Type tfield){
+    defineFun(cName(name, version), immutable, List.cons(tobj), tfield,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		embedCall(params, result, 
+			  callJni(expandJniName("Get*Field", tfield),
+				  "_argv[0].l",
+				  cFieldIdName(name, version)),
+			  handler);
+	      }
+	      );
+  }
+
+  /** Generate binding defining update of field. */
+  public void defineSetField(Type thisClass,
+			     Name name, int version, 
+			     boolean immutable,
+			     Type tobj, Type tfield){
+    defineFun(cName(name, version), immutable, 
+	      List.cons(tobj, tfield), Type.fromClass(Void.TYPE),
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		embedCall(params, result,
+			  callJni(expandJniName("Set*Field", tfield),
+				  "_argv[0].l",
+				  cFieldIdName(name, version),
+				  "_argv[1]." + tfield.jniUnion),
+			  handler);
+	      }
+	      );
+  }
+
+  /** Generate binding defining internal update of field. */
+  public void defineInternSetField(Type thisClass,
+				   Name name, int version, 
+				   Type tobj, Type tfield){
+    defineFun(cName(name, version), true, 
+	      List.cons(tobj, tfield), tobj,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		stm("jobject _jobj = get_jobject(" + 
+		    params.head().name + ")");
+		String argVar = params.tail().head().name;
+		stm("jvalue _jarg");
+		if (tfield.dimension == 0){
+		  stm(call(tfield.asJava, argVar, 
+			   "_jarg." + tfield.jniUnion));
+		} else {
+		  stm(call(tfield.asJava, 
+			   Integer.toString(tfield.dimension),
+			   tfield.compType.classVarName,
+			   "_" + tfield.compType.asJava,
+			   argVar, 
+			   "_jarg." + tfield.jniUnion));
+		}
+		stm(callJni(expandJniName("Set*Field", tfield),
+			    "_jobj",
+			    cFieldIdName(name, version),
+			    "_jarg." + tfield.jniUnion));
+		stm(handler);
+		stm(result.name + " = " + params.head().name);
+		switch (tfield.howToFree){
+		case Type.TEMPFREE:
+		  stm(call("javabind_free_temp", 
+			   "_jarg." + tfield.jniUnion));
+		  break;
+		case Type.OBJECTFREE:
+		  stm(call("javabind_free_arg", 
+			   argVar));
+		  break;
+		}
+	      }
+	     );
+  }
+
+		  
+  /** Generate binding defining retrieval of static field. */
+  public void defineGetStaticField(Type thisClass,
+				   Name name, int version, 
+				   boolean immutable,
+				   Type tfield){
+    defineFun(cName(name, version), immutable, 
+	      List.Nil,
+	      tfield,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		embedCall(params, result,
+			  callJni(expandJniName("GetStatic*Field", tfield),
+				  thisClass.classVarName,
+				  cFieldIdName(name, version)),
+			  handler);
+	      }
+	      );
+  }
+
+  /** Generate binding defining update of static field. */
+  public void defineSetStaticField(Type thisClass,
+				   Name name, int version, 
+				   boolean immutable,
+				   Type tfield){
+    defineFun(cName(name, version), immutable, 
+	      List.cons(tfield), Type.fromClass(Void.TYPE),
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		embedCall(params, result,
+			  callJni(expandJniName("SetStatic*Field", tfield),
+				  thisClass.classVarName,
+				  cFieldIdName(name, version),
+				  "_argv[0]." + tfield.jniUnion),
+			  handler);
+	      }
+	      );
+  }
+		  
+  /** Generate binding defining call of method. */
+  public void defineMethod(Type thisClass,
+			   Name name, int version, 
+			   boolean immutable,
+			   List<Type> tparams, Type tresult){
+    defineFun(cName(name, version), immutable, tparams, tresult,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		embedCall(params, result,
+			  callJni(expandJniName("Call*MethodA", tresult),
+				  "_argv[0].l",
+				  cMethodIdName(name, version),
+				  "&_argv[1]"),
+			  handler);
+	      }
+	      );
+  }
+		  
+  /** Generate binding defining call of static method. */
+  public void defineStaticMethod(Type thisClass,
+				 Name name, int version, 
+				 boolean immutable,
+				 List<Type> tparams, Type tresult){
+    defineFun(cName(name, version), immutable, tparams, tresult,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		embedCall(params, result,
+			  callJni(expandJniName("CallStatic*MethodA", tresult),
+				  thisClass.classVarName,
+				  cMethodIdName(name, version),
+				  "_argv"),
+			  handler);
+	      }
+	      );
+  }
+
+  /** Generate binding defining call of constructor. */
+  public void defineConstructor(Type thisClass,
+				Name name, int version, 
+				boolean immutable,
+				List<Type> tparams, Type tresult){
+    defineFun(cName(name, version), immutable, tparams, tresult,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		embedCall(params, result,
+			  callJni("NewObjectA",
+				  thisClass.classVarName,
+				  cConstructorIdName(name, version),
+				  "_argv"),
+			  handler);
+	      }
+	      );
+  }
+
+  /** Generate binding defining upwards cast. */
+  public void defineUpCast(Type thisClass,
+			   Name name, int version,
+			   Type upClass){
+    defineFun(cName(name, version), true, List.cons(thisClass), upClass,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		stm(call("javabind_upcast",
+			 params.head().name,
+			 result.name));
+	      }
+	      );
+  }
+
+  /** Generate binding defining downwards cast. */
+  public void defineDownCast(Type thisClass,
+			     Name name, int version,
+			     Type upClass){
+    defineFun(cName(name, version), true, List.cons(upClass), thisClass,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		stm(call("javabind_downcast",
+			 params.head().name,
+			 thisClass.classVarName,
+			 result.name));
+	      }
+	      );
+  }
+
+  /** Generate binding defining downwards test. */
+  public void defineDownTest(Type thisClass,
+			     Name name, int version,
+			     Type upClass){
+    defineFun(cName(name, version), true, List.cons(upClass), thisClass,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		stm(call("javabind_downtest",
+			 params.head().name,
+			 thisClass.classVarName,
+			 result.name));
+	      }
+	      );
+  }
+
+  /** Generate binding defining catch command. */
+  public void defineCatch(Type thisClass,
+			  Name name, int version){
+    Type any = Type.fromClass(Void.TYPE); // FIXME: need an ANY type?
+    defineFun(cName(name, version), false, 
+	      List.cons(any, thisClass), any,
+	      fun (List<Var> params, Var result, String handler)->void 
+	      { 
+		stm(call("javabind_catch_com",
+			 params.head().name,
+			 thisClass.classVarName,
+			 result.name));
+	      }
+	      );
+  }
+    
+
+		  
+  // Auxiliaries
+	
+  private void embedCall(List<Var> params, Var result, 
+			 String theCall, String theHandler){
+    begBlock("{ jvalue _argv[" + (params.length() + 1) + "];");
+    if (!result.type.clazz.equals(Void.TYPE)){
+      stm(declare(result.type.jniType, "_res"));
+    }
+    
+    Enumerator<Var> enum = new pizza.newutil.ListEnumerator(params);
+    int i = 0;
+    while(enum.hasMoreElements()){
+      switch (enum.nextElement()){
+      case Var(String name, Type type):
+	if (type.dimension == 0){
+	  stm(call(type.asJava, name, 
+		   "_argv[" + Integer.toString(i) + "]." + type.jniUnion));
+	} else {
+	  stm(call(type.asJava, 
+		   Integer.toString(type.dimension),
+		   type.compType.classVarName,
+		   "_" + type.compType.asJava,
+		   name, 
+		   "_argv[" + Integer.toString(i) + "]." + type.jniUnion));
+	}
+      }
+      i++;
+    }
+
+    if (!result.type.clazz.equals(Void.TYPE)){
+      stm(assign("_res", theCall));
+      stm(theHandler);
+      if (result.type.dimension == 0){
+	stm(call(result.type.fromJava, "_res", result.name));
+      } else {
+	stm(call(result.type.fromJava, 
+		 Integer.toString(result.type.dimension),
+		 result.type.compType.classVarName,
+		 "_" + result.type.compType.fromJava,
+		 "_res",
+		 result.name));
+      }
+    } else {
+      stm(theCall);
+      stm(theHandler);
+      stm(call(result.type.fromJava, result.name));
+    }
+    enum = new pizza.newutil.ListEnumerator(params);
+    i = 0;
+    while (enum.hasMoreElements()){
+      switch (enum.nextElement()){
+      case Var(String name, Type type):
+	switch (type.howToFree){
+	case Type.TEMPFREE:
+	  stm(call("javabind_free_temp", 
+		   "_argv[" + Integer.toString(i) + "]." + type.jniUnion));
+	break;
+	case Type.OBJECTFREE:
+	  stm(call("javabind_free_arg", name));
+	  break;
+	}
+      }
+      i++;
+    }
+    endBlock("}");
+  }
+
+  private String expandJniName(String name, Type type){
+    int r = name.indexOf("*");
+    if (r >= 0){
+      return name.substring(0, r) + type.jniQualifier
+                                  + name.substring(r+1, name.length());
+    } else {
+      return name;
+    }
+  }
+
+  private String callJni(String f, String a1){
+    return call("javabind_" + f, a1);
+    // return call("(*javabind_env)->" + f, "javabind_env", a1);
+  }
+
+  private String callJni(String f, String a1, String a2){
+    return call("javabind_" + f, a1, a2);
+    // return call("(*javabind_env)->" + f, "javabind_env", a1, a2);
+  }
+
+  private String callJni(String f, String a1, String a2, String a3){
+    return call("javabind_" + f, a1, a2, a3);
+    // return call("(*javabind_env)->" + f, "javabind_env", a1, a2, a3);
+  }
+
+  private String cMethodIdName(Name name, int version){
+    return "mId_" + cLocalName(name, version);
+  }
+
+  private String cFieldIdName(Name name, int version){
+    return "fId_" + cLocalName(name, version);
+  }
+
+  private String cConstructorIdName(Name name, int version){
+    return "cId_" + cLocalName(name, version);
+  }
+
+  private String methodSign(List<Type> params, Type result){
+    return "(" + params.map(fun (Type t)->String { return t.jniSign; })
+                       .elementsToString("") 
+	       + ")" + result.jniSign;
+  }
+
+
+}
+
+
+

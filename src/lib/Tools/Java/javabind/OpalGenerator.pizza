@@ -1,0 +1,214 @@
+/** The binding generator backend for OPAL.
+  *
+  * @author Wolfgang Grieskamp
+  * @version $Id: OpalGenerator.pizza,v 1.1 1999-10-16 17:32:05 wg Exp $
+  */
+
+package opal.javabind;
+
+import java.lang.*;
+import java.lang.reflect.*;
+import java.io.*;
+import pizza.lang.*;
+import pizza.newutil.*;
+
+public class OpalGenerator implements FunGenerator {
+  
+
+  /** The system definitions file. */
+  private SysDefsWriter sysDefs = null;
+
+  /** Information about the current structure. */
+  private String structName;
+  private boolean splitted;
+  private StructureGenerator sortStruct;
+  private StructureGenerator struct;
+
+  /** Information about current target class. */
+  private Class target;
+  private Type targetType;
+  
+
+  /** Constructing the generator. */
+  public OpalGenerator() {
+  }
+
+  /** Begin generating bindings. */
+  public void beginAll() throws IOException {
+    // create the system definitions 
+    new File(Config.system).mkdirs();
+    sysDefs = new SysDefsWriter(Config.system, List.Nil);
+  }
+
+  /** End generating bindings. */
+  public void endAll() {
+    sysDefs.close();
+  }
+
+  /** Generate a cluster structure, reexporting the given classes. */
+  public void clusterStruct(String struct, Set<Class> classes)
+  throws IOException {
+    Set<String> reexport = new Set();
+    Enumeration<Class> e = classes.elements();
+    while (e.hasMoreElements()){
+      reexport.put(Config.structOfClass.get(e.nextElement()));
+    }
+    StructureGenerator gen = new StructureGenerator(Config.system,
+						    struct,
+						    true);
+    Enumeration<String> r = reexport.elements();
+    while (r.hasMoreElements()){
+      gen.genStructReexport(r.nextElement());
+    }
+    sysDefs.addNormalStructure(gen.getOrigin());
+    gen.close();
+  }
+    							
+
+  /** Begin generating bindings for structure. */
+  public void beginStruct(String structName,
+			  boolean genSorts,
+			  boolean genMethods) throws IOException {
+    this.structName = structName;
+    if (Config.splittedStructs.contains(structName)){
+      splitted = true;
+      sortStruct =
+	new StructureGenerator(Config.system,
+			       structName + Config.sortStructSuffix,
+			       genSorts);
+      if (genSorts)
+	sysDefs.addForeignStructure(sortStruct.getOrigin());
+      struct = new StructureGenerator(Config.system, structName,
+				      genMethods);
+      if (genMethods)
+	sysDefs.addForeignStructure(struct.getOrigin());
+    } else {
+      splitted = false;
+      sortStruct = struct =
+	new StructureGenerator(Config.system, structName, true);
+      sysDefs.addForeignStructure(struct.getOrigin());
+    }
+  }
+
+  /** End generating bindings for structure. */
+  public void endStruct() throws IOException {
+    if (splitted) { 
+      sortStruct.close(); sortStruct = null; 
+    }
+    struct.close(); struct = null;
+  }
+
+  /** Begin generating bindings for class. */
+  public void beginClass(Class target) throws IOException {
+    this.target = target;
+    targetType = Type.fromClass(target); 
+  }
+    
+  /** End generating bindings for class. */
+  public void endClass() throws IOException {
+    // if this class is a Throwable, generate a catch and throw command
+    // in a special structure
+    /*
+    if (throwable.isAssignableFrom(target)){
+      StructureGenerator catchStruct =
+	new StructureGenerator(packageDir, 
+			       target.getName().replace('.','_') + "_COM",
+			       1);
+      catchStruct.importClassType(target);
+      catchStruct.genCatch(target);
+      catchStruct.genThrow(target);
+      packageSysDefs.addForeignStructure(catchStruct.getOrigin());
+      catchStruct.close();
+    }
+    */
+  }
+
+  /** Constant holding the class of throwables. */
+  private static final Class throwable = Aux.forName("java.lang.Throwable");
+    
+  public void classType(){
+    // Generate class sort
+    Name name = sortStruct.genClassType(target);
+    // Import class types
+    struct.importClassType(target);
+    // System.out.println(": " + target + "\n" + Config.deps);
+    Enumerator<Class> enum = Config.deps.get(target).elements();
+    while (enum.hasMoreElements()){
+      Class dep = enum.nextElement();
+      if (!dep.equals(target) && !dep.isArray() && !dep.isPrimitive()
+	  && !isSpecialClass(dep)){
+	struct.importClassType(dep);
+      }
+    }
+    if (splitted) struct.genReexport(name);
+  }
+
+  /** Generate upwards cast for the current class. */
+  public void upCast(Class to) throws IOException {
+    Name name = sortStruct.genUpCast(target, to);
+    if (splitted) struct.genReexport(name);
+  }
+
+  /** Generate downwards cast for the current class. */
+  public void downCast(Class from) throws IOException {
+    Name name = sortStruct.genDownCast(from, target);
+    if (splitted) struct.genReexport(name);
+  }
+
+
+  /** Generate downwards test for the current class. */
+  public void downTest(Class from) throws IOException {
+    Name name = sortStruct.genDownTest(from, target);
+    if (splitted) struct.genReexport(name);
+  }
+
+  /** Generate free type for the current class. */
+  public void freeType(List<Config.Variant> variants){
+    if (splitted){
+      System.out.println("Warning: free type cannot be generated for `"  +
+			 target + "'\n" +
+			 "since structure `" + structName +
+			 "' is splitted");
+      return;
+    }
+    Enumerator<Name> names = sortStruct.genFreeType(target, variants)
+                                       .elements();
+  }
+      
+
+  /** Generate constructor for the current class. */
+  public void constructor(Constructor cons, 
+				   Set<BindProp> props)
+  throws IOException {
+    Name name = struct.genConstructor(target, cons, props);
+  }
+				     
+  /** Generate field access function for the current classs. */
+  public void getField(Field field, Set<BindProp> props) 
+  throws IOException {
+    Name name = struct.genGetField(target, field, props);
+  }
+    
+
+  /** Generate field update function for the current classs. */
+  public void setField(Field field, Set<BindProp> props)
+  throws IOException {
+    Name name = struct.genSetField(target, field, props);
+  }
+
+  /** Generate method for the current class. */
+  public void method(Method method, Set<BindProp> props)
+  throws IOException {
+    Name name = struct.genMethod(target, method, props);
+  }
+
+  /** Tell whether the given class should not be processed
+    * since it is represented by a special type in the functional
+    * language (typically applies to java.lang.String)
+    */
+  public boolean isSpecialClass(Class clazz){
+    return clazz.getName().equals("java.lang.String");
+  }
+
+}
+

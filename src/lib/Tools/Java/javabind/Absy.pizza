@@ -1,0 +1,340 @@
+/** Abstract syntax of the javabind language. */
+
+package opal.javabind;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
+import java.io.File;
+import pizza.lang.*;
+import pizza.newutil.*;
+import opal.javabind.Config.*;
+
+class Absy {
+
+  case Absy(String system, List<String> options,
+	    List<String> uses, List<Item> items);
+
+  static Absy newAbsy(String system, String[] options,
+		      String[] uses, Item[] items){
+    return new Absy(system, List.fromArray(options),
+		    List.fromArray(uses), List.fromArray(items));
+  }
+
+  private boolean inherit = true;
+
+  static class Item {
+    case Bind(List<String> classSpec, String structSpec, BindKind kind);
+    case Cluster(List<String> classSpec, String structSpec);
+    static Item newBind(String[] classSpec, String structSpec, BindKind kind){
+      return new Bind(List.fromArray(classSpec), structSpec, kind);
+    }
+    static Item newCluster(String[] classSpec, String structSpec){
+      return new Cluster(List.fromArray(classSpec), structSpec);
+    }
+  }
+		      
+  static class BindKind {
+    case FreeType;
+    case Immutable;
+    case Reference;
+  }
+
+  /** Analyze this abstract syntax, initializing the variables from
+    * Config. */
+  void analyze(){
+    Config.system = system;
+    if (options.contains("declared-only")) inherit = false;
+    Config.subsystems = uses.concat(Config.subsystems);
+    Enumeration<Item> e = new pizza.newutil.ListEnumerator(items);
+    while (e.hasMoreElements()){
+      switch(e.nextElement()){
+
+      case Bind(List<String> classSpec, String structSpec, BindKind kind):
+	Set<Class> add = analyzeClassSpec(classSpec);
+	Class[] adda = new Class[add.size()];
+	add.copyInto(adda);
+	addClasses(adda, structSpec);
+	switch(kind){
+	case Immutable:
+	  setImmutables(adda);
+	  break;
+	case FreeType:
+	  setFreeTypes(adda);
+	  break;
+	case Reference:
+	  break;
+	}
+	break;
+
+      case Cluster(List<String> classSpec, String structSpec):
+	break;
+      }
+    }
+    e = new pizza.newutil.ListEnumerator(items);
+    while (e.hasMoreElements()){
+      switch(e.nextElement()){
+      case Bind(List<String> classSpec, String structSpec, BindKind kind):
+	break;
+
+      case Cluster(List<String> classSpec, String structSpec):
+	Config.clusters.put(structSpec, matchClassSpec(classSpec));
+	break;
+      }
+    }
+
+    Enumerator<Class> classes = Config.structOfClass.keys();
+    // need a copy of classes, because of sideeffects ... arrghh
+    List<Class> list = List.Nil;
+    while (classes.hasMoreElements()){
+      list = new List.Cons(classes.nextElement(), list);
+    }
+    classes = new pizza.newutil.ListEnumerator(list);
+    while (classes.hasMoreElements()){
+      postProcess(classes.nextElement());
+    }
+
+  }
+  
+  /** Given a list of class specifications, return the set
+    * of classes they denote. */
+  private Set<Class> analyzeClassSpec(List<String> classSpec){
+    Set<Class> classes = new Set();
+    Enumeration<String> e = new pizza.newutil.ListEnumerator(classSpec);
+    while (e.hasMoreElements()){
+      String spec = e.nextElement();
+      if (spec.endsWith(".*")){
+	String packageName = spec.substring(0, spec.length()-2);
+	classes.put(Aux.packageClasses(packageName));
+      } else {
+	String s = spec;
+	while (true){
+	  try {
+	    classes.put(Class.forName(s));
+	    break;
+	  }
+	  catch (ClassNotFoundException ex){
+	    int i = s.lastIndexOf(".");
+	    if (i > 0){
+	      s = s.substring(0,i) + "$" + s.substring(i+1);
+	    } else {
+	      System.out.println("Warning: class not found: " + spec);
+	    }
+	  }
+	}
+      }
+    }
+    return classes;
+  }
+
+  /** Given a list of class specifications, return the set
+    * of classes which match them and are included. */
+  private Set<Class> matchClassSpec(List<String> classSpec){
+    Set<Class> classes = new Set();
+    Enumeration<Class> c = Config.structOfClass.keys();
+    while (c.hasMoreElements()){
+      Class cand = c.nextElement();
+      String candName = cand.getName();
+      String candPackage = Aux.packageName(candName);
+      Enumeration<String> e = new pizza.newutil.ListEnumerator(classSpec);
+      while (e.hasMoreElements()){
+        String spec = e.nextElement();
+        if ((spec.endsWith(".*") &&
+	     spec.substring(0, spec.length()-2).equals(candPackage)) ||
+            spec.equals(candName)){
+          classes.put(cand);
+	  break;
+        }
+      }
+    }
+    return classes;
+  }
+
+
+  /** Post process the given class. */
+  public void postProcess(Class clazz){
+    // System.out.println("post " + clazz);
+    Set<Class> deps = Aux.superClasses(clazz);
+    if (!Config.minimal.contains(clazz)){
+      deps.put(Aux.referredClasses(clazz));
+      if (inherit) Config.inherits.put(clazz);
+    }
+    // FIXME: exceptions
+    Config.deps.put(clazz, deps);
+    if (Config._transient){
+      // Class declaring = Aux.getDeclaringClass(clazz);
+      // Class[] declared = Aux.getDeclaredClasses(clazz);
+      Enumerator<Class> enum = deps.elements();
+         //  .concat(new Set(declared).elements())
+	 //  .concat(declaring == null ? 
+	 //	new EmptyEnumerator ()
+	 //	: new SingletonEnumerator(declaring));
+      while (enum.hasMoreElements()){
+	Class dep = enum.nextElement();
+	if (!dep.isPrimitive() && 
+	    !dep.isArray() &&
+	    Config.structOfClass.get(dep) == null){
+	  addClass(dep, null);
+	  Config.minimal.put(dep);
+	  postProcess(dep);
+	}
+      }
+    }
+  }
+
+  /** Add class to configuration. */
+  private void addClass(Class clazz, String struct){
+    // System.out.println(clazz + " --> " + struct);
+    // remove some previous structure assignment
+    String oldStruct = Config.structOfClass.get(clazz);
+    if (oldStruct != null){
+      Config.classesOfStruct.get(oldStruct).remove(clazz);
+    }
+    // put new assignment
+    if (struct == null) {
+      struct = Config.defaultStruct(clazz);
+      findOtherSubsys(struct, clazz);
+    }
+    Config.structOfClass.put(clazz, struct);
+    Set<Class> classes = Config.classesOfStruct.get(struct);
+    if (classes == null){
+      classes = new Set();
+      Config.classesOfStruct.put(struct, classes);
+      Config.splittedStructs.put(struct);
+    }
+    classes.put(clazz);
+  }
+
+  /** Add classes to configuration. */
+  private void addClasses(Class[] classes, String struct){
+    for (int i = 0; i < classes.length; i++){
+      addClass(classes[i], struct);
+    }
+  }
+
+  /** Check if structure is located in another subsystem . */
+  private void findOtherSubsys(String struct, Class clazz){
+    Enumeration<String> ss = 
+      new pizza.newutil.ListEnumerator(Config.subsystems
+                                       .concat(Config.libraries));
+    boolean implFound = false;
+    while (ss.hasMoreElements()){
+      String subsys = ss.nextElement();
+      if (!implFound && 
+          (new File(subsys, struct + ".sign").exists() ||
+           new File(subsys, struct + ".sign.inter").exists())){
+	// System.out.println("method structure of " + clazz + " found in " +
+        // 			   subsys);
+	Config.subsysOfMethods.put(clazz, subsys);
+	implFound = true;
+      }
+      if (new File(subsys, 
+		   struct + Config.sortStructSuffix + ".sign").exists() ||
+          new File(subsys, 
+		   struct + Config.sortStructSuffix + ".sign.inter").exists()){
+	// System.out.println("sort structure of " + clazz + " found in " +
+        // 			   subsys);
+	Config.subsysOfSort.put(clazz, subsys);
+	// methods structure cannot appear deeper in hierarchy then
+	// sort structure
+	return;
+      }
+    }
+  }
+
+  /** Set class to be a free type. */
+  private void setFreeType(Class clazz){
+    // make structure of class non-splitted
+    Config.splittedStructs.remove(Config.structOfClass.get(clazz));
+    List<Variant> variants = List.Nil;
+    // take all static final fields which are of type clazz
+    Field[] fields = clazz.getDeclaredFields();
+    for (int i = 0; i < fields.length; i++){
+      if (fields[i].getType().equals(clazz)){
+	int mod = fields[i].getModifiers();
+	if (Modifier.isPublic(mod) &&
+	    Modifier.isStatic(mod) &&
+	    Modifier.isFinal(mod))
+	  variants = variants.concat(new Variant.Constant(fields[i]));
+      }
+    }
+    // take all static inner classes which are subclasses
+    // and have a constructor which matches their declared
+    // public fields
+    Class[] inners = Aux.getDeclaredClasses(clazz);
+    for (int i = 0; i < inners.length; i++){
+      // System.out.println("checking " + inners[i].getName());
+      if (inners[i].getSuperclass().equals(clazz)){
+	// System.out.println("is subclass");
+	int mod = inners[i].getModifiers();
+	if (Modifier.isPublic(mod)){ 
+	       // && Modifier.isStatic(mod)){
+	       // JDK 1.1 reflection bug? Modifier.isStatic(mod) always false
+	  Variant variant = tryMakeVariant(inners[i]);
+	  if (variant != null){
+	    variants = variants.concat(variant);
+	    // variant implies immutability
+	    setImmutable(inners[i]);
+	    // variant is by default located in the same structure as the
+	    // free type
+	    if (Config.structOfClass.get(inners[i]) == null){
+	      addClass(inners[i], Config.structOfClass.get(clazz));
+	    }
+	  }
+	}
+      }
+    }
+    if (variants != List.Nil){
+      setImmutable(clazz);
+      Config.freeTypes.put(clazz, variants);
+    } else {
+      // if their is a constructor in the class which captures
+      // all fields, take this one as a singleton variant 
+      Variant variant = tryMakeVariant(clazz);
+      if (variant != null){
+	setImmutable(clazz);
+	Config.freeTypes.put(clazz, List.cons(variant));
+      }
+    }
+  }
+
+  private Variant tryMakeVariant(Class clazz){
+    List<Field> args = 
+      List.fromArray(clazz.getDeclaredFields())
+          .filter(fun (Field f)->boolean
+		  { return Modifier.isPublic(f.getModifiers()); });
+    Class[] argTypes = new Class[args.length()];
+    args.map(fun (Field f)->Class { return f.getType(); })
+	.copy(argTypes);
+    try {
+      Constructor cons = clazz.getConstructor(argTypes);
+      if (Modifier.isPublic(cons.getModifiers()))
+	return new Variant.Subclass(clazz, cons, args);
+      else 
+	return null;
+    } 
+    catch (NoSuchMethodException e){
+      return null;
+    }
+  }
+
+  /** Set classes to be free types. */
+  private void setFreeTypes(Class[] classes){
+    for (int i = 0; i < classes.length; i++){
+      setFreeType(classes[i]);
+    }
+  }
+
+  /** Set class to be immutable. */
+  private void setImmutable(Class clazz){
+    Config.immutables.put(clazz);
+  }
+
+  /** Set classes to be immutable. */
+  private void setImmutables(Class[] classes){
+    for (int i = 0; i < classes.length; i++){
+      setImmutable(classes[i]);
+    }
+  }
+
+}

@@ -1,0 +1,368 @@
+/*  A parametric class for sets,
+ *  based on java.util.Hashtable
+ *  @author  Martin Odersky
+ *  @version 1.0alpha8 96/11/22
+ *  @java-version 1.33, 95/12/15
+ *  @java-author Arthur van Hoff
+ */
+
+/*
+ * Copyright (c) 1994 Sun Microsystems, Inc. All Rights Reserved.
+ *
+ * Permission to use, copy, modify, and distribute this software
+ * and its documentation for NON-COMMERCIAL purposes and without
+ * fee is hereby granted provided that this copyright notice
+ * appears in all copies. Please refer to the file "copyright.html"
+ * for further important copyright and licensing information.
+ *
+ * SUN MAKES NO REPRESENTATIONS OR WARRANTIES ABOUT THE SUITABILITY OF
+ * THE SOFTWARE, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+ * TO THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+ * PARTICULAR PURPOSE, OR NON-INFRINGEMENT. SUN SHALL NOT BE LIABLE FOR
+ * ANY DAMAGES SUFFERED BY LICENSEE AS A RESULT OF USING, MODIFYING OR
+ * DISTRIBUTING THIS SOFTWARE OR ITS DERIVATIVES.
+ */
+
+package pizza.newutil;
+
+
+
+/**
+ * Hashtable collision list.
+ */
+class SetEntry<A> {
+
+    A elem;
+    int hash;
+    SetEntry<A> next;
+
+    SetEntry(A elem, int hash, SetEntry<A> next) {
+	this.elem = elem;
+	this.hash = hash;
+	this.next = next;
+    }
+
+    protected SetEntry<A> copy() {
+	return new SetEntry(elem, hash,
+			    (next != null) ? next.copy() : null);
+    }
+}
+
+/* To sucessfully store and retrieve objects from a set, the
+ * object used as the elem must implement the hashCode() and equals()
+ * methods.<p>
+ *
+ */
+public
+class Set<A> implements Cloneable {
+    /**
+     * The hash table data.
+     */
+    private SetEntry<A> table[];
+
+    /**
+     * The total number of entries in the hash table.
+     */
+    private int count = 0;
+
+    /**
+     * Rehashes the table when count exceeds this threshold.
+     */
+    private int threshold;
+
+    /**
+     * The load factor for the hashtable.
+     */
+    private float loadFactor;
+
+    /**
+     * Constructs a new, empty hashtable with the specified initial
+     * capacity and the specified load factor.
+     * @param initialCapacity the initial number of buckets
+     * @param loadFactor a number between 0.0 and 1.0, it defines
+     *		the threshold for rehashing the hashtable into
+     *		a bigger one.
+     * @exception IllegalArgumentException If the initial capacity
+     * is less than or equal to zero.
+     * @exception IllegalArgumentException If the load factor is
+     * less than or equal to zero.
+     */
+    public Set(int initialCapacity, float loadFactor) {
+	if ((initialCapacity <= 0) || (loadFactor <= 0.0)) {
+	    throw new IllegalArgumentException();
+	}
+	this.loadFactor = loadFactor;
+	table = new SetEntry[initialCapacity];
+	threshold = (int)(initialCapacity * loadFactor);
+    }
+
+    /**
+     * Constructs a new, empty set with the specified initial
+     * capacity.
+     * @param initialCapacity the initial number of buckets
+     */
+    public Set(int initialCapacity) {
+	this(initialCapacity, 0.75f);
+    }
+
+    /**
+     * Constructs a new, empty set. A default capacity and load factor
+     * is used. Note that the set will automatically grow when it gets
+     * full.
+     */
+    public Set() {
+	this(101, 0.75f);
+    }
+
+  /** Construct a set from enumeration. */
+  public Set(Enumerator<A> enum){
+    this();
+    while (enum.hasMoreElements()) put(enum.nextElement());
+  }
+
+  /** Construct a set from array. */
+  public Set(A[] arr){
+    this();
+    for (int i = 0; i < arr.length; i++) put(arr[i]);
+  }
+
+
+    /**
+     * Returns the number of elements contained in the set.
+     */
+    public int size() {
+	return count;
+    }
+
+    /**
+     * Returns true if the set contains no elements.
+     */
+    public boolean isEmpty() {
+	return count == 0;
+    }
+
+    /**
+     * Returns an enumeration of the elements. Use the Enumeration methods
+     * on the returned object to fetch the elements sequentially.
+     * @see Hashtable#keys
+     * @see Enumeration
+     */
+    public synchronized Enumerator<A> elements() {
+	return new SetEnumerator(table);
+    }
+
+   /**
+     * Returns true if the collection contains an element for the elem.
+     * @param elem the elem that we are looking for
+     * @see Hashtable#contains
+     */
+    public synchronized boolean contains(A elem) {
+	SetEntry<A> tab[] = table;
+	int hash = ((Object)elem).hashCode();
+	int index = (hash & 0x7FFFFFFF) % tab.length;
+	for (SetEntry<A> e = tab[index] ; e != null ; e = e.next) {
+	    if ((e.hash == hash) && ((Object)e.elem).equals((Object)elem)) {
+		return true;
+	    }
+	}
+	return false;
+    }
+
+    /**
+     * Rehashes the content of the table into a bigger table.
+     * This method is called automatically when the set's
+     * size exceeds the threshold.
+     */
+    protected void rehash() {
+	int oldCapacity = table.length;
+	SetEntry<A> oldTable[] = table;
+
+	int newCapacity = oldCapacity * 2 + 1;
+	SetEntry<A> newTable[] = new SetEntry[newCapacity];
+
+	threshold = (int)(newCapacity * loadFactor);
+	table = newTable;
+
+	//System.out.println("rehash old=" + oldCapacity + ", new=" + newCapacity + ", thresh=" + threshold + ", count=" + count);
+
+	for (int i = oldCapacity ; i-- > 0 ;) {
+	    for (SetEntry<A> old = oldTable[i] ; old != null ; ) {
+		SetEntry<A> e = old;
+		old = old.next;
+
+		int index = (e.hash & 0x7FFFFFFF) % newCapacity;
+		e.next = newTable[index];
+		newTable[index] = e;
+	    }
+	}
+    }
+
+    /**
+     * Puts the specified element into the set
+     */
+    public synchronized void put(A elem) {
+	// Makes sure the elem is not already in the set.
+	SetEntry<A> tab[] = table;
+	int hash = ((Object)elem).hashCode();
+	int index = (hash & 0x7FFFFFFF) % tab.length;
+	for (SetEntry<A> e = tab[index] ; e != null ; e = e.next) {
+	    if ((e.hash == hash) && ((Object)e.elem).equals((Object)elem)) {
+		return;
+	    }
+	}
+
+	if (count >= threshold) {
+	    // Rehash the table if the threshold is exceeded
+	    rehash();
+	    tab = table;
+	    index = (hash & 0x7FFFFFFF) % tab.length;
+	}
+	// Creates the new entry.
+	tab[index] = new SetEntry(elem, hash, tab[index]);
+	count++;
+    }
+
+  /** Puts enumeration into set. */
+  public void put(Enumerator<A> enum){
+    while (enum.hasMoreElements()) put(enum.nextElement());
+  }
+
+  /** Puts array into set. */
+  public void put(A[] arr){
+    for (int i = 0; i < arr.length; i++) put(arr[i]);
+  }
+
+  /** Puts set into set. */
+  public void put(Set<A> set){
+    put(set.elements());
+  }
+
+    /**
+     * Removes the element corresponding to the elem. Does nothing if the
+     * elem is not present.
+     * return true iff `elem' was in set.
+     * @param elem the elem that needs to be removed
+     */
+    public synchronized boolean remove(A elem) {
+	SetEntry<A> tab[] = table;
+	int hash = ((Object)elem).hashCode();
+	int index = (hash & 0x7FFFFFFF) % tab.length;
+	for (SetEntry<A> e = tab[index], prev = null ; e != null ; prev = e, e = e.next) {
+	    if ((e.hash == hash) && ((Object)e.elem).equals((Object)elem)) {
+		if (prev != null) {
+		    prev.next = e.next;
+		} else {
+		    tab[index] = e.next;
+		}
+		count--;
+		return true;
+	    }
+	}
+	return false;
+    }
+
+    /**
+     * Clears the set so that it has no more elements in it.
+     */
+    public synchronized void clear() {
+	SetEntry<A> tab[] = table;
+	for (int index = tab.length; --index >= 0; )
+	    tab[index] = null;
+	count = 0;
+    }
+
+    /**
+     * Creates a clone of the set. A shallow copy is made,
+     * the keys and elements themselves are NOT cloned. This is a
+     * relatively expensive operation.
+     */
+    public synchronized Object clone() {
+	Set<A> t = new Set(table.length, loadFactor);
+	for (int i = table.length ; i-- > 0 ; ) {
+	    t.table[i] = (table[i] != null) ? table[i].copy() : null;
+	}
+	return t;
+    }
+
+    /**
+     * Converts to a rather lengthy String.
+     */
+    public synchronized String toString() {
+	int max = size() - 1;
+	StringBuffer buf = new StringBuffer();
+	Enumeration<A> e = elements();
+	buf.append("{");
+
+	for (int i = 0; i <= max; i++) {
+	    String s2 = ((Object)e.nextElement()).toString();
+	    buf.append(s2);
+	    if (i < max) {
+		buf.append(", ");
+	    }
+	}
+	buf.append("}");
+	return buf.toString();
+    }
+
+  /** copy into an array. */
+  public void copyInto(A[] arr){
+    Enumerator<A> elems = elements();
+    int i = 0;
+    while (elems.hasMoreElements()){
+      arr[i] = elems.nextElement();
+      i++;
+    }
+  }
+}
+
+/**
+ * A set enumerator class.  This class should remain opaque
+ * to the client. It will use the Enumeration interface.
+ */
+class SetEnumerator<A> extends Enumerator<A> {
+    int index;
+    SetEntry<A> table[];
+    SetEntry<A> entry;
+
+    SetEnumerator(SetEntry<A> table[]) {
+	this.table = table;
+	this.index = table.length;
+    }
+	
+    public boolean hasMoreElements() {
+	if (entry != null) {
+	    return true;
+	}
+	while (index-- > 0) {
+	    if ((entry = table[index]) != null) {
+		return true;
+	    }
+	}
+	return false;
+    }
+
+    public A nextElement() {
+	if (entry == null) {
+	    while ((index-- > 0) && ((entry = table[index]) == null));
+	}
+	if (entry != null) {
+	    SetEntry<A> e = entry;
+	    entry = e.next;
+	    return e.elem;
+	}
+	throw new NoSuchElementException("SetEnumerator");
+    }
+
+    public Object clone() {
+    	if (entry == null){
+	    return new SetEnumerator(table);
+	} else {
+	    SetEntry<A>[] copy = new SetEntry[index+1];
+	    for (int i = 0; i < copy.length; i++){
+		copy[i] = table[i];
+	    }
+	    return new SetEnumerator(copy);
+	}
+     }
+
+}

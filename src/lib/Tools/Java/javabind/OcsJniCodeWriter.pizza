@@ -1,0 +1,123 @@
+/** Class representing writers for JNI bindings in the context of OCS.
+  * It adds the stuff depending on the OCS handcoding scheme to 
+  * JniCodeWriter.
+  * @author Wolfgang Grieskamp
+  * @version $Id: OcsJniCodeWriter.pizza,v 1.1 1999-10-16 17:32:05 wg Exp $
+  *
+  */ 
+
+package opal.javabind;
+import java.lang.*;  
+import java.io.*;  
+import pizza.lang.*;  
+import pizza.newutil.*;  
+
+class OcsJniCodeWriter extends JniCodeWriter {
+
+  // CONSTRUCTORS
+
+  /** Construct an OCS-JNI code writer which writes to output stream. */
+  public OcsJniCodeWriter (OutputStream s){
+    super(s);
+  }
+
+  /** Construct a OCS-JNI code writer which writes to writer. */
+  public OcsJniCodeWriter(Writer w){
+    super(w);
+  }
+
+  // IMPLEMENTATION OF ABSTRACT METHODS OF JniCodeWriter
+
+  /** Return mapping of extern function name to C name in
+    * the handcoding interface. */
+  protected String cName(Name name, int version){
+    return addVersion(version,
+		      "_" + convert(name.origin.base) +
+		      "_" + convert(name.base));
+  }
+
+  /** Return a unique local (static) C name for name in
+    * the handcoding interface. */
+  protected String cLocalName(Name name, int version){
+    return addVersion(version, convert(name.base));
+  }
+
+
+  /** Generate function definition in the handcoding interface.
+    * The parameter bodyGen generates the body. */
+  protected void defineFun(String cname,
+			   boolean immutable,
+			   List<Type> tparams,
+			   Type tresult,
+			   (List<Var>, Var, String)->void bodyGen){
+    List<Var> params = List.Nil;
+    Enumerator<Type> enum = new pizza.newutil.ListEnumerator(tparams);
+    for (int i = 1; enum.hasMoreElements(); i++){
+      params = 
+	params.concat(Var.Var("x" + Integer.toString(i), enum.nextElement()));
+    }
+    Var result = Var.Var("y", tresult);
+
+    String paramsStr;
+    if (params.length() > 0){
+      paramsStr = params.map(fun (Var v)->String { return "OBJ " + v.name; })
+	                .elementsToString(",");
+      begBlock("extern OBJ " + cname + "(" + 
+	       paramsStr + (immutable ? "" : ",OBJ unit") +
+	       "){");
+    } else {
+      begBlock("extern OBJ " + cname + "(" + "OBJ unit" + "){");
+    }
+    stm("OBJ " + "y");
+
+    if (immutable){
+      bodyGen(params, result, "javabind_catch_abort()");
+      stm("javabind_immutable_return(y)");
+    } else {
+      bodyGen(params, result, "javabind_catch_fail()");
+      stm("javabind_return(y)");
+    }
+    endBlock("}");
+  }
+
+  
+
+  // AUXILIARY 
+
+  /** Convert an Opal identifier to a C identifier (see OCS Handcoders Guide). 
+    * DRAFT: works only for names of the form 
+    *       [ :=_ ] letgit ( _ letgit)* [ ? ]
+    */
+  public static String convert(String id){
+    StringBuffer res = new StringBuffer();
+    if (id.startsWith(":=_")){
+      res.append("Sie_");
+      id = id.substring(3);
+    }
+    res.append("A");
+    int i;
+    while ((i = id.indexOf("_")) > 0) {
+      res.append(id.substring(0, i));
+      res.append("_A");
+      id = id.substring(i+1);
+    }
+    i = id.indexOf("?");
+    if (i > 0){
+      res.append(id.substring(0, i));
+      res.append("_");
+    } else {
+      res.append(id);
+    }
+    return res.toString();
+  }
+
+  /** Add overloading version number to C name. */
+  private static String addVersion(int version, String id){
+    if (version > 1){
+      return id + "_O" + Integer.toString(version - 1);
+    } else {
+      return id;
+    }
+  }
+
+}

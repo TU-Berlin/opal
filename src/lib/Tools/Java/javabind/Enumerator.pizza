@@ -1,0 +1,189 @@
+package pizza.newutil;
+
+/** an abstract class for implementations of the Enumeration interface
+ */
+public abstract class Enumerator<A> implements Enumeration<A>, Cloneable {
+
+    /** the Enumeration methods
+     */
+    public abstract boolean hasMoreElements();
+    public abstract A nextElement();
+
+    /** concat another enumerator, to be called when this one is done
+     */
+    public Enumerator<A> concat(Enumerator<A> rest) {
+	return new CompositeEnumerator(this, rest);
+    }
+
+    /** return enumerator that yields `f' applied to each element 
+     *  of this enumerator
+     */
+    public <B> Enumerator<B> map((A)->B f) {
+	return new MapEnumerator(f, this);
+    }
+
+    /** return elements of this enumerator as long as predicate `p' is true
+     */
+    public Enumerator<A> takeWhile((A)->boolean p) {
+	return new TakeWhileEnumerator(p, this);
+    }
+
+    /** return enumerator that starts with the first element of this
+     *  enumerator for which `p' holds, and then continues with all 
+     *  subsequent elements of this enumerator
+     */
+    public Enumerator<A> dropWhile((A)->boolean p) {
+	return new DropWhileEnumerator(p, this);
+    }
+
+    /** return enumerator that yields all element of this enumerator that
+     *  satisfy predicate `p'.
+     */
+    public Enumerator<A> filter((A)->boolean p) {
+	return new FilterEnumerator(p, this);
+    }
+
+    /** apply function `f' to all elements of this enumerator
+     */
+    public <B> void forall((A)->B f) {
+	while (hasMoreElements()) f(nextElement());
+    }
+
+    /** reduce all elements of this enumerator with binary operation `f', 
+     *  starting with `z'. Operations are grouped to the left.
+     */
+    public <B> B reduceLeft(B z, (B,A)->B f) {
+	while (hasMoreElements()) z = f(z, nextElement());
+	return z;
+    }
+
+    /** reduce all elements of this enumerator with binary operation `f', 
+     *  starting with `z'. Operations are grouped to the right.
+     */
+    public <B> B reduceRight((A,B)->B f, B z) {
+	if (hasMoreElements()) return f(nextElement(), reduceRight(f, z));
+	else return z;
+    }
+}
+
+/** an enumerator implementing `map'
+ */
+class MapEnumerator<B,A> extends Enumerator<A> {
+
+    private (B)->A f;
+    private Enumerator<B> dom;
+    
+    MapEnumerator((B)->A f, Enumerator<B> dom) {
+	this.f = f;
+	this.dom = dom;
+    }
+
+    public boolean hasMoreElements() {
+	return dom.hasMoreElements();
+    }
+
+    public A nextElement() {
+	return f(dom.nextElement());
+    }
+}
+
+/** an enumerator implementing `filter'
+ */
+class FilterEnumerator<A> extends Enumerator<A> {
+
+    private (A)->boolean p;
+    private Enumerator<A> dom;
+    private A next;
+    private boolean lookahead;
+    
+    FilterEnumerator((A)->boolean p, Enumerator<A> dom) {
+	this.p = p;
+	this.dom = dom;
+	lookahead = false;
+    }
+
+    public boolean hasMoreElements() {
+	while (!lookahead && dom.hasMoreElements()) {
+	    next = dom.nextElement();
+	    lookahead = p(next);
+	}
+	return lookahead;
+    }
+
+    public A nextElement() {
+	if (lookahead || hasMoreElements()) {
+	    lookahead = false;
+	    return next;
+	}
+	throw new NoSuchElementException();
+    }
+}
+
+/** an enumerator implementing `takewhile'
+ */
+class TakeWhileEnumerator<A> extends Enumerator<A> {
+
+    private (A)->boolean p;
+    private Enumerator<A> dom;
+    private A next;
+    private boolean lookahead;
+    
+    TakeWhileEnumerator((A)->boolean p, Enumerator<A> dom) {
+	this.p = p;
+	this.dom = dom;
+	lookahead = false;
+    }
+
+    public boolean hasMoreElements() {
+	if (!lookahead && dom.hasMoreElements()) {
+	    next = dom.nextElement();
+	    if (p(next)) lookahead = true;
+	    else dom = EmptyEnumerator.empty;
+	}
+	return lookahead;
+    }
+
+    public A nextElement() {
+	if (lookahead || hasMoreElements()) {
+	    lookahead = false;
+	    return next;
+	}
+	throw new NoSuchElementException();
+    }
+}
+
+/** an enumerator implementing `dropwhile'
+ */
+class DropWhileEnumerator<A> extends Enumerator<A> {
+
+    private (A)->boolean p;
+    private Enumerator<A> dom;
+    private A next;
+    private boolean lookahead;
+    
+    DropWhileEnumerator((A)->boolean p, Enumerator<A> dom) {
+	this.p = p;
+	this.dom = dom;
+	lookahead = false;
+    }
+
+    public boolean hasMoreElements() {
+	while (p != null && dom.hasMoreElements()) {
+	    next = dom.nextElement();
+	    if (!p(next)) {
+		lookahead = true;
+		p = null;
+	    }
+	}
+	return lookahead || dom.hasMoreElements();
+    }
+
+    public A nextElement() {
+	if (lookahead || p != null && hasMoreElements()) {
+	    lookahead = false;
+	    return next;
+	} else {
+	    return dom.nextElement();
+	}
+    }
+}

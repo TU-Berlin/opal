@@ -1,0 +1,178 @@
+/** Driver for the javabind compiler. */
+
+package opal.javabind;
+
+import java.lang.*;
+import java.io.*;
+import java.lang.reflect.*;
+import pizza.lang.*;
+import pizza.newutil.*;
+
+public class Driver {
+
+
+  /** Main entry. */
+  public static void main(String[] argv){
+
+    System.out.println("javabind version " + Config.version);
+    Config.gen = new OpalGenerator();
+
+    InputStream in;
+    int argc = 0;
+    boolean nolibs = false;
+    while (argc < argv.length-1){
+      if (argv[argc].equals("-lib")){
+        Config.libraries = new List.Cons(argv[argc+1], Config.libraries);
+	argc += 2;
+      } else 
+      if (argv[argc].equals("-nolibs")){
+        nolibs = true;
+	argc++;
+      } else {
+        break;
+      }
+    }
+    if (nolibs){
+      Config.libraries = List.Nil;
+    }
+    if (argc != argv.length-1){
+      System.out.println("usage: ( -lib <libpath> | -nolibs )* <bindingfile>");
+      System.exit(1);
+      return;
+    } else {
+      try {
+	in = new java.io.FileInputStream(argv[argc]);
+      }
+      catch (FileNotFoundException e){
+	System.out.println("file `" + argv[argc] + "' not found");
+	System.exit(1);
+	return;
+      }
+    }
+    try {
+      Parser.parse(in).analyze();
+    }
+    catch (ParseException e){
+      System.out.println("syntax errors, aborting");
+      System.exit(2);
+      return;
+    }
+
+    
+    try {
+      Config.gen.beginAll();
+      Enumerator<String> structs = Config.classesOfStruct.keys();
+      while (structs.hasMoreElements()){
+	String struct = structs.nextElement();
+	Set<Class> classes = Config.classesOfStruct.get(struct);
+	Enumerator<Class> classesEnum = classes.elements();
+	if (classes.size() == 1){
+	  Class canonical = classesEnum.nextElement();
+	  Config.gen.beginStruct(struct,
+				 Config.subsysOfSort.get(canonical) == null,
+				 Config.subsysOfMethods.get(canonical) == null
+				 && !Config.minimal.contains(canonical));
+	  processClass(struct, canonical);
+	} else {
+	  Config.gen.beginStruct(struct, true, true);
+	  while (classesEnum.hasMoreElements()){
+	    processClass(struct, classesEnum.nextElement());
+	  }
+	}
+	Config.gen.endStruct();
+      }
+      Enumeration<String> clusters = Config.clusters.keys();
+      while (clusters.hasMoreElements()){
+	String cluster = clusters.nextElement();
+	Config.gen.clusterStruct(cluster, Config.clusters.get(cluster));
+      }
+      Config.gen.endAll();
+    }
+    catch (IOException e){
+      throw new Error("i/o error: " + e.getMessage());
+    } 
+  }
+   
+  
+  /** Process a class. */
+  private static void processClass(String struct, Class target)
+  throws IOException {
+
+    boolean minimal =  Config.minimal.contains(target);
+    boolean inherits = Config.inherits.contains(target);
+    String sortSubsys = Config.subsysOfSort.get(target); 
+    String methodsSubsys = Config.subsysOfMethods.get(target); 
+
+    System.out.println(target);
+    if (minimal) {
+    	System.out.println("  indirectly referred (requesting only sorts and casts)");
+    }
+    System.out.println("  bounded in " + struct);
+
+    if (sortSubsys != null){
+       System.out.println("  " + struct + Config.sortStructSuffix +
+                          " reused from " + sortSubsys);
+    }
+    if (methodsSubsys != null){
+       System.out.println("  " + struct +
+                          " reused from " + methodsSubsys);
+    }
+                            
+       
+    Config.gen.beginClass(target);
+    Config.gen.classType();
+
+    Enumerator<Class> enum = Aux.superClasses(target).elements();
+    while (enum.hasMoreElements()){
+      Class sup = enum.nextElement();
+      Config.gen.upCast(sup);
+      Config.gen.downCast(sup);
+      Config.gen.downTest(sup);
+    }
+
+    if (!minimal){
+
+      Set<BindProp> props = new Set();
+      if (Config.immutables.contains(target)){
+	props.put(BindProp.Immutable);
+      }
+
+      List<Config.Variant> variants = Config.freeTypes.get(target);
+      if (variants != null) {
+	Config.gen.freeType(variants);
+      }
+
+      Constructor[] conss = inherits ? target.getConstructors()
+                                   : target.getDeclaredConstructors();
+      if (!Modifier.isAbstract(target.getModifiers())){
+	for (int i = 0; i < conss.length; i++){
+	  if (Modifier.isPublic(conss[i].getModifiers())){
+	    Config.gen.constructor(conss[i], props);
+	  }
+	}
+      }
+      Field[] fields = inherits ? target.getFields()
+                              : target.getDeclaredFields();
+      for (int i = 0; i < fields.length; i++){
+	if (Modifier.isPublic(fields[i].getModifiers())
+	    && fields[i].getName().indexOf("$") < 0) {
+	  Config.gen.getField(fields[i], props);
+	  Config.gen.setField(fields[i], props);
+	}
+      }
+      Method[] methods = inherits ? target.getMethods()
+                                : target.getDeclaredMethods();
+      for (int i = 0; i < methods.length; i++){
+	if (Modifier.isPublic(methods[i].getModifiers())
+	    && methods[i].getName().indexOf("$") < 0) {
+	  Config.gen.method(methods[i], props);
+	}
+      }
+
+    }
+
+    Config.gen.endClass();
+  }
+
+
+}

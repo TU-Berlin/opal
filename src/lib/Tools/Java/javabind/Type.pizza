@@ -1,0 +1,173 @@
+/** Class describing types, which collect information about the translation
+  * of a java class into OPAL.
+  *
+  * @author Wolfgang Grieskamp
+  * @version $Id: Type.pizza,v 1.1 1999-10-16 17:32:05 wg Exp $
+  *
+  */
+
+package opal.javabind;
+import java.lang.*;
+import pizza.lang.*;
+import pizza.newutil.*;
+
+
+public class Type {
+  public case Type(Class clazz,     // the class described
+		   Name name,       // the OPAL name of the class
+		   int dimension,   // dimension as an array
+		   Type compType,   // component type if dim > 0
+		   String asJava,   // the OPAL-C to Java cast
+		   int howToFree,   // how to free the ref created by asJava
+		   String fromJava, // the OPAL-C from Java cast
+		   String jniQualifier, // the Qualifier used in JNI functions
+		   String jniType,   // the JNI C type
+		   String jniSign,   // the JVM signature letter
+		   String jniUnion,  // the union member name of jvalue 
+		   String classVarName // name of the class variable
+		                      // (null if not present)
+		   );
+
+  public static final int NOFREE = 0;
+  public static final int TEMPFREE = 1;
+  public static final int OBJECTFREE = 2;
+
+  private static Hashtable<Class,Type> cache = new Hashtable();
+
+  /** Construct a type from a given class. */
+  public static Type fromClass(Class clazz){
+    Type type = cache.get(clazz);
+    if (type != null){
+      return type;
+    } else {
+      if (clazz.isArray()){
+	Class comp = clazz.getComponentType();
+	Type compType = fromClass(comp);
+	type = new Type(clazz, arrayOf(compType.name),
+			compType.dimension + 1,
+			compType.dimension > 0 ? compType.compType : compType,
+			"javabind_asObjectArray",
+			TEMPFREE,
+			"javabind_fromObjectArray",
+			"Object",
+			"jobject",
+			"[" + compType.jniSign,
+			"l",
+			compType.classVarName + "_Array");
+      } else {
+	String originStr = Config.structOfClass.get(clazz);
+	if (Config.splittedStructs.contains(originStr)){
+	  originStr = originStr + Config.sortStructSuffix;
+	}
+	String classStr = clazz.getName();
+	String jvmClassStr = classStr.replace('.','/');
+	String ocsClassStr = classStr.replace('.','_').replace('$','_');
+	Name name = new Name(classStr.substring(classStr.lastIndexOf('.') + 1)
+	                             .replace('$','_'),
+			     Kind.Sort,
+			     new Origin(originStr, List.Nil));
+	type = new Type(clazz, name,
+			0, null,
+			"javabind_asObject", 
+			OBJECTFREE,
+			"javabind_fromObject",
+			"Object",
+			"jobject",
+			"L" + jvmClassStr + ";",
+			"l",
+			"javabind_class_" + ocsClassStr);
+      }
+      cache.put(clazz, type);
+      return type;
+    }
+  }
+
+  /** Add a primitive type and its array form to cache. */
+  private static void addPrim(Class clazz, String sort, String struct,
+			      String qual,
+			      String cname,
+			      String sign,
+			      String union){
+    Name name = new Name(sort, Kind.Sort, new Origin(struct, List.Nil));
+    Type type = new Type(clazz, name,
+			 0, null,
+			 "javabind_as" + qual, 
+			 NOFREE,
+			 "javabind_from" + qual,
+			 qual,
+			 cname,
+			 sign,
+			 union,
+			 "");
+    Type atype = new Type(Aux.forName("[" + sign), arrayOf(name),
+			  0, null, // dont count as an array wrt conversion
+			  "javabind_as" + qual + "Array", 
+			  TEMPFREE,
+			  "javabind_from" + qual + "Array",
+			  "Object",
+			  "jobject",
+			  "[" + sign,
+			  "l",
+			  "");
+    cache.put(type.clazz, type);
+    cache.put(atype.clazz, atype);
+  }
+
+  private static Name arrayOf(Name elemName){
+    return new Name("array", Kind.Sort, 
+		    new Origin("Array", List.cons(elemName)));
+  }
+
+  static {
+    addPrim(Boolean.TYPE, "bool", "BOOL", "Boolean", "jboolean", "Z", "z");
+    addPrim(Byte.TYPE, "byte", "Byte", "Byte", "jbyte", "B", "b");
+    addPrim(java.lang.Character.TYPE, "char", "Char", "Char", "jchar", 
+	    "C", "c");
+    addPrim(Short.TYPE, "short", "Short", "Short", "jshort", "S", "s");
+    addPrim(Integer.TYPE, "int", "Int", "Int", "jint", "I", "i");
+    addPrim(Long.TYPE, "long", "Long", "Long", "jlong", "J", "j");
+    addPrim(Float.TYPE, "sreal", "SmallReal", "Float", "jfloat", "F", "f");
+    addPrim(Double.TYPE, "real", "Real", "Double", "jdouble", "D", "d");
+
+    cache.put(Void.TYPE,
+	      new Type(Void.TYPE,
+		       new Name("void", Kind.Sort, 
+				new Origin("Void", List.Nil)),
+		       0, null,
+		       "javabind_asVoid", NOFREE,
+		       "javabind_fromVoid",
+		       "Void",
+		       "void",
+		       "V",
+		       "v",
+		       ""));
+
+    cache.put(Aux.forName("java.lang.String"),
+	      new Type(Aux.forName("java.lang.String"),
+		       new Name("denotation", Kind.Sort,
+				new Origin("DENOTATION", List.Nil)),
+		       0, null,
+		       "javabind_asString", TEMPFREE,
+		       "javabind_fromString",
+		       "Object",
+		       "jobject",
+		       "Ljava/lang/String;",
+		       "l",
+		       "javabind_class_java_lang_String"));
+
+    /*
+    cache.put(Aux.forName("[Ljava.lang.String;"),
+	      new Type(Aux.forName("[Ljava.lang.String;"),
+		       arrayOf(new Name("denotation", Kind.Sort,
+					new Origin("DENOTATION", List.Nil))),
+		       "javabind_asStringArray", true,
+		       "javabind_fromStringArray",
+		       "Object",
+		       "jobject",
+		       "[Ljava.lang.String;",
+		       "l",
+		       "javabind_class_java_lang_String_Array"));
+    */
+    
+  }
+}

@@ -1,0 +1,112 @@
+/** Class representing writers for make files. 
+  *
+  * @author Wolfgang Grieskamp
+  * @version $Id: SysDefsWriter.pizza,v 1.1 1999-10-16 17:32:05 wg Exp $
+  */
+
+package opal.javabind;
+import java.lang.*;
+import java.io.*;
+import pizza.lang.*;
+import pizza.newutil.*;
+
+public class SysDefsWriter extends CodeWriter {
+  
+  Set<Origin> normStructs = new Set();
+  Set<Origin> foreignStructs = new Set();
+
+  String sysName;
+  
+  /** Construct a sysdefs writer. */
+  public SysDefsWriter (String sysName, List<String> usedSysNames)
+  throws IOException {
+    super(new StringWriter());
+    this.sysName = sysName;
+
+    usedSysNames = usedSysNames.filter(fun (String s)->boolean
+				       { return !s.equals(sysName); });
+
+    File nodeDir = new File(sysName);
+    String nodeName = nodeDir.getCanonicalPath();
+    {  
+    	int i = nodeName.lastIndexOf(File.separator);
+       	if (i >= 0) nodeName = nodeName.substring(i+1);
+    }		
+
+    word("NODENAME = ");
+    line(nodeName);
+    line("SUBNODES = ");
+    line("GENOPTIONS = -V -v1");
+    word("OPAL_LIBS = ");
+    Enumerator<String> enum = new pizza.newutil.ListEnumerator(Config.libraries);
+    while (enum.hasMoreElements()){
+      line("\\");
+      word(" ");
+      word(enum.nextElement());
+    }
+    line("\\");
+    word(" $(OPAL_BASE)");
+    line();
+    word("GENSUBSYS = ");
+    enum = new pizza.newutil.ListEnumerator(Config.subsystems);
+    while (enum.hasMoreElements()){
+      line("\\");
+      word(" -s ");
+      word(enum.nextElement());
+    }
+    line("\\");
+    word("  $(GENSTDSYS)");
+  }
+
+  /** Put a normal structure to system definitions. (Can be repeated.) */
+  public void addNormalStructure(Origin orig){
+    normStructs.put(orig);
+  }
+    
+  /** Put a foreign structure to system definitions. (Can be repeated.) */
+  public void addForeignStructure(Origin orig){
+    foreignStructs.put(orig);
+  }
+
+  /** Close system definitions. */
+  public void close(){
+    Enumerator<Origin> origs;
+    nextline("NORMSTRUCTS = ");
+    origs = normStructs.elements();
+    while (origs.hasMoreElements()){
+      line("\\");
+      word("  ");
+      word(origs.nextElement().base);
+    }
+    nextline("FOREIGNSTRUCTS = ");
+    origs = foreignStructs.elements();
+    while (origs.hasMoreElements()){
+      line("\\");
+      word("  ");
+      word(origs.nextElement().base);
+    }
+    nextline("include $(OMLIBPATH)/GlobalRules.subhc");
+    line();
+
+    super.close();
+    try {
+      Aux.writeOnDiff(((StringWriter)writer).toString(), 
+		      new File(sysName, "SysDefs"));
+    }
+    catch(IOException e){
+      throw new Error("IOException: " + e.getMessage());
+    }
+
+  }
+
+  /** Output a comment. */
+  public void comment(String s) {
+    int i;
+    while ((i = s.indexOf("\n")) >= 0){
+      line("# " + s.substring(0,i));
+      s = s.substring(i+1);
+    }
+    line("# " + s);
+  }
+
+}
