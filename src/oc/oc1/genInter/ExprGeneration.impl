@@ -3,56 +3,54 @@ IMPLEMENTATION ExprGeneration
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-09-23 09:59:56 $ ($Revision: 1.3 $)
+-- % $Date: 1998-10-12 18:28:16 $ ($Revision: 1.4 $)
 -- ============================================================================
--- Autor:       ralfi
--- Projekt:     OPAL1-Compiler
--- subject:     Generation of Expressions (globSig->InterOpal)
+-- Autor:	ralfi
+-- Projekt:	OPAL1-Compiler
+-- subject: 	Generation of Expressions (globSig->InterOpal)
 -- ============================================================================
 
 
-IMPORT  InterOpal       COMPLETELY
-        EnvIO           COMPLETELY
-        NameGeneration  ONLY    name2Name
-        FctGeneration   ONLY    fct2Fct
-        BaseGeneration  ONLY    pos:globSig**name**part->seq[pos'InterOpal]
-                                pos:pos'Pos**part->pos'InterOpal
-                                pos:interOpal->pos'InterOpal
+IMPORT	InterOpal	COMPLETELY
+	EnvIO		COMPLETELY
+	NameGeneration	ONLY	name2Name
+	FctGeneration	ONLY	fct2Fct
+	BaseGeneration	ONLY	pos:globSig**name**part->seq[pos'InterOpal]
+				pos:pos'Pos**part->pos'InterOpal
+				pos:interOpal->pos'InterOpal
 
-IMPORT  Impl[name'Name] COMPLETELY
-        AnalyzedGlobSig ONLY    globSig no:name->nat rep:globSig**name->rep
-                                local?
-                                locSig:SORT ! :locSig**nat->rep**fct
-        Rep             ONLY    rep `
-        Pos             ONLY    pos
-        Patterns[name'Name]
-                        ONLY    pattDescr irrel target fun args 
-                                patt constr subPatts
-        SeqMapEnv       ONLY    *
+IMPORT	Impl[name'Name]	COMPLETELY
+	AnalyzedGlobSig	ONLY	globSig no:name->nat rep:globSig**name->rep
+				local?
+				locSig:SORT ! :locSig**nat->rep**fct
+	Rep		ONLY	rep `
+	Pos		ONLY	pos
+	Patterns[name'Name]
+			ONLY	pattDescr irrel target fun args 
+				patt constr subPatts
+	SeqMapEnv	ONLY	*
 
-IMPORT  Seq             ONLY    seq <> ft ::
-        Option          ONLY    option avail nil
-        Pair            ONLY    & pair 1st 2nd
-        SeqReduce       ONLY    \
-        Denotation      ONLY    = ++
-       NatConv ONLY `
+IMPORT	Seq		ONLY	seq <> ft ::
+	Option		ONLY	option avail nil
+	Pair		ONLY	& pair 1st 2nd
+	SeqReduce	ONLY	\
 
 FUN defEq2Eq : globSig ** locSig -> envIO ** pair[eq,seq[pattDescr]] -> 
-                envIO ** eqn
+		envIO ** eqn
 DEF defEq2Eq(Sig,LocSig)(EnvIO,&(eq(Left,Right,Pos),SeqPatt)) ==
-  LET   (EnvIO1,Lhs)    == expr2Pattern(Sig,LocSig)(EnvIO,Left)
-        (EnvIO2,Rhs)    == expr2Expr(Sig,LocSig)(EnvIO1,Right)
-        (EnvIO3,Patts)  == (pattDescr2Pattern(Sig,LocSig))*(EnvIO2,SeqPatt)
-  IN    (EnvIO3,eqn(pos(Pos,part(EnvIO3 io)),Lhs,Patts,Rhs))
+  LET	(EnvIO1,Lhs)	== expr2Pattern(Sig,LocSig)(EnvIO,Left)
+	(EnvIO2,Rhs)	== expr2Expr(Sig,LocSig)(EnvIO1,Right)
+	(EnvIO3,Patts)	== (pattDescr2Pattern(Sig,LocSig))*(EnvIO2,SeqPatt)
+  IN	(EnvIO3,eqn(pos(Pos,part(EnvIO3 io)),Lhs,Patts,Rhs))
 
 FUN letEq2Eq : globSig ** locSig -> envIO ** eq -> envIO ** eqn
 -- fuer Gleichungen von Let's
 DEF letEq2Eq(Sig,LocSig)(EnvIO,Eq) == defEq2Eq(Sig,LocSig)(EnvIO,&(Eq,<>))
-/*  LET (EnvIO1,Lhs)    == expr2Pattern(Sig,LocSig)(EnvIO,Left)
-        (EnvIO2,Rhs)    == expr2Expr(Sig,LocSig)(EnvIO1,Right)
-        Patterns        == <> -- nyi
+/*  LET	(EnvIO1,Lhs)	== expr2Pattern(Sig,LocSig)(EnvIO,Left)
+	(EnvIO2,Rhs)	== expr2Expr(Sig,LocSig)(EnvIO1,Right)
+	Patterns	== <> -- nyi
 -- soll sein: any oder tuple(<any,...,any>) 
-  IN    (EnvIO2,eqn(pos(Pos,part(EnvIO2 io)),Lhs,Patterns,Rhs))
+  IN	(EnvIO2,eqn(pos(Pos,part(EnvIO2 io)),Lhs,Patterns,Rhs))
 */
 
 
@@ -67,77 +65,77 @@ DEF mktuple(Pos,Args) == tuple(Pos,Args)
 -- high-order-function
 
 FUN seqPattDescr2Pattern : globSig ** locSig -> envIO ** seq[pattDescr] -> 
-                        envIO ** pattern
+			envIO ** pattern
 DEF seqPattDescr2Pattern(Sig,LocSig)(EnvIO,SeqPattDescr) ==
-   LET  (EnvIO1,SeqPatt)== (pattDescr2Pattern(Sig,LocSig))*(EnvIO,SeqPattDescr)
-        Pos             == pos(EnvIO io)
-   IN   (EnvIO1,mktuple(Pos,SeqPatt))
+   LET	(EnvIO1,SeqPatt)== (pattDescr2Pattern(Sig,LocSig))*(EnvIO,SeqPattDescr)
+	Pos		== pos(EnvIO io)
+   IN	(EnvIO1,mktuple(Pos,SeqPatt))
 
 
 
 FUN mkapply: globSig ** locSig -> seq[pattDescr]** pair[envIO,pattern] ->
-                                                pair[envIO,pattern]
+						pair[envIO,pattern]
 DEF mkapply(Sig,LocSig)(SeqPatDe,&(EnvIO,Fkt)) ==
-   LET  (EnvIO1,Arg)    == seqPattDescr2Pattern(Sig,LocSig)(EnvIO,SeqPatDe)
-        Pos             == pos(EnvIO io)
-        NewFkt          == apply(Pos,Fkt,Arg)
+   LET	(EnvIO1,Arg)	== seqPattDescr2Pattern(Sig,LocSig)(EnvIO,SeqPatDe)
+	Pos		== pos(EnvIO io)
+	NewFkt		== apply(Pos,Fkt,Arg)
    IN &(EnvIO1,NewFkt)
 
 
 FUN pattDescr2Pattern : globSig ** locSig -> envIO ** pattDescr -> 
-                        envIO ** pattern
+			envIO ** pattern
 -- target: nur aeusserste Huelle
 -- aeussere Sequenz: Fkt. hoeherer Ordnung
 -- innere Sequenz: einzelne Argumente
 DEF pattDescr2Pattern(Sig,LocSig)(EnvIO,target(Fun,Args)) ==
-  LET   Funct           == name(Pos,Name)
-        Pos             == pos(EnvIO io)
-        (EnvIO1,Name)   == name2Name(Sig)(EnvIO,Fun)
-        (EnvIO2,Patt)   == (Pair 1st,Pair 2nd)
-        Pair            == \ (mkapply(Sig,LocSig),&(EnvIO1,Funct))(Args)
-  IN    (EnvIO2,Patt)
+  LET	Funct		== name(Pos,Name)
+	Pos		== pos(EnvIO io)
+	(EnvIO1,Name)   == name2Name(Sig)(EnvIO,Fun)
+	(EnvIO2,Patt)	== (Pair 1st,Pair 2nd)
+	Pair		== \ (mkapply(Sig,LocSig),&(EnvIO1,Funct))(Args)
+  IN	(EnvIO2,Patt)
 
 DEF pattDescr2Pattern(Sig,LocSig)(EnvIO,patt(Constr,SubPatts)) ==
-  LET   Funct           == name(Pos,Name)
-        (EnvIO1,Name)   == name2Name(Sig)(EnvIO,Constr)
-        (EnvIO2,Elems)  == (pattDescr2Pattern(Sig,LocSig))*(EnvIO1,SubPatts)
-        Arg             == tuple(Pos,Elems)
-        Pos             == pos(EnvIO io)
-  IN    (EnvIO2,apply(Pos,Funct,Arg))
+  LET	Funct		== name(Pos,Name)
+	(EnvIO1,Name)   == name2Name(Sig)(EnvIO,Constr)
+	(EnvIO2,Elems)	== (pattDescr2Pattern(Sig,LocSig))*(EnvIO1,SubPatts)
+	Arg		== tuple(Pos,Elems)
+	Pos		== pos(EnvIO io)
+  IN	(EnvIO2,apply(Pos,Funct,Arg))
 DEF pattDescr2Pattern(Sig,LocSig)(EnvIO,irrel) == 
-        (EnvIO,any(pos(EnvIO io)))
+	(EnvIO,any(pos(EnvIO io)))
 
 FUN expr2Expr : globSig ** locSig -> envIO ** expr'Impl ->
-                envIO ** expr'InterOpal
+		envIO ** expr'InterOpal
 DEF expr2Expr(_,_)(EnvIO,den(Rep,Pos) ) ==
-        (EnvIO,den(pos(Pos,part(EnvIO io)),Rep`)) 
+	(EnvIO,den(pos(Pos,part(EnvIO io)),Rep`)) 
 
 DEF expr2Expr(Sig,LocSig)(EnvIO,tuple(IElems,Pos)) ==
-  LET   (EnvIO1,Elems)  == (expr2Expr(Sig,LocSig))*(EnvIO,IElems)
+  LET	(EnvIO1,Elems)	== (expr2Expr(Sig,LocSig))*(EnvIO,IElems)
   IN (EnvIO1,tuple(pos(Pos,part(EnvIO io)),Elems)) 
 
 DEF expr2Expr(Sig,LocSig)(EnvIO,apply(IFunct,IArg,Pos)) ==
-  LET   (EnvIO1,Funct)  == expr2Expr(Sig,LocSig)(EnvIO,IFunct)
-        (EnvIO2,Arg)    == expr2Expr(Sig,LocSig)(EnvIO1,IArg)
-  IN    (EnvIO2,apply(pos(Pos,part(EnvIO io)),Funct,Arg)) 
+  LET	(EnvIO1,Funct)	== expr2Expr(Sig,LocSig)(EnvIO,IFunct)
+	(EnvIO2,Arg)	== expr2Expr(Sig,LocSig)(EnvIO1,IArg)
+  IN	(EnvIO2,apply(pos(Pos,part(EnvIO io)),Funct,Arg)) 
 
 DEF expr2Expr(Sig,LocSig)(EnvIO,cases(IGuards,IElse,Pos))==
-  LET   (EnvIO1,Guards) == (guard2Guard(Sig,LocSig))*(EnvIO,IGuards)
-        (EnvIO2,Else)   ==
-                IF (IElse none?) or (IElse rtError?) THEN (EnvIO1,nil)
-                ELSE    LET (EnvIOL,Ex) == expr2Expr(Sig,LocSig)(EnvIO1,IElse)
-                        IN (EnvIOL,avail(Ex)) FI
+  LET   (EnvIO1,Guards)	== (guard2Guard(Sig,LocSig))*(EnvIO,IGuards)
+        (EnvIO2,Else)	==
+		IF (IElse none?) or (IElse rtError?) THEN (EnvIO1,nil)
+		ELSE	LET (EnvIOL,Ex)	== expr2Expr(Sig,LocSig)(EnvIO1,IElse)
+			IN (EnvIOL,avail(Ex)) FI
   IN    (EnvIO2,cases(pos(Pos,part(EnvIO io)),Guards,Else))
 
 DEF expr2Expr(Sig,LocSig)(EnvIO,lambda(IVars,IBody,IPos)) ==
-  LET   (EnvIO1,Vars)   == (name2Var(Sig,LocSig,unknown))*(EnvIO,IVars)
-        (EnvIO2,Body)   == expr2Expr(Sig,LocSig)(EnvIO1,IBody)
-        Pos             == pos(IPos,part(EnvIO io))
+  LET   (EnvIO1,Vars)	== (name2Var(Sig,LocSig,unknown))*(EnvIO,IVars)
+        (EnvIO2,Body)	== expr2Expr(Sig,LocSig)(EnvIO1,IBody)
+	Pos		== pos(IPos,part(EnvIO io))
   IN    (EnvIO2,lambda(Pos,Vars,Body))
 
 DEF expr2Expr(Sig,LocSig)(EnvIO,val(GName,Pos)) ==
-  LET   (EnvIO1,Name)   == name2Name(Sig)(EnvIO,GName)
-  IN    (EnvIO1,name(pos(Pos,part(EnvIO io)),Name))
+  LET	(EnvIO1,Name)	== name2Name(Sig)(EnvIO,GName)
+  IN	(EnvIO1,name(pos(Pos,part(EnvIO io)),Name))
 
 DEF expr2Expr(Sig,LocSig)(EnvIO,block(IDefs,IBody,Pos)) ==
   LET   (EnvIO1,Eqs)    == (letEq2Eq(Sig,LocSig))*(EnvIO,IDefs)
@@ -145,7 +143,7 @@ DEF expr2Expr(Sig,LocSig)(EnvIO,block(IDefs,IBody,Pos)) ==
   IN    (EnvIO2,block(pos(Pos,part(EnvIO io)),Eqs,Body))
 
 DEF expr2Expr(Sig,LocSig)(EnvIO,typed(Expr,_,_)) ==
-        expr2Expr(Sig,LocSig)(EnvIO,Expr)
+	expr2Expr(Sig,LocSig)(EnvIO,Expr)
 
 -- nicht mehr vorhanden:
 -- DEF expr2Expr(Sig,LocSig)(EnvIO,IExpr AS none ) == (EnvIO,) 
@@ -165,42 +163,39 @@ DEF expr2Pattern(Sig,LocSig)(EnvIO,apply(IFunct,IArg,Pos)) ==
   IN    (EnvIO2,apply(pos(Pos,part(EnvIO io)),Funct,Arg))
 
 DEF expr2Pattern(Sig,LocSig)(EnvIO,val(NName,IPos)) ==
-  LET   Pos     == pos(IPos,part(EnvIO io))
-  IN    IF NName local? THEN
-          LET   (EnvIO1,Var)    == name2Var(Sig,LocSig,Pos)(EnvIO,NName)
-          IN    (EnvIO1,var(Pos,Var))
-        ELSE
-          LET   (EnvIO1,Name)   == name2Name(Sig)(EnvIO,NName)
-          IN    (EnvIO1,name(Pos,Name))
-        FI
+  LET	Pos	== pos(IPos,part(EnvIO io))
+  IN	IF NName local? THEN
+	  LET	(EnvIO1,Var)	== name2Var(Sig,LocSig,Pos)(EnvIO,NName)
+	  IN	(EnvIO1,var(Pos,Var))
+	ELSE
+	  LET   (EnvIO1,Name)   == name2Name(Sig)(EnvIO,NName)
+	  IN	(EnvIO1,name(Pos,Name))
+	FI
 
 DEF expr2Pattern(Sig,LocSig)(EnvIO,as(IPatName,IExpr,IPos)) ==
 -- IPos ist die Position von IExpr
 -- trotzdem fuer Var verwendet! (Vielleicht spaeter mal besser)
-  LET   (EnvIO1,Var)    == name2Var(Sig,LocSig,Pos)(EnvIO,IPatName)
-        (EnvIO2,Pattern)== expr2Pattern(Sig,LocSig)(EnvIO1,IExpr)
-        Pos             == pos(IPos,part(EnvIO io))
-  IN    (EnvIO2,as(Pos,Var,Pattern))
+  LET	(EnvIO1,Var)	== name2Var(Sig,LocSig,Pos)(EnvIO,IPatName)
+	(EnvIO2,Pattern)== expr2Pattern(Sig,LocSig)(EnvIO1,IExpr)
+	Pos		== pos(IPos,part(EnvIO io))
+  IN	(EnvIO2,as(Pos,Var,Pattern))
 
 
 
 FUN guard2Guard : globSig ** locSig -> envIO ** guard'Impl ->
-                envIO ** guard'InterOpal
+		envIO ** guard'InterOpal
 DEF guard2Guard(Sig,LocSig)(EnvIO,guard(IIf,IThen,Pos)) ==
-  LET   (EnvIO1,If)     == expr2Expr(Sig,LocSig)(EnvIO,IIf)
-        (EnvIO2,Then)   == expr2Expr(Sig,LocSig)(EnvIO1,IThen)
+  LET   (EnvIO1,If)	== expr2Expr(Sig,LocSig)(EnvIO,IIf)
+        (EnvIO2,Then)	== expr2Expr(Sig,LocSig)(EnvIO1,IThen)
   IN    (EnvIO2,guard(pos(Pos,part(EnvIO io)),If,Then))
 
-/* % wandle globSig-Namen in Variablennamen um. Falls Symbol leer ist
-     (kann bei umgewandelten Gleichungen auftreten), erzeuge einen Namen. */
+
 FUN name2Var : globSig ** locSig ** pos'InterOpal -> envIO ** name'Name ->
-        envIO ** var
+	envIO ** var
 DEF name2Var(Sig,LocSig,Pos)(EnvIO,NName) ==
-  LET   No              == no(NName) 
-        (Rep,GFct)      == !(LocSig,No)
-        Symbol          == Rep`
-        Symbol1     == IF Symbol = "" THEN "_v" ++ (No`)
-                       ELSE Symbol FI
-        (EnvIO1,Fct)    == fct2Fct(Sig)(EnvIO,GFct)
-  IN    (EnvIO1,var(Pos,No ident,Symbol1,Fct))
+  LET	No		== no(NName) 
+	(Rep,GFct)	== !(LocSig,No)
+	Symbol		== Rep`
+	(EnvIO1,Fct)	== fct2Fct(Sig)(EnvIO,GFct)
+  IN	(EnvIO1,var(Pos,No ident,Symbol,Fct))
 

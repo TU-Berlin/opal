@@ -3,7 +3,7 @@ IMPLEMENTATION GenMake
 
 -- generate make or shape file for OPAL program or library system
 -- wg 23.8.92, 6.10.92, 4.7.93    
--- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/GenMake.impl,v 1.2 1998-06-22 12:52:58 maeder Exp $
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/GenMake.impl,v 1.3 1998-10-12 18:31:13 kd Exp $
 
 
 IMPORT  Compose         COMPLETELY
@@ -53,7 +53,7 @@ IMPORT  OptionScan      COMPLETELY
 FUN versionKey : denotation
 
 DEF versionKey == 
-   "genmake om-2.1d (bundled with ocs-2.1d)"
+   "genmake om-2.3b (bundled with ocs-2.3b)"
 
 -- =========================================================================
 -- argument processing
@@ -1464,7 +1464,7 @@ DEF genExpRule(S,SysInfo,structinfo(Struct,_,SignDeps,_,_,_),
           genOcSysParams(S,SignDeps)            u 
           ))))))))
     ) & (\\ _ .
-    write(Make, "\t@if [ -n ""$(DOSFOPROOT)"" ] ; then %s $(ECHO) %s >> $(DOSFOPROOT)/only ; fi\n",
+    write(Make, "\t@if [ -n ""$(PROJECTROOT)"" ] ; then %s $(ECHO) %s >> $(PROJECTROOT)/DOSFOP/only ; fi\n",
           genVerbose(S, SysInfo, Struct, 
                      "Marking %s for documentation ...") u (
           Struct u
@@ -1508,7 +1508,7 @@ DEF genAnaRule(S,SysInfo,structinfo(Struct,_,_,ImplDeps,_,_),
           genOcSysParams(S,ImplDeps)            u 
           ))))))))))
     ) & (\\ _ .
-    write(Make, "\t@if [ $(DOSFOPROOT) ] ; then %s $(ECHO) %s >> $(DOSFOPROOT)/only ; fi\n",
+    write(Make, "\t@if [ $(PROJECTROOT) ] ; then %s $(ECHO) %s >> $(PROJECTROOT)/DOSFOP/only ; fi\n",
           genVerbose(S, SysInfo, Struct, 
                      "Marking %s for documentation ...") u (
           Struct u
@@ -1560,8 +1560,15 @@ DEF genCRule(S,SysInfo,structinfo(Struct,_,_,ImplDeps,_,_),
           Struct                                u (
           genOcSysParams(S,ImplDeps)            u 
           ))))))))))))
-    )                                                   & (\\ _ .
-    IF shape def? options(args(S)) THEN
+    )                                                   & 
+(\\ _ .
+    write(Make, "\t@if [ -n ""$(PROJECTROOT)"" ] ; then %s $(ECHO) %s >> $(PROJECTROOT)/DOSFOP/only ; fi\n",
+          genVerbose(S, SysInfo, Struct, 
+                     "Marking %s for documentation ...") u (
+          Struct u
+          ))
+    ) & ( \\ _ .
+      IF shape def? options(args(S)) THEN
         write(Shape,"%s %s: : +(OC2)%s%s\n",
           CFile                                 u (
           OptFile                               u (
@@ -1639,6 +1646,7 @@ DEF genORule(S,SysInfo,structinfo(Struct,_,_,_,_,_),Make,Shape) ==
 
 -- --------------------------------------------------------------------------
 -- generate combined rules to derive O file from impl file
+-- change: no longer remove anaFile (needed by DOSFOP!)
 
 FUN genCombORule : 
         state ** sysinfo ** structinfo ** file ** file -> com[void]
@@ -1659,14 +1667,13 @@ DEF genCombORule(S,SysInfo,structinfo(Struct,_,_,ImplDeps,_,_),
                 ELSE optFile(SysInfo,Struct) FI
         Oc2Com ==
           format(
-    "$(OC2) $(OC2FLAGS) %s %s %s %s %s $(OCSYSPARAM) && $(RM) -f %s",
+    "$(OC2) $(OC2FLAGS) %s %s %s %s %s $(OCSYSPARAM)",
                         SpecialOc2App                           u (
                         SpecialOc2TopApp                        u (
                         genOcSysLocation(S,SysInfo)             u (
                         Struct                                  u (
-                        genOcSysParams(S,ImplDeps)              u (
-                        anaFile(SysInfo,Struct)                 u
-                        )))))
+                        genOcSysParams(S,ImplDeps) u
+                        ))))
                 )
     IN
     LET (SpecialOc1Def,SpecialOc1App,Oc1Ingredients) == 
@@ -1719,6 +1726,12 @@ DEF genCombORule(S,SysInfo,structinfo(Struct,_,_,ImplDeps,_,_),
           Oc2Com                                u (
           CcCom                                 u
           ))))))))))))
+    ) & (\\ _ .
+    write(Make, "\t@if [ -n ""$(PROJECTROOT)"" ] ; then %s $(ECHO) %s >> $(PROJECTROOT)/DOSFOP/only ; fi\n",
+          genVerbose(S, SysInfo, Struct, 
+                     "Marking %s for documentation ...") u (
+          Struct u
+          ))
     ) & (\\ _ .
     IF shape def? options(args(S)) THEN
         write(Shape,"%s %s: : +(OC1)%s +(OC2)%s%s +(CC)%s\n",

@@ -3,7 +3,7 @@ IMPLEMENTATION Scanner
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:40 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1998-10-12 18:28:48 $ ($Revision: 1.2 $)
 
 /* %@table @asis
 @item author: 
@@ -42,7 +42,7 @@ IMPORT
         Char                    COMPLETELY
         CharConv                ONLY ` asDigitNat asNat
         PrintableChar           COMPLETELY
-        Nat                     ONLY nat max:nat + 0 1 2 3 = < 256 - >= 16 8 * 10 4 succ even? 5
+        Nat                     COMPLETELY
         Pair[seq[token],repTab] ONLY pair & 1st 2nd 
         Triple                  ONLY triple & 1st 2nd 3rd
         Void                    ONLY void
@@ -104,10 +104,19 @@ DATA ctx ==
             none(dotKW: bool)
             -- %- currently allowed set, reverted string, starting position
             ide(charset?: char -> bool, sofar: string, op: pos, dotKW: bool)
+            /* %- docu: like comm, but count open and closed curly braces
+                  esc: last character was escape character */
+            docu(nest: seq[pos], openCt: seq[nat], closeCt: seq[nat],
+                 esc? : bool, dotKW: bool)
 
 FUN initArg : sc
 DEF initArg == sc(initialTab,<>,firstPos,ok,none(false))
 
+FUN clearEsc setEsc incO incC: ctx -> ctx
+DEF clearEsc(docu(N, O, C, _, d)) == docu(N, O, C, false, d)
+DEF setEsc(docu(N, O, C, _, d)) == docu(N, O, C, true, d)
+DEF incO(docu(N, O1 :: OO, C, e, d)) == docu(N, succ(O1) :: OO, C, e, d)
+DEF incC(docu(N, O, C1 :: CC, e, d)) == docu(N, O, succ(C1) :: CC, e, d)
 
 /* %Scan @sc{Opal} file which is given in the options. */
 FUN scanAll : options -> com[sc]
@@ -131,6 +140,7 @@ DEF final(sc(RT,TS,P,E,C)) ==
       sc(RT,NTS,P,E+NE,C)
       WHERE NTS == revert(token(eof,nilRep,P):: TS)
             NE  == IF C comm? THEN (+ /ok)(revert(sErr(cNotC,_)*nest(C)))
+                   IF C docu? THEN (+ /ok)(revert(sErr(cNotC,_)*nest(C)))
                    IF C deno? THEN sErr(dNotC,op(C))
                    ELSE ok   
                    FI
@@ -181,6 +191,8 @@ DEF scan(raw(<>, _),RT,TS,P,E,C) ==
                 (NRT2, T) == classify(op(C), Ide, RT, dotKW(C))
             IN 
             (NRT2, T :: TS, ok, none(dotT?(T, dotKW(C))))
+          IF C docu? THEN
+            (RT, TS, ok, clearEsc(C))
           ELSE (RT, TS, ok, C) FI
 
 DEF scan(CS0, RT, TS, P, E0, C) ==
@@ -239,11 +251,15 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
          LET (NRT,Tok) == classify(P,Ch,RT)
          IN scan(CS,NRT,Tok::TS,NP,E,C)
        OTHERWISE
+       IF (Ch = /) and nestDocuBegin?(CS) THEN -- begin of nested doumentation
+          scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E,
+               docu(P%, 0%, 0%, false, dot?))
+       OTHERWISE
        IF (Ch = /) and nestComBegin?(CS) THEN -- begin of nested comment
           scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E,comm(P%, dot?))
        OTHERWISE
        IF (Ch = -) and lineCom?(CS)  THEN -- begin of line comment
-         scan(<>,RT,TS,P,E,C)
+         scan(<>,RT,TS,P,E + checkLineDoc(rtUni(CS), P, P),C)
        OTHERWISE
        IF Ch = dblquote THEN -- start of denotation
          scan(CS,RT,TS,NP,E,deno(P,<>, dot?))
@@ -274,7 +290,7 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
       IF (Ch = -) THEN -- check for possible line comment
         IF lineCom?(CS) THEN scan(<>,RT,TS,P,E,C)
         ELSE LET (NP1,NCS,NE) == skipMinus(NP,CS,ok)
-             IN scan(NCS,RT,TS,NP1,E+NE,C)
+             IN scan(NCS,RT,TS,NP1,E+NE+checkLineDoc(CS,P,P),C)
         FI      
       OTHERWISE
       IF (Ch = /) and nestComBegin?(CS) THEN -- start of nested comment
@@ -285,6 +301,40 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
          IN scan(NCS,RT,TS,NP1,E+NE,C)
       ELSE -- just ignore this character
         scan(CS,RT,TS,NP,E,C)
+      FI
+    OTHERWISE
+    IF C docu? THEN -- within nested docuemntation
+      IF (Ch = *) and nestEnd?(CS) THEN -- end of nested documentation
+        scan(rtUni(CS), RT, TS, nextPosUni(NP,CS), E + NE + NE1, NC)
+        WHERE (NC,NE) == IF nest(C) <>? THEN (none(dot?),sErr(cNotO,P))
+                         IF #(nest(C)) = 1 THEN (none(dot?),ok)
+                         ELSE (docu(rt(nest(C)), rt(openCt(C)),
+                                    rt(closeCt(C)), false, dot?),ok) FI
+              NE1 == IF openCt(C) <>? THEN ok
+                     ELSE IF ft(openCt(C)) = ft(closeCt(C)) THEN ok 
+                          ELSE sErr(unbalanced, ft(nest(C)))
+                          FI
+                     FI
+      OTHERWISE                         
+      IF (Ch = -) THEN -- check for possible line comment
+        IF lineCom?(CS) THEN scan(<>,RT,TS,P,E+checkLineDoc(rtUni(CS),P,P),C)
+        ELSE LET (NP1,NCS,NE) == skipMinus(NP,CS,ok)
+             IN scan(NCS,RT,TS,NP1,E+NE,C)
+        FI      
+      OTHERWISE
+      IF (Ch = /) and nestComBegin?(CS) THEN -- start of nested docu
+         scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E,
+              docu(P :: nest(C), 0 :: openCt(C), 0 :: closeCt(C), false, dot?))
+      OTHERWISE
+      IF esc?(C) THEN -- last character was escape character
+        scan(CS, RT, TS, NP, E, clearEsc(C))
+      OTHERWISE
+      IF Ch = @ THEN scan(CS, RT, TS, NP, E, setEsc(C))
+      OTHERWISE
+      IF Ch = { THEN scan(CS, RT, TS, NP, E, clearEsc(incO(C)))
+      IF Ch = } THEN scan(CS, RT, TS, NP, E, clearEsc(incC(C)))
+      ELSE
+        scan(CS,RT,TS,NP,E,clearEsc(C))
       FI
     ELSE -- C deno?
       IF Ch = dblquote THEN -- end of deno or literal dblquote
@@ -473,6 +523,47 @@ DEF hexdigit?(ch) == digit?(ch) or (a <= ch and ch <= f) or
 
 DEF octdigit?(ch) == 0 <= ch and ch <= 7
 
+/* %Check body of a line comment. If it is a documentation comment,
+    the curly braces must be balanced. (We just count brackets here,
+    so some unbalanced comments might escape) */
+
+FUN checkLineDoc: rawString ** pos ** pos -> err
+DEF checkLineDoc(CS, P, CP) ==
+  IF CS <>? THEN 
+    ok
+  ELSE
+    LET (Ch, _) == ftUni(CS, CP)
+        CS1 == rtUni(CS)
+        CP1 == nextPosUni(CP, CS)
+    IN
+    IF Ch scanSpace? THEN checkLineDoc(CS1, P, CP1)
+    IF Ch = ("%"!) THEN checkLineDoc(CS1, P, CP1, 0, 0, Ch)
+    ELSE ok
+    FI
+  FI
+
+FUN checkLineDoc: rawString ** pos ** pos ** nat ** nat ** char -> err
+DEF checkLineDoc(CS, P, CP, openCt, closeCt, lastC) ==
+  IF CS <>? THEN 
+    IF openCt |= closeCt THEN sErr(unbalanced, P) ELSE ok FI
+  ELSE
+    LET (Ch, _) == ftUni(CS, CP)
+        CS1 == rtUni(CS)
+        CP1 == nextPosUni(CP, CS)
+    IN
+    IF Ch = ("@"!) ANDIF (lastC = ("@"!)) THEN
+      checkLineDoc(CS1, P, CP1, succ(openCt), closeCt, " "!)
+    IF Ch = ("{"!) ANDIF (lastC |= ("@"!)) THEN
+      checkLineDoc(CS1, P, CP1, succ(openCt), closeCt, Ch)
+    IF Ch = ("}"!) ANDIF (lastC |= ("@"!)) THEN
+      checkLineDoc(CS1, P, CP1, openCt, succ(closeCt), Ch)
+    ELSE
+      checkLineDoc(CS1, P, CP1, openCt, closeCt, Ch)
+    FI
+  FI
+
+  
+
 -- %- -----------------------------------------------------------------------
 -- %$Code the internal representation$
 -- %- -----------------------------------------------------------------------
@@ -523,7 +614,7 @@ DEF dotT?(T, expectDot?) ==
 
     Errors in analyzing these characters must be treated by the caller.
 */
-FUN lineCom? nestComBegin? nestEnd? : rawString->bool 
+FUN lineCom? nestComBegin? nestDocuBegin? nestEnd? : rawString->bool 
 DEF lineCom?(raw(<>, _)) == false
 DEF lineCom?(CS) ==
   LET (Ch, _) == ftUni(firstPos,CS)
@@ -547,6 +638,35 @@ DEF nestComBegin?(CS) ==
     LET (Ch2, _) == ftUni(firstPos,CS1)
     IN
     (Ch = *) and ~(Ch2 special?)
+  FI
+
+DEF nestDocuBegin?(raw(<>, _)) == false
+DEF nestDocuBegin?(CS) ==
+  LET (Ch, _) == ftUni(firstPos,CS)
+      CS1 == rtUni(CS)
+  IN
+  IF CS1 <>? THEN Ch = *
+  ELSE
+    LET (Ch2, _) == ftUni(firstPos,CS1)
+    IN
+    IF (Ch = *) and ~(Ch2 special?) THEN
+      checkPercent(rtUni(CS1))
+    ELSE
+      false
+    FI
+  FI
+
+FUN checkPercent: rawString -> bool
+DEF checkPercent(CS) ==
+  IF CS <>? THEN false
+  ELSE
+    LET (Ch, _) == ftUni(firstPos, CS)
+        CS1 == rtUni(CS)
+    IN
+    IF Ch scanSpace? THEN checkPercent(CS1)
+    IF Ch = ("%"!) THEN true
+    ELSE false
+    FI
   FI
 
 DEF nestEnd?(raw(<>, _)) == false
@@ -577,7 +697,7 @@ FUN sWarn: denotation ** pos -> err
 DEF sWarn(msg, pos) == err(warning, msg, pos)
 
 FUN otherChar cNotO cNotC dNotC never tabInD pNotC pNotO 
-    nlInD: denotation
+    nlInD unbalanced: denotation
 DEF dNotC        == "`""` not closed before end of line" 
 DEF tabInD       == "Tabular in denotation is not allowed" 
 DEF nlInD        == "Cannot escape newline"
@@ -587,6 +707,7 @@ DEF cNotO        == "`*/` not opened"
 DEF pNotO        == "`$/` not opened" 
 DEF otherChar    == "other character" 
 DEF never        == "INTERNAL SCANNER ERROR: should not happen" 
+DEF unbalanced   == "unbalanced curly brackets in documentation"
 
 FUN unkEC: char -> denotation
 DEF unkEC(ch)        == "unknown escape `\\" ++ (ch`) ++
