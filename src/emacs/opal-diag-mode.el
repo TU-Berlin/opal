@@ -1,5 +1,5 @@
 ;; emacs mode for processing opal diag files
-;; $__Header$
+;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.2 1998-07-01 17:15:57 kd Exp $
 ;; Author: wg, changed by ralfi
 
 (provide 'opal-diag-mode)
@@ -765,7 +765,7 @@ these are selected"
 
 ;; -- support for extended help
 
-(defvar opal-diag-info-buffer "*opal-diag-information $__version$*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Version$*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (errmark srcmark)
@@ -1128,7 +1128,7 @@ You most probably forgot to compile the property parts of \\2.")
 Allowed sequences are:
 
 \\\\a (alert), \\\\b (backspace), \\\\f (formfeed), \\\\n (newline), \\\\r (carriage return), \\\\t (tabulator), \\\\v (vertical tabulator), \\\\\\\\ (literal backslash), \\\\? (question mark), \\\\' (single quote), \\\\\" (double quote)
-\\\\x followed by an arbitrary number of hexadecimal digits, denotes the character at that code position, \\\\ followed by ont, two or three octal digits is an alternative to denote a certain character.
+\\\\x followed by an arbitrary number of hexadecimal digits, denotes the character at that code position, \\\\ followed by one, two or three octal digits is an alternative to denote a certain character.
 
 \\\\u followed by one, two, three or four hexadecimal digits (unicode escape), likewise denotes the character at that code position. Note that unicode escapes are processed outside of denotation constants, too, and that this expansion takes place before the expansion of the other characters. ")
 
@@ -1173,7 +1173,7 @@ Either import \\2 instantiated or supply the instantiation at the application.")
 ("compound object: not allowed for operations (and local names)" .
            "You may not declare a function or a local variable to be of a product type. 
 
-If this error occurs in a function declaration, the easiest explanantion is that you typed '*' instead of '**', but you may also have forgotten the codomain of the functionality, and check the correct instantiation of the sorts in the domain, too. 
+If this error occurs in a function declaration, the easiest explanation is that you typed '*' instead of '**', but you may also have forgotten the codomain of the functionality, and check the correct instantiation of the sorts in the domain, too. 
 
 If you really need to have a compound object here, use pair, triple or quadruple from the Bibliotheca Opalica.")
 
@@ -1189,7 +1189,7 @@ All constants are evaluated once, when the program is started. Therefore this er
            "Local names cannot be overloaded. The name \\1 is already declared as a local variable at \\2. Check for a typing error, if it is not an error, you have to rename one occurrence of \\1.")
 
 ("Expected was >> \\(.*\\) << as Structure Name" .
-    "The name of a structure and the base name of the file it is located must be the same.")
+    "The name of a structure and the base name of the file where it is located must be the same.")
 
 ("Expected was \\(`.*'\\) instead of \\(`.*'\\)" .
            "The compiler expected \\1 and found instead \\2. Perhaps you forgot \\1, perhaps \\2 is at the wrong place.")
