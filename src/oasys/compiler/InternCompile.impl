@@ -218,6 +218,11 @@ DEF extendUnit1(Name, Text, Deps, Opts)(R) ==
         
 -- %$Compiling Units$ ===================================================
 
+FUN xSwitch: stateId[bool]
+DEF xSwitch == EXEC(stateId(false))
+
+DEF xSwitch(flag) == xSwitch => (\\ _ . flag)
+
 DEF compileUnit(U)(R) ==
     LET Deps == related(direct, implImports, \\UI. library?(UI)(R) 
                                                         or released?(UI)(R))
@@ -509,6 +514,8 @@ DEF codeUnit(U)(R) ==
     LET ObjFile    == path(objectFile(U)(R))
         (Base, _)  == splitSuffix(ObjFile, ".")
         SrcFile    == Base ++ ".c"
+        SoFile     == Base ++ ".so"
+        NmFile     == Base ++ ".nmu"
         IncludePath == (\\F, P. 
                            IF sourcePath(F) |= objectPath(F) THEN
                                dirName1(sourcePath(F)) ::
@@ -522,12 +529,27 @@ DEF codeUnit(U)(R) ==
     call(normPath(Dir) ++ "ccompiler", 
          "ccompiler" :: SrcFile :: ObjFile :: IncludePath, 
          stdIn, stdOut, stdErr)(R)                      ; (\\ Ans .
-    IF okay?(Ans) THEN
-        succeed(ok & R)
-    ELSE
+    IF fail?(Ans) THEN
         succeed(!!(error,freeRef("C compiler"), error(Ans)) & R)
+    ELSE
+      get(xSwitch) & (\\ xSw.
+      IF xSw THEN
+        call(normPath(Dir) ++ "xccompiler", 
+             "xccompiler" :: ObjFile :: SoFile :: NmFile :: <>,
+             stdIn, stdOut, stdErr)(R) ; (\\ Ans2 .
+        IF fail?(Ans2) THEN
+          succeed(!!(error,freeRef("dynamic linker"), error(Ans2)) & R)
+        ELSE
+          succeed(ok & R)
+        FI
+        )
+      ELSE
+        succeed(ok & R)
+      FI
+      )
     FI
     ))
+  
 
 
 
