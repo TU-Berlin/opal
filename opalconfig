@@ -1,4 +1,5 @@
 #! /usr/X11R6/bin/wish 
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/opalconfig,v 1.3 2000-06-07 18:59:08 kd Exp $
 
 
 
@@ -17,56 +18,105 @@ array set option { }
 set useCache 0
 set makeTargets {}
 
+# currentWorkFrame
+
 ## set up main window
+
+. configure -background navyblue
+
+## MENU
+
+frame .mbar -relief raised -bd 2 
+menubutton .mbar.file -text File -menu .mbar.file.menu
+menubutton .mbar.action -text Action -menu .mbar.action.menu
+menubutton .mbar.expert -text Expert -menu .mbar.expert.menu
+
+pack .mbar.file .mbar.action .mbar.expert -side left -anchor nw
+pack .mbar -expand 1 -fill both
+
+menu .mbar.file.menu
+.mbar.file.menu add command -label About -command midAbout
+.mbar.file.menu add command -label Quit -command midQuit
+menu .mbar.action.menu
+.mbar.action.menu add command -label "Configure OCS" -command midConfigure
+.mbar.action.menu add command -label "Install OCS" -command midInstall
+menu .mbar.expert.menu
+.mbar.expert.menu add command -label "Select OCS Version" -command midSelectVersion
+
 
 ## TOP LINE: image + headline
 
-. configure -background white
 
-frame .top 
+frame .top  -background lightblue
 
 image create photo opalimage -file opal.gif
 canvas .top.image -width 58 -height 57
 .top.image create image 31 30 -image opalimage
 
-label .top.headline -text "The OCS Configurator"  -background white -font $font1
+label .top.headline -text "The OCS Configurator"  -background lightblue -font $font1
 
 
-pack .top.image .top.headline -side left -fill y
+pack .top.image .top.headline -side left -expand 1 -fill y
 
-## BUTTON ROW
+## PLACEHOLDER: ABOUT
 
-frame .mid -background white
-button .mid.configure -text "Configure OCS" -command midConfigure
-button .mid.install -text "Install OCS" -command midInstall -state disabled
-if [file exists opalconfig.makeTargets] {
-    .mid.install configure -state normal
-}
-button .mid.selectVersion -text "Select OCS Version" -command midSelectVersion
-button .mid.quit -text Quit -command midQuit
+set currentWorkFrame ""
 
-pack .mid.configure .mid.install .mid.selectVersion .mid.quit -side top -expand 1 -fill x
+# ## BUTTON ROW
+# 
+# frame .mid -background white
+# button .mid.configure -text "Configure OCS" -command midConfigure
+# button .mid.install -text "Install OCS" -command midInstall -state disabled
+# if [file exists opalconfig.makeTargets] {
+#     .mid.install configure -state normal
+# }
+# button .mid.selectVersion -text "Select OCS Version" -command midSelectVersion
+# button .mid.quit -text Quit -command midQuit
+# 
+# pack .mid.configure .mid.install .mid.selectVersion .mid.quit -side top -expand 1 -fill x
 
 ## DISPLAY MAIN WINDOW
 pack .top 
-pack .mid -expand 1 -fill both
+# pack .mid -expand 1 -fill both
 
 
 
 ## ======================================================================
 ## BUTTON COMMANDS
 
+### About
+proc midAbout { } {
+    global currentWorkFrame font2 fonttt
+
+    if { $currentWorkFrame == ".about" } { return }
+
+    frame .about -height 5c -background white -relief ridge -borderwidth 4
+    message .about.who -text "Copyright 2000\nby the Opal Group" -font $font2 -aspect 1000 -background white
+    set revision "$Date: 2000-06-07 18:59:08 $\n$Revision: 1.3 $"
+    regsub -all "\$" $revision "" revision2
+    label .about.revision -text $revision2 -background white 
+    label .about.email -text "opal@cs.tu-berlin.de" -background white -font $fonttt
+    label .about.http -text "http://uebb.cs.tu-berlin.de/~opal" -background white -font $fonttt
+    pack .about.who .about.email .about.http
+    replaceWorkFrame .about
+}
+
 ### Configure
 proc midConfigure { } {
-    global prefix font2 option optionList useCache
+    global prefix font2 option optionList useCache currentWorkFrame
 
+    if { $currentWorkFrame == ".configure" } { return }
 
     midConfigureCancel
     # parray option
 
-    .mid.configure configure -state disabled
-    toplevel .configure -background white
-    wm title .configure "Configure OCS"
+#    .mid.configure configure -state disabled
+#    toplevel .configure -background white
+#    wm title .configure "Configure OCS"
+
+    frame .configure 
+    replaceWorkFrame .configure
+
     label .configure.headline -text "Configure OCS" -font $font2  -bg white
     namedEntry .configure.prefix "OCS Root Directory:" prefix
 
@@ -82,8 +132,8 @@ proc midConfigure { } {
     button .configure.buttons.do -text "Configure" -command midConfigureDo
     button .configure.buttons.default -text "Default" -command midConfigureDefault
     button .configure.buttons.cancel -text "Cancel" -command midConfigureCancel
-    button .configure.buttons.quit -text "Quit" -command midConfigureQuit
-    pack .configure.buttons.do .configure.buttons.default .configure.buttons.cancel .configure.buttons.quit -side left -expand 1 -fill x
+#    button .configure.buttons.quit -text "Quit" -command midConfigureQuit
+    pack .configure.buttons.do .configure.buttons.default .configure.buttons.cancel -side left -expand 1 -fill x
     
     pack .configure.headline -expand 1 -fill x
     pack .configure.prefix .configure.options .configure.buttons -expand 1 -fill x
@@ -93,8 +143,9 @@ proc midConfigure { } {
 proc midConfigureDo { } {
     global prefix option optionList useCache midConfigureProgress fonttt
 
-    .mid.install configure -state disabled
-    foreach b {do default cancel quit} {
+    .mbar.action.menu entryconfigure 2 -state disabled
+#    .mid.install configure -state disabled
+    foreach b {do default cancel} {
 	.configure.buttons.$b configure -state disabled
     }
     frame .configure.progress -relief ridge -borderwidth 4
@@ -133,7 +184,7 @@ proc midConfigureDo { } {
     } else { 
 	label .configure.progress.l3 -text "Configure succeeded!"
 	button .configure.progress.b -text "OK" -command midConfigureDoAux1
-	.mid.install configure -state normal
+	.mbar.action.menu entryconfigure 2 -state normal
     }
     pack forget .configure.progress.l .configure.progress.l2
     pack .configure.progress.l3 -expand 1 -fill x  -side left
@@ -141,7 +192,7 @@ proc midConfigureDo { } {
 }
 
 proc midConfigureDoAux1 { } {
-    foreach b {do default cancel quit} { 
+    foreach b {do default cancel} { 
 	.configure.buttons.$b configure -state normal
     } 
     destroy .configure.progress
@@ -199,7 +250,7 @@ proc midConfigureDefault { } {
 proc midConfigureQuit { } {
 
     midConfigureSave
-    destroy .configure
+#    destroy .configure
     .mid.configure configure -state normal
 }
 
@@ -222,12 +273,18 @@ proc midConfigureSave { } {
 
 ### Install OCS
 proc midInstall { } {
-    global font2 makeTargets fontsmall
+    global font2 makeTargets fontsmall elapsed elapsedCount currentWorkFrame
 
-    .mid.install configure -state disabled
+#    .mid.install configure -state disabled
 
-    toplevel .tInstall -background white
-    wm title .tInstall "Install OCS"
+#    toplevel .tInstall -background white
+#    wm title .tInstall "Install OCS"
+
+    if { $currentWorkFrame == ".tInstall"} { return }
+
+    frame .tInstall -background white
+    replaceWorkFrame .tInstall
+
     label .tInstall.headline -text "Install OCS" -font $font2 -background white
     pack .tInstall.headline
     source opalconfig.makeTargets
@@ -250,23 +307,38 @@ proc midInstall { } {
 	pack .tInstall.f$fidx -anchor w
     }
     frame .tInstall.b -width 5c
+    frame .tInstall.msg
+    set n [llength $makeTargets]
+    label .tInstall.msg.l1 -text "$n packages" -background white
+    set elapsed "00:00 min"
+    set elapsedCount 0
+    label .tInstall.msg.l2 -textvariable elapsed -anchor e -background white
+    pack .tInstall.msg.l1  -side left
+    pack .tInstall.msg.l2 -side right
+    pack .tInstall.msg
     button .tInstall.b.start -text Install -command midInstallDo
-    button .tInstall.b.cancel -text Quit -command midInstallQuit
-    pack .tInstall.b.start .tInstall.b.cancel -side left -expand 1
+    pack .tInstall.b.start  -side left -expand 1
     pack .tInstall.b -expand 1 -fill x
 
 }
 
 proc midInstallDo { } { 
-    global makeTargets fonttt tInstallProgress t
+    global makeTargets fonttt tInstallProgress t runTimer
 
     frame .tInstall.progress -relief ridge -borderwidth 4
     label .tInstall.progress.l -text "Now making <target> ..." 
-    message .tInstall.progress.l2 -text " <output> " -font $fonttt -width 200p -justify left -anchor w
+    message .tInstall.progress.l2 -text " <output> " -font $fonttt -justify left -anchor w -width 5c
     pack .tInstall.progress.l .tInstall.progress.l2 -expand 1 -fill x 
     pack .tInstall.progress -expand 1 -fill x 
+    .tInstall.b.start configure -state disabled
+    button .tInstall.b.cancel -text Cancel -command midInstallCancel
+    pack .tInstall.b.cancel
     update
+    set runTimer 1
+    after 1000 midInstallTimer
 
+    set n [llength $makeTargets]
+    set i 0
     foreach t $makeTargets {
 	.tInstall.progress.l configure -text "Now making $t ..."
 	regsub -all "\\." $t "_" l
@@ -276,16 +348,20 @@ proc midInstallDo { } {
 	after 200 midInstallDoAux
 	set res [backExec "make $t"]
 	set tInstallProgress 0
+	incr i
 	if {$res == 0} {
 	    .tInstall.$l configure -background white
+	    .tInstall.msg.l1 configure -text "installed $i of $n OCS packages"
 	} else {
 	    .tInstall.$l configure -background red
-	    label .tInstall.progress.l3 -text "make $t failed!" -fg red
+	    label .tInstall.progress.l3 -text "make $t failed with >$res<!" -fg red
 	    button .tInstall.progress.b -text "See output" -command {midInstallDoAux2 $t}
 	    break
 	}
 	update
     }
+    catch {destroy .tInstall.b.cancel}
+    set runTimer 0
     if {$res == 0} {
 	label .tInstall.progress.l3 -text "Installation completed successfully"
 	button .tInstall.progress.b -text "OK" -command midInstallDoAux3
@@ -298,8 +374,8 @@ proc midInstallDo { } {
 
 proc midInstallQuit { } {
 
-    .mid.install configure -state normal
-    destroy .tInstall
+    .tInstall.b.start configure -state normal
+#    destroy .tInstall
 }
 
 proc midInstallDoAux { } {
@@ -315,18 +391,43 @@ proc midInstallDoAux { } {
 proc midInstallDoAux2 { target } {
     
     showFile "Make $target failed!" "/tmp/opalconfig.out"
-    .mid.install configure -state normal
-    destroy .tInstall
+    .tInstall.b.start configure -state normal
+    catch {destroy .tInstall.b.cancel}
+    destroy .tInstall.progress
+#    destroy .tInstall
 }
 
 proc midInstallDoAux3 { } {
-    .mid.install configure -state normal
-    destroy .tInstall
+    .tInstall.b.start configure -state normal
+    catch {destroy .tInstall.b.cancel}
+    destroy .tInstall.progress
+#    destroy .tInstall
 }
+
+proc midInstallCancel { } {
+    global pid
+
+    set x [catch {exec kill $pid} msg]
+}
+
+proc midInstallTimer { } {
+    global runTimer elapsed elapsedCount
+
+    if $runTimer {
+	incr elapsedCount
+	set min [expr $elapsedCount / 60]
+	set sec [expr $elapsedCount % 60]
+	set elapsed [format "%02d:%02d min" $min $sec]
+	after 1000 midInstallTimer
+    }
+}
+	
 
 ### Select Version
 proc midSelectVersion { } {
-    global prefix font2 currentOCSversion ocslist
+    global prefix font2 currentOCSversion ocslist currentWorkFrame
+
+    if {$currentWorkFrame == ".tSelectVersion"} { return }
 
 #    if {"" != [ocsVersionInDir "$prefix/ocs"]} {
 	set currentOCSversion [ocsVersionInDir $prefix/ocs]
@@ -337,10 +438,13 @@ proc midSelectVersion { } {
 	    if {[ocsVersionInDir $f] != ""} { lappend ocslist $f }
 	}
 	
-	.mid.selectVersion configure -state disabled
-	toplevel .tSelectVersion -background white
-        wm title .tSelectVersion "Select OCS Version"
-	label .tSelectVersion.headline -text "Select OCS Version" -font $font2
+#	.mid.selectVersion configure -state disabled
+#	toplevel .tSelectVersion -background white
+#        wm title .tSelectVersion "Select OCS Version"
+    
+        frame .tSelectVersion
+        replaceWorkFrame .tSelectVersion
+	label .tSelectVersion.headline -text "Select OCS Version" -font $font2 -background white
 	namedLabel .tSelectVersion.current "Current:" currentOCSversion
 	frame .tSelectVersion.lb
 	listbox .tSelectVersion.lb.available -yscrollcommand ".tSelectVersion.lb.scroll set" -selectmode single 
@@ -360,8 +464,7 @@ proc midSelectVersion { } {
 	}
 	frame .tSelectVersion.b
 	button .tSelectVersion.b.apply -text "Apply" -command midSelectVersionApply
-	button .tSelectVersion.b.quit -text "Quit" -command midSelectVersionQuit
-	pack .tSelectVersion.b.apply .tSelectVersion.b.quit -side left -expand 1 -fill x
+	pack .tSelectVersion.b.apply -side left -expand 1 -fill x
 	pack .tSelectVersion.headline .tSelectVersion.current  .tSelectVersion.lb .tSelectVersion.b -expand 1 -fill x
 #    } else {
 #	errorMsg "File $prefix/ocs/VERSION could not be found. Change prefix to proper value." 
@@ -370,8 +473,8 @@ proc midSelectVersion { } {
 
 proc midSelectVersionQuit { } {
     midSelectVersionApply
-    destroy .tSelectVersion
-    .mid.selectVersion configure -state normal
+#    destroy .tSelectVersion
+#    .mid.selectVersion configure -state normal
 }
 
 proc midSelectVersionApply { } {
@@ -464,6 +567,7 @@ proc namedEntry {pathName boldText watchVar} {
 ## be performed
 
 proc backExec { cmd } {
+    global pid 
     
     set cmd "$cmd &> /tmp/opalconfig.out ; echo \$? > /tmp/opalconfig.res"
     set pid [ exec /bin/sh -c $cmd & ]
@@ -476,6 +580,7 @@ proc backExec { cmd } {
     set f [open "/tmp/opalconfig.res" "r"]
     set configError [read $f]
     close $f
+    set configError [expr $configError + 0]
     return $configError
 }
 
@@ -506,8 +611,6 @@ proc showFile {header filename} {
 	$showFilePathName.t.content tag add errorTag "$pos linestart" "$pos lineend"
     }
     button $showFilePathName.done -text Done -command "destroy $showFilePathName"
-
-    
     pack $showFilePathName.t.content -side left -expand 1 -fill both
     pack $showFilePathName.t.scrolly -side top -expand 1 -fill y
 
@@ -515,4 +618,22 @@ proc showFile {header filename} {
     pack $showFilePathName.t -expand 1 -fill both
     pack $showFilePathName.scrollx -expand 1 -fill x
     pack $showFilePathName.done
+}
+
+## replace current frame with argument
+proc replaceWorkFrame { new } {
+    global currentWorkFrame
+
+    if { $currentWorkFrame != ""} { destroy $currentWorkFrame }
+    pack $new -in . -after .top
+    set currentWorkFrame $new
+}
+
+######################################################################
+#  finally initalize
+
+midAbout
+
+if { ! [file exists opalconfig.makeTargets] } {
+        .mbar.action.menu entryconfigure 2 -state disabled
 }
