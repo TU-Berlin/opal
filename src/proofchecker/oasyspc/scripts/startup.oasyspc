@@ -1,0 +1,90 @@
+# default startup file for oasys  --*-tcl-*--
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/scripts/startup.oasyspc,v 1.1 1999-10-14 08:33:47 kd Exp $
+
+# ----------------
+# assume the environment variable OCS is set to the base directory
+# of the OCS installation:
+
+set OcsDir $env(OCS)
+
+
+# ----------------
+# let user overwrite oasys library directory
+
+if {[lsearch [array names env] "OASYSLIB"] > 0} {
+   set OasysLib $env(OASYSLIB)
+} else {
+   set OasysLib "$OcsDir/lib/oasys"
+}
+
+
+# ----------------
+# define a more verbose source command
+
+proc vsource { fname } {
+    set err [ catch { source $fname } msg ]
+    if { $err } {
+	puts stderr "Tcl error in $fname: $msg"
+        error "Tcl error in $fname: $msg"
+    }
+}
+
+# ----------------
+# define the oasys-path command to source any definitions belonging
+# to a specific subsystem
+
+oasys-proc \
+  {oasys-path} \
+  {Print current search path.} \
+  {CMD} \
+  {oasys-intern-path}
+
+oasys-proc \
+  {oasys-path add ocs @^PATH} \
+  {Add normal (ocs) subsystem at PATH to oasys search path.
+ If in the directory PATH a file config.oasys exists, it will be sourced.} \
+  {CMD LIT1 LIT2 PATH} \
+  {oasys-intern-path add ocs $PATH
+   if [expr [file exists "$PATH/OCS"] == 0] {exec mkdir "$PATH/OCS"}
+   if [file exists "$PATH/config.oasys"] {vsource "$PATH/config.oasys"}
+  }
+
+oasys-proc \
+  {oasys-path add library @^PATH} \
+  {Add library subsystem at PATH to oasys search path.
+ If in the directory PATH a file config.oasys exists, it will be sourced.} \
+  {CMD LIT1 LIT2 PATH} \
+  {oasys-intern-path add library $PATH
+   if [file exists "$PATH/config.oasys"] {vsource "$PATH/config.oasys"}
+  }
+
+# ----------------
+# source single-letter shortcuts 
+
+vsource "$OasysLib/shortcuts.oasys"
+
+# ----------------
+# source proofchecker commands
+
+vsource "$OasysLib/startup.pchecker
+
+
+# ----------------
+# set up default path
+
+#  use a loop over the environment variable SUPPORTED_OPAL_LIBS
+#  (the list has to be reverted in Tcl since it is top-down, but
+#   oasys-path must be used bottom-up)
+
+set opal_libs_reverted ""
+if {[array names env SUPPORTED_OPAL_LIBS] != ""} {
+  foreach lib $env(SUPPORTED_OPAL_LIBS) { 
+    set opal_libs_reverted "$lib $opal_libs_reverted"
+  }
+  foreach lib $opal_libs_reverted { 
+    oasys-path add library $lib
+  }
+}
+
+# Finally, add "."
+oasys-path add ocs .

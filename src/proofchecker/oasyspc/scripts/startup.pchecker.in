@@ -1,0 +1,175 @@
+#Some initialization for pchecker addition --*-tcl-*--
+
+puts -nonewline "preparing oasys for proof checking ..."
+
+global env
+
+set ocssrcD   @ocs_abssrcdir@/src
+set pcheckD   $ocssrcD/proofchecker/oasyspc
+set oasysD    $ocssrcD/oasys
+set prooflibD $ocssrcD/proofchecker/prooflib
+
+
+oasys-intern-path add frozen $oasysD/oasyslib
+oasys-intern-path add frozen $oasysD/repo
+oasys-intern-path add frozen $pcheckD/proofscript
+
+oasys-intern-path add frozen $pcheckD/libPlus
+oasys-intern-path add frozen $pcheckD/oasysPlus
+oasys-intern-path add frozen $pcheckD/derivations
+oasys-intern-path add frozen $pcheckD/pcheck
+
+oasys-register PROOFSCRIPT
+oasys-register INTERACTIVEPROOF
+
+oasys-intern-path add frozen $prooflibD/REFLEXION
+oasys-register REFLEXIONS
+
+oasys-intern-path add frozen $prooflibD/Tactics
+
+oasys-intern-set-options -zprop -zpchecker
+oasys-intern-extended-compile on
+pcheck-intern fulness n n
+
+oasys-proc { pc ?@^UNITL } {add, focus and proof-check unit} {CMD UNITL} {
+    
+    set UNIT [lindex $UNITL 0]
+    if { $UNIT != "" } { 
+	puts "Setting unit to $UNIT"
+	a $UNIT
+	f $UNIT
+    }
+    pcheck-check
+}
+
+oasys-proc { pcc ?@^UNITL } {add, focus, proof-check and compile unit} {CMD UNITL} {
+    
+    set UNIT [lindex $UNITL 0]
+    if { $UNIT != "" } { 
+	puts "Setting unit to $UNIT"
+	a $UNIT
+	f $UNIT
+    }
+    pcheck-compile
+}
+
+oasys-proc { pp @PPREFIX ?@^UNITL } {add, focus unit and proof-check proofs} {CMD PPREFIX UNITL} {
+    
+    set UNIT [lindex $UNITL 0]
+    if { $UNIT != "" } { 
+	puts "Setting unit to $UNIT"
+	a $UNIT
+	f $UNIT
+    }
+    pcheck-proof $PPREFIX
+}
+
+### Interactive proofs
+
+set currentProofname { }
+set proofCommands { }
+
+oasys-proc { show-proof } { write current state to .trace and tell Emacs to read it } { CMD } {
+    global env currentProofname proofCommands
+     
+    pcheck-interactive show
+    set dir [pwd]
+    exec gnuclient -q -batch -eval "(opal-trace-interactive-init\"$dir\")" &
+    puts "Interactive proof of $currentProofname"
+    puts $proofCommands
+}
+
+oasys-proc { by @SCRIPT *@SCRIPTCONT } { perform script on current state of interactive proof } { CMD SCRIPT SCRIPTCONT } {
+    global env currentProofname proofCommands
+
+    set proofCommands [lappend proofCommands "$SCRIPT $SCRIPTCONT"]
+    # 'done ;' ensures that one `;' triggers every functions
+#    puts "apply'INTERACTIVEPROOF ( $SCRIPT $SCRIPTCONT ; done )"
+    ex "apply'INTERACTIVEPROOF ( ($SCRIPT $SCRIPTCONT) ) "
+    show-proof
+}
+
+
+oasys-proc { goal @PNAME ?@^UNITL } { initialize interactive proof with given proof in current or given unit } { CMD PNAME UNITL } {
+
+    global env currentProofname proofCommands
+
+    set UNIT [lindex $UNITL 0]
+    if { $UNIT != "" } { 
+	puts "Setting unit to $UNIT"
+	a $UNIT
+	f $UNIT
+    }
+    oasys-register INTERACTIVEPROOF.sign
+    oasys-register BasicTac.sign
+    oasys-additional-context add INTERACTIVEPROOF.sign BasicTac.sign
+    pcheck-interactive start $PNAME
+    ex "apply'INTERACTIVEPROOF ( every(traceProof); every(stat) ) "
+    set proofCommands { }
+    set currentProofname $PNAME
+    show-proof
+}
+
+oasys-proc { restart-proof } { restart last interactive proof } { CMD } {
+
+    global currentProofname
+
+    goal $currentProofname
+}
+
+oasys-proc { finish-proof } { finish interactive proof } { CMD } {
+
+    global env currentProofname proofCommands
+
+    pcheck-interactive finish
+    puts "Interactive proof of $currentProofname"
+    puts $proofCommands
+}
+
+oasys-proc { abort-proof } { abandon current interactive proof } { CMD } {
+    ex abort'INTERACTIVEPROOF
+}
+
+oasys-proc { next-proof } { select next state in interactive proof } { CMD } {
+    global proofCommands
+    ex nextState'INTERACTIVEPROOF
+    show-proof
+    set proofCommands [lappend proofCommands "next-proof"]
+}
+
+oasys-proc {back-proof } { revert last proofscript } { CMD } {
+    global proofCommands
+    ex backState'INTERACTIVEPROOF
+    show-proof
+    set proofCommands [lappend proofCommands "back-proof"]
+}
+
+oasys-proc {subgoal-proof start ?@IDX } { restrict subgoals in current state to the one given (0 is default) } {CMD LIT1 IDX} {
+    global proofCommands
+
+    if { [llength $IDX] = 0 } { set IDX 0 }
+    ex ($IDX subgoalStart'INTERACTIVEPROOF)
+    show-proof
+    set proofCommands [lappend proofCommands "subgoal-proof start $IDX"]
+
+}
+
+oasys-proc {subgoal-proof end } { re-insert hidden subgoals } {CMD LIT1} {
+    global proofCommands
+    ex subgoalEnd'INTERACTIVEPROOF
+    show-proof
+    set proofCommands [lappend proofCommands "subgoal-proof end"]
+}
+
+oasys-proc { add-formula @FORMULA *@FORMULACONT } { add formula to proof } \
+    { CMD FORMULA FORMULACONT } {
+	global proofCommands
+
+	# puts "pcheck-interactive add-formula $FORMULA $FORMULACONT"
+	pcheck-interactive add-formula $FORMULA $FORMULACONT
+	show-proof
+	set proofCommands [lappend proofCommands \
+			   "add-formula $FORMULA $FORMULACONT"]
+    }
+
+puts " done"
