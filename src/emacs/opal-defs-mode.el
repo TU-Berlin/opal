@@ -28,6 +28,8 @@
 		      )
 	 (define-key opal-defs-mode-map [(alt button1)] 
 	    'opal-defs-mode-menu-xemacs)
+	 (define-key opal-defs-mode-map [(button3)] 
+	    'opal-defs-mode-menu-xemacs)
 	 )
      ; FSF Emacs related
      )
@@ -48,6 +50,10 @@
   (nconc 
    (list (concat "Current: "(buffer-file-name)))
 ;   items
+    (if (string-match "ProjectDefs" (buffer-name))
+	(list ["set OCSPROJECT to this file" 'opal-defs-make-current t])
+      nil
+      )
    (list (opal-switch-opaldefs-buffers-menu))
    (list (opal-switch-opal-buffers-menu))
    ;; Submenu mit Opal-Dateien in akt. Verzeichnis
@@ -104,6 +110,12 @@
   "ask for Sysdefs template file to be inserted"
   (interactive  "fTemplate to insert:\n")
   (insert-file-contents file)
+)
+
+(defun opal-defs-make-current ()
+  "make current buffer ProjectDefs buffer"
+  (interactive)
+  (setq opal-compile-projectdefsfile (buffer-file-name))
 )
 
 (provide 'opal-defs-mode)

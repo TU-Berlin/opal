@@ -1,5 +1,5 @@
 ;; emacs mode for processing opal diag files
-;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.3 1998-07-01 17:17:39 kd Exp $
+;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.4 1998-09-23 09:57:23 kd Exp $
 ;; Author: wg, changed by ralfi
 
 (provide 'opal-diag-mode)
@@ -317,6 +317,7 @@ kill diag buffers as soon as they are no longer required."
 ;  (make-local-variable 'opal-diag-show-what)  ;; global gemacht (ralfi)
   (make-local-variable 'opal-diag-hidden-diag)
   (setq buffer-read-only t)
+  (opal-toolbar-install)
 
   (run-hooks 'opal-diag-mode-hook))
 
@@ -325,22 +326,16 @@ kill diag buffers as soon as they are no longer required."
 
 (defun opal-diag-delete-current-diag-buffer (&optional delete-diag)
   "Delete current diag buffer and pop up the source code buffer, and ask to save all opal files."
-  (if (get-buffer oasys-check-diagnostics-buffer)
-      (progn
-	(if delete-diag (kill-buffer oasys-check-diagnostics-buffer))
-	(delete-other-windows)
-	(switch-to-buffer oasys-current-opal-buffer)
-      )
-    (let ((opal-diag-tmp (substring (buffer-name (current-buffer)) 0 -5)))
-      (if (string= ".diag" (substring (buffer-name (current-buffer)) -5 nil))
-	  (progn
-	    (if delete-diag (kill-buffer (current-buffer)))
-	    (delete-other-windows)
-	    (switch-to-buffer  opal-diag-tmp))
-	))
+  
+  (let ((opal-diag-tmp (substring (buffer-name (current-buffer)) 0 -5)))
+    (if (string= ".diag" (substring (buffer-name (current-buffer)) -5 nil))
+	(progn
+	  (if delete-diag (kill-buffer (current-buffer)))
+	  (delete-other-windows)
+	  (switch-to-buffer  opal-diag-tmp))
+      ))
+					;  (opal-ask-save-opal-buffers)
   )
-;  (opal-ask-save-opal-buffers)
-)
 
 (defun opal-diag-next-main-error (n)
   "Visit next compilation error and corresponding source code, skipping
@@ -409,10 +404,7 @@ skipping sub errors."
 ;  (delete-other-windows)
   (opal-diag-clear-errors)
   (opal-diag-find-diag)
-  (if (get-buffer oasys-check-diagnostics-buffer)
-      ()
-    (find-alternate-file (buffer-file-name))
-  )
+  (find-alternate-file (buffer-file-name))
   (if opal-diag-curr-error
       (setq opal-diag-curr-error 
 	    (max 0 (min opal-diag-curr-error 
@@ -511,31 +503,25 @@ these are selected"
 	  (opal-diag-parse))
     (let* ((fn (file-name-nondirectory buffer-file-name))
 	   (diagfn (concat fn ".diag"))
-	   (buf (get-buffer oasys-check-diagnostics-buffer)))
-      (if buf
-	  (progn
-	    (set-buffer buf)
-	    (if (not opal-diag-number-errors)
-		(opal-diag-parse))
-	  )
-	(if opal-diag-hidden-diag
-	    (setq diagfn (concat "OCS/" diagfn)))
-	(if (and fn
-		 (string-match ".*\\.\\(sign\\|impl\\|extp\\|intp\\)$" fn))
-	    (if (file-readable-p diagfn)
-		(progn
-		  (if (setq buf (get-file-buffer diagfn))
-		      (set-buffer buf)
-		    (find-file diagfn))
-		  (if (not opal-diag-number-errors)
-		      (opal-diag-parse))
-		  t)
-	      (if noerror
-		  nil
-		(error (concat "No corresponding diagnostics " diagfn))))
-	  (if noerror nil (error "No Opal file."))
-	  )
-	))))
+	   )
+      (if opal-diag-hidden-diag
+	  (setq diagfn (concat "OCS/" diagfn)))
+      (if (and fn
+	       (string-match ".*\\.\\(sign\\|impl\\|extp\\|intp\\)$" fn))
+	  (if (file-readable-p diagfn)
+	      (progn
+		(if (setq buf (get-file-buffer diagfn))
+		    (set-buffer buf)
+		  (find-file diagfn))
+		(if (not opal-diag-number-errors)
+		    (opal-diag-parse))
+		t)
+	    (if noerror
+		nil
+	      (error (concat "No corresponding diagnostics " diagfn))))
+	(if noerror nil (error "No Opal file."))
+	)
+      )))
 
 (defun opal-diag-show-error ()
   "Make current error and corresponding source visible."
@@ -622,11 +608,10 @@ these are selected"
 )
 
 (defun opal-diag-parse ()
-  "Parse current diagnostic buffer und setup diagnostic variables. If buffer oasys-check-diag-buffer exists, the appropriate format is selected."
+  "Parse current diagnostic buffer und setup diagnostic variables. "
   (message "Parsing diagnostics ...")
   (let*((error-list nil) 
-	(oasys (get-buffer oasys-check-diagnostics-buffer))
-	(curr-src (if oasys nil (opal-diag-find-source)))
+	(curr-src (opal-diag-find-source))
 	src
        )
     (save-excursion
@@ -737,9 +722,7 @@ these are selected"
 	   
 
 (defun opal-diag-find-source (&optional diag)
-  "Find source corresponding to diag buffer. This does not work for oasys diagnostics, an error is signaled."
-  (if (get-buffer oasys-check-diagnostics-buffer) 
-      (error "opal-diag-find-source called with oasys diagnostics!"))
+  "Find source corresponding to diag buffer."
   (if (not diag) (setq diag (current-buffer)))
   (let* ( (fn-diag (file-name-nondirectory (buffer-file-name diag)))
 	  (fn-src  (substring fn-diag 0 (- (length fn-diag) 5))))
@@ -765,7 +748,7 @@ these are selected"
 
 ;; -- support for extended help
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.3 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.4 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (errmark srcmark)
@@ -774,10 +757,7 @@ these are selected"
 ;  (interactive)
   (switch-to-buffer (marker-buffer errmark))
   (goto-char errmark)
-  (if (get-buffer oasys-check-diagnostics-buffer)
-      (setq acterror (opal-next-line))
-    (setq acterror (opal-current-line))
-  )
+  (setq acterror (opal-current-line))
   (opal-diag-check-extended-buffer (marker-buffer errmark) 
 				   (marker-buffer srcmark))
   (set-buffer opal-diag-info-buffer)
@@ -1085,8 +1065,7 @@ used or exported for further use.
 This can happen in a DATA declaration, if you did not export the corresponding 
 free type. Otherwise you can remove the declaration and the definition of 
 \\1 without affecting the usefulness of this structure.
-
-Note that you cannot use this function in the oasys evaluator, because the optimizer will remove it. The simplest way to keep the optimizer from removing it is to export this function.")
+")
 
 ("unused sort \\(.*\\)" .
              "The sort \\1 was declared at the indicated place but never used nor exported.")

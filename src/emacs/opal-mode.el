@@ -1,4 +1,4 @@
-;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Opal Mode
 ;;; Main Part
 ;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -24,16 +24,28 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 
 (require 'opal-parser)
 ;(require 'opal-abbrev-mode)
-(require 'opal-compile)
 (require 'opal-browser)
 (require 'opal-filehandling)
-(require 'opal-diag-mode)
+(if opal-running-xemacs
+    (progn
+      (require 'opal-x-diag-mode)
+      (require 'opal-x-compile)
+      )
+  (require 'opal-diag-mode)
+  (require 'opal-compile)
+)
 ;(require 'opal-dired)
 (require 'opal-dosfop)   ;;; DOSFOP
 (require 'opal-switch)
 (require 'opal-import)
 (require 'opal-defs-mode)
-(require 'opal-oasys)
+(if opal-running-xemacs
+    (progn
+      (require 'opal-oasys)
+      (require 'opal-toolbar)
+      (require 'oasys-mode)
+      )
+)
 
 ;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
@@ -64,7 +76,6 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   )
   ;; reverse order of appearance in OPAL menu! (for FSF only)
   (opal-mode-misc-keymap)
-  (opal-mode-oasys-keymap)
   (opal-mode-import-keymap)
   (opal-mode-switch-keymap)
   (opal-mode-filehandling-keymap)
@@ -116,7 +127,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 	    (add-submenu (list "OPAL") opal-compile-menu)
 	    (add-submenu (list "OPAL") opal-dosfop-menu)
 	    (add-submenu (list "OPAL") opal-browser-menu)
-;	    (add-submenu (list "OPAL") opal-oasys-menu)
+	    (add-submenu (list "OPAL") opal-oasys-menu)
 	    (add-submenu (list "OPAL") opal-misc-menu)
 	    )
 	  (add-submenu nil opal-diag-menu)
@@ -509,7 +520,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   (mapcar (function opal-ask-save-opal-buffer) (buffer-list))
 )
 
-(defun opal-ask-save-opal-buffer (buffer)
+(defun opal-ask-save-opal-buffer (buffer &optional dontask)
   "if buffer is opal buffer (i.e. in opal-mode) and modified, offer to save it"
   (let ((blv (buffer-local-variables buffer))
        )
@@ -517,10 +528,12 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 	 (equal (assoc 'major-mode blv) '(major-mode . opal-mode))
 	 (equal (assoc 'major-mode blv) '(major-mode . opal-defs-mode)))
 	(if (buffer-modified-p buffer)
-	    (if (y-or-n-p (concat "Save OPAL unit " 
-				  (file-name-nondirectory 
-				   (buffer-file-name buffer))
-				  "? "))
+	    (if (or dontask
+		    (y-or-n-p (concat "Save OPAL unit " 
+				      (file-name-nondirectory 
+				       (buffer-file-name buffer))
+				      "? "))
+		    )
 		(save-excursion
 		  (set-buffer buffer)
 		  (save-buffer)
@@ -648,7 +661,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
   (kill-all-local-variables)
   (opal-mode-set-nonexist-keymap)
   (use-local-map opal-mode-map)         ; This provides the local keymap
-  (setq mode-name "Opal(v3)")
+  (setq mode-name "Opal(v4)")
   (setq major-mode 'opal-mode)
 ;  (setq indent-tabs-mode nil)  ;; no TABs
   (line-number-mode 1)  ;; show line numbers
@@ -660,6 +673,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 ;  (auto-fill-mode)
 ;  (setq auto-fill-function 'opal-mode-auto-fill)
   (setq opal-compile-projectdefsfile (getenv "OCSPROJECT"))
+  (opal-toolbar-install)
   (run-hooks 'opal-mode-hook)
   (run-hooks 'opal-mode-hooks)  ; for backwards compatibility
   )

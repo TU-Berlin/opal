@@ -36,8 +36,8 @@
      )
    ;; Rest
    (list
-    ["Save all Opal buffers" opal-ask-save-opal-buffers t]
-    ["New Opal structure" opal-switch-new-file t]
+    ["Save all Opal buffers ..." opal-ask-save-opal-buffers t]
+    ["New Opal structure ..." opal-switch-new-file t]
     "-----"
     )
     ;; Opal-Defs
@@ -207,6 +207,7 @@
       (progn
 	(opal-switch-menu-xemacs)
 	(define-key opal-mode-map [(alt button1)] 'opal-switch-popup-xemacs)
+	(define-key opal-mode-map [(button3)] 'opal-switch-popup-xemacs)
       )
       (opal-switch-menu-fsfemacs)
       (opal-switch-popup-fsfemacs)

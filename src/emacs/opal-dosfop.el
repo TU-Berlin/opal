@@ -4,7 +4,7 @@
   "Set the opal-mode dosfop keymap."
 ;; Tastenbelegungen von DOSFOP
 ;;longkeys
-  (define-key opal-mode-map "\C-c\C-d\C-f" 'dosfop-docs-to-doc-file)
+  (define-key opal-mode-map "\C-c\C-d\C-o" 'dosfop-docs-to-doc-file)
   (define-key opal-mode-map "\C-c\C-d\C-l" 'dosfop-docs-to-current-buffer)
   (define-key opal-mode-map "\C-c\C-d\C-n" 'dosfop-next-documentary)
   (define-key opal-mode-map "\C-c\C-d\C-p" 'dosfop-prev-documentary)
