@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.4 2001-04-26 11:32:54 kd Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.5 2001-05-27 15:29:50 kd Exp $
  */
     
 
@@ -803,6 +803,13 @@ extern int get_denotation(OBJ,char *,int);
 
 extern OBJ __ABUILTIN_AABORT;
 
+/* to keep the linker quiet under CYGWIN */
+#ifdef OCS_CYGWIN
+extern int _bss_end__ ;
+extern int _bss_start__ ;
+extern int _data_end__ ;
+extern int _data_start__ ;
+#endif
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 /* initialization

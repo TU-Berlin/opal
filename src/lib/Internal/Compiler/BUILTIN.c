@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.7 2001-04-26 11:32:54 kd Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.8 2001-05-27 15:29:50 kd Exp $
  */
 
 /* FIXME: stub for strdup() */
@@ -1609,6 +1609,13 @@ extern char * ocsstrerror(int no){
 
 #endif /* ! HAVE_STRERROR */
 
+/* This is for CYGWIN only */
+#ifdef OCS_CYGWIN
+int _bss_end__ ;   
+int _bss_start__ ; 
+int _data_end__ ;  
+int _data_start__ ;
+#endif
 
 /* =========================================================================
  * initialization 
