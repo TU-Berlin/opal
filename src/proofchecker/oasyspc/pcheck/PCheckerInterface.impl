@@ -63,6 +63,7 @@ IMPORT
 2.5 handle check and compile better
 2.6 handle proof as program
 2.7 support for interactive proof
+2.8 small changes to meet specifications; data type implementations
 */
 
 IMPORT INLINE ONLY INLINE
@@ -83,7 +84,7 @@ IMPORT INLINE ONLY INLINE
        ABORT ONLY ABORT
        SeqReduce ONLY /
        FileSystem ONLY unlink
-       PrettyAn ONLY updatePrettyAn setFullness
+       PrettyAn ONLY updatePrettyAn setFullness origin? instance?
        RepoObjectAccess ONLY objects symbol
        SetReduce ONLY /
        SetFilter ONLY |
@@ -102,7 +103,7 @@ FUN compileTime: denotation
 DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
 
 DEF initPChecker == 
-    write(stdOut, title("property checker 2.7c ")) & (\\ _ .
+    write(stdOut, title("property checker 2.8a ")) & (\\ _ .
     writeLine(stdOut, compileTime) & (\\ _ .
     register(pceHandler) & (\\ _ .
     register(updatePrettyAn) & (\\ _ .
@@ -131,7 +132,8 @@ DEF pcheckerCmdtable ==
          |(lit("known-objects") o var("name") & 2nd @ pcheckKnownObjects)
          |(lit("fulness") o var("origin") & 2nd o var("instance") @ pcheckV)
         ) & 2nd,
-        "execute internal commands")
+        "execute internal commands: \n" ++
+        "fulness ORIGIN INSTANCE  (use t and d): control printing of terms")
     ++
     cmd(lit("pcheck-verbosity") o
         ( (nat("set", noCompletion) @ pcheckSetLevel)
@@ -197,8 +199,9 @@ DEF pcheckerCmdtable ==
             "add formula to hypothese of interactive proof")
     ++ 
     cmd(lit("pcheck-info") o
-        (lit("testcases") o (objectNameSpec o objectNameSpec) &
-         2nd @ pcheckInfoTestCases
+        (  (lit("testcases") o (objectNameSpec o objectNameSpec) &
+            2nd @ pcheckInfoTestCases)
+        |  (lit("env") o unitNameSpec & 2nd @ pcheckInfoEnv) 
         ) & 2nd, 
         "testcases FUN HEUR: show testcases for FUN according to HEUR")
        
@@ -528,9 +531,12 @@ DEF pcheckV(oD & iD) ==
   LET o? == oD <| "true"
       i? == iD <| "true"
   IN
-  upd(\\ R. setFullness(R, o?, i?)) &
-  dumpFmt(lit("verbosity: "); lit(IF o? THEN "origin" ELSE "no origin" FI);
-          lit(","); spc(1); lit(IF i? THEN "instance" ELSE "no instance" FI))
+  upd(\\ R. setFullness(R, o?, i?)) & (
+  query(\\ R. origin?(R)) & (\\ oo? .
+  query(\\ R. instance?(R)) & (\\ ii? .
+  dumpFmt(lit("verbosity: "); lit(IF oo? THEN "origin" ELSE "no origin" FI);
+          lit(","); spc(1); lit(IF ii? THEN "instance" ELSE "no instance" FI))
+  )))
 
 -- %$Info functions$
 FUN pcheckInfoTestCases: pair[objectName, objectName] -> com[denotation]
@@ -568,6 +574,22 @@ DEF pcheckInfoTestCases(func & heur) ==
     ))))))))))))
   FI
   )
+
+FUN pcheckInfoEnv: unitName -> com[denotation]
+DEF pcheckInfoEnv(uN) == 
+  checkDo(requireFullAbsy(uN)) & (\\ _ .
+  checkDo(reloadUnits(%(uN))) & (\\ _ .
+  checkDo(checkUnits(%(uN))) & (\\ _ .
+  query(related(transitive, imports)(uN)) & (\\ rel.
+  upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
+                             succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
+  queryUpd(proofSemantics(uN)) & (\\pce.
+  upd(diag(diags(pce))) & ( \\ _ .
+  verbosityLevel & (\\vl.
+  query(prettyInfo(vl)(pce)(uN)) & (\\ f.
+  log(pretty(f)) & (\\ _ .
+  dumpFmt(f) 
+  ))))))))))
     
 
 -- %$Auxiliary functions$

@@ -36,6 +36,7 @@ IMPORT RepoUnitAccess COMPLETELY
        NatConv ONLY `
        RepoAn ONLY none
        SetMapEnv ONLY *
+       SeqFilter ONLY |
 
 
 -- %$Relations$
@@ -297,22 +298,40 @@ DEF theory?(pragma(_,token(x) :: _)) == x = "THEORY"
 DEF theory?(_) == false -- else
 
 
-DEF proof?(R)(uN) ==
-  "PROOF" <| symbol(baseName(uN))(R) or internalPlus(R)(uN)
-DEF reflexion?(R)(uN) ==
-  "REFLEXION" <| symbol(baseName(uN))(R) or internalPlus(R)(uN)
-
 /* %try to exclude Structures which are included because they are 
     used by PROOF/REFLEXION */
+
+DEF proof? == internalCheck(iproof?)
+DEF reflexion? == internalCheck(ireflexion?)
+
+FUN iproof?: repo -> unitName -> bool
+DEF iproof?(R)(uN) == "PROOF" <| symbol(baseName(uN))(R) or internalPlus(R)(uN)
+
+FUN ireflexion?: repo -> unitName -> bool
+DEF ireflexion?(R)(uN) ==
+  "REFLEXION" <| symbol(baseName(uN))(R) or internalPlus(R)(uN)
+
 FUN internalPlus: repo -> unitName -> bool
-DEF internalPlus(R)(uN) ==
+DEF internalPlus(R)(uN) == 
   IF "Repo" <| symbol(baseName(uN))(R) THEN true
   IF "Id" <| symbol(baseName(uN))(R) THEN true
-  IF derivedUnitName?(uN) THEN
-    exist?(internalPlus(R), unitName * actuals(uN)(R))
   ELSE
-    false
+    ((\\x, y. internalPlus?(x) or y), false) /
+    pragmas(unitInfo(baseName(uN))(R))
   FI
 
+FUN internalPlus?: pragma -> bool
+DEF internalPlus?(pragma(_, token(x) :: _)) == x = "internal_proofscript"
+DEF internalPlus?(_) == false
+  
 
-
+FUN internalCheck: (repo -> unitName -> bool) -> repo -> unitName -> bool
+DEF internalCheck(T)(R)(uN) ==
+  IF T(R)(uN) THEN true
+  ELSE 
+    IF derivedUnitName?(uN) THEN
+      exist?(internalCheck(T)(R), unitName * actuals(uN)(R))
+    ELSE
+      false
+    FI
+  FI

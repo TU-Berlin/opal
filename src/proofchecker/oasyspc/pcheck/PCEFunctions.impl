@@ -4,8 +4,8 @@ IMPORT RepoAn ONLY none
        RepoDiag ONLY ok unitRef <+
        Set ONLY set + incl {}
        PCEnv COMPLETELY
-       Map ONLY map {} <+ def
-       MapFilter ONLY partition
+       Map ONLY map {} <+ def exist? dom
+       MapFilter ONLY partition |
        MapReduce ONLY /
        RepoName ONLY unit impl baseName derivedUnitName?
        RepoSource ONLY locator unspecified locator?
@@ -14,7 +14,7 @@ IMPORT RepoAn ONLY none
        RepoObjectAccess ONLY object
        ABORT ONLY ABORT
        Repo ONLY repo
-       Seq ONLY seq exist?
+       Seq ONLY seq exist? <> :: ++
        Predicate ONLY or
        InstanceHandling ONLY deriveLike
        SetMapEnv ONLY *
@@ -24,17 +24,19 @@ IMPORT RepoAn ONLY none
        SetMap ONLY *
        FormulaHandling ONLY mandatoryImpl? propertyS parameter?
        SeqMap ONLY *
-       Nat ONLY nat max 0 + succ
+       Nat ONLY nat max 0 + succ 6
        Compose ONLY o
        NameHandling ONLY parameter?
        SeqFilter ONLY |
        DEBUG ONLY PRINT
        Denotation ONLY ++
-       Fmt ONLY pretty
+       Fmt ONLY pretty none
        PrettyFormatting ONLY fmtUnitNameLong
        BoolConv ONLY `
        String ONLY string
        PrettyPCEnv ONLY pretty
+       MapConv ONLY asSeq asMap
+       Pair ONLY pair & 1st 2nd
 
 
 -- %$The Proof Checker Environment$
@@ -44,9 +46,9 @@ DEF {} == pcEnv(none, ok, 0, {},{},{},{},{},{})
 
 DEF pcEnv( _, d1, f1, l1, xl1, ass1, res1, ph1, pb1) <+
     pcEnv(an, d2, f2, l2, xl2, ass2, res2, ph2, pb2) ==
-  pcEnv(an, d1 <+ d2, f1 + f2,
-        l1 + l2, xl1 + xl2, ass1 + ass2, res1 + res2,
-        ph1 <+ shift(f1, ph2), pb1 <+ shift(f1, pb2))
+    pcEnv(an, d1 <+ d2, f1 + f2,
+          l1 + l2, xl1 + xl2, ass1 + ass2, res1 + res2,
+          ph1 <+ shift(f1, ph2), pb1 <+ shift(f1, pb2))
 
 -- %shift all generated proofnames by indicated amount
 FUN shift: nat ** map[proofName, <, pHead] -> map[proofName, <, pHead]
@@ -64,6 +66,36 @@ DEF shift(n, M:map[proofName, <, pBody]) ==
   IN
   ((\\oldpN, oldpB, newM.
    def(gen(an(oldpN), n + no(oldpN)), oldpB, newM)), noGens) / gens
+
+FUN shift: nat ** proofName -> proofName
+DEF shift(n, gen(anO, noO)) == gen(anO, n + noO)
+DEF shift(_, else:proofName) == else
+
+
+DEF flat(<>) == {}
+DEF flat(e :: <>) == e
+DEF flat(E AS _ :: _ :: _) ==
+  flat(E, none, ok, 0, {}, {}, {}, {}, <>, <>)
+
+FUN flat: seq[pcEnv] ** an ** diag ** nat ** set[lawName, <] **
+           set[lawName, <] ** set[lawName, <] ** set[lawName, <] **
+           seq[pair[proofName, pHead]] ** seq[pair[proofName, pBody]] -> pcEnv
+DEF flat(<>, anK, diagK, nxtK, lawsK, exLawsK, assK, resK, pHK, pBK) ==
+  pcEnv(anK, diagK, nxtK, lawsK, exLawsK, assK, resK, asMap(pHK), asMap(pBK))
+DEF flat(pcEnv(an1, d1, f1, l1, xl1, ass1, res1, ph1, pb1) :: R,
+         _, diagK, nxtK, lawsK, exLawsK, assK, resK, pHK, pBK) ==
+  flat(R, an1, d1 <+ diagK, f1 + nxtK, l1 + lawsK, xl1 + exLawsK,
+       ass1 + assK, res1 + resK, shift(nxtK, asSeq(ph1)) ++ pHK,
+       shift(nxtK, asSeq(pb1)) ++ pBK)
+
+FUN shift: nat ** seq[pair[proofName, pHead]] -> seq[pair[proofName, pHead]]
+DEF shift(0, S) == S: seq[pair[proofName, pHead]]
+DEF shift(n, S) == (\\ p. shift(n, 1st(p)) & (2nd(p)): pHead) * S       
+
+FUN shift: nat ** seq[pair[proofName, pBody]] -> seq[pair[proofName, pBody]]
+DEF shift(0, S) == S: seq[pair[proofName, pBody]]
+DEF shift(n, S) == (\\ p. shift(n, 1st(p)) & (2nd(p)): pBody) * S       
+       
 
 
 DEF pce <+ ls == pce :=_laws laws(pce) + ls
@@ -90,6 +122,9 @@ DEF %(pN, pH, pB) == (pN, pH, pB) incl {}
 DEF %(l) == l incl {}
 
 DEF asPCEnv(d) == pcEnv(none, d, 0, {}, {}, {}, {}, {}, {})
+
+DEF getAxioms(e) == law * dom((\\ _ , bd. axiom?(bd)) | pBodies(e))
+  
 
 -- %$Law Names$
 

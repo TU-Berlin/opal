@@ -33,6 +33,7 @@ IMPORT RepoAn ONLY anLayer register def !?  undef
        SetConv ONLY asSeq
        FileName ONLY splitSuffix
        Void ONLY void
+       ComState ONLY stateId => ?
 
 
 FUN pceStoreLayer: anLayer
@@ -76,6 +77,13 @@ DEF pceHandler(e)(R) ==
     succeed(R)
   FI
 
+-- %Switch storing of pce-files on and off
+FUN pceFileSwitch: stateId[bool]
+DEF pceFileSwitch == EXEC(stateId(false))
+
+DEF setFileSwitch(what) == pceFileSwitch => (\\ _ . what)
+DEF getFileSwitch == pceFileSwitch ?
+
 -- %If a unit has this flag set, it is not reread by tryRead
 FUN pceFileReadLayer: anLayer
 DEF pceFileReadLayer == EXEC(register(9 * 100 + 15, boolDyn1))
@@ -87,49 +95,55 @@ FUN boolDyn1: dyn -> fmt
 DEF boolDyn1(d) == lit(IF unpack(d, pceFRtag) THEN "true" ELSE "false" FI)
 
 DEF tryRead(uN)(R) ==
-  LET flag == (\\d. unpack(d, pceFRtag)) * an(uN)(R) !? pceFileReadLayer
-      U == pretty(fmtUnitName(R)(uN))
-  IN
-  IF flag avail? ANDIF cont(flag) THEN 
-    debugMsg("tryRead", \\ .  U ++ " not reloaded")(R) & (\\ R1.
-    succeed(nil & R1)
-    )
-  ELSE
-    LET pceF == pceFileName(uN)(R)
+  getFileSwitch & (\\ sw.
+  IF sw THEN
+    LET flag == (\\d. unpack(d, pceFRtag)) * an(uN)(R) !? pceFileReadLayer
+        U == pretty(fmtUnitName(R)(uN))
     IN
-    IF notExistent?(sourceFile(uN)(R)) or notExistent?(absyFile(uN)(R)) THEN
-      debugMsg("tryRead", \\ .  U ++ " absy or source not found")(R) & (\\ R1.
+    IF flag avail? ANDIF cont(flag) THEN 
+      debugMsg("tryRead", \\ .  U ++ " not reloaded")(R) & (\\ R1.
       succeed(nil & R1)
       )
     ELSE
-      stat(pceF) ; (\\ ex: ans[filestat].
-      IF fail?(ex) THEN 
-        debugMsg("tryRead", \\ .  U ++ " pce not found")(R) & (\\ R1.
+      LET pceF == pceFileName(uN)(R)
+      IN
+      IF notExistent?(sourceFile(uN)(R)) or notExistent?(absyFile(uN)(R)) THEN
+        debugMsg("tryRead", \\ .  U ++ " absy or source not found")(R) & (\\ R1.
         succeed(nil & R1)
         )
-      IF okay?(ex) THEN 
-        LET t == mtime(data(ex))
-        IN
-        IF mtime(sourceFile(uN)(R)) <= t and mtime(absyFile(uN)(R)) <= t THEN
-          open(pceF, "rb") & (\\f.
-          read(f, pceTag) & (\\ e.
-          close(f) & (\\ _ .
-          debugMsg("tryRead", \\ . U ++ " pce read")(R) & (\\ R1.
-          LET R2 == updateAn(uN, (\\ a. def(pceStoreLayer, pack(e, pceTag),
-                                            def(pceFileReadLayer,
-                                                pack(true, pceFRtag), a))))(R1)
-          IN
-          succeed(avail(e) & R2)
-          ))))
-        ELSE
-          debugMsg("tryRead", \\ . U ++ " too old")(R) & (\\ R1.
+      ELSE
+        stat(pceF) ; (\\ ex: ans[filestat].
+        IF fail?(ex) THEN 
+          debugMsg("tryRead", \\ .  U ++ " pce not found")(R) & (\\ R1.
           succeed(nil & R1)
           )
-        FI
+          IF okay?(ex) THEN 
+            LET t == mtime(data(ex))
+            IN
+            IF mtime(sourceFile(uN)(R)) <= t and mtime(absyFile(uN)(R)) <= t THEN
+              open(pceF, "rb") & (\\f.
+              read(f, pceTag) & (\\ e.
+              close(f) & (\\ _ .
+              debugMsg("tryRead", \\ . U ++ " pce read")(R) & (\\ R1.
+              LET R2 == updateAn(uN, (\\ a. def(pceStoreLayer, pack(e, pceTag),
+                                                def(pceFileReadLayer,
+                                                    pack(true, pceFRtag), a))))(R1)
+              IN
+              succeed(avail(e) & R2)
+              ))))
+            ELSE
+              debugMsg("tryRead", \\ . U ++ " too old")(R) & (\\ R1.
+              succeed(nil & R1)
+              )
+            FI
+          FI
+        )
       FI
-      )
     FI
+  ELSE
+    succeed(nil & R)
   FI
+  )
 
 
 -- %If a unit has this flag set it is stored by storePces
@@ -142,7 +156,10 @@ DEF pceNewTag == "pceNew"
 FUN boolDyn2: dyn -> fmt
 DEF boolDyn2(d) == lit(IF unpack(d, pceNewTag) THEN "true" ELSE "false" FI)
 
-DEF storePces(R) == (storePce, R) /& asSeq(units(R))
+DEF storePces(R) == 
+  getFileSwitch & (\\ sw.
+  IF sw THEN (storePce, R) /& asSeq(units(R)) ELSE succeed(R) FI
+  )
 
 FUN storePce: unitName ** repo -> com[repo]
 DEF storePce(uN, R) ==

@@ -1,17 +1,17 @@
 IMPLEMENTATION PrettyPCEnv
 
 IMPORT Fmt ONLY lit ; inc dec fmt none brk  spc
-       Nat ONLY nat 6 2 1 0 >= = 3 10 4 <
+       Nat ONLY nat 6 2 1 0 >= = 3 10 4 < <=
        FmtSet ONLY fmtSet
        PCEnv COMPLETELY
        Repo ONLY repo
        PrettyFormatting COMPLETELY
        MapReduce ONLY /
-       Map ONLY map !?
+       Map ONLY map !? dom
        Option ONLY option avail nil avail? cont
        Control ONLY ^
        RepoObjectAccess ONLY symbol
-       Set ONLY set
+       Set ONLY set - +
        String ONLY string
        Predicate ONLY or
        SetFilter ONLY |
@@ -21,6 +21,9 @@ IMPORT Fmt ONLY lit ; inc dec fmt none brk  spc
        RepoDiag ONLY fmtDiag
        FmtBasicTypes ONLY fmtNat
        ColourText ONLY hintText prompt
+       Compose ONLY o
+       MapFilter ONLY |
+       SetMap ONLY *
 
 -- %$Very long variant$
 
@@ -51,11 +54,51 @@ DEF pretty(level)(e)(R) ==
      inc(2); fmtSet(pretty(R))(resolved(e)); dec(2)); brk
   FI
 
+/* %We don't include the freetype laws as proof obligations because 
+    they are added only internally.
+*/
+DEF prettyInfo(level)(e)(main)(R) ==
+  -- %- can't use getAxioms'PCEFunctions here due to cycle in import relation
+  LET rawAxioms == law * dom((\\ pN, _ . axm?(pN)) | pBodies(e))
+      rawObs == laws(e) - rawAxioms
+      obligations == (~ o (freetypeLaws? or datatypeLaws?)) | rawObs
+      axioms == IF level <= 2 THEN
+                  ((~ o datatype?) | rawAxioms) +
+                  (freetypeLaws? or datatypeLaws?) | rawObs
+                ELSE
+                  rawAxioms
+                FI
+      tProofNh == \\ pN, _ :pHead . true -- ~(axm?(pN))
+      tProofNb == \\ pN, _ :pBody . true -- ~(axm?(pN))
+  IN
+  prompt(lit("Axioms: ")); brk;
+  (inc(2); fmtSet(pretty(R, main))(axioms); dec(2); brk);
+  prompt(lit("Proof obligations: ")); brk;
+  (inc(2); fmtSet(pretty(R, main))(obligations); dec(2); brk);
+  prompt(lit("Lemmas: ")); brk;
+  (inc(2); 
+   pretty1(R, main)(tProofNh | pHeads(e), tProofNb | pBodies(e)); dec(2));
+  (IF level >= 4 THEN
+     prompt(lit("Extra laws:")); brk;
+     inc(2); fmtSet(pretty(R, main))(extraLaws(e)); dec(2)
+   ELSE
+     none
+   FI)
+
+-- %- can' use datatype?'PCEFunctions either
+FUN datatype? : lawName -> bool -- freetype? or cdfd?
+FUN freetype? : lawName -> bool
+
+DEF datatype? == freetype? or cdfd? or datatypeLaws?
+DEF freetype? == gen? or ind? or discr? or sel? or equiv? or
+                    ddfd? or sdfd? or freetypeLaws?
+ 
+
 FUN pretty: repo -> lawName -> fmt
 DEF pretty(R)(ordinary(_, pN)) == fmtPropertyNameLong(R)(pN)
 DEF pretty(R)((def(_, fun)):lawName) == lit("Def["); fmtObjectNameLong(R)(fun); lit("]")
-DEF pretty(R)(restr(_, orig, _)) == lit("Restr["); pretty(R)(orig); lit("]")
-DEF pretty(R)(copy(_, orig)) == lit("Copy["); pretty(R)(orig); lit("]")
+DEF pretty(R)(restr(_, orig, _)) == lit("Trans["); pretty(R)(orig); lit("]")
+DEF pretty(R)(copy(_, orig)) == lit("Incl["); pretty(R)(orig); lit("]")
 DEF pretty(R)(spc(_, fun, _)) == lit("Spc["); fmtObjectNameLong(R)(fun); lit("]")
 DEF pretty(R)(discr(_, _, con, dis)) ==
   lit("Discr["); fmtObjectNameLong(R)(constructor(con)); lit(","); spc(1);
@@ -168,9 +211,9 @@ DEF pretty(R, uN)(ordinary(_, pN)) == fmtPropertyNameLong(R, uN)(pN)
 DEF pretty(R, uN)((def(_, fun)):lawName) ==
   lit("Def["); fmtObjectNameLong(R, uN)(fun); lit("]")
 DEF pretty(R, uN)(restr(_, orig, _)) ==
-  lit("Restr["); pretty(R, uN)(orig); lit("]")
+  lit("Trans["); pretty(R, uN)(orig); lit("]")
 DEF pretty(R, uN)(copy(_, orig)) ==
-  lit("Copy["); pretty(R, uN)(orig); lit("]")
+  lit("Incl["); pretty(R, uN)(orig); lit("]")
 DEF pretty(R, uN)(spc(_, fun, _)) ==
   lit("Spc["); fmtObjectNameLong(R, uN)(fun); lit("]")
 DEF pretty(R, uN)(discr(_, _, con, dis)) ==

@@ -1,6 +1,6 @@
 IMPLEMENTATION ProofSemantics
 
-IMPORT Seq ONLY seq <> % ft rt ++ ::
+IMPORT Seq ONLY seq <> % ft rt ++ :: +%
        RepoName COMPLETELY
        RepoAbsy COMPLETELY
        Set ONLY set % find? incl {}? arb {}  - + {<}
@@ -64,6 +64,9 @@ IMPORT Seq ONLY seq <> % ft rt ++ ::
        ObjectNameMap ONLY <*
        NameHandling ONLY parameter?
        RepoEvent ONLY diag event
+       RealConv ONLY ``
+       Real ONLY - real
+       Stopwatch ONLY now
 
 DEF proofSemantics(uN)(R0) ==
   LET oldE? == get(uN)(R0)
@@ -113,11 +116,9 @@ DEF proofSemantics(uN)(R0) ==
       (propertySemantic(uN), R14) *& asSeq(properties(uN)(R14)) && (\\ R15, e7.
       progress(2, \\ . "realization relation ...")(R15) & (\\ R16.
       realizationSemantic(uN)(R16) && (\\ R17, e8.
-      LET
-        all == flat(e1) <+ flat(e2) <+ flat(e3) <+ flat(e4) <+
-               flat(e5) <+ flat(e6) <+ flat(e7) <+ e8
-        newE == checkProofs(all)(R17)
-        R18 == set(newE, uN)(R17)
+      LET all == flat(e1 ++ e2 ++ e3 ++ e4 ++ e5 ++ e6 ++ (e7 +% e8))
+          newE == checkProofs(all)(R17)
+          R18 == set(newE, uN)(R17)
       IN
       progress(1, \\ . "Finished proof semantics of " ++
                        denoUnit)(R18) & (\\ R19.
@@ -157,7 +158,7 @@ DEF relationSemantic(main, rType)(R)(relation) ==
     LET (R2a, obs) == impObjects(main, relation)(R2)
     IN
     (checkImport(rType, main, relation), R2a) *& asSeq(obs) && (\\ R3, e2 .
-    succeed(R3 & e1 <+ flat(e2))
+    succeed(R3 & flat(e1 :: e2))
     ))))
   FI
 
@@ -300,6 +301,10 @@ and inserted in appropriate position. For freetype laws and includable laws
 a law COPY[l] |- RESTR[l] is added.
 */
 
+FUN rCopy: unitName -> lawName -> lawName
+DEF rCopy(interface)(lN) == 
+  IF from(interface)(lN) THEN copy(none, lN) ELSE lN FI
+
 FUN realizationSemantic: unitName -> repo -> com[pair[repo, pcEnv]]
 DEF realizationSemantic(uN)(R0) ==
   IF part(uN) sign? THEN 
@@ -342,14 +347,14 @@ DEF realizationSemantic(uN)(R0) ==
     debugMsg("realizationSemantic", \\ . "trueSorts:" ++
              pretty(fmtSet(fmtObjectName(R))(sorts)))(R) & (\\R0a.
     progress(3, \\ . "realization of " ++ !(R0a)(interface))(R0a) & (\\ R1.
-    succeed(R1 & hintsNonAuto :=_laws newLaws
-                              :=_extraLaws inclLaws + newExtras
-                              :=_assumes newAssumes
-                              :=_resolved newResolved
-                              :=_pHeads newHeads
-                              :=_pBodies newBodies
-                              <+ (autolaw, {}) / autoLaws
-                              <+ (ftlaw, {}) / ft? | laws(pce))
+    succeed(R1 & flat(%(hintsNonAuto :=_laws newLaws
+                                     :=_extraLaws inclLaws + newExtras
+                                     :=_assumes newAssumes
+                                     :=_resolved newResolved
+                                     :=_pHeads newHeads
+                                     :=_pBodies newBodies,
+                        (autolaw, {}) / autoLaws,
+                        (ftlaw, {}) / ft? | laws(pce))))
     )))
   FI
 
@@ -568,9 +573,6 @@ DEF mkError(ordinary(_, oN), R)(lN) ==
   FI
 
 -- %$Auxiliary functions$
-FUN flat: seq[pcEnv] -> pcEnv
-DEF flat(s) == (<+, {}) / s
-
 FUN objRef: objectName ** repo -> ref
 DEF objRef(oN, R) ==
   LET loc? == locator?(an(object(oN)(R)))
