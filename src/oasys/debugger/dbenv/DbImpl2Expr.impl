@@ -1,45 +1,45 @@
 IMPLEMENTATION DbImpl2Expr
 
 IMPORT
-	Seq			COMPLETELY
-	SeqMap			COMPLETELY
-	SeqZip			COMPLETELY
-	SeqFold			COMPLETELY
-	SeqFilter		COMPLETELY
-	SeqIndex		COMPLETELY
-	SeqReduce		COMPLETELY
-	SeqMapEnv		COMPLETELY
-	Map			COMPLETELY
-	Nat			COMPLETELY
-	NatConv			COMPLETELY
-	Pair			COMPLETELY
-	Array			COMPLETELY
-	ArrayConv		COMPLETELY
-	ArrayMap		COMPLETELY
-	Option			COMPLETELY
-	ABORT			COMPLETELY
-	Fmt			COMPLETELY
-	DEBUG			COMPLETELY
-	Denotation		COMPLETELY
+        Seq                     COMPLETELY
+        SeqMap                  COMPLETELY
+        SeqZip                  COMPLETELY
+        SeqFold                 COMPLETELY
+        SeqFilter               COMPLETELY
+        SeqIndex                COMPLETELY
+        SeqReduce               COMPLETELY
+        SeqMapEnv               COMPLETELY
+        Map                     COMPLETELY
+        Nat                     COMPLETELY
+        NatConv                 COMPLETELY
+        Pair                    COMPLETELY
+        Array                   COMPLETELY
+        ArrayConv               COMPLETELY
+        ArrayMap                COMPLETELY
+        Option                  COMPLETELY
+        ABORT                   COMPLETELY
+        Fmt                     COMPLETELY
+        DEBUG                   COMPLETELY
+        Denotation              COMPLETELY
 IMPORT
-	RepoAbsy		COMPLETELY
-	RepoObjectAccess	COMPLETELY
-	RepoUnitAccess		COMPLETELY
-	RepoName		COMPLETELY
+        RepoAbsy                COMPLETELY
+        RepoObjectAccess        COMPLETELY
+        RepoUnitAccess          COMPLETELY
+        RepoName                COMPLETELY
 IMPORT
-	Expression		COMPLETELY
-	SeqExtensions		COMPLETELY
-	SeqMapEnv2		COMPLETELY
-	SeqMapEnv3		COMPLETELY
+        Expression              COMPLETELY
+        SeqExtensions           COMPLETELY
+        SeqMapEnv2              COMPLETELY
+        SeqMapEnv3              COMPLETELY
 IMPORT
-	DbConvEnv		COMPLETELY
-	DbIdentTable		COMPLETELY
-	DbNameStack		COMPLETELY
-	DbName2Expr		COMPLETELY
-	DbPatternTmpPatt	COMPLETELY
-	DbPatternBind		COMPLETELY
-	DbPatternMatchtree	COMPLETELY	
-	DbAbsyAux		COMPLETELY
+        DbConvEnv               COMPLETELY
+        DbIdentTable            COMPLETELY
+        DbNameStack             COMPLETELY
+        DbName2Expr             COMPLETELY
+        DbPatternTmpPatt        COMPLETELY
+        DbPatternBind           COMPLETELY
+        DbPatternMatchtree      COMPLETELY      
+        DbAbsyAux               COMPLETELY
 
 
 -- %$Parametrisierung$
@@ -59,58 +59,60 @@ Instanziierung festgelegt wird (Lambda-Abstraktion):
  */
 
 FUN fun2expr :
-	env ** objectName	-> env ** expr'Expression ** nat ** impl
+        env ** objectName       -> env ** expr'Expression ** nat ** impl
 
 DEF fun2expr(E,Name) ==
-    LET Impl	 == impl(Name)(repo(E))
-	Parafuns == (\\N.oper?(N)(repo(E))) | actuals(Name)(repo(E))
-	-- alle Annotationen erfolgen im Kontext der Toplevel Annotation:
-	E0	 == E pushAn an(Impl)
+    LET Impl     == impl(Name)(repo(E))
+        Parafuns == (\\N.oper?(N)(repo(E))) | actuals(Name)(repo(E))
+        -- alle Annotationen erfolgen im Kontext der Toplevel Annotation:
+        E0       == E pushAn an(Impl)
     IN IF Parafuns <>?
-	 THEN	/* % @BIL Keine Parametrisierung bzw. Parametrisierung ohne
-		Parameterfunktionen und damit keine Lambda-Abstraktion.
-		@EIL */
-	      LET (E1,Expr,Rank,Impl1) == impl2expr(E0,Name,Impl)
-		  (E2,An)	      == E1 popAn
-		 -- Annotation der Implementierung wird aktualisiert
-	      IN (E2,Expr,Rank,Impl1 :=_an An)
-	 ELSE	/* % @BIL Parametrisierung  mit Parameterfunktionen:
-		Es muß nun eine Lambda-Abstraktion um den Lambda-Term
-		der eigentlichen Definitionsgleichungen gestellt werden,
-		der die Higher-order-Übersetzung der Parametrisierung 
-		realisiert. @EIL */
-	      LET -- Aus den Parafuns wird nun ein Mtree errechnet. Es wird
-		  -- ein neues Item auf den NameStack des Env gelegt.
-		  E1			== pushItem(E0)
-		  (E2,Mtree)		== names2mtree(E1,Parafuns)
-		  (E3,Expr,Rank,Impl1)	== impl2expr(E2,Name,Impl)
-		  -- Nun wird der Lambda-Term aufgebaut.
-		  (E4,Expr1)		== E3 @ 
-					    lambda(_,Mtree, asArray(%(Expr)))
-		  (E5,An)		== E4 popAn
-	      IN (E5,Expr1,rank(Mtree)+Rank,Impl1 :=_an An)
+         THEN   /* % @BIL Keine Parametrisierung bzw. Parametrisierung ohne
+                Parameterfunktionen und damit keine Lambda-Abstraktion.
+                @EIL */
+              LET (E1,Expr,Rank,Impl1) == impl2expr(E0,Name,Impl)
+                  (E2,An)             == E1 popAn
+                 -- Annotation der Implementierung wird aktualisiert
+              IN (E2,Expr,Rank,Impl1 :=_an An)
+         ELSE   /* % @BIL Parametrisierung  mit Parameterfunktionen:
+                Es muß nun eine Lambda-Abstraktion um den Lambda-Term
+                der eigentlichen Definitionsgleichungen gestellt werden,
+                der die Higher-order-Übersetzung der Parametrisierung 
+                realisiert. @EIL */
+              LET -- Aus den Parafuns wird nun ein Mtree errechnet. Es wird
+                  -- ein neues Item auf den NameStack des Env gelegt.
+                  E1                    == pushItem(E0)
+                  (E2,Mtree)            == names2mtree(E1,Parafuns)
+                  (E3,Expr,Rank,Impl1)  == impl2expr(E2,Name,Impl)
+                  -- Nun wird der Lambda-Term aufgebaut.
+                  (E4,Expr1)            == E3 @ 
+                                            lambda(_,Mtree, asArray(%(Expr)))
+                  (E5,An)               == E4 popAn
+              IN (E5,Expr1,rank(Mtree)+Rank,Impl1 :=_an An)
        FI
 
 -- %-====================================================================
 -- %$Transformation einer Implementierung$ ==============================
 FUN impl2expr : env ** objectName ** impl 
-			-> env ** expr'Expression ** nat ** impl
+                        -> env ** expr'Expression ** nat ** impl
 DEF impl2expr(E,_,def(An,Eqns)) ==
-    LET TmpEqns		== asTmpEqn * Eqns
-	BestFitPatts	== (expr2tmpPattWithoutTop * _) * patterns * Eqns
-	MaxArgDim	== (max,0) \ (dim * lhsPatt * TmpEqns)
-	-- Aufbau des matchtree:
-	(E1,MatchTree)	== tmpPatts2matchtree(E,BestFitPatts,MaxArgDim)
-	-- Initial ist NS für alle Gleichng. gleich:
-	NS		== pushItem(nameStack(E1))
-	(E2,IntEqs,MEqs)== (topeqn2expr(NS),E1) * TmpEqns
-	Mtree		== mtree(MatchTree,asArray(lhs * IntEqs),MaxArgDim)
-	(E3,Expr)	== IF MaxArgDim > 0 
-			     THEN E2 @ lambda(_,Mtree,asArray(rhs * IntEqs))
-			     ELSE -- Konstante: treten mehrere Definitionsgl.
-				  -- auf, wird die erste genommen.
-				  (E2,rhs(ft(IntEqs)))
-			   FI
+    LET TmpEqns         == asTmpEqn * Eqns
+        getPattern      == \\eq. IF patterns(eq) <>? THEN %(lhs(eq))
+                                 ELSE patterns(eq) FI
+        BestFitPatts    == (expr2tmpPattWithoutTop * _) * getPattern * Eqns
+        MaxArgDim       == (max,0) \ (dim * lhsPatt * TmpEqns)
+        -- Aufbau des matchtree:
+        (E1,MatchTree)  == tmpPatts2matchtree(E,BestFitPatts,MaxArgDim)
+        -- Initial ist NS für alle Gleichng. gleich:
+        NS              == pushItem(nameStack(E1))
+        (E2,IntEqs,MEqs)== (topeqn2expr(NS),E1) * TmpEqns
+        Mtree           == mtree(MatchTree,asArray(lhs * IntEqs),MaxArgDim)
+        (E3,Expr)       == IF MaxArgDim > 0 
+                             THEN E2 @ lambda(_,Mtree,asArray(rhs * IntEqs))
+                             ELSE -- Konstante: treten mehrere Definitionsgl.
+                                  -- auf, wird die erste genommen.
+                                  (E2,rhs(ft(IntEqs)))
+                           FI
     IN (E3,Expr,MaxArgDim,def(An,MEqs))
 
 /* FIXME: the next two where commented out. why? 
@@ -141,27 +143,27 @@ DEF impl2expr(E,Name,OImpl AS induced(_,Sort,Kind)) ==
 d.h. in ein Paar aus @code{bpattern} und @code{expr'Expression}.
  */
 FUN topeqn2expr : nameStack -> env ** tmpEqn 
-		-> env ** internEqn ** eqn'RepoAbsy
+                -> env ** internEqn ** eqn'RepoAbsy
 DEF topeqn2expr(NS)(E,eqn(eqn(An,Sign,Lhs,Patts,Rhs),LhsPatt)) ==
-    LET E0		== E :=_nameStack NS
-	E1		== E0 pushAn An
-	(E2,BPattern)	== tmpPatt2bpattern(E1,LhsPatt)
-	(E3,Rhs1,MRhs)	== expr2expr(E2,Rhs)
-	(E4,MAn)	== E3 popAn
+    LET E0              == E :=_nameStack NS
+        E1              == E0 pushAn An
+        (E2,BPattern)   == tmpPatt2bpattern(E1,LhsPatt)
+        (E3,Rhs1,MRhs)  == expr2expr(E2,Rhs)
+        (E4,MAn)        == E3 popAn
     IN (E4,eqn(BPattern,Rhs1),eqn(MAn,Sign,Lhs,Patts,MRhs))
 
 -- % interne Repräsentationen für Gleichungen:
    DATA tmpEqn == 
-	eqn(	eqn	:	eqn'RepoAbsy,
-		lhsPatt :	tmpPatt	-- pattern of the left hand side
-	)
+        eqn(    eqn     :       eqn'RepoAbsy,
+                lhsPatt :       tmpPatt -- pattern of the left hand side
+        )
    FUN asTmpEqn : eqn'RepoAbsy -> tmpEqn
    DEF asTmpEqn(Eqn) == eqn(Eqn,expr2tmpPattWithoutTop(lhs(Eqn)))
 
    DATA internEqn ==
-	eqn(	lhs	:	bpattern,
-		rhs	:	expr'Expression
-	)
+        eqn(    lhs     :       bpattern,
+                rhs     :       expr'Expression
+        )
 
 -- %$$$$Transformation einer induzierten Funktion$ ====================
 /* %
@@ -171,11 +173,11 @@ Sorte mit angegeben. Die Positionen der Sequenz von Varianten werden als Tags
 verwendet.
  */
 FUN induced2expr : env ** objectName ** seq[variant] ** inducedKind 
-	-> env ** expr'Expression ** nat
+        -> env ** expr'Expression ** nat
 DEF induced2expr(E,Name,Variants,constructor) ==
-    LET Tag	== cont((\\V. constructor(V) = Name) pos Variants)
-	Variant == Variants ! Tag
-	Rank	== #(components(Variant))
+    LET Tag     == cont((\\V. constructor(V) = Name) pos Variants)
+        Variant == Variants ! Tag
+        Rank    == #(components(Variant))
     IN (E @ cons(_,Tag,Rank),Rank)
 
 DEF induced2expr(E,Name,Variants,test) ==
@@ -189,9 +191,9 @@ DEF induced2expr(E,Name,Variants,selector) ==
   DEF selPos(Name)(variant(_,_,_,Comps)) ==
       LET OptPos == (\\ C. selector(C) = Name) pos Comps
       IN IF OptPos avail?
-	   THEN cont(OptPos)
-	   ELSE max'Nat
-	 FI
+           THEN cont(OptPos)
+           ELSE max'Nat
+         FI
 
 -- %-====================================================================
 -- %$Übersetzung eines Ausdrucks$ =======================================
@@ -204,9 +206,9 @@ FUN expr2expr : env ** expr'RepoAbsy -> env ** expr'Expression ** expr'RepoAbsy
 
 -- % Namen:
 DEF expr2expr(E,name(An,Name)) == 
-    LET E0	   == E pushAn An
-	(E1,Expr1) == name2expr(E0,Name)
-	(E2,MAn)   == E1 popAn
+    LET E0         == E pushAn An
+        (E1,Expr1) == name2expr(E0,Name)
+        (E2,MAn)   == E1 popAn
     IN (E2,Expr1,name(MAn,Name))
 
 
@@ -219,80 +221,80 @@ DEF expr2expr(E,tuple(An,<>)) ==
     IN (E1,Expr,tuple(MAn,<>))
 
 DEF expr2expr(E,tuple(An,Elems)) == 
-    LET	(E1,Elems1,MElems) == (expr2expr,E) * Elems
-	  -- Übersetzung der Elems1 in tupleExpr
-	(Dim,Indices)== ((\\Index,Exp.
-				(Index+dim(fct(repo(E1),Exp)),Index)
-		    ),0) * MElems
-	Elems2 == zip(tupleExpr)(Elems1,Indices)
-	(E2,Expr,MAn) == E1 @ (tuple(_,Elems2,Dim),An)
+    LET (E1,Elems1,MElems) == (expr2expr,E) * Elems
+          -- Übersetzung der Elems1 in tupleExpr
+        (Dim,Indices)== ((\\Index,Exp.
+                                (Index+dim(fct(repo(E1),Exp)),Index)
+                    ),0) * MElems
+        Elems2 == zip(tupleExpr)(Elems1,Indices)
+        (E2,Expr,MAn) == E1 @ (tuple(_,Elems2,Dim),An)
     IN (E2,Expr,tuple(MAn,MElems))
 
 DEF expr2expr(E,OExpr AS apply(An,F,A)) ==
     LET (E1,F1,MF)    == expr2expr(E,F)
-	(E2,A1,MA)    == expr2expr(E1,A)
-	Dim	      == dim(fct(repo(E2),OExpr))
-	(E3,Expr,MAn) == E2 @ (apply(_,F1,A1,Dim),An)
+        (E2,A1,MA)    == expr2expr(E1,A)
+        Dim           == dim(fct(repo(E2),OExpr))
+        (E3,Expr,MAn) == E2 @ (apply(_,F1,A1,Dim),An)
     IN (E3,Expr,apply(MAn,MF,MA))
 
 DEF expr2expr(E,cases(An,Guards,Else)) ==
     LET (E1,Guards1,MGuards) == (guard2guard,E) * Guards
-	E2		     == E1 pushAn An
-	(E3,Else1,MElse) == IF Else nil?
-			      THEN (E2 @ undefined(_),Else)
-			      ELSE 
-				LET (E21,R,ERes) == expr2expr(E2,cont(Else))
-				IN (E21,R,avail(ERes))
-			    FI
-	(E4,MAn)	 == E3 popAn
+        E2                   == E1 pushAn An
+        (E3,Else1,MElse) == IF Else nil?
+                              THEN (E2 @ undefined(_),Else)
+                              ELSE 
+                                LET (E21,R,ERes) == expr2expr(E2,cont(Else))
+                                IN (E21,R,avail(ERes))
+                            FI
+        (E4,MAn)         == E3 popAn
     IN (E4 @ cases(_,Guards1,Else1),cases(MAn,MGuards,MElse))
 
 -- FIXME: free vars as lambda-abstraction
 DEF expr2expr(E,lambda(An,Sign,Vars,Expr)) ==
-   LET E0	       == E pushItem
-       E1	       == E0 pushAn An
+   LET E0              == E pushItem
+       E1              == E0 pushAn An
        (E2,Mtree)      == names2mtree(E1,Vars)
        (E3,Expr1,MExpr)== expr2expr(E2,Expr)
        (E4,Expr2)      == E3 @ lambda(_,Mtree,asArray(%(Expr1)))
-       E5	       == E4 popItem
-       (E6,MAn)	       == E5 popAn
+       E5              == E4 popItem
+       (E6,MAn)        == E5 popAn
    IN (E6,Expr2,lambda(MAn,Sign,Vars,MExpr))
 
 DEF expr2expr(E,let(An,Eqns,Expr)) ==
-    LET E0		== E pushItem -- item for all variables of this block
-	OldNS		== nameStack(E0)
-	E1		== E0 pushAn An
-	(E2,Eqns1,MEqns)== (eqn2blockEqn,E1) * Eqns
-	NewNS		== nameStack(E2)
-	(E3,Expr1,MExpr)== expr2expr(E2,Expr)
-	(E4,MAn)	== E3 popAn
-	E5		== E4 popItem
+    LET E0              == E pushItem -- item for all variables of this block
+        OldNS           == nameStack(E0)
+        E1              == E0 pushAn An
+        (E2,Eqns1,MEqns)== (eqn2blockEqn,E1) * Eqns
+        NewNS           == nameStack(E2)
+        (E3,Expr1,MExpr)== expr2expr(E2,Expr)
+        (E4,MAn)        == E3 popAn
+        E5              == E4 popItem
     IN (E5 @ block(_,Eqns1,Expr1,NewNS-OldNS),let(MAn,MEqns,MExpr))
 
 -- % eqn2blockEqn
 FUN eqn2blockEqn : env ** eqn -> env ** blockEqn ** eqn
 
 DEF eqn2blockEqn(E,eqn(An,Sign,Lhs,Patterns0,Rhs)) ==
-    LET Patterns	== IF <>?(Patterns0) THEN %(Lhs) ELSE Patterns0 FI
-	LhsPatt		== expr2tmpPatt(Lhs)
-	BestFits	== expr2tmpPatt * Patterns
-	E1		== E pushAn An
-	(E2,RhsE,MRhs)	== expr2expr(E1,Rhs)
-	(E3,Matchtree)	== tmpPatts2matchtree(E2,%(BestFits),dim(LhsPatt))
-	(E4,BPatt)	== tmpPatt2bpattern(E3,LhsPatt)
-	(E5,MAn)	== E4 popAn
-	Mtree		== mtree(Matchtree,asArray(%(BPatt)),dim(LhsPatt))
+    LET Patterns        == IF <>?(Patterns0) THEN %(Lhs) ELSE Patterns0 FI
+        LhsPatt         == expr2tmpPatt(Lhs)
+        BestFits        == expr2tmpPatt * Patterns
+        E1              == E pushAn An
+        (E2,RhsE,MRhs)  == expr2expr(E1,Rhs)
+        (E3,Matchtree)  == tmpPatts2matchtree(E2,%(BestFits),dim(LhsPatt))
+        (E4,BPatt)      == tmpPatt2bpattern(E3,LhsPatt)
+        (E5,MAn)        == E4 popAn
+        Mtree           == mtree(Matchtree,asArray(%(BPatt)),dim(LhsPatt))
     IN (E5,eqn(Mtree,RhsE),eqn(MAn,Sign,Lhs,Patterns,MRhs))
-	
+        
 -- % guard2guard
 FUN guard2guard: env ** guard'RepoAbsy -> 
-		env ** guard'Expression ** guard'RepoAbsy
+                env ** guard'Expression ** guard'RepoAbsy
 DEF guard2guard(E,guard(An,If,Then)) ==
-    LET (E1,If1,MIf)	 == expr2expr(E,If)
-	(E2,Then1,MThen) == expr2expr(E1,Then)
+    LET (E1,If1,MIf)     == expr2expr(E,If)
+        (E2,Then1,MThen) == expr2expr(E1,Then)
     IN -- Der guard selbst hat keine assoziierte Position und kann 
        -- damit auch nicht die Annotation modifizieren
-	(E2,guard(If1,Then1),guard(An,MIf,MThen))
+        (E2,guard(If1,Then1),guard(An,MIf,MThen))
 
 -- %$Pattern für Sequenzen von Namen$ ====================================
 /* %
@@ -304,12 +306,12 @@ NameStack die Namen @code{Names}. Die Termposition ist @emph{nicht} verändert.
  */
 FUN names2mtree : env ** seq[objectName] -> env ** mtree
 DEF names2mtree(E,Names) ==
-    LET TmpPatt		== names2tmpPatt(Names)
-	ArgsDim		== dim(TmpPatt) -- ArgsDim === #(Names)
-	(E1,Matchtree)	== tmpPatts2matchtree(E,%(%(TmpPatt)),ArgsDim)
-	(E2,BPatt)	== tmpPatt2bpattern(E1,TmpPatt)
+    LET TmpPatt         == names2tmpPatt(Names)
+        ArgsDim         == dim(TmpPatt) -- ArgsDim === #(Names)
+        (E1,Matchtree)  == tmpPatts2matchtree(E,%(%(TmpPatt)),ArgsDim)
+        (E2,BPatt)      == tmpPatt2bpattern(E1,TmpPatt)
     IN -- Kombination im resultierenden mtree
-	(E2,mtree(Matchtree,asArray(%(BPatt)),ArgsDim))
+        (E2,mtree(Matchtree,asArray(%(BPatt)),ArgsDim))
 
 
 
