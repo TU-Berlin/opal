@@ -47,6 +47,13 @@ IMPORT  RepoAn          COMPLETELY
 IMPORT  RepoInternData  COMPLETELY
         RepoInternSource COMPLETELY
         RepoInternAbsy COMPLETELY
+       PrintableChar ONLY /
+       ProcessCtrl COMPLETELY
+       Char ONLY =
+       ABORT ONLY ABORT
+       StringFilter ONLY split
+       StringConv ONLY `
+       DEBUG ONLY PRINT
 
 
 -- FIXME: reloading of objects
@@ -198,15 +205,16 @@ DEF searchStructure(Symbol, Force?, Folder :: Folders)(R) ==
         FI
         )
     ELSE
+        getCWD & (\\ cwd. 
         -- check for signature source in user system
-        LET ThisPath == sourcePath(Folder)
+        LET ThisPath == normalize(cwd)(sourcePath(Folder))
             SignName == sourceFileName(ThisPath, Symbol, sign)
         IN
         fileExists?(SignName)                           & (\\ Exists? .
         IF Exists? THEN
             -- unit located in this system
           dupStructures(Symbol, Folders, {}) & (\\dups.
-            IF (ThisPath excl dups) {}? THEN
+            IF (ThisPath excl normalize(cwd) * dups) {}?[denotation, <] THEN
               registerUserStructure(Symbol, Folder)(R)
             ELSE
               diag((error, maintain) !!
@@ -220,7 +228,7 @@ DEF searchStructure(Symbol, Force?, Folder :: Folders)(R) ==
             -- unit not located in this system, try next one
             searchStructure(Symbol, Force?, Folders)(R)
         FI
-        )
+        ))
     FI
     )
 
@@ -641,3 +649,20 @@ FUN fileExists? : denotation    -> com[bool]
 DEF fileExists?(Path) ==
     stat(Path)  ; (\\ Ans . succeed(okay?(Ans)))
 
+FUN normalize: denotation -> denotation -> denotation
+DEF normalize(cwd)(path) == 
+  LET pathS == IF path!0 = / THEN path! ELSE ((cwd!) ++ / :: (path!)) FI
+  IN
+  `(normalize(split(_ = /, pathS), <>))
+
+FUN normalize: seq[string] ** seq[string] -> string
+DEF normalize(<>, comps) == (/ :: (+/+(/), <>) / revert(comps)) +% /
+DEF normalize(f :: R, comps) ==
+  IF f = ("."!) THEN normalize(R, comps)
+  IF f = (".."!) THEN 
+    IF comps ::? THEN normalize(R, rt(comps))
+    ELSE ABORT("normalize'RepoMaintain: too much `..' in path")
+    FI
+  ELSE
+    normalize(R, f :: comps)
+  FI

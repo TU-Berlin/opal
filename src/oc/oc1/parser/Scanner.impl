@@ -3,7 +3,7 @@ IMPLEMENTATION Scanner
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-02-25 09:09:56 $ ($Revision: 1.3 $)
+-- % $Date: 1999-04-06 10:06:52 $ ($Revision: 1.4 $)
 
 /* %@table @asis
 @item author: 
@@ -310,16 +310,18 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
                          IF #(nest(C)) = 1 THEN (none(dot?),ok)
                          ELSE (docu(rt(nest(C)), rt(openCt(C)),
                                     rt(closeCt(C)), false, dot?),ok) FI
-              NE1 == IF openCt(C) <>? THEN ok
+               NE1 == IF openCt(C) <>? THEN ok
                      ELSE IF ft(openCt(C)) = ft(closeCt(C)) THEN ok 
-                          ELSE sErr(unbalanced, ft(nest(C)))
+                          ELSE sErr(unbalanced(ft(openCt(C)), ft(closeCt(C))),
+                                    ft(nest(C)))
                           FI
                      FI
       OTHERWISE                         
       IF (Ch = -) THEN -- check for possible line comment
-        IF lineCom?(CS) THEN scan(<>,RT,TS,P,E+checkLineDoc(rtUni(CS),P,P),C)
+        LET C1 == clearEsc(C) IN
+        IF lineCom?(CS) THEN scan(<>,RT,TS,P,E+checkLineDoc(rtUni(CS),P,P),C1)
         ELSE LET (NP1,NCS,NE) == skipMinus(NP,CS,ok)
-             IN scan(NCS,RT,TS,NP1,E+NE,C)
+             IN scan(NCS,RT,TS,NP1,E+NE,C1)
         FI      
       OTHERWISE
       IF (Ch = /) and nestComBegin?(CS) THEN -- start of nested docu
@@ -545,7 +547,7 @@ DEF checkLineDoc(CS, P, CP) ==
 FUN checkLineDoc: rawString ** pos ** pos ** nat ** nat ** char -> err
 DEF checkLineDoc(CS, P, CP, openCt, closeCt, lastC) ==
   IF CS <>? THEN 
-    IF openCt |= closeCt THEN sErr(unbalanced, P) ELSE ok FI
+    IF openCt |= closeCt THEN sErr(unbalanced(openCt, closeCt), P) ELSE ok FI
   ELSE
     LET (Ch, _) == ftUni(CS, CP)
         CS1 == rtUni(CS)
@@ -697,7 +699,7 @@ FUN sWarn: denotation ** pos -> err
 DEF sWarn(msg, pos) == err(warning, msg, pos)
 
 FUN otherChar cNotO cNotC dNotC never tabInD pNotC pNotO 
-    nlInD unbalanced: denotation
+    nlInD: denotation
 DEF dNotC        == "`""` not closed before end of line" 
 DEF tabInD       == "Tabular in denotation is not allowed" 
 DEF nlInD        == "Cannot escape newline"
@@ -707,7 +709,11 @@ DEF cNotO        == "`*/` not opened"
 DEF pNotO        == "`$/` not opened" 
 DEF otherChar    == "other character" 
 DEF never        == "INTERNAL SCANNER ERROR: should not happen" 
-DEF unbalanced   == "unbalanced curly brackets in documentation"
+
+FUN unbalanced: nat ** nat -> denotation
+DEF unbalanced(o, c)  ==
+  "unbalanced curly brackets in documentation (" ++
+  `(o) ++ " x `{' " ++ `(c) ++ " x `}' )"
 
 FUN unkEC: char -> denotation
 DEF unkEC(ch)        == "unknown escape `\\" ++ (ch`) ++
