@@ -1,12 +1,93 @@
+-- %- -- LAST EDIT: Thu Nov  4 15:55:41 1993 by maeder@cs.tu-berlin.de korso
 
 IMPLEMENTATION Options
 
+-- %$Change History$
 /* %-@example
 ============================================================================
 author:      af
 project:     opal-1/common
 purpose:     analyze commandline options (see oc(1))
              compute filenames
+Version:     Options.impl[4.8] accessed Fri Feb 11 01:00:34 1994
+Bytes:       21053
+
+
+changes: cg+af 7.6.93 included language variant options
+                      changed handling of part (w.r.t. property language)
+                      improvements in using option character constants
+changes: cg+af 24.6.93 included language variant options {r,l}assoc/infix
+changes: cg+af 25.6.93 incl. language variant options simpleLambda/seqGuard
+                       renamed language variant opt. suspension to section
+changes: af 29.6.93 included options and filenames for interOpal/prop.lang.
+changes: af 29.6.93 diag files in hidden directory
+changes: cg 1.7.93  included option -zunderline
+changes: wg 7.7.93  reworked optim and debug flags
+changes: wg 12.7.93 usage of OCS instead of .exp .ana .opt ...
+changes: cm 1.2.94  replaced string with denotation
+============================================================================
+-- Log for /tmp_amd/bolero/export/uebb/opal/workbench/build-release/src/oc/shared/admin/Options.impl[4.8]:
+  ocs-1.0b
+[1.2] Wed Jul 14 02:51:55 1993 opal@cs.tu-berlin.de saved
+  added identification string
+[1.3] Wed Jul 14 02:52:05 1993 opal@cs.tu-berlin.de saved
+  support of property files and AC dump file
+  ,
+[1.4] Wed Jul 14 02:52:17 1993 wg@cs.tu-berlin.de saved
+  added several language extension options (cg+af)
+  hidden directorys replaced by single repository OCS
+  reworked debug and optimization flags (wg)
+  ,
+[1.5] Wed Jul 14 02:52:27 1993 wg@cs.tu-berlin.de saved
+  *** empty log message ***
+[1.6] Wed Jul 14 02:52:37 1993 opal@cs.tu-berlin.de saved
+  *** empty log message ***
+[1.7] Wed Jul 14 02:52:48 1993 opal@cs.tu-berlin.de saved
+  *** empty log message ***
+[1.8] Fri Jul 16 23:36:25 1993 opal@cs.tu-berlin.de published
+  [Fri Jul 16 11:29:41 1993] Intention for change:
+  --- no intent expressed ---
+[2.0] Fri Jul 16 23:36:25 1993 opal@cs.tu-berlin.de accessed
+  [Fri Jul 16 11:29:41 1993] Intention for change:
+  --- no intent expressed ---
+[2.1] Sun Sep 26 15:10:17 1993 fetti@cs.tu-berlin.de saved
+  
+[3.0] Sat Oct  9 17:28:31 1993 wg@cs.tu-berlin.de accessed
+  [Sat Oct  9 15:29:28 1993] Intention for change:
+  [Sat Oct  9 15:28:55 1993] Intention for change:
+  port to language extensions
+[3.1] Sun Nov  7 23:01:22 1993 maeder@cs.tu-berlin.de accessed
+  [Thu Nov  4 11:31:20 1993] Intention for change:
+  added Function extpExpFile to handle extp.exp files
+[3.2] Mon Dec 20 15:47:54 1993 wg@cs.tu-berlin.de saved
+  Added myHcCFileTmpl myHcHFileTmpl
+[3.3] Mon Jan 17 14:36:05 1994 maeder@cs.tu-berlin.de saved
+  changed extension .dep to .deps for compatibility with ocs
+[4.0] Mon Jan 17 20:05:13 1994 wg@cs.tu-berlin.de saved
+  [Mon Jan 17 19:28:57 1994] Intention for change:
+  --- no intent expressed ---
+[4.1] Wed Jan 19 16:38:21 1994 wg@cs.tu-berlin.de saved
+  Error.sign
+[4.2] Thu Jan 20 00:41:30 1994 wg@cs.tu-berlin.de saved
+  [Thu Jan 20 00:22:15 1994] Intention for change:
+  --- no intent expressed ---
+[4.3] Thu Jan 20 18:54:55 1994 opal@cs.tu-berlin.de saved
+  [Thu Jan 20 18:54:17 1994] Intention for change:
+  --- no intent expressed ---
+[4.4] Thu Jan 20 19:08:13 1994 opal@cs.tu-berlin.de proposed
+  [Thu Jan 20 18:57:59 1994] Intention for change:
+  --- no intent expressed ---
+[4.5] Tue Feb  1 17:47:59 1994 maeder@cs.tu-berlin.de saved
+  
+[4.6] Tue Feb  1 18:51:08 1994 maeder@cs.tu-berlin.de saved
+  [Tue Feb  1 17:33:00 1994] Intention for change:
+  removed restriction for structure names and cleaned up strings
+[4.7] Wed Feb  2 18:08:37 1994 maeder@cs.tu-berlin.de saved
+  corrected printOptions to reuse this output as input
+[4.8] Fri Feb 11 01:00:34 1994 maeder@cs.tu-berlin.de accessed
+  changed dump of -t -o and -d
+============================================================================
+@end example
 */
 
 IMPORT  
@@ -32,6 +113,8 @@ IMPORT
         ProcessArgs             COMPLETELY -- ONLY args:com[seq[denotation]]
         Seq             ONLY seq ft rt <>? <> ::
         SeqMap          ONLY *
+        DEBUG           COMPLETELY
+
         OcExit          ONLY ioError
 
 -- %$Data types and constants$
@@ -75,6 +158,9 @@ DEF stdOptions== options(""&stdPath,impl,{},0,1,{},{},"",{},{},stdErr)
     DEF impl ` == " -" ++ `(implChar)
     DEF extp ` == " -" ++ `(extpChar)
     DEF intp ` == " -" ++ `(intpChar)
+
+    FUN `` : char -> denotation   -- c -> " -c"
+    DEF ``(ch) == `(blank) ++ `(optionChar) ++ `(ch)
 
     FUN ` : path -> denotation
     DEF `(p) == " -"++where++dirname(p)++" -"++state WHERE 
@@ -178,14 +264,7 @@ DEF allDebugKinds ==
 
 -- %- ------------------------------------------------------------------------
 -- %$Analyze Options$
-
-FUN analyzedOptions: options
-DEF analyzedOptions == EXEC(getOptions)
-
-FUN getOptions: com[options]
-DEF analyzeOptions == succeed(analyzedOptions)
-
-DEF getOptions ==
+DEF analyzeOptions ==
   args ;
   (\\a.IF a fail? THEN writeErr(error(a))
        IF a okay? THEN analyzeOptionsInline(rt(data(a))) FI)
@@ -459,42 +538,73 @@ DEF foreignExpPrefix    == "foreignExp:" -- only used inside of Options.impl
 -- %@zoindex infix
 -- %@zoindex pchecker
 -- %@zoindix defSign
+FUN zwildcard zsection zsimpleLambda zseqGuard
+    zrassoc zlassoc zinfix zunderline zpchecker zdefSign: denotation
+-- DEF zprop                   == "prop"
+DEF zwildcard               == "wildcard"
+DEF zsection                == "section"
+DEF zsimpleLambda           == "simpleLambda"
+DEF zunderline              == "underline"
+DEF zseqGuard               == "seqGuard"
+DEF zdefSign                == "defSign"
 
-DEF wildcard?(o)            == cop?("nowildcard",o) ~
-DEF section?(o)             == cop?("nosection",o) ~
-DEF simpleLambda?(o)        == cop?("simpleLambda",o)
-DEF underline?(o)           == cop?("nounderline",o) ~
-DEF seqGuard?(o)            == cop?("noseqGuard",o) ~
+DEF zrassoc                 == "rassoc"
+DEF zlassoc                 == "lassoc"
+DEF zinfix                  == "infix"
+DEF zpchecker               == "pchecker"
 
-DEF rassoc?(o)              == cop?("norassoc",o) ~
-DEF lassoc?(o)              == cop?("lassoc",o) and ~(rassoc?(o))
-DEF infix?(o)               == cop?("noinfix",o) ~
-DEF pchecker?(o)            == cop?("pchecker", o)
-DEF defSign?(o)             == cop?("defSign", o) 
+FUN mkCopOpt mkNoCopOpt mkNoOpt: denotation -> denotation
+DEF mkCopOpt(s) == tl(``(copChar) ++ s)
+DEF mkNoCopOpt(s) == mkCopOpt("no" ++ s)
+DEF mkNoOpt(s) == "no" ++ s
 
-DEF wildcard?            == wildcard?(analyzedOptions)
-DEF section?             == section?(analyzedOptions)
-DEF simpleLambda?        == simpleLambda?(analyzedOptions)
-DEF underline?           == underline?(analyzedOptions)
-DEF seqGuard?            == seqGuard?(analyzedOptions)
 
-DEF rassoc?              == rassoc?(analyzedOptions)
-DEF lassoc?              == lassoc?(analyzedOptions)
-DEF infix?               == infix?(analyzedOptions)
-DEF pchecker?            == pchecker?(analyzedOptions)
+-- DEF prop?(o)                == cop?(zprop,o)
+DEF wildcard?(o)            == cop?(mkNoOpt(zwildcard),o) ~
+DEF section?(o)             == cop?(mkNoOpt(zsection),o) ~
+DEF simpleLambda?(o)        == cop?(zsimpleLambda,o)
+DEF underline?(o)           == cop?(mkNoOpt(zunderline),o) ~
+DEF seqGuard?(o)            == cop?(mkNoOpt(zseqGuard),o) ~
+
+DEF rassoc?(o)              == cop?(mkNoOpt(zrassoc),o) ~
+DEF lassoc?(o)              == cop?(zlassoc,o) and ~(rassoc?(o))
+DEF infix?(o)               == cop?(mkNoOpt(zinfix),o) ~
+DEF pchecker?(o)            == cop?(zpchecker, o)
+DEF defSign?(o)             == cop?(zdefSign, o) 
+
+-- DEF prop?                   == FIELD?[bool](mkCopOpt(zprop))
+DEF wildcard?               == FIELD?[bool](mkNoCopOpt(zwildcard)) ~
+DEF section?                == FIELD?[bool](mkNoCopOpt(zsection)) ~
+DEF simpleLambda?           == FIELD?[bool](mkCopOpt(zsimpleLambda))
+DEF underline?              == FIELD?[bool](mkNoCopOpt(zunderline)) ~
+DEF seqGuard?               == FIELD?[bool](mkNoCopOpt(zseqGuard)) ~
+
+DEF rassoc?                 == FIELD?[bool](mkNoCopOpt(zrassoc)) ~
+DEF lassoc?                 == FIELD?[bool](mkCopOpt(zlassoc)) and ~(rassoc?)
+DEF infix?                  == FIELD?[bool](mkNoCopOpt(zinfix)) ~
+DEF pchecker?               == FIELD?[bool](mkCopOpt(zpchecker))
 
 -- %- ---------------------------------------------------------------------
+
+FUN zinterOpal: denotation
+DEF zinterOpal == "interOpal"
 
 FUN interOpal?: options -> bool
-DEF interOpal?(_) == true -- what else!
+DEF interOpal?(o) == cop?(zinterOpal,o)
 -- %- ---------------------------------------------------------------------
+
+FUN zonlyParse: denotation
+DEF zonlyParse == "onlyParse"
 
 FUN onlyParse?: options -> bool
-DEF onlyParse?(o) == cop?("onlyParse",o)
+DEF onlyParse?(o) == cop?(zonlyParse,o)
 -- %- ---------------------------------------------------------------------
 
+FUN zdoNotParse: denotation
+DEF zdoNotParse == "doNotParse"
+
 FUN doNotParse?: options -> bool
-DEF doNotParse?(o) == cop?("doNotParse",o)
+DEF doNotParse?(o) == cop?(zdoNotParse,o)
 -- %- ---------------------------------------------------------------------
 -- %$File options$
 DEF debugKind?(Kind,o)          == Kind in debugKinds(o)
