@@ -3,7 +3,7 @@ IMPLEMENTATION InterOpalGeneration
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 2000-04-14 21:20:54 $ ($Revision: 1.4 $)
+-- % $Date: 2000-09-12 21:08:56 $ ($Revision: 1.5 $)
 -- ============================================================================
 -- Autor:       ralfi
 -- Projekt:     OPAL1-Compiler
@@ -22,7 +22,7 @@ IMPORT  BaseGeneration  ONLY    globSig2Part structPos updateStruct
         InterOpal       COMPLETELY
         EnvIO           COMPLETELY
 -- OC
-        Rep             ONLY    rep ` <
+        Rep             ONLY    rep ` < PROOFSCRIPT =
         Objects         ONLY    struct
         AGSig           COMPLETELY
         AnalyzedGlobSig ONLY    globSig rep ide
@@ -50,10 +50,12 @@ IMPORT  BaseGeneration  ONLY    globSig2Part structPos updateStruct
         ComCompose[void,void]           ONLY    &
         Void            ONLY    void
         Map             ONLY    def {} map !
-        GlobSig         ONLY    pragmas impPragmas impLaws
+        GlobSig         ONLY    pragmas impPragmas impLaws structIde
         MapConv         ONLY    asSeq
-        Map             ONLY    map
+        Map             ONLY    map exist? 
+        MapFilter       ONLY |
         PostInterOpal   ONLY    checkInfoPragmas
+        InterOpalAccess ONLY mainStruct
 
 
 
@@ -97,7 +99,8 @@ DEF gen(Opts)(Sig) ==
         IO5     == (addGlobPragma(Sig,Part), IO4) \ pragmas(Sig)
         IO6     == (addImpPragma(Sig,Part), IO5) \ asSeq(impPragmas(Sig))
         IO7     == (addImpLaw(Sig), IO6) \ asSeq(impLaws(Sig))
-   IN addAllDependExtNames(Sig)(IO7)
+   IN 
+   clean(addAllDependExtNames(Sig)(IO7))
 
 FUN globSig2Main : part -> globSig -> struct'InterOpal
 DEF globSig2Main (Part)(Sig) ==
@@ -137,3 +140,11 @@ DEF globSig2Struct (N, Sig, EnvIO) ==
      IN &(updateStruct(Origin, updateInst(formal,SName,SameStruct),IOLoc),
         dep(EnvIO2) + asSet(Names))
      FI   
+
+/* % remove all pseude-imports from InterOpal */
+FUN clean: interOpal -> interOpal
+DEF clean(IO) ==
+  interOpal(part(IO), nonempty? | structs(IO))
+
+FUN nonempty?: origin ** struct'InterOpal -> bool
+DEF nonempty?(_, st) == exist?((\\ _, ob. ~(parameter?(def(ob)))), objs(st))

@@ -1,10 +1,10 @@
 IMPLEMENTATION ExtendP
 
-IMPORT RepoUnitAccess ONLY related transitive implImports symbol relMode relOp
+IMPORT RepoUnitAccess COMPLETELY
        SetFilter ONLY partition
        UnitHandling ONLY theory?
        Set ONLY {}? set
-       Denotation ONLY ++ +/+ <
+       Denotation ONLY ++ +/+ < |= 
        SetMap ONLY *
        InternCompile ONLY extendUnit diag failure? failure absy success success?
        RepoName ONLY < : unitName ** unitName -> bool
@@ -22,7 +22,7 @@ IMPORT RepoUnitAccess ONLY related transitive implImports symbol relMode relOp
 
 
 DEF extendUnitP == extendUnitP(false)
-DEF extendUnitA == extendUnitP(true)
+DEF extendUnitA == extendUnitA(true)
 
 FUN extendUnitP: bool -> unitName ** denotation -> repo ->
                   com[pair[extendResult, repo]]
@@ -53,3 +53,36 @@ DEF extendUnitP(ass?)(mainU, newText)(R) ==
   IF E success? THEN succeed(success(ds, absy(E)) & R1)
   FI
   )
+
+
+FUN extendUnitA: bool -> unitName ** denotation -> repo ->
+                  com[pair[extendResult, repo]]
+DEF extendUnitA(ass?)(mainU, newText)(R) ==
+  LET deps == related(direct, imports, notPROOFSCRIPT(R))(mainU)(R)
+      (ths, strs) == partition(theory?(R), deps)
+      importsU == IF strs {}? THEN "" 
+                  ELSE "IMPORT " ++ 
+                    (+/+(" "), "") /[denotation,<,denotation]
+                    ((\\u1. symbol(u1)(R) ++ " COMP" ++ "LETELY") * strs)
+                    ++ ""
+                  FI
+      asserts == IF ass? ANDIF ~(ths {}?) THEN
+                   (+/+(" "), "") /[denotation,<,denotation]
+                   ((\\u1. "ASSERT " ++ symbol(u1)(R) ++ "COMP" ++
+                           "LETELY") * ths)
+                 ELSE
+                   ""
+                 FI
+  IN
+  extendUnit(mainU, importsU ++ " " ++ asserts ++
+             " " ++ newText, deps)(R) & (\\ ER.
+  LET (E, R1) == unpair(ER)
+      ds == transDiag(avail o shift(-(2), 0), diag(E))
+  IN
+  IF E failure? THEN succeed(failure(ds) & R1)
+  IF E success? THEN succeed(success(ds, absy(E)) & R1)
+  FI
+  )
+
+FUN notPROOFSCRIPT: repo -> unitName -> bool
+DEF notPROOFSCRIPT(R)(uN) == symbol(uN)(R) |= "PROOFSCRIPT"
