@@ -28,6 +28,7 @@ IMPORT SeqMapEnv ONLY *
        Denotation ONLY ++
        ABORT ONLY ABORT
        VarHandling ONLY newVars
+       FmtSeq ONLY fmtSeq
 
 -- %$Unpacking$
 DEF transDefEqn(R)(eqs) == 
@@ -70,8 +71,10 @@ DEF transDefEqnGen(lhs, leftVars, rhs)(R) ==
 FUN mkForm: bool -> expr ** expr -> repo ** pair[subst, seq[objectName]] ->
              repo ** formula
 DEF mkForm(recur?)(lhs, rhs)(R, S & vars) ==
-  LET lhs1 == simplify(R)(S <$ lhs)
-      rhs1 == simplify(R)(S <$ rhs)
+  LET lhs1 == PRINT(traceSimplify1?, \\ . "mkForm/l:" ++
+                    pretty(prettyExpr(R)(lhs)), simplify(R)(S <$ lhs))
+      rhs1 == PRINT(traceSimplify1?, \\ . "mkForm/r:" ++
+                    pretty(prettyExpr(R)(rhs)), simplify(R)(S <$ rhs))
   IN
   IF recur? ANDIF apply?(lhs1) THEN
     LET locals == lVars(arg(lhs1))
@@ -112,13 +115,19 @@ FUN getConstrTerms: expr -> repo ** objectName ->
                      repo ** seq[pair[subst, seq[objectName]]]
 DEF getConstrTerms(rhs)(R, var) ==
   LET tp == sort(fct(kind(var)(R)))
-      vs == xVariants(tp, R)
+      vs0 == xVariants(tp, R)
+      vs == PRINT(traceSimplify1?, \\ . "constrTerm:" ++
+                  pretty(fmtObjectNameLong(R)(var)) ++
+                  " sort: " ++ pretty(fmtObjectNameLong(R)(tp)) ++
+                  " vs(c): " ++ pretty(fmtSeq(fmtObjectNameLong(R))(constructor * vs0)), vs0)
       lS == sign(var)
   IN
-  IF vs <>? THEN (R, %((var, name(none, var)) def {} & %(var)))
+  IF vs <>? THEN (PRINT(traceSimplify1?, \\ . "no variants", R),
+                  %((var, name(none, var)) def {} & %(var)))
   OTHERWISE
   IF ~(discrApplied(R)(rhs, var)) THEN
-    (R, %((var, name(none, var)) def {} & %(var)))
+    (PRINT(traceSimplify1?, \\ . "no discr applied", R),
+     %((var, name(none, var)) def {} & %(var)))
   ELSE
     LET (R1, nTermSeq) == (canTerm(lS, no(var)`), R) * vs
         mkSubst == \\p. LET (e, oN) == unpair(p) IN (var, e) def {} & oN
@@ -147,8 +156,18 @@ DEF discrApplied(_)(any(_), _) == false
 
 FUN discrAppliedHere: repo -> expr ** objectName -> bool
 DEF discrAppliedHere(R)(apply(_, name(_, f), name(_, arg)), V) ==
-  IF arg = V THEN discr?(f)(R) ELSE false FI
-DEF discrAppliedHere(_)(_else, _) == false
+  IF arg = V THEN 
+    IF discr?(f)(R) THEN PRINT(traceSimplify1?, \\ . "dAH:ok", true)
+    ELSE PRINT(traceSimplify1?, \\ . "dAH: noDiscr " ++
+               pretty(fmtObjectNameLong(R)(f)) ++ " " ++
+               pretty(fmtObjectName(f))
+               , false)
+    FI
+  ELSE 
+    PRINT(traceSimplify1?, \\ . "dAH: arg /= V", false)
+  FI
+DEF discrAppliedHere(_)(_else, _) == 
+  PRINT(traceSimplify1?, \\ . "no apply", false)
  
 /* %For a single variant return a canonical constructor term and the
     used variables */
@@ -219,7 +238,10 @@ DEF simplify(R)(apply(an, f, a)) ==
                       `(sel?(n2)(R)), sel?(n2)(R))
       IN
       IF d? THEN
-        IF test(c) = n2 THEN 
+        LET t == PRINT(traceSimplify?, \\ . "d?->" ++
+                       pretty(fmtObjectName(test(c))), test(c))
+        IN
+        IF t = baseName(n2) THEN 
           PRINT(traceSimplify?, \\ . "discr/constr/true", true(R))
         ELSE
           PRINT(traceSimplify?, \\ . "discr/constr/false", false(R))
@@ -228,7 +250,8 @@ DEF simplify(R)(apply(an, f, a)) ==
         IF a1 name? THEN 
           PRINT(traceSimplify?, \\ . "sel/constr/name!", apply(an, f1, a1))
         ELSE
-          LET res == checkSel(selector * components(c), oper(f1),
+          LET res == checkSel(baseName * selector * components(c),
+                              baseName(oper(f1)),
                               IF arg(a1) tuple? THEN elems(arg(a1))
                               ELSE %(arg(a1)) 
                               FI)

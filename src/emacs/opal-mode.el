@@ -193,6 +193,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    '("-- %.*$" (0 'font-lock-doc-string-face t t))
    '("-- [^%].*$" (0 'font-lock-comment-face t t))
    '("/\\$.*\\$/" (0 'font-lock-preprocessor-face t t))
+   `("\\(CERTIFICATION\\|FORMALTEST\\|FORMALPROOF\\|SYNTHESIS\\)" (0 'font-lock-reference-face t t))
    )
 )
 

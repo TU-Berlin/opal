@@ -6,7 +6,7 @@ IMPLEMENTATION Fmt
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-06 15:11:06 $ ($Revision: 1.3 $)
+-- % $Date: 2000-08-31 16:32:22 $ ($Revision: 1.4 $)
 
 
 IMPORT
@@ -218,6 +218,11 @@ space.
 No time to fix this currently, hence left for future tuning.
 */
 
+/* some output of the proofchecker provoked errors in calling -'Nat
+   as a quick fix I added code which protects calls to -
+   kd, 31 Aug 2000
+*/
+
 
 DEF flatten( S, <|(Beg) :: (<__>(Shift) :: F) ) ==
     -- rippling: shift a space at block start out of block
@@ -250,8 +255,8 @@ DEF flatten( S, <|(N) :: F ) ==
         flatten( SubS, F )
     ELSE
         LET I    == IF ::?(indent(S)) THEN leng(indent(S)) ELSE 0 FI
-            ActN == IF margin(S) - I < minblockind THEN 0 ELSE N FI
-            ActI == min(margin(S) - 1, I + ActN)
+            ActN == IF margin(S) -: I < minblockind THEN 0 ELSE N FI
+            ActI == min(margin(S) -: 1, I + ActN)
             SubS == initialState :=_saved  avail(savedState(S, ActI)) 
                                  :=_column 0
                                  :=_margin margin(S) - ActI
@@ -377,12 +382,12 @@ DEF flatten( S, ->| :: F ) ==
   -- map tabulator to single spaces
   LET C == column(S)
   IN
-  flatten( S, (<~> x (((C+tab)/tab)*tab)-C) :: F )
+  flatten( S, (<~> x (((C+tab)/tab)*tab)-:C) :: F )
 
 DEF flatten( S, ->!(N) :: F ) ==
   -- map to blanks if possible
   IF N <= margin(S)  and  column(S) < ((N max 1) pred) THEN
-    flatten( S, (<~> x (N pred) - column(S)) :: F )
+    flatten( S, (<~> x (N pred) -: column(S)) :: F )
   ELSE
     flatten( S, F)
   FI
@@ -424,7 +429,7 @@ DEF flatten( S, (Str !!) :: F ) ==
                    ELSE
                      (left(S), NC)
                    FI
-        NP      == (((((margin(S) - (IC min margin(S))) max 1) * 100) 
+        NP      == (((((margin(S) -: (IC min margin(S))) max 1) * 100) 
                                 / margin(S) ) 
                                         * GLev) min maxpen
       IN
@@ -488,10 +493,10 @@ DEF flatten( S, -|(N) :: F ) ==
         flatten( S :=_indent rt(indent(S)), F)
       IF IL > N THEN
         -- pop a part of the last indentation
-        flatten( S :=_indent ((IL-N) take ft(indent(S)))::rt(indent(S)), F )
+        flatten( S :=_indent ((IL-:N) take ft(indent(S)))::rt(indent(S)), F )
       IF IL < N THEN
         -- pop the last indentation and more
-        flatten( S :=_indent rt(indent(S)), -|(N - IL) :: F )
+        flatten( S :=_indent rt(indent(S)), -|(N -: IL) :: F )
       FI
     FI
 
@@ -517,6 +522,9 @@ DEF flatten( S, (O |!) :: F ) ==
   -- add column indentation for object
   flatten( S, |.(->!(column(S) succ)) :: O :: .| :: F )
 
+FUN -: : nat ** nat -> nat
+DEF a -: b ==
+  IF a < b THEN 0 ELSE a - b FI
 
 /* %
 These functions generate the correct indentation as a single string.

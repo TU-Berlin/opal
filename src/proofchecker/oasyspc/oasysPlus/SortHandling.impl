@@ -4,7 +4,7 @@ IMPORT Set ONLY exist? in excl set {}? arb {} - + {<}
        RepoName COMPLETELY
        RepoObjectAccess ONLY object impl kind
        RepoAbsy COMPLETELY
-       Seq ONLY <> # forall? ++ seq :: = % find?
+       Seq ONLY <> # forall? ++ seq :: = % find? exist? ::?
        SetFilter ONLY |
        SetMap ONLY *
        SetConv ONLY asSet
@@ -16,6 +16,11 @@ IMPORT Set ONLY exist? in excl set {}? arb {} - + {<}
        Option ONLY option nil? cont nil avail
        ABORT ONLY ABORT
        NameHandling ONLY instantiate
+       DEBUG ONLY PRINT
+       String ONLY string
+       Fmt ONLY pretty fmt
+       FmtSeq ONLY fmtSeq
+       Denotation ONLY ++
 
 
 -- %$Indirect Recursion$
@@ -133,41 +138,84 @@ DEF findD(R)(oN) ==
 
 
 DEF findCon(R)(con, variants) ==
-  find?(\\v. constructor(v) = con, variants)
+  find?(\\v. baseName(constructor(v)) = baseName(con), variants)
 
 DEF findDis(R)(dis, variants) ==
-   find?(\\v. test(v) = dis, variants)
+   find?(\\v. baseName(test(v)) = baseName(dis), variants)
 
 DEF findSel(R)(sel, <>) == nil
 DEF findSel(R)(sel, var :: variants) ==
-  LET erg == find?(\\v. selector(v) = sel, components(var))
+  LET erg == find?(\\v. baseName(selector(v)) = baseName(sel), components(var))
   IN
   IF erg nil? THEN findSel(R)(sel, variants)
   ELSE erg
   FI
 
 DEF constr?(oN)(R) ==
-  LET i == impl(baseName(oN))(R)
+  LET boN == baseName(oN)
+      vs == sVariants(boN, R)
+      vs0 == PRINT(traceSH, \\ . "constr?: " ++
+                  pretty(fmtSeq(fmtObjectName)(constructor * vs)) ++
+                  " " ++ 
+                  pretty(fmtObjectName(oN)) ++ "/" ++
+                  pretty(fmtObjectName(boN)),
+                  vs)
   IN
-  IF i induced? THEN kind(i) constructor?
-  ELSE false
-  FI
+  exist?(\\ oNN. oNN = boN, constructor * vs0)
+
 DEF sel?(oN)(R) ==
-  LET i == impl(baseName(oN))(R)
+  LET boN == baseName(oN)
+      vs == tVariants(boN, R)
   IN
-  IF i induced? THEN kind(i) selector?
-  ELSE false
-  FI
+  exist?(\\ oNN. oNN = boN, selector * flat(components * vs))
+
 DEF discr?(oN)(R) ==
-  LET i == impl(baseName(oN))(R)
+  LET boN == baseName(oN)
+      vs == tVariants(boN, R)
   IN
-  IF i induced? THEN kind(i) test?
-  ELSE false
+  exist?(\\ oNN. oNN = boN, test * vs)
+
+-- %variants of type of single codomain functionality
+FUN sVariants: objectName ** repo -> seq[variant]
+DEF sVariants(boN, R) ==
+  LET k == kind(boN)(R)
+  IN
+  IF k oper? ANDIF fct(k) funct? ANDIF name?(codom(fct(k))) THEN
+    PRINT(traceSH, \\ . "sVariants:ok2", xVariants(sort(codom(fct(k))), R))
+  IF k oper? ANDIF name?(fct(k)) THEN
+    PRINT(traceSH, \\ . "sVariants:okC", xVariants(sort(fct(k)), R))
+  ELSE
+    PRINT(traceSH,  \\ . "sVariants:fail:" ++ pretty(fmtKind(k)), <>)
+  FI
+
+-- %variants of type of single domain functionality
+FUN tVariants: objectName ** repo -> seq[variant]
+DEF tVariants(boN, R) ==
+  LET k == kind(boN)(R)
+  IN
+  IF k oper? ANDIF fct(k) funct? ANDIF name?(dom(fct(k))) THEN
+    xVariants(sort(dom(fct(k))), R)
+  ELSE
+    <>
+  FI
+  
+
+FUN xVariants: objectName ** repo -> seq[variant]
+DEF xVariants(oN, R) ==
+  IF dataVariants(oN, R) ::? THEN dataVariants(oN, R)
+  ELSE variants(oN, R)
   FI
 
 -- %$Check for free type$
 DEF freeTV?(R)(oN) ==
   LET s == sort(fct(kind(oN)(R)))
-      props == properties(object(s)(R))
+  IN freeT(s)(R)
+
+FUN freeT: objectName -> repo -> bool
+DEF freeT(s)(R) ==
+  LET props == properties(object(s)(R))
   IN
   exist?(\\ pN. freeType?(propertyS(pN)(R)), props)
+
+FUN traceSH: bool
+DEF traceSH == false

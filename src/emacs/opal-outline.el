@@ -91,10 +91,10 @@
 	(backward-char) 
 	t
 	)
-    (if quiet
-	nil
-      (error "no end found")
-      )
+;    (if quiet
+	(goto-char (point-max))
+;      (error "no end found")
+;      )
     )
   )
 
