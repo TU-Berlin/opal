@@ -1,5 +1,5 @@
 # Process this file with autoconf to produce a configure script.
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.2 1999-09-17 12:23:44 kd Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.3 1999-09-17 14:03:47 kd Exp $
 
 AC_INIT(ocs-version)
 
@@ -14,6 +14,9 @@ LDFLAGS=
 LIBS=
 DEFS=
 
+
+## get current system
+AC_CANONICAL_HOST
 
 # -------------------------------------------------------------------------
 # Macro definitions
@@ -126,6 +129,10 @@ AC_DEFUN(OCS_CHECK_FEATURE_GNU,[
   AC_SUBST(ocs_cv_feature_$1)
 ])	
 
+AC_DEFUN(OCS_SET_FEATURE,[
+  ocs_cv_feature_$1=$2
+  AC_SUBST(ocs_cv_feature_$1)
+])
 
 # -------------------------------------------------------------------------
 # Checking features 
@@ -161,7 +168,20 @@ OCS_CHECK_FEATURE(dldflags, dldflags, no,
 OCS_CHECK_FEATURE(dldlibs, dldlibs, no,
   [  --enable-dldlibs=LIBS      use LIBS on linkage of dynamic])
 
+OCS_CHECK_FEATURE(ldrpath, ldrpath, "",
+  [  --enable-ldrpath=FLAGS     specifiy how to add directory to linker's runtime library search path])
 
+OCS_CHECK_FEATURE(ldrpathlink, ldrpathlink, "",
+  [  --enable-ldrpathlink=FLAGS specify how to add directory to linker's link time library search path])
+
+OCS_CHECK_FEATURE(soname, soname, "",
+  [--enable-soname=FLAGS        specify how to set internal SONAME field])
+
+OCS_CHECK_FEATURE(ldstatic, ldstatic, "",
+  [--enable-ldstatic=FLAGS     specify how to mark static link targets])
+
+OCS_CHECK_FEATURE(lddynamic, lddynamic, "",
+  [--enable-lddynamic=FLAGS    specify how to mark dynamic link targets])
 
 # -------------------------------------------------------------------------
 # Checks for C compiler characteristics and general configuration
@@ -386,12 +406,60 @@ else
   ocs_DLDLIBS="$ocs_LIBS"
 fi
 
+OCS_CHECK_PROGS(ac_cv_path_LD, ld)
+AC_MSG_CHECKING(what flags your linker needs for shared libraries)
+ocs_found=no
+AC_SUBST(ocs_cv_feature_ldrpath)
+AC_SUBST(ocs_cv_feature_ldrpathlink)
+AC_SUBST(ocs_cv_feature_soname)
+AC_SUBST(ocs_cv_feature_ldstatic)
+AC_SUBST(ocs_cv_feature_lddynamic)
 
-OCS_CHECK_FEATURE_GNU(ldrpath,[-Wl,-rpath,],how to add directory to linker's runtime library search path)
-OCS_CHECK_FEATURE_GNU(ldrpathlink, [-Wl,-rpath-link,],how to add direectory to linker's link time library search path)
-OCS_CHECK_FEATURE_GNU(soname,[-Wl,-soname,],how to set internal SONAME field)
-OCS_CHECK_FEATURE_GNU(ldstatic, "-Xlinker -Bstatic", how to mark static link targets)
-OCS_CHECK_FEATURE_GNU(lddynamic, "-Xlinker -Bdynamic", how to mark dynamic link targets)
+if test -n "$ocs_cv_feature_ldrpath" -a \
+        -n "$ocs_cv_feature_ldrpathlink" -a \
+   	-n "$ocs_cv_feature_soname" -a \
+        -n "$ocs_cv_feature_ldstatic" -a \
+        -n "$ocs_cv_feature_lddynamic"
+then
+  ocs_found=yes
+  AC_MSG_RESULT(explicitly provided)
+fi
+
+
+# do we have the GNU linker?
+if test "$ocs_found" = no 
+then
+if $ac_cv_path_LD -V 2>&1 | grep "GNU" 1> /dev/null 2>&1
+then
+  AC_MSG_RESULT(GNU linker flags)
+  ocs_found=yes
+  OCS_SET_FEATURE(ldrpath,[-Wl,-rpath,])
+  OCS_SET_FEATURE(ldrpathlink, [-Wl,-rpath-link,])
+  OCS_SET_FEATURE(soname,[-Wl,-soname,])
+  OCS_SET_FEATURE(ldstatic, "-Xlinker -Bstatic")
+  OCS_SET_FEATURE(lddynamic, "-Xlinker -Bdynamic")
+fi
+fi
+# do we have the solaris linker?
+if test "$ocs_found" = no 
+then
+if $ac_cv_path_LD -V 2>&1| grep "Solaris/ELF" 1> /dev/null 2>&1
+then
+  AC_MSG_RESULT(Solaris linker flags)
+  ocs_found=yes
+  OCS_SET_FEATURE(ldrpath,-R)
+  OCS_SET_FEATURE(ldrpathlink,-R)
+  OCS_SET_FEATURE(soname,-h)
+  OCS_SET_FEATURE(ldstatic, [-Wl,-B,static])
+  OCS_SET_FEATURE(lddynamic, [-Wl,-B,dynamic])
+fi 
+fi
+
+if test "$ocs_found" = no
+then
+  AC_MSG_ERROR(cannot find out what flags your linker needs.)
+fi 
+
 
 ocs_LD="$ocs_CC $ocs_cv_feature_ldrpath\${OCSLIBPATH} $ocs_cv_feature_ldrpathlink\${OCSLIBPATH}"
 else
@@ -634,8 +702,6 @@ OCS_CHECK_OPT_PROGS(ac_cv_path_MAKEINFO,makeinfo)
 AC_SUBST(ocs_version)
 ocs_version=2.3d
 
-## get current system
-AC_CANONICAL_HOST
 
 ## get absolute path for sourcedir
 ocs_abssrcdir=`pwd`; echo "absolute path: $ocs_abssrcdir"; 
