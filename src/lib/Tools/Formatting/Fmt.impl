@@ -6,21 +6,22 @@ IMPLEMENTATION Fmt
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 16:00:24 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1998-10-12 18:41:14 $ ($Revision: 1.2 $)
 
 
 IMPORT
-  Nat		      ONLY nat 0 1 2 3 4 5 6 7 8 9 10 100 max min
-			   succ pred + - * / < <= = |= >= > !
-  Char		      ONLY char = blank tab newline printable? whitespace?
-  String	      ONLY string <> :: <>? ! # take ++ revert last
-  StringConv	      ONLY `
-  Seq		      ONLY seq <> :: <>? ::? ++ ft # rt front last +%
-  SeqMap	      ONLY *
-  SeqReduce	      ONLY / \
-  SeqFold	      ONLY / 
-  Option	      ONLY option nil? avail? nil avail cont
-  Denotation	      ONLY init
+  Nat                 ONLY nat 0 1 2 3 4 5 6 7 8 9 10 100 max min
+                           succ pred + - * / < <= = |= >= > !
+  Char                ONLY char = blank tab newline
+  Latin1          ONLY printable? whitespace?
+  String              ONLY string <> :: <>? ! # take ++ revert last
+  StringConv          ONLY `
+  Seq                 ONLY seq <> :: <>? ::? ++ ft # rt front last +%
+  SeqMap              ONLY *
+  SeqReduce           ONLY / \
+  SeqFold             ONLY / 
+  Option              ONLY option nil? avail? nil avail cont
+  Denotation          ONLY init
 
 
 
@@ -34,33 +35,33 @@ interface functions are easily mapped to it.
 */
 
 DATA fmt ==
-  <>				  -- empty output
-  <__>	 ( space   : nat )	  -- white space (usually N blanks)
-  |<<-				  -- force new line
-  ->|				  -- tabulator (every 8 columns)
-  ->!	 ( col	   : nat )	  -- proceed to specified column (1 .. margin)
-  x	 ( fmt	   : fmt,	  -- n-fold repetition
-	   times   : nat ) 
-  !!	 ( string  : string )	  -- literal string, unbreakable
-  ..	 ( fmt1	   : fmt,
-	   fmt2	   : fmt)	  -- concat 
-  >.	 ( glue	   : nat )	  -- add glue factor
-  .<				  -- remove glued block
-  -|	 ( dec	   : nat )	  -- decrease indentation by so many characters
-  |.	 ( indent  : fmt )	  -- add indentation
-  .|				  -- remove indentation
-  |!	 ( fmt	   : fmt )	  -- add indentation to current column
+  <>                              -- empty output
+  <__>   ( space   : nat )        -- white space (usually N blanks)
+  |<<-                            -- force new line
+  ->|                             -- tabulator (every 8 columns)
+  ->!    ( col     : nat )        -- proceed to specified column (1 .. margin)
+  x      ( fmt     : fmt,         -- n-fold repetition
+           times   : nat ) 
+  !!     ( string  : string )     -- literal string, unbreakable
+  ..     ( fmt1    : fmt,
+           fmt2    : fmt)         -- concat 
+  >.     ( glue    : nat )        -- add glue factor
+  .<                              -- remove glued block
+  -|     ( dec     : nat )        -- decrease indentation by so many characters
+  |.     ( indent  : fmt )        -- add indentation
+  .|                              -- remove indentation
+  |!     ( fmt     : fmt )        -- add indentation to current column
 
-  <|	 ( nat	   : nat )	  -- begin block 
-  |>				  -- end block 
+  <|     ( nat     : nat )        -- begin block 
+  |>                              -- end block 
 
 
 /* %
 These functions map those interface functions which do not correspond to
 the engine's instructions.
 */
-DEF <_>	      == <__>(1)
-DEF <~>	      == !(" ")
+DEF <_>       == <__>(1)
+DEF <~>       == !(" ")
 DEF !(Deno)   == !!(Deno !)
 DEF !-(Deno)  == !!-(Deno !)
 DEF !_(Deno)  == !!_(Deno !)
@@ -78,12 +79,12 @@ DEF H |.| O   == |.(H) .. O .. .|
 
 DEF none      == <>
 DEF spc(N)    == <__>(N)
-DEF brk	      == |<<-
+DEF brk       == |<<-
 DEF lit(Deno) == !-(Deno)
 DEF lit(Str)  == !!-(Str)
 DEF Hd ; Tl   == Hd .. Tl
 DEF beg(N)    == <|(N) -- .(<~> x N) .. >.(maxglue)
-DEF end	      == |> -- .< .. .|
+DEF end       == |> -- .< .. .|
 DEF H block O == beg(H) ; O ; end
 DEF inc(N)    == |.(<~> x N)
 DEF dec(N)    == -|(N)
@@ -114,37 +115,37 @@ The formatting engine works on a state with the following components:
 */
 
 DATA state ==
-    state	(column		: nat,
-		 margin		: nat,
-		 glues		: seq[nat],
-		 left		: seq[string],
-		 penalty	: nat,
-		 right		: seq[string],
-		 previous	: seq[seq[string]],
-		 indent		: seq[string],
-		 space?		: bool,
-		 break?		: bool,
-		 saved		: option[savedState])
+    state       (column         : nat,
+                 margin         : nat,
+                 glues          : seq[nat],
+                 left           : seq[string],
+                 penalty        : nat,
+                 right          : seq[string],
+                 previous       : seq[seq[string]],
+                 indent         : seq[string],
+                 space?         : bool,
+                 break?         : bool,
+                 saved          : option[savedState])
 
 DATA savedState ==
-    savedState	(state		: state,
-		 indent		: nat)
-    ignored	(state		: state)
+    savedState  (state          : state,
+                 indent         : nat)
+    ignored     (state          : state)
 
 
 FUN initialState : state
 
-FUN :=_column		: state ** nat -> state
-FUN :=_margin		: state ** nat -> state
-FUN :=_glues		: state ** seq[nat] -> state
-FUN :=_left		: state ** seq[string] -> state
-FUN :=_penalty		: state ** nat -> state
-FUN :=_right		: state ** seq[string] -> state
-FUN :=_previous		: state ** seq[seq[string]] -> state
-FUN :=_indent		: state ** seq[string] -> state
-FUN :=_space?		: state ** bool -> state
-FUN :=_break?		: state ** bool -> state
-FUN :=_saved		: state ** option[savedState] -> state
+FUN :=_column           : state ** nat -> state
+FUN :=_margin           : state ** nat -> state
+FUN :=_glues            : state ** seq[nat] -> state
+FUN :=_left             : state ** seq[string] -> state
+FUN :=_penalty          : state ** nat -> state
+FUN :=_right            : state ** seq[string] -> state
+FUN :=_previous         : state ** seq[seq[string]] -> state
+FUN :=_indent           : state ** seq[string] -> state
+FUN :=_space?           : state ** bool -> state
+FUN :=_break?           : state ** bool -> state
+FUN :=_saved            : state ** option[savedState] -> state
 
 DEF state(_, M, G, L, P, R, A, I, W, X, S) :=_column C ==
     state(C, M, G, L, P, R, A, I, W, X, S) 
@@ -183,7 +184,7 @@ DEF state(C, M, G, L, P, R, A, I, W, X, _) :=_saved S ==
 FUN initialState : state
 
 DEF initialState == state(0, maxcol, <>, <>, inipen, <>, <>, <>, true, false,
-			  nil)
+                          nil)
 
 
 /* % The function which drives the formatting engine takes
@@ -239,91 +240,91 @@ DEF flatten( S, (Shift AS |<<-) :: (End AS |>) :: F ) ==
 DEF flatten( S, <|(N) :: F ) ==
     -- begin of nested block
     IF column(S) < minblockcol THEN
-	-- a block at the very beginning of a line is ignored to prevent
-	-- breaks such as:
-	--  (
-	--   (
-	--    ( ...
-	LET SubS == S :=_saved avail(ignored(S))
-	IN
-	flatten( SubS, F )
+        -- a block at the very beginning of a line is ignored to prevent
+        -- breaks such as:
+        --  (
+        --   (
+        --    ( ...
+        LET SubS == S :=_saved avail(ignored(S))
+        IN
+        flatten( SubS, F )
     ELSE
-	LET I	 == IF ::?(indent(S)) THEN leng(indent(S)) ELSE 0 FI
-	    ActN == IF margin(S) - I < minblockind THEN 0 ELSE N FI
-	    ActI == min(margin(S) - 1, I + ActN)
-	    SubS == initialState :=_saved  avail(savedState(S, ActI)) 
-				 :=_column 0
-				 :=_margin margin(S) - ActI
-				 :=_space? false
-	IN
-	flatten( SubS, F )
+        LET I    == IF ::?(indent(S)) THEN leng(indent(S)) ELSE 0 FI
+            ActN == IF margin(S) - I < minblockind THEN 0 ELSE N FI
+            ActI == min(margin(S) - 1, I + ActN)
+            SubS == initialState :=_saved  avail(savedState(S, ActI)) 
+                                 :=_column 0
+                                 :=_margin margin(S) - ActI
+                                 :=_space? false
+        IN
+        flatten( SubS, F )
     FI
 
 DEF flatten( S, |> :: F ) ==
     -- end of nested block
     IF nil?(saved(S)) THEN
-	-- ... hmmm, better ABORT?
-	flatten( S, F )
+        -- ... hmmm, better ABORT?
+        flatten( S, F )
     OTHERWISE
     IF ignored?(cont(saved(S))) THEN
-	-- ignored block
-	flatten( S :=_saved saved(state(cont(saved(S)))), F )
+        -- ignored block
+        flatten( S :=_saved saved(state(cont(saved(S)))), F )
     ELSE
-	LET MaxWidth == (max, leng(left(S)) + leng(right(S)))
-					\ (leng * previous(S))
-				-- FIXME: for efficiency,
-				-- this value should be incrementally 
-				-- maintained in the state
-	    Saved    == cont(saved(S))
-	    PS	     == state(Saved)
-	IN
-	IF column(PS) + MaxWidth >= margin(PS) THEN
-	    -- break is necessary
-	    LET S1 == S :=_previous  (doIndent(indent(Saved)) * previous(S)) ++
-				     (right(PS) ++ left(PS)) :: previous(PS)
-			:=_left	     doIndent(indent(Saved))(left(S))
-			:=_column    indent(Saved) + column(S) 
-			:=_margin    margin(PS)
-			:=_glues     glues(PS)
-			:=_saved     saved(PS)
-	    IN
-	    flatten( S1, F )
-	OTHERWISE
-	-- break is not necessary, merge block to the current line
-	IF ::?(previous(S)) THEN
-	    -- there have been more then one line in the block
-	    LET (Ind1, Ind2) == 
-	    	       IF column(PS) = 0 THEN
-	    		   (indent(Saved), indent(Saved))
-		       ELSE (column(PS), 0) FI
-	        S1 == S :=_previous (doIndent(Ind1) * front(previous(S)))
-					++
-				    ((last(previous(S)) ++ right(PS) 
-						++ doIndent(Ind2)(left(PS))) 
-					 :: previous(PS))
-			:=_left	     doIndent(Ind1)(left(S))
-			:=_column    Ind1 + column(S)
-			:=_margin    margin(PS)
-			:=_glues     glues(PS)
-			:=_saved     saved(PS)
-	    IN
-	    flatten( S1, F )
-	ELSE  
-	    LET Ind == IF column(PS) = 0 THEN
-	    		   indent(Saved)
-		       ELSE 0 FI
-	        S1 == S :=_previous  previous(PS)
-			:=_left	     doIndent(Ind)(left(PS))
-			:=_right     right(S) ++ left(S) 
-					      ++ right(PS)
-					-- FIXME: setup right line split??
-			:=_column    column(PS) + Ind + column(S)
-			:=_margin    margin(PS)
-			:=_glues     glues(PS)
-			:=_saved     saved(PS)
-	    IN
-	    flatten( S1, F )
-	FI
+        LET MaxWidth == (max, leng(left(S)) + leng(right(S)))
+                                        \ (leng * previous(S))
+                                -- FIXME: for efficiency,
+                                -- this value should be incrementally 
+                                -- maintained in the state
+            Saved    == cont(saved(S))
+            PS       == state(Saved)
+        IN
+        IF column(PS) + MaxWidth >= margin(PS) THEN
+            -- break is necessary
+            LET S1 == S :=_previous  (doIndent(indent(Saved)) * previous(S)) ++
+                                     (right(PS) ++ left(PS)) :: previous(PS)
+                        :=_left      doIndent(indent(Saved))(left(S))
+                        :=_column    indent(Saved) + column(S) 
+                        :=_margin    margin(PS)
+                        :=_glues     glues(PS)
+                        :=_saved     saved(PS)
+            IN
+            flatten( S1, F )
+        OTHERWISE
+        -- break is not necessary, merge block to the current line
+        IF ::?(previous(S)) THEN
+            -- there have been more then one line in the block
+            LET (Ind1, Ind2) == 
+                       IF column(PS) = 0 THEN
+                           (indent(Saved), indent(Saved))
+                       ELSE (column(PS), 0) FI
+                S1 == S :=_previous (doIndent(Ind1) * front(previous(S)))
+                                        ++
+                                    ((last(previous(S)) ++ right(PS) 
+                                                ++ doIndent(Ind2)(left(PS))) 
+                                         :: previous(PS))
+                        :=_left      doIndent(Ind1)(left(S))
+                        :=_column    Ind1 + column(S)
+                        :=_margin    margin(PS)
+                        :=_glues     glues(PS)
+                        :=_saved     saved(PS)
+            IN
+            flatten( S1, F )
+        ELSE  
+            LET Ind == IF column(PS) = 0 THEN
+                           indent(Saved)
+                       ELSE 0 FI
+                S1 == S :=_previous  previous(PS)
+                        :=_left      doIndent(Ind)(left(PS))
+                        :=_right     right(S) ++ left(S) 
+                                              ++ right(PS)
+                                        -- FIXME: setup right line split??
+                        :=_column    column(PS) + Ind + column(S)
+                        :=_margin    margin(PS)
+                        :=_glues     glues(PS)
+                        :=_saved     saved(PS)
+            IN
+            flatten( S1, F )
+        FI
     FI
 
 
@@ -342,12 +343,12 @@ DEF flatten( S, <__>(N) :: F ) ==
   ELSE
     IF column(S) + N >= margin(S) THEN
       LET S1 == S :=_column    0
-		  :=_left      <>
-		  :=_penalty   inipen
-		  :=_right     <>
-		  :=_previous  (right(S) ++ left(S)) :: previous(S)
-		  :=_space?    true
-		  :=_break?    true
+                  :=_left      <>
+                  :=_penalty   inipen
+                  :=_right     <>
+                  :=_previous  (right(S) ++ left(S)) :: previous(S)
+                  :=_space?    true
+                  :=_break?    true
       IN
       flatten( S1, F )
     ELSE
@@ -361,12 +362,12 @@ DEF flatten( S, |<<- :: F ) ==
     flatten( S :=_break? false, F )
   ELSE
     LET S1 == S :=_column    0
-		:=_left	     <>
-		:=_penalty   inipen
-		:=_right     <>
-		:=_previous  (right(S) ++ left(S)) :: previous(S)
-		:=_space?    true
-		:=_break?    false	
+                :=_left      <>
+                :=_penalty   inipen
+                :=_right     <>
+                :=_previous  (right(S) ++ left(S)) :: previous(S)
+                :=_space?    true
+                :=_break?    false      
     IN
     flatten( S1, F )
   FI
@@ -398,56 +399,56 @@ DEF flatten( S, (Str !!) :: F ) ==
   LET
     EscS == escape(Str)
     SLen == #(EscS)
-    NC	 == column(S) + SLen
+    NC   == column(S) + SLen
   IN
     IF NC > margin(S)  and  penalty(S) |= inipen THEN
       -- string does not fit in line and is not the first to be output
       LET S1 == S :=_column    0
-		  :=_left      <>
-		  :=_penalty   inipen
-		  :=_right     <>
-		  :=_previous  left(S) :: previous(S)
-		  :=_space?    true
-		  :=_break?    true
+                  :=_left      <>
+                  :=_penalty   inipen
+                  :=_right     <>
+                  :=_previous  left(S) :: previous(S)
+                  :=_space?    true
+                  :=_break?    true
       IN
       flatten( S1, right(S) prepend ((Str !!) :: F) )
     ELSE
       -- string fits in line or is the first to be output
       LET
-	GLev	== IF glues(S) <>? THEN 1 ELSE ft(glues(S)) FI
-	WhS?	== IF EscS <>? THEN space?(S) ELSE last(EscS) whitespace? FI
-	(NB,IC) == IF penalty(S) = inipen THEN
-		     LET Ind == mkIndent(indent(S)) 
-		     IN 
-		     (Ind :: left(S), NC + #(Ind))
-		   ELSE
-		     (left(S), NC)
-		   FI
-	NP	== (((((margin(S) - (IC min margin(S))) max 1) * 100) 
-				/ margin(S) ) 
-					* GLev) min maxpen
+        GLev    == IF glues(S) <>? THEN 1 ELSE ft(glues(S)) FI
+        WhS?    == IF EscS <>? THEN space?(S) ELSE last(EscS) whitespace? FI
+        (NB,IC) == IF penalty(S) = inipen THEN
+                     LET Ind == mkIndent(indent(S)) 
+                     IN 
+                     (Ind :: left(S), NC + #(Ind))
+                   ELSE
+                     (left(S), NC)
+                   FI
+        NP      == (((((margin(S) - (IC min margin(S))) max 1) * 100) 
+                                / margin(S) ) 
+                                        * GLev) min maxpen
       IN
-	IF NP <= penalty(S) THEN 
-		-- FIXME: unexpected interleaving with <| ... |>??
-	  -- it is better to break the line here
-	  LET S1 == S :=_column	   IC
-		      :=_left	   EscS :: (right(S) ++ NB)
-		      :=_penalty   NP
-		      :=_right	   <>
-		      :=_space?	   WhS?
-		      :=_break?	   false
-	  IN
-	  flatten( S1, F )
-	ELSE
-	  -- it is worse to break the line here
-	  LET S1 == S :=_column	   IC
-		      :=_left	   NB
-		      :=_right	   EscS :: right(S)
-		      :=_space?	   WhS?
-		      :=_break?	   false
-	  IN
-	  flatten( S1, F )
-	FI
+        IF NP <= penalty(S) THEN 
+                -- FIXME: unexpected interleaving with <| ... |>??
+          -- it is better to break the line here
+          LET S1 == S :=_column    IC
+                      :=_left      EscS :: (right(S) ++ NB)
+                      :=_penalty   NP
+                      :=_right     <>
+                      :=_space?    WhS?
+                      :=_break?    false
+          IN
+          flatten( S1, F )
+        ELSE
+          -- it is worse to break the line here
+          LET S1 == S :=_column    IC
+                      :=_left      NB
+                      :=_right     EscS :: right(S)
+                      :=_space?    WhS?
+                      :=_break?    false
+          IN
+          flatten( S1, F )
+        FI
     FI
 
 DEF flatten( S, Fmt1 .. Fmt2 :: F ) ==
@@ -457,8 +458,8 @@ DEF flatten( S, Fmt1 .. Fmt2 :: F ) ==
 DEF flatten( S, >.(L) :: F ) ==
   -- increase glue level
   LET G == IF ::?(glues(S)) THEN
-	       (ft(glues(S))+(L min maxglue)) min maxglue
-	   ELSE (1+(L min maxglue)) min maxglue	 FI
+               (ft(glues(S))+(L min maxglue)) min maxglue
+           ELSE (1+(L min maxglue)) min maxglue  FI
       S1 == S :=_glues G :: glues(S)
   IN
   flatten( S1, F )
@@ -466,11 +467,11 @@ DEF flatten( S, >.(L) :: F ) ==
 DEF flatten( S, .< :: F ) ==
   -- decrease glue level
   LET S1 == IF <>?(glues(S)) THEN
-		-- glue level cannot be decreased, ignore
-		S
-	    ELSE
-		S :=_glues rt(glues(S))
-	    FI
+                -- glue level cannot be decreased, ignore
+                S
+            ELSE
+                S :=_glues rt(glues(S))
+            FI
   IN
   flatten( S1, F )
 
@@ -483,14 +484,14 @@ DEF flatten( S, -|(N) :: F ) ==
       LET IL == #(ft(indent(S)))
       IN
       IF IL = N THEN
-	-- pop exactly the last indentation
-	flatten( S :=_indent rt(indent(S)), F)
+        -- pop exactly the last indentation
+        flatten( S :=_indent rt(indent(S)), F)
       IF IL > N THEN
-	-- pop a part of the last indentation
-	flatten( S :=_indent ((IL-N) take ft(indent(S)))::rt(indent(S)), F )
+        -- pop a part of the last indentation
+        flatten( S :=_indent ((IL-N) take ft(indent(S)))::rt(indent(S)), F )
       IF IL < N THEN
-	-- pop the last indentation and more
-	flatten( S :=_indent rt(indent(S)), -|(N - IL) :: F )
+        -- pop the last indentation and more
+        flatten( S :=_indent rt(indent(S)), -|(N - IL) :: F )
       FI
     FI
 
@@ -499,8 +500,8 @@ DEF flatten( S, |.(O) :: F ) ==
   LET
     InLen == #(mkIndent(indent(S)))
     Lines == flatten( initialState :=_column InLen,
-		      O :: <> )
-    Ind	  == IF Lines <>? THEN <> ELSE ft(Lines) FI
+                      O :: <> )
+    Ind   == IF Lines <>? THEN <> ELSE ft(Lines) FI
   IN
     flatten( S :=_indent Ind :: indent(S), F )
 
@@ -524,7 +525,7 @@ FUN mkIndent: seq[string] -> string
 DEF mkIndent( Inds ) == mkIndent( Inds, <> )
 
 FUN mkIndent: seq[string] ** string -> string
-DEF mkIndent( <>,	   A ) == A
+DEF mkIndent( <>,          A ) == A
 DEF mkIndent( Ind :: Rest, A ) == mkIndent( Rest, Ind ++ A )
 
 /* %
@@ -559,11 +560,11 @@ DEF format( <> :seq[seq], A ) == A
 DEF format( Line :: Rest, A ) == format( Rest, format(Line, <>) :: A )
 
 FUN format: seq[string] ** string -> string
-DEF format( <> :seq,	 A ) == A :string
+DEF format( <> :seq,     A ) == A :string
 DEF format( Str :: Rest, A ) == format( Rest, format(Str, A) )
 
 FUN format: string ** string -> string
-DEF format( <> :string,	  A ) == A
+DEF format( <> :string,   A ) == A
 DEF format( Char :: Rest, A ) == Char :: format( Rest, A )
 
 
@@ -571,7 +572,7 @@ DEF format( Char :: Rest, A ) == Char :: format( Rest, A )
 This function prepends strings in reverse order to formats.
 */
 FUN prepend: seq[string] ** seq[fmt] -> seq[fmt]
-DEF <>	   prepend F == F
+DEF <>     prepend F == F
 DEF (S::R) prepend F == R prepend ((S !!) :: F)
 
 
@@ -596,9 +597,9 @@ DEF linenize( Str ) == ..*(linenize( <>, Str ))
 FUN linenize: string ** string -> seq[fmt]
 DEF linenize( A, <> ) == ((A revert)!!) :: <>
 DEF linenize( A, C :: R ) ==
-  IF C = tab	 THEN ((A revert)!!) :: ->|  :: linenize(<>, R)
+  IF C = tab     THEN ((A revert)!!) :: ->|  :: linenize(<>, R)
   IF C = newline THEN ((A revert)!!) :: |<<- :: linenize(<>, R)
-		 ELSE linenize(C :: A, R) FI
+                 ELSE linenize(C :: A, R) FI
 
 /* %
 These functions lift white space in the given string to the pretty printing
@@ -611,17 +612,17 @@ FUN tokenize: bool ** string ** string -> seq[fmt]
 DEF tokenize( _,     A, <> ) == ((A revert)!!) :: <>
 DEF tokenize( true,  A, C :: R ) ==
   IF C whitespace? THEN ((A revert)!!) :: tokenize(false, <>, R)
-		   ELSE tokenize(true, C :: A, R) FI
+                   ELSE tokenize(true, C :: A, R) FI
 DEF tokenize( false, _, C :: R ) ==
   IF C whitespace? THEN tokenize(false, <>, R)
-		   ELSE tokenize(true, <>, C :: R) FI
+                   ELSE tokenize(true, <>, C :: R) FI
 
   
 /* %
 This function makes a single string from a sequence of strings.
 */
 FUN unify: seq[string] -> string
-DEF unify(<>)	       == <>
+DEF unify(<>)          == <>
 DEF unify(Str :: <>)   == Str
 DEF unify(Str :: Rest) == Str ++ (newline :: unify(Rest))
 
@@ -676,7 +677,7 @@ is performed.
 FUN maxcol tab inipen maxpen maxglue minblockcol minblockind: nat
 
 DEF maxcol  == 100 + 100 + (100/2)
-DEF tab	    == 8
+DEF tab     == 8
 DEF inipen  == 100 + 100
 DEF maxpen  == 100
 DEF maxglue == 100
