@@ -25,6 +25,7 @@ IMPORT  Seq             COMPLETELY
         RUNTIME         COMPLETELY
         RUNTIMEENV[environment,expr]
                         COMPLETELY
+        CAST            COMPLETELY                        
 IMPORT
         Fmt             COMPLETELY
         FmtSeq          COMPLETELY
@@ -86,12 +87,12 @@ DEF eval1(E,Expr AS name(_,Name)) ==
     LET Id      == objectId(Name)
         Rank    == rank(E,Id)
     IN  IF Rank = 0
-          THEN /* % @BIL Ist der Rang Null, wird das Objekt unmittelbar
-                eingesetzt. @EIL */
+          THEN /* % @BIL{} Ist der Rang Null, wird das Objekt unmittelbar
+                eingesetzt. @EIL{} */
                LET (E1,Obj) == getDef(E,Expr,Id)
                IN  (E1,%(Obj))
-          ELSE /* % @BIL Der Name wird nun in ein Closure-Object
-                 kodiert. @EIL */
+          ELSE /* % @BIL{} Der Name wird nun in ein Closure-Object
+                 kodiert. @EIL{} */
                (E,%(closure(Rank,Expr,reduce)))
         FI
 
@@ -129,12 +130,12 @@ DEF eval1(E,apply(Pos,F,A,Dim)) ==
     LET (E1,F1) == evalUniq(E,F)
         (E2,A1) ==  eval(E1,A)
 
-        /* % @BIL Applikation der Normalformen wird durchgeführt. Dazu wird ein
+        /* % @BIL{} Applikation der Normalformen wird durchgeführt. Dazu wird ein
         spezielles BindItem @code{applyPos(Pos)} im BindingStack abgelegt, 
         da innerhalb der Auswertung von apply die Beta-Reduktion erfolgen 
         kann. Um nachvollziehen zu können, von welcher Stelle aus man diese 
         Auswertung betreten hat, ist dieses Datum im Stack wichtig. Nach der
-        Applikation wird es wieder aus dem Stack entfernt. @EIL */
+        Applikation wird es wieder aus dem Stack entfernt. @EIL{} */
 
         (E3,FA) == apply(E2 push applyPos(Pos),F1,Dim,A1)
     IN (pop(E3),FA)
@@ -247,9 +248,9 @@ DEF evalCases(E,guard(If,Then) :: Rt,Else) ==
 
 DEF eval1(E,Expr AS cons(_,Tag,Rank)) == 
     IF Rank = 0
-      THEN -- % @BIL Konstante: wird sofort ausgewertet. @EIL
+      THEN -- % @BIL{} Konstante: wird sofort ausgewertet. @EIL
            (E,%(cons(Tag,<>)))
-      ELSE -- % @BIL Closure-Object wird aufgebaut. @EIL
+      ELSE -- % @BIL{} Closure-Object wird aufgebaut. @EIL
            (E,%(closure(Rank,Expr,reduce)))
     FI
 
@@ -299,6 +300,13 @@ DEF eval1(E,Expr AS asDenoFormatter(_,_)) ==
 
 DEF eval1(E,Expr AS asFmtFormatter(_,_)) ==
     (E,%(closure(1,Expr,reduce)))
+
+-- %$$Evaluation von repo$ ----------------------------------------
+DEF eval1(E, Expr AS repo(_)) == 
+  IF avail?(getRepo(E)) THEN (E, cast(cont(getRepo(E))) %)
+  IF nil?(getRepo(E)) THEN (abort(E, Expr, "internal repository undefined"),
+                            %(_|_))
+  FI
 
 
 -- %$Die Beta-Reduktion$ ==================================================
@@ -389,7 +397,7 @@ DEF reduce(E,Expr AS guardedBp(_,Id,Obj,_,Dim,Guard),Args) ==
         E3              == 
                 IF asBool(GrdAns) THEN -- guard ist erfüllt
                     LET (E2a, PopName?) == 
-                              IF ~(empty?(E)) 
+                              IF ~(empty?(E2)) 
                                         ANDIF enter?(E2 ! 0) ANDIF 
                                         objectId(name(E2 ! 0)) = Id THEN
                                   (E2, false)
@@ -515,7 +523,7 @@ DEF printFun(E,sortInfo(name(SId,Insts),RequOutSort)) ==
                 /* % Funktionsobjekt zur Print-Funktion wird erzeugt.
                  Instanziierung ist gleich der Instanziierung der Sorte.
                  (Per Konvention muß die Instanziierung von Print-Funktion
-                 und Sorte identisch sein.) @EIL */
+                 und Sorte identisch sein.) @EIL{} */
              (E1,PObj)           == mkObj(E,name(PId,Insts))
              (E2,PObj1)          ==
                 IF avail?(OptParaSorts)
@@ -525,15 +533,15 @@ DEF printFun(E,sortInfo(name(SId,Insts),RequOutSort)) ==
                            applyUniq(E1,PObj,%(_|_))
                       ELSE 
                         LET SortInfos == cont(paraSorts(PInfo))
-                          /* % @BIL Die @code{Sorts}, die i.allg. formal
+                          /* % @BIL{} Die @code{Sorts}, die i.allg. formal
                            bzw. formal  parametrisiert sein können, werden
-                           durch Substitution vollständig instaziiert. @EIL */
+                           durch Substitution vollständig instaziiert. @EIL{} */
                             InstMap   == asMap(zip(&)(para(E1,PId),Insts))
                             SortInfos1== subst(_,InstMap) * SortInfos
 
-                          /* % @BIL Für diese Sorten werden die Print-Funktionen
+                          /* % @BIL{} Für diese Sorten werden die Print-Funktionen
                            (rekursiv) ermittelt und auf das instanziierte
-                           PrintObjekt (@code{PrintFunObj1}) appliziert. @EIL */
+                           PrintObjekt (@code{PrintFunObj1}) appliziert. @EIL{} */
                             (E11,PInnerObjs) == printFun * (E1,SortInfos1)
                         IN applyUniq(E11,PObj,PInnerObjs)
                     FI
@@ -556,10 +564,10 @@ FUN subst: name ** map[objectId,<,name] -> name
 DEF subst(name(ObjId,Insts),Map) ==
     LET OptInsts == Map !? ObjId
     IN IF OptInsts avail? 
-         THEN /* % @BIL Für die ObjectId ist eine Umbenennung in der Map 
+         THEN /* % @BIL{} Für die ObjectId ist eine Umbenennung in der Map 
                 angegeben. Sie wird nun angewendet. Dabei muß gelten:
                 @code{Insts <>?}. (Dies ist aber für formale Parameter, 
-                für die @code{subst} verwendet wird, immer der Fall. @EIL */
+                für die @code{subst} verwendet wird, immer der Fall. @EIL{} */
               IF Insts <>?
                 THEN cont(OptInsts)
                 ELSE ABORT("Formal instance is not empty.")

@@ -26,6 +26,8 @@ IMPORT	Nat		COMPLETELY
 
 IMPORT	RepoName	COMPLETELY
 	RepoSource	COMPLETELY	
+       PrintableChar ONLY % s
+       Char ONLY =
 	
 
 DATA diag == diag(mode: mode, msgs : seq[msg])
@@ -66,9 +68,21 @@ DEF noDiag?(diag(_, S)) == <>?(S)
 
 DEF (M, R) !! S		== (M, R) !! `(S)
 DEF (M, R) !! D		== diag(M, %(msg(M, R, D)))
-DEF (M, R) !! (D, A1)	== (M, R) !! format(D, %(denotation(A1)))
-DEF (M, R) !! (D, A1, A2) == (M, R) !! format(D, %(denotation(A1),
-						   denotation(A2)))
+DEF (M, R) !! (D, A1)	== (M, R) !! format(escape(1, D!), %(denotation(A1)))
+DEF (M, R) !! (D, A1, A2) ==
+  (M, R) !! format(escape(2, D!), %(denotation(A1), denotation(A2)))
+
+FUN escape: nat ** string -> string
+DEF escape(_, <>) == <>
+DEF escape(_, c :: <>) == c :: <>
+DEF escape(n, c1 :: c2 :: R) ==
+  IF n > 0 and c1 = % and c2 = s THEN c1 :: c2 :: escape(pred(n), R)
+  IF c1 = % and c2 = % THEN c1 :: c2 :: escape(n, R)
+  ELSE 
+    IF c1 = % THEN % :: % :: escape(n, c2 :: R)
+    ELSE c1 :: escape(n, c2 :: R)
+    FI
+  FI
 
 DEF diag(M1, Msg1) <+ diag(M2, Msg2) ==
     diag(IF M1 < M2 THEN M1 ELSE M2 FI, Msg1 ++ Msg2)

@@ -50,7 +50,8 @@ DATA environment ==
                 channel:        channel,
                 evalIds:        seq[evalId],
                 resultStack:    array[option[obj]],
-                singlerStepCnt: nat
+                singlerStepCnt: nat,
+                repo:           option[repo]
         )
 
         FUN resultStackFrameSize : nat
@@ -58,37 +59,42 @@ DATA environment ==
 
 DEF init(Eval,Print,IPrint, Channel) == 
         env(empty,<>,Eval,Print,IPrint,
-        Channel,<>,init(resultStackFrameSize,nil),0)
+        Channel,<>,init(resultStackFrameSize,nil),0,nil)
 
         FUN :=_objectTab: environment ** (array[object] -> array[object])
                         -> environment
-        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_objectTab Upd == 
-            env(Upd(v1),v2,v3,v4,v4a,v5,v6,v7,v8)
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9) :=_objectTab Upd == 
+            env(Upd(v1),v2,v3,v4,v4a,v5,v6,v7,v8,v9)
 
         FUN :=_bindStack: environment ** 
                         (stack -> stack)
                         -> environment
-        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_bindStack Upd == 
-            env(v1,Upd(v2),v3,v4,v4a,v5,v6,v7,v8)
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9) :=_bindStack Upd == 
+            env(v1,Upd(v2),v3,v4,v4a,v5,v6,v7,v8,v9)
         FUN :=_resultStack: environment ** 
                         (array[option[obj]] -> array[option[obj]])
                         -> environment
-        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_resultStack Upd == 
-            env(v1,v2,v3,v4,v4a,v5,v6,Upd(v7),v8)
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9) :=_resultStack Upd == 
+            env(v1,v2,v3,v4,v4a,v5,v6,Upd(v7),v8,v9)
 
         FUN :=_singlerStepCnt: environment ** (nat -> nat)
                         -> environment
-        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_singlerStepCnt Upd == 
-            env(v1,v2,v3,v4,v4a,v5,v6,v7,Upd(v8))
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9) :=_singlerStepCnt Upd == 
+            env(v1,v2,v3,v4,v4a,v5,v6,v7,Upd(v8),v9)
 
         FUN ! : environment ** objectId -> object
-        DEF E ! Id == objectTab(E) ! no(Id)
+        DEF E ! Id ==
+          IF no(Id) < #(objectTab(E)) THEN objectTab(E) ! no(Id)
+          ELSE ABORT("!'Environment : environment ** objectid" ++
+                     " : no entry for " ++ `(no(Id)) ++
+                     " max id is " ++ `(#(objectTab(E))))
+          FI
 
-DEF pushEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8),Id) ==
-        env(v1,v2,v3,v4,v4a,v5,Id::v6,v7,v8)
-DEF popEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8)) == env(v1,v2,v3,v4,v4a,v5,rt(v6),v7,v8)
-DEF topEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8)) == ft(v6)
-DEF noEvalIds?(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8)) == <>?(v6)
+DEF pushEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9),Id) ==
+        env(v1,v2,v3,v4,v4a,v5,Id::v6,v7,v8,v9)
+DEF popEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9)) == env(v1,v2,v3,v4,v4a,v5,rt(v6),v7,v8,v9)
+DEF topEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9)) == ft(v6)
+DEF noEvalIds?(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9)) == <>?(v6)
 
 DEF setCounter(E,N) == E :=_singlerStepCnt (\\ _ . N)
 DEF unsetCounter(E) == E :=_singlerStepCnt (\\ _ . 0)
@@ -119,6 +125,10 @@ DEF getResults(E) ==
               THEN A
               ELSE extend(A,max(N - #(A),resultStackFrameSize),nil)
             FI
+
+DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,v9) :=_repo R ==
+  env(v1,v2,v3,v4,v4a,v5,v6,v7,v8,avail(R))
+DEF getRepo(E) == repo(E)
 -- %$Objekte$ ==================================================
 
 DATA object ==
@@ -601,7 +611,7 @@ DEF getLastReducedName(Ft::Rt) ==
 -- %$Formatierung$ ======================================================
 
 FUN fmtEnvironment : environment -> fmt
-DEF fmtEnvironment(env(OTab,BST,_,_,_,_,_,_,_)) ==
+DEF fmtEnvironment(env(OTab,BST,_,_,_,_,_,_,_,_)) ==
     block(1,lit("env(");
        (((\\Idx,Obj,Fmt.
         Fmt ; brk ; 

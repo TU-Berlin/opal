@@ -16,6 +16,7 @@ IMPORT  ProcessCtrl             ONLY    process:SORT
         Fmt                     ONLY    fmt:SORT
         Nat                     ONLY    nat
         Void                    ONLY    void
+        RUNTIME                 ONLY    obj:SORT
         
         Expression              ONLY    expr:SORT objectId:SORT
                                         name:SORT tpos:SORT 
@@ -23,6 +24,7 @@ IMPORT  ProcessCtrl             ONLY    process:SORT
                                         kind:SORT sortInfo:SORT
                                         bindOffset:SORT
                                         evalId:SORT < : evalId ** evalId -> bool
+        Repo ONLY repo:SORT
 
 -- %$Kommunikationsprinzip zwischen Debugger und Client$ ====================
 /* %
@@ -51,9 +53,16 @@ eindeutiger Nummer, der dann vom Client einfach zurückgesendet wird. Der
 Debugger verzögert dabei solange, bis die @code{sync}-Answer mit gleicher Id
 empfangen wurde.
 
-@code{eval:} Auswertung eines Ausdrucks durch den Interpreter.
+@code{eval:} Auswertung eines Ausdrucks durch den Interpreter mit Umwandlung
+in lesbare Darstellung.
 @smallexample
         eval            => broken* (result | aborted)
+@end smallexample
+
+@code{internEval:} Auswertung eines Ausdrucks durch den Interpreter; Rückgabe
+des Ergebnisses als obj.
+@smallexample
+        internEval            => broken* (iResult | aborted)
 @end smallexample
 
 @code{exec:} Ausführung eines Commands durch den Interpreter. Im Normalfall
@@ -133,6 +142,12 @@ Darstellung.
 @smallexample
         iprint          => iprint
 @end smallexample
+
+@code{setRepo} Definiert das übergebene Repository als Ersatz für die
+spezielle Expression @code{repo}
+@smallexample
+        setRepo         => ready
+@end smallexample
 */
 
 -- %$Daten vom Debugger zum Client$ ========================================
@@ -143,6 +158,8 @@ TYPE task ==
         eval(           id:             evalId,
                         expr:           expr,
                         fct:            fct)
+        internEval(     id:             evalId,
+                        expr:           expr)
         exec(           id:             evalId,
                         expr:           expr,
                         fct:            fct) 
@@ -161,6 +178,7 @@ TYPE task ==
         iprint(         id:             evalId,
                         tpos:           seq[nat],
                         fct:            fct)
+        setRepo(        repo:           repo)
 
         FUN fmtTask : task -> fmt
 
@@ -274,6 +292,8 @@ TYPE answer ==
         register(       pid:            process)
         result(         id:             evalId,
                         result:         denotation) -- FIXME: should be format
+        iResult(        id:             evalId,
+                        result:         obj)
         fail(           id:             evalId,
                         error:          denotation)
         broken(         id:             evalId)

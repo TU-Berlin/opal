@@ -1,18 +1,23 @@
 IMPLEMENTATION RepoAbsy
 
-IMPORT	Nat		COMPLETELY
-	Fmt		COMPLETELY
-	FmtSeq		COMPLETELY
-	FmtMap		COMPLETELY
-	FmtSet		COMPLETELY
-	FmtOption	COMPLETELY
-	FmtBasicTypes	COMPLETELY
-	RepoAn		COMPLETELY
-	SeqCompare	COMPLETELY
-	IdTab		COMPLETELY
+IMPORT  Nat             COMPLETELY
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        FmtMap          COMPLETELY
+        FmtSet          COMPLETELY
+        FmtOption       COMPLETELY
+        FmtBasicTypes   COMPLETELY
+        RepoAn          COMPLETELY
+        SeqCompare      COMPLETELY
+        IdTab           COMPLETELY
+        Dyn COMPLETELY
+        DynConv COMPLETELY
+        OptionMap COMPLETELY
+        Com ONLY EXEC
+        Denotation COMPLETELY
 
-IMPORT	RepoAn		COMPLETELY
-	RepoName	COMPLETELY
+IMPORT  RepoAn          COMPLETELY
+        RepoName        COMPLETELY
 
 
 -- %$Inserted from Signature$ ==============================================
@@ -26,235 +31,257 @@ IMPORT	RepoAn		COMPLETELY
 /* % Pragmas are defined by the types below: */
 
 DATA pragma ==
-	pragma		(an		: an,
-			 comps		: seq[pragmaComp])
-	-- special variant for internal purposes
-	removed	   
+        pragma          (an             : an,
+                         comps          : seq[pragmaComp])
+        -- special variant for internal purposes
+        removed    
 
-     FUN fmtPragma	: pragma			-> fmt
+     FUN fmtPragma      : pragma                        -> fmt
 
 
 DATA pragmaComp ==
-	token		(text		: denotation)
-	objects		(objects	: seq[objectName])
+        token           (text           : denotation)
+        objects         (objects        : seq[objectName])
 
-     FUN fmtPragmaComp	: pragmaComp			-> fmt
+     FUN fmtPragmaComp  : pragmaComp                    -> fmt
 
-			 
+DEF pragmasAnLayer == EXEC(register(3, fmtDynPragmas))
+
+FUN pragmasAnTag: denotation
+DEF pragmasAnTag == "3"
+
+FUN fmtDynPragmas: dyn -> fmt
+DEF fmtDynPragmas(Val) == fmtSeq(fmtPragma)(unpack[seq[pragma]](Val, pragmasAnTag))
+
+DEF pragmas?(An) == (\\Val . unpack[seq[pragma]](Val, pragmasAnTag)) 
+                             * (An !? pragmasAnLayer)
+DEF pragmas(An) == unpack(An ! pragmasAnLayer, pragmasAnTag)
+
+DEF An :=_pragmas P == def(pragmasAnLayer,
+                           pack[seq[pragma]](P, pragmasAnTag), An)
+                         
 -- %$Properties$ ===========================================================
 
 /* % Properties are defined by the types below: */
 
 DATA property ==
-	freeType	(an		: an,
-			 sort		: objectName,
-					  -- sort associated with free type
-			 variants	: seq[variant])
-					  -- variants of free type
-	law		(an		: an,
-			 symbol		: option[denotation],
-					 -- symbolic identifier of law 
-			 formula	: formula)
-	-- special variant for internal purposes
-	removed	   
+        freeType        (an             : an,
+                         sort           : objectName,
+                                          -- sort associated with free type
+                         variants       : seq[variant])
+                                          -- variants of free type
+        law             (an             : an,
+                         symbol         : option[denotation],
+                                         -- symbolic identifier of law 
+                         formula        : formula)
+        other           (an             : an,
+                         id             : denotation,
+                         data           : dyn)
+        -- special variant for internal purposes
+        removed    
 
-	FUN :=_an	: property ** an	       -> property
-	FUN fmtProperty : property		       -> fmt
+        FUN :=_an       : property ** an               -> property
+        FUN fmtProperty : property                     -> fmt
 
 DATA formula ==
-	atomic		(an		: an,
-			 kind		: atomicKind,
-			 exprs		: seq[expr])
-	connect		(an		: an,
-			 kind		: connectKind,
-			 formulas	: seq[formula])
-	quant		(an		: an,
-			 kind		: quantKind,
-			 sign		: localSignName,
-					  -- signature of local variables
-			 vars		: seq[objectName],
-			 range		: formula)
+        atomic          (an             : an,
+                         kind           : atomicKind,
+                         exprs          : seq[expr])
+        connect         (an             : an,
+                         kind           : connectKind,
+                         formulas       : seq[formula])
+        quant           (an             : an,
+                         kind           : quantKind,
+                         sign           : localSignName,
+                                          -- signature of local variables
+                         vars           : seq[objectName],
+                         range          : formula)
 
-     FUN :=_an		: formula ** an			-> formula
-     FUN fmtFormula	: formula			-> fmt
+     FUN :=_an          : formula ** an                 -> formula
+     FUN fmtFormula     : formula                       -> fmt
 
 
-DATA atomicKind	   == dfd approx cong other(id: denotation)
+DATA atomicKind    == dfd approx cong other(id: denotation, data: dyn)
+                      informal(text: denotation)
 DATA connectKind   == neg conj disj impl equiv other(id: denotation)
-DATA quantKind	   == forall exist other(id: denotation)
+DATA quantKind     == forall exist other(id: denotation)
 
-     FUN fmtAtomicKind	: atomicKind			 -> fmt
-     FUN fmtConnectKind : connectKind			 -> fmt
-     FUN fmtQuantKind	: quantKind			 -> fmt
+     FUN fmtAtomicKind  : atomicKind                     -> fmt
+     FUN fmtConnectKind : connectKind                    -> fmt
+     FUN fmtQuantKind   : quantKind                      -> fmt
 
 
-			
+                        
 -- %$Objects$ =============================================================
 
 /* % Objects are defined by the types below: */
 
 DATA object == 
-	object		(an		: an,
-			 symbol		: denotation,
-					-- symbolic identifier
-			 kind		: kind,
-					-- kind 
-			 impl		: impl,
-					-- implementation
-			 properties	: set[propertyName,<],
-					-- base names of related properties 
-			 items		: set[itemName,<])
-					-- base names of related items
-	-- special variant for internal purposes
-	removed	   
+        object          (an             : an,
+                         symbol         : denotation,
+                                        -- symbolic identifier
+                         kind           : kind,
+                                        -- kind 
+                         impl           : impl,
+                                        -- implementation
+                         properties     : set[propertyName,<],
+                                        -- base names of related properties 
+                         items          : set[itemName,<])
+                                        -- base names of related items
+        -- special variant for internal purposes
+        removed    
 
-     FUN :=_an		: object ** an			-> object
-     FUN :=_symbol	: object ** denotation		-> object
-     FUN :=_kind	: object ** kind		-> object
-     FUN :=_impl	: object ** impl		-> object
-     FUN :=_properties	: object ** set[propertyName,<] -> object
-     FUN :=_items	: object ** set[itemName,<]	-> object
-     FUN fmtObject	: object			-> fmt
+     FUN :=_an          : object ** an                  -> object
+     FUN :=_symbol      : object ** denotation          -> object
+     FUN :=_kind        : object ** kind                -> object
+     FUN :=_impl        : object ** impl                -> object
+     FUN :=_properties  : object ** set[propertyName,<] -> object
+     FUN :=_items       : object ** set[itemName,<]     -> object
+     FUN fmtObject      : object                        -> fmt
 
 
 DATA kind == 
-	sort
-	oper		(fct		: fct)
+        sort
+        oper            (fct            : fct)
+        other           (id: denotation, data: dyn)
 
-     FUN =		: kind ** kind			-> bool
-     FUN fmtKind	: kind				-> fmt
-	
+     FUN =              : kind ** kind                  -> bool
+     FUN fmtKind        : kind                          -> fmt
+        
 
 DATA impl == 
-	missing		(an		: an)
-					-- missing implementation 
-	hidden		(an		: an)
-					-- implementation may exists but 
-					-- not visible here
-	variable	(an		: an)
-					-- variable
-	parameter	(an		: an)
-					-- parameter 
-	induced		(an		: an,
-			 sort		: objectName,
-			 kind		: inducedKind)
-					-- induced implementation
-					-- from given sortName
-	data		(an		: an,
-			 variants	: seq[variant])
-				       -- data definition with variants
-	def		(an		: an,
-			 eqns		: seq[eqn])
-					-- function definition
+        missing         (an             : an)
+                                        -- missing implementation 
+        hidden          (an             : an)
+                                        -- implementation may exists but 
+                                        -- not visible here
+        variable        (an             : an)
+                                        -- variable
+        parameter       (an             : an)
+                                        -- parameter 
+        induced         (an             : an,
+                         sort           : objectName,
+                         kind           : inducedKind)
+                                        -- induced implementation
+                                        -- from given sortName
+        data            (an             : an,
+                         variants       : seq[variant])
+                                       -- data definition with variants
+        def             (an             : an,
+                         eqns           : seq[eqn])
+                                        -- function definition
+        other            (an            : an,
+                          id            : denotation,
+                          data          : dyn)
 
 
-     FUN :=_an		: impl ** an			-> impl
-     FUN fmtImpl	: impl				-> fmt
+     FUN :=_an          : impl ** an                    -> impl
+     FUN fmtImpl        : impl                          -> fmt
 
 DATA inducedKind ==
-	constructor selector test other(id: denotation)
+        constructor selector test other(id: denotation)
 
-     FUN fmtInducedKind : inducedKind			-> fmt
+     FUN fmtInducedKind : inducedKind                   -> fmt
 
 
 DATA variant == 
-	variant		(an		: an,
-			 constructor	: objectName,
-					-- constructor function
-			 test		: objectName,
-					-- test function
-			 components	: seq[component])
-					-- components
+        variant         (an             : an,
+                         constructor    : objectName,
+                                        -- constructor function
+                         test           : objectName,
+                                        -- test function
+                         components     : seq[component])
+                                        -- components
 
-     FUN :=_an		: variant ** an			-> variant
-     FUN fmtVariant	: variant			-> fmt
+     FUN :=_an          : variant ** an                 -> variant
+     FUN fmtVariant     : variant                       -> fmt
 
 
 DATA component == 
-	component	(an		: an,
-			 selector	: objectName)
-					-- base name of selector
+        component       (an             : an,
+                         selector       : objectName)
+                                        -- base name of selector
 
-     FUN :=_an		: component ** an		-> component
-     FUN fmtComponent	: component			-> fmt
+     FUN :=_an          : component ** an               -> component
+     FUN fmtComponent   : component                     -> fmt
 
-				
+                                
 DATA eqn == 
-	eqn		(an		: an,
-			 sign		: localSignName,
-					-- env of local pattern variables
-			 lhs		: expr,
-					-- original pattern (represented 
-					-- as expr)
-			 patterns	: seq[expr], 
-					-- minimal complete set of
-					-- perfect-fit patterns
-			 rhs		: expr) 
-					-- rhs of expression
+        eqn             (an             : an,
+                         sign           : localSignName,
+                                        -- env of local pattern variables
+                         lhs            : expr,
+                                        -- original pattern (represented 
+                                        -- as expr)
+                         patterns       : seq[expr], 
+                                        -- minimal complete set of
+                                        -- perfect-fit patterns
+                         rhs            : expr) 
+                                        -- rhs of expression
 
-     FUN :=_an		: eqn ** an			-> eqn
-     FUN fmtEqn		: eqn				-> fmt
+     FUN :=_an          : eqn ** an                     -> eqn
+     FUN fmtEqn         : eqn                           -> fmt
 
 
 -- %$Expressions$ =======================================================
 
 DATA expr == 
-	name		(an		: an,
-			 oper		: objectName)
-	apply		(an		: an,
-			 funct		: expr,
-			 arg		: expr)
-	tuple		(an		: an,
-			 elems		: seq[expr])
+        name            (an             : an,
+                         oper           : objectName)
+        apply           (an             : an,
+                         funct          : expr,
+                         arg            : expr)
+        tuple           (an             : an,
+                         elems          : seq[expr])
 
-	-- for right hand side expressions only:
-	den		(an		: an,
-			 text		: denotation)
-	cases		(an		: an,
-			 guards		: seq[guard], 
-			 else		: option[expr])
-	lambda		(an		: an,
-			 sign		: localSignName,
-					-- env of local abstraction variables
-			 vars		: seq[objectName],
-			 body		: expr)
-	let		(an		: an,
-			 eqns		: seq[eqn],
-			 body		: expr)
+        -- for right hand side expressions only:
+        den             (an             : an,
+                         text           : denotation)
+        cases           (an             : an,
+                         guards         : seq[guard], 
+                         else           : option[expr])
+        lambda          (an             : an,
+                         sign           : localSignName,
+                                        -- env of local abstraction variables
+                         vars           : seq[objectName],
+                         body           : expr)
+        let             (an             : an,
+                         eqns           : seq[eqn],
+                         body           : expr)
 
-	-- for patterns only:
-	as		(an		: an,
-			 var		: objectName,
-					-- always a local name and member of
-					-- eqn-env
-			 expr		: expr)
-	any		(an		: an)
-					-- wildcard
+        -- for patterns only:
+        as              (an             : an,
+                         var            : objectName,
+                                        -- always a local name and member of
+                                        -- eqn-env
+                         expr           : expr)
+        any             (an             : an)
+                                        -- wildcard
 
 
-     FUN :=_an		: expr ** an		-> expr
-     FUN fmtExpr	: expr			-> fmt
+     FUN :=_an          : expr ** an            -> expr
+     FUN fmtExpr        : expr                  -> fmt
 
 
 DATA guard == 
-	guard		(an		: an,
-			 if		: expr, 
-			 then		: expr)
+        guard           (an             : an,
+                         if             : expr, 
+                         then           : expr)
 
-     FUN :=_an		: guard ** an		-> guard
-     FUN fmtGuard	: guard			-> fmt
+     FUN :=_an          : guard ** an           -> guard
+     FUN fmtGuard       : guard                 -> fmt
 
 
 -- %$Functionalities$ ======================================================
 
 DATA fct == 
-	name		(sort		: objectName)
-	cart		(elems		: seq[fct])
-	funct		(dom		: fct, 
-			 codom		: fct)
+        name            (sort           : objectName)
+        cart            (elems          : seq[fct])
+        funct           (dom            : fct, 
+                         codom          : fct)
 
-     FUN =		: fct ** fct		-> bool
-     FUN fmtFct		: fct			-> fmt
+     FUN =              : fct ** fct            -> bool
+     FUN fmtFct         : fct                   -> fmt
 
 
 
@@ -270,11 +297,19 @@ DATA fct ==
 @ignore
 */
 
+/* %Some additional functions, so that putput from ordinatrice needs not
+    to be changed */
+
+FUN fmtDyn: dyn -> fmt
+DEF fmtDyn(_) == lit("<#dyn>")
+
+FUN = : dyn ** dyn -> bool
+DEF _ : dyn = _ == false
+
 -- this is output of ordinatrice verte for free type impl
 
-
-
 FUN :=_an : impl ** an -> impl
+DEF :=_an(other(_,2,3),new) == (other(new,2,3)):impl
 DEF :=_an(def(_,2),new) == def(new,2)
 DEF :=_an(data(_,2),new) == data(new,2)
 DEF :=_an(induced(_,2,3),new) == induced(new,2,3)
@@ -282,8 +317,6 @@ DEF :=_an(parameter(_),new) == parameter(new)
 DEF :=_an(variable(_),new) == variable(new)
 DEF :=_an(hidden(_),new) == hidden(new)
 DEF :=_an(missing(_),new) == missing(new)
-
-
 
 
 FUN fmtImpl : impl -> fmt
@@ -294,6 +327,8 @@ DEF fmtImpl(parameter(v0)) == ;(;(beg(2),lit("parameter")),;(;(lit("("),;(fmtAn(
 DEF fmtImpl(induced(v0,v1,v2)) == ;(;(beg(2),lit("induced")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtInducedKind(v2))),lit(")"))),end))
 DEF fmtImpl(data(v0,v1)) == ;(;(beg(2),lit("data")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtVariant)(v1))),lit(")"))),end))
 DEF fmtImpl(def(v0,v1)) == ;(;(beg(2),lit("def")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtEqn)(v1))),lit(")"))),end))
+DEF fmtImpl(other(v0,v1,v2)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtDenotation(v1))),;(lit(", "),fmtDyn(v2))),lit(")"))),end))
+
 
 
 
@@ -374,18 +409,6 @@ DEF :=_an(den(_,2),new) == den(new,2)
 DEF :=_an(tuple(_,2),new) == tuple(new,2)
 DEF :=_an(apply(_,2,3),new) == apply(new,2,3)
 DEF :=_an(name(_,2),new) == name(new,2)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 FUN fmtExpr : expr -> fmt
@@ -483,8 +506,19 @@ DEF fmtObject(removed) == ;(;(beg(2),lit("removed")),end)
 FUN = : kind ** kind -> bool
 DEF =(sort,sort) == true
 DEF =(sort,oper(_)) == false
+DEF =(sort,other(_,_)) == false
 DEF =(oper(_),sort) == false
 DEF =(oper(a),oper(A)) == IF =(a,A) THEN true
+ELSE
+false
+FI
+DEF =(oper(_),other(_,_)) == false
+DEF =(other(_,_),sort) == false
+DEF =(other(_,_),oper(_)) == false
+DEF =(other(a,b),other(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
 ELSE
 false
 FI
@@ -493,8 +527,7 @@ FI
 FUN fmtKind : kind -> fmt
 DEF fmtKind(sort) == ;(;(beg(2),lit("sort")),end)
 DEF fmtKind(oper(v0)) == ;(;(beg(2),lit("oper")),;(;(lit("("),;(fmtFct(v0),lit(")"))),end))
-
-
+DEF fmtKind(other(v0,v1)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(;(fmtDenotation(v0),;(lit(", "),fmtDyn(v1))),lit(")"))),end))
 
 -- this is output of ordinatrice verte for free type quantKind
 
@@ -532,13 +565,14 @@ DEF fmtFormula(quant(v0,v1,v2,v3,v4)) == ;(;(beg(2),lit("quant")),;(;(lit("("),;
 
 -- this is output of ordinatrice verte for free type atomicKind
 
-
-
 FUN fmtAtomicKind : atomicKind -> fmt
 DEF fmtAtomicKind(dfd) == ;(;(beg(2),lit("dfd")),end)
 DEF fmtAtomicKind(approx) == ;(;(beg(2),lit("approx")),end)
 DEF fmtAtomicKind(cong) == ;(;(beg(2),lit("cong")),end)
-DEF fmtAtomicKind(other(v0)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(fmtDenotation(v0),lit(")"))),end))
+DEF fmtAtomicKind(other(v0,v1)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(;(fmtDenotation(v0),;(lit(", "),fmtDyn(v1))),lit(")"))),end))
+DEF fmtAtomicKind(informal(v0)) == ;(;(beg(2),lit("informal")),;(;(lit("("),;(fmtDenotation(v0),lit(")"))),end))
+
+
 
 
 
@@ -559,14 +593,15 @@ DEF fmtPragmaComp(objects(v0)) == ;(;(beg(2),lit("objects")),;(;(lit("("),;(fmtS
 
 
 FUN :=_an : property ** an -> property
+DEF :=_an(other(_,2,3),new) == (other(new,2,3)):property
 DEF :=_an(law(_,2,3),new) == law(new,2,3)
 DEF :=_an(freeType(_,2,3),new) == freeType(new,2,3)
-
 
 
 FUN fmtProperty : property -> fmt
 DEF fmtProperty(freeType(v0,v1,v2)) == ;(;(beg(2),lit("freeType")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtSeq(fmtVariant)(v2))),lit(")"))),end))
 DEF fmtProperty(law(v0,v1,v2)) == ;(;(beg(2),lit("law")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtOption(fmtDenotation)(v1))),;(lit(", "),fmtFormula(v2))),lit(")"))),end))
+DEF fmtProperty(other(v0,v1,v2)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtDenotation(v1))),;(lit(", "),fmtDyn(v2))),lit(")"))),end))
 DEF fmtProperty(removed) == ;(;(beg(2),lit("removed")),end)
 
 

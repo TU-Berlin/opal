@@ -134,6 +134,7 @@ DATA readResult ==
                          imports        : idmap[unitImport],
                          objects        : idmap[object'RepoAbsy],
                          properties     : idmap[property'RepoAbsy],
+                         pragmas        : idmap[pragma'RepoAbsy],
                          localSigns     : idmap[unitLocalSign])
 
 
@@ -146,7 +147,7 @@ DEF readAbsy(IO0, full?)(R) ==
     IF nil?(Main?) THEN
         (readResult(cannotLocate(symbol(structs(IO) ! main), 
                                  readPart(part(IO))),
-                    basicUnitName(0, sign), {}, <>, {}, {}, {}, {}),
+                    basicUnitName(0, sign), {}, <>, {}, {}, {}, {}, {}),
          R)
     ELSE
         -- construct initial reading state
@@ -161,7 +162,8 @@ DEF readAbsy(IO0, full?)(R) ==
         -- translate objects and properties if no errors have been
         -- occured
         IF ~(ok?(diag(S1))) THEN
-            (readResult(diag(S1), main(S1), instances(S1), <>, {}, {}, {}, {}),
+            (readResult(diag(S1), main(S1), instances(S1), <>, 
+                        {}, {}, {}, {}, {}),
              repo(S1))
         ELSE
             LET (S2, Objs) == readObject * 
@@ -169,14 +171,16 @@ DEF readAbsy(IO0, full?)(R) ==
                 (S3, Props) == readProperty *
                                   (S2, asSeq(props(structs(IO) ! main)))
                 ObjsMap     == (calcInduced, asMap(Objs)) / Objs
+                (S4, Prags0) == readPragma *
+                                  (S3, pragmas(structs(IO) ! main))
+                (_, Prags) == (\\ n, p.(succ(n), id(n) & p))  * (0, Prags0)
             IN
-            (readResult(diag(S3), main(S3), instances(S3), formals(S3),
-                        imports(S3), 
-                        ObjsMap, asMap(Props), localSigns(S3)),
-             repo(S3))
+            (readResult(diag(S4), main(S4), instances(S4), formals(S4),
+                        imports(S4), 
+                        ObjsMap, asMap(Props), asMap(Prags), localSigns(S4)),
+             repo(S4))
         FI
     FI
-
 
 -- %$$Reading Origins$
 
@@ -312,22 +316,33 @@ DEF readInstObjectName(S, name(Ident, Orig, Inst)) ==
 /* % @code{readObject(S, Ident & Obj)} converts the given
 InterOpal object to a repository object.
 @code{readProperty(S, Ident & Prop)} behaves
-similar for properties. The rest of the read functions
+similar for properties, @code{readPragma(S, Ident & Pragma)} behaves
+similar for pragmas. The rest of the read functions
 are long and boring ... */
 
 FUN readObject  : readState ** pair[ident,object'InterOpal]
                             -> readState ** pair[id,object'RepoAbsy]
+
+FUN readObject  : readState ** object'InterOpal
+                            -> readState ** object'RepoAbsy
                                             
 FUN readProperty : readState ** pair[ident,property'InterOpal]
                             -> readState ** pair[id,property'RepoAbsy]
+FUN readPragma : readState ** pragma'InterOpal
+                            -> readState ** pragma'RepoAbsy
 -- %cindex neues InterOpal
-DEF readObject(S, Ident & object(Pos, _, Sym, Kind, Def, Props, _)) ==
+DEF readObject(S, Ident & o) ==
+  LET (S2, nO) == readObject(S, o)
+  IN
+  (S2, readObjectId(S)(Ident) & nO)
+
+DEF readObject(S, object(Pos, _, Sym, Kind, Def, Props, Prags)) ==
     LET S1 == S :=_localRemap {} 
                         -- reset local remapping (for efficiency only)
         (S2, Impl) == readImpl(S1, Def)
+        (S3, nPrags) == readPragma * (S2, Prags)
     IN
-    (S2, readObjectId(S)(Ident) &
-         object(readPos(S)(Pos),
+    (S3, object(readPos(S)(Pos) :=_pragmas nPrags,
                 Sym,
                 readKind(S)(Kind),
                 Impl,
@@ -337,21 +352,42 @@ DEF readObject(S, Ident & object(Pos, _, Sym, Kind, Def, Props, _)) ==
                        * Props),
                 {}))
 
--- %cindex neues InterOpal
-DEF readProperty(S, Ident & freeType(Pos, _, Sort, Variants, _)) ==
-    (S, readPropertyId(S)(Ident) &
-        freeType(readPos(S)(Pos),
-                 readObjectName(S)(Sort),
-                 readVariant(S) * Variants))
+DEF readProperty(S, Ident & freeType(Pos, _, Sort, Variants, Prags)) ==
+  LET (S1, nPrags) == readPragma * (S, Prags)
+  IN
+  (S1, readPropertyId(S)(Ident) &
+       freeType(readPos(S)(Pos) :=_pragmas nPrags,
+                readObjectName(S)(Sort),
+                readVariant(S) * Variants))
 
--- %cindex neues InterOpal
-DEF readProperty(S, Ident & law(Pos, _, Sym, Form, _)) ==
+DEF readProperty(S, Ident & law(Pos, _, Sym, Form, Prags)) ==
     LET S1 == S :=_localRemap {} 
                         -- reset local remapping (for efficiency only)
         (S2, Form1) == readFormula(S1, Form)
+        (S3, nPrags) == readPragma * (S2, Prags)
     IN
-    (S2, readPropertyId(S)(Ident) &
-         law(readPos(S)(Pos), Sym, Form1))
+    (S3, readPropertyId(S)(Ident) &
+         law(readPos(S)(Pos) :=_pragmas nPrags, Sym, Form1))
+
+DEF readProperty(S, Ident & other(Pos, Id, Data, Prags)) ==
+  LET (S1, nPrags) == readPragma * (S, Prags) 
+  IN
+  (S1, readPropertyId(S)(Ident) &
+       other(readPos(S)(Pos) :=_pragmas nPrags, Id, Data))
+             
+
+DEF readPragma(S, pragma(pItems)) ==
+  LET (S1, pItems1) == readPragmaItem * (S, pItems)
+  IN
+  (S1, pragma(none, pItems1))
+
+FUN readPragmaItem: readState ** pragmaItem -> readState ** pragmaComp
+DEF readPragmaItem(S, objects(o)) ==
+  LET obs == readObjectName(S) * o
+  IN
+  (S, objects(obs))
+
+DEF readPragmaItem(S, token(_, text)) ==  (S, token(text))
 
 
 -- %$$Reading Kinds and Functionalities$
@@ -361,6 +397,7 @@ FUN readFct  : readState -> fct'InterOpal  -> fct'RepoAbsy
 
 DEF readKind(_)(sort) == sort
 DEF readKind(S)(fct(Fct)) == oper(readFct(S)(Fct))
+DEF readKind(_)(other(Id, Data)) == other(Id, Data)
 
 DEF readFct(S)(sort(Name)) == name(readObjectName(S)(Name))
 DEF readFct(S)(cart(Elems)) == cart(readFct(S) * Elems)
@@ -449,6 +486,11 @@ DEF readFormula(S, exist(Pos, Vars, Range)) ==
                 -- FIXME: exist must be exists! 
                 -- (old naming bug infiltrated from InterOpal)
 
+DEF readFormula(S, informal(Pos, Text)) ==
+  (S, atomic(readPos(S)(Pos), informal(Text), <>))
+
+DEF readFormula(S, other(Pos, Id, Data)) ==
+  (S, atomic(readPos(S)(Pos), other(Id, Data), <>))
 
 -- %$$Reading Implementations$
 
@@ -489,6 +531,13 @@ DEF readImpl(S, def(Eqns)) ==
         IN
         (S1, def(none, Eqns1))
     ELSE (S, hidden(none)) FI
+
+DEF readImpl(S, other(Pos, Id, Data)) ==
+  IF withImpls?(S) THEN
+    (S, other(readPos(S)(Pos), Id, Data))
+  ELSE
+    (S, hidden(none))
+  FI
 
 -- %$$Reading Equations$
 
@@ -651,7 +700,7 @@ DEF readPos(S)(Pos:seq[pos]) ==
 
 FUN makePos : readState -> pos'InterOpal ** locator -> locator
 DEF makePos(_)(unknown, Loc) == Loc
-DEF makePos(_)(_, Loc) == Loc
+DEF makePos(_)(part(_), Loc) == Loc
 DEF makePos(S)(pos(Part, Row, Col), Loc) == 
     IF readPart(Part) = part(main(S)) THEN
         pos(pos(Row, Col), Loc)
@@ -660,6 +709,13 @@ DEF makePos(S)(pos(Part, Row, Col), Loc) ==
         -- we cannot convert it
         Loc
     FI 
+
+DEF makePos(S)(region(Part, Row, Col, EndRow, EndCol), Loc) ==
+  IF readPart(Part) = part(main(S)) THEN
+    region(region(pos(Row, Col), pos(EndRow, EndCol)), Loc)
+  ELSE
+    Loc
+  FI
 
 -- %$$Reading Structure Parts$
 
@@ -747,11 +803,13 @@ DEF iloadUnitAbsy(U)(R) ==
                                    removed)
                     Objs      == asTab(asSeq(objects(Res)), removed)
                     Props     == asTab(asSeq(properties(Res)), removed)
+                    Prags     == asTab(asSeq(pragmas(Res)), removed)
                 IN
                 Info :=_imports    imports(Res)
                      :=_instances  Instances
                      :=_objects    Objs
                      :=_properties Props
+                     :=_pragmas    Prags
                      :=_localSigns asTab(asSeq(localSigns(Res)), removed)
                      :=_absyVersion succ(absyVersion(Info))
               )(R4)
@@ -900,7 +958,13 @@ DEF lookupPos(nil, _) == {}
 FUN << : pair[region,itemName] ** pair[region,itemName] -> bool
 DEF P1 << P2 == 1st(P1) < 1st(P2)
     
+
 -- %$fix some bugs in interOpal$ ============================================
+/* %Welche ??!?!
+    Bei Objeckten der induzierten Signatur wird Verweis auf freetype-Law
+    eingetragen. 
+*/
+-- %-Aenderung alte Properties in Objekten bleoiben erhalten!
 IMPORT  MapMap          COMPLETELY
         MapFilter       COMPLETELY
        Fmt ONLY pretty
@@ -913,17 +977,15 @@ DEF fix(interOpal(Part,Structs)) ==
 
 -- fix main stucture
 FUN fix : part'InterOpal -> struct'InterOpal -> struct'InterOpal
--- %cindex neues InterOpal
 DEF fix(Part)(struct(Pos,Origin,Symb,Insts,Onlys,Objs,Props,Prags)) ==
     struct(Pos,Origin,Symb,Insts,Onlys,fix(Part,Props) * Objs,Props,Prags)
 
 -- fix objects of the main structure
 FUN fix : part'InterOpal ** map[ident'InterOpal,<,property'InterOpal] 
                 -> object'InterOpal -> object'InterOpal
--- %cindex neues InterOpal
-DEF fix(Part,Props)(object(Pos,Ident,Symbol,Kind,Def,_,Prags)) ==
+DEF fix(Part,Props)(object(Pos,Ident,Symbol,Kind,Def,PropsOrig,Prags)) ==
     object(Pos,Ident,Symbol,Kind,fiximpl(Part,Def),
-                asSeq(dom(related(Ident) | Props)),Prags)
+                asSeq(dom(related(Ident) | Props)) ++ PropsOrig,Prags)
 
 -- remove 'induced'-Implementations in signature
 FUN fiximpl : part'InterOpal ** impl'InterOpal -> impl'InterOpal

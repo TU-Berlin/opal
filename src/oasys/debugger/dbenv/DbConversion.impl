@@ -1,38 +1,42 @@
 IMPLEMENTATION DbConversion
 
-IMPORT	
-	Seq		COMPLETELY
-	SeqFilter	COMPLETELY
-	SeqMap		COMPLETELY
+IMPORT  
+        Seq             COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqMap          COMPLETELY
 IMPORT
-	RepoObjectAccess COMPLETELY
-	RepoUnitAccess	COMPLETELY
-	RepoName	COMPLETELY
+        RepoObjectAccess COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoName        COMPLETELY
 IMPORT
-	Expression	COMPLETELY
-	ChannelData	COMPLETELY
+        Expression      COMPLETELY
+        ChannelData     COMPLETELY
 IMPORT
-	DbIdentTable	COMPLETELY
-	DbConvEnv	COMPLETELY
-	DbImpl2Expr	COMPLETELY
-	DbAbsyAux	COMPLETELY
-	DbName2Expr	COMPLETELY
-	DEBUG		COMPLETELY
-	Fmt		COMPLETELY
-	Nat		COMPLETELY
+        DbIdentTable    COMPLETELY
+        DbConvEnv       COMPLETELY
+        DbImpl2Expr     COMPLETELY
+        DbAbsyAux       COMPLETELY
+        DbName2Expr     COMPLETELY
+        DEBUG           COMPLETELY
+        Fmt             COMPLETELY
+        Nat             COMPLETELY
+        ABORT COMPLETELY
+        Denotation COMPLETELY
+        RepoAbsy COMPLETELY
+       RepoNameConv ONLY opalName
 
 DEF asExpr(Repo,ITab,ObjName) ==
     LET ObjectId == ITab ! ObjName
-	E == init(Repo,ITab)
-	(_,Expr,Rank,_) == fun2expr(E,ObjName)
-	Fct == fct(ObjName)(Repo)
+        E == init(Repo,ITab)
+        (_,Expr,Rank,_) == fun2expr(E,ObjName)
+        Fct == fct(ObjName)(Repo)
     IN (Expr,Rank,dim(applyWith(Fct,Rank)))
 
 DEF asExpr(Repo,ITab,Expr) ==
     LET E    == init(Repo,ITab)
-	Fct  == fct(Repo,Expr)
-	Fct1 == fct2fct(E,Fct)
-	(_,Expr1,_) == expr2expr(E,Expr)
+        Fct  == fct(Repo,Expr)
+        Fct1 == fct2fct(E,Fct)
+        (_,Expr1,_) == expr2expr(E,Expr)
     IN (Expr1,Fct1)
 
 DEF asName(Repo,ITab,ObjName) ==
@@ -40,43 +44,63 @@ DEF asName(Repo,ITab,ObjName) ==
     IN name2name(E,ObjName)
 
 DEF asDeclare(Repo,ITab,OName) ==
-    LET ObjectId	== ITab ! OName
-	E		== init(Repo,ITab)
-	-- Die übersetzten Parameternamen werden ermittelt, indem der
-	-- gesamte Name überstzt wird und die Instastanzen dann herausgenommen
-	-- werden.
-	Para		== objectId * instances(name2name(E,OName))
+    LET ObjectId        == ITab ! OName
+        E               == init(Repo,ITab)
+        -- Die übersetzten Parameternamen werden ermittelt, indem der
+        -- gesamte Name überstzt wird und die Instastanzen dann herausgenommen
+        -- werden.
+        Para            == objectId * instances(name2name(E,OName))
     IN IF oper?(OName)(Repo)
-	 THEN IF formal?(OName)(Repo)
-		   THEN formal(ObjectId)
-		   ELSE LET StructSymb	== symbol(unit(OName))(Repo)
-			    Ident	== no(OName)
-			IN function(ObjectId,Para,StructSymb,Ident)
-	      FI
+         THEN IF formal?(OName)(Repo)
+                   THEN formal(ObjectId)
+                   ELSE LET StructSymb  == symbol(unit(OName))(Repo)
+                            Ident       == no(OName)
+                        IN function(ObjectId,Para,StructSymb,Ident)
+              FI
        IF sort?(OName)(Repo)
-	 THEN IF formal?(OName)(Repo)
-		THEN formal(ObjectId)
-		ELSE sort(ObjectId,Para)
-	      FI
+         THEN IF formal?(OName)(Repo)
+                THEN formal(ObjectId)
+                ELSE sort(ObjectId,Para)
+              FI
+       IF other?(kind(object(OName)(Repo))) THEN
+         IF formal?(OName)(Repo) THEN
+           formal(ObjectId)
+         ELSE
+           ABORT("asDeclare'DbConversion: other kind `" ++
+                 id(kind(object(OName)(Repo))) ++ "' for " ++
+                 opalName(OName)(Repo))
+         FI
        FI
 
 DEF asDefine(Repo,ITab,ObjName,coded) ==
-    LET Fct		== fct(ObjName)(Repo)
-	FParaNo		== #((\\N. oper?(N)(Repo)) | actuals(ObjName)(Repo))
-	ObjectId	== ITab ! ObjName
+    LET Fct             == fct(ObjName)(Repo)
+        FParaNo         == #((\\N. function?(N)(Repo)) |
+                                actuals(ObjName)(Repo))
+        ObjectId        == ITab ! ObjName
     IN coded(ObjectId,rankDimTable(Fct,FParaNo))
+
+-- %return true, if kind is oper or other("any", _)
+FUN function? : objectName -> repo -> bool
+DEF function?(N)(R) ==
+  LET k == kind(N)(R)
+  IN
+  IF k sort? THEN false
+  IF k oper? THEN true
+  IF k other? THEN id(k) = "any"
+  FI
+
 DEF asDefine(Repo,ITab,ObjName,interpreted) ==
-    LET ObjectId	== ITab ! ObjName
-	(Expr,Rank,Dim) == asExpr(Repo,ITab,ObjName)
+    LET ObjectId        == ITab ! ObjName
+        (Expr,Rank,Dim) == asExpr(Repo,ITab,ObjName)
     IN interpreted(ObjectId,Rank,Dim,Expr)
 
 DEF lookFor?(Repo,ITab,ObjName,Tpos) ==
     LET ObjectId == ITab ! ObjName
-	E == initForQuery(Repo,ITab,Tpos)
-	(E1,_,_,MImpl) == fun2expr(E,ObjName)
+        E == initForQuery(Repo,ITab,Tpos)
+        (E1,_,_,MImpl) == fun2expr(E,ObjName)
     IN (context?(E1),MImpl)
 
 DEF lookFor?(Repo,ITab,Expr,Tpos) ==
     LET E    == initForQuery(Repo,ITab,Tpos)
-	(E1,_,MExpr) == expr2expr(E,Expr)
+        (E1,_,MExpr) == expr2expr(E,Expr)
     IN (context?(E1),MExpr)
