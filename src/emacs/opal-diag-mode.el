@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.13 1999-05-11 13:32:28 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.14 1999-05-11 13:53:38 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -70,7 +70,7 @@
     )
   )
 
-(defun opal-diag-def-errno (ext i)
+(defun opal-diag-def-errno (ext i nogoto)
   "define associated err number (ignored in XEmacs [number is stored in keymap])"
 )
 
@@ -129,9 +129,10 @@
     )
 )
 
-(defun opal-diag-def-errno (ovl i)
+(defun opal-diag-def-errno (ovl i nogoto)
   "define associated err number"
   (overlay-put ovl 'err-no i)
+  (overlay-put ovl 'nogoto nogoto)
 )
 
 )) ;; end of FSF Emacs only
@@ -425,17 +426,18 @@
   "set point to position where event occurred. if event occurred 
 over an overlay which has err-no set, select that error"
   (interactive "e")
-  (let (ovl this errno)
+  (let (ovl this errno nogoto)
     (mouse-set-point event)
     (setq ovl (overlays-at (point)))
     (while ovl
       (setq this (car ovl))
       (setq ovl (cdr ovl))
       (setq errno (overlay-get this 'err-no))
+      (setq nogoto (overlay-get this 'nogoto))
       (if errno
 	  (progn
 	    (if (>= errno 0)
-		(opal-diag-show-this-error errno t)
+		(opal-diag-show-this-error errno nogoto)
 	      (opal-diag-not-found)
 	      )
 	    (setq ovl nil)
@@ -445,13 +447,14 @@ over an overlay which has err-no set, select that error"
   "set point to position where event occurred. if event occurred 
 over an overlay which has err-no set, hide-diagnostics"
   (interactive "e")
-  (let (ovl this errno)
+  (let (ovl this errno nogoto)
     (mouse-set-point event)
     (setq ovl (overlays-at (point)))
     (while ovl
       (setq this (car ovl))
       (setq ovl (cdr ovl))
       (setq errno (overlay-get this 'err-no))
+      (setq nogoto (overlay-get this 'nogoto))
       (if errno
 	  (progn
 	    (if (>= errno 0)
@@ -465,19 +468,20 @@ over an overlay which has err-no set, hide-diagnostics"
   "set point to position where event occurred. if event occurred 
 over an overlay which has err-no set, toggle extended help"
   (interactive "e")
-  (let (ovl this errno)
+  (let (ovl this errno nogoto)
     (mouse-set-point event)
     (setq ovl (overlays-at (point)))
     (while ovl
       (setq this (car ovl))
       (setq ovl (cdr ovl))
       (setq errno (overlay-get this 'err-no))
+      (setq nogoto (overlay-get this 'nogoto))
       (if errno
 	  (progn
 	    (if (>= errno 0)
 		(progn
-		  (opal-diag-show-this-error errno t)
-		  (opal-diag-toggle-extended-flag t)
+		  (opal-diag-show-this-error errno nogoto)
+		  (opal-diag-toggle-extended-flag nogoto)
 		  )
 	      (opal-diag-not-found)
 	      )
@@ -906,7 +910,8 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   (let (end-reached err-start err-end line col type curr-src-buf src 
 		    true-error src-start src-end new-src-ext new-err-ext
 		    signal-error-on-buffer-boundary error-list
-		    num-hint num-warn num-error i ext-keymap unknown-src)
+		    num-hint num-warn num-error i ext-src-keymap 
+		    ext-err-keymap unknown-src)
     (setq signal-error-on-buffer-boundary nil)
     (save-excursion
       (set-buffer opal-diag-buffer)
@@ -1183,27 +1188,40 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   )
 
 (defun opal-diag-parse-ext-for-unknown ()
-  (define-key ext-keymap [(button1)] 'opal-diag-not-found)
-  (define-key ext-keymap [(button2)] 'opal-diag-not-found)
-  (define-key ext-keymap [(button3)] 'opal-diag-not-found)
+  (define-key ext-err-keymap [(button1)] 'opal-diag-not-found)
+  (define-key ext-err-keymap [(button2)] 'opal-diag-not-found)
+  (define-key ext-err-keymap [(button3)] 'opal-diag-not-found)
+  (define-key ext-src-keymap [(button1)] 'opal-diag-not-found)
+  (define-key ext-src-keymap [(button2)] 'opal-diag-not-found)
+  (define-key ext-src-keymap [(button3)] 'opal-diag-not-found)
   (setq new-err-ext 
 	(opal-diag-def-diag err-start err-end
 			    (get-buffer opal-diag-buffer)
-			    ext-keymap
+			    ext-err-keymap
 			    'opal-diag-source-error-face 'default))
 )
 
 (defun opal-diag-parse-ext-keymap ()
-  (define-key ext-keymap "\M-n" 'opal-diag-next-main-error)
-  (define-key ext-keymap "\M-p" 'opal-diag-prev-main-error)
-  (define-key ext-keymap [(button1)]
+  (define-key ext-src-keymap "\M-n" 'opal-diag-next-main-error)
+  (define-key ext-src-keymap "\M-p" 'opal-diag-prev-main-error)
+  (define-key ext-src-keymap [(button1)]
     `(lambda (ev) (interactive "e") (mouse-set-point ev) (opal-diag-show-this-error ,i t)))
-  (define-key ext-keymap [(button2)]
+  (define-key ext-src-keymap [(button2)]
     'opal-diag-hide-diag-buffer)
-  (define-key ext-keymap [(button3)]
+  (define-key ext-src-keymap [(button3)]
     `(lambda (ev) (interactive "e") (mouse-set-point ev)
        (opal-diag-show-this-error ,i t)
        (opal-diag-toggle-extended-flag t)))
+  (define-key ext-err-keymap "\M-n" 'opal-diag-next-main-error)
+  (define-key ext-err-keymap "\M-p" 'opal-diag-prev-main-error)
+  (define-key ext-err-keymap [(button1)]
+    `(lambda () (interactive) (opal-diag-show-this-error ,i )))
+  (define-key ext-err-keymap [(button2)]
+    'opal-diag-hide-diag-buffer)
+  (define-key ext-err-keymap [(button3)]
+    `(lambda () (interactive ) 
+       (opal-diag-show-this-error ,i )
+       (opal-diag-toggle-extended-flag )))
   )
 
 (defun opal-diag-parse-src-ext ()
@@ -1217,7 +1235,8 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 	  )
     (setq new-src-ext 
 	  (opal-diag-def-diag src-start src-end (get-buffer src)
-			      ext-keymap sface 'opal-diag-source-error-face))
+			      ext-src-keymap sface
+			      'opal-diag-source-error-face))
     )
   )
 
@@ -1236,25 +1255,26 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
     (setq new-err-ext 
 	  (opal-diag-def-diag err-start err-end
 			      (get-buffer opal-diag-buffer)
-			      ext-keymap eface emface))
+			      ext-err-keymap eface emface))
     )
   )
 
 (defun opal-diag-parse-error-found ()
   (opal-diag-parse-counter silent)
   (opal-diag-parse-set-start-position)
-  (setq ext-keymap (make-sparse-keymap))
+  (setq ext-src-keymap (make-sparse-keymap))
+  (setq ext-err-keymap (make-sparse-keymap))
   (if (not src)
       (progn
 	(opal-diag-parse-ext-for-unknown)
-	(opal-diag-def-errno new-src-ext -1)
-	(opal-diag-def-errno new-err-ext -1)
+	(opal-diag-def-errno new-src-ext -1 t)
+	(opal-diag-def-errno new-err-ext -1 t)
 	)
     (opal-diag-parse-ext-keymap)
     (opal-diag-parse-src-ext)
     (opal-diag-parse-err-ext)
-    (opal-diag-def-errno new-src-ext i)
-    (opal-diag-def-errno new-err-ext i)
+    (opal-diag-def-errno new-src-ext i t)
+    (opal-diag-def-errno new-err-ext i nil)
     (setq error-list 
 	  (cons (opal-diag-make-diag (opal-diag-parse-type type)
 		 new-src-ext new-err-ext) 
@@ -1305,7 +1325,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.13 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.14 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)

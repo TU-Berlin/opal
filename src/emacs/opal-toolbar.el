@@ -2,7 +2,7 @@
 ;;; Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.5 1999-04-28 12:55:43 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.6 1999-05-11 13:53:40 kd Exp $
 
 
 (provide 'opal-toolbar)
@@ -301,9 +301,9 @@
 	(defun opal-toolbar-install ()
            "install toolbar ersatz - click mouse1 on toolbar"
 	   (interactive)
-	   (opal-toolbar-ersatz-menu)
-	   (define-key opal-mode-map [mode-line mouse-1]
-	     'opal-toolbar-ersatz-menu)
+;	   (opal-toolbar-ersatz-menu)
+;	   (define-key opal-mode-map [mode-line mouse-1]
+;	     'opal-toolbar-ersatz-menu)
 	   )
 	(put 'opal-diag-toggle-extended-flag 'menu-enable '(opal-ersatz-enabled-p))
 	(put 'opal-diag-prev-main-error 'menu-enable '(opal-ersatz-enabled-p))
