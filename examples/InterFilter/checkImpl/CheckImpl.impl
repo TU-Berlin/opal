@@ -1,0 +1,74 @@
+IMPLEMENTATION CheckImpl
+
+-- from /usr/ocs/signs/oc/shared/interOpal
+IMPORT InterOpal COMPLETELY
+       InterOpalIO ONLY readInterOpal writeInterOpal
+
+-- opal library
+IMPORT Com ONLY com exit
+       ComCheck ONLY check
+       Denotation ONLY ++
+       ProcessArgs ONLY args
+       ComCompose ONLY &
+       Seq ONLY # ft rt seq <>? <>
+       Nat ONLY |= 2 > 0
+       ComAction ONLY -!-> done
+       Option ONLY nil? cont option nil avail
+       Stream ONLY stdErr writeLine output
+       SeqReduce ONLY /
+       SeqMap ONLY *
+       Pair ONLY pair
+       String ONLY string
+       Map ONLY ! codom
+       SeqFilter ONLY |
+       NatConv ONLY `
+       ProcessCtrl ONLY success exit failure procstat
+       DEBUG ONLY PRINT
+
+-- %$Hauptprogramm$
+
+/* %Argumente parsen, Checker aufrufen, ggf. Fehlermeldungen ausgeben
+    und mit passendem Fehlerstatus zurück. */
+DEF checkImpl ==  
+  args & (\\ cArgs.
+  (#(cArgs) |= 2) -!-> usage & (
+  LET interFile == ft(rt(cArgs))
+  IN
+  readInterOpal(false, interFile) & (\\ IO.
+  (nil?(IO) -!-> (\\ . "interopal file could not be read")) & (
+  LET 
+    errorMsgs == doCheckImpl(cont(IO))
+  IN
+  (IF #(errorMsgs) > 0 THEN
+     ((&, done) /  (\\m. writeLine(stdErr, m)) * errorMsgs) 
+   ELSE
+     done
+   FI) &
+  exit(#(errorMsgs))
+  ))))
+
+
+FUN usage: () -> denotation
+DEF usage() == "usage: checkImpl <interfile>"
+
+-- %$Kern$
+
+/* %Nur für Implementierungsteile: Objekte mit fehlender @code{missing?}
+    Implementierung bestimmen und Fehlermeldungen zurückgeben */
+FUN doCheckImpl: interOpal -> seq[denotation]
+DEF doCheckImpl(IO) ==
+  IF part(IO) implementation? THEN
+    LET mainObjs == objs(structs(IO)!main)
+        badObjs == (\\ o. def(o) missing? ) | codom(mainObjs)
+        getPos == \\s. IF s <>? THEN nil ELSE avail(ft(s)) FI
+    IN
+    (\\ o:object. descr(symbol(o), getPos(pos(o)))) * badObjs
+  ELSE
+    <>
+  FI
+
+/* %Erzeugt aus Symbol und optionaler Position eine Fehlermeldung */
+FUN descr: denotation **  option[pos] -> denotation
+DEF descr(sym, _) == "<unknown>ERROR: " ++ sym ++ " is not implemented" 
+DEF descr(sym, avail(pos(_, r, c))) == 
+  "<" ++ (r`) ++ "," ++ (c`) ++ ">ERROR: " ++ sym ++ " is not implemented" 
