@@ -6,7 +6,7 @@
     (load-file "~/.opal-password.el")
   )
 
-;; make defualt definition
+;; make default definition
 (defvar opal-certify-password nil)
 
 (defconst opal-certify-extent-keymap nil)
@@ -56,10 +56,10 @@ return name of this proof"
     (setq thisbuf (current-buffer))
     (beginning-of-line)
     (setq start (point))
-    (while (not (looking-at ".*[a-zA-Z 0-9]|-[a-zA-Z 0-9]"))
+    (while (not (looking-at ".*[a-zA-Z 0-9]\\(|-\\|==>\\)[a-zA-Z 0-9]"))
       (forward-line)
       )
-    (if (looking-at ".*[a-zA-Z 0-9]|-[ ]*$")
+    (if (looking-at ".*[a-zA-Z 0-9]\\(|-\\|==>\\)[ ]*$")
 	(forward-line)
       )
     (end-of-line)
@@ -77,7 +77,7 @@ by the Opal compiler and return name of property"
 
    (set-buffer (get-buffer-create opal-certify-tmp-buffer))
    (goto-char (point-min))
-   (re-search-forward "\\(PROP\\|PROOF\\) ")
+   (re-search-forward "\\(PROP\\|PROOF\\|LEMMA\\|GOAL\\) ")
    (replace-match "")
    (re-search-forward ": ")
    (replace-match " ")
@@ -85,7 +85,7 @@ by the Opal compiler and return name of property"
      (replace-match "")
      )
    (goto-char (point-min))
-   (re-search-forward "|- ")
+   (re-search-forward "\\(|-\\|==>\\) ")
    (replace-match " ")
    (goto-char (point-min))
    (while (re-search-forward " +" nil t)
@@ -109,7 +109,7 @@ by the Opal compiler and return name of property"
   
   (save-excursion
     (beginning-of-line)
-    (if (not (looking-at ".*\\(PROOF\\|PROP\\)[ \t]+.*:"))
+    (if (not (looking-at ".*\\(PROOF\\|PROP\\|LEMMA\\|GOAL\\)[ \t]+.*:"))
 	(error "must be at line with proof head / proposition")
       )
     )
@@ -125,7 +125,7 @@ by the Opal compiler and return name of property"
 	(progn
 	  (beginning-of-line)
 	  (kill-line 1)
-	  (while (and (not (looking-at "^\\(LAW\\|PROOF\\|FUN\\|DEF\\|PROP\\|JSTF\\|TYPE\\|SORT\\|DATA\\)"))
+	  (while (and (not (looking-at "^\\(LAW\\|PROOF\\|FUN\\|DEF\\|PROP\\|JSTF\\|TYPE\\|SORT\\|DATA\\|LEMMA\\|GOAL\\)"))
 		      (not (looking-at "^[ \t]*$")))
 	    (kill-line 1)
 	    )
@@ -326,7 +326,7 @@ opal-certify-password to hold your GPG password:
 	(setq pname (buffer-substring (match-beginning 2) (match-end 2)))
 	(goto-char (point-min))
 	(if (not (re-search-forward 
-		  (concat "[ \t]*\\(PROP\\|PROOF\\)[ \t]+"
+		  (concat "[ \t]*\\(PROP\\|PROOF\\|LEMMA\\|GOAL\\)[ \t]+"
 			  (regexp-quote pname) "[ \t]*:") nil t))
 	    (error "cannot find associated proofhead `%s' ?!?" pname)
 	  (opal-certify-check-proof)
