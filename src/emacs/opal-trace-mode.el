@@ -79,14 +79,16 @@
 (defconst opal-trace-font-lock-keywords
   (list
       ; '("\\<SORT\\>\\|\\<ALL\\>\\|\\<AND\\>\\|\\<ANDIF\\>\\|\\<AS\\>\\|\\<COMPLETELY\\>\\|\\<DFD\\>\\|\\<ELSE\\>\\|\\<EX\\>\\|\\<FI\\>\\|\\<IF\\>\\|\\<IN\\>\\|\\<LET\\>\\|\\<NOT\\>\\|\\<ONLY\\>\\|\\<ORIF\\>\\|\\<OR\\>\\|\\<OTHERWISE\\>\\|\\<THEN\\>\\|\\<WHERE\\>\\|\\*\\*\\|->\\|\\<\\.\\>\\|\\<:\\>\\|\\<_\\>\\|===\\|<<=\\|==>\\|<=>\\|==\\|\\\\\\\\\\>" (0 'font-lock-function-name-face nil t))
+       '("\\<ALL\\>\\|\\<EX\\>" (0 'font-lock-function-name-face nil t))
+       '("\\<ALL\\>\\|\\<AND\\>\\|\\<DFD\\>\\|\\<EX\\>\\|\\<NOT\\>\\|\\<OR\\>\\|===\\|<<=\\|==>\\|<=>" (0 'font-lock-keyword-face nil t))
    '("^Proofstate.*$" (0 'underline t t))
    '("^final proofstate.*$" (0 'underline t t))
    '("^end of proofstate.*$" (0 'underline t t))
-   '("\\<Subgoal\\>\\|\\<hypotheses\\>" (0 'modeline-buffer-id t t))
+   '("\\<subgoal\\>\\|\\<hypotheses\\>" (0 'modeline-buffer-id t t))
    '("^Trace of .*" (0 'modeline-mousable t t))
 ;   '("^Trace of \\(.*\\)" (1 'font-lock-comment-face t t))
-   '("[a-zA-Z]+[¡¿]" (0 'italic t t))
-   '("§[0-9]+ \\(ALL\\|EX\\)?" (0 'font-lock-reference-face t t))
+   '("[a-z]+[¡]" (0 'italic t t))
+   '("§[0-9]+" (0 'font-lock-reference-face t t))
    '("§[0-9]+ [^¤§]*¤" (0 'secondary-selection t t))   ;; new formula
    '("§[0-9]+ [^ø§]*ø" (0 'font-lock-string-face t t)) ;; original formula
    '("subgoal #.*$" (0 'italic t t)) 
@@ -107,22 +109,42 @@
   "find next proofstate"
   (interactive)
 
-  (if (looking-at "^ *\\(Proofstate\\|final proofstate\\)")
-      (forward-line 1)
+  (let ((a (point)))
+    (if (looking-at "^ *\\(Proofstate\\|final proofstate\\)")
+	(forward-line 1)
+      )
+    (search-forward-regexp "^ *end of proofstate")
+    (if (search-forward-regexp "^ *\\(Proofstate\\|final proofstate\\)" nil t)
+	(progn 
+	  (beginning-of-line)
+	  (opal-trace-back-nonempty)
+	  )
+      (message "already at last proofstate")
+      (ding)
+      (goto-char a)
+      )
     )
-  (search-forward-regexp "^ *end of proofstate")
-  (search-forward-regexp "^ *\\(Proofstate\\|final proofstate\\)")
-  (beginning-of-line)
-  (opal-trace-back-nonempty)
-)
+  )
 
 (defun opal-trace-previous-proofstate ()
   "find next proofstate"
   (interactive)
 
-  (search-backward-regexp "^ *\\(Proofstate\\|final proofstate\\)")
-  (beginning-of-line)
-  (opal-trace-back-nonempty)
+  (if (search-backward-regexp "^ *\\(Proofstate\\|final proofstate\\)" nil t)
+      (progn
+	(beginning-of-line)
+	(opal-trace-back-nonempty)
+	)
+    nil
+    )
+)
+
+(defun opal-trace-last-proofstate ()
+  "goto last proofstate"
+
+  (interactive)
+  (goto-char (point-max))
+  (opal-trace-previous-proofstate)
 )
 
 (defun opal-trace-back-nonempty ()
@@ -149,10 +171,14 @@
   (if (looking-at "^ *Trace")
       (forward-line 1)
     )
-  (search-forward-regexp "^ *Trace")
-  (beginning-of-line)
-  (set-window-start (selected-window) (point))
-)
+  (if (search-forward-regexp "^ *Trace" nil t)
+      (progn
+	(beginning-of-line)
+	(set-window-start (selected-window) (point))
+	)
+    (message "at last trace")
+    )
+  )
 
 (defun opal-trace-previous-trace ()
   "find next trace"
@@ -317,23 +343,26 @@
 
   (interactive)
 
-  (let (fn b pop-up-frames font-lock-maximum-size)
+  (let (fn b pop-up-frames)
     (setq pop-up-frames t)
     (setq fn (concat path "/.trace"))
     (if (not (file-readable-p fn))
 	(progn
 	  (setq b (get-buffer-create ".trace"))
 	  (pop-to-buffer b)
+	  (toggle-read-only 0)
 	  (insert "File " fn " does not exist or is no readable")
 	  )
       (setq b (find-file-noselect fn t))
       (pop-to-buffer b)
+      (toggle-read-only 0)
       (revert-buffer t t t)
       (goto-char (point-max))
       (opal-trace-previous-proofstate)
       (opal-trace-fontify-proofstate)
       )
     (display-buffer b)
+    (toggle-read-only 1)
     (raise-frame (car (frames-of-buffer b)))
     )
   )

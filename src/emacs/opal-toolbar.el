@@ -2,7 +2,7 @@
 ;;; Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.6 1999-05-11 13:53:40 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.7 1999-05-31 08:32:11 kd Exp $
 
 
 (provide 'opal-toolbar)

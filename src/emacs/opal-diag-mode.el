@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.18 1999-05-11 16:05:55 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.19 1999-05-31 08:32:08 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -731,7 +731,8 @@ skipping sub errors."
 	   (get-buffer-window err-buf)
 	   (get-buffer-window src-buf)
 	   (not new))
-      (message "opal-diag-set-windows: nothing to do") ; do nothing if diag-info-buffer exists and all buffers are displayed
+;      (message "opal-diag-set-windows: nothing to do") ; do nothing if diag-info-buffer exists and all buffers are displayed
+      t
     (let (dw nw)
       (switch-to-buffer src-buf)
       (delete-other-windows)
@@ -1334,7 +1335,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.18 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.19 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
