@@ -1,7 +1,7 @@
 ### calling the dosfop-translator itself
 ### and subsequent tools for processing 
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-translation.tcl,v 1.1.1.1 1998-06-16 16:00:44 wg Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-translation.tcl,v 1.2 1999-04-28 15:12:49 wg Exp $
 
 uplevel #0 append dosfopVersions {dosfop-translation\ 1.24\n}
 
@@ -47,9 +47,9 @@ proc dosfop-dvi-intern { filename } {
     set outputFileName [dosfop-output-file-name]
     dosfop-set-switches dvi
     cd $dosfopRoot/DOSFOP
-    set env(TEXINDEX) dosfopTexindex
+    set env(TEXINDEX) $env(DOSFOP)/bin/dosfopTexindex
     set env(TEXINPUTS) $dosfopRoot/DOSFOP:$env(DOSFOP)/tex:$env(TEXINPUTS)
-    set env(MAKEINFO) "dosfopMacroExpander"
+    set env(MAKEINFO) "perl $env(DOSFOP)/bin/dosfopMacroExpander"
     if {[string length $filename] == 0} then {
 	set retCode [catch {exec $dosfop2dvi --verbose $outputFileName >@stdout 2>@stderr } result]
     } else {
@@ -84,7 +84,7 @@ proc dosfop-info-intern { filename } {
     eval [concat [list exec rm] [glob *.info *.info-\[0-9\] *.info-\[0-9\]\[0-9\] ]]
     # now expand macros
     set incldir "$env(DOSFOP)/tex"
-    set retCode [ catch {exec dosfopMacroExpander --verbose -I $dosfopRoot/DOSFOP -I $incldir -E $outputFileNameNew $outputFileName 2>@ stderr } ]
+    set retCode [ catch {exec perl $env(DOSFOP)/bin/dosfopMacroExpander --verbose -I $dosfopRoot/DOSFOP -I $incldir -E $outputFileNameNew $outputFileName 2>@ stderr } ]
     if {$retCode != 0} {
 	catch { exec rm $outputFileNameNew }
 	puts "DOSFOP: macroexpansion returned with errors; translation to info aborted"
@@ -131,7 +131,7 @@ proc dosfop-html-intern { filename } {
     eval [concat [list exec rm] [glob *.html]]
     set incldir "$env(DOSFOP)/tex"
     # now expand macros
-    set retCode [ catch {exec dosfopMacroExpander --verbose -I $dosfopRoot/DOSFOP -I $incldir -E $outputFileNameNew $outputFileName 2>@ stderr } ]
+    set retCode [ catch {exec perl $env(DOSFOP)/bin/dosfopMacroExpander --verbose -I $dosfopRoot/DOSFOP -I $incldir -E $outputFileNameNew $outputFileName 2>@ stderr } ]
     if {$retCode != 0} {
 	catch { exec rm $outputFileNameNew }
 	puts "DOSFOP: macroexpansion returned with errors; translation to HTML aborted"
@@ -141,9 +141,9 @@ proc dosfop-html-intern { filename } {
     dosfop-backup $outputFileName
     dosfop-mv $outputFileNameNew $outputFileName
     if {[string length $filename] == 0} then {
-	set retCode [ catch {exec $dosfop2html -toc_name $toc -I $incldir -split_node -menu -verbose $outputFileName >@stdout 2>@stderr }]
+	set retCode [ catch {exec perl $dosfop2html -toc_name $toc -I $incldir -split_node -menu -verbose $outputFileName >@stdout 2>@stderr }]
     } else {
-      set retCode [ catch {exec $dosfop2html -toc_name $toc -I $incldir -split_node -menu -verbose $outputFileName >& temp } ]
+      set retCode [ catch {exec perl $dosfop2html -toc_name $toc -I $incldir -split_node -menu -verbose $outputFileName >& temp } ]
     }
     exec rm $outputFileName
     exec mv $outputFileName.old $outputFileName
