@@ -6,20 +6,21 @@ default: usage
 
 ## define these variables to match your system
 #.. Path to the source of the distribution
-OCSSRC=/home/uebb/kd/ocs/src
+OCSSRC=/home/opaladm/ocs/src
 #.. Absolute path to the ProjectDefs file in this directory
-OCSPROJECT=/home/uebb/kd/ocs/ProjectDefs
+OCSPROJECT=/home/opaladm/ocs/ProjectDefs
 #.. Path to the place where the distribution is to be installed
-OCSHOME=/home/uebb/kd/ocs-$(VERSION)
+OCSHDIR=ocs-$(VERSION)
+OCSHOME=/usr/local/$(OCSHDIR)
 #.. Description of your system (see also in $OCSSRC/om/specs/Specs.basic)
 #.. use something like `uname -s`-`uname -m`
-OSARCH=sol2-sparc
+OSARCH=linux2-i586
 #.. Path to the GNU sed program
-SED=/usr/gnu/bin/gsed
+SED=/usr/bin/sed
 #.. Path to the GNU tar program
-TAR=/usr/local/bin/gtar
+TAR=/bin/tar
 #.. Path to the GNU zip program
-GZIP=/usr/local/bin/gzip -f 
+GZIP=/usr/bin/gzip -f 
 #.. Non-vital components of the Opal system
 STDPACKAGES =  lib.opal_parserlight lib.opal_readline \
 		lib.opal_tcl lib.opal_tk lib.opal_win \
@@ -29,12 +30,12 @@ STDPACKAGES =  lib.opal_parserlight lib.opal_readline \
 ## don't change anything beyond this line ##############################
 
 #.. Version of the Opal distribution
-VERSION=2.3b.beta
+VERSION=2.3d.beta
 
 #.. name of the distribution archives
 SRCDISTR=ocs-$(VERSION)-src
 SHAREDDISTR=ocs-$(VERSION)-shared
-BINDISTR=ocs-$(VERSION)-bin
+BINDISTR=ocs-$(VERSION)-bin-$(OSARCH)
 
 #.. Packages which are to be installed (in the given order!)
 INITPACKAGES = pkg.om
@@ -58,6 +59,9 @@ pkg.% lib.%:
 	$(OCSADMIN) ocs $@
 	$(OCSADMIN) install $@
 
+pkg.examples:
+	$(OCSADMIN) install $@
+
 boot: $(MINPACKAGES)
 	$(OCSADMIN) install $(MINSRCPACKAGES)
 
@@ -73,9 +77,17 @@ sourcedistr:
 	$(TAR) -X /tmp/ignore1 -X /tmp/ignore2 -cvf $(SRCDISTR).tar ocs/src; \
 	$(TAR) -X /tmp/ignore1 \
 		-X /tmp/ignore2 -rvf $(SRCDISTR).tar ocs/examples; \
-	$(TAR) -X /tmp/ignore1 -rvf $(SRCDISTR).tar ocs/doc; \
+	$(TAR) -X /tmp/ignore1 -rvf $(SRCDISTR).tar ocs/doc ocs/Makefile ocs/ignore1 ocs/ignore2 ; \
 	$(GZIP) $(SRCDISTR).tar; \
 	rm /tmp/ignore1; rm /tmp/ignore2
+
+bindistr:
+	$(TAR) -cvf $(OCSSRC)/../../$(BINDISTR).tar -C $(OCSHOME)/.. $(OCSHDIR)/bin $(OCSHDIR)/dosfop $(OCSHDIR)/packages $(OCSHDIR)/lib ; \
+	$(GZIP) $(OCSSRC)/../../$(BINDISTR).tar
+
+shareddistr:
+	$(TAR) -cvf $(OCSSRC)/../../$(SHAREDDISTR).tar -C $(OCSHOME)/.. $(OCSHDIR)/VERSION $(OCSHDIR)/doc $(OCSHDIR)/etc $(OCSHDIR)/examples $(OCSHDIR)/man ; \
+	$(GZIP) $(OCSSRC)/../../$(SHAREDDISTR).tar
 
 usage:
 	@echo "usage: first edit the variables at the beginning of Makefile"
