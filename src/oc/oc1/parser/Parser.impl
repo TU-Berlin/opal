@@ -4,7 +4,7 @@ IMPLEMENTATION Parser
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-02-25 09:09:54 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-11 15:02:51 $ ($Revision: 1.3 $)
 
 -- author:      cg
 -- purpose:     parsing
@@ -36,7 +36,7 @@ IMPORT  -- admin
         Verbose         COMPLETELY
         Pos             ONLY pos firstPos `
         Error           ONLY errors err ok errKind + error warning
-        Options         COMPLETELY
+        Options         ONLY options cop? sign? impl? extp? intp? myStruct
         OcExit          ONLY languageError
 IMPORT  -- lib
         Nat             COMPLETELY
@@ -170,6 +170,9 @@ DEF pBody(Opts)((Tok::One)::RTS,SoFar,Ok?) ==
     IN Parse & 
        (\\Res. LET More == modify(SoFar,2nd(Res),modStructBody)
                IN pBody(Opts)(RTS,More,1st(Res) and Ok?))
+
+FUN defSign? : options -> bool
+DEF defSign?(o) == cop?("defSign", o)
 
 FUN parsSigBody : options**token -> seq[token] -> com[pair[bool,pRes]]
 DEF parsSigBody(Opts,Tok)(<>) == 
@@ -422,9 +425,7 @@ DEF pDef(Opts)(TS) ==
   verb(Opts,definition,"parsing DEF " ++ `(lexem(IdeTok)) ++ " ...") ;
   (\\ _ . 
    LET  (Mix?,MixLhs?)  == IF mix? THEN (mkMix,mkMix)
-                           IF (rassoc? or lassoc?) or infix? 
-                           THEN (mkRhsAssoc,mkLhsNoMix)
-                           ELSE (mkRhsNoMix,mkLhsNoMix) FI
+                           ELSE (mkRhsAssoc,mkLhsNoMix) FI
         DefP   == (pDef(MixLhs?,Mix?)) @ TS
         Def    == PRINT(traceParse?,
                         \\ . "Result of Definition " ++ `(DefP), DefP)
@@ -468,8 +469,7 @@ DEF pLhs(M)(FtSet) == parser(\\Arg. \\ .
 FUN pLhsExprS : modifier -> set[terminal,<] -> parser 
 DEF pLhsExprS (M)(F) ==
     LET InnerMod == IF mix? THEN mkMix
-                    IF (rassoc? or lassoc?) or infix? THEN mkInnerLhsAssoc
-                    ELSE mkInnerLhsNoMix                      FI
+                    ELSE mkInnerLhsAssoc FI
     IN  (((pLhsExpr(M)(F)) 
          <|> ((isA?(openBr) <&> pTuple(pLhs(InnerMod)(inside)))(modTuplePos)))
          + )(modExpr) 
@@ -555,20 +555,3 @@ DEF pProof(Opts)(T AS Tok::TS) ==
     succeed((err(Proof) ok?) & Proof)
     )
 )
-    
-
-/* %-
--- %Warnungen wg. fehlender Spezifikationen erzeugen - verlegt nach GlobSigEval
-FUN doSpecs: options ** struct -> com[bool]
-DEF doSpecs(Opts, Struct) ==
-  IF pchecker? THEN
-    errors(Opts, 
-           (+, ok) / 
-           ((\\pN : partName. err(warning, "no specification for " ++ `(pN), pos(pN))) *
-            ((\\pN. kind(pN) op?) | partName? | signature(Struct)))
-          )
-  ELSE
-    succeed(true)
-  FI
-  
-*/
