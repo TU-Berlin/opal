@@ -1,12 +1,12 @@
 -- LAST EDIT: Mon Jun 28 02:07:39 1993 by Andreas Fett (paris!fetti) 
 -- ============================================================================
--- Autor:	af
--- Projekt:	OPAL1-Compiler
--- Changes:	af, May 14 1993: adapted to lazy candidate sets
---		af, Jun 15 1993: set known types of locals
---        	af, Jun 18 1993: added typing for avoiding bug oc1.34
---		af, Jun 21 1993: removed unnecessary typing
---		af, Jun 27 1993: added handling of mix expressions
+-- Autor:       af
+-- Projekt:     OPAL1-Compiler
+-- Changes:     af, May 14 1993: adapted to lazy candidate sets
+--              af, Jun 15 1993: set known types of locals
+--              af, Jun 18 1993: added typing for avoiding bug oc1.34
+--              af, Jun 21 1993: removed unnecessary typing
+--              af, Jun 27 1993: added handling of mix expressions
 -- ============================================================================
 
 IMPLEMENTATION FunDefAnalysis
@@ -14,70 +14,79 @@ IMPLEMENTATION FunDefAnalysis
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-02-25 09:09:18 $ ($Revision: 1.2 $)
 
-IMPORT	Nat		COMPLETELY
-	Pair		COMPLETELY
-	Triple		COMPLETELY
-	Seq		COMPLETELY
-	SeqReduce	COMPLETELY
-	SeqMap		COMPLETELY
-	SeqCompare	ONLY eq?
+IMPORT  Nat             COMPLETELY
+        Pair            COMPLETELY
+        Triple          COMPLETELY
+        Seq             COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqCompare      ONLY eq?
 
-	Pos		ONLY pos `
-	Error		ONLY err ok + ok? errKind error
-			     string
+        Pos             ONLY pos `
+        Error           ONLY err ok + ok? errKind error
+                             string
 
-	Rep		ONLY rep `
+        Rep             ONLY rep `
 
-	PartName	ONLY partName:SORT
-	Fct[name]	ONLY fct
-	Impl[partName]	COMPLETELY
-	Impl[name]	COMPLETELY
+        PartName        ONLY partName:SORT
+        Fct[name]       ONLY fct
+        Impl[partName]  COMPLETELY
+        Impl[name]      COMPLETELY
 
-	AnalyzedGlobSig	ONLY globSig name global? internal? local
-				eqBase var origInst
-				` :globSig**level->name->denotation
-				level standard
-			     impl:SORT defImpl impl:globSig**name->impl
-				none parameter canonical def
-			     locSig:SORT +
+        AnalyzedGlobSig ONLY globSig name global? internal? local
+                                eqBase var origInst
+                                ` :globSig**level->name->denotation
+                                level standard
+                             impl:SORT defImpl impl:globSig**name->impl
+                                none parameter canonical def
+                             locSig:SORT +
+                             `
 
-	RepSet		ONLY repSet {} - * toSeq
-	Knowledge	ONLY knowl empty defAsLocal defAsLocalOrConstr locals
-	Substitution	ONLY subst unify:globSig
-			                 ->fct[name]**fct[name]**subst**nat
-			                 ->seq[subst]**nat
-	Reason		ONLY reason wronglyTypedImplementation
-	Candidates	ONLY cands eval none?:cands->bool errors
-			     combine split bestOf
-			     mode eager 
-	DataDefAnalysis	ONLY parameterImplementation duplicateImplementation
-	TypeIndepExprAnalysis	COMPLETELY
-	TypeDepExprAnalysis	COMPLETELY
-	LhsAnalysis		COMPLETELY
+        RepSet          ONLY repSet {} - * toSeq
+        Knowledge       ONLY knowl empty defAsLocal defAsLocalOrConstr locals
+        Substitution    ONLY subst unify:globSig
+                                         ->fct[name]**fct[name]**subst**nat
+                                         ->seq[subst]**nat
+        Reason          ONLY reason wronglyTypedImplementation
+        Candidates      ONLY cands eval none?:cands->bool errors
+                             combine split bestOf
+                             mode eager 
+        DataDefAnalysis ONLY parameterImplementation duplicateImplementation
+        TypeIndepExprAnalysis   COMPLETELY
+        TypeDepExprAnalysis     COMPLETELY
+        LhsAnalysis             COMPLETELY
+        DEBUG COMPLETELY
 
 DEF target(eq(left,right,pos)) == target(left)
 
 DEF analyzeFunDef(eq,sig) ==
   LET (rearrangedEq,knowl,nextLocal,usedReps,scopeErr) == typeIndepAna(eq,sig)
-  IN IF ~(scopeErr ok?) THEN (sig,scopeErr)
-     ELSE LET (cands,freeLocal) == typeDepAna(rearrangedEq,sig,knowl,nextLocal)
-          IN IF cands none? THEN (sig,scopeErr+errors(cands))
-             ELSE LET idents == identFunctions(sig)(cands)
-                      (target,newEq,extSig,partSig,localOffset,ambigErr) ==
-				substitute(rearrangedEq,idents,sig,usedReps)
-                  IN IF ~(ambigErr ok?) THEN (extSig,scopeErr+ambigErr)
-                     ELSE LET (newSig,implErr) ==
-				include(extSig,target,newEq,partSig,
+  IN 
+  IF ~(scopeErr ok?) THEN (sig,scopeErr)
+  ELSE 
+    LET (cands,freeLocal) == typeDepAna(rearrangedEq,sig,knowl,nextLocal)
+    IN 
+    IF cands none? THEN (sig,scopeErr+errors(cands))
+    ELSE 
+      LET idents == identFunctions(sig)(cands)
+          (target0,newEq,extSig,partSig,localOffset,ambigErr) ==
+                                substitute(rearrangedEq,idents,sig,usedReps)
+          target == PRINT(FIELD?[bool]("-ztraceAnalyzeFunDef"),
+                          \\ . `(sig, standard)(target0), target0)
+      IN 
+      IF ~(ambigErr ok?) THEN (extSig,scopeErr+ambigErr)
+      ELSE 
+        LET (newSig,implErr) == include(extSig,target,newEq,partSig,
                                         freeLocal+localOffset)
-                          IN (newSig,(scopeErr+ambigErr)+implErr)
-                     FI
-             FI
-     FI
-
+        IN (newSig,(scopeErr+ambigErr)+implErr)
+      FI
+    FI
+  FI
+  
 FUN typeIndepAna: eq[partName]**globSig ->
-					eq[partName]**knowl**nat**repSet**err
+                                        eq[partName]**knowl**nat**repSet**err
 -- liefert Gleichung mit sortierten Lets,
 -- Wissen ueber die Verwendung von Bezeichnern
 --   sowie kleinste, noch nicht fuer lokale Namen verwendete Nummer,
@@ -86,7 +95,7 @@ FUN typeIndepAna: eq[partName]**globSig ->
 
 DEF typeIndepAna(eq(left,right,pos),sig) ==
   LET (rearrangedRight,ignoredLets,innerVars,usedReps,scopeErrHintsRight) ==
-							rearrange(right,{})
+                                                        rearrange(right,{})
       (_,patternVars,pattVarOrConstrs,scopeErrLeft) == idUses(left,sig)
       newPattVarOrConstrs == pattVarOrConstrs-innerVars
       scopeErrEq == ((\\rpp,e.
@@ -104,19 +113,19 @@ FUN typeDepAna: eq[partName]**globSig**knowl**nat -> cands**nat
 DEF typeDepAna(eq(left,right,pos),sig,knowl,nextLocal) ==
   LET (leftCands,nextVar) == analyzeLhs(left,sig,knowl,0)
       (leftCands2,typedKnowl,nextVar2) ==
-		setKnownFcts(sig,locals(knowl),leftCands,knowl,nextVar)
+                setKnownFcts(sig,locals(knowl),leftCands,knowl,nextVar)
       (rightCands,freeLocal,interVar) ==
-				analyze(right,sig,typedKnowl,nextLocal,nextVar2)
+                                analyze(right,sig,typedKnowl,nextLocal,nextVar2)
       combFct == \\leftFct,rightFct,subst,var.
                    LET (newSubsts,free) ==
-					unify(sig)(leftFct,rightFct,subst,var)
+                                        unify(sig)(leftFct,rightFct,subst,var)
                    IN IF newSubsts <>? THEN (leftFct,subst%,var,
                                              wronglyTypedImplementation
-						     (leftFct,rightFct,subst)%)
+                                                     (leftFct,rightFct,subst)%)
                       IF newSubsts ::? THEN (leftFct,newSubsts,free,<>)
                       FI
       (cands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
-							(leftCands2,rightCands)
+                                                        (leftCands2,rightCands)
       (finalCands,_) == eval(sig,freeVar)(cands)
   IN (finalCands,freeLocal)
 
@@ -145,7 +154,7 @@ DEF eq(sig)(name1,name2) ==
   FI
 
 FUN substitute: eq[partName]**cands**globSig**repSet ->
-				name**eq[name]**globSig**locSig**nat**err
+                                name**eq[name]**globSig**locSig**nat**err
 -- wendet die Identifizierungsfunktionen an, liefert
 -- - den Namen der definierten Funktion
 -- - die eingesetzte Gleichung (mit normalisierten Lets)
@@ -157,9 +166,9 @@ FUN substitute: eq[partName]**cands**globSig**repSet ->
 DEF substitute(eq(left,right,pos),cands,sig,usedReps) ==
   LET (leftCands,rightCands) == split(cands)
       (target,newLeft,extSig,leftLocSig,localOffset,leftAmbigErr) ==
-				substituteLhs(left,leftCands,sig,usedReps)
+                                substituteLhs(left,leftCands,sig,usedReps)
       (newRight,newSig,rightLocSig,rightAmbigErr) ==
-			substitute(right,rightCands,extSig,localOffset)
+                        substitute(right,rightCands,extSig,localOffset)
   IN (target,eq(newLeft,newRight,pos),newSig,
       leftLocSig+rightLocSig,localOffset,leftAmbigErr+rightAmbigErr)
 

@@ -86,11 +86,13 @@
 ;   '("^Trace of \\(.*\\)" (1 'font-lock-comment-face t t))
    '("[a-zA-Z]+[¡¿]" (0 'italic t t))
    '("§[0-9]+" (0 'font-lock-reference-face t t))
-   '("§[0-9]+ [^¤§]*¤" (0 'highlight t t))
+   '("§[0-9]+ [^¤§]*¤" (0 'secondary-selection t t))
    '("§[0-9]+ [^ø§]*ø" (0 'font-lock-string-face t t))
    '("subgoal #.*$" (0 'italic t t)) 
    '("finished subgoal, 0.*$" (0 'italic t t))
    '("finished subgoal, [1-9].*$" (0 'font-lock-comment-face t t))   
+   '("FAILURE PATH" (0 'font-lock-comment-face t t))   
+   '("bt #[0-9].*$" (0 'font-lock-comment-face t t))   
    )
   )
 
@@ -201,8 +203,51 @@
   "reload proof trace"
 
   (interactive)
-
+  (let ((pstate (opal-trace-current-proofstate))
+	(ptrace (opal-trace-current-trace)))
   (revert-buffer t t t)
+  (beginning-of-buffer)
+  (if (search-forward ptrace nil t)
+      (if (search-forward pstate nil t)
+	  (progn
+	    (beginning-of-line)
+	    (opal-trace-back-nonempty)
+	    )
+	(message "Could not find %s" pstate)
+	)
+    (message "Could not find %s" ptrace)
+    )
+  )
+  )
+
+(defun opal-trace-current-proofstate ()
+  "return current place"
+
+  (save-excursion
+    (if (looking-at "^\\Proofstate")
+	(opal-current-line)
+      (search-backward-regexp "^\\Proofstate")
+      (opal-current-line)
+      )
+    )
+  )
+
+(defun opal-trace-current-trace ()
+  "return current trace"
+  (save-excursion
+    (if (looking-at "^\\Trace")
+	(opal-current-line)
+      (search-backward-regexp "^\\Trace")
+      (opal-current-line)
+      )
+    )
+  )
+
+(defun opal-trace-location ()
+  "show current location in proof trace"
+  (interactive)
+  (message "%s" (concat (opal-trace-current-proofstate)
+			(opal-trace-current-trace)))
 )
 
 (defun opal-trace-next-subgoal ()

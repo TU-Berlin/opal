@@ -3,7 +3,7 @@ IMPLEMENTATION Scanner
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-10-12 18:28:48 $ ($Revision: 1.2 $)
+-- % $Date: 1999-02-25 09:09:56 $ ($Revision: 1.3 $)
 
 /* %@table @asis
 @item author: 
@@ -21,7 +21,7 @@ IMPORT
         Options                 ONLY options cop? myFile wildcard? section?
                                      underline?
         Error                   ONLY err errKind  + error ok errors warning  ok?
-        Pos                     ONLY pos firstPos nextPos nextLine
+        Pos                     ONLY pos firstPos nextPos nextLine initPos + +!
         OcExit                  ONLY exit languageError
         OcSetup                 COMPLETELY
         OcStream                COMPLETELY
@@ -110,7 +110,7 @@ DATA ctx ==
                  esc? : bool, dotKW: bool)
 
 FUN initArg : sc
-DEF initArg == sc(initialTab,<>,firstPos,ok,none(false))
+DEF initArg == sc(initialTab,<>,initPos,ok,none(false))
 
 FUN clearEsc setEsc incO incC: ctx -> ctx
 DEF clearEsc(docu(N, O, C, _, d)) == docu(N, O, C, false, d)
@@ -188,7 +188,7 @@ DEF scan(raw(<>, _),RT,TS,P,E,C) ==
             (RT, TS, sErr(dNotC,op(C)),none(dotKW(C)))
           IF C ide? THEN
             LET Ide == revert(sofar(C))
-                (NRT2, T) == classify(op(C), Ide, RT, dotKW(C))
+                (NRT2, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
             IN 
             (NRT2, T :: TS, ok, none(dotT?(T, dotKW(C))))
           IF C docu? THEN
@@ -207,7 +207,7 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
           IF C deno? THEN (RT, TS, sErr(dNotC,op(C)),none(dot?))
           IF C ide? THEN
             LET Ide == revert(sofar(C))
-                (NRT2, T) == classify(op(C), Ide, RT, dotKW(C))
+                (NRT2, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
             IN 
             (NRT2, T :: TS, ok, none(dotT?(T, dotKW(C))))
           ELSE (RT, TS, ok, C)
@@ -227,13 +227,13 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
                  ide(alphanum?, Ch :: sofar(C), op(C), dot?))
           ELSE -- identifier finished
             LET Ide == revert(sofar(C))
-                (NRT, T) == classify(op(C), Ide, RT, dotKW(C))
+                (NRT, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
             IN -- must use oriignal parameters!
             scan(CS0, NRT, T :: TS, P, E0, none(dotT?(T, dot?)))
           FI
         ELSE -- wrong charset, no underscore -> finished
           LET Ide == revert(sofar(C))
-              (NRT, T) == classify(op(C), Ide, RT, dotKW(C))
+              (NRT, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
           IN -- must use orignal parameters!
           scan(CS0, NRT, T :: TS, P, E0, none(dotT?(T, dot?)))
         FI
@@ -341,7 +341,7 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
         IF CS <>? THEN -- end of deno
           LET (NRT,Rp) == insert(RT,`(revert(sf(C))))
           IN 
-          scan(CS,NRT,token(denotation,Rp,op(C))::TS, NP,E,none(dot?))
+          scan(CS,NRT,token(denotation,Rp,op(C)+!P)::TS, NP,E,none(dot?))
         ELSE
           LET (Ch2, chE) == ftUni(NP, CS)
           IN
@@ -351,7 +351,7 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
           ELSE -- end of denotation
             LET (NRT,Rp) == insert(RT,`(revert(sf(C))))
             IN 
-            scan(CS,NRT,token(denotation,Rp,op(C))::TS, NP,E,none(dot?))
+            scan(CS,NRT,token(denotation,Rp,op(C)+!P)::TS, NP,E,none(dot?))
           FI       
         FI
       OTHERWISE

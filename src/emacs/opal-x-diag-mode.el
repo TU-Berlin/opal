@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-x-diag-mode.el,v 1.4 1998-11-19 10:45:54 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-x-diag-mode.el,v 1.5 1999-02-25 09:08:23 kd Exp $
 
 ;;; This file is written for XEmacs and may not work with other Emacsen.
 ;;; Use the original opal-diag-mode.el in this case.
@@ -299,7 +299,9 @@ Signal error, if not. Don't signal error if noerror is t"
   (interactive)
   (if opal-diag-buffer
       (progn
-	(set-buffer opal-diag-buffer)
+	(if (buffer-live-p opal-diag-buffer)
+	    (set-buffer opal-diag-buffer)
+	  )
 	(delete-other-windows)
 	(cond (opal-diag-hide (switch-to-buffer opal-diag-hide))
 	      (opal-diag-source (switch-to-buffer opal-diag-source))
@@ -556,6 +558,18 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   "<\\([0-9]+\\),\\([0-9]+\\)>\\(ERROR\\|WARNING\\|HINT\\)"
   "regexp to match ocs warnings")
 
+(defconst opal-diag-parse-ocs-unknown-regexp 
+  "<unknown>\\(ERROR\\|WARNING\\|HINT\\)"
+  "regexp to match ocs warnings")
+
+(defconst opal-diag-parse-ocs-line-region-regexp 
+  "<\\([0-9]+\\),\\([0-9]+\\)-\\([0-9]+\\)>\\(ERROR\\|WARNING\\|HINT\\)"
+  "regexp to match ocs line region warnings")
+
+(defconst opal-diag-parse-ocs-region-regexp 
+  "<\\([0-9]+\\),\\([0-9]+\\)-\\([0-9]+\\),\\([0-9]+\\)>\\(ERROR\\|WARNING\\|HINT\\)"
+  "regexp to match ocs region warnings")
+
 (defconst opal-diag-parse-oasys-regexp
   "\\(ERROR\\|WARNING\\|HINT\\) \\[\\(.*\\) at \\([0-9]+\\)\\.\\([0-9]+\\)"
   "regexp to match oasys warnings")
@@ -601,9 +615,16 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
       (while (not end-reached)
 	(beginning-of-line)
 	(setq err-start (point))
+	(setq eLine nil)
 	(save-excursion (forward-line) (setq err-end (point)))
 	(cond
 	 ((looking-at opal-diag-parse-ocs-regexp) (opal-diag-handle-ocs))
+	 ((looking-at opal-diag-parse-ocs-unknown-regexp)
+	  (opal-diag-handle-ocs-unknown))
+	 ((looking-at opal-diag-parse-ocs-line-region-regexp)
+	  (opal-diag-handle-ocs-line-region))
+	 ((looking-at opal-diag-parse-ocs-region-regexp)
+	  (opal-diag-handle-ocs-region))
 	 ((looking-at opal-diag-parse-oasys-regexp) (opal-diag-handle-oasys))
 	 ((looking-at opal-diag-parse-oasys-unknown-regexp)
 	  (opal-diag-handle-oasys-unknown))
@@ -663,6 +684,38 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   (setq line (string-to-int (opal-diag-match 1)))
   (setq col (string-to-int (opal-diag-match 2)))
   (setq type (opal-diag-match 3))
+  (setq true-error t)
+)
+
+(defun opal-diag-handle-ocs-unknown ()
+
+  (setq src curr-src-buf)
+  (setq line 0)
+  (setq col 1)
+  (setq type (opal-diag-match 1))
+  (setq is-suberror nil)
+  (setq true-error t)
+)
+
+(defun opal-diag-handle-ocs-line-region ()
+
+  (setq src curr-src-buf)
+  (setq line (string-to-int (opal-diag-match 1)))
+  (setq col (string-to-int (opal-diag-match 2)))
+  (setq eLine line)
+  (setq eCol (string-to-int (opal-diag-match 3)))
+  (setq type (opal-diag-match 4))
+  (setq true-error t)
+)
+
+(defun opal-diag-handle-ocs-region ()
+
+  (setq src curr-src-buf)
+  (setq line (string-to-int (opal-diag-match 1)))
+  (setq col (string-to-int (opal-diag-match 2)))
+  (setq eLine (string-to-int (opal-diag-match 3)))
+  (setq eCol (string-to-int (opal-diag-match 4)))
+  (setq type (opal-diag-match 5))
   (setq true-error t)
 )
 
@@ -760,10 +813,17 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 	(move-to-column col)
 	(backward-char)
 	(setq src-start (point))
-	(forward-char 1)
-	(setq src-end (point))
-	(if (equal 'suberror (opal-diag-parse-type type))
-	    (setq src-end (+ src-end 1)))
+	(if eLine
+	    (progn
+	      (goto-line eLine)
+	      (move-to-column eCol)
+	      (setq src-end (point))
+	      )
+	  (forward-char 1)
+	  (setq src-end (point))
+	  (if (equal 'suberror (opal-diag-parse-type type))
+	      (setq src-end (+ src-end 1)))
+	  )
 	)
     )
   )
@@ -877,7 +937,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.4 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.5 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (err-ext)

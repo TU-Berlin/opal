@@ -17,7 +17,7 @@ IMPLEMENTATION LhsAnalysis
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-02-25 09:09:19 $ ($Revision: 1.2 $)
 
 IMPORT  Nat             COMPLETELY
         Pair            COMPLETELY
@@ -28,23 +28,25 @@ IMPORT  Nat             COMPLETELY
         SeqMap          COMPLETELY
         SeqFilter       ONLY |
         SeqZip          COMPLETELY
+        SeqConv ONLY `
 
         Pos             ONLY pos `
         Error           ONLY err ok + ok? errKind error string
 
         Rep             ONLY rep `
 
-        PartName        ONLY partName:SORT ide paramS pos structIde
-                                partName?
+        PartName        ONLY partName:SORT ide paramS pos structIde kind
+                                partName? `  kind:SORT
         Fct[partName]   COMPLETELY
         Fct[name]       COMPLETELY
         Impl[partName]  COMPLETELY
         Impl[name]      COMPLETELY
 
-        AnalyzedGlobSig ONLY globSig name fct:globSig**name->fct[name]
+        AnalyzedGlobSig ONLY globSig name fct:globSig**name->fct[name] level
                              locSig:SORT {} + impl:SORT def? freeLocal
                                 impl:globSig**name->impl
                              actStructParams isFreeConstr matchingOps
+                             ` level standard
 
         RepSet          ONLY repSet {} % + - *
         Knowledge       ONLY knowl
@@ -60,6 +62,8 @@ IMPORT  Nat             COMPLETELY
                                 selectPatternOp matchingFcts
                                 selectDefinitionTarget
         TypeDepExprAnalysis ONLY analyzeTyping analyzeMixS substituteMix
+        DEBUG COMPLETELY
+        Denotation ONLY ++
 
 -- ----------------------------------------------------------------------------
 
@@ -230,14 +234,21 @@ FUN substituteLhs: expr[partName]**cands**globSig**repSet ->
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
 DEF analyzeLhs(val(pname,pos),sig,knowl,nextVar) ==
-  LET (idNames,errors,unusedVar) == matchingInternalOp(pname,sig,nextVar)
+  LET (idNames0,errors,unusedVar) == matchingInternalOp(pname,sig,nextVar)
+      idNames == PRINT(FIELD?[bool]("-ztraceAnalyzeFunDef"),
+                       \\ . "analyzeLhs/pname:" ++ `(pname) ++
+                            " idNames:" ++ `(`(sig, standard))(name * idNames0),
+                       idNames0)
   IN IF errors ok? THEN (single(idNames,pos),unusedVar)
                    ELSE (none(errors),unusedVar)
      FI
 
 DEF substituteLhs(val(pname,pos),cands,sig,usedReps) ==
-  LET (name,ambiguousErr) ==
+  LET (name0,ambiguousErr) ==
                         selectDefinitionTarget(extract(sig)(cands),sig,pos)
+      name == PRINT(FIELD?[bool]("-ztraceAnalyzeFunDef"),
+                    \\ . "substituteLhs/name:" ++ `(sig, standard)(name0) ++
+                         " pname:" ++ `(pname), name0)
       formerImpl == impl(sig,name)
       offset == IF formerImpl def? THEN freeLocal(formerImpl)
                 ELSE succ(actStructParams(sig)#)

@@ -22,7 +22,7 @@ IMPLEMENTATION NameAnalysis
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-02-25 09:09:20 $ ($Revision: 1.2 $)
 
 IMPORT  Denotation      ONLY ++
         Nat             COMPLETELY
@@ -46,7 +46,7 @@ IMPORT  Denotation      ONLY ++
 
         MySeqFun2       ONLY cmp
 
-        Rep             ONLY rep = ` generated?
+        Rep             ONLY rep = ` generated? lexem
 
         PartName        COMPLETELY
         Fct[partName]   COMPLETELY
@@ -77,6 +77,8 @@ IMPORT  Denotation      ONLY ++
         Reason          COMPLETELY
 
         DEBUG           COMPLETELY              -- for debugging
+        OptionConv ONLY `
+        SeqConv ONLY `
 
 -- ============================================================================
 -- Analyse im Kontext lokaler Signaturen
@@ -92,6 +94,17 @@ DATA anaName == op     (ide:rep,
                 unknown(ide:rep,
                         structIde:option[rep],
                         pars:seq[name])
+
+FUN ` : globSig -> anaName -> denotation
+DEF `(sig)(aN) == 
+  (IF op?(aN) THEN "Op("
+   IF sort?(aN) THEN "Sort("
+   IF unknown?(aN) THEN "Unknown("
+   FI) ++
+  ("ide:" ++ lexem(ide(aN))) ++
+  (",structIde:" ++ `(lexem)(structIde(aN))) ++
+  (",pars:" ++ `(`(sig, standard))(pars(aN))) ++
+  ")"
 
 -- ----------------------------------------------------------------------------
 
@@ -183,7 +196,11 @@ DEF matchingInternalOp(pname,sig,firstVar) ==
                                          IF kind(pname) none? THEN nil
                                          ELSE avail(fct(aname))
                                          FI)
-                        ns == (\\n. ~(impl(sig,n) parameter?)) | nsWithParams
+                        ns0 == (\\n. ~(impl(sig,n) parameter?)) | nsWithParams
+                        ns == PRINT(FIELD?[bool]("-ztraceAnalyzeFunDef"),
+                                    "ns in mIntOp:" ++
+                                    `(`(sig, standard))(ns0),
+                                    ns0)
                     IN IF ns <>? THEN namesNerr
                        IF ns ::? THEN
                                  &(((\\n.idName(n,ide(aname),fct(sig,n),empty))
@@ -465,22 +482,22 @@ DEF combinations(par1S,parRS) ==
 FUN traceAnaNames?: bool
 DEF traceAnaNames? == FIELD?[bool]("-ztraceAnaNames")
 
-FUN ` : seq[anaName] -> denotation
-DEF anas` == `(anas#) ++ " possible components "
+FUN ` : globSig -> seq[anaName] -> denotation
+DEF `(sig)(anas) == `(anas#) ++ " possible components: " ++ `(`(sig))(anas)
 
-FUN printComponents: seq[anaName] -> () -> denotation
-DEF printComponents(anas)() == `(anas) ++ "found"
+FUN printComponents: globSig ** seq[anaName] -> () -> denotation
+DEF printComponents(sig, anas)() == `(sig)(anas) ++ "found"
 
-FUN traceComponents: seq[anaName]**err**nat -> seq[anaName]**err**nat
-DEF traceComponents(anas,err,free) ==
-  (PRINT(traceAnaNames?,printComponents(anas),anas),err,free)
+FUN traceComponents: globSig -> seq[anaName]**err**nat -> seq[anaName]**err**nat
+DEF traceComponents(sig)(anas,err,free) ==
+  (PRINT(traceAnaNames?,printComponents(sig,anas),anas),err,free)
 
 -- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
 
 FUN components: partName**globSig**nat -> seq[anaName]**err**nat
 
 DEF components(pname,sig,firstVar) ==
-  traceComponents(yieldComponents(pname,sig,firstVar))
+  traceComponents(sig)(yieldComponents(pname,sig,firstVar))
 
 FUN yieldComponents: partName**globSig**nat -> seq[anaName]**err**nat
 

@@ -1,10 +1,10 @@
 /* %-
 LAST EDIT: Tue May 18 18:31:12 1993 by OPAL compiler (athene!opal) 
 ============================================================================
-Autor:	mija (urspruenglich von Johannes Labisch)
-Projekt:	OPAL1-Compiler
-Anmerkung:	Zur Effizienzsteigerung koennten die Zeile und Spalte zu einem
-	nat zusammengefasst werden.
+Autor:  mija (urspruenglich von Johannes Labisch)
+Projekt:        OPAL1-Compiler
+Anmerkung:      Zur Effizienzsteigerung koennten die Zeile und Spalte zu einem
+        nat zusammengefasst werden.
 ============================================================================
 */
 
@@ -13,52 +13,149 @@ IMPLEMENTATION Pos
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:35 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-02-25 09:12:44 $ ($Revision: 1.2 $)
 
-IMPORT	Nat		ONLY	0   1 succ >  <	>=  <=	=   |=	+   -	% 8
-	NatConv		ONLY	`
-	Char		ONLY	tab	newline   = 
-	Denotation	ONLY	++ 
-	
+IMPORT  Nat ONLY 0 1 succ >  < >=  <=  =   |=  +   -   % 8 % 100000 min max
+        NatConv         ONLY    `
+        Char            ONLY    tab     newline   = 
+        Denotation      ONLY    ++ 
+       SeqReduce ONLY /
 
+DATA pos == unknown
+            pos(part: part, lin: nat, col: nat)
+            region(part: part, lin: nat, col: nat, eLin: nat, eCol: nat)
 
-DATA pos	== pos(lin:nat,col:nat)
+DATA part == signature implementation unknownP
 
--- %$Konstruktionsfunktionen$
+FUN max: part ** part -> part
+DEF max(unknownP, P) == P
+DEF max(P, unknownP) == P
+DEF max(unknownP, unknownP) == unknownP
+DEF max(P1, _) == P1 -- %to make it total
 
-DEF firstPos == pos(1,1)
+DEF initPos == pos(unknownP, 1, 1)
+DEF mkReg == region
+DEF mkPos(l, c) == pos(unknownP, l, c)
+DEF mkPosS(l, c) == pos(signature, l, c)
 
-DEF nextPos(pos(lin,col),c) ==
-    IF c = tab THEN pos(lin,col+(tabWidth-(col % tabWidth)))
-    IF c = newline THEN pos(succ(lin),1)
-    ELSE pos(lin,succ(col))
+DEF nextPos(pos(p, lin,col),c) ==
+    IF c = tab THEN pos(p, lin,col+(tabWidth-(col % tabWidth)))
+    IF c = newline THEN pos(p, succ(lin),1)
+    ELSE pos(p, lin,succ(col))
     FI
+DEF nextPos(_else, _) == _else
 
-DEF nextLine(pos(lin,_)) == pos(succ(lin),1)
+DEF nextLine(pos(P, lin,_)) == pos(P, succ(lin),1)
+DEF nextLine(_else) == _else
 
 FUN tabWidth : nat
 DEF tabWidth == 8
 
-DEF mkPos == pos
+DEF extend(unknown, _) == unknown
+DEF extend(pos(P, l, c), e) == region(P, l, c, l, c + e)
+DEF extend(region(P, l, c, eL, eC), e) == region(P, l, c, eL, eC + e)
 
+DEF unknown + unknown == unknown
+DEF unknown + P == P
+DEF P + unknown == P
+DEF pos(P1, l1, c1) + pos(P2, l2, c2) == 
+  IF l1 = l2 and c1 = c2 THEN
+    pos(max(P1, P2), l1, c1)
+  ELSE
+    region(max(P1, P2), min(l1, l2), min(c1, c2), max(l1, l2), max(c1, c2))
+  FI
+DEF pos(P1, l1, c1) + region(P2, l2, c2, eL2, eC2) ==
+  region(max(P1, P2), min(l1, l2), min(c1, c2), max(l1, eL2), max(c1, eC2))
+DEF region(P1, l1, c1, eL1, eC1) + region(P2, l2, c2, eL2, eC2) ==
+  region(max(P1, P2), min(l1, c1, l2, c2), max(eL1, eC1, eL2, eC2))
+DEF region(P1, l1, c1, eL1, eC1) + pos(P2, l2, c2) ==
+  region(max(P1, P2), min(l1, l2), min(c1, c2), max(eL1, l2), max(eC1, c2))
+
+DEF s +/ == (+, unknown) / s
+
+DEF P1 +! pos(p2, l2, succ(c2)) == P1 + pos(p2, l2, c2)
+DEF P1 +! P2 == P1 + P2
+
+-- %$Konstruktionsfunktionen$
+
+DEF firstPos == unknown
+
+DEF signature?(P) == IF P unknown? THEN false ELSE part(P) signature? FI
+DEF implementation?(P) ==
+  IF P unknown? THEN false ELSE part(P) implementation? FI
 
 -- %$Relationen$
 
-DEF pos(l1,c1) > pos(l2,c2) ==
-    IF l1 > l2 THEN true
-    OTHERWISE
-    IF l1 < l2 THEN false
-    ELSE c1 > c2
+FUN min max: nat ** nat ** nat ** nat -> nat ** nat
+DEF (l1, c1) min (l2, c2) == 
+  IF l1 < l2 THEN (l1, c1)
+  IF l1 = l2 THEN IF c1 < c2 THEN (l1, c1) ELSE (l2, c2) FI
+  IF l1 > l2 THEN (l2, c2)
+  FI
+DEF (l1, c1) max (l2, c2) == 
+  IF l1 > l2 THEN (l1, c1)
+  IF l1 = l2 THEN IF c1 > c2 THEN (l1, c1) ELSE (l2, c2) FI
+  IF l1 < l2 THEN (l2, c2)
+  FI
+  
+
+DEF unknown > unknown == false
+DEF _ > unknown == true
+DEF unknown > _ == false
+DEF P1 > P2 ==
+  LET l1 == lin(P1) c1 == col(P1)
+      l2 == lin(P2) c2 == col(P2)
+  IN
+  IF l1 > l2 THEN true
+  OTHERWISE
+  IF l1 < l2 THEN false
+  ELSE 
+    IF c1 > c2 THEN true
+    IF c1 = c2 THEN 
+      IF (P1 pos?) and (P2 pos?) THEN false -- gleich
+      IF (P1 pos?) and (P2 region?) THEN false -- kleiner
+      IF (P1 region?) and (P2 pos?) THEN true -- größer
+      IF (P1 region?) and (P2 region?) THEN
+        LET eL1 == eLin(P1) eC1 == eCol(P1)
+            eL2 == eLin(P2) eC2 == eCol(P2)
+        IN
+        IF eL1 > eL2 THEN true
+        OTHERWISE
+        IF eL1 < eL2 THEN false
+        ELSE 
+          IF eC1 > eC2 THEN true
+          ELSE false
+          FI
+        FI
+      FI        
+    ELSE false
     FI
+  FI
 
 DEF p1 < p2 == p2 > p1
 DEF p1 >= p2 == ~(p2>p1)
 DEF p1 <= p2 == ~(p1>p2)
-DEF pos(l1,c1) = pos(l2,c2) == (l1 = l2) and (c1 = c2)
+
+DEF unknown = unknown == true
+DEF pos(_, l1, c1) = pos(_, l2, c2) == (l1 = l2) and (c1 = c2)
+DEF region(_, l1, c1, eL1, eC1) = region(_, l2, c2, eL2, eC2) ==
+  (l1 = l2) and (c1 = c2) and (eL1 = eL2) and (eC1 = eC2)
+DEF _else1 = _else2 == false
 
 DEF p1 |= p2 == ~ (p1 = p2)
 
 
 -- %$sonstige Funktionen$
 
-DEF  pos(l,c)` == "<" ++ (l`) ++ "," ++ (c`) ++ ">"
+DEF unknown` == "<unknown>"
+DEF pos(_,l,c)` == "<" ++ (l`) ++ "," ++ (c`) ++ ">"
+DEF region(_, l1, c1, l2, c2)` ==
+  IF l1 = l2 THEN
+    IF c1 = c2 THEN
+      "<" ++ (l1`) ++ "," ++ (c1`) ++ ">"
+    ELSE
+      "<" ++ (l1`) ++ "," ++ (c1`) ++ "-" ++ (c2`) ++ ">"
+    FI
+  ELSE
+    "<" ++ (l1`) ++ "," ++ (c1`) ++ "-" ++ (l2`) ++ "," ++ (c2`) ++ ">"
+  FI

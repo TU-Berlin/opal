@@ -33,11 +33,11 @@ Return the amount the indentation changed by."
   )
 
 (defconst opal-indent-major-keyword
-  "^[ \t]*\\(SIGNATURE\\|IMPLEMENTATION\\|IMPORT\\|FUN\\|DEF\\|TYPE\\|DATA\\|SORT\\|LAW\\|EXTERNAL\\|INTERNAL\\|/\\*\\|--\\)[ \n]"
+  "^[ \t]*\\(SIGNATURE\\|IMPLEMENTATION\\|IMPORT\\|FUN\\|DEF\\|PROOF\\|TYPE\\|DATA\\|SORT\\|LAW\\|EXTERNAL\\|INTERNAL\\|/\\*\\|--\\)[ \n]"
   "*regexp to match keywords with constant indentation 0")
 
 (defconst opal-indent-indent-keyword
-  "^[ \t]*\\(DATA\\|DEF\\|LET\\|IF\\|ELSE\\|LAW\\|WHERE\\|TYPE\\)[ \t\n]"
+  "^[ \t]*\\(DATA\\|DEF\\|PROOF\\|LET\\|IF\\|ELSE\\|LAW\\|WHERE\\|TYPE\\)[ \t\n]"
   "*regexp to match lines which increase indentation in reference line")
 
 (defconst opal-indent-outdent-keyword
