@@ -1,0 +1,285 @@
+IMPLEMENTATION Testing
+
+IMPORT EQUALITY ONLY wEqual
+       Triple ONLY triple & untriple
+       PrettyFormatting ONLY prettyFormula prettyExpr
+       Bool ONLY implies equiv
+       BoolConv ONLY `
+       RepoCom1 ONLY with
+       Com ONLY succeed com
+       RepoDiag ONLY error !! ok <+ ref diag hint mode ok? unitRef? unit unitRef
+       Repo ONLY repo
+       RepoName ONLY unitName objectName = pragmaName part
+       RepoAbsy COMPLETELY
+       Seq ONLY :: <> ft rt seq revert # forall? % exist? ++
+       Loquacity ONLY progress
+       Nat ONLY nat 10 |= 2 1 =
+       Denotation ONLY ++
+       NFmt ONLY fmtLatin1
+       InternEval ONLY eval okay? undefined? unknown? msg data result
+       ComSeqMapEnv ONLY &&
+       SeqReduce ONLY /
+       RepoObjectAccess ONLY actuals kind fct
+       SeqMap ONLY *
+       Pair ONLY pair &
+       SeqZip ONLY zip
+       Option ONLY option cont avail?
+       OSubstitution ONLY subst def {} <$
+       ABORT ONLY ABORT
+       String ONLY string
+       Expression ONLY expr:SORT
+       RUNTIME ONLY obj
+       ComCompose ONLY &
+       SeqOfSeq ONLY flat
+       OptionMap ONLY *
+       RepoSource ONLY locator? locator
+
+-- %$Evaluating formulae$
+
+DEF evaluate(R, main, f, r) ==
+  IF hasQ(f) THEN succeed(&(R, (error, r) !! "formula not quantifier free"))
+  ELSE
+    evaluate(R, main, r)(f) & (\\tr.
+    LET (R1, diags, res) == untriple(tr)
+        e == IF res THEN ok
+             ELSE (error, r) !! "could not be proven by evaluation"
+             FI
+    IN
+    succeed(&(R1, diags <+ e))
+    )
+  FI
+    
+    
+-- %return true, if formula is valid
+FUN evaluate: repo ** unitName ** ref -> formula ->
+               com[triple[repo, diag, bool]]
+DEF evaluate(R, main, re)(F AS atomic(_, dfd, e :: _)) ==
+  progress(10, \\ . " evaluating »" ++
+           fmtLatin1(prettyFormula(R, main)(F)) ++ "«")(R) & (\\ R1.
+  with(R1, eval(main, e)) && (\\res, R2.
+  IF res okay? THEN succeed(&(R2, ok, true))
+  IF res undefined? THEN succeed(&(R2, ok, false))
+  IF res unknown? THEN succeed(&(R2, noEval(R1, re, main, e, msg(res)), false))
+  FI
+  ))
+DEF evaluate(R, main, re)(F AS atomic(_, approx, e1 :: e2 :: _)) ==
+  progress(10, \\ . " evaluating »" ++
+           fmtLatin1(prettyFormula(R, main)(F)) ++ "«")(R) & (\\ R1.
+  with(R1, eval(main, e1)) && (\\res1, R2.
+  with(R2, eval(main, e2)) && (\\res2, R3.
+  IF res1 unknown? THEN succeed(&(R3, noEval(R3, re, main, e1, msg(res1)),
+                                  false))
+  IF res2 unknown? THEN succeed(&(R3, noEval(R3, re, main, e2, msg(res2)),
+                                  false))
+  OTHERWISE
+  IF res1 undefined? THEN succeed(&(R3, ok, true))
+  OTHERWISE
+  IF res2 undefined? THEN succeed(&(R3, ok, false))
+  ELSE
+    succeed(&(R3, ok, data(res1) wEqual data(res2)))
+  FI
+  )))
+DEF evaluate(R, main, re)(F AS atomic(_, cong, e1 :: e2 :: _)) ==
+  progress(10, \\ . " evaluating »" ++
+           fmtLatin1(prettyFormula(R, main)(F)) ++ "«")(R) & (\\ R1.
+  with(R1, eval(main, e1)) && (\\res1, R2.
+  with(R2, eval(main, e2)) && (\\res2, R3.
+  IF res1 unknown? THEN succeed(&(R3, noEval(R3, re, main, e1, msg(res1)),
+                                  false))
+  IF res2 unknown? THEN succeed(&(R3, noEval(R3, re, main, e2, msg(res2)),
+                                  false))
+  OTHERWISE
+  IF (res1 undefined?) and (res2 undefined?) THEN succeed(&(R3, ok, true))
+  OTHERWISE
+  IF res1 undefined? THEN succeed(&(R3, hUndef(R, re, main,
+                                               e1, msg(res1)), false))
+  IF res2 undefined? THEN succeed(&(R3, hUndef(R, re, main,
+                                               e2, msg(res2)), false))
+  ELSE
+    LET eq? == data(res1) wEqual data(res2)
+        h == IF eq? THEN ok
+             ELSE ok /* (hint, re) !! "equality test may fail" ++
+                                " if function values are involved" */
+             FI
+    IN
+    succeed(&(R3, h, eq?))
+  FI
+  )))
+DEF evaluate(R, main, re)(F AS atomic(_, other(id, _), _)) ==
+  progress(10, \\ . " evaluating »" ++
+           fmtLatin1(prettyFormula(R, main)(F)) ++ "«")(R) & (\\ R1.
+  succeed(&(R1, (error, re) !! "cannot evaluate `other(" ++ id ++
+                               ", ...)'", false))
+  )
+DEF evaluate(R, main, re)(F AS atomic(_, informal(_), _)) ==
+  progress(10, \\ . " evaluating »" ++
+           fmtLatin1(prettyFormula(R, main)(F)) ++ "«")(R) & (\\ R1.
+  succeed(&(R1, (error, re) !! "cannot evaluate informal formula", false))
+  )
+DEF evaluate(R, main, re)(F AS connect(_, k, fs)) ==
+  progress(10, \\ . " starting »" ++
+           fmtLatin1(prettyFormula(R, main)(F)) ++ "«")(R) & (\\ R1.
+  evaluateAll(R1, main, re)(fs, <>, ok) & (\\ res.
+  LET (R2, dg, ress) == untriple(res)
+      final == IF dg ok? THEN
+                 IF k neg? THEN ~(ft(ress))
+                 IF k conj? THEN (and, true) / ress
+                 IF k disj? THEN (or, false) / ress
+                 IF k impl? THEN ft(ress) implies ft(rt(ress))
+                 IF k equiv? THEN ft(ress) equiv ft(rt(ress))
+                 ELSE false
+                 FI
+               ELSE
+                 false
+               FI
+  IN
+  progress(10, \\ . "ending with " ++ `(final))(R2) & (\\ R3.
+  succeed(&(R3, dg, final))
+  )))
+
+
+FUN evaluateAll: repo ** unitName ** ref ->
+                  seq[formula] ** seq[bool] ** diag ->
+                  com[triple[repo, diag, seq[bool]]]
+DEF evaluateAll(R, _main, _re)(<>, ress, dg) == succeed(&(R, dg, revert(ress)))
+DEF evaluateAll(R, main, re)(f :: Fs, ress, dg) ==
+  evaluate(R, main, re)(f) & (\\ res.
+  LET (R1, dg1, valid?) == untriple(res)
+  IN
+  evaluateAll(R1, main, re)(Fs, valid? :: ress, dg <+ dg1)
+  )
+
+-- %$$Generating diagnostics for evaluation$
+
+FUN noEval: repo ** ref ** unitName ** expr'RepoAbsy ** denotation -> diag
+DEF noEval(R, re, main, e, msg) ==
+  (error, re) !! "could not evaluate »" ++
+                 fmtLatin1(prettyExpr(R, main)(e)) ++
+                 "« " ++ msg
+
+FUN hUndef: repo ** ref ** unitName ** expr'RepoAbsy ** denotation -> diag
+DEF hUndef(R, re, main, e, msg) ==
+  (hint, set(re, e)) !! "»" ++ fmtLatin1(prettyExpr(R, main)(e)) ++
+  "« is undefined [" ++ msg ++ "]"
+
+
+FUN set: ref ** expr'RepoAbsy -> ref
+DEF set(re, e) ==
+  IF re unitRef? THEN
+    IF avail?(locator?(an(e))) THEN
+      unitRef(cont(locator?(an(e))), unit(re))
+    ELSE re
+    FI
+  ELSE re
+  FI
+
+-- %$Performing tests$
+
+-- %we assume that e is an application of test[f, data]
+DEF doTest(R, main, F, re, e) ==
+  IF #(actuals(oper(funct(e)))(R)) |= 2 THEN
+    succeed(R & (error, re) !! "!? wrong number of parameters for test")
+  IF ~(checkF(F)) THEN
+    succeed(R & (error, re) !! "malformed formula for test")
+  ELSE
+    IF hasQ(range(F)) THEN 
+      succeed(R & (error, re) !! "range may not contain quantifiers")
+    ELSE
+      LET testF == ft(actuals(oper(funct(e)))(R))  -- test function
+      IN
+      IF ~(conforms(R, testF, vars(F))) THEN
+        succeed(R & (error, re) !! "mismatch of function functionality" ++
+                " and types of quantified variables")
+      ELSE
+        LET testValues == findArgs(testF, e)  
+            g == instF(range(F), vars(F)) * testValues
+        IN
+        doTest(R, main, re)(g, testValues, ok)
+      FI
+    FI
+  FI
+
+FUN doTest: repo ** unitName ** ref ->
+             seq[formula] ** seq[expr'RepoAbsy] ** diag ->
+             com[pair[repo, diag]]
+DEF doTest(R, _main, _re)(<>, _, dg) == succeed(R & dg)
+DEF doTest(R, main, re)(f :: fs, e :: es, dg) ==
+  evaluate(R, main, re)(f) & (\\tr.
+  LET (R1, dg1, ok?) == untriple(tr)
+      dg2 == IF ok? THEN ok
+             ELSE (error, set(re, e)) !! "test failed for »" ++
+                   fmtLatin1(prettyExpr(R, main)(e)) ++ "«" 
+             FI
+  IN
+  doTest(R1, main, re)(fs, es, dg <+ dg1 <+ dg2)
+  )
+               
+
+/* %@code{conforms(R, f, vars)} is true, iff @code{f(vars)} is type correct.
+    (actually, vars may be scattered along higher-order calls) */
+FUN conforms: repo ** objectName ** seq[objectName] -> bool
+DEF conforms(R, f, vars) ==
+  IF kind(f)(R) oper? ANDIF
+    fct(kind(f)(R)) funct? THEN conforms(R, flat(dom(fct(kind(f)(R)))), vars)
+  ELSE
+    false
+  FI
+
+FUN conforms: repo ** fct ** seq[objectName] -> bool
+DEF conforms(R, name(sr), var :: <>) == sr = sort(fct(var)(R))
+DEF conforms(R, cart(els), vars) ==
+  IF #(els) = #(vars) ANDIF forall?(name?, els) THEN
+      forall?(\\x.x, zip(\\el,var. sort(el) = sort(fct(var)(R)))(els, vars))
+  ELSE
+    false
+  FI
+  
+/* %return a sequence of arguments to given function within expr. */
+FUN findArgs: objectName ** expr'RepoAbsy -> seq[expr'RepoAbsy]
+DEF findArgs(f, name(_, _)) == <>
+DEF findArgs(f, apply(_, f1, args)) ==
+  IF f1 name? ANDIF oper(f1) = f THEN %(args)
+  ELSE findArgs(f, f1) ++ findArgs(f, args)
+  FI
+DEF findArgs(f, tuple(_, elems)) == flat(findArgs(f, _) * elems)
+DEF findArgs(f, den(_, _)) == <>
+DEF findArgs(f, cases(_, ifs, optelse)) ==
+  flat(findArgs(f, _) * then * ifs) ++ cont(<>)(findArgs(f, _) * optelse)
+DEF findArgs(f, lambda(_, _, _, _)) == <>
+DEF findArgs(f, let(_,_,_)) == <>
+DEF findArgs(f, as(_, _, e)) == findArgs(f, e)
+DEF findArgs(f, any(_)) == <>
+
+/* %Replace variables in formula by expression(s).
+    Error checking here is over-engineering: these conditions should have
+    been (and are) ensured by the caller. */
+FUN instF: formula ** seq[objectName] -> expr'RepoAbsy -> formula
+DEF instF(f, vars)(e) ==
+  IF #(vars) = 1 ANDIF ~(tuple?(e)) THEN
+    subst(ft(vars), e)(f)
+  ELSE
+    IF ~(tuple?(e)) THEN ABORT("instF'Testing: expr is not a tuple")
+    ELSE
+      IF #(vars) |= #(elems(e)) THEN
+        ABORT("instF'Testing: number of vars and tuple exprs mismatch")
+      ELSE
+        def(vars, elems(e), {}) <$ f
+      FI
+    FI
+  FI
+
+-- %$Auxiliary functions$
+FUN hasQ: formula -> bool
+DEF hasQ(f) ==
+  IF f atomic? THEN false
+  IF f connect? THEN exist?(hasQ, formulas(f))
+  IF f quant? THEN true
+  FI
+
+FUN checkF: formula -> bool
+DEF checkF(f) == IF f quant? THEN kind(f) forall? ELSE false FI
+
+FUN flat: fct -> fct
+DEF flat(F AS name(_)) == F
+DEF flat(cart(elems)) == cart(flat * elems)
+DEF flat(funct(d, c)) == cart(%(flat(d), flat(c)))

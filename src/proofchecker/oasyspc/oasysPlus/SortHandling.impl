@@ -1,0 +1,156 @@
+IMPLEMENTATION SortHandling
+
+IMPORT Set ONLY exist? in excl set {}? arb {} - + {<}
+       RepoName ONLY objectName < unitName = pragmaName part ~ baseName
+       RepoObjectAccess ONLY object impl kind
+       RepoAbsy COMPLETELY
+       Seq ONLY <> # forall? ++ seq :: = % find?
+       SetFilter ONLY |
+       SetMap ONLY *
+       SetConv ONLY asSet
+       SetOfSet ONLY flat
+       Nat ONLY |= nat
+       SeqOfSeq ONLY partition flat
+       FormulaHandling ONLY propertyS
+       SeqMap ONLY *
+       Option ONLY option nil? cont nil avail
+       ABORT ONLY ABORT
+
+
+-- %$Indirect Recursion$
+DEF indirectRec?(oN)(R) ==
+  exist?((\\ s. oN in reachable(s)(R)), excl(oN, directReachable(oN)(R)))
+
+-- %return direct reachable sorts from the same structure
+FUN directReachable: objectName -> repo -> set[objectName, <]
+DEF directReachable(oN)(R) ==
+  LET srt == object(oN)(R)
+      vars == IF impl(srt) data? THEN variants(impl(srt))
+              OTHERWISE
+              IF properties(srt) {}? THEN <>
+              ELSE variants(propertyS(arb(properties(srt)))(R))
+              FI
+  IN
+  (\\newSort. unitName(newSort) ~ unitName(oN)) |
+  asSet((flat(names * fct * kind * 
+                     (\\ oN1. object(oN1)(R)) * (constructor * vars))))
+
+FUN names: fct -> seq[objectName]
+DEF names(name(n)) == %(n)
+DEF names(cart(els)) == flat(names * els)
+DEF names(funct(d,c)) == names(d) ++ names(c)
+
+FUN reachable: objectName -> repo -> set[objectName, <]
+DEF reachable(oN)(R) == reachable({}, R)(oN)
+
+FUN reachable: set[objectName, <] ** repo -> objectName -> set[objectName, <]
+DEF reachable(already, R)(self) ==
+  LET cands == directReachable(self)(R)
+      new == cands - already
+  IN
+  already + flat(reachable(already + cands, R) * new)
+
+
+-- %$Equivalence$
+
+DEF ~~(R)(vs1, vs2) ==
+  IF #(vs1) |= #(vs2) THEN false
+  ELSE
+    forall?(~(R), partition((\\x, y. constructor(x) = constructor(y)))
+                           (vs1 ++ vs2))
+  FI
+
+-- %constructors ok? 
+FUN ~ : repo -> seq[variant] -> bool
+DEF ~(R)(v1 :: v2 :: <>) == 
+  IF test(v1) = test(v2) THEN =(~)(components(v1),components(v2))
+  ELSE false
+  FI
+DEF ~(_)(_) == false
+
+FUN ~ : component ** component -> bool
+DEF component(_, sel1) ~ component(_, sel2) == sel1 = sel2
+
+
+DEF variants(oN, R) ==
+  LET props == properties(object(oN)(R))
+  IN
+  IF props {}? THEN <> -- no free type information
+  IF ~(kind(object(oN)(R)) sort?) THEN <> -- ? no sort
+  ELSE
+    variants(propertyS(arb(props))(R))
+  FI
+
+DEF dataVariants(oN, R) ==
+  LET i == impl(object(oN)(R))
+  IN
+  IF i data? THEN variants(i)
+  ELSE <> -- not a sort or not implemented
+  FI
+
+DEF find(R)(oN) ==
+  LET k == kind(object(oN)(R))
+  IN
+  IF k sort? THEN nil 
+  ELSE
+    LET f == fct(k)
+    IN
+    IF f name? THEN avail(sort(f))
+    IF f funct? ANDIF name?(codom(f)) THEN avail(sort(codom(f)))
+    ELSE nil
+    FI
+  FI
+
+DEF findD(R)(oN) ==
+  LET k == kind(object(oN)(R))
+  IN
+  IF k sort? THEN nil 
+  ELSE
+    LET f == fct(k)
+    IN
+    IF f name? THEN avail(sort(f))
+    IF f funct? ANDIF name?(dom(f)) THEN avail(sort(dom(f)))
+    ELSE nil
+    FI
+  FI
+
+
+DEF findCon(R)(con, variants) ==
+  find?(\\v. constructor(v) = con, variants)
+
+DEF findDis(R)(dis, variants) ==
+   find?(\\v. test(v) = dis, variants)
+
+DEF findSel(R)(sel, <>) == nil
+DEF findSel(R)(sel, var :: variants) ==
+  LET erg == find?(\\v. selector(v) = sel, components(var))
+  IN
+  IF erg nil? THEN findSel(R)(sel, variants)
+  ELSE erg
+  FI
+
+DEF constr?(oN)(R) ==
+  LET i == impl(baseName(oN))(R)
+  IN
+  IF i induced? THEN kind(i) constructor?
+  ELSE false
+  FI
+DEF sel?(oN)(R) ==
+  LET i == impl(baseName(oN))(R)
+  IN
+  IF i induced? THEN kind(i) selector?
+  ELSE false
+  FI
+DEF discr?(oN)(R) ==
+  LET i == impl(baseName(oN))(R)
+  IN
+  IF i induced? THEN kind(i) test?
+  ELSE false
+  FI
+
+-- %$Check for free type$
+DEF freeTV?(R)(oN) ==
+  LET s == sort(fct(kind(oN)(R)))
+      props == properties(object(s)(R))
+  IN
+  exist?(\\ pN. freeType?(propertyS(pN)(R)), props)

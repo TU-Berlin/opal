@@ -1,0 +1,57 @@
+IMPLEMENTATION ProofHandling
+
+IMPORT RepoObjectAccess ONLY object objects lookup
+       RepoAbsy COMPLETELY
+       SetFilter ONLY partition |
+       RepoName ONLY unitName objectName < : objectName ** objectName -> bool  localSignName
+       Set ONLY arb set {}?
+       SetConv ONLY asSet
+       Option ONLY option avail nil
+       RepoAn ONLY an
+       Seq ONLY seq :: <>
+       Nat ONLY nat
+       SeqMap ONLY *
+       Denotation ONLY = ++
+       PredefEntities ONLY proofscript
+
+-- %true, if symbol starts with @code{"PROOF%"}
+DEF codedProof?(oN)(R) == codedProof?(object(oN)(R))
+
+DEF codedProof?(o) == "PROOF%" <| symbol(o)
+
+DEF codedProofUniq?(oN)(R) == codedProofUniq?(object(oN)(R))
+DEF codedProofUniq?(o) ==
+  IF codedProof?(o) THEN
+    name?(fct(kind(o)))
+  ELSE
+    false
+  FI
+
+DEF decode(codedProof)(R) ==
+  LET (head, body) == partition(head?(R),
+                                (sim(R, codedProof) |
+                                 objects(unitName(codedProof))(R)))
+  IN
+  (decode(fct(kind(object(arb(head))(R)))), decode(impl(object(arb(body))(R))))
+
+FUN decode: fct -> set[objectName, <] ** objectName
+DEF decode(funct(cart(els), name(cod))) == (asSet(sort * els), cod)
+
+FUN decode: impl -> option[expr]
+DEF decode(def(_, eqn(_, _, _, _, ex) :: <>)) == avail(ex)
+DEF decode(_) == nil 
+
+-- %true, if both objectNames have the same symbol
+FUN sim: repo ** objectName -> objectName -> bool
+DEF sim(R, oN1)(oN2) == symbol(object(oN1)(R)) = symbol(object(oN2)(R))
+
+-- %true, iff object denotes a proof head
+FUN head? : repo -> objectName -> bool
+DEF head?(R)(oN) == fct(kind(object(oN)(R))) funct?
+
+DEF find?(uN, sym)(R) ==
+  LET pSym == "PROOF%" ++ sym
+      os == lookup(uN, pSym)(R)
+      c == (\\oN. codedProofUniq?(oN)(R)) | os
+  IN
+  IF c {}? THEN nil ELSE avail(arb(c)) FI

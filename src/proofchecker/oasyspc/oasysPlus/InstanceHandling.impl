@@ -1,0 +1,157 @@
+IMPLEMENTATION InstanceHandling
+
+IMPORT 
+       Compose ONLY o
+       RepoName COMPLETELY
+       DEBUG ONLY PRINT string
+       SeqMapEnv ONLY *
+       Seq ONLY seq <>? <> ::? 
+       SeqMap ONLY *
+       Map[objectName,<,objectName] ONLY map extend ! {} !?
+       Option ONLY option nil? cont avail?
+       ABORT ONLY ABORT
+       Set ONLY set
+       RepoUnitAccess ONLY actuals formals enterInstance lookupInstance
+       NameHandling ONLY instantiate
+       RepoAbsy ONLY variant component
+       RepoAn ONLY an
+
+DEF deriveLike(Main)(R, uN) == 
+  IF Main basicUnitName? THEN (R, uN)
+  ELSE derive(instanceMap(Main,R))(R, uN:unitName) 
+  FI
+
+DEF deriveLike(Main)(R, pN) == 
+  IF Main basicUnitName? THEN (R, pN)
+  ELSE derive(instanceMap(Main,R))(R, pN:propertyName)
+  FI
+
+DEF deriveLike(Main)(R, oN) ==  
+  IF Main basicUnitName? THEN (R, oN)
+  ELSE derive(instanceMap(Main,R))(R, oN:objectName)
+  FI
+
+DEF deriveLike(Main)(R, lsN)==   
+  IF Main basicUnitName? THEN (R, lsN)
+  ELSE derive(instanceMap(Main,R))(R,lsN:localSignName)
+  FI
+
+DEF deriveLike(Main)(R, variant(an, con, tst, com)) ==
+  LET (R1, nCon) == deriveLike(Main)(R, con)
+      (R2, nTst) == deriveLike(Main)(R1, tst)
+      (R3, nCom) == (deriveLike(Main), R2) * com
+  IN
+  (R3, variant(an, nCon, nTst, nCom))
+
+DEF deriveLike(Main)(R, component(an, sel)) ==
+  LET (R1, nSel) == deriveLike(Main)(R, sel) IN (R1, component(an, nSel))
+
+FUN derive: map[objectName, <, objectName] ->
+             repo ** unitName -> repo ** unitName
+FUN derive: map[objectName, <, objectName] -> 
+             repo ** propertyName -> repo ** propertyName
+FUN derive: map[objectName, <, objectName] -> 
+             repo ** objectName -> repo ** objectName
+FUN derive: map[objectName, <, objectName] -> 
+             repo ** localSignName -> repo ** localSignName
+
+
+DEF derive(M)(R, uN) ==
+  IF (uN monomorphic?)(R) THEN (R, uN)
+  ELSE
+    LET (R2, instance) == derive(M) * (R, actuals(uN)(R))
+        swap == \\a, b. (b, a)
+    IN 
+    swap(enterInstance(baseName(uN), instance)(R2))
+  FI
+
+DEF derive(M)(R, pN) ==  
+  LET (newR, newU) == derive(M)(R, unit(pN))
+  IN
+  (newR, propertyName(no(pN), newU))
+
+DEF derive(M)(R, O AS globalObjectName(no, uN)) ==
+  IF avail?(M !? O) THEN (R, M ! O)
+  ELSE
+    LET (newR, newU) == derive(M)(R, uN)
+    IN
+    (newR, instantiate(M)(globalObjectName(no, newU)))
+  FI
+DEF derive(M)(R, O AS localObjectName(no, lsN)) ==
+  IF avail?(M !? O) THEN (R, M ! O)
+  ELSE
+    LET (newR, newLS) == derive(M)(R, lsN)
+    IN
+    (newR, instantiate(M)(localObjectName(no, newLS)))
+  FI
+
+DEF derive(M)(R, localSignName(no, uN)) ==
+  LET (newR, newU) == derive(M)(R, uN)
+  IN
+  (newR, localSignName(no, newU))
+
+
+-- ----------------------------------------------------------------------
+/*
+DEF deriveLike(Main)(R, Import) ==
+    IF monomorphic?(Main)(R) THEN (R, Import)
+    IF monomorphic?(Import)(R) THEN (R, Import)
+    ELSE
+      LET (R2, concreteInst) == deriveLike(Main) * (R, actuals(Import)(R))
+          swap == \\a, b. (b, a)
+      IN 
+          swap(enterInstance(baseName(Import), concreteInst)(R2))
+--           LET lI == lookupInstance(baseName(Import), concreteInst)(R2)
+--           IN
+--           IF lI avail? THEN (R2, cont(lI))
+--           ELSE (ABORT("deriveLike/unitName : instance not found"),
+--           Main)
+--          FI
+    FI
+
+/* %Change a property name according to the instantiation given in
+   @code{uN}. Property name must be known within @code{baseName(uN)}.
+    (i.e. @code{pN in allProperties(uN)}).
+
+  If @code{unit(pN) ~ uN}, we have to exchange the base name with the
+  derived name @code{uN}. Otherwise, we instantiate the unit name. */
+
+DEF deriveLike(uN)(R, pN) ==
+    IF monomorphic?(uN)(R) THEN (R, pN)
+    ELSE -- IF unit(pN) ~ uN THEN (R, instantiate(instNo(uN), pN))
+         -- ELSE
+           LET (newR, newU) == deriveLike(uN)(R, unit(pN))
+           IN
+           (newR, propertyName(no(pN), newU))
+         -- FI
+    FI
+
+DEF deriveLike(uN)(R, oN) ==
+    IF monomorphic?(uN)(R) THEN (R, oN)
+    OTHERWISE
+    IF oN localObjectName? THEN
+        LET (newR, newS) == deriveLike(uN)(R, sign(oN))
+        IN
+        (newR, instantiate(instanceMap(uN, R))(localObjectName(no(oN), newS)))
+    IF oN globalObjectName? THEN
+        LET (newR, newU) == deriveLike(uN)(R, unit(oN))
+        IN
+        (newR, instantiate(instanceMap(uN, R))(globalObjectName(no(oN), newU)))
+    FI
+
+DEF deriveLike(uN)(R, lsN) ==
+    LET (newR, newU) == deriveLike(uN)(R, unit(lsN))
+    IN
+    (newR, localSignName(no(lsN), newU))
+*/
+
+DEF instanceMap(uN, R) == 
+    IF uN basicUnitName? THEN {} 
+    ELSE extend({}, formals(uN)(R), actuals(uN)(R)) FI
+
+DEF instantiate(M)(oN) ==
+    IF (M !? oN) nil? THEN oN ELSE cont(M !? oN) FI
+
+DEF parameterized?(uN)(R) == formals(uN)(R) ::?
+
+DEF monomorphic?(uN)(R) == formals(uN)(R) <>?

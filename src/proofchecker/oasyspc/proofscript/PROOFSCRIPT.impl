@@ -1,0 +1,83 @@
+IMPLEMENTATION PROOFSCRIPT
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-13 20:32:48 $ ($Revision: 1.1 $)
+
+IMPORT RepoAbsy COMPLETELY
+       RepoDiag COMPLETELY
+       RepoAn COMPLETELY
+       Seq COMPLETELY
+       Compose COMPLETELY
+       Nat ONLY nat 0 succ 2
+       SeqFilter ONLY |
+       SeqOfSeq ONLY combinations
+       AnonPair ONLY 1st
+       LSeq ONLY lseq split pull <>?
+       Repo ONLY repo
+       RepoObjectAccess ONLY newLocalSign objects
+       PredefEntities ONLY proofscript
+       SeqMap ONLY *
+       Pair ONLY pair
+       ProofAn ONLY getCanRef
+       Stat ONLY stat initStat
+       Sequent ONLY sequent
+       
+DATA proofscript == abs(rep: state -> result)
+
+DATA result == okay(data: lseq[state])
+               fail(lastState: state)
+
+DATA resultF == okay(an: an, diags: diag, stat: stat, trace: seq[fmt]) 
+
+DATA state == state(an: an,
+                    diags: diag, 
+                    subgoals: seq[sequent], 
+                    repo: repo, 
+                    unknownSig: localSignName, uCt: nat,
+                    freeVarSig: localSignName, fCt: nat,
+                    main: unitName,
+                    stat: stat, trace: seq[fmt],
+                    every: state -> state, atexit: state -> state) 
+
+              
+
+
+
+DEF apply(repo, main, initAn, prems, concl, script) ==
+  LET (uS, R1) == newLocalSign(proofscript(repo))(repo)
+      (fS, R2) == newLocalSign(proofscript(R1))(R1)
+  IN
+  !@(rep(script)(state(initAn,ok,%(sequent(none, prems, %(concl))), R2,
+                       uS, 0, fS, 0, main, initStat, <>, \\x.x, \\x.x)))
+
+/* %Convert result to less voluminous data type; add error, warnings, hints,
+    which cannot be detected by atexit-functions. */
+FUN !@ : result -> resultF
+DEF !@(okay(l)) == 
+  IF l <>? THEN okay(none, (error, freeRef("prover")) !!
+                           "internal error: empty list of proof states",
+                           initStat, <>)
+  ELSE
+    LET (s0, sR) == pull(l)
+        s1 == atexit(s0)(s0)
+        ref == getCanRef(an(s1))
+        w == IF (subgoals(s1) <>?) or (sR <>?) THEN ok
+             ELSE (hint, ref) !! "resulting proof state ambiguous"
+             FI
+    IN
+    okay(an(s1), diags(s1) <+ w, stat(s1), trace(s1))
+  FI
+    
+DEF !@(fail(s0)) == 
+  LET s == atexit(s0)(s0)
+      ref == getCanRef(an(s))
+  IN
+  okay(an(s),
+       diags(s) <+ (error, ref) !! "proof script FAILED",
+       stat(s), trace(s))
+
+
+
+DEF evaluate == abs(\\st. fail(st))

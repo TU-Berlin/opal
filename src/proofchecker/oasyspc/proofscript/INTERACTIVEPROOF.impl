@@ -1,0 +1,297 @@
+IMPLEMENTATION INTERACTIVEPROOF
+
+IMPORT PROOFSCRIPT COMPLETELY
+       Seq ONLY seq <> ft <>? % :: ::? rt # split ++ +% last revert
+       Pair ONLY pair & 1st 2nd
+       Sequent COMPLETELY
+       ComState ONLY stateId => get 
+       Com ONLY EXEC com succeed
+       Void ONLY void
+       ComCompose ONLY &
+       ComStatePlus ONLY -!->
+       RepoObjectAccess ONLY newLocalSign
+       PredefEntities ONLY proofscript
+       RepoDiag ONLY ok diag
+       RepoAn ONLY none
+       Nat ONLY 0 >= <=
+       Stat ONLY initStat stat ct
+       LSeq ONLY lseq %  ft rt
+       LSeqMap ONLY *
+       Fmt ONLY fmt
+       RepoName ONLY localSignName
+       File ONLY file:SORT open close writeLine
+       ComAction ONLY -!-> done
+
+-- %$Internal State$
+DATA IPstate == IPstate(result: result,
+                        subgoalStack: seq[pair[seq[sequent], seq[sequent]]])
+
+FUN IPstack: stateId[seq[IPstate]]
+DEF IPstack == EXEC(stateId(<>))
+
+FUN lastFail? : seq[IPstate] -> bool
+DEF lastFail?(s) == fail?(result(ft(s)))
+
+FUN clear: com[void]
+DEF clear == IPstack => (\\ _ . <>)
+
+FUN empty?: com[bool]
+DEF empty? == get(IPstack) & (\\ s. succeed(<>?(s)))
+
+FUN push: result -> com[void]
+DEF push(res) ==
+  IPstack => (\\ s. IF s <>? THEN %(IPstate(res, <>))
+                    ELSE IPstate(res, subgoalStack(ft(s))) :: s
+                    FI)
+
+FUN push: pair[seq[sequent], seq[sequent]] ** state -> com[void]
+DEF push(p, st) ==
+  LET res == okay(%(st))
+  IN
+  IPstack => (\\ s. IF s <>? THEN %(IPstate(res, %(p)))
+                    ELSE IPstate(res, p :: subgoalStack(ft(s))) :: s
+                    FI)
+
+FUN topState: com[state]
+DEF topState ==
+  (IPstack, <>?) -!-> "IPstack empty" & (
+  (IPstack, lastFail?) -!-> "last script failed" & (
+  get(IPstack) & (\\ s. 
+  succeed(ft(data(result(ft(s)))))
+  )))
+
+
+-- %$Handcoded Commands$
+
+DEF initialize(repo, main, initAn, prems, concl) ==
+  ((IPstack, ::?) -!-> "unfinished proof") & (
+  LET (uS, R1) == newLocalSign(proofscript(repo))(repo)
+      (fS, R2) == newLocalSign(proofscript(R1))(R1)
+      initState == state(initAn,ok,%(sequent(none, prems, %(concl))), R2,
+                         uS, 0, fS, 0, main, initStat, <>, \\x.x, \\x.x)
+      initState0 == PRINT(false, \\ . "initState", initState)
+--      st10 == mtraceProof(initState0)
+--      st11 == PRINT(false, \\ . "mtraceProof", st10)
+--      st0 == traceProof(st11)
+--      st1 == PRINT(false, \\ . "traceProof", st0)
+      st2 == ltraceProof(initState0)
+      st == PRINT(false, \\ . "ltraceProof", st2)
+  IN
+  push(okay(%(st)))
+  )
+
+DEF apply(script) ==
+  ((IPstack, <>?) -!-> "no interactive proof found") & (
+  topState & (\\ st.
+  LET st1 == st :=_trace %(last(trace(st)))
+      res1 == rep(script)(st1)
+      res2 == IF res1 okay? THEN okay((\\st0. every(st0)(st0)) * data(res1))
+              IF res1 fail? THEN fail(every(lastState(res1))(lastState(res1)))
+              FI
+  IN
+  push(res2)
+  ))
+
+DEF finalize == getResult & (\\r. clear & succeed(r))
+
+DEF finalizeW == 
+  finalize & (\\ rF.
+  LET res == okay(an(rF), diags(rF), stat(rF), <>)
+  IN
+  store(traceFile, trace(rF)) &
+  succeed(res)
+  )
+
+DEF addHypothesis(f) ==
+  (IPstack, <>?) -!-> "no interactive proof found" &
+  (IPstack, lastFail?) -!-> "last script failed" & 
+  IPstack => (\\s. LET res == result(ft(s))
+                       newStates == \\ st. state(an(st), diags(st),
+                                                newSubgoals * subgoals(st),
+                                                repo(st),
+                                                unknownSig(st), uCt(st),
+                                                freeVarSig(st), fCt(st),
+                                                main(st), stat(st),
+                                                trace(st), every(st),
+                                                atexit(st))
+                       newSubgoals == \\sq. sequent(an(sq), hyps(sq) +% f,
+                                                    props(sq))
+                   IN
+                   IPstate(okay(newStates * data(res)),
+                           subgoalStack(ft(s))) :: s
+             )
+  
+
+-- %$Manipulate Internal State$
+
+DEF nextState ==
+  (IPstack, <>?) -!-> "no interactive proof found" &
+  (IPstack, lastFail?) -!-> "last script failed" & 
+  IPstack => (\\s. LET (top, rest) == (ft(s), rt(s))
+                   IN
+                   IPstate(okay(rt(data(result(top)))),
+                           subgoalStack(top)) :: rest)
+
+DEF backState ==
+  (IPstack, <>?) -!-> "no interactive proof found" &
+  (IPstack, \\s. <>?(rt(s))) -!-> "cannot discard first state" &
+  IPstack => rt
+  
+
+DEF subgoalStart == subgoalStart(0)
+DEF subgoalStart(i) ==
+  (IPstack , <>?) -!-> "no interactive proof found" & (
+  topState & (\\ st:state.
+  ((#(subgoals(st)) <= i) -!-> ( \\ . "no subgoal #" ++ `(i) ++
+                                      " only " ++ `(#(subgoals(st))) ++
+                                      " found")) &
+  (LET (preGoals, post) == split(i, subgoals(st))
+       (subgoal, postGoals) == (ft(post), rt(post))
+       newState == state(an(st), diags(st), %(subgoal), repo(st),
+                         unknownSig(st), uCt(st), freeVarSig(st), fCt(st),
+                         main(st), stat(st), trace(st), every(st), atexit(st))
+   IN
+   push(preGoals & postGoals, newState)
+   )))
+
+DEF subgoalEnd ==
+  (IPstack , <>?) -!-> "no interactive proof found" &
+  (IPstack, \\x.subgoalStack(ft(x)) <>?) -!-> "no subgoal started" &
+  (IPstack, lastFail?) -!-> "last script failed" &
+  IPstack => (\\ s. LET res == result(ft(s))
+                        sg == ft(subgoalStack(ft(s)))
+                        newStates == 
+                          \\ st:state. state(an(st), diags(st), 
+                                       1st(sg) ++ subgoals(st) ++ 2nd(sg),
+                                       repo(st), unknownSig(st), uCt(st),
+                                       freeVarSig(st), fCt(st), main(st),
+                                       stat(st),
+                                       trace(st), every(st), atexit(st))
+                    IN
+                    IPstate(okay(newStates * data(res)),
+                            rt(subgoalStack(ft(s)))) :: s
+             )
+
+-- %$Get Information About Current State$
+
+DEF getResult ==
+  (IPstack , <>?) -!-> "no interactive proof found" & (
+  get(IPstack) & (\\ s. 
+  succeed(!@(result(ft(s))))
+  ))
+
+DEF getResultW == 
+  getResult & (\\ rF.
+  LET res == okay(an(rF), diags(rF), stat(rF), <>)
+  IN
+  store(traceFile, trace(rF)) &
+  succeed(res)
+  )
+
+-- %$Other$
+
+DEF abort == clear
+
+-- %$from ProofInteractive$
+
+FUN traceFile: denotation
+DEF traceFile == ".trace"
+
+FUN store: denotation ** seq[fmt] -> com[void]
+DEF store(name, traceR) ==
+  LET trace == revert(traceR)
+  IN
+  open(name, "a") & (\\ fh.
+  store(fh, brk :: lit("Trace of interactive proof") :: brk :: trace) &
+  close(fh))
+
+FUN store: file ** seq[fmt] -> com[void]
+DEF store(fh:file, <>) == done
+DEF store(fh, fm :: <>) == writeLine(fh, (pretty(fm)):denotation)
+DEF store(fh, fm :: fms) ==
+  writeLine(fh, (pretty(fm)):denotation) & store(fh, fms)
+
+
+
+-- %$aus BasicTac$
+
+IMPORT Fmt COMPLETELY
+       FmtBasicTypes ONLY fmtNat
+       SeqSupplements ONLY fmtIdxSeq
+       ProofAn COMPLETELY
+       RepoGlobalAccess ONLY an
+       PrettyFormatting ONLY prettyFormula
+       Option ONLY cont
+       SeqMap ONLY *
+       RepoInternData ONLY :=_an : repo ** an -> repo
+       DEBUG ONLY PRINT
+       NatConv ONLY `
+       Denotation ONLY ++
+
+FUN xtrace: (sequent -> fmt) -> state -> state
+DEF xtrace(f)(st0) == 
+  LET txt0 == lit("Proofstate at step #"); 
+              fmtNat(ct(stat(st))); 
+              lit(" is "); brk; 
+              fmtIdxSeq(f)(subgoals(st));
+              brk; lit("end of proofstate"); brk
+      txt == PRINT(false, \\ . (pretty(txt0)):denotation, txt0)
+      st == PRINT(false, \\ . "xtrace 1", st0)
+  IN
+  st :=_trace txt :: trace(st)
+
+FUN traceProof: state -> state
+DEF traceProof(st0) == 
+  LET st == setSCS(ensureShortcut(st0) )
+  IN
+  xtrace(prettySequentS(repo(st), main(st)))(st)
+
+FUN ltraceProof: state -> state
+DEF ltraceProof(st) == xtrace(prettySequent(repo(st), main(st)))(st)
+
+FUN mtraceProof: state -> state
+DEF mtraceProof(st0) == 
+  LET st == setSCS(ensureShortcut(st0) )
+  IN
+  xtrace(fmtSequent)(st)
+
+FUN setSCS: state -> state
+DEF setSCS(st) == st :=_an (an(st) :=_shortcutSwitch true)
+                     :=_repo (repo(st) :=_an
+                                   (an(repo(st)):=_shortcutSwitch true))
+
+FUN useSC: state -> bool
+DEF useSC(st:state) == LET s? == getShortcutSwitch(an(st))
+                       IN
+                       cont(false)(s?)
+
+FUN :=_subgoals : state ** seq[sequent] -> state
+DEF :=_subgoals(state(1,2,_,4,5,6,7,8,9,10,11,12,13),new) == state(1,2,new,4,5,6,7,8,9,10,11,12,13)
+
+FUN ensureShortcut: state -> state
+DEF ensureShortcut(st) ==
+  IF useSC(st) THEN
+    st :=_subgoals ensureShortcut(repo(st), main(st)) * subgoals(st)
+  ELSE
+    st
+  FI
+
+FUN ensureShortcut: repo ** unitName -> sequent -> sequent
+DEF ensureShortcut(R, main)(sq) ==
+  sq :=_hyps ensureShortcut(R, main) * hyps(sq)
+     :=_props ensureShortcut(R,main) * props(sq)
+
+FUN ensureShortcut: repo ** unitName -> formula -> formula
+DEF ensureShortcut(R, main)(F) ==
+  IF shortcut?(F) THEN clearNewSC(F)
+  ELSE setNewSC(F :=_shortcut prettyFormula(R, main)(F))
+  FI
+
+FUN :=_trace : state ** seq[fmt] -> state
+DEF :=_trace(state(1,2,3,4,5,6,7,8,9,10,_,12,13),new) == state(1,2,3,4,5,6,7,8,9,10,new,12,13)
+
+FUN :=_an : state ** an -> state
+DEF :=_an(state(_,2,3,4,5,6,7,8,9,10,11,12,13),new) == state(new,2,3,4,5,6,7,8,9,10,11,12,13)
+
+FUN :=_repo : state ** repo -> state
+DEF :=_repo(state(1,2,3,_,5,6,7,8, 9,10,11,12,13),new) == state(1,2,3,new,5,6,7,8,9,10,11,12,13)

@@ -1,0 +1,254 @@
+IMPLEMENTATION PrettyPCEnv
+
+IMPORT Fmt ONLY lit ; inc dec fmt none brk  spc
+       Nat ONLY nat 6 2 1 0 >= = 3 10 4 <
+       FmtSet ONLY fmtSet
+       PCEnv COMPLETELY
+       Repo ONLY repo
+       PrettyFormatting COMPLETELY
+       MapReduce ONLY /
+       Map ONLY map !?
+       Option ONLY option avail nil avail? cont
+       Control ONLY ^
+       RepoObjectAccess ONLY symbol
+       Set ONLY set
+       String ONLY string
+       Predicate ONLY or
+       SetFilter ONLY |
+       FmtSeq ONLY fmtSeq
+       RepoAbsy COMPLETELY
+       SeqMap ONLY *
+       RepoDiag ONLY fmtDiag
+       FmtBasicTypes ONLY fmtNat
+       ColourText ONLY hintText prompt
+
+-- %$Very long variant$
+
+DEF pretty(level)(e)(R) ==
+  IF level = 0 THEN lit( "ready" )
+  OTHERWISE
+  IF level < 4 THEN
+    (prompt(lit( "Laws / Proof obligations: " )); brk;
+     inc(2); fmtSet(pretty(R))((ordinary? or restr?) | laws(e)); dec(2));brk;
+    (prompt(lit("Proofs: ")); brk;
+     inc(2); pretty1(R)(pHeads(e), pBodies(e)); dec(2))
+  OTHERWISE
+  IF level < 10 THEN
+    (prompt(lit("Laws / Proof obligations ")); brk;
+     inc(2); fmtSet(pretty(R))(laws(e)); dec(2));brk;
+    (prompt(lit("Proofs: ")); brk;
+     inc(2); pretty(R)(pHeads(e), pBodies(e)); dec(2))
+  IF level >= 10 THEN
+    (prompt(lit("Laws / Proof obligations ")); brk;
+     inc(2); fmtSet(pretty(R))(laws(e)); dec(2));brk;
+    (prompt(lit("Proofs: ")); brk;
+     inc(2); pretty(R)(pHeads(e), pBodies(e)); dec(2)); brk; 
+    (prompt(lit("Extra Laws:")); brk;
+     inc(2); fmtSet(pretty(R))(extraLaws(e)); dec(2)); brk;
+    (prompt(lit("Assumes:")); brk;
+     inc(2); fmtSet(pretty(R))(assumes(e)); dec(2)); brk;
+    (prompt(lit("Resolved:")); brk;
+     inc(2); fmtSet(pretty(R))(resolved(e)); dec(2)); brk
+  FI
+
+FUN pretty: repo -> lawName -> fmt
+DEF pretty(R)(ordinary(_, pN)) == fmtPropertyNameLong(R)(pN)
+DEF pretty(R)((def(_, fun)):lawName) == lit("Def["); fmtObjectNameLong(R)(fun); lit("]")
+DEF pretty(R)(restr(_, orig, _)) == lit("Restr["); pretty(R)(orig); lit("]")
+DEF pretty(R)(copy(_, orig)) == lit("Copy["); pretty(R)(orig); lit("]")
+DEF pretty(R)(spc(_, fun, _)) == lit("Spc["); fmtObjectNameLong(R)(fun); lit("]")
+DEF pretty(R)(discr(_, _, con, dis)) ==
+  lit("Discr["); fmtObjectNameLong(R)(constructor(con)); lit(","); spc(1);
+  fmtObjectNameLong(R)(test(dis)); lit("]")
+DEF pretty(R)(sel(_, _, con, sl)) ==
+  lit("Sel["); fmtObjectNameLong(R)(constructor(con)); lit(","); spc(1);
+  fmtObjectNameLong(R)(selector(sl)); lit("]")
+DEF pretty(R)(gen(_, type, sorts)) ==
+  lit("Gen["); fmtObjectNameLong(R)(type); spc(1);
+  fmtSeq(fmtObjectName(R))(constructor * sorts); lit("]")
+DEF pretty(R)(ind(_, type, sorts)) ==
+  lit("Ind["); fmtObjectNameLong(R)(type); spc(1);
+  fmtSeq(fmtObjectName(R))(constructor * sorts); lit("]")
+DEF pretty(R)(equiv(_, _, con1, con2)) ==
+  lit("Equiv["); fmtObjectNameLong(R)(constructor(con1)); lit(","); spc(1);
+  fmtObjectNameLong(R)(constructor(con2)); lit("]")
+DEF pretty(R)(cdfd(_, _, con)) ==
+  lit("CDfd["); fmtObjectNameLong(R)(constructor(con)); lit("]")
+DEF pretty(R)(ddfd(_, _, dis)) ==
+  lit("DDfd["); fmtObjectNameLong(R)(test(dis)); lit("]")
+DEF pretty(R)(sdfd(_, _, sel)) ==
+  lit("SDfd["); fmtObjectNameLong(R)(selector(sel)); lit("]")
+DEF pretty(R)(freetypeLaws(_, type, _)) ==
+  lit("Freetype["); fmtObjectNameLong(R)(type); lit("]")
+DEF pretty(R)(datatypeLaws(_, type, _)) ==
+  lit("Datatype["); fmtObjectNameLong(R)(type); lit("]")
+DEF pretty(R)(error(msg)) == lit("ERROR("); fmtDiag(msg); lit(")")
+
+FUN pretty: repo -> map[proofName, <, pHead] ** map[proofName, <, pBody] -> fmt
+DEF pretty(R)(heads, bodies) ==
+  ((pretty(R, bodies)), none) / heads
+
+FUN pretty: repo ** map[proofName, <, pBody] ->
+             proofName ** pHead ** fmt -> fmt
+DEF pretty(R, bodies)(pN, pH, f) ==
+  pretty(R)(pN); spc(1); lit(":"); spc(1); pretty(R)(pH); 
+  spc(1); lit("["); pretty(R)(bodies !? pN); lit("]"); brk;
+  f
+
+FUN pretty1: repo -> map[proofName, <, pHead] ** map[proofName, <, pBody] ->
+              fmt
+DEF pretty1(R)(heads, bodies) ==
+  ((pretty1(R, bodies)), none) / heads
+
+FUN pretty1: repo ** map[proofName, <, pBody] ->
+             proofName ** pHead ** fmt -> fmt
+DEF pretty1(R, bodies)(pN, pH, f) ==
+  LET body == bodies !? pN
+  IN
+  IF body avail? ANDIF (axiom? or equiv?)(cont(body)) THEN f
+  ELSE
+    hintText(pretty(R)(pN)); spc(1); lit(":"); spc(1); pretty(R)(pH); 
+    spc(1); lit("["); pretty(R)(body); lit("]"); brk;
+    f
+  FI
+
+FUN pretty: repo -> pHead -> fmt
+DEF pretty(R)(pHead(_, prems, concl)) ==
+  fmtSet(pretty(R))(prems); spc(1); lit("|-"); spc(1); pretty(R)(concl)
+
+FUN pretty: repo -> option[pBody] -> fmt
+DEF pretty(_)(nil) == lit("?? not available ??")
+DEF pretty(R)(avail(pB)) == pretty(R)(pB)
+
+FUN pretty: repo -> pBody -> fmt
+DEF pretty(_)(ordinary(_, _ :expr)) == lit("explicit script")
+DEF pretty(_)(axiom(_)) == lit("axiom")
+DEF pretty(_)(equiv(_)) == lit("equiv")
+DEF pretty(_)(missing(_)) == lit("missing")
+
+FUN pretty: repo -> proofName -> fmt
+DEF pretty(R)((ordinary(_, pN)):proofName) == lit((tl ^ 6)(symbol(pN)(R)))
+DEF pretty(R)(axm(_, lN)) == pretty(R)(lN)
+DEF pretty(R)(gen(_, no)) == lit("Gen[#"); fmtNat(no); lit("]")
+DEF pretty(R)(inst(_, rel, par)) ==
+  lit("Inst["); fmtUnitNameLong(R)(rel); spc(1); lit"/";
+  spc(1); fmtObjectNameLong(R)(par); lit("]")
+
+-- %$Shorter variant$
+DEF pretty(level)(e)(uN)(R) ==
+  IF level = 0 THEN lit("ready")
+  OTHERWISE
+  IF level < 4 THEN
+    (prompt(lit("LAWS / PROOF OBLIGATIONS: ")); brk;
+     inc(2); fmtSet(pretty(R, uN))
+     ((ordinary? or restr?) | laws(e)); dec(2));brk;
+    (prompt(lit("PROOFS: ")); brk;
+     inc(2); pretty1(R, uN)(pHeads(e), pBodies(e)); dec(2))
+  OTHERWISE
+  IF level < 10 THEN
+    (prompt(lit("LAWS / PROOF OBLIGATIONS ")); brk;
+     inc(2); fmtSet(pretty(R, uN))(laws(e)); dec(2));brk;
+    (prompt(lit("PROOFS: ")); brk;
+     inc(2); pretty(R, uN)(pHeads(e), pBodies(e)); dec(2))
+  IF level >= 10 THEN
+    (prompt(lit("LAWS / PROOF OBLIGATIONS ")); brk;
+     inc(2); fmtSet(pretty(R, uN))(laws(e)); dec(2));brk;
+    (prompt(lit("PROOFS: ")); brk;
+     inc(2); pretty(R, uN)(pHeads(e), pBodies(e)); dec(2)); brk;
+    (prompt(lit("EXTRA LAWS:")); brk;
+     inc(2); fmtSet(pretty(R, uN))(extraLaws(e)); dec(2)); brk;
+    (prompt(lit("ASSUMES:")); brk;
+     inc(2); fmtSet(pretty(R, uN))(assumes(e)); dec(2)); brk;
+    (prompt(lit("RESOLVED:")); brk;
+     inc(2); fmtSet(pretty(R, uN))(resolved(e)); dec(2)); brk
+  FI
+
+FUN pretty: repo ** unitName -> lawName -> fmt
+DEF pretty(R, uN)(ordinary(_, pN)) == fmtPropertyNameLong(R, uN)(pN)
+DEF pretty(R, uN)((def(_, fun)):lawName) ==
+  lit("Def["); fmtObjectNameLong(R, uN)(fun); lit("]")
+DEF pretty(R, uN)(restr(_, orig, _)) ==
+  lit("Restr["); pretty(R, uN)(orig); lit("]")
+DEF pretty(R, uN)(copy(_, orig)) ==
+  lit("Copy["); pretty(R, uN)(orig); lit("]")
+DEF pretty(R, uN)(spc(_, fun, _)) ==
+  lit("Spc["); fmtObjectNameLong(R, uN)(fun); lit("]")
+DEF pretty(R, uN)(discr(_, _, con, dis)) ==
+  lit("Discr["); fmtObjectNameLong(R, uN)(constructor(con)); lit(","); spc(1);
+  fmtObjectNameLong(R, uN)(test(dis)); lit("]")
+DEF pretty(R, uN)(sel(_, _, con, sl)) ==
+  lit("Sel["); fmtObjectNameLong(R, uN)(constructor(con)); lit(","); spc(1);
+  fmtObjectNameLong(R, uN)(selector(sl)); lit("]")
+DEF pretty(R, uN)(gen(_, type, sorts)) ==
+  lit("Gen["); fmtObjectNameLong(R, uN)(type); spc(1);
+  fmtSeq(fmtObjectNameLong(R, uN))(constructor * sorts); lit("]")
+DEF pretty(R, uN)(ind(_, type, sorts)) ==
+  lit("Ind["); fmtObjectNameLong(R, uN)(type); spc(1);
+  fmtSeq(fmtObjectNameLong(R, uN))(constructor * sorts); lit("]")
+DEF pretty(R, uN)(equiv(_, _, con1, con2)) ==
+  lit("Equiv["); fmtObjectNameLong(R, uN)(constructor(con1)); lit(","); spc(1);
+  fmtObjectNameLong(R, uN)(constructor(con2)); lit("]")
+DEF pretty(R, uN)(cdfd(_, _, con)) ==
+  lit("CDfd["); fmtObjectNameLong(R, uN)(constructor(con)); lit("]")
+DEF pretty(R, uN)(ddfd(_, _, dis)) ==
+  lit("DDfd["); fmtObjectNameLong(R, uN)(test(dis)); lit("]")
+DEF pretty(R, uN)(sdfd(_, _, sel)) ==
+  lit("SDfd["); fmtObjectNameLong(R, uN)(selector(sel)); lit("]")
+DEF pretty(R, uN)(freetypeLaws(_, type, _)) ==
+  lit("Freetype["); fmtObjectNameLong(R, uN)(type); lit("]")
+DEF pretty(R, uN)(datatypeLaws(_, type, _)) ==
+  lit("Datatype["); fmtObjectNameLong(R, uN)(type); lit("]")
+DEF pretty(R, uN)(error(msg)) ==
+  lit("ERROR("); fmtDiag(msg); lit(")")
+
+FUN pretty: repo ** unitName ->
+             map[proofName, <, pHead] ** map[proofName, <, pBody] -> fmt
+DEF pretty(R, uN)(heads, bodies) ==
+  ((pretty(R, uN, bodies)), none) / heads
+
+FUN pretty: repo ** unitName ** map[proofName, <, pBody] ->
+             proofName ** pHead ** fmt -> fmt
+DEF pretty(R, uN, bodies)(pN, pH, f) ==
+  hintText(pretty(R, uN)(pN)); spc(1); lit(":"); spc(1); pretty(R, uN)(pH); 
+  spc(1); lit("["); pretty(R, uN)(bodies !? pN); lit("]"); brk;
+  f
+
+FUN pretty1: repo ** unitName ->
+              map[proofName, <, pHead] ** map[proofName, <, pBody] -> fmt
+DEF pretty1(R, uN)(heads, bodies) ==
+  ((pretty1(R, uN, bodies)), none) / heads
+
+FUN pretty1: repo ** unitName ** map[proofName, <, pBody] ->
+             proofName ** pHead ** fmt -> fmt
+DEF pretty1(R, uN, bodies)(pN, pH, f) ==
+  LET body == bodies !? pN
+  IN
+  IF body avail? ANDIF (axiom? or equiv?)(cont(body)) THEN f
+  ELSE
+    hintText(pretty(R, uN)(pN)); spc(1); lit(":"); spc(1); pretty(R, uN)(pH); 
+    spc(1); lit("["); pretty(R, uN)(body); lit("]"); brk;
+    f
+  FI
+
+FUN pretty: repo ** unitName -> pHead -> fmt
+DEF pretty(R, uN)(pHead(_, prems, concl)) ==
+  fmtSet(pretty(R, uN))(prems); spc(1); lit("|-"); spc(1); pretty(R, uN)(concl)
+
+FUN pretty: repo ** unitName -> option[pBody] -> fmt
+DEF pretty(_, _)(nil) == lit("?? not available ??")
+DEF pretty(R, uN)(avail(pB)) == pretty(R, uN)(pB)
+
+FUN pretty: repo ** unitName -> pBody -> fmt
+DEF pretty(_, _)(ordinary(_, _ :expr)) == lit("explicit script")
+DEF pretty(_, _)(axiom(_)) == lit("axiom")
+DEF pretty(_, _)(equiv(_)) == lit("equiv")
+DEF pretty(_, _)(missing(_)) == lit("missing")
+
+FUN pretty: repo ** unitName -> proofName -> fmt
+DEF pretty(R, uN)((ordinary(_, pN)):proofName) ==
+  lit((tl ^ 6)(symbol(pN)(R)))
+DEF pretty(R, uN)(gen(_, no)) == lit("Gen[#"); fmtNat(no); lit("]")
+DEF pretty(R, uN)(axm(_, lN)) == pretty(R, uN)(lN)
+DEF pretty(R, uN)(inst(_, rel, par)) ==
+  lit("Inst["); fmtUnitNameLong(R, uN)(rel); spc(1); lit"/";
+  spc(1); fmtObjectNameLong(R, uN)(par); lit("]")

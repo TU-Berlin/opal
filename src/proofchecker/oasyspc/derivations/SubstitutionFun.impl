@@ -1,0 +1,82 @@
+IMPLEMENTATION SubstitutionFun
+
+IMPORT RepoAbsy COMPLETELY
+       Seq ONLY seq exist?
+       SeqMap ONLY *
+       Pair COMPLETELY
+       OSubstitution ONLY subst !?
+       Option ONLY option avail? cont
+       OptionMap ONLY *
+       Sequent COMPLETELY
+
+DEF f <$ F == 
+  LET nF == 1st(f <$ F)
+  IN
+  IF 2nd(f <$ F) THEN changed(nF) ELSE nF FI
+  
+       
+FUN <$ : subst ** formula -> pair[formula, bool]
+DEF f <$ atomic(a, aK, es) == 
+  LET nes == (f <$ _) * es
+      nF == atomic(a, aK, 1st * nes)
+  IN
+  nF & exist?(\\x.x, 2nd * nes)
+DEF f <$ connect(a, cK, fs) ==
+  LET nfs == (f <$ _) * fs
+      nF == connect(a, cK, 1st * nfs)
+  IN
+  nF & exist?(\\x.x, 2nd * nfs)
+DEF f <$ quant(a, qK, lS, os, fr) == 
+  quant(a, qK, lS, os, 1st(f <$ fr)) & 2nd(f <$ fr)
+
+FUN <$ : subst ** expr -> pair[expr, bool]
+FUN <$ : subst ** guard -> pair[guard, bool]
+FUN <$ : subst ** eqn -> pair[eqn, bool]
+DEF f <$ name(a, o) == 
+  IF avail?(f !? o) THEN cont(f !? o)  & true 
+  ELSE name(a, o) & false 
+  FI
+DEF f <$ apply(a, fc, ar) == 
+  LET nfc == f <$ fc
+      nar == f <$ ar
+  IN
+  apply(a, 1st(nfc), 1st(nar)) & 2nd(nfc) or 2nd(nar)
+DEF f <$ tuple(a, es) == 
+  LET nes == (f <$ _) * es
+  IN tuple(a, 1st * nes) & exist?(\\x.x, 2nd * nes)
+DEF _ <$ den(a, t) == den(a, t) & false
+DEF f <$ cases(a, gs, oe) == 
+  LET ngs == (f <$ _) * gs
+      noe == (f <$ _) * oe
+  IN
+  cases(a, 1st * ngs, 1st * noe) &
+  exist?(\\x.x, 2nd * ngs) or cont(false)(2nd * noe)
+DEF f <$ lambda(a, s, vs, b) == lambda(a, s, vs, 1st(f <$ b)) & 2nd(f <$ b)
+DEF f <$ let(a, eqs, b) == 
+  LET neqs == (f <$ _)  * eqs
+      nb == f <$ b
+  IN
+  let(a, 1st * neqs, 1st(nb)) &
+  exist?(\\x. x, 2nd * neqs) or 2nd(nb)
+DEF f <$ as(a, v, e) == as(a, v, 1st(f <$ e)) & 2nd(f <$ e)
+DEF _ <$ any(a) == any(a) & false
+
+DEF f <$ guard(a, i, t) == 
+  guard(a, 1st(f <$ i), 1st(f <$ t)) & 2nd(f <$ i) or 2nd(f <$ t)
+
+DEF f <$ eqn(a, s, l, ps, r) == 
+  LET nl == f <$ l
+      nps == (f <$ _) * ps
+      nr == f <$ r
+  IN
+  eqn(a, s, 1st(nl), 1st * nps, 1st(nr)) &
+  2nd(nl) or exist?(\\x.x, 2nd * nps) or 2nd(nr)
+
+-- %sequents
+DEF f <$ sq ==
+  LET nProps == (f <$ _) * props(sq)
+      nHyps == (f <$ _) * hyps(sq)
+  IN
+  sq :=_props nProps :=_hyps nHyps
+
+DEF f <$$ sq == sq :=_props (f <$ _) * props(sq)

@@ -1,0 +1,63 @@
+SIGNATURE OSubstitution
+
+IMPORT RepoAbsy ONLY eqn:SORT guard:SORT expr:SORT formula:SORT
+       Seq[expr] ONLY seq[expr]:SORT
+       RepoName COMPLETELY
+       Option[expr] ONLY option[expr]:SORT
+       Seq[objectName] ONLY seq[objectName]:SORT
+       Repo ONLY repo:SORT
+       Fmt ONLY fmt:SORT
+       Set[objectName, <] ONLY set
+
+/* %Substitutions exploit uniqueness of local names in @sc{Opal} formulae.
+*/
+SORT subst
+FUN fmtSubst: subst -> fmt
+FUN prettySubst: repo -> subst -> fmt
+
+FUN subst: objectName ** expr -> formula -> formula
+FUN subst: seq[objectName] ** seq[objectName] -> subst
+
+-- %empty substitution
+FUN {} : subst
+FUN {}? : subst -> bool
+-- %add pair to substitution
+FUN def: objectName ** expr ** subst -> subst
+FUN def: seq[objectName] ** seq[expr] ** subst -> subst
+-- %apply v |-> e within substitution before adding this pair
+FUN odef: objectName ** expr ** subst -> subst
+-- %ask for definedness
+FUN !? : subst ** objectName -> option[expr]
+-- %union of substituion, second wins
+FUN <+ : subst ** subst -> subst
+-- %composition of substitutions @code{(s2 o s1) <$ e === s2 <$ (s1 <$ e)}
+FUN o : subst ** subst -> subst
+-- %remove substitutions of variables from given signature
+FUN - : subst ** localSignName -> subst
+-- %rename variable
+FUN ren: objectName ** objectName ** subst -> subst
+-- %filter: only substitutions from given local signature are retained
+FUN | : localSignName ** subst -> subst
+-- %filter: check domain
+FUN | : (objectName -> bool) ** subst -> subst
+-- %filter: restrict to given domain
+FUN | : seq[objectName] ** subst -> subst
+
+-- %defined variables
+FUN dom: subst -> set[objectName, <]
+
+-- %inserted expressions
+FUN codom: subst -> seq[expr]
+
+-- %check all substitutions
+FUN forall? : (objectName ** expr -> bool) ** subst -> bool
+
+/* %Note: function is not applied to variable declarations within
+   quantified formulae */
+FUN <$ : subst ** formula -> formula
+
+/* %Note: function is not applied to variable declarations within
+   lambda expressions or the as variable. */
+FUN <$ : subst ** expr -> expr
+FUN <$ : subst ** guard -> guard
+FUN <$ : subst ** eqn -> eqn

@@ -1,0 +1,132 @@
+IMPLEMENTATION FormInclusion
+
+IMPORT FormulaHandling ONLY property cart 
+       RepoAbsy COMPLETELY
+       Repo ONLY repo
+       RepoName COMPLETELY
+       Seq ONLY seq forall? exist? # seq find?
+       RepoObjectAccess ONLY object symbol fct
+       SortHandling ONLY variants dataVariants
+       Option ONLY option nil? cont
+       Pair ONLY pair unpair &
+       SeqZip ONLY zip
+       Predicate ONLY or
+       Nat ONLY nat =
+       Denotation ONLY = ++
+       DEBUG ONLY PRINT
+       Fmt ONLY pretty
+       PrettyFormatting ONLY fmtObjectNameLong
+       PredicateX ONLY and
+       String ONLY string
+
+FUN traceTD? : bool
+DEF traceTD? == false
+
+DEF includable?(pN, uN)(R) ==
+  LET (R1, pr) == property'FormulaHandling(pN)(R)
+  IN
+  includable?(R1, uN)(formula(pr))
+
+FUN includable? : repo ** unitName -> formula -> bool
+DEF includable?(R, uN) == includableQ?(R) or includableS?(R, uN)
+
+-- %true, if no EX and no NOT occur
+FUN includableQ? : repo -> formula -> bool
+DEF includableQ?(R)(F) ==
+  IF F atomic? THEN true
+  IF F connect? THEN
+    IF kind(F) neg? THEN false ELSE forall?(includableQ?(R), formulas(F)) FI
+  IF F quant? THEN 
+    IF kind(F) exist? THEN false ELSE includableQ?(R)(range(F)) FI
+  FI
+
+/* %True, if quantified variables are from foreign sorts. (This could be
+    made more fine grained: allow also sorts, the constructors of which are
+    all exported, or there is a 1:1 correspondence between internal and
+    external constructors. */
+FUN includableS? : repo ** unitName -> formula -> bool
+DEF includableS?(R, uN)(F) ==
+  IF F atomic? THEN true
+  IF F connect? THEN forall?(includableS?(R, uN), formulas(F))
+  IF F quant? THEN
+    forall?(includableS?(R, uN), vars(F)) and includableS?(R, uN)(range(F))
+  FI
+
+-- %objectName should be a variable
+FUN includableS? : repo ** unitName -> objectName -> bool
+DEF includableS?(R, uN)(oN) ==
+  LET k == kind(object(oN)(R))
+  IN
+  IF k sort? THEN false -- ?? cannot happen for variables
+  IF k oper? THEN includableS?(R, uN)(fct(k))
+  FI
+
+FUN includableS? : repo ** unitName -> fct -> bool
+DEF includableS?(R, uN)(name(n)) == 
+  IF ~(unitName(n) ~ uN) THEN true ELSE isTypeData(R)(n) FI
+DEF includableS?(R, uN)(cart(els)) == forall?(includableS?(R, uN), els)
+DEF includableS?(R, uN)(funct(d, c)) ==
+  includableS?(R, uN)(d) and includableS?(R, uN)(c)
+
+/* %Check, whether TYPE and DATA of the specified sort are identical. */
+
+FUN isTypeData: repo -> objectName -> bool
+DEF isTypeData(R)(oN0) ==
+  LET sName == globalObjectName(no(oN), unit(oN) :=_part sign)
+      iName == globalObjectName(no(oN), unit(oN) :=_part impl)
+      tVs == variants(sName, R)
+      dVs == dataVariants(iName, R)
+      oN == PRINT(traceTD?, \\ . "isTypeData:" ++ 
+                                 pretty(fmtObjectNameLong(R)(oN0)), oN0)
+  IN
+  IF #(tVs) = #(dVs) THEN
+    forall?(checkTD(R)(tVs, sName, iName), dVs)
+  ELSE 
+    false
+  FI
+
+/* %Check, whether (data) variant is congruent with one of the 
+    (type) variants. */
+FUN checkTD: repo -> seq[variant] ** objectName ** objectName ->
+              variant -> bool
+DEF checkTD(R)(typeVs, sName, iName)(dataV0) ==
+  LET cSym == symbol(constructor(dataV))(R)
+      typeVO == find?(\\v. symbol(constructor(v))(R) = cSym, typeVs)
+      dataV == PRINT(traceTD?, \\ . "checkTD:" ++
+                                    pretty(fmtObjectNameLong(R)
+                                           (constructor(dataV0))), dataV0)
+  IN
+  IF nil?(typeVO) THEN false
+  ELSE
+    LET sFct == fct(constructor(cont(typeVO)))(R)
+        iFct == fct(constructor(dataV))(R)
+    IN
+    checkFct(R)(sName, iName)(sFct, iFct)
+  FI
+
+FUN checkFct checkFct0: repo -> objectName ** objectName -> fct ** fct -> bool
+DEF checkFct(R)(sName, iName)(f1, f2) ==
+  PRINT(traceTD?, \\ . "checkFct:" ++
+        (IF (f1 and f2)(name?) THEN
+         "names:" ++ pretty(fmtObjectNameLong(R)(sort(f1))) ++
+         "," ++ pretty(fmtObjectNameLong(R)(sort(f2)))
+         IF (f1 and f2)(cart?) THEN "cart"
+         IF (f1 and f2)(funct?) THEN "funct"
+         ELSE "not equal"
+         FI), checkFct0(R)(sName, iName)(f1, f2))
+
+
+DEF checkFct0(R)(sName, iName)(name(sN), name(iN)) ==
+  IF sN = sName THEN iN = iName
+  ELSE sN = iN
+  FI
+DEF checkFct0(R)(sName, iName)(cart(se), cart(ie)) ==
+  IF #(se) = #(ie) THEN
+    forall?(\\p. checkFct(R)(sName, iName)(unpair(p)), zip(&)(se, ie))
+  ELSE
+    false
+  FI
+DEF checkFct0(R)(sName, iName)(funct(sd,sc), funct(id, ic)) ==
+  checkFct(R)(sName, iName)(sd, id) and checkFct(R)(sName, iName)(sc, ic)
+DEF checkFct0(_)(_,_)(_else1, _else2) == false
+  

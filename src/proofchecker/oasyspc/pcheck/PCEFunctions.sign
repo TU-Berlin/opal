@@ -1,0 +1,127 @@
+/* %Functions on the pc environment, separated from the data type declarations
+    and definitions of ordering relations.
+*/
+SIGNATURE PCEFunctions
+
+IMPORT PCEnv COMPLETELY
+       RepoDiag ONLY diag:SORT ref:SORT
+       RepoName ONLY objectName:SORT
+       Set[lawName,<] ONLY set
+
+
+-- %$The Proof Checker Environment$
+-- %Empty Environment
+FUN {} : pcEnv
+
+-- %union of environments (second environment wins)
+FUN <+ : pcEnv ** pcEnv -> pcEnv
+-- %add set to laws
+FUN <+ : pcEnv ** set[lawName, <] -> pcEnv
+
+-- %add assumes / resolved
+FUN <+_ass : pcEnv ** set[lawName, <] -> pcEnv
+FUN <+_res : pcEnv ** set[lawName, <] -> pcEnv
+
+-- %add a proof / law/ diag
+FUN incl: proofName ** pHead ** pBody ** pcEnv -> pcEnv
+FUN inclGen:           pHead ** pBody ** pcEnv -> pcEnv
+
+FUN incl: lawName ** pcEnv -> pcEnv
+FUN incl: diag ** pcEnv -> pcEnv
+
+-- %add as extra law 
+FUN inclX: lawName ** pcEnv -> pcEnv
+
+-- % make law as axiom
+FUN %! : lawName -> pcEnv
+
+FUN % : proofName ** pHead ** pBody -> pcEnv
+FUN % : lawName -> pcEnv
+
+-- %abstract diagnostic
+FUN asPCEnv: diag -> pcEnv
+
+
+-- %$Law Names$
+
+-- %freetype / morphism induced, function associated, source law?
+FUN datatype? : lawName -> bool -- freetype? or cdfd?
+FUN freetype? : lawName -> bool
+FUN morphism? : lawName -> bool
+FUN assocFun? : lawName -> bool
+FUN source?   : lawName -> bool
+
+-- %Law from this or other part of structure
+FUN from : unitName -> lawName -> bool
+
+-- %suitable ref for lawname
+FUN ref: repo -> lawName -> ref
+-- %force ref to be in given unit (setting to unknown location, if necessary)
+FUN ref: repo ** unitName -> lawName -> ref
+
+-- %change law to reflect derivation of unit
+FUN deriveLike: unitName -> repo ** lawName -> repo ** lawName
+
+-- %get `origin'
+FUN unitName : lawName -> unitName
+
+-- %$Proof Names$
+
+-- %suitable ref for proofname
+FUN ref: repo ** unitName -> proofName -> ref
+
+-- %$Proof Heads$
+
+
+-- %abbreviation
+FUN def: objectName -> repo -> pHead
+FUN axm: lawName -> pHead
+
+-- %$Proof Bodies$
+
+-- %abbreviation
+FUN def: objectName -> repo -> pBody
+
+
+
+-- %$Morphisms$
+-- %$$Inclusion$
+/* %In principle, this is simple, we can just put a @code{copy} around the
+    law name. Freetype proofs, however, have a predefined structure, and are
+    directly translated to laws on the corresponding types and functions.
+
+    Additionally, laws from the signature, which are referred to in proof
+    heads, are translated to copy laws. So the user does not
+    need to write COPY explicitly.
+
+    Laws the origin of which is different from the supplied unit name, are
+    not changed.
+*/
+FUN toImpl: unitName ** repo -> lawName -> lawName
+
+/* proofs just cannot be included
+FUN toImpl: unitName ** repo ->
+             proofName ** pHead ** map[proofName, <, pHead] ->
+             map[proofName, <, pHead]
+FUN toImpl: unitName ** repo ->
+             proofName ** pBody ** map[proofName, <, pBody] ->
+             map[proofName, <, pBody]
+*/
+-- %$$Restriction$
+
+/* %Check, whether the law is from the supplied unit name, or its
+    instantiation, and if so, construct the restriction. Otherwise do not
+    change the law name. */
+
+FUN restrict: repo -> unitName ** set[objectName, <] -> lawName -> lawName
+
+/* %Perform restriction on all law names in head and conclusion. If proof is
+    axiom of an ordinary law or an specification, which is no longer mandatory,
+    the proof is omitted. (Check definitional equations also, if they are
+    allowed in source structures of realization. */
+FUN restrict: repo -> unitName ** set[objectName, <] ->
+               proofName ** pHead ** map[proofName, <, pHead] ->
+               map[proofName, <, pHead]
+FUN restrict: repo -> unitName ** set[objectName, <] ->
+               proofName ** pBody ** map[proofName, <, pBody] ->
+               map[proofName, <, pBody]

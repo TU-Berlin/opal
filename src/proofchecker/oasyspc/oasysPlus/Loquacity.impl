@@ -1,0 +1,85 @@
+IMPLEMENTATION Loquacity
+
+IMPORT ComState ONLY stateId  ?  =>  get
+       Nat ONLY nat max  <= 
+       Com ONLY EXEC succeed  com:SORT okay? error ans data
+       ComCompose ONLY & ;
+       RepoEvent ONLY event repository progress progressTarget:SORT
+       Set ONLY set {}  incl  excl  exist? 
+       Denotation ONLY < ++  init
+       File ONLY file open close writeLine stdErr
+       Option COMPLETELY
+       String ONLY string
+       Char ONLY blank char
+       ComAction ONLY done
+       ColourText ONLY warnText : denotation -> denotation
+
+-- %$Normal Messages$
+
+FUN vStateId: stateId[nat]
+DEF vStateId == EXEC(stateId(max))
+
+DEF verbosityLevel == vStateId ?
+DEF setVerbosity(n) == vStateId => (\\ _ . n)
+
+DEF progress(n, msg)(R) ==
+  verbosityLevel & (\\ vl.
+  IF n <= vl THEN
+    log(init(n, blank) ++ msg()) & 
+    event(progress(repository, init(n, blank) ++ msg()))(R)
+  ELSE
+    succeed(R)
+  FI
+  )
+
+-- %$Debug Messages$
+
+FUN dbStateId: stateId[set[denotation, <]]
+DEF dbStateId == EXEC(stateId({}))
+
+DEF debugSet == dbStateId ?
+DEF setDebug(tags) == dbStateId => (\\ _ . tags)
+DEF inclDebug(tag) == dbStateId => incl(tag, _)
+DEF exclDebug(tag) == dbStateId => excl(tag, _)
+
+DEF debugMsg(tag, msg)(R) ==
+  debugSet & (\\ tags.
+  IF exist?(_ <| tag, tags) THEN
+    log( "DEBUG[" ++ tag ++ "]\n" ++ msg()) & 
+    event(progress(repository, warnText("DEBUG[" ++ tag ++ "]\n" ++ msg())))(R)
+  ELSE
+    succeed(R)
+  FI
+  )
+
+-- %$Logging$
+
+FUN logStateId: stateId[option[file]]
+DEF logStateId == EXEC(stateId(nil))
+
+DEF loggingOn == 
+  get(logStateId) & (\\ logF .
+  IF avail?(logF) THEN done
+  ELSE
+    open("oasyslog", "a") ; (\\ F.
+    IF okay?(F) THEN logStateId => (\\ _ . avail(data(F)))
+    ELSE writeLine(stdErr, "could not open log file:" ++ error(F))
+    FI
+    )
+  FI
+  )
+
+DEF loggingOff ==
+  get(logStateId) & (\\ F.
+  IF avail?(F) THEN
+    close(F cont) & logStateId => (\\ _ . nil)
+  ELSE
+    done
+  FI
+  ) 
+
+FUN log: denotation -> com[void]
+DEF log(msg) ==
+  get(logStateId) & (\\ log? .
+  IF log? avail? THEN writeLine(cont(log?), msg) ELSE done FI
+  ) 

@@ -1,0 +1,140 @@
+IMPLEMENTATION InternEval
+
+IMPORT DbComm ONLY ensureClient rpc
+       ComCompose ONLY & ;
+       DbRequire ONLY require
+       Set ONLY % set
+       RepoName COMPLETELY
+       DbGlobalEnv ONLY identTable
+       RepoCom1 ONLY query
+       AnonPair ONLY 1st
+       DbConversion ONLY asExpr
+       DbAbsyAux ONLY fct
+       DbEvalTable ONLY newEval rmEval
+       ChannelData COMPLETELY
+       Com ONLY fail? succeed error data com ans yield okay? break
+       Predicate ONLY or
+       Void ONLY void nil
+       RepoInternData ONLY repo:SORT
+       Expression ONLY fct expr:SORT evalId
+       Nat ONLY nat
+       ComAction ONLY done
+       RepoUnitAccess ONLY interpreted?
+       SetFilter ONLY |
+       RepoEvent ONLY clearErrors errors?
+       RepoCom ONLY upd
+       Check ONLY checkUnits
+       RepoComAbort ONLY abort
+       Compile ONLY compileUnits
+       Fmt ONLY pretty
+       FmtSet ONLY fmtSet
+       PrettyFormatting ONLY fmtUnitName
+       Denotation ONLY ++
+       Loquacity ONLY debugMsg
+       String ONLY string
+       Seq ONLY seq
+       SetMap ONLY *
+
+-- %$The result type$
+DATA result == okay(data: obj)  
+               undefined(msg: denotation)  
+               unknown(msg: denotation) 
+
+-- %$Evaluating expressions$
+DEF eval(uN, Expr) ==
+  identTable & (\\ iTab.
+  query(\\R. 1st(asExpr(R, iTab, Expr))) & (\\ EExpr.
+  query(\\R. fct(R, Expr)) & (\\ Fct.
+  eval(uN, EExpr, Fct)
+  )))
+
+DEF eval(uN, EExpr, Fct) == 
+    newEval("<INTERN>", Fct) & (\\ id.
+  rpc(internEval(id, EExpr), internEvalAnswer?) ; (\\ res.
+  rmEval(id) & (\\ _ .
+  IF res fail? THEN
+    succeed(unknown(error(res)))
+  ELSE
+    LET a == data(res)
+    IN
+    IF a broken? THEN succeed(unknown("broken evaluation"))
+    IF a aborted? THEN succeed(undefined(reason(a)))
+    IF a iResult? THEN succeed(okay(result(a)))
+    FI
+  FI
+  ))) ; (\\ res:ans .
+  IF res okay? THEN yield(res)
+  IF res fail? THEN succeed(unknown(error(res)))
+  FI
+  )
+
+-- %$Transforming expressions$
+DEF asExpr(AE) ==
+  identTable & (\\ iTab.
+  query(\\R. 1st(asExpr(R, iTab, AE))) & (\\ EE.
+  succeed(EE)
+  ))
+
+-- %$Sending current repository to client$
+DEF setRepo(R) ==
+  rpc(setRepo(R), ready?) ; (\\res.
+  IF fail?(res) THEN break("could not set repository")
+  ELSE
+    done
+  FI)
+
+-- %$Preparation$
+-- %-similar functions found in DbEvaluation
+
+DEF checkAndCompile(deps) ==
+  query(\\R. (\\U. ~(interpreted?(U)(R))) | deps)     & (\\CodedDeps0.
+  LET CodedDeps == (_ :=_part impl) * CodedDeps0
+  IN
+  upd(\\R. debugMsg("checkAndCompile", \\ . 
+                    "Deps:" ++ pretty(fmtSet(fmtUnitName(R))(deps)) ++
+                    "\nCodedDeps:" ++ 
+                    pretty(fmtSet(fmtUnitName(R))(CodedDeps)))(R)) & (\\ _ .
+  clearErrors                                         & (\\ _ .
+  upd(checkUnits(deps))                               & (\\ _ .
+  errors?                                             & (\\ CheckErrors? .
+  IF CheckErrors? THEN
+    abort
+  ELSE
+    upd(compileUnits(CodedDeps))                    & (\\ _ .
+    errors?                                         & (\\ CompileErrors? .
+    IF CompileErrors? THEN
+      abort
+    ELSE succeed(nil) FI
+    ))
+  FI
+  )))))
+
+
+-- %$EXecuting Commands$
+DEF exec(uN, EExpr, Fct) == 
+  newEval("<INTERN>", Fct) & (\\ id.
+  rpc(internExec(id, EExpr), internExecAnswer?) ; (\\ res.
+  rmEval(id) & (\\ _ .
+  IF res fail? THEN
+    succeed(unknown(error(res)))
+  ELSE
+    LET a == data(res)
+    IN
+    IF a broken? THEN succeed(unknown("broken evaluation"))
+    IF a aborted? THEN succeed(undefined(reason(a)))
+    IF a iResult? THEN succeed(okay(result(a)))
+    IF a fail? THEN succeed(unknown("failed: " ++ error(a)))
+    FI
+  FI
+  ))) ; (\\ res:ans .
+  IF res okay? THEN yield(res)
+  IF res fail? THEN succeed(unknown(error(res)))
+  FI
+  )
+
+-- %$Auxiliary functions$
+FUN internEvalAnswer? : answer -> bool
+DEF internEvalAnswer? == aborted? or broken? or iResult?
+
+FUN internExecAnswer? : answer -> bool
+DEF internExecAnswer? == aborted? or broken? or iResult? or fail?

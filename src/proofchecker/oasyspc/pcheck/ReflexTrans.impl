@@ -1,0 +1,401 @@
+IMPLEMENTATION ReflexTrans 
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/pcheck/ReflexTrans.impl,v 1.1 1999-10-13 20:32:47 kd Exp $
+
+IMPORT RepoObjectAccess ONLY symbol actuals object newLocalSign newLocalObjects
+       Denotation ONLY = ++
+       RepoName COMPLETELY
+       PCEnv COMPLETELY
+       Seq ONLY ft rt seq <> <>? % ++ exist?
+       Set ONLY arb set {}? {}
+       RepoAbsy COMPLETELY
+       ABORT ONLY ABORT
+       FormulaHandling COMPLETELY
+       Nat ONLY nat 4
+       RepoUnitAccess ONLY symbol
+       PrettyFormatting ONLY fmtObjectNameLong 
+       Fmt ONLY fmt pretty
+       RepoAn ONLY an none
+       String ONLY string
+       UnitHandling COMPLETELY
+       SortHandling COMPLETELY
+       InstanceHandling ONLY instantiate instanceMap deriveLike
+       SeqMap ONLY *
+       Map ONLY map
+       Control ONLY ^
+       SeqZip ONLY zip
+       Option ONLY option avail nil avail? nil? cont
+       RepoSource ONLY locator? unspecified locator
+       RepoDiag ONLY unitRef !! ref mode error msg
+       SeqIndex ONLY pos !
+       NFmt ONLY fmtLatin1
+       DEBUG ONLY PRINT
+       SeqMapEnv ONLY *
+       PrettyPCEnv ONLY pretty
+       ProofAn ONLY :=_shortcut
+       Weight ONLY +#
+       SeqFilter ONLY |
+       TypeLaws ONLY getFreetypeLaws getDatatypeLaws
+       SetConv ONLY asSeq
+       SeqMapEnv ONLY *
+       DefEqnHandling ONLY transDefEqn
+       ObjectNameMap ONLY <*
+       VarHandling ONLY toImplVars toImpl newVars asVar newTypeVar
+       PredefEntities ONLY true false proofscript
+       AbsySC COMPLETELY
+
+-- %$Decode Reflexion$
+
+-- %different arranging of parameters makes use in @code{*'SeqMapEnv} possible
+DEF refl(main)(R, cProp) == refl(R, main)(cProp)
+
+-- %@TODO korrekte Anwendung "uberpr"ufen!
+DEF refl(R, main)(cProp) ==
+  IF reflexion?(R)(unitName(cProp)) THEN
+-- %Decode: get the symbol of the object and the instance 
+    LET reflOp0 == symbol(cProp)(R)
+        reflOp == IF "LAW%" <| reflOp0 THEN (tl ^ 4)(reflOp0) ELSE reflOp0 FI
+        aPars == actuals(cProp)(R)
+        a == an(object(cProp)(R))
+    IN
+    IF reflOp = "Def" THEN 
+      IF impl(object(ft(aPars))(R)) def? THEN (R, def(a,ft(aPars)))
+      ELSE (R, error(mkDiag(a, ft(aPars), main, R)
+                     ("no definition found for %s")))
+      FI
+    IF reflOp = "Spc" THEN
+      LET 
+        props == properties(object(ft(aPars))(R))
+      IN
+      IF {}?(props) THEN
+        LET (R1, ob) == toSign(R, main)(ft(aPars))
+            props2 == properties(object(ob)(R1))
+        IN
+        IF {}?(props2) THEN
+          (R1, error(mkDiag(a, ft(aPars), main, R) ("No properties for %s")))
+        ELSE
+          (R1, spc(a, ft(aPars), arb(props2)))
+        FI
+      ELSE (R, spc(a, ft(aPars), arb(props)))
+      FI
+    IF reflOp = "Restr" THEN
+      LET (R1, ob) == toSign(R, main)(ft(aPars))
+          (R2, res) == refl(R1, main)(ob)
+      IN
+      IF res error? THEN (R2, res)
+      ELSE
+        (R2, restr(none, res, trueSorts(unit(ob))(R)))
+      FI
+    IF reflOp = "Copy" THEN
+      LET (R1, ob) == toSign(R, main)(ft(aPars))
+          (R2, res) == refl(R1, main)(ob)
+      IN
+      IF res error? THEN (R2, res) ELSE (R2, copy(none, res)) FI
+    IF reflOp = "Gen" THEN 
+      checkFT(main, R)(a, ft(aPars), \\vs. 
+      (R, gen(a, ft(aPars), vs)))
+    IF reflOp = "Ind" THEN
+      checkFT(main, R)(a, ft(aPars), \\vs. 
+      (R, ind(a, ft(aPars), vs)))
+    IF reflOp = "Discr" THEN 
+      checkAssocFT(main, R)(a, ft(aPars), \\type . 
+      checkFT(main, R)(a, type, \\ vs.
+      checkCon(main, R)(a, ft(aPars), type, vs, \\con. 
+      checkDis(main, R)(a, ft(rt(aPars)), type, vs, \\dis. 
+      (R, discr(a, type, con, dis))
+      ))))
+    IF reflOp = "Sel" THEN 
+      checkAssocFT(main, R)(a, ft(aPars), \\type.
+      checkFT(main, R)(a, type, \\ vs.
+      checkCon(main, R)(a, ft(aPars), type, vs, \\con.
+      checkSel(main, R)(a, ft(rt(aPars)), type, vs, \\sl. 
+      (R, sel(a, type, con, sl))
+      ))))
+    IF reflOp = "Equiv" THEN 
+      checkAssocFT(main, R)(a, ft(aPars), \\type.
+      checkFT(main, R)(a, type, \\ vs.
+      checkCon(main, R)(a, ft(aPars), type, vs, \\con1.
+      checkCon(main, R)(a, ft(rt(aPars)), type, vs, \\con2. 
+      (R, equiv(a, type, con1, con2))
+      ))))
+    IF reflOp = "CDfd" THEN
+      checkAssocFT(main, R)(a, ft(aPars), \\type.
+      checkData(main, R)(a, type, \\ vs. 
+      checkCon(main, R)(a, ft(aPars), type, vs, \\con.
+      (R, cdfd(a, type, con))
+      )))
+    IF reflOp = "DDfd" THEN
+      checkAssocFTD(main, R)(a, ft(aPars), \\type.
+      checkFT(main, R)(a, type, \\ vs. 
+      checkDis(main, R)(a, ft(aPars), type, vs, \\dis. 
+      (R, ddfd(a, type, dis))
+      )))
+    IF reflOp = "SDfd" THEN
+      checkAssocFTD(main, R)(a, ft(aPars), \\type.
+      checkFT(main, R)(a, type, \\ vs. 
+      checkSel(main, R)(a, ft(aPars), type, vs, \\sl. 
+      (R, sdfd(a, type, sl))
+      )))
+    IF reflOp = "Freetype" THEN
+      checkFT(main, R)(a, ft(aPars), \\vs. 
+      (R, freetypeLaws(a, ft(aPars), vs)))
+    IF reflOp = "Datatype" THEN
+      checkData(main, R)(a, ft(aPars), \\vs. 
+      (R, datatypeLaws(a, ft(aPars), vs)))
+    ELSE (R, error(mkDiag(a, ft(aPars), main, R)
+                   ("unknown reflexion " ++ reflOp)))
+    FI  
+  ELSE
+    LET dec0 == decode(cProp)(R)
+        (R0, dec) == deriveLike(main)(R, dec0)     
+        (R1, p) == property(dec)(R0)
+        a == an(p)
+    IN
+    IF part(unitName(cProp)) = part(unit(dec)) THEN(R1, ordinary(a, dec))
+    ELSE (R1, copy(none, ordinary(a, dec)))
+    FI
+  FI
+
+-- %check free type: call continuation if objectName denotes a free type
+FUN checkFT: unitName ** repo -> an ** objectName **
+              (seq[variant] -> repo ** lawName) -> repo ** lawName
+DEF checkFT(main, R)(a, oN, contin) ==
+  LET vs == variants(oN, R)
+  IN
+  IF vs <>? THEN (R, error(mkDiag(a, oN, main, R)
+                           ("%s is not a free type")))
+  ELSE contin(vs)
+  FI
+
+-- %check data type
+FUN checkData: unitName ** repo -> an ** objectName **
+              (seq[variant] -> repo ** lawName) -> repo ** lawName
+DEF checkData(main, R)(a, oN, contin) ==
+  LET vs == dataVariants(oN, R)
+  IN
+  IF vs <>? THEN (R, error(mkDiag(a, oN, main, R)
+                           ("%s is not an implemented data type")))
+  ELSE contin(vs)
+  FI
+    
+-- %try to find associated free type for constructor
+FUN checkAssocFT: unitName ** repo -> an ** objectName **
+                   (objectName -> repo ** lawName) -> repo ** lawName
+DEF checkAssocFT(main, R)(a, oN, contin) ==
+  LET type == find(R)(oN)
+  IN
+  IF type nil? THEN (R, error(mkDiag(a, oN, main, R)
+                              ("cannot determine free type for %s")))
+  ELSE contin(type cont)
+  FI
+
+-- %try to find associated free type for selector or discriminator
+FUN checkAssocFTD: unitName ** repo -> an ** objectName **
+                   (objectName -> repo ** lawName) -> repo ** lawName
+DEF checkAssocFTD(main, R)(a, oN, contin) ==
+  LET type == findD(R)(oN)
+  IN
+  IF type nil? THEN (R, error(mkDiag(a, oN, main, R)
+                              ("cannot determine free type for %s")))
+  ELSE contin(type cont)
+  FI
+
+-- %check for constructor
+FUN checkCon: unitName ** repo ->
+               an ** objectName ** objectName ** seq[variant] **
+               (variant -> repo ** lawName) -> repo ** lawName
+DEF checkCon(main, R)(a, oN, type, vs, contin) ==
+  LET con == findCon(R)(oN, vs)
+  IN
+  IF con nil? THEN
+    (R, error(mkDiag(a, type, oN, main, R)
+              ("%s is no free constructor of %s")))
+  ELSE contin(con cont)
+  FI
+
+-- %check for discriminator
+FUN checkDis: unitName ** repo ->
+               an ** objectName ** objectName ** seq[variant] **
+               (variant -> repo ** lawName) -> repo ** lawName
+DEF checkDis(main, R)(a, oN, type, vs, contin) ==
+  LET dis == findDis(R)(oN, vs)
+  IN
+  IF dis nil? THEN
+    (R, error(mkDiag(a, type, oN, main, R) "%s is no discriminator of %s"))
+  ELSE contin(dis cont)
+  FI
+
+-- %check for selector
+FUN checkSel: unitName ** repo ->
+               an ** objectName ** objectName ** seq[variant] **
+               (component -> repo ** lawName) -> repo ** lawName
+DEF checkSel(main, R)(a, oN, type, vs, contin) ==
+  LET sl == findSel(R)(oN, vs)
+  IN
+  IF sl nil? THEN
+    (R, error(mkDiag(a, type, oN, main, R) "%s is no selector of %s"))
+  ELSE contin(sl cont)
+  FI
+
+-- %$Get Formula$
+
+FUN debugFormula? : bool
+DEF debugFormula? == false
+  
+DEF formula(lN, uN0)(R) ==
+  LET uN == PRINT(debugFormula?,
+                  \\ . (fmtLatin1(fmtLawName(lN))):denotation, uN0)
+      fm == pretty(R, uN)(lN)
+      (R1, f1) == formula0(lN, uN)(R)
+  IN 
+  (R1, +#(R1)(f1 :=_shortcut fm))
+
+-- %variant for use in SetMapEnv
+FUN formula: unitName -> repo ** lawName -> repo ** formula
+DEF formula(uN)(R, lN) == formula(lN, uN)(R)
+
+FUN formula0: lawName ** unitName -> repo -> repo ** formula
+DEF formula0(ordinary(_, n),_)(R) == 
+  LET (R1, p) == property(n)(R) IN (R1, formula(p))
+DEF formula0(def(_, n),_)(R) == 
+  LET i == impl(object(n)(R))
+  IN
+  IF def?(i) THEN
+    LET uN == unitName(n)
+    IN
+    IF basicUnitName?(uN) THEN transDefEqn(R)(eqns(i))
+    IF derivedUnitName?(uN) THEN
+      transDefEqn(R)((\\ e. instantiate(instanceMap(uN, R)) <* e) * eqns(i))
+    FI
+  ELSE
+    (R, ABORT("formula'ReflexTrans: Def without equation!" ++ ""))
+  FI
+DEF formula0(spc(_, f, p),_)(R) == 
+  LET (R1, pr) == property(p)(R) IN (R1, formula(pr))
+DEF formula0(restr(_, orig, sorts), main)(R) ==
+  IF sorts {}? THEN
+    LET (R1, origF) == formula(orig, main)(R) 
+        (R2, F1) == toImplVars(main)(R1, origF)
+    IN (R2, toImpl(main) <* F1)
+  ELSE
+    (R, ABORT("formula'ReflexTrans: cannot construct Restr yet" ++ "" ))
+  FI
+DEF formula0(copy(_, orig), main)(R) ==
+  LET (R1, origF) == formula(orig, main)(R) 
+      (R2, F1) == toImplVars(main)(R1, origF)
+  IN (R2, toImpl(main) <* F1)
+DEF formula0(discr(_, tpe, con, dcr),_)(R) ==
+  LET res == select(constructor(con) = constructor(dcr))(R)
+  IN
+  IF components(con) <>? THEN
+    (R, cong(apply1(test(dcr), constructor(con)), res))
+  ELSE
+    LET (R1, lS) == newVars(R, %(con))
+        vars == (\\sl. asVar(R1)(lS, sl)) * selector * components(con)
+        lhs == apply1(test(dcr), apply1(constructor(con), vars))
+    IN
+    (R1, quant(none, forall, lS, vars, cong(lhs, res)))
+  FI
+
+DEF formula0(sel(_, tpe, con, sl),_)(R) ==
+  LET (R1, lS) == newVars(R, %(con))
+      vars == (\\sl1. asVar(R1)(lS, sl1)) * selector * components(con)
+      p == pos(\\ c. selector(c) = selector(sl), components(con))
+      cTerm == apply1(constructor(con), vars)
+  IN
+  IF p nil? THEN
+    (R1, forall1(vars, neg(dfd(apply1(selector(sl), cTerm)))))
+
+  ELSE
+    (R1, forall1(vars, cong(apply1(selector(sl), cTerm),
+                            name(none, vars!(cont(p))))))
+  FI
+
+DEF formula0(gen(_, tpe, vars),_)(R) ==
+  LET (main, R2) == newTypeVar(tpe)(R)
+      (R3, conT) == (mkEx(main), R2) * vars
+  IN
+  (R3, forall1(main, disj1(none, conT)))
+
+FUN mkEx: objectName -> repo ** variant -> repo ** formula
+DEF mkEx(mv)(R, vrt) ==
+  LET (R1, lS) == newVars(R, %(vrt))
+      vars == (\\sl1. asVar(R1)(lS, sl1)) * selector * components(vrt)
+      cTerm == apply1(constructor(vrt), vars)
+  IN
+  (R1, exist1(none, vars, cong(name(none, mv), cTerm)))
+
+DEF formula0(ind(_, tpe, vars),_)(R) ==
+  (R, ABORT("formula'ReflexTrans: cannot construct Ind yet" ++ "" ))
+DEF formula0(equiv(_, tpe, con1, con2),_)(R) ==
+  LET (R1, lS, v1, v2) == newVars(R, con1, con2)
+      equation == cong(apply1(constructor(con1), v1),
+                       apply1(constructor(con2), v2))
+  IN
+  IF constructor(con1) = constructor(con2) THEN 
+    IF (v1 ++ v2) <>? THEN (R1, equation)
+    ELSE
+      (R1, forall1(none, v1 ++ v2,
+                   equiv(equation,
+                         conj1(zip(\\w1, w2. cong(w1, w2))(v1, v2)))))
+    FI
+  ELSE
+    (R1, neg(exist1(none, v1 ++ v2, equation)))
+    -- (R1, forall1(none, v1 ++ v2, connect(none, neg, %(equation))))
+  FI
+DEF formula0(cdfd(_, tpe, con), _)(R) ==
+  LET (R1, lS) == newVars(R, %(con))
+      vars == (\\sl1. asVar(R1)(lS, sl1)) * selector * components(con)
+      cTerm == apply1(constructor(con), vars)
+  IN
+  (R1, forall1(vars, dfd(cTerm)))
+
+DEF formula0(ddfd(_, tpe, dis), _)(R) ==
+  LET (var, R2) == newTypeVar(tpe)(R)
+      dTerm == apply1(test(dis), var)
+  IN
+  (R2, forall1(var, dfd(dTerm)))
+
+DEF formula0(sdfd(_, tpe, sel), _)(R) ==
+  LET vs == variants(tpe, R)
+      goodVar == \\v. exist?(\\c. selector(c) = selector(sel), components(v))
+      (var, R2) == newTypeVar(tpe)(R)
+      mkCong == \\v. cong(apply1(test(v), var), true(R))
+  IN
+  (R2, forall1(var, impl(disj1(none, mkCong * goodVar | vs),
+                         dfd(apply1(selector(sel), var)))))
+
+DEF formula0(freetypeLaws(_, tpe, vs), uN)(R) ==
+  LET laws == getFreetypeLaws(tpe)(R)
+      (R1, forms) == (formula(uN), R) * asSeq(laws)
+  IN
+  (R1, conj1(forms))
+
+DEF formula0(datatypeLaws(_, tpe, vs), uN)(R) ==
+  LET laws == getDatatypeLaws(tpe)(R)
+      (R1, forms) == (formula(uN), R) * asSeq(laws)
+  IN
+  (R1, conj1(forms))
+
+
+ 
+
+DEF formula0(error(d), _)(R) ==
+  (R, ABORT("formula'ReflexTrans: found erroneous formula" ++ msg(d)))
+
+
+FUN mkDiag: an ** objectName ** unitName ** repo -> denotation -> diag
+DEF mkDiag(a, errorOb, main, R)(msg) ==
+  LET loc == cont(unspecified)(locator?(a))
+      ref == unitRef(loc, main)
+  IN
+  (error, ref) !! (msg, pretty(fmtObjectNameLong(R, main)(errorOb)))
+
+FUN mkDiag: an ** objectName ** objectName ** unitName ** repo ->
+             denotation -> diag
+DEF mkDiag(a, errorOb1, errorOb2, main, R)(msg) ==
+  LET loc == cont(unspecified)(locator?(a))
+      ref == unitRef(loc, main)
+  IN
+  (error, ref) !! (msg, pretty(fmtObjectNameLong(R, main)(errorOb2)),
+                        pretty(fmtObjectNameLong(R, main)(errorOb1)))
+

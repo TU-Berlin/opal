@@ -1,0 +1,1315 @@
+IMPLEMENTATION PCEnv
+
+IMPORT FmtBasicTypes COMPLETELY
+       FmtSet COMPLETELY
+       FmtSeq COMPLETELY
+       FmtMap COMPLETELY
+       Fmt COMPLETELY
+       Nat ONLY 2 < =
+       RepoAn ONLY fmtAn
+       RepoAbsy COMPLETELY
+       Set ONLY {<} =
+       Seq ONLY < =
+       RepoDiag ONLY fmtDiag mode msg < =
+       Denotation ONLY < =
+
+-- %$The Proof Checker Environment$
+/* %The proof checker environment contains all laws / proof obligations and
+    all proofs available for a specific unit. Some additional components are
+    provided (@code{assumes, resolved}) to undo (some of) the effects of the
+    flattening of the import relation by the Opal compiler. */
+-- %@itemize @bullet
+DATA pcEnv == pcEnv(an: an,
+-- %@ITEM Diagnostics produced during obligation generation
+                    diags: diag,
+-- %@ITEM Next free no for generated proofs
+                    nextFree: nat,
+-- %@ITEM Laws to be proven (proof obligations)
+                    laws: set[lawName, <],
+-- %@ITEM Laws which may occur in proof heads without being proof obligations
+                    extraLaws: set[lawName, <],
+/* %@ITEM Laws which must be proven for instantiation (subset of @code{laws})
+(direct ASSUMES). */
+                    assumes: set[lawName, <],
+/* %@ITEM Laws which are induced by correctness of tarnsitive instantiations
+    (subset of @code{laws}. (indirect ASSUMES). */
+                    resolved: set[lawName, <],
+-- %@ITEM Heads of available proofs
+                    pHeads: map[proofName, <, pHead],
+-- %@ITEM Bodies of available proofs
+                    pBodies: map[proofName, <, pBody])
+-- %@end itemize
+
+
+-- %$Law Names$
+
+/* %Law names abstract from the concrete formulae, which are generated
+    on demand only. Apart from ordinary formulae, we have names associated
+    to functions (@code{Def, Spc}), names for free type laws
+    (@code{Discr, Sel, Gen, Ind, Equiv}), and for laws induced by
+    relations (@code{Restr, Copy}). */
+
+DATA lawName == 
+/* %@itemize @bullet
+@ITEM The law directly given in the source code. */
+                ordinary(an:an, name: propertyName)
+/* %@ITEM The law associated with the definitional equation for
+    function @code{fun}.  */
+                def(an:an, fun: objectName)
+/* %@ITEM The specification law associated with function @code{fun}.
+@code{name} is the generated law in the abstract syntax. */
+                spc(an:an, fun: objectName, name: propertyName)
+/* %@ITEM The restrict-forget image of law @code{orig} from the signature
+    part in the implementation. The set of sorts of the signature is
+    added for faster generation. */
+                restr(an:an, orig: lawName, sorts: set[objectName, <])
+/* %@ITEM The inclusion of law @code{orig} from the signature part
+    into the implementation. */
+                copy(an:an, orig: lawName)
+/* %@ITEM Generatedness of @code{type} by the constructors. */
+                gen(an:an, type: objectName, variants: seq[variant])
+/* %@ITEM Induction for @code{type} with given constructors. */
+                ind(an:an, type: objectName, variants: seq[variant])
+/* %@ITEM Discriminator value of @code{dis},
+    if applied to constructor @code{con} */
+                discr(an:an, type: objectName, con: variant, dis: variant)
+/* %@ITEM Selector property for given constructor and selector. */
+                sel(an:an, type: objectName, con: variant, sel: component)
+/* %@ITEM Equivalence of given constructors */
+                equiv(an:an, type: objectName, con1: variant, con2: variant)
+/* %@ITEM Definedness of constructor (@code{DATA} definitions only). */
+                cdfd(an:an, type: objectName, con: variant)
+/* %@ITEM Definedness of discriminator */
+                ddfd(an:an, type: objectName, dis: variant)
+/* %@ITEM Definedness of selector */
+                sdfd(an:an, type: objectName, sel: component)
+/* %@ITEM All laws of a free type */
+                freetypeLaws(an: an, type: objectName, variants: seq[variant])
+/* %@ITEM All laws of a data type */
+                datatypeLaws(an: an, type: objectName, variants: seq[variant])
+/* %@ITEM Erroneous law - may result from a bad application of a reflexion */
+                error(diag: diag)
+-- %@end itemize
+
+-- %$Proof Names$
+
+/* %Similar to laws, we have proofs which are given in the source code
+    (@code{ordinary}), and names for generated proofs (@code{def, axm, inst}).
+*/
+DATA proofName == 
+/* %@itemize @bullet
+@ITEM Proofs from the source code (name of the proof script constant). */
+                  ordinary(an:an, name: objectName)
+-- %@ITEM Proof, which declares law an axiom. 
+                  axm(an:an, law: lawName)
+-- %@ITEM Proof for correctness of parameter @code{param} of instantiation.
+                  inst(an:an, inst: unitName, param: objectName)
+-- %@ITEM Generated Proof
+                  gen(an: an, no: nat)
+-- %@end itemize
+
+
+-- %$Proof Heads$
+
+-- %Assemble premises and conclusion.
+DATA pHead == pHead(an:an, prems: set[lawName, <], concl: lawName)
+
+-- %$Proof Bodies$
+
+DATA pBody == 
+/* %@itemize @bullet
+@ITEM Proof script from the source code. */
+              ordinary(an: an, script: expr)
+-- %@ITEM Proof is an axiom and need not be proven.
+              axiom(an: an)
+-- %@ITEM Single premise and conclusion must be equivalent
+              equiv(an: an)
+-- %@ITEM Proof script is missing.
+              missing(an: an)
+-- %@end itemize
+
+-- %$Ordering Relations and Injections and Formatting Functions$
+/* %Generated by ordinatrice and not printed here. No ordering relations on
+    type @code{pcEnv} are available. */
+-- %Annotations are not considered
+FUN < = : an ** an -> bool
+DEF a1:an < a2 == false
+DEF a1:an = a2 == true
+-- %Sets have different operators
+FUN < = : (lawName ** lawName -> bool) ->
+           set[lawName, <] ** set[lawName, <] -> bool
+DEF <(_)(s1: set[lawName, <], s2) == s1 {<} s2
+DEF =(_)(s1: set[lawName, <], s2) == s1 = s2
+FUN < = : (objectName ** objectName -> bool) ->
+           set[objectName, <] ** set[objectName, <] -> bool
+DEF <(_)(s1: set[objectName, <], s2) == s1 {<} s2
+DEF =(_)(s1: set[objectName, <], s2) == s1 = s2
+-- %Variants are ordered by their constructor
+FUN < = : variant ** variant -> bool
+DEF v1 < v2 == constructor(v1) < constructor(v2)
+DEF v1 = v2 == constructor(v1) = constructor(v2)
+-- %Components are ordered by their selector
+FUN < = : component ** component -> bool
+DEF c1 < c2 == selector(c1) < selector(c2)
+DEF c1 = c2 == selector(c1) = selector(c2)
+-- %Diagnostics are ordered by mode and msg
+FUN < = : diag ** diag -> bool
+DEF d1 < d2 == IF mode(d1) < mode(d2) THEN true ELSE msg(d1) < msg(d2) FI
+DEF d1 = d2 == mode(d1) = mode(d2) and msg(d1) = msg(d2)
+
+-- %@ignore
+-- this is output of ordinatrice verte for free type pHead
+FUN < : pHead ** pHead -> bool
+DEF <(pHead(a,b,c),pHead(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(<)(b,B) THEN true
+IF <(<)(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+
+FUN = : pHead ** pHead -> bool
+DEF =(pHead(a,b,c),pHead(A,B,C)) == IF =(a,A) THEN IF =(=)(b,B) THEN IF =(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+FUN fmtPHead : pHead -> fmt
+DEF fmtPHead(pHead(v0,v1,v2)) == ;(;(beg(2),lit("pHead")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtSet(fmtLawName)(v1))),;(lit(", "),fmtLawName(v2))),lit(")"))),end))
+
+FUN :=_concl : pHead ** lawName -> pHead
+DEF :=_concl(pHead(1,2,_),new) == pHead(1,2,new)
+
+FUN :=_prems : pHead ** set[lawName,<] -> pHead
+DEF :=_prems(pHead(1,_,3),new) == pHead(1,new,3)
+
+FUN :=_an : pHead ** an -> pHead
+DEF :=_an(pHead(_,2,3),new) == pHead(new,2,3)
+
+
+
+-- this is output of ordinatrice verte for free type pBody
+FUN fmtPBody : pBody -> fmt
+DEF fmtPBody(ordinary(v0,v1)) == ;(;(beg(2),lit("ordinary")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtExpr(v1))),lit(")"))),end))
+DEF fmtPBody(axiom(v0)) == ;(;(beg(2),lit("axiom")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+DEF fmtPBody(equiv(v0)) == ;(;(beg(2),lit("equiv")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+DEF fmtPBody(missing(v0)) == ;(;(beg(2),lit("missing")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+
+FUN :=_an : pBody ** an -> pBody
+DEF :=_an(missing(_),new) == missing(new)
+DEF :=_an(equiv(_),new) == equiv(new)
+DEF :=_an(axiom(_),new) == axiom(new)
+DEF :=_an(ordinary(_,2:expr),new) == ordinary(new,2)
+
+FUN :=_script : pBody ** expr -> pBody
+DEF :=_script(ordinary(1,_),new) == ordinary(1,new)
+
+
+
+-- this is output of ordinatrice verte for free type lawName
+FUN < : lawName ** lawName -> bool
+DEF <(ordinary(a,b:propertyName),ordinary(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+DEF <(ordinary(_,_),def(_,_)) == true
+DEF <(ordinary(_,_),spc(_,_,_)) == true
+DEF <(ordinary(_,_),restr(_,_,_)) == true
+DEF <(ordinary(_,_),copy(_,_)) == true
+DEF <(ordinary(_,_),gen(_,_,_)) == true
+DEF <(ordinary(_,_),ind(_,_,_)) == true
+DEF <(ordinary(_,_),discr(_,_,_,_)) == true
+DEF <(ordinary(_,_),sel(_,_,_,_)) == true
+DEF <(ordinary(_,_),equiv(_,_,_,_)) == true
+DEF <(ordinary(_,_),cdfd(_,_,_)) == true
+DEF <(ordinary(_,_),ddfd(_,_,_)) == true
+DEF <(ordinary(_,_),sdfd(_,_,_)) == true
+DEF <(ordinary(_,_),freetypeLaws(_,_,_)) == true
+DEF <(ordinary(_,_),datatypeLaws(_,_,_)) == true
+DEF <(ordinary(_,_),error(_)) == true
+DEF <(def(_,_),ordinary(_,_)) == false
+DEF <(def(a,b),def(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+DEF <(def(_,_),spc(_,_,_)) == true
+DEF <(def(_,_),restr(_,_,_)) == true
+DEF <(def(_,_),copy(_,_)) == true
+DEF <(def(_,_),gen(_,_,_)) == true
+DEF <(def(_,_),ind(_,_,_)) == true
+DEF <(def(_,_),discr(_,_,_,_)) == true
+DEF <(def(_,_),sel(_,_,_,_)) == true
+DEF <(def(_,_),equiv(_,_,_,_)) == true
+DEF <(def(_,_),cdfd(_,_,_)) == true
+DEF <(def(_,_),ddfd(_,_,_)) == true
+DEF <(def(_,_),sdfd(_,_,_)) == true
+DEF <(def(_,_),freetypeLaws(_,_,_)) == true
+DEF <(def(_,_),datatypeLaws(_,_,_)) == true
+DEF <(def(_,_),error(_)) == true
+DEF <(spc(_,_,_),ordinary(_,_)) == false
+DEF <(spc(_,_,_),def(_,_)) == false
+DEF <(spc(a,b,c),spc(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(spc(_,_,_),restr(_,_,_)) == true
+DEF <(spc(_,_,_),copy(_,_)) == true
+DEF <(spc(_,_,_),gen(_,_,_)) == true
+DEF <(spc(_,_,_),ind(_,_,_)) == true
+DEF <(spc(_,_,_),discr(_,_,_,_)) == true
+DEF <(spc(_,_,_),sel(_,_,_,_)) == true
+DEF <(spc(_,_,_),equiv(_,_,_,_)) == true
+DEF <(spc(_,_,_),cdfd(_,_,_)) == true
+DEF <(spc(_,_,_),ddfd(_,_,_)) == true
+DEF <(spc(_,_,_),sdfd(_,_,_)) == true
+DEF <(spc(_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(spc(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(spc(_,_,_),error(_)) == true
+DEF <(restr(_,_,_),ordinary(_,_)) == false
+DEF <(restr(_,_,_),def(_,_)) == false
+DEF <(restr(_,_,_),spc(_,_,_)) == false
+DEF <(restr(a,b,c),restr(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(<)(c,C) THEN true
+IF <(<)(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(restr(_,_,_),copy(_,_)) == true
+DEF <(restr(_,_,_),gen(_,_,_)) == true
+DEF <(restr(_,_,_),ind(_,_,_)) == true
+DEF <(restr(_,_,_),discr(_,_,_,_)) == true
+DEF <(restr(_,_,_),sel(_,_,_,_)) == true
+DEF <(restr(_,_,_),equiv(_,_,_,_)) == true
+DEF <(restr(_,_,_),cdfd(_,_,_)) == true
+DEF <(restr(_,_,_),ddfd(_,_,_)) == true
+DEF <(restr(_,_,_),sdfd(_,_,_)) == true
+DEF <(restr(_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(restr(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(restr(_,_,_),error(_)) == true
+DEF <(copy(_,_),ordinary(_,_)) == false
+DEF <(copy(_,_),def(_,_)) == false
+DEF <(copy(_,_),spc(_,_,_)) == false
+DEF <(copy(_,_),restr(_,_,_)) == false
+DEF <(copy(a,b),copy(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+DEF <(copy(_,_),gen(_,_,_)) == true
+DEF <(copy(_,_),ind(_,_,_)) == true
+DEF <(copy(_,_),discr(_,_,_,_)) == true
+DEF <(copy(_,_),sel(_,_,_,_)) == true
+DEF <(copy(_,_),equiv(_,_,_,_)) == true
+DEF <(copy(_,_),cdfd(_,_,_)) == true
+DEF <(copy(_,_),ddfd(_,_,_)) == true
+DEF <(copy(_,_),sdfd(_,_,_)) == true
+DEF <(copy(_,_),freetypeLaws(_,_,_)) == true
+DEF <(copy(_,_),datatypeLaws(_,_,_)) == true
+DEF <(copy(_,_),error(_)) == true
+DEF <(gen(_,_,_),ordinary(_,_)) == false
+DEF <(gen(_,_,_),def(_,_)) == false
+DEF <(gen(_,_,_),spc(_,_,_)) == false
+DEF <(gen(_,_,_),restr(_,_,_)) == false
+DEF <(gen(_,_,_),copy(_,_)) == false
+DEF <(gen(a,b,c),gen(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(<)(c,C) THEN true
+IF <(<)(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(gen(_,_,_),ind(_,_,_)) == true
+DEF <(gen(_,_,_),discr(_,_,_,_)) == true
+DEF <(gen(_,_,_),sel(_,_,_,_)) == true
+DEF <(gen(_,_,_),equiv(_,_,_,_)) == true
+DEF <(gen(_,_,_),cdfd(_,_,_)) == true
+DEF <(gen(_,_,_),ddfd(_,_,_)) == true
+DEF <(gen(_,_,_),sdfd(_,_,_)) == true
+DEF <(gen(_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(gen(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(gen(_,_,_),error(_)) == true
+DEF <(ind(_,_,_),ordinary(_,_)) == false
+DEF <(ind(_,_,_),def(_,_)) == false
+DEF <(ind(_,_,_),spc(_,_,_)) == false
+DEF <(ind(_,_,_),restr(_,_,_)) == false
+DEF <(ind(_,_,_),copy(_,_)) == false
+DEF <(ind(_,_,_),gen(_,_,_)) == false
+DEF <(ind(a,b,c),ind(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(<)(c,C) THEN true
+IF <(<)(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(ind(_,_,_),discr(_,_,_,_)) == true
+DEF <(ind(_,_,_),sel(_,_,_,_)) == true
+DEF <(ind(_,_,_),equiv(_,_,_,_)) == true
+DEF <(ind(_,_,_),cdfd(_,_,_)) == true
+DEF <(ind(_,_,_),ddfd(_,_,_)) == true
+DEF <(ind(_,_,_),sdfd(_,_,_)) == true
+DEF <(ind(_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(ind(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(ind(_,_,_),error(_)) == true
+DEF <(discr(_,_,_,_),ordinary(_,_)) == false
+DEF <(discr(_,_,_,_),def(_,_)) == false
+DEF <(discr(_,_,_,_),spc(_,_,_)) == false
+DEF <(discr(_,_,_,_),restr(_,_,_)) == false
+DEF <(discr(_,_,_,_),copy(_,_)) == false
+DEF <(discr(_,_,_,_),gen(_,_,_)) == false
+DEF <(discr(_,_,_,_),ind(_,_,_)) == false
+DEF <(discr(a,b,c,d),discr(A,B,C,D)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+IF <(d,D) THEN true
+IF <(D,d) THEN false
+ELSE
+false
+FI
+FI
+FI
+FI
+DEF <(discr(_,_,_,_),sel(_,_,_,_)) == true
+DEF <(discr(_,_,_,_),equiv(_,_,_,_)) == true
+DEF <(discr(_,_,_,_),cdfd(_,_,_)) == true
+DEF <(discr(_,_,_,_),ddfd(_,_,_)) == true
+DEF <(discr(_,_,_,_),sdfd(_,_,_)) == true
+DEF <(discr(_,_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(discr(_,_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(discr(_,_,_,_),error(_)) == true
+DEF <(sel(_,_,_,_),ordinary(_,_)) == false
+DEF <(sel(_,_,_,_),def(_,_)) == false
+DEF <(sel(_,_,_,_),spc(_,_,_)) == false
+DEF <(sel(_,_,_,_),restr(_,_,_)) == false
+DEF <(sel(_,_,_,_),copy(_,_)) == false
+DEF <(sel(_,_,_,_),gen(_,_,_)) == false
+DEF <(sel(_,_,_,_),ind(_,_,_)) == false
+DEF <(sel(_,_,_,_),discr(_,_,_,_)) == false
+DEF <(sel(a,b,c,d),sel(A,B,C,D)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+IF <(d,D) THEN true
+IF <(D,d) THEN false
+ELSE
+false
+FI
+FI
+FI
+FI
+DEF <(sel(_,_,_,_),equiv(_,_,_,_)) == true
+DEF <(sel(_,_,_,_),cdfd(_,_,_)) == true
+DEF <(sel(_,_,_,_),ddfd(_,_,_)) == true
+DEF <(sel(_,_,_,_),sdfd(_,_,_)) == true
+DEF <(sel(_,_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(sel(_,_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(sel(_,_,_,_),error(_)) == true
+DEF <(equiv(_,_,_,_),ordinary(_,_)) == false
+DEF <(equiv(_,_,_,_),def(_,_)) == false
+DEF <(equiv(_,_,_,_),spc(_,_,_)) == false
+DEF <(equiv(_,_,_,_),restr(_,_,_)) == false
+DEF <(equiv(_,_,_,_),copy(_,_)) == false
+DEF <(equiv(_,_,_,_),gen(_,_,_)) == false
+DEF <(equiv(_,_,_,_),ind(_,_,_)) == false
+DEF <(equiv(_,_,_,_),discr(_,_,_,_)) == false
+DEF <(equiv(_,_,_,_),sel(_,_,_,_)) == false
+DEF <(equiv(a,b,c,d),equiv(A,B,C,D)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+IF <(d,D) THEN true
+IF <(D,d) THEN false
+ELSE
+false
+FI
+FI
+FI
+FI
+DEF <(equiv(_,_,_,_),cdfd(_,_,_)) == true
+DEF <(equiv(_,_,_,_),ddfd(_,_,_)) == true
+DEF <(equiv(_,_,_,_),sdfd(_,_,_)) == true
+DEF <(equiv(_,_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(equiv(_,_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(equiv(_,_,_,_),error(_)) == true
+DEF <(cdfd(_,_,_),ordinary(_,_)) == false
+DEF <(cdfd(_,_,_),def(_,_)) == false
+DEF <(cdfd(_,_,_),spc(_,_,_)) == false
+DEF <(cdfd(_,_,_),restr(_,_,_)) == false
+DEF <(cdfd(_,_,_),copy(_,_)) == false
+DEF <(cdfd(_,_,_),gen(_,_,_)) == false
+DEF <(cdfd(_,_,_),ind(_,_,_)) == false
+DEF <(cdfd(_,_,_),discr(_,_,_,_)) == false
+DEF <(cdfd(_,_,_),sel(_,_,_,_)) == false
+DEF <(cdfd(_,_,_),equiv(_,_,_,_)) == false
+DEF <(cdfd(a,b,c),cdfd(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(cdfd(_,_,_),ddfd(_,_,_)) == true
+DEF <(cdfd(_,_,_),sdfd(_,_,_)) == true
+DEF <(cdfd(_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(cdfd(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(cdfd(_,_,_),error(_)) == true
+DEF <(ddfd(_,_,_),ordinary(_,_)) == false
+DEF <(ddfd(_,_,_),def(_,_)) == false
+DEF <(ddfd(_,_,_),spc(_,_,_)) == false
+DEF <(ddfd(_,_,_),restr(_,_,_)) == false
+DEF <(ddfd(_,_,_),copy(_,_)) == false
+DEF <(ddfd(_,_,_),gen(_,_,_)) == false
+DEF <(ddfd(_,_,_),ind(_,_,_)) == false
+DEF <(ddfd(_,_,_),discr(_,_,_,_)) == false
+DEF <(ddfd(_,_,_),sel(_,_,_,_)) == false
+DEF <(ddfd(_,_,_),equiv(_,_,_,_)) == false
+DEF <(ddfd(_,_,_),cdfd(_,_,_)) == false
+DEF <(ddfd(a,b,c),ddfd(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(ddfd(_,_,_),sdfd(_,_,_)) == true
+DEF <(ddfd(_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(ddfd(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(ddfd(_,_,_),error(_)) == true
+DEF <(sdfd(_,_,_),ordinary(_,_)) == false
+DEF <(sdfd(_,_,_),def(_,_)) == false
+DEF <(sdfd(_,_,_),spc(_,_,_)) == false
+DEF <(sdfd(_,_,_),restr(_,_,_)) == false
+DEF <(sdfd(_,_,_),copy(_,_)) == false
+DEF <(sdfd(_,_,_),gen(_,_,_)) == false
+DEF <(sdfd(_,_,_),ind(_,_,_)) == false
+DEF <(sdfd(_,_,_),discr(_,_,_,_)) == false
+DEF <(sdfd(_,_,_),sel(_,_,_,_)) == false
+DEF <(sdfd(_,_,_),equiv(_,_,_,_)) == false
+DEF <(sdfd(_,_,_),cdfd(_,_,_)) == false
+DEF <(sdfd(_,_,_),ddfd(_,_,_)) == false
+DEF <(sdfd(a,b,c),sdfd(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(sdfd(_,_,_),freetypeLaws(_,_,_)) == true
+DEF <(sdfd(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(sdfd(_,_,_),error(_)) == true
+DEF <(freetypeLaws(_,_,_),ordinary(_,_)) == false
+DEF <(freetypeLaws(_,_,_),def(_,_)) == false
+DEF <(freetypeLaws(_,_,_),spc(_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),restr(_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),copy(_,_)) == false
+DEF <(freetypeLaws(_,_,_),gen(_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),ind(_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),discr(_,_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),sel(_,_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),equiv(_,_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),cdfd(_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),ddfd(_,_,_)) == false
+DEF <(freetypeLaws(_,_,_),sdfd(_,_,_)) == false
+DEF <(freetypeLaws(a,b,c),freetypeLaws(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(<)(c,C) THEN true
+IF <(<)(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(freetypeLaws(_,_,_),datatypeLaws(_,_,_)) == true
+DEF <(freetypeLaws(_,_,_),error(_)) == true
+DEF <(datatypeLaws(_,_,_),ordinary(_,_)) == false
+DEF <(datatypeLaws(_,_,_),def(_,_)) == false
+DEF <(datatypeLaws(_,_,_),spc(_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),restr(_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),copy(_,_)) == false
+DEF <(datatypeLaws(_,_,_),gen(_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),ind(_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),discr(_,_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),sel(_,_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),equiv(_,_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),cdfd(_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),ddfd(_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),sdfd(_,_,_)) == false
+DEF <(datatypeLaws(_,_,_),freetypeLaws(_,_,_)) == false
+DEF <(datatypeLaws(a,b,c),datatypeLaws(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(<)(c,C) THEN true
+IF <(<)(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(datatypeLaws(_,_,_),error(_)) == true
+DEF <(error(_),ordinary(_,_)) == false
+DEF <(error(_),def(_,_)) == false
+DEF <(error(_),spc(_,_,_)) == false
+DEF <(error(_),restr(_,_,_)) == false
+DEF <(error(_),copy(_,_)) == false
+DEF <(error(_),gen(_,_,_)) == false
+DEF <(error(_),ind(_,_,_)) == false
+DEF <(error(_),discr(_,_,_,_)) == false
+DEF <(error(_),sel(_,_,_,_)) == false
+DEF <(error(_),equiv(_,_,_,_)) == false
+DEF <(error(_),cdfd(_,_,_)) == false
+DEF <(error(_),ddfd(_,_,_)) == false
+DEF <(error(_),sdfd(_,_,_)) == false
+DEF <(error(_),freetypeLaws(_,_,_)) == false
+DEF <(error(_),datatypeLaws(_,_,_)) == false
+DEF <(error(a),error(A)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+false
+FI
+
+FUN = : lawName ** lawName -> bool
+DEF =(ordinary(a,b:propertyName),ordinary(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(ordinary(_,_),def(_,_)) == false
+DEF =(ordinary(_,_),spc(_,_,_)) == false
+DEF =(ordinary(_,_),restr(_,_,_)) == false
+DEF =(ordinary(_,_),copy(_,_)) == false
+DEF =(ordinary(_,_),gen(_,_,_)) == false
+DEF =(ordinary(_,_),ind(_,_,_)) == false
+DEF =(ordinary(_,_),discr(_,_,_,_)) == false
+DEF =(ordinary(_,_),sel(_,_,_,_)) == false
+DEF =(ordinary(_,_),equiv(_,_,_,_)) == false
+DEF =(ordinary(_,_),cdfd(_,_,_)) == false
+DEF =(ordinary(_,_),ddfd(_,_,_)) == false
+DEF =(ordinary(_,_),sdfd(_,_,_)) == false
+DEF =(ordinary(_,_),freetypeLaws(_,_,_)) == false
+DEF =(ordinary(_,_),datatypeLaws(_,_,_)) == false
+DEF =(ordinary(_,_),error(_)) == false
+DEF =(def(_,_),ordinary(_,_)) == false
+DEF =(def(a,b),def(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(def(_,_),spc(_,_,_)) == false
+DEF =(def(_,_),restr(_,_,_)) == false
+DEF =(def(_,_),copy(_,_)) == false
+DEF =(def(_,_),gen(_,_,_)) == false
+DEF =(def(_,_),ind(_,_,_)) == false
+DEF =(def(_,_),discr(_,_,_,_)) == false
+DEF =(def(_,_),sel(_,_,_,_)) == false
+DEF =(def(_,_),equiv(_,_,_,_)) == false
+DEF =(def(_,_),cdfd(_,_,_)) == false
+DEF =(def(_,_),ddfd(_,_,_)) == false
+DEF =(def(_,_),sdfd(_,_,_)) == false
+DEF =(def(_,_),freetypeLaws(_,_,_)) == false
+DEF =(def(_,_),datatypeLaws(_,_,_)) == false
+DEF =(def(_,_),error(_)) == false
+DEF =(spc(_,_,_),ordinary(_,_)) == false
+DEF =(spc(_,_,_),def(_,_)) == false
+DEF =(spc(a,b,c),spc(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(spc(_,_,_),restr(_,_,_)) == false
+DEF =(spc(_,_,_),copy(_,_)) == false
+DEF =(spc(_,_,_),gen(_,_,_)) == false
+DEF =(spc(_,_,_),ind(_,_,_)) == false
+DEF =(spc(_,_,_),discr(_,_,_,_)) == false
+DEF =(spc(_,_,_),sel(_,_,_,_)) == false
+DEF =(spc(_,_,_),equiv(_,_,_,_)) == false
+DEF =(spc(_,_,_),cdfd(_,_,_)) == false
+DEF =(spc(_,_,_),ddfd(_,_,_)) == false
+DEF =(spc(_,_,_),sdfd(_,_,_)) == false
+DEF =(spc(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(spc(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(spc(_,_,_),error(_)) == false
+DEF =(restr(_,_,_),ordinary(_,_)) == false
+DEF =(restr(_,_,_),def(_,_)) == false
+DEF =(restr(_,_,_),spc(_,_,_)) == false
+DEF =(restr(a,b,c),restr(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(=)(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(restr(_,_,_),copy(_,_)) == false
+DEF =(restr(_,_,_),gen(_,_,_)) == false
+DEF =(restr(_,_,_),ind(_,_,_)) == false
+DEF =(restr(_,_,_),discr(_,_,_,_)) == false
+DEF =(restr(_,_,_),sel(_,_,_,_)) == false
+DEF =(restr(_,_,_),equiv(_,_,_,_)) == false
+DEF =(restr(_,_,_),cdfd(_,_,_)) == false
+DEF =(restr(_,_,_),ddfd(_,_,_)) == false
+DEF =(restr(_,_,_),sdfd(_,_,_)) == false
+DEF =(restr(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(restr(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(restr(_,_,_),error(_)) == false
+DEF =(copy(_,_),ordinary(_,_)) == false
+DEF =(copy(_,_),def(_,_)) == false
+DEF =(copy(_,_),spc(_,_,_)) == false
+DEF =(copy(_,_),restr(_,_,_)) == false
+DEF =(copy(a,b),copy(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(copy(_,_),gen(_,_,_)) == false
+DEF =(copy(_,_),ind(_,_,_)) == false
+DEF =(copy(_,_),discr(_,_,_,_)) == false
+DEF =(copy(_,_),sel(_,_,_,_)) == false
+DEF =(copy(_,_),equiv(_,_,_,_)) == false
+DEF =(copy(_,_),cdfd(_,_,_)) == false
+DEF =(copy(_,_),ddfd(_,_,_)) == false
+DEF =(copy(_,_),sdfd(_,_,_)) == false
+DEF =(copy(_,_),freetypeLaws(_,_,_)) == false
+DEF =(copy(_,_),datatypeLaws(_,_,_)) == false
+DEF =(copy(_,_),error(_)) == false
+DEF =(gen(_,_,_),ordinary(_,_)) == false
+DEF =(gen(_,_,_),def(_,_)) == false
+DEF =(gen(_,_,_),spc(_,_,_)) == false
+DEF =(gen(_,_,_),restr(_,_,_)) == false
+DEF =(gen(_,_,_),copy(_,_)) == false
+DEF =(gen(a,b,c),gen(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(=)(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(gen(_,_,_),ind(_,_,_)) == false
+DEF =(gen(_,_,_),discr(_,_,_,_)) == false
+DEF =(gen(_,_,_),sel(_,_,_,_)) == false
+DEF =(gen(_,_,_),equiv(_,_,_,_)) == false
+DEF =(gen(_,_,_),cdfd(_,_,_)) == false
+DEF =(gen(_,_,_),ddfd(_,_,_)) == false
+DEF =(gen(_,_,_),sdfd(_,_,_)) == false
+DEF =(gen(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(gen(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(gen(_,_,_),error(_)) == false
+DEF =(ind(_,_,_),ordinary(_,_)) == false
+DEF =(ind(_,_,_),def(_,_)) == false
+DEF =(ind(_,_,_),spc(_,_,_)) == false
+DEF =(ind(_,_,_),restr(_,_,_)) == false
+DEF =(ind(_,_,_),copy(_,_)) == false
+DEF =(ind(_,_,_),gen(_,_,_)) == false
+DEF =(ind(a,b,c),ind(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(=)(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(ind(_,_,_),discr(_,_,_,_)) == false
+DEF =(ind(_,_,_),sel(_,_,_,_)) == false
+DEF =(ind(_,_,_),equiv(_,_,_,_)) == false
+DEF =(ind(_,_,_),cdfd(_,_,_)) == false
+DEF =(ind(_,_,_),ddfd(_,_,_)) == false
+DEF =(ind(_,_,_),sdfd(_,_,_)) == false
+DEF =(ind(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(ind(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(ind(_,_,_),error(_)) == false
+DEF =(discr(_,_,_,_),ordinary(_,_)) == false
+DEF =(discr(_,_,_,_),def(_,_)) == false
+DEF =(discr(_,_,_,_),spc(_,_,_)) == false
+DEF =(discr(_,_,_,_),restr(_,_,_)) == false
+DEF =(discr(_,_,_,_),copy(_,_)) == false
+DEF =(discr(_,_,_,_),gen(_,_,_)) == false
+DEF =(discr(_,_,_,_),ind(_,_,_)) == false
+DEF =(discr(a,b,c,d),discr(A,B,C,D)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN IF =(d,D) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(discr(_,_,_,_),sel(_,_,_,_)) == false
+DEF =(discr(_,_,_,_),equiv(_,_,_,_)) == false
+DEF =(discr(_,_,_,_),cdfd(_,_,_)) == false
+DEF =(discr(_,_,_,_),ddfd(_,_,_)) == false
+DEF =(discr(_,_,_,_),sdfd(_,_,_)) == false
+DEF =(discr(_,_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(discr(_,_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(discr(_,_,_,_),error(_)) == false
+DEF =(sel(_,_,_,_),ordinary(_,_)) == false
+DEF =(sel(_,_,_,_),def(_,_)) == false
+DEF =(sel(_,_,_,_),spc(_,_,_)) == false
+DEF =(sel(_,_,_,_),restr(_,_,_)) == false
+DEF =(sel(_,_,_,_),copy(_,_)) == false
+DEF =(sel(_,_,_,_),gen(_,_,_)) == false
+DEF =(sel(_,_,_,_),ind(_,_,_)) == false
+DEF =(sel(_,_,_,_),discr(_,_,_,_)) == false
+DEF =(sel(a,b,c,d),sel(A,B,C,D)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN IF =(d,D) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(sel(_,_,_,_),equiv(_,_,_,_)) == false
+DEF =(sel(_,_,_,_),cdfd(_,_,_)) == false
+DEF =(sel(_,_,_,_),ddfd(_,_,_)) == false
+DEF =(sel(_,_,_,_),sdfd(_,_,_)) == false
+DEF =(sel(_,_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(sel(_,_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(sel(_,_,_,_),error(_)) == false
+DEF =(equiv(_,_,_,_),ordinary(_,_)) == false
+DEF =(equiv(_,_,_,_),def(_,_)) == false
+DEF =(equiv(_,_,_,_),spc(_,_,_)) == false
+DEF =(equiv(_,_,_,_),restr(_,_,_)) == false
+DEF =(equiv(_,_,_,_),copy(_,_)) == false
+DEF =(equiv(_,_,_,_),gen(_,_,_)) == false
+DEF =(equiv(_,_,_,_),ind(_,_,_)) == false
+DEF =(equiv(_,_,_,_),discr(_,_,_,_)) == false
+DEF =(equiv(_,_,_,_),sel(_,_,_,_)) == false
+DEF =(equiv(a,b,c,d),equiv(A,B,C,D)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN IF =(d,D) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(equiv(_,_,_,_),cdfd(_,_,_)) == false
+DEF =(equiv(_,_,_,_),ddfd(_,_,_)) == false
+DEF =(equiv(_,_,_,_),sdfd(_,_,_)) == false
+DEF =(equiv(_,_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(equiv(_,_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(equiv(_,_,_,_),error(_)) == false
+DEF =(cdfd(_,_,_),ordinary(_,_)) == false
+DEF =(cdfd(_,_,_),def(_,_)) == false
+DEF =(cdfd(_,_,_),spc(_,_,_)) == false
+DEF =(cdfd(_,_,_),restr(_,_,_)) == false
+DEF =(cdfd(_,_,_),copy(_,_)) == false
+DEF =(cdfd(_,_,_),gen(_,_,_)) == false
+DEF =(cdfd(_,_,_),ind(_,_,_)) == false
+DEF =(cdfd(_,_,_),discr(_,_,_,_)) == false
+DEF =(cdfd(_,_,_),sel(_,_,_,_)) == false
+DEF =(cdfd(_,_,_),equiv(_,_,_,_)) == false
+DEF =(cdfd(a,b,c),cdfd(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(cdfd(_,_,_),ddfd(_,_,_)) == false
+DEF =(cdfd(_,_,_),sdfd(_,_,_)) == false
+DEF =(cdfd(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(cdfd(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(cdfd(_,_,_),error(_)) == false
+DEF =(ddfd(_,_,_),ordinary(_,_)) == false
+DEF =(ddfd(_,_,_),def(_,_)) == false
+DEF =(ddfd(_,_,_),spc(_,_,_)) == false
+DEF =(ddfd(_,_,_),restr(_,_,_)) == false
+DEF =(ddfd(_,_,_),copy(_,_)) == false
+DEF =(ddfd(_,_,_),gen(_,_,_)) == false
+DEF =(ddfd(_,_,_),ind(_,_,_)) == false
+DEF =(ddfd(_,_,_),discr(_,_,_,_)) == false
+DEF =(ddfd(_,_,_),sel(_,_,_,_)) == false
+DEF =(ddfd(_,_,_),equiv(_,_,_,_)) == false
+DEF =(ddfd(_,_,_),cdfd(_,_,_)) == false
+DEF =(ddfd(a,b,c),ddfd(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(ddfd(_,_,_),sdfd(_,_,_)) == false
+DEF =(ddfd(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(ddfd(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(ddfd(_,_,_),error(_)) == false
+DEF =(sdfd(_,_,_),ordinary(_,_)) == false
+DEF =(sdfd(_,_,_),def(_,_)) == false
+DEF =(sdfd(_,_,_),spc(_,_,_)) == false
+DEF =(sdfd(_,_,_),restr(_,_,_)) == false
+DEF =(sdfd(_,_,_),copy(_,_)) == false
+DEF =(sdfd(_,_,_),gen(_,_,_)) == false
+DEF =(sdfd(_,_,_),ind(_,_,_)) == false
+DEF =(sdfd(_,_,_),discr(_,_,_,_)) == false
+DEF =(sdfd(_,_,_),sel(_,_,_,_)) == false
+DEF =(sdfd(_,_,_),equiv(_,_,_,_)) == false
+DEF =(sdfd(_,_,_),cdfd(_,_,_)) == false
+DEF =(sdfd(_,_,_),ddfd(_,_,_)) == false
+DEF =(sdfd(a,b,c),sdfd(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(sdfd(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(sdfd(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(sdfd(_,_,_),error(_)) == false
+DEF =(freetypeLaws(_,_,_),ordinary(_,_)) == false
+DEF =(freetypeLaws(_,_,_),def(_,_)) == false
+DEF =(freetypeLaws(_,_,_),spc(_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),restr(_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),copy(_,_)) == false
+DEF =(freetypeLaws(_,_,_),gen(_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),ind(_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),discr(_,_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),sel(_,_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),equiv(_,_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),cdfd(_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),ddfd(_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),sdfd(_,_,_)) == false
+DEF =(freetypeLaws(a,b,c),freetypeLaws(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(=)(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(freetypeLaws(_,_,_),datatypeLaws(_,_,_)) == false
+DEF =(freetypeLaws(_,_,_),error(_)) == false
+DEF =(datatypeLaws(_,_,_),ordinary(_,_)) == false
+DEF =(datatypeLaws(_,_,_),def(_,_)) == false
+DEF =(datatypeLaws(_,_,_),spc(_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),restr(_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),copy(_,_)) == false
+DEF =(datatypeLaws(_,_,_),gen(_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),ind(_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),discr(_,_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),sel(_,_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),equiv(_,_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),cdfd(_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),ddfd(_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),sdfd(_,_,_)) == false
+DEF =(datatypeLaws(_,_,_),freetypeLaws(_,_,_)) == false
+DEF =(datatypeLaws(a,b,c),datatypeLaws(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(=)(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(datatypeLaws(_,_,_),error(_)) == false
+DEF =(error(_),ordinary(_,_)) == false
+DEF =(error(_),def(_,_)) == false
+DEF =(error(_),spc(_,_,_)) == false
+DEF =(error(_),restr(_,_,_)) == false
+DEF =(error(_),copy(_,_)) == false
+DEF =(error(_),gen(_,_,_)) == false
+DEF =(error(_),ind(_,_,_)) == false
+DEF =(error(_),discr(_,_,_,_)) == false
+DEF =(error(_),sel(_,_,_,_)) == false
+DEF =(error(_),equiv(_,_,_,_)) == false
+DEF =(error(_),cdfd(_,_,_)) == false
+DEF =(error(_),ddfd(_,_,_)) == false
+DEF =(error(_),sdfd(_,_,_)) == false
+DEF =(error(_),freetypeLaws(_,_,_)) == false
+DEF =(error(_),datatypeLaws(_,_,_)) == false
+DEF =(error(a),error(A)) == IF =(a,A) THEN true
+ELSE
+false
+FI
+
+FUN fmtLawName : lawName -> fmt
+DEF fmtLawName(ordinary(v0,v1)) == ;(;(beg(2),lit("ordinary")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtPropertyName(v1))),lit(")"))),end))
+DEF fmtLawName(def(v0,v1)) == ;(;(beg(2),lit("def")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),lit(")"))),end))
+DEF fmtLawName(spc(v0,v1,v2)) == ;(;(beg(2),lit("spc")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtPropertyName(v2))),lit(")"))),end))
+DEF fmtLawName(restr(v0,v1,v2)) == ;(;(beg(2),lit("restr")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtLawName(v1))),;(lit(", "),fmtSet(fmtObjectName)(v2))),lit(")"))),end))
+DEF fmtLawName(copy(v0,v1)) == ;(;(beg(2),lit("copy")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtLawName(v1))),lit(")"))),end))
+DEF fmtLawName(gen(v0,v1,v2)) == ;(;(beg(2),lit("gen")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtSeq(fmtVariant)(v2))),lit(")"))),end))
+DEF fmtLawName(ind(v0,v1,v2)) == ;(;(beg(2),lit("ind")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtSeq(fmtVariant)(v2))),lit(")"))),end))
+DEF fmtLawName(discr(v0,v1,v2,v3)) == ;(;(beg(2),lit("discr")),;(;(lit("("),;(;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtVariant(v2))),;(lit(", "),fmtVariant(v3))),lit(")"))),end))
+DEF fmtLawName(sel(v0,v1,v2,v3)) == ;(;(beg(2),lit("sel")),;(;(lit("("),;(;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtVariant(v2))),;(lit(", "),fmtComponent(v3))),lit(")"))),end))
+DEF fmtLawName(equiv(v0,v1,v2,v3)) == ;(;(beg(2),lit("equiv")),;(;(lit("("),;(;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtVariant(v2))),;(lit(", "),fmtVariant(v3))),lit(")"))),end))
+DEF fmtLawName(cdfd(v0,v1,v2)) == ;(;(beg(2),lit("cdfd")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtVariant(v2))),lit(")"))),end))
+DEF fmtLawName(ddfd(v0,v1,v2)) == ;(;(beg(2),lit("ddfd")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtVariant(v2))),lit(")"))),end))
+DEF fmtLawName(sdfd(v0,v1,v2)) == ;(;(beg(2),lit("sdfd")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtComponent(v2))),lit(")"))),end))
+DEF fmtLawName(freetypeLaws(v0,v1,v2)) == ;(;(beg(2),lit("freetypeLaws")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtSeq(fmtVariant)(v2))),lit(")"))),end))
+DEF fmtLawName(datatypeLaws(v0,v1,v2)) == ;(;(beg(2),lit("datatypeLaws")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtSeq(fmtVariant)(v2))),lit(")"))),end))
+DEF fmtLawName(error(v0)) == ;(;(beg(2),lit("error")),;(;(lit("("),;(fmtDiag(v0),lit(")"))),end))
+
+FUN :=_diag : lawName ** diag -> lawName
+DEF :=_diag(error(_),new) == error(new)
+
+FUN :=_variants : lawName ** seq[variant] -> lawName
+DEF :=_variants(datatypeLaws(1,2,_),new) == datatypeLaws(1,2,new)
+DEF :=_variants(freetypeLaws(1,2,_),new) == freetypeLaws(1,2,new)
+DEF :=_variants(ind(1,2,_),new) == ind(1,2,new)
+DEF :=_variants(gen(1,2,_),new) == gen(1,2,new)
+
+FUN :=_type : lawName ** objectName -> lawName
+DEF :=_type(datatypeLaws(1,_,3),new) == datatypeLaws(1,new,3)
+DEF :=_type(freetypeLaws(1,_,3),new) == freetypeLaws(1,new,3)
+DEF :=_type(sdfd(1,_,3),new) == sdfd(1,new,3)
+DEF :=_type(ddfd(1,_,3),new) == ddfd(1,new,3)
+DEF :=_type(cdfd(1,_,3),new) == cdfd(1,new,3)
+DEF :=_type(equiv(1,_,3,4),new) == equiv(1,new,3,4)
+DEF :=_type(sel(1,_,3,4),new) == sel(1,new,3,4)
+DEF :=_type(discr(1,_,3,4),new) == discr(1,new,3,4)
+DEF :=_type(ind(1,_,3),new) == ind(1,new,3)
+DEF :=_type(gen(1,_,3),new) == gen(1,new,3)
+
+FUN :=_an : lawName ** an -> lawName
+DEF :=_an(datatypeLaws(_,2,3),new) == datatypeLaws(new,2,3)
+DEF :=_an(freetypeLaws(_,2,3),new) == freetypeLaws(new,2,3)
+DEF :=_an(sdfd(_,2,3),new) == sdfd(new,2,3)
+DEF :=_an(ddfd(_,2,3),new) == ddfd(new,2,3)
+DEF :=_an(cdfd(_,2,3),new) == cdfd(new,2,3)
+DEF :=_an(equiv(_,2,3,4),new) == equiv(new,2,3,4)
+DEF :=_an(sel(_,2,3,4),new) == sel(new,2,3,4)
+DEF :=_an(discr(_,2,3,4),new) == discr(new,2,3,4)
+DEF :=_an(ind(_,2,3),new) == ind(new,2,3)
+DEF :=_an(gen(_,2,3),new) == gen(new,2,3)
+DEF :=_an(copy(_,2),new) == copy(new,2)
+DEF :=_an(restr(_,2,3),new) == restr(new,2,3)
+DEF :=_an(spc(_,2,3),new) == spc(new,2,3)
+DEF :=_an(def(_,2),new) == def(new,2)
+DEF :=_an(ordinary(_,2:propertyName),new) == ordinary(new,2)
+
+FUN :=_sel : lawName ** component -> lawName
+DEF :=_sel(sdfd(1,2,_),new) == sdfd(1,2,new)
+DEF :=_sel(sel(1,2,3,_),new) == sel(1,2,3,new)
+
+FUN :=_dis : lawName ** variant -> lawName
+DEF :=_dis(ddfd(1,2,_),new) == ddfd(1,2,new)
+DEF :=_dis(discr(1,2,3,_),new) == discr(1,2,3,new)
+
+FUN :=_con : lawName ** variant -> lawName
+DEF :=_con(cdfd(1,2,_),new) == cdfd(1,2,new)
+DEF :=_con(sel(1,2,_,4),new) == sel(1,2,new,4)
+DEF :=_con(discr(1,2,_,4),new) == discr(1,2,new,4)
+
+FUN :=_con2 : lawName ** variant -> lawName
+DEF :=_con2(equiv(1,2,3,_),new) == equiv(1,2,3,new)
+
+FUN :=_con1 : lawName ** variant -> lawName
+DEF :=_con1(equiv(1,2,_,4),new) == equiv(1,2,new,4)
+
+FUN :=_orig : lawName ** lawName -> lawName
+DEF :=_orig(copy(1,_),new) == copy(1,new)
+DEF :=_orig(restr(1,_,3),new) == restr(1,new,3)
+
+FUN :=_sorts : lawName ** set[objectName,<] -> lawName
+DEF :=_sorts(restr(1,2,_),new) == restr(1,2,new)
+
+FUN :=_name : lawName ** propertyName -> lawName
+DEF :=_name(spc(1,2,_),new) == spc(1,2,new)
+DEF :=_name(ordinary(1,_ : propertyName),new) == ordinary(1,new)
+
+FUN :=_fun : lawName ** objectName -> lawName
+DEF :=_fun(spc(1,_,3),new) == spc(1,new,3)
+DEF :=_fun(def(1,_),new) == def(1,new)
+
+
+
+-- this is output of ordinatrice verte for free type proofName
+FUN < : proofName ** proofName -> bool
+DEF <(ordinary(a,b:objectName),ordinary(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+DEF <(ordinary(_,_),axm(_,_)) == true
+DEF <(ordinary(_,_),inst(_,_,_)) == true
+DEF <(ordinary(_,_),gen(_,_)) == true
+DEF <(axm(_,_),ordinary(_,_)) == false
+DEF <(axm(a,b),axm(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+DEF <(axm(_,_),inst(_,_,_)) == true
+DEF <(axm(_,_),gen(_,_)) == true
+DEF <(inst(_,_,_),ordinary(_,_)) == false
+DEF <(inst(_,_,_),axm(_,_)) == false
+DEF <(inst(a,b,c),inst(A,B,C)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+IF <(c,C) THEN true
+IF <(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+DEF <(inst(_,_,_),gen(_,_)) == true
+DEF <(gen(_,_),ordinary(_,_)) == false
+DEF <(gen(_,_),axm(_,_)) == false
+DEF <(gen(_,_),inst(_,_,_)) == false
+DEF <(gen(a,b),gen(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+
+FUN = : proofName ** proofName -> bool
+DEF =(ordinary(a,b:objectName),ordinary(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(ordinary(_,_),axm(_,_)) == false
+DEF =(ordinary(_,_),inst(_,_,_)) == false
+DEF =(ordinary(_,_),gen(_,_)) == false
+DEF =(axm(_,_),ordinary(_,_)) == false
+DEF =(axm(a,b),axm(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(axm(_,_),inst(_,_,_)) == false
+DEF =(axm(_,_),gen(_,_)) == false
+DEF =(inst(_,_,_),ordinary(_,_)) == false
+DEF =(inst(_,_,_),axm(_,_)) == false
+DEF =(inst(a,b,c),inst(A,B,C)) == IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(inst(_,_,_),gen(_,_)) == false
+DEF =(gen(_,_),ordinary(_,_)) == false
+DEF =(gen(_,_),axm(_,_)) == false
+DEF =(gen(_,_),inst(_,_,_)) == false
+DEF =(gen(a,b),gen(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+FUN fmtProofName : proofName -> fmt
+DEF fmtProofName(ordinary(v0,v1)) == ;(;(beg(2),lit("ordinary")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),lit(")"))),end))
+DEF fmtProofName(axm(v0,v1)) == ;(;(beg(2),lit("axm")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtLawName(v1))),lit(")"))),end))
+DEF fmtProofName(inst(v0,v1,v2)) == ;(;(beg(2),lit("inst")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtUnitName(v1))),;(lit(", "),fmtObjectName(v2))),lit(")"))),end))
+DEF fmtProofName(gen(v0,v1)) == ;(;(beg(2),lit("gen")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtNat(v1))),lit(")"))),end))
+
+FUN :=_no : proofName ** nat -> proofName
+DEF :=_no(gen(1,_),new) == gen(1,new)
+
+FUN :=_an : proofName ** an -> proofName
+DEF :=_an(gen(_,2),new) == gen(new,2)
+DEF :=_an(inst(_,2,3),new) == inst(new,2,3)
+DEF :=_an(axm(_,2),new) == axm(new,2)
+DEF :=_an(ordinary(_,2:objectName),new) == ordinary(new,2)
+
+FUN :=_param : proofName ** objectName -> proofName
+DEF :=_param(inst(1,2,_),new) == inst(1,2,new)
+
+FUN :=_inst : proofName ** unitName -> proofName
+DEF :=_inst(inst(1,_,3),new) == inst(1,new,3)
+
+FUN :=_law : proofName ** lawName -> proofName
+DEF :=_law(axm(1,_),new) == axm(1,new)
+
+FUN :=_name : proofName ** objectName -> proofName
+DEF :=_name(ordinary(1,_ : objectName),new) == ordinary(1,new)
+
+
+
+-- this is output of ordinatrice verte for free type pcEnv
+FUN fmtPcEnv : pcEnv -> fmt
+DEF fmtPcEnv(pcEnv(v0,v1,v2,v3,v4,v5,v6,v7,v8)) == ;(;(beg(2),lit("pcEnv")),;(;(lit("("),;(;(;(;(;(;(;(;(;(fmtAn(v0),;(lit(", "),fmtDiag(v1))),;(lit(", "),fmtNat(v2))),;(lit(", "),fmtSet(fmtLawName)(v3))),;(lit(", "),fmtSet(fmtLawName)(v4))),;(lit(", "),fmtSet(fmtLawName)(v5))),;(lit(", "),fmtSet(fmtLawName)(v6))),;(lit(", "),fmtMap(fmtProofName,fmtPHead)(v7))),;(lit(", "),fmtMap(fmtProofName,fmtPBody)(v8))),lit(")"))),end))
+
+FUN :=_pBodies : pcEnv ** map[proofName,<,pBody] -> pcEnv
+DEF :=_pBodies(pcEnv(1,2,3,4,5,6,7,8,_),new) == pcEnv(1,2,3,4,5,6,7,8,new)
+
+FUN :=_pHeads : pcEnv ** map[proofName,<,pHead] -> pcEnv
+DEF :=_pHeads(pcEnv(1,2,3,4,5,6,7,_,9),new) == pcEnv(1,2,3,4,5,6,7,new,9)
+
+FUN :=_resolved : pcEnv ** set[lawName,<] -> pcEnv
+DEF :=_resolved(pcEnv(1,2,3,4,5,6,_,8,9),new) == pcEnv(1,2,3,4,5,6,new,8,9)
+
+FUN :=_assumes : pcEnv ** set[lawName,<] -> pcEnv
+DEF :=_assumes(pcEnv(1,2,3,4,5,_,7,8,9),new) == pcEnv(1,2,3,4,5,new,7,8,9)
+
+FUN :=_extraLaws : pcEnv ** set[lawName,<] -> pcEnv
+DEF :=_extraLaws(pcEnv(1,2,3,4,_,6,7,8,9),new) == pcEnv(1,2,3,4,new,6,7,8,9)
+
+FUN :=_laws : pcEnv ** set[lawName,<] -> pcEnv
+DEF :=_laws(pcEnv(1,2,3,_,5,6,7,8,9),new) == pcEnv(1,2,3,new,5,6,7,8,9)
+
+FUN :=_nextFree : pcEnv ** nat -> pcEnv
+DEF :=_nextFree(pcEnv(1,2,_,4,5,6,7,8,9),new) == pcEnv(1,2,new,4,5,6,7,8,9)
+
+FUN :=_diags : pcEnv ** diag -> pcEnv
+DEF :=_diags(pcEnv(1,_,3,4,5,6,7,8,9),new) == pcEnv(1,new,3,4,5,6,7,8,9)
+
+FUN :=_an : pcEnv ** an -> pcEnv
+DEF :=_an(pcEnv(_,2,3,4,5,6,7,8,9),new) == pcEnv(new,2,3,4,5,6,7,8,9)
+
+
+
+
+-- %@end ignore

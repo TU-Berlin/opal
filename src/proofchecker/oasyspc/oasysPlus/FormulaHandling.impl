@@ -1,0 +1,224 @@
+IMPLEMENTATION FormulaHandling
+
+IMPORT RepoPropertyAccess ONLY properties property
+       RepoAbsy COMPLETELY
+       Seq ONLY seq forall? <> :: % ++ <>? = ft
+       Option ONLY option nil avail avail? cont =
+       Repo ONLY repo
+       RepoAn ONLY an none
+       SeqMap ONLY *
+       OptionMap ONLY *
+       Control ONLY ^
+       Nat ONLY 4 nat
+       RepoObjectAccess COMPLETELY
+       SetMap ONLY *
+       SetFilter ONLY |
+       ABORT ONLY ABORT
+       Denotation ONLY ++ =
+       Set ONLY {}? arb
+       ProofHandling ONLY codedProof?
+       Predicate ONLY or
+       DynConv ONLY pack
+       RepoName COMPLETELY
+       Compose ONLY o
+       InstanceHandling ONLY instantiate instanceMap deriveLike
+       Map ONLY map {} def !? ! extend <+ codom {}?
+       SeqOfSeq ONLY flat
+       Denotation ONLY =
+       MapFilter ONLY | 
+       Fmt ONLY fmt lit ; pretty
+       FmtMap ONLY fmtMap
+       String ONLY string
+       SeqMapEnv ONLY *
+       DEBUG ONLY PRINT
+       NFmt ONLY fmtLatin1
+       PrettyFormatting ONLY fmtObjectNameLong prettyExpr fmtObjectName
+       BoolConv ONLY `
+       ObjectNameMap ONLY <* checkNames 
+       VarHandling ONLY changeVars toImpl
+
+-- %$Access Properties$
+DEF property(pN)(R) ==
+    LET U == unit(pN)
+        P == property'RepoPropertyAccess(baseName(pN))(R)
+    IN
+    IF basicUnitName?(U) THEN(R, P)
+    IF derivedUnitName?(U) THEN 
+      LET -- P1 == instantiate(instanceMap(U, R)) <* P
+          (R1a, P2) == deriveLike(U) <* (R,P)
+/*
+          P2 == (\\oN. IF localObjectName?(oN) THEN oN
+                       IF globalObjectName?(oN) THEN
+                         IF unit(oN) ~ unit(pN) THEN
+                           derived(oN, instNo(U))
+                         ELSE
+                           oN
+                         FI
+                       FI) <* P1
+*/
+      IN
+      IF P2 law? THEN
+        (R1a, P2)
+/*
+        LET (R1, f1) == changeVars(newV(instantiate(instanceMap(U, R1a))),
+                                   newLocalSign(baseName(U)))(R1a, formula(P2))
+*/
+/*
+        LET (R1, f1) == changeVars(newV(deriveLike(U))),
+                                   newLocalSign(baseName(U)))(R1a, formula(P2))
+        IN
+        (R1, law(an(P2), symbol(P2), f1))
+*/
+      ELSE
+        (R1a, P2)
+      FI
+    FI
+
+DEF propertyS(pN)(R) ==
+    LET U == unit(pN)
+        P == property'RepoPropertyAccess(baseName(pN))(R)
+    IN
+    IF basicUnitName?(U) THEN P
+    IF derivedUnitName?(U) THEN instantiate(instanceMap(U, R)) <* P
+    FI
+
+/* %Changes kind of the object as indicated by the function */
+FUN newV: (objectName -> objectName) -> object -> object
+DEF newV(f)(ob) == ob :=_kind newV(f)(kind(ob))
+
+FUN newV: (objectName -> objectName) -> kind -> kind
+DEF newV(_)(sort) == sort
+DEF newV(f)(oper(fc)) == oper(newV(f)(fc))
+DEF newV(_)(k AS other(_,_)) == k
+
+FUN newV: (objectName -> objectName) -> fct -> fct
+DEF newV(f)(name(s)) == name(f(s))
+DEF newV(f)(cart(es)) == cart(newV(f) * es)
+DEF newV(f)(funct(d, c)) == funct(newV(f)(d), newV(f)(c))
+
+
+-- %$Decode properties$
+-- %coded Property is a Sort the symbol of which starts with @code{"LAW%"}
+DEF codedProperty?(o) == (kind(o) sort?) and ("LAW%" <| symbol(o))
+
+DEF codedProperty?(oN)(R) == codedProperty?(object(oN)(R))
+
+  -- %find associated property by its name
+DEF decode(oN)(R) ==
+  LET check == \\ pN. LET p == propertyS'FormulaHandling(pN)(R)
+                      IN
+                      IF p law? THEN
+                        IF avail?(symbol(p)) THEN cont(symbol(p)) = cmpName
+                        ELSE false
+                        FI
+                      ELSE
+                        false
+                      FI
+      cmpName == (tl ^ 4)(symbol(oN)(R))
+      props1 == check | properties(unitName(oN))(R)
+      (props, sign?) == IF (props1 {}?) and (part(unitName(oN)) impl?) THEN
+                          (check | properties(unitName(oN) :=_part sign)(R),
+                           true)
+                        ELSE
+                          (props1, false)
+                        FI
+  IN
+  IF props {}? THEN ABORT("decode'FormulaHandling: no property for " ++
+                          cmpName)
+  ELSE 
+   
+    LET p == arb(props)
+        res == 
+        IF sign? THEN propertyName(no(p), unit(oN) :=_part sign)
+        ELSE          propertyName(no(p), unit(oN))
+        FI
+    IN
+    PRINT(false, \\ . "decoding " ++ pretty(fmtObjectName(oN)) ++ " yielded "
+          ++ pretty(fmtPropertyName(res)), res)
+  FI
+
+-- %$Properties of Properties$
+
+DEF mandatory?(uN, p)(R) == ~(checkNames(~ o declaredOnly?(uN, R))(p))
+DEF mandatory?(uN, p, debug?)(R) ==
+  ~(checkNames(~ o declaredOnly?(uN, R, debug?))(p))
+
+FUN declaredOnly? : unitName ** repo -> objectName -> bool
+DEF declaredOnly?(uN, R)(oN) ==
+  IF localObjectName?(oN) THEN false
+  IF codedProof?(oN)(R) THEN false    -- no need to declare
+  IF ~(uN ~ unitName(oN)) THEN false  -- imported from elsewhere
+  ELSE
+    (missing? or hidden?)
+    (impl(object(oN)(R))) -- no definition available
+  FI
+
+/* %return true, if name is a global object, from the own structure,
+    not a coded Proof and not implemented. */
+FUN declaredOnly? : unitName ** repo ** bool -> objectName -> bool
+DEF declaredOnly?(uN, R, debug?)(oN0) ==
+  LET oN == PRINT(debug?, \\ . "declaredOnly: " ++ fmtLatin1(fmtObjectNameLong(R)(oN0)) ++ " " ++ `(~(uN ~ unitName(oN0))) ++ `(codedProof?(oN0)(R)), oN0)
+  IN
+  IF localObjectName?(oN) THEN false
+  IF ~(uN ~ unitName(oN)) THEN false  -- imported from elsewhere
+  IF codedProof?(oN)(R) THEN false    -- no need to declare
+  ELSE
+    (missing? or hidden?)
+    (impl(object(oN)(R))) -- no definition available
+  FI
+
+DEF mandatoryImpl?(uN, pN)(R) ==
+  ~(checkNamesPN(~ o declaredOnlyImpl?(uN, R, false), R)(pN))
+
+DEF mandatoryImpl?(uN, pN, debug?)(R) ==
+  ~(checkNamesPN(~ o declaredOnlyImpl?(uN, R, debug?), R)(pN))
+
+/* %return true, if definition should be there, but isn't */
+FUN declaredOnlyImpl? : unitName ** repo ** bool -> objectName -> bool
+DEF declaredOnlyImpl?(uN, R, debug?)(oN0) ==
+  LET oN == PRINT(debug?, \\ . "declaredOnly: " ++ fmtLatin1(fmtObjectNameLong(R)(oN0)) ++ "import: " ++ `(~(uN ~ unitName(oN0))) ++ " proof:" ++ `(codedProof?(oN0)(R)) ++ " local" ++ `(localObjectName?(oN0)), oN0)
+  IN
+  IF localObjectName?(oN) THEN false
+  IF codedProof?(oN)(R) THEN false    -- no need to declare
+  IF ~(uN ~ unitName(oN)) THEN false  -- imported from elsewhere
+  ELSE
+    LET res == (missing? or hidden?)
+                 (impl(object(toImpl(oN))(R))) -- no definition available
+    IN
+    PRINT(debug?, \\ . "no definition: " ++ `(res), res)
+  FI
+
+
+
+DEF parameter?(uN, p)(R) ==
+  (checkNames(~ o declaredHere?(uN, R))(p)) and
+  ~(checkNames(imported?(uN))(p))
+
+DEF parameter?(uN, pN)(R) == parameter?(uN, propertyS(pN)(R))(R)
+
+FUN declaredHere? : unitName ** repo -> objectName -> bool
+DEF declaredHere?(uN, R)(oN) ==
+  IF codedProof?(oN)(R) THEN true  -- is declared here
+  IF ~(uN ~ unitName(oN)) THEN false -- imported from elsewhere
+  ELSE
+    ~(parameter?(impl(object(oN)(R))))
+  FI
+
+FUN imported? : unitName -> objectName -> bool
+DEF imported?(uN)(oN) == 
+  IF globalObjectName?(oN) THEN ~(uN ~ unitName(oN)) ELSE true FI
+
+  
+-- %collect variable names in lhs expression
+FUN lVars: expr -> seq[objectName]
+DEF lVars(name(_, n)) == IF localObjectName?(n) THEN %(n) ELSE <> FI
+DEF lVars(apply(_,f,a)) == lVars(f) ++ lVars(a)
+DEF lVars(tuple(_, elems)) == flat(lVars * elems)
+DEF lVars(as(_, v, x)) == v :: lVars(x)
+DEF lVars(any(_)) == <>
+DEF lVars(_else) == <>
+
+
+-- %Property names
+DEF checkNamesPN(ok?, R)(pN) ==
+  checkNames(ok?)(propertyS'FormulaHandling(pN)(R))

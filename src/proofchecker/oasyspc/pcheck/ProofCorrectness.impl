@@ -1,0 +1,426 @@
+IMPLEMENTATION ProofCorrectness
+
+IMPORT Loquacity ONLY progress debugMsg
+       Nat ONLY nat 1 3 5 0 2 4 10 6 succ? * +
+       ComCompose ONLY & ;
+       PCEStore ONLY get
+       Option ONLY option nil? cont avail? avail nil
+       RepoEvent ONLY diag event
+       RepoDiag ONLY error freeRef !! <+ ok limit mode ref warn fmtDiag ok?
+       Com ONLY succeed com okay? data fail? error break ans
+       PCEnv COMPLETELY
+       ComMapMapEnv ONLY *&
+       ComSeqMapEnv ONLY &&
+       SeqReduce ONLY / \
+       Map ONLY codom map ! {}
+       RepoName ONLY unitName =
+       Repo ONLY repo
+       Pair ONLY pair & unpair
+       Fmt ONLY lit brk none ; spc pretty
+       NFmt ONLY fmtLatin1
+       PrettyPCEnv ONLY pretty
+       Denotation ONLY ++ empty?
+       Equiv ONLY equiv
+       ReflexTrans ONLY formula
+       Void ONLY void
+       String ONLY string
+       Seq ONLY seq % <>? ft rt ++ +/+ <> revert :: exist?
+       Set ONLY set arb %
+       PCEFunctions COMPLETELY
+       RepoAbsy COMPLETELY
+       RepoUnitAccess ONLY lookup? absyFile
+       RepoObjectAccess ONLY lookup symbol
+       RepoAn ONLY none
+       SeqMapEnv ONLY *
+       SetConv ONLY asSeq
+       DbGlobalEnv ONLY identTable
+       DbConvEnv ONLY init @ env
+       Expression ONLY obj tuple tupleExpr apply expr:SORT tpos repo
+       CAST ONLY cast
+       DbImpl2Expr ONLY expr2expr
+       InternEval ONLY eval undefined? unknown? msg okay? data result setRepo
+       PROOFSCRIPT COMPLETELY
+       DbRequire ONLY require
+       PredefEntities ONLY proofscript
+       LSeq ONLY lseq <>? pull
+       MapFilter ONLY partition |
+       ProofAn ONLY  initProofAn setOriginal getSpecExpr :=_specFun 
+       PrettyAn ONLY updateUniqAn
+       Stat ONLY stat prettyStat valid? ct maxSq maxHyp maxProp
+       PredicateX ONLY and
+       FileName ONLY splitSuffix
+       RepoAdmin ONLY path repoFile
+       File ONLY writeLine open file close
+       Time ONLY time -
+       RealConv ONLY ``
+       Real ONLY real * / 100 -
+       Timer ONLY checkTime
+       FmtSeq ONLY fmtSeq
+       Testing ONLY evaluate doTest
+       FmtSet ONLY fmtSet
+       ComAction ONLY done
+       Control ONLY ^
+       Stopwatch ONLY start elapsed now
+       NatConv ONLY asReal `
+       FmtBasicTypes ONLY fmtNat
+       SeqMap ONLY *
+       ProofAsProgram ONLY handleProofAsProgram
+       PrettyFormatting ONLY prettyExpr fmtObjectNameLong
+       ProofCommon ONLY sendRepo resetTime addTime getTime specFun
+       BasicSupplements ONLY fmtReal
+       FmtOption ONLY fmtOption
+
+
+DEF proofCorrectness(uN)(R)(pprefix, tStart) ==
+  progress(1, \\ . "Checking proof correctness ...")(R) & (\\ R1.
+  LET e == get(uN)(R1)
+  IN
+  IF e nil? THEN
+    succeed((error, freeRef("proof correctness")) !!
+            ("no pc-environment for unit found") & R1)
+  ELSE
+    LET (ordProofs, xProofs) == split(pHeads(e cont))(pprefix, R1)
+    IN
+    clearTrace(uN, R1) & (\\ R1a.
+    (checkProof(pBodies(e cont), uN), R1a) *& xProofs && (\\ R2, diagMap1.
+    (yProofs(pBodies(e cont), uN), R2) *& ordProofs && (\\ R3, ypMap.
+    sendRepo(R3) & (\\ R4.
+    LET R5 == resetTime(R4)
+    IN
+    (checkOrdProof(uN), R5) *& ypMap && (\\ R6a, diagMap2.
+    now & (\\ tEnd.
+    showTime(R6a, tEnd - tStart) & (\\ R6.
+    LET diags == (<+, ok) \ codom(diagMap1) ++ codom(diagMap2)
+    IN
+    debugMsg("showCorrectnessDiags",
+             \\ . fmtLatin1(fmtDiag(diags)))(R6) & (\\ R8.
+    succeed(diags & R8)
+    ))))))))
+  FI
+  )
+
+/* %Check non explicit proofs */
+
+FUN checkProof: map[proofName, <, pBody] ** unitName ->
+                 repo -> proofName ** pHead -> com[pair[repo, diag]]
+DEF checkProof(bodies, main)(R)(pN, pH) ==
+  LET pB == bodies!pN
+      descr == \\ r. fmtLatin1(pretty(r)(pN))
+  IN
+  progress(3, \\ . "checking " ++ descr(R))(R) & (\\ R1.
+  IF pB axiom? THEN
+    progress(5, \\ . "is an axiom")(R1) & (\\ R2.
+    succeed(R2 & ok)
+    )
+  IF pB missing? THEN
+    progress(5, \\ . "is missing")(R1) & (\\ R2.
+    succeed(R2 & ((error, ref(R2, main)(pN)) !!
+                  ("no proof body for " ++ descr(R2))))
+    )
+  IF pB equiv? THEN
+    progress(5, \\ . "equivalence ...")(R1) & (\\ R2.
+    LET (R3, f1) == formula(arb(prems(pH)), main)(R2)
+        (R4, f2) == formula(concl(pH), main)(R3)
+    IN
+    IF f1 equiv f2 THEN 
+      debugMsg("checkProof", \\ . "are equivalent")(R4) & (\\ R5.
+      succeed(R5 & ok)
+      )
+    ELSE
+      debugMsg("checkProof", \\ . "are different")(R4) & (\\ R5.
+      succeed(R5 & ((error, ref(R5, main)(pN)) !! "laws " ++
+                    !(R5)(arb(prems(pH))) ++ " and " ++
+                    !(R5)(concl(pH)) ++ " are not equivalent"))
+      )
+    FI
+    )
+  ELSE
+    debugMsg("checkProof",
+             \\ . "ordinary proof here => should not happen!!")(R1) & (\\ R5.
+    succeed(R5 & ok)
+    )
+  FI
+  )
+
+/* %Check ordinary (= explicitly given) proof. */
+
+FUN checkOrdProof: unitName -> 
+                    repo -> proofName ** yproof -> com[pair[repo, diag]]
+DEF checkOrdProof(main)(R)(pN, yp) ==
+  IF script(yp) axiom? THEN -- Law von anderer Struktur
+    progress(10, \\ . fmtLatin1(lit("axiom found: ");
+                                pretty(R, main)(pN)))(R) & (\\R2.
+    succeed(R2 & ok))
+  IF script(yp) equiv? THEN -- ?!
+    succeed(R & (limit, ref(R, main)(pN)) !! 
+                   ("equiv ?!" ++ pretty(pretty(R, main)(pN))))
+  IF script(yp) missing? THEN
+    succeed(R & (error, ref(R, main)(pN)) !! ("proof script missing"))
+  IF script(yp) ordinary? THEN
+    IF evaluate?(R, script(script(yp))) THEN
+      progress(2, \\ . fmtLatin1(lit("evaluating conclusion for"); spc(1); 
+                                 pretty(R, main)(pN)))(R) & (\\ R2.
+      evaluate(R2, main, prop(yp), ref(R2, main)(pN)) && (\\ R3, diags.
+      progress(10, \\ . "finished")(R3) & (\\ R4.
+      succeed(R4 & diags)
+      )))
+    IF proofByTest?(R, script(script(yp))) THEN 
+      progress(2, \\ . fmtLatin1(lit("performing test for"); spc(1);
+                                 pretty(R, main)(pN)))(R) & (\\ R2.
+      doTest(R2, main, prop(yp),
+             ref(R2, main)(pN), script(script(yp))) && (\\ R3, diags.
+      progress(10, \\ . "finished")(R3) & (\\ R4.
+      succeed(R4 & diags)
+      )))
+    ELSE
+      progress(2, \\ . fmtLatin1(lit("executing proof"); spc(1); 
+                                 pretty(R, main)(pN)))(R) & (\\ R2.
+      perform(R2, main)(pN, yp) ; (\\ resT.
+      IF resT okay? THEN -- command okay?
+        LET (scriptRes:resultF, time) == unpair(data(resT))
+            scriptDiags == diags(scriptRes)
+            scriptAn == an(scriptRes)
+            scriptTrace == revert(trace(scriptRes)) -- getTrace(scriptAn)
+            scriptStat == stat(scriptRes) -- getStat(scriptAn)
+        IN
+        IF okay?(scriptRes) THEN 
+          debugMsg("checkProof",
+                   \\ . "returned okay")(R2) & (\\ R3.
+          (IF scriptTrace <>? THEN succeed(R3)
+           ELSE 
+             LET txt == (brk; lit("Trace of "); pretty(R, main)(pN); brk); 
+                          ((\\f1, f2. f1; brk; f2) , none) / scriptTrace
+             IN
+             progress(6, \\ . fmtLatin1(txt))(R3) & (\\ R3a.
+             store(brk; lit("Trace of "); pretty(R, main)(pN); brk,
+                   scriptTrace, main, R3a))
+           FI) & (\\ R4.
+          (IF valid?(scriptStat) THEN
+           progress(6, \\ . fmtLatin1(prettyStat(scriptStat)))(R4) & (\\ R4a.
+           store(lit("Statistics of "); pretty(R, main)(pN); brk;
+                 prettyStat(scriptStat); brk; 
+                 prettyTimeStat(scriptStat, time, 6), 
+                 main, addTime(time)(R4a)))
+           ELSE succeed(R4)
+           FI) & (\\ R5.
+          progress(2, \\ . fmtLatin1(prettyTimeStat(scriptStat,
+                                                    time, 2)))(R5) & (\\ R6.
+          (LET sE == getSpecExpr(scriptAn)
+           IN
+           IF avail?(sE) THEN
+             debugMsg("checkProof", \\ . "returned spec expr:" ++
+                      fmtLatin1(fmtExpr(cont(sE))))(R6) & (\\R7.
+             handleProofAsProgram(R7, main, pN,
+                                  cont(specFun(yp)), cont(sE)) && (\\ R8, txt.
+             store((lit("inserted definition for "); pretty(R, main)(pN));
+                   (brk; lit(txt)), main, R8)
+             ))
+           ELSE
+             succeed(R6)
+           FI) & (\\ R7.
+             succeed(R7 & scriptDiags)
+          )))))
+        FI -- just one alternative left
+      IF resT fail? THEN
+        debugMsg("checkProof", \\ . "error in proof script")(R2) & (\\ R3.
+        succeed(R3 & ((error, ref(R3, main)(pN)) !!
+                      ("proof script could not be executed: %s",
+                       error(resT))))
+        )
+      FI
+      ))
+    FI
+  FI
+
+-- %$Call evaluator$
+-- %return result and time in seconds needed
+FUN perform: repo ** unitName -> proofName ** yproof ->
+              com[pair[resultF'PROOFSCRIPT, real]]
+DEF perform(R, uN)(pN, yproof(hyps, prop, ordinary(_, script), sF)) ==
+  identTable & (\\ iTab. 
+  LET initAn == IF sF avail? THEN 
+                  initProofAn(ref(R, uN)(pN)) :=_specFun cont(sF)
+                ELSE
+                  initProofAn(ref(R, uN)(pN))
+                FI
+      E0 == init(R, iTab)
+      (E1, main, _) == expr2expr(E0, apply(R))
+      (E1a, arg0) == E1 @ repo(_)
+      (E1b, arg0a) == E1a @ obj(_, cast(uN))
+      (E1c, arg0b) == E1b @ obj(_, cast(initAn))
+      (E2, arg1) == E1c @ obj(_, cast(setOriginal * hyps))
+      (E3, arg2) == E2 @ obj(_, cast(setOriginal(prop)))
+      (E4, arg3, _) == expr2expr(E3, script)
+      (E5, args) == E4 @ tuple(_, %(tupleExpr(arg0, 0),
+                                    tupleExpr(arg0a, 1),
+                                    tupleExpr(arg0b, 2),
+                                    tupleExpr(arg1, 3),
+                                    tupleExpr(arg2, 4), 
+                                    tupleExpr(arg3, 5)), 6)
+      (_E6, top) == E5 @ apply(_, main, args, 1)
+  IN
+  start & (\\ _ .
+  debugMsg("checkProof", \\ . "evaluating proofscript ...")(R) & (\\ R3.
+  eval(uN, top, resultF(R3)) & (\\ res.
+  debugMsg("checkProof", \\ . "... done")(R3) & (\\ R4 .
+  elapsed & (\\ diff.
+  debugMsg("timer", \\ . "elapsed time: " ++ 
+           ``(diff, 6) ++ " sec")(R4) & (\\ _R5 . 
+  IF res undefined? THEN break("undefined script:" ++ msg(res))
+  IF res unknown? THEN break(msg(res))
+  IF res okay? THEN succeed(cast(data(res)) & diff)
+  FI
+  )))))))
+
+
+DATA yproof == yproof(hyps: seq[formula],
+                      prop: formula,
+                      script: pBody,
+                      specFun: option[objectName])
+
+FUN yProofs: map[proofName, <, pBody] ** unitName ->
+              repo -> proofName ** pHead -> com[pair[repo, yproof]]
+DEF yProofs(M, uN)(R0)(pN, pH) ==
+  progress(10, \\ . "preprocessing proof " ++
+                    fmtLatin1(pretty(R0)(pN)))(R0) & (\\ R0a.
+  debugMsg("yProofs", \\ . fmtLatin1(lit("old premises:");
+                                     fmtSet(fmtLawName)(prems(pH));
+                                     lit(" old conclusion:");
+                                     fmtLawName(concl(pH))))(R0a) & (\\ R.
+  LET pB == M ! pN
+      trans == \\ r, l. formula(l, uN)(r)
+      (R1, nPrems) == (trans, R) * asSeq(prems(pH))
+      (R2, nConcl) == formula(concl(pH), uN)(R1)
+      specF == specFun(uN, R2, concl(pH))
+      R3 == R2
+  IN  
+  debugMsg("yProofs", \\ . fmtLatin1(lit("premises:");
+                                     fmtSeq(fmtFormula)(nPrems);
+                                     lit(" conclusion:");
+                                     fmtFormula(nConcl);
+                                     lit(" specfun:");
+                                     fmtOption(fmtObjectNameLong(R3, uN))(specF)
+          ))(R3) & (\\ R4.
+  succeed(R4 & yproof(nPrems, nConcl, pB, specF))
+  )))
+
+    
+-- %$Access standard objects$
+
+
+FUN apply: repo -> expr'RepoAbsy
+DEF apply(R) ==
+  LET applyOb == arb(lookup(proofscript(R), "apply")(R))
+  IN
+  name(none, applyOb)
+
+FUN resultF: repo -> fct
+DEF resultF(R) == name(arb(lookup(proofscript(R), "resultF")(R)))
+
+-- %$Auxiliary Functions$
+
+-- %shortcut for printing lawnames
+FUN ! : repo -> lawName -> denotation
+DEF !(R)(lN) == fmtLatin1(pretty(R)(lN))
+
+/* %splitting proofs - remove proofs whose name does not start with the
+    given prefix  */
+FUN split: map[proofName, <, pHead] -> denotation ** repo ->
+            map[proofName, <, pHead] ** map[proofName, <, pHead]
+DEF split(M)(pprefix, R) == 
+  IF empty?(pprefix) THEN partition(\\d, _ . ordinary?(d), M)
+  ELSE 
+    ((\\d, _ . IF ordinary?(d) THEN pprefix <| (tl ^ 6)(symbol(name(d))(R))
+               ELSE false FI) | M, {})
+  FI
+
+FUN showTime: repo ** real -> com[repo]
+DEF showTime(R, total) ==
+  LET totalP == getTime(R)
+  IN
+  progress(2, \\ . pretty(lit("** total: "); fmtReal(total, 2);
+                          lit(" sec"); spc(1); lit("(proving:");
+                          fmtReal(totalP, 2); lit(" sec "); spc(1);
+                          fmtReal(100 * (totalP / total), 2);
+                          lit("% ) **")))(R)
+
+
+-- %$$Managing the trace file$
+FUN clearTrace: unitName ** repo -> com[repo]
+DEF clearTrace(uN, R) ==
+  open(traceFile(uN, R), "w") ; (\\ of.
+  IF okay?(of) THEN close(data(of)) & succeed(R)
+  IF fail?(of) THEN diag((error, freeRef("prover")) !!
+                         ("could not open " ++ traceFile(uN, R)))(R) 
+  FI
+  )
+
+FUN store: fmt ** unitName ** repo -> com[repo]
+DEF store(txt, uN, R) ==
+  open(traceFile(uN, R), "a") ; (\\ of.
+  IF okay?(of) THEN
+    (writeLine(data(of), (fmtLatin1(txt)):denotation)
+     & close(data(of))) & succeed(R)
+  IF fail?(of) THEN succeed(R) -- error should have been reported by clearTrace
+  FI
+  )
+
+FUN store: fmt ** seq[fmt] ** unitName ** repo -> com[repo]
+DEF store(start, txt, uN, R) ==
+   open(traceFile(uN, R), "a") ; (\\ of.
+  IF okay?(of) THEN
+    writeLine(data(of), (fmtLatin1(start)):denotation) & (
+    write(data(of), txt) & (
+    close(data(of)) & 
+    succeed(R)))
+  IF fail?(of) THEN succeed(R) -- error should have been reported by clearTrace
+  FI
+  )
+ 
+FUN write: file ** seq[fmt] -> com[void]
+DEF write(_f, <>) == done
+DEF write(f, t :: txt) == 
+  writeLine(f, (fmtLatin1(t)):denotation) &
+  write(f, txt)
+  
+FUN traceFile: unitName ** repo -> denotation
+DEF traceFile(uN, R) ==
+  LET oF == path(absyFile(uN)(R))
+      (prefix, _) == splitSuffix(oF, ".")
+  IN
+  prefix ++ ".trace"
+
+-- %nice description of time statistics
+FUN prettyTimeStat: stat ** real ** nat -> fmt
+DEF prettyTimeStat(st, time, dig) ==
+  LET vol == ct(st) * maxSq(st) * (maxHyp(st) + maxProp(st))
+  IN
+  lit(``(time, dig) ++ " sec  " ++
+      ``(asReal(ct(st)) / time, dig) ++ " steps/sec  " ++
+      ``(asReal(vol) / time, dig) ++ " vol/sec" ++
+      " (volume: " ++ `(vol) ++ ")")
+  
+-- %is expr equal to @code{evaluate'PROOFSCRIPT} ?
+FUN evaluate?: repo ** expr'RepoAbsy -> bool
+DEF evaluate?(R, e) ==
+  IF e name? THEN oper(e) = arb(lookup(proofscript(R), "evaluate")(R))
+  ELSE false
+  FI
+
+-- %is expr an application of @code{test'ProofByTest} ?
+FUN proofByTest? : repo ** expr'RepoAbsy -> bool
+DEF proofByTest?(R, e) ==
+  IF e apply? THEN
+    LET pbt == proofByTest(R)
+    IN
+    IF (funct(e) name?) and (avail?(pbt)) THEN 
+      baseName(oper(funct(e))) = arb(lookup(cont(pbt), "test")(R))
+    ELSE
+      false
+    FI
+  ELSE
+    false
+  FI
+
+FUN proofByTest: repo -> option[unitName]
+DEF proofByTest(R) == lookup?("ProofByTest", sign)(R)

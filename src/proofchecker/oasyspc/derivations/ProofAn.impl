@@ -1,0 +1,275 @@
+IMPLEMENTATION ProofAn
+
+IMPORT RepoAn ONLY anLayer register def !? none undef
+       Com ONLY EXEC com
+       Nat ONLY ! nat 0 1 succ max 3
+       RepoAbsy COMPLETELY
+       DynConv ONLY unpack pack
+       Option ONLY avail? cont option
+       OptionMap ONLY *
+       Seq ONLY <> # :: seq revert
+       RepoDiag ONLY fmtRef freeRef
+       Fmt ONLY lit ; spc brk
+       FmtBasicTypes ONLY fmtNat
+       FmtSeq ONLY fmtSeq
+       SeqReduce ONLY /
+       Dyn ONLY dyn
+       String ONLY string
+       SeqMap ONLY *
+       BasicSupplements ONLY fmtBool fmtReal
+       Compose ONLY o
+       AbsySC ONLY conj? disj? neg?
+       FmtPair ONLY fmtPair
+       RepoName ONLY fmtObjectName
+       Pair ONLY pair & 1st
+       RepoObjectAccess ONLY updateObject object
+       OSubstitution ONLY o {} fmtSubst
+
+-- %$Formula annotation$
+
+DEF clearFormAn == clearShadow o clearShortcut o clearOriginal
+
+-- %$$Shadow$
+FUN shadowTag: denotation
+DEF shadowTag == "shadow"
+
+FUN shadowLayer: anLayer
+DEF shadowLayer ==
+  EXEC(register("901"!, \\ d. shadowTag $
+                              fmtPair(fmtFormula, fmtSeq(fmtObjectName))
+                                     (unpack(d, shadowTag))))
+
+DEF f :=_shadow (s, sv) ==
+  f :=_an def(shadowLayer, pack(s & sv, shadowTag), an(f))
+
+DEF shadow?(f) == avail?(getShadow(f))
+DEF getShadow(f) == unpack(_, shadowTag) * (an(f) !? shadowLayer)
+DEF getShadowF(f) == 1st * getShadow(f)
+FUN clearShadow: formula -> formula
+DEF clearShadow(f) == f :=_an undef(an(f), shadowLayer)
+
+-- %$$Shortcut$
+FUN shortcutTag: denotation
+DEF shortcutTag == "shortcut"
+
+FUN shortcutLayer: anLayer
+DEF shortcutLayer ==
+  EXEC(register("906"!, \\ d. shortcutTag $ unpack(d, shortcutTag)))
+
+DEF f :=_shortcut s ==
+  f :=_an def(shortcutLayer, pack(s, shortcutTag), an(f))
+
+DEF shortcut?(f) == avail?(getShortcut(f))
+DEF getShortcut(f) == unpack(_, shortcutTag) * (an(f) !? shortcutLayer)
+FUN clearShortcut: formula -> formula
+DEF clearShortcut(f) == f :=_an undef(an(f), shortcutLayer)
+
+-- %$$Shortcut Switch$
+FUN shortcutSwitchTag: denotation
+DEF shortcutSwitchTag == "shortcutSwitch"
+
+FUN shortcutSwitchLayer: anLayer
+DEF shortcutSwitchLayer ==
+  EXEC(register("908"!, \\ d. shortcutSwitchTag $
+                              unpack(d, shortcutSwitchTag)))
+
+DEF a :=_shortcutSwitch b ==
+  def(shortcutSwitchLayer, pack(b, shortcutSwitchTag), a)
+
+
+DEF getShortcutSwitch(a) ==
+  unpack(_, shortcutSwitchTag) * (a !? shortcutSwitchLayer)
+
+-- %$$New Shortcut Flag$
+FUN newShortcutTag: denotation
+DEF newShortcutTag == "newShortcut"
+
+FUN newShortcutLayer: anLayer
+DEF newShortcutLayer ==
+  EXEC(register("909"!,
+                \\d. newShortcutTag $ fmtBool(unpack(d, newShortcutTag))))
+
+DEF newSC?(f) ==
+  cont(false)(unpack(_, newShortcutTag) * an(f) !? newShortcutLayer)
+
+DEF setNewSC(f) ==
+  f :=_an def(newShortcutLayer, pack(true, newShortcutTag), an(f))
+
+DEF clearNewSC(f) ==
+  f :=_an def(newShortcutLayer, pack(false, newShortcutTag), an(f))
+
+-- %$$Original Flag$
+FUN newOriginalTag: denotation
+DEF newOriginalTag == "newOriginal"
+
+FUN newOriginalLayer: anLayer
+DEF newOriginalLayer ==
+  EXEC(register("910"!,
+                \\d. newOriginalTag $ fmtBool(unpack(d, newOriginalTag))))
+
+DEF original?(f) ==
+  cont(false)(unpack(_, newOriginalTag) * an(f) !? newOriginalLayer)
+DEF new?(f) == ~(original?(f))
+
+DEF setOriginal(f) ==
+  LET f0 == f :=_an def(newOriginalLayer, pack(true, newOriginalTag), an(f))
+  IN
+  IF f0 conj? THEN connect(an(f0), conj, setOriginal * formulas(f0))
+  IF f0 disj? THEN connect(an(f0), disj, setOriginal * formulas(f0))
+  IF f0 neg? THEN connect(an(f0), neg, setOriginal * formulas(f0))
+  ELSE f0
+  FI
+
+FUN clearOriginal: formula -> formula
+DEF clearOriginal(f) ==
+  f :=_an def(newOriginalLayer, pack(false, newOriginalTag), an(f))
+
+
+-- %$Weight$
+FUN weightTag: denotation
+DEF weightTag == "weight"
+
+FUN weightLayer: anLayer
+DEF weightLayer ==
+  EXEC(register("907"!, \\ d.weightTag $ fmtNat(unpack(d, weightTag))))
+
+DEF f :=_weight s ==
+  f :=_an def(weightLayer, pack(s, weightTag), an(f))
+
+DEF weight?(f) == avail?(getWeight(f))
+DEF getWeight(f) == unpack(_, weightTag) * (an(f) !? weightLayer)
+DEF clearWeight(f) == f :=_an undef(an(f), weightLayer)
+
+-- %$Types$
+FUN typesTag: denotation
+DEF typesTag == "types"
+
+FUN typesLayer: anLayer
+DEF typesLayer ==
+  EXEC(register("923"!, \\ d. typesTag $ fmtSeq(fmtFct)(unpack(d, typesTag))))
+
+
+DEF a :=_types tps == (typesLayer, pack(tps, typesTag)) def a
+DEF getTypes(a) == unpack(_, typesTag) * (a !? typesLayer)
+
+-- %free variable count annotation
+FUN fvctTag: denotation
+DEF fvctTag == "fvct"
+
+FUN fvctLayer: anLayer
+DEF fvctLayer == 
+  EXEC(register("911"!, \\ d. fvctTag $ fmtNat(unpack(d, fvctTag))))
+
+DEF :=_fvct(ob, ct) ==
+  ob :=_an def(fvctLayer, pack(ct, fvctTag), an(ob))
+
+DEF setFVct(ct)(ob) == ob :=_fvct ct
+DEF setFVct(ct)(oN, R) == updateObject(oN, setFVct(ct))(R)
+
+DEF getFVct(ob) == unpack(_, fvctTag) * (an(ob) !? fvctLayer)
+DEF getFVct(oN)(R) == getFVct(object(oN)(R))
+
+-- %$Proofstate annotations$
+
+DEF initProofAn(r) ==
+  def(canRefLayer, pack(r, canRefTag),
+      def(traceLayer, pack(<>[denotation], traceTag),
+--        def(statLayer, pack(initStat, statTag),
+              none))
+-- )
+
+-- %$$canonical reference$
+FUN canRefLayer: anLayer
+DEF canRefLayer ==
+  EXEC(register("902"!, \\ d. canRefTag $ fmtRef(unpack(d, canRefTag))))
+
+FUN canRefTag: denotation
+DEF canRefTag == "canRef"
+
+DEF an :=_canRef r == def(canRefLayer, pack(r, canRefTag), an)
+DEF getCanRef(an) ==
+  cont(freeRef("??prover??"))(unpack(_, canRefTag) * (an !? canRefLayer))
+
+-- %$$Trace layer$
+FUN traceLayer: anLayer
+DEF traceLayer ==
+  EXEC(register("904"!, \\ d. traceTag $ fmtSeq(\\x.x)(unpack(d, traceTag))))
+
+FUN traceTag: denotation
+DEF traceTag == "trace"
+
+DEF xtrace(msg)(a) == 
+  LET list == cont(<>)(unpack(_, traceTag) * (a !? traceLayer))
+  IN
+  def(traceLayer, pack(msg :: list, traceTag), a)
+
+DEF getTrace(an) == revert(cont(<>)(unpack(_, traceTag) * (an !? traceLayer)))
+
+-- %$$Time layer$
+FUN timeLayer: anLayer
+DEF timeLayer ==
+  EXEC(register("919"!, \\ d. timeTag $ fmtReal(unpack(d, timeTag),3)))
+
+FUN timeTag: denotation
+DEF timeTag == "time"
+
+DEF setTime(t)(a) == def(timeLayer, pack(t, timeTag), a)
+DEF getTime(a) == unpack(_, timeTag) * (a !? timeLayer)
+
+-- %$$Specified function layer$
+FUN specFunTag: denotation
+DEF specFunTag == "specFun"
+
+FUN specFunLayer: anLayer
+DEF specFunLayer ==
+  EXEC(register("912"!,
+                \\ d. specFunTag $ fmtObjectName(unpack(d, specFunTag))))
+
+DEF an :=_specFun oN == def(specFunLayer, pack(oN, specFunTag), an)
+DEF getSpecFun(an) == unpack(_, specFunTag) * (an !? specFunLayer)
+
+-- %$$Unskolem variable layer$
+
+FUN unskolTag: denotation
+DEF unskolTag == "unskol"
+
+FUN unskolLayer: anLayer
+DEF unskolLayer ==
+  EXEC(register("913"!, \\ d. unskolTag $ fmtObjectName(unpack(d, unskolTag))))
+
+DEF an :=_unskol oN == def(unskolLayer, pack(oN, unskolTag), an)
+DEF getUnskol(an) == unpack(_, unskolTag) * (an !? unskolLayer)
+
+
+-- %$$Specification expression layer$
+
+FUN specExprTag: denotation
+DEF specExprTag == "specExpr"
+
+FUN specExprLayer: anLayer
+DEF specExprLayer ==
+  EXEC(register("914"!,
+                \\ d. specExprTag $ fmtObjectName(unpack(d, specExprTag))))
+
+DEF an :=_specExpr oN == def(specExprLayer, pack(oN, specExprTag), an)
+DEF getSpecExpr(an) == unpack(_, specExprTag) * (an !? specExprLayer)
+
+-- %$Subgoal Tactic$
+
+FUN currSubstTag: denotation
+DEF currSubstTag == "currSubst"
+
+FUN currSubstLayer: anLayer
+DEF currSubstLayer ==
+  EXEC(register("920"!,
+                \\ d. currSubstTag $ fmtSubst(unpack(d, currSubstTag))))
+
+DEF an °=_subst s == 
+  (currSubstLayer, pack(s o getCurrSubst(an), currSubstTag)) def an
+DEF getCurrSubst(an) ==
+  cont({})(unpack(_, currSubstTag) * (an !? currSubstLayer))
+
+
+-- %$Auxiliary$
+FUN $ : denotation ** fmt -> fmt
+DEF t $ f == lit("<"); lit(t); lit(":"); f; lit(">")

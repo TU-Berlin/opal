@@ -1,0 +1,303 @@
+IMPLEMENTATION ProofInteractive
+
+IMPORT PCEnv COMPLETELY
+       Option ONLY option:SORT nil? cont avail? avail nil
+       Seq ONLY seq[formula]:SORT seq % revert <>? :: <>
+       RepoAbsy COMPLETELY
+       Com ONLY com:SORT succeed okay? ans break error fail?
+       Loquacity ONLY progress debugMsg
+       Nat ONLY nat 1 5 0 2 3 4 6
+       ComCompose ONLY & ;
+       PCEStore ONLY get
+       RepoDiag ONLY error freeRef !! ok mode
+       ProofHandling ONLY find?
+       Denotation ONLY ++ +/+ =
+       RepoUnitAccess COMPLETELY
+       RepoAn ONLY none an
+       Map ONLY !? map find?
+       InternEval ONLY setRepo exec undefined? msg unknown? result okay? data
+       ReflexTrans ONLY formula
+       SeqMap ONLY *
+       SetConv ONLY asSeq
+       Repo ONLY repo
+       RepoName ONLY unitName objectName propertyName =
+       Void ONLY void nil
+       DbGlobalEnv ONLY identTable
+       ProofAn COMPLETELY
+       PCEFunctions ONLY ref
+       DbConvEnv ONLY init env @
+       DbImpl2Expr ONLY expr2expr
+       Set ONLY set arb {}?
+       String ONLY string
+       Expression ONLY expr tupleExpr selector repo obj tuple apply tpos
+       Pair ONLY & pair unpair 1st 2nd
+       CAST ONLY cast
+       RepoObjectAccess ONLY lookup
+       SeqMapEnv ONLY *
+       PROOFSCRIPT COMPLETELY
+       Fmt ONLY lit brk ; none pretty
+       SeqReduce ONLY / 
+       Stat ONLY valid? prettyStat
+       ProofAsProgram ONLY handleProofAsProgram
+       PredefEntities ONLY proofscript
+       File ONLY open close writeLine file
+       ABORT ONLY ABORT
+       ComSeqMapEnv ONLY &&
+       InternCompile ONLY extendUnit extendResult failure? success? absy diag
+       RepoInternAbsy ONLY readAbsy readResult:SORT properties
+       INTERACTIVEPROOF ONLY addHypothesis
+       Char ONLY char
+       InterOpal ONLY interOpal:SORT
+       SetMap ONLY *
+       SetReduce ONLY /
+       IdMap ONLY find? idmap:SORT
+       ExtendP ONLY extendUnitP
+       OptionMap ONLY *
+       PrettyAn ONLY updateUniqAn
+       ProofCommon ONLY transPH sendRepo ` lookup unit
+       ComAction ONLY done
+
+DEF startProof(uN, pName)(R) ==
+  progress(1, \\ . "Initializing interactive proof ...")(R) & (\\ R1.
+  LET e == get(uN)(R1)
+  IN
+  IF e nil? THEN succeed((error, IPref) !! 
+                         ("no pc-environment for unit found") & R1)
+  ELSE
+    LET p == find?(uN, pName)(R1)
+    IN
+    IF p nil? THEN succeed((error, IPref) !! ("no proof " ++ pName ++ "'" ++ 
+                                              symbol(uN)(R1)) & R1)
+    ELSE
+      LET pN == ordinary(none, p cont)
+          pH == 2nd * find?(\\d, _ . IF ordinary?(d) THEN name(d) = (p cont)
+                                     ELSE false FI, pHeads(e cont))
+      IN
+      IF pH nil? THEN succeed((error, IPref) !!
+                              ("no proof head found for " ++ pName ++ "'" ++ 
+                               symbol(uN)(R1)) & R1)
+      ELSE
+        LET (R2, nPrems, nConcl, specF) == transPH(R1)(pH cont, uN)
+        IN
+        sendRepo(R2) & (\\ R7.
+        perform(R7, uN)(pN, nPrems, nConcl, specF) ; (\\ res.
+        IF res okay? THEN
+          succeed(ok & R7)
+        ELSE
+          succeed((error, IPref) !! ("initializing for " ++ pName ++ "'" ++ 
+                                     symbol(uN)(R7) ++
+                                     (" failed:" ++ error(res))) & R7)
+        FI
+        ))
+      FI
+    FI
+  FI
+  )
+
+FUN IPref : ref
+DEF IPref == freeRef("interactive prover")
+
+FUN perform: repo ** unitName -> proofName ** seq[formula] **
+              formula ** option[objectName] -> com[void]
+DEF perform(R, uN)(pN, hyps, concl, sF) ==
+  identTable & (\\ iTab.
+  LET initAn == IF sF avail? THEN
+                  initProofAn(ref(R, uN)(pN)) :=_specFun cont(sF)
+                ELSE
+                  initProofAn(ref(R, uN)(pN))
+                FI
+       E0 == init(R, iTab)
+       (E1, main, _) == expr2expr(E0, initialize(R))
+       (E2, arg0) == E1 @ repo(_)
+       (E3, arg1) == E2 @ obj(_, cast(uN))
+       (E4, arg2) == E3 @ obj(_, cast(initAn))
+       (E5, arg3) == E4 @ obj(_, cast(setOriginal * hyps))
+       (E6, arg4) == E5 @ obj(_, cast(setOriginal(concl)))
+       (E7, args) == E6 @ tuple(_, %(tupleExpr(arg0, 0),
+                                     tupleExpr(arg1, 1),
+                                     tupleExpr(arg2, 2),
+                                     tupleExpr(arg3, 3),
+                                     tupleExpr(arg4, 4)), 5)
+       (_E8, top) == E7 @ apply(_, main, args, 1)
+  IN
+  exec(uN, top, void(R)) & (\\ res:result.
+  IF res undefined? THEN break("undefined initialization?! :" ++ msg(res))
+  IF res unknown? THEN break(msg(res))
+  IF res okay? THEN succeed(nil)
+  FI
+  ))
+
+DEF finProof(uN)(R) == perform(finalizeW, uN)(R)
+DEF handleState(uN)(R) == perform(getResultW, uN)(R)
+
+FUN perform: ((repo -> expr'RepoAbsy) ** unitName) ->
+              repo -> com[pair[diag, repo]]
+DEF perform(f, uN)(R) ==
+  clearTrace & (\\ _ .
+  identTable & (\\ iTab.
+  LET E0 == init(R, iTab)
+      (_E1, main, _) == expr2expr(E0, f(R))
+  IN
+  exec(uN, main, resultF(R)) & (\\ res:result'InternEval.
+  IF res undefined? THEN
+    succeed((error, freeRef("interactive prover"))
+            !! ("undefined constant: " ++ msg(res)) & R)
+  IF res unknown? THEN
+    succeed((error, freeRef("interactive prover"))
+            !! msg(res) & R)
+  IF res okay? THEN
+    LET scriptRes:resultF == cast(data(res))
+        scriptDiags == diags(scriptRes)
+        scriptAn == an(scriptRes)
+        scriptTrace == revert(trace(scriptRes)) -- getTrace(scriptAn)
+        scriptStat == stat(scriptRes) -- getStat(scriptAn)
+    IN
+    IF okay?(scriptRes) THEN 
+      debugMsg("interactive", \\ . "returned okay")(R) & (\\ R3.
+      IF scriptTrace <>? THEN succeed(R3)
+      ELSE 
+        LET txt == lit("Trace of interactive proof"); brk
+        IN
+        progress(6, \\ . pretty(txt))(R3) & (\\ R3a.
+        store(brk :: txt :: scriptTrace) & (\\ _ .
+        succeed(R3a)))
+      FI) & (\\ R4.
+      IF valid?(scriptStat) THEN
+        progress(6, \\ . pretty(prettyStat(scriptStat)))(R4) & (\\ R4a.
+        store(lit("Statistics of interactive proof"); brk;
+              prettyStat(scriptStat); brk) & (\\ _ .
+        succeed(R4a)))
+      ELSE succeed(R4)
+      FI) & (\\ R6:repo.
+      LET sE == getSpecExpr(scriptAn)
+      IN
+      IF avail?(sE) THEN
+        LET sF == IF avail?(getSpecFun(scriptAn)) THEN
+                    cont(getSpecFun(scriptAn))
+                  ELSE
+                    ABORT("perform'ProofInteractive: no spec fun")
+                  FI
+        IN
+        debugMsg("interactive", \\ . "returned spec expr:" ++
+                 pretty(fmtExpr(cont(sE))))(R6) & (\\R7.
+        handleProofAsProgram(R7, uN, sF, cont(sE)) && (\\ R8, txt.
+        store((lit("inserted definition for function"); (brk; lit(txt)))) &
+        succeed(R8)
+        ))
+      ELSE
+        succeed(R6)
+      FI) & (\\ R7.
+      succeed(scriptDiags & R7)
+      )
+    FI
+  FI
+  )))
+
+DEF addHypothesis(uN, preForm)(R) ==
+  progress(6, \\ . "compiling formula ...")(R) & (\\ R1.
+  LET newText == " LAW $$ == \n" ++ preForm
+  IN
+  debugMsg("addHypo", \\ . "inserted text: " ++ newText)(R1) & (\\ R2.
+  extendUnitP(uN,newText)(R2) & (\\ ER.
+  LET (res:extendResult, R3) == unpair(ER)
+  IN
+  IF failure?(res) THEN 
+    debugMsg("addHypo", \\ . "failure extending unit")(R3) & (\\ R4.
+    succeed(diag(res) & R4)
+    )
+  IF success?(res) THEN
+    LET (absyR, R4) == readAbsy(absy(res), true)(R3)
+        props == properties(absyR)
+        newLaw == find?(\\ p. IF law?(p) ANDIF avail?(symbol(p)) THEN
+                              cont(symbol(p)) = "$$" ELSE false FI, props)
+    IN
+    IF newLaw nil? THEN
+      debugMsg("addHypo", \\ . "no new law")(R4) & (\\ R5.
+      succeed((error, freeRef("addHypo")) !! 
+              ("inserted law $$ not found") & R5)
+      )
+    ELSE
+      debugMsg("addHypo", \\ . "adding hypothesis")(R4) & (\\ R5.
+      perform(R5, uN, formula(cont(newLaw))) ; (\\ a .
+      IF a fail? THEN
+        debugMsg("addHypo", \\ . "ERROR: " ++ error(a))(R5) & (\\ R6.
+        succeed((error, freeRef("addHypo")) !! "addHypothesis failed" & R6)
+        )
+      ELSE
+        debugMsg("addHypo", \\ . "added hypothesis")(R5) & (\\ R6.
+        progress(6, \\ . "formula inserted")(R6) & (\\ R7.
+        succeed(diag(res) & R7)
+        ))
+      FI
+      ))
+    FI
+  FI
+  )))
+      
+FUN perform: repo ** unitName ** formula -> com[void]
+DEF perform(R, uN, fo) ==
+  identTable & (\\ iTab.
+  LET E0 == init(R, iTab)
+      (E1, main, _) == expr2expr(E0, addHypothesis(R))
+      (E2, arg0) == E1 @ obj(_, cast(fo))
+      (_E3, top) == E1 @ apply(_, main, arg0, 1)
+  IN
+  exec(uN, top, void(R)) & (\\ res:result.
+  IF res undefined? THEN break("undefined perform/aH :" ++ msg(res))
+  IF res unknown? THEN break(msg(res))
+  IF res okay? THEN succeed(nil)
+  FI
+  ))
+
+-- %$Special elements of the absy$        
+                             
+FUN initialize: repo -> expr'RepoAbsy
+DEF initialize ==  "initialize" ` INTERACTIVEPROOF
+
+FUN finalize: repo -> expr'RepoAbsy
+DEF finalize == "finalize" ` INTERACTIVEPROOF
+
+FUN finalizeW: repo -> expr'RepoAbsy
+DEF finalizeW == "finalizeW" ` INTERACTIVEPROOF
+
+FUN addHypothesis: repo -> expr'RepoAbsy
+DEF addHypothesis == "addHypothesis" ` INTERACTIVEPROOF
+
+FUN getResult: repo -> expr'RepoAbsy
+DEF getResult == "getResult" ` INTERACTIVEPROOF
+
+FUN getResultW: repo -> expr'RepoAbsy
+DEF getResultW == "getResultW" ` INTERACTIVEPROOF
+
+FUN INTERACTIVEPROOF: repo -> unitName
+DEF INTERACTIVEPROOF(R) == cont(lookup?("INTERACTIVEPROOF", sign)(R))
+
+FUN void: repo -> fct
+DEF void == lookup(unit("Void"), "void")
+
+FUN resultF: repo -> fct
+DEF resultF == lookup(proofscript, "resultF")
+
+-- %$Handling the trace file$
+FUN clearTrace: com[void]
+DEF clearTrace == open(".trace", "w") & close
+
+FUN store: fmt -> com[void]
+DEF store(fm) ==
+  open(".trace", "a") & (\\ fn.
+  writeLine(fn, (pretty(fm)):denotation) & (\\ _ .
+  close(fn)
+  ))
+
+FUN store: seq[fmt] -> com[void]
+DEF store(fms) ==
+  open(".trace", "a") & (\\ fn.
+  store(fms, fn) & (\\ _ .
+  close(fn)
+  ))
+
+FUN store: seq[fmt] ** file -> com[void]
+DEF store(<>, _) == done
+DEF store(fm :: <>, fn) == writeLine(fn, (pretty(fm)):denotation)
+DEF store(fm :: fms, fn) ==
+  writeLine(fn, (pretty(fm)):denotation) & store(fms, fn)

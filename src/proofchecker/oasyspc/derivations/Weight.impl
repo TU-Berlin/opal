@@ -1,0 +1,81 @@
+IMPLEMENTATION Weight
+
+IMPORT Option ONLY option avail? cont nil? 
+       ProofAn ONLY getWeight :=_weight
+       Repo ONLY repo
+       RepoAbsy COMPLETELY
+       Nat ONLY nat 2 succ + 0 1
+       RepoName ONLY baseName pragmaName unitName
+       SortHandling ONLY find variants findCon findDis findSel
+       SeqReduce ONLY /
+       SeqMap ONLY *
+       Int ONLY int < - max
+       Seq ONLY seq :: <> <>?
+       NatConv ONLY asInt
+
+DEF #(R)(e) ==
+  IF avail?(getWeight(e)) THEN cont(getWeight(e)) ELSE weight(R)(e) FI
+
+/* %Compute the weight of an expression. We employ a simple technique
+    by assigning constant natural numbers to certain categories of
+    expressions. More elaborate orderings based on the definitions
+    and laws could (and should?) be provided.
+
+@itemize @bullet
+@ITEM constructors, discriminators and selectors count 1
+@ITEM denotations count 1
+@ITEM other names count 2
+@ITEM apply, tuple, cases, let, lambda count 1 + sum of parts
+@ITEM as and any count 1 (+ sum of parts)
+@end itemize
+*/
+
+FUN weight: repo -> expr -> nat
+DEF weight(R)(name(_, op)) ==
+  LET b == baseName(op)
+      tgt == find(R)(b)
+  IN
+  IF tgt nil? THEN 2 -- wrong functionality
+  ELSE LET vs == variants(tgt cont, R)  
+       IN
+       IF vs <>? THEN 2  -- no free type information
+       ELSE
+         IF avail?(findCon(R)(b, vs)) THEN 1
+         IF avail?(findDis(R)(b, vs)) THEN 1
+         IF avail?(findSel(R)(b, vs)) THEN 1
+         ELSE 2
+         FI
+       FI
+  FI
+DEF weight(R)(apply(_, fc, ar)) == succ(#(R)(fc) + #(R)(ar))
+DEF weight(R)(tuple(_, els)) == succ((+, 0) / #(R) * els)
+DEF weight(_)(den(_, _)) == 1
+DEF weight(R)(cases(_, gds, el)) ==
+  LET sumIfs == (+, 0) / #(R) * if * gds
+      sumThens == (+, 0) / #(R) * then * gds
+      sumElse == IF avail?(el) THEN #(R)(el cont) ELSE 0 FI
+  IN
+  succ(sumIfs + sumThens + sumElse)
+DEF weight(R)(lambda(_, _, _, b)) == succ(#(R)(b))
+DEF weight(R)(let(_, eqs, b)) ==
+  succ((+, 0) / #(R) * rhs * eqs + #(R)(b))
+DEF weight(R)(as(_, _, e)) == succ(#(R)(e))
+DEF weight(R)(any(_)) == 1
+
+
+-- %only shallow add weight
+DEF +#(R)(e) == e :=_weight (#(R)(e))
+
+DEF +#(R)(atomic(a, k, exs)) == atomic(a, k, +#(R) * exs)
+DEF +#(R)(connect(a, k, fs)) == connect(a, k, +#(R) * fs)
+DEF +#(R)(quant(a, k, s, v, rn)) == quant(a, k, s, v, +#(R)(rn))
+
+
+DEF <(R)(F1, F2) == #(R)(F1) < #(R)(F2)
+
+FUN # : repo -> formula -> int
+DEF #(R)(atomic(_, cong, e1 :: e2 :: <>)) ==
+  asInt(#(R)(e2)) - asInt(#(R)(e1))
+DEF #(R)(connect(_, impl, _ :: atomic(_, _, e1 :: e2 :: <>) :: <>)) == 
+  asInt(#(R)(e2)) - asInt(#(R)(e1))
+DEF #(_)(_else) == max

@@ -1,0 +1,300 @@
+IMPLEMENTATION PCEFunctions
+
+IMPORT RepoAn ONLY none 
+       RepoDiag ONLY ok unitRef <+
+       Set ONLY set + incl {}
+       PCEnv COMPLETELY
+       Map ONLY map {} <+ def
+       MapFilter ONLY partition
+       MapReduce ONLY /
+       RepoName ONLY unit impl baseName derivedUnitName?
+       RepoSource ONLY locator unspecified locator?
+       Option ONLY cont option
+       SeqMapEnv ONLY *
+       RepoObjectAccess ONLY object
+       ABORT ONLY ABORT
+       Repo ONLY repo
+       Seq ONLY seq exist?
+       Predicate ONLY or
+       InstanceHandling ONLY deriveLike
+       SetMapEnv ONLY *
+       RepoAbsy COMPLETELY
+       UnitHandling ONLY toImpl
+       RepoUnitAccess ONLY actuals
+       SetMap ONLY *
+       FormulaHandling ONLY mandatoryImpl? propertyS parameter?
+       SeqMap ONLY *
+       Nat ONLY nat max 0 + succ
+
+
+-- %$The Proof Checker Environment$
+
+DEF {} == pcEnv(none, ok, 0, {},{},{},{},{},{})
+
+
+DEF pcEnv( _, d1, f1, l1, xl1, ass1, res1, ph1, pb1) <+
+    pcEnv(an, d2, f2, l2, xl2, ass2, res2, ph2, pb2) ==
+  pcEnv(an, d1 <+ d2, f1 + f2,
+        l1 + l2, xl1 + xl2, ass1 + ass2, res1 + res2,
+        ph1 <+ shift(f1, ph2), pb1 <+ shift(f1, pb2))
+
+-- %shift all generated proofnames by indicated amount
+FUN shift: nat ** map[proofName, <, pHead] -> map[proofName, <, pHead]
+DEF shift(0, M) == M:map[proofName, <, pHead]
+DEF shift(n, M:map[proofName, <, pHead]) ==
+  LET (gens, noGens) == partition(\\pN, _ . gen?(pN), M)
+  IN
+  ((\\oldpN, oldpH, newM.
+   def(gen(an(oldpN), n + no(oldpN)), oldpH, newM)), noGens) / gens
+
+FUN shift: nat ** map[proofName, <, pBody] -> map[proofName, <, pBody]
+DEF shift(0, M) == M:map[proofName, <, pBody]
+DEF shift(n, M:map[proofName, <, pBody]) ==
+  LET (gens, noGens) == partition(\\pN, _ . gen?(pN), M)
+  IN
+  ((\\oldpN, oldpB, newM.
+   def(gen(an(oldpN), n + no(oldpN)), oldpB, newM)), noGens) / gens
+
+
+DEF pce <+ ls == pce :=_laws laws(pce) + ls
+
+DEF pce <+_ass ass == pce :=_assumes assumes(pce) + ass
+DEF pce <+_res res == pce :=_resolved resolved(pce) + res
+
+DEF (pN, pH, pB) incl pcEnv(an, ds, f, ls, xls, ass, res, pHs, pBs) ==
+  pcEnv(an, ds, f, ls, xls, ass, res, (pN, pH) def pHs, (pN, pB) def pBs)
+DEF (pH, pB) inclGen pcEnv(an, ds, f, ls, xls, ass, res, pHs, pBs) ==
+  LET pN == gen(none, f)
+  IN
+  pcEnv(an, ds, succ(f), ls, xls, ass, res, (pN, pH) def pHs, (pN, pB) def pBs)
+DEF lN incl pcEnv(an, ds, f, ls, xls, ass, res, pHs, pBs) ==
+  pcEnv(an, ds, f, incl(lN, ls), xls, ass, res, pHs, pBs)
+DEF lN inclX pcEnv(an, ds, f, ls, xls, ass, res, pHs, pBs) ==
+  pcEnv(an, ds, f, ls, incl(lN, xls), ass, res, pHs, pBs)
+DEF d incl pcEnv(an, ds, f, ls, xls, ass, res, pHs, pBs) ==
+  pcEnv(an, ds <+ d, f, ls, xls, ass, res, pHs, pBs)
+
+DEF %!(lN) == (axm(an(lN),lN), axm(lN), axiom(none)) incl (lN incl {})
+
+DEF %(pN, pH, pB) == (pN, pH, pB) incl {}
+DEF %(l) == l incl {}
+
+DEF asPCEnv(d) == pcEnv(none, d, 0, {}, {}, {}, {}, {}, {})
+
+-- %$Law Names$
+
+DEF datatype? == freetype? or cdfd? or datatypeLaws?
+DEF freetype? == gen? or ind? or discr? or sel? or equiv? or
+                    ddfd? or sdfd? or freetypeLaws?
+DEF morphism? == copy? or restr?
+DEF assocFun? == def? or spc?
+DEF source? == ordinary? or spc?
+
+DEF from(uN)(lN) == uN ~ unitName(lN)
+
+FUN unitName: lawName -> unitName
+DEF unitName(lN) ==
+  IF lN source? THEN unit(name(lN))
+  IF lN assocFun? THEN unitName(fun(lN))
+  IF lN morphism? THEN unitName(orig(lN)) :=_part impl
+  IF lN datatype? THEN unitName(type(lN))
+ FI
+
+DEF ref(R)(lN) == 
+  IF source?(lN) THEN
+    LET a == an(propertyS(name(lN))(R))
+    IN
+    unitRef(loc(a), baseName(unitName(lN)))
+  ELSE
+    unitRef(loc(an(lN)), baseName(unitName(lN)))
+  FI
+
+DEF ref(R, main)(lN) == 
+  IF baseName(main) = baseName(unitName(lN)) THEN ref(R)(lN)
+  ELSE unitRef(unspecified, baseName(main))
+  FI
+
+FUN loc: an -> locator
+DEF loc(a) == cont(unspecified)(locator?(a))
+
+DEF deriveLike(Main)(R, ordinary(an, pN)) ==
+  LET (R1, newPN) == deriveLike(Main)(R, pN) IN (R1, ordinary(an, newPN))
+DEF deriveLike(Main)(R, def(an, fun)) ==
+  LET (R1, newFun) == deriveLike(Main)(R, fun) IN (R1, def(an, newFun))
+DEF deriveLike(Main)(R, spc(an, fun, pN)) ==
+  LET (R1, newFun) == deriveLike(Main)(R, fun)
+      (R2, newPN) == deriveLike(Main)(R1, pN)
+  IN
+  (R2, spc(an, newFun, newPN))
+DEF deriveLike(Main)(R, restr(an, orig, sorts)) ==
+  LET (R1, newOrig) == deriveLike(Main)(R, orig)
+      (R2, newSorts) == (deriveLike(Main), R1) * sorts
+  IN
+  (R2, restr(an, newOrig, newSorts))
+DEF deriveLike(Main)(R, copy(an, orig)) ==
+  LET (R1, newOrig) == deriveLike(Main)(R, orig) IN (R1, copy(an, newOrig))
+DEF deriveLike(Main)(R, gen(an, type, variants)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newVs) == (deriveLike(Main), R1) * variants
+  IN
+  (R2, gen(an, newType, newVs))
+DEF deriveLike(Main)(R, ind(an, type, variants)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newVs) == (deriveLike(Main), R1) * variants
+  IN
+  (R2, gen(an, newType, newVs))
+DEF deriveLike(Main)(R, discr(an, type, con, dis)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newCon) == deriveLike(Main)(R1, con)
+      (R3, newDis) == deriveLike(Main)(R2, dis)
+  IN
+  (R3, discr(an, newType, newCon, newDis))
+DEF deriveLike(Main)(R, sel(an, type, con, sl)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newCon) == deriveLike(Main)(R1, con)
+      (R3, newSel) == deriveLike(Main)(R2, sl)
+  IN
+  (R3, sel(an, newType, newCon, newSel))
+DEF deriveLike(Main)(R, equiv(an, type, con1, con2)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newCon1) == deriveLike(Main)(R1, con1)
+      (R3, newCon2) == deriveLike(Main)(R2, con2)
+  IN
+  (R3, equiv(an, newType, newCon1, newCon2))
+DEF deriveLike(Main)(R, cdfd(an, type, con)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newCon) == deriveLike(Main)(R1, con)
+  IN
+  (R2, cdfd(an, newType, newCon))
+DEF deriveLike(Main)(R, ddfd(an, type, dis)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newDis) == deriveLike(Main)(R1, dis)
+  IN
+  (R2, ddfd(an, newType, newDis))
+DEF deriveLike(Main)(R, sdfd(an, type, sel)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newSel) == deriveLike(Main)(R1, sel)
+  IN
+  (R2, sdfd(an, newType, newSel))
+DEF deriveLike(Main)(R, freetypeLaws(an, type, variants)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newVs) == (deriveLike(Main), R1) * variants
+  IN
+  (R2, freetypeLaws(an, newType, newVs))
+DEF deriveLike(Main)(R, datatypeLaws(an, type, variants)) ==
+  LET (R1, newType) == deriveLike(Main)(R, type)
+      (R2, newVs) == (deriveLike(Main), R1) * variants
+  IN
+  (R2, datatypeLaws(an, newType, newVs))
+
+-- %$Proof Names$
+
+DEF ref(R, uN)(pN:proofName) == unitRef(loc(an(pN)), baseName(uN))
+
+-- %$Proof Heads$
+
+DEF def(fun)(R) == (axm(def(an(object(fun)(R)), fun))):pHead
+DEF axm(lN) == pHead(an(lN), {}, lN)
+
+-- %$Proof Bodies$
+
+DEF def(fun)(R) == axiom(an(object(fun)(R)))
+
+-- %$Morphisms$
+-- %$$Inclusion$
+
+DEF toImpl(uN, R)(lN) ==
+  IF from(uN)(lN) THEN
+    IF lN source? THEN copy(none, lN)
+    IF lN assocFun? THEN copy(none, lN)
+    IF lN morphism? THEN ABORT("toImpl'PCEFunctions: cannot copy copy/restr")
+    IF lN datatype? THEN
+      LET newType == toImpl(R, uN)(type(lN))
+      IN
+      IF lN gen? THEN gen(none, newType, toImpl(R, uN) * variants(lN))
+      IF lN ind? THEN ind(none, newType, toImpl(R, uN) * variants(lN))
+      IF lN discr? THEN discr(none, newType, toImpl(R, uN)(con(lN)),
+                              toImpl(R, uN)(dis(lN)))
+      IF lN sel? THEN sel(none, newType, toImpl(R, uN)(con(lN)),
+                          toImpl(R, uN)(sel(lN)))
+      IF lN equiv? THEN equiv(none, newType, toImpl(R, uN)(con1(lN)),
+                              toImpl(R, uN)(con2(lN)))
+      IF lN cdfd? THEN cdfd(none, newType, toImpl(R, uN)(con(lN)))
+      IF lN ddfd? THEN ddfd(none, newType, toImpl(R, uN)(dis(lN)))
+      IF lN sdfd? THEN sdfd(none, newType, toImpl(R, uN)(sel(lN)))
+      IF lN freetypeLaws? THEN 
+        freetypeLaws(none, newType, toImpl(R, uN) * variants(lN))
+      IF lN datatypeLaws? THEN 
+        datatypeLaws(none, newType, toImpl(R, uN) * variants(lN))
+      FI
+    FI
+  ELSE 
+    lN
+  FI
+
+-- %$$Restriction$
+
+DEF restrict(R)(uN, sorts)(lN) ==
+  IF ~^~ (R, uN)(unitName(lN)) THEN restr(none, lN, sorts) 
+  ELSE lN FI
+
+FUN ~^~ :repo ** unitName -> unitName -> bool
+DEF ~^~(R, main)(current) ==
+  IF main ~ current THEN true
+  IF derivedUnitName?(current) THEN
+    exist?(~^~(R, main), unitName * actuals(current)(R))
+  ELSE
+    false
+  FI
+
+/* %Restriction of a proof:
+@table @code
+@item ordinary
+Restrict premises and conclusion, make body an axiom.
+@item axiom
+If proof declares an explicit given law to be an axiom, 
+check again, whether law is an axiom in the context of the implementation.
+@item else
+omit this proof.
+@end table
+*/
+
+DEF restrict(R)(uN, sorts)(pN, pHead(an, prems, concl), Heads) ==
+  IF ordinary?(pN) THEN (pN, pHead(an, restrict(R)(uN, sorts) * prems,
+                                   restrict(R)(uN, sorts)(concl))) def Heads
+  IF gen?(pN) THEN (pN, pHead(an, restrict(R)(uN, sorts) * prems,
+                                   restrict(R)(uN, sorts)(concl))) def Heads
+  IF axm?(pN) THEN
+    IF (ordinary? or spc?)(law(pN)) THEN
+      IF mandatoryImpl?(uN, name(law(pN)), false)(R) or
+        parameter?(uN, name(law(pN)))(R) THEN
+        (axm(none, restrict(R)(uN, sorts)(law(pN))),
+         pHead(an, restrict(R)(uN, sorts) * prems,
+               restrict(R)(uN, sorts)(concl))) def Heads
+      ELSE
+        Heads
+      FI
+    ELSE
+      Heads
+    FI
+  IF inst?(pN) THEN Heads -- Instanzen werden neu "uberpr"uft
+  FI
+
+DEF restrict(R)(uN, sorts)(pN, _ :pBody, Bodies) == 
+  IF gen?(pN) THEN (pN, axiom(none)) def Bodies
+  IF ordinary?(pN) THEN (pN, axiom(none)) def Bodies
+  IF axm?(pN) THEN
+    IF (ordinary? or spc?)(law(pN)) THEN
+      IF mandatoryImpl?(uN, name(law(pN)))(R) or
+        parameter?(uN, name(law(pN)))(R) THEN
+        (axm(none, restrict(R)(uN, sorts)(law(pN))), axiom(none)) def Bodies
+      ELSE
+        Bodies
+      FI
+    ELSE
+      Bodies
+    FI
+  IF inst?(pN) THEN Bodies -- Instanzen werden neu "uberpr"uft
+  FI
+
+

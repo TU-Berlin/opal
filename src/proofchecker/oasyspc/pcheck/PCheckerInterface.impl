@@ -1,0 +1,580 @@
+IMPLEMENTATION PCheckerInterface
+
+IMPORT 
+       Argspec ONLY argspec:SORT
+       ArgspecBasic ONLY lit nat noCompletion var
+       ArgspecCompose ONLY o & @
+       ArgspecOp ONLY | *
+       BoolConv ONLY `
+       Cmdtable ONLY ++
+       Cmdtable[denotation] ONLY cmdtable cmd
+       Com ONLY com succeed okay? data ans 
+       ComCompose ONLY & ;
+       Denotation ONLY ++ < +/+ =
+       File ONLY file writeLine stdOut stdErr write open close
+       Fmt ONLY pretty fmt lit ; spc
+       FmtBasicTypes ONLY fmtNat
+       FmtSet ONLY fmtSet
+       OasysCmdtable ONLY register
+       Pair ONLY pair 2nd &
+       PrettyFormatting COMPLETELY
+       Repo ONLY repo
+       RepoAn ONLY an:SORT
+       RepoCom ONLY upd
+       RepoCom1 ONLY query queryUpd
+       RepoName COMPLETELY
+       RepoNameConv ONLY unitNameSpec asUnitName asDeno symbolic style
+       RepoUnitAccess COMPLETELY
+       Set ONLY set {} % incl +
+       String ONLY string ::? rt ft ! ++ ::
+       Void ONLY nil
+       Loquacity COMPLETELY
+       Seq ONLY seq <> ::
+       NatConv ONLY `
+       RepoMaintain ONLY requireFullAbsy reloadUnits
+       ProofSemantics ONLY proofSemantics
+       PCEnv ONLY fmtPcEnv pcEnv:SORT diags
+       PrettyPCEnv COMPLETELY
+       RepoEvent ONLY clearErrors errors? event:SORT register callback:SORT diag
+       Check ONLY checkUnits
+       RepoComAbort ONLY abort
+       ComAction ONLY done
+       PCEStore ONLY pceHandler reset storePces
+       ProofCompleteness ONLY proofCompleteness
+       ProofCorrectness ONLY proofCorrectness
+       ComSeqReduce ONLY /&
+       SetConv ONLY asSeq
+       PredefEntities ONLY proofscript
+       DbRequire ONLY require
+       DbComm ONLY ensureClient
+       ColourText ONLY title prettyC
+
+/* %-Version history:
+1.0 first plugin into oasys, checking whether laws are all named
+1.1 compute parameter properties - first version
+1.2 compute axioms and requires, correct parameter properties
+1.3 check import obligations
+1.4  introduce proofs and iproofs
+2.0 new start, compute proof obligations
+2.1 check proof completeness
+2.2 check proof correctness
+2.3 called evaluator 
+2.4 complete command for proof checking
+2.5 handle check and compile better
+2.6 handle proof as program
+2.7 support for interactive proof
+*/
+
+IMPORT INLINE ONLY INLINE
+       Char ONLY char ! digit? |=
+       RepoFocus ONLY focus?
+       Option ONLY nil? option cont avail?
+       RepoDiag ONLY <+ fmtDiag ok
+       StringFilter ONLY split
+       RepoAdmin ONLY path
+       FileName ONLY splitSuffix
+       StringConv ONLY `
+       NFmt ONLY fmtLatin1
+       InternEval ONLY checkAndCompile
+       Compile ONLY compileUnits
+       DbUnitTable ONLY changed def unitState unitTable
+       DbGlobalEnv ONLY :=_unitTable
+       ProofInteractive ONLY startProof finProof handleState addHypothesis
+       ABORT ONLY ABORT
+       SeqReduce ONLY /
+       FileSystem ONLY unlink
+       PrettyAn ONLY updatePrettyAn setFullness
+       RepoObjectAccess ONLY objects symbol
+       SetReduce ONLY /
+       SetFilter ONLY |
+       Nat ONLY 1 2
+       Stopwatch ONLY now
+       Real ONLY real -
+       RealConv ONLY ``
+
+FUN compileTime: denotation
+DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
+
+DEF initPChecker == 
+    write(stdOut, title("property checker 2.7b ")) & (\\ _ .
+    writeLine(stdOut, compileTime) & (\\ _ .
+    register(pceHandler) & (\\ _ .
+    register(updatePrettyAn) & (\\ _ .
+    register(pcheckerCmdtable)    
+    ))))
+
+DEF finitPChecker == upd(storePces) & removeDotTrace
+
+FUN pcheckerCmdtable: cmdtable[denotation]
+DEF pcheckerCmdtable ==
+    cmd(lit("pcheck-dump") o 
+        ((lit("instances") o unitNameSpec & 2nd @ pcheckDumpInstances)
+        |(lit("deps") o unitNameSpec &2nd @ pcheckDumpDeps)
+        ) & 2nd,
+        "dump known instances of specified unit")
+    ++
+    cmd(lit("pcheck-intern") o 
+        ((lit("requireFullAbsy") o unitNameSpec & 2nd @
+          pcheckDo(requireFullAbsy))
+         |(lit("proofSemantics") o unitNameSpec & 2nd @ pcheckProofSem)
+         |(lit("resetPCE") o unitNameSpec & 2nd @ pcheckResetPCE)
+         |(lit("startProof") o var("proof name") & 2nd @ pcheckStartProof)
+         |(lit("showProof") @ pcheckShowProof)
+         |(lit("finishProof") @ pcheckFinishProof)
+         |(lit("addFormula") o *(var("formula")) & 2nd @ pcheckAddFormula)
+         |(lit("known-objects") o var("name") & 2nd @ pcheckKnownObjects)
+         |(lit("fulness") o var("origin") & 2nd o var("instance") @ pcheckV)
+        ) & 2nd,
+        "execute internal commands")
+    ++
+    cmd(lit("pcheck-verbosity") o
+        ( (nat("set", noCompletion) @ pcheckSetLevel)
+        | (lit("show")  @ pcheckShowLevel)
+        ) & 2nd,
+        "set or show verbosity level")
+    ++
+    cmd(lit("pcheck-debug") o
+        ( (lit("add") o *(var("debug tag")) & 2nd @ pcheckDebugIncl)
+        | (lit("rm") o *(var("debug tag")) & 2nd @ pcheckDebugExcl)
+        | (lit("show")  @ pcheckDebugShow)
+        | (lit("reset") @ pcheckDebugReset)
+        ) & 2nd, 
+        "add, remove, show, reset to default of debug tags")
+    ++
+    cmd(lit("pcheck-log") o
+        ( (lit("on")  @ (\\ _ . loggingOn & succeed("logging on")))
+        | (lit("off") @ (\\ _ . loggingOff & succeed("logging off")))
+        ) & 2nd,
+        "switch logging to file \"oasyslog\" on or off")
+    ++
+    cmd(lit("pcheck-obligations") o unitNameSpec & 2nd @ pcheckObligations,
+        "print proof obligations for unit")
+    ++
+    cmd(lit("pcheck-completeness") o unitNameSpec & 2nd @ pcheckCompleteness,
+        "check proof completeness of unit")
+    ++
+    cmd(lit("pcheck-correctness") o unitNameSpec & 2nd @ pcheckCorrectness,
+        "check proof correctness of unit")
+    ++
+    cmd(lit("pcheck-check") @ pcheckCheck,
+        "check and prove current unit")
+    ++
+    cmd(lit("pcheck-compile") @ pcheckCompile,
+        "check and prove and compile current unit")
+    ++
+    cmd((lit("pcheck-proof") o var("proof-name-prefix") & 2nd) @ pcheckProof,
+        "check and prove proofs whose names begin with prefix in current unit")
+    ++
+    cmd((lit("pcheck-proof-intern") o
+         var("proof name prefix") & 2nd) @ pcheckProofIntern,
+        "check and prove proofs whose names begin with prefix in current unit - dont set unit to interpreted")
+    ++
+    cmd(lit("pcheck-interactive") o lit("start") o var("proof-name") & 2nd
+        @ pcheckStartProof, 
+        "start interactive proof of `proof-name' in current unit")
+    ++
+    cmd(lit("pcheck-interactive") o lit("show") & 2nd @ pcheckShowProof,
+        "write trace of current interactive proof to file `.trace'")
+    ++
+    cmd(lit("pcheck-interactive") o lit("finish") & 2nd @ pcheckFinishProof,
+        "finish current interactive proof")
+    ++
+    cmd(lit("pcheck-interactive") o lit("add-formula") o
+            *(var("formula")) & 2nd @ pcheckAddFormula,
+            "add formula to hypothese of interactive proof")
+        
+
+-- %$Dump commands$
+FUN pcheckDumpInstances: unitName -> com[denotation]
+DEF pcheckDumpInstances(uN) ==
+    query(instances(uN)) & (\\insts.
+    query(\\R. fmtSet(fmtInst(R))(insts)) & (\\F.
+    dumpFmt(F)
+    )) WHERE
+          fmtInst == \\R. \\uN1.
+                     IF basicUnitName?(uN1) THEN lit("basic "); 
+                                                 fmtUnitName(R)(uN1)
+                     ELSE lit("derived #"); fmtNat(instNo(uN1)); 
+                          lit(" "); fmtUnitNameLong(R)(uN1)
+                     FI
+
+FUN pcheckDumpDeps: unitName -> com[denotation]
+DEF pcheckDumpDeps(uN) ==
+  query(\\R. related(direct, implImports, 
+                     \\UI. library?(UI)(R) or 
+                           released?(UI)(R))(uN)(R)) & (\\ res.
+  query(\\R. fmtSet(fmtUnitNameLong(R))(res)) & (\\ F1.
+  dumpFmt(lit("library? or released? ->");F1)
+  )) & (
+  query(\\R. related(direct, implImports, \\ _ . true)(uN)(R)) & (\\ res2.
+  query(\\R. fmtSet(fmtUnitNameLong(R))(res2)) & (\\ F2.
+  dumpFmt(lit("all ->");F2)
+  )))
+
+-- %$Internal Commands$
+
+FUN pcheckProofSem: unitName -> com[denotation]
+DEF pcheckProofSem(uN) ==
+  queryUpd(\\R. proofSemantics(uN)(R)) & (\\pce.
+  log(fmtLatin1(fmtPcEnv(pce))) & (\\ _ .
+  dumpFmt(fmtPcEnv(pce))
+  ))
+
+FUN pcheckResetPCE: unitName -> com[denotation]
+DEF pcheckResetPCE(uN) ==
+  upd(reset(uN)) & succeed("reset pce")
+
+-- %$Verbosity commands$
+FUN pcheckSetLevel: nat -> com[denotation]
+DEF pcheckSetLevel(n) == setVerbosity(n) & succeed("")
+
+FUN pcheckShowLevel: denotation -> com[denotation]
+DEF pcheckShowLevel(_) ==
+  verbosityLevel & (\\vl.
+  succeed("current pcheck verbosity level is " ++ (vl`))
+  )
+
+-- %$Debug commands$
+FUN pcheckDebugIncl: seq[denotation] -> com[denotation]
+DEF pcheckDebugIncl(<>) == pcheckDebugShow("")
+DEF pcheckDebugIncl(tag :: tags) == inclDebug(tag) & pcheckDebugIncl(tags)
+  
+FUN pcheckDebugExcl: seq[denotation] -> com[denotation]
+DEF pcheckDebugExcl(<>) == pcheckDebugShow("")
+DEF pcheckDebugExcl(tag :: tags) == exclDebug(tag) & pcheckDebugExcl(tags)
+
+FUN pcheckDebugShow: denotation -> com[denotation]
+DEF pcheckDebugShow(_) ==
+  debugSet & (\\ tags.
+  dumpFmt(lit("current debug tags: "); fmtSet(lit)(tags))
+  )
+
+FUN pcheckDebugReset: denotation -> com[denotation]
+DEF pcheckDebugReset(_) == setDebug({}) & pcheckDebugShow("")
+
+-- %$Proof Obligations$
+FUN pcheckObligations: unitName -> com[denotation]
+DEF pcheckObligations(uN) ==
+  checkDo(requireFullAbsy(uN)) & (\\ _ .
+  checkDo(reloadUnits(%(uN))) & (\\ _ .
+  checkDo(checkUnits(%(uN))) & (\\ _ .
+  query(related(transitive, imports)(uN)) & (\\ rel.
+  upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
+                             succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
+  queryUpd(proofSemantics(uN)) & (\\pce.
+  upd(diag(diags(pce))) & ( \\ _ .
+  verbosityLevel & (\\vl.
+  query(pretty(vl)(pce)(uN)) & (\\ f.
+  log(pretty(f)) & (\\ _ .
+  dumpFmt(f) 
+  ))))))))))
+
+-- %$Proof completeness$
+FUN pcheckCompleteness: unitName -> com[denotation]
+DEF pcheckCompleteness(uN) ==
+  queryUpd(\\R. proofCompleteness(uN)(R)) & (\\pce.
+  upd(diag(diags(pce))) & ( \\ _ .
+  verbosityLevel & (\\vl.
+  query(pretty(vl)(pce)(uN)) & (\\ f.
+  log(pretty(f)) & (\\ _ .
+  dumpFmt(f)
+  )))))
+
+-- %$Proof correctness$
+FUN pcheckCorrectness: unitName -> com[denotation]
+DEF pcheckCorrectness(uN) ==
+  now & (\\ tStart.
+  ensureClientT & (\\ _ .
+  query(proofscript) & (\\ proofscriptUnit. 
+  require(%(uN :=_part sign, uN :=_part impl, proofscriptUnit)) & (\\ _ .
+  queryUpd(\\R. proofCorrectness(uN)(R)("", tStart)) & (\\ ds .
+  upd(diag(ds)) & (\\ _ .
+  succeed("")
+  ))))))
+  
+-- %$Proof Check$
+FUN pcheckCheck: denotation -> com[denotation]
+DEF pcheckCheck(_) == pcheckCheckI("", false, true)
+
+FUN pcheckCheckI: denotation ** bool ** bool -> com[denotation]
+DEF pcheckCheckI(pprefix, doCompile, setInterpreted?) == 
+  now & (\\ tStart.
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected") 
+  ELSE
+    LET uN == uNv cont 
+    IN
+    clearDiag(uN) & (\\ _ .
+    query(interpreted?(uN)) & (\\ interp? .
+    checkDo(requireFullAbsy(uN)) & (\\ _ .
+    setI(uN, interp?, setInterpreted?) & (\\ _ .
+    checkDo(reloadUnits(%(uN))) & (\\ _ .
+    checkDo(checkUnits(%(uN))) & (\\ _ .
+    query(related(transitive, imports)(uN)) & (\\ rel.
+    checkAndCompile(rel) & (\\ _ .
+    upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
+              succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
+    queryUpd(proofSemantics(uN)) & (\\ pce.
+    checkDo(diag(diags(pce))) & (\\ _ .
+    queryUpd(\\R. proofCompleteness(uN)(R)) & (\\pce2.
+    verbosityLevel & (\\vl.
+    query(pretty(vl)(pce)(uN)) & (\\ f.
+    dumpFmt(f) & (\\ _ .
+    log(pretty(f)) & (\\ _ .
+    ensureClientT & (\\ _ .
+    now & (\\ startReq.
+    query(proofscript) & (\\ proofscriptUnit. 
+    require(%(uN :=_part sign, uN :=_part impl, proofscriptUnit)) & (\\ _ .
+    now & (\\ endReq.
+    writeLine(stdOut, "require needed " ++ 
+              ``(endReq - startReq, 2) ++ " sec") & (\\ _ .
+    queryUpd(\\R. proofCorrectness(uN)(R)(pprefix, tStart)) & (\\ ds .
+    upd(diag(diags(pce2) <+ ds)) & (\\ _ .
+    dumpDiag(diags(pce2) <+ ds, uN) & (\\ _ .
+    setI(uN, interp?, interp?) & (\\ _ .
+    (IF doCompile THEN checkDo(compileUnits(%(uN))) ELSE done FI) & (\\ _ .
+    succeed("")
+    )))))))))))))))))))))))))))
+  FI
+  ))
+    
+FUN setI: unitName ** bool ** bool -> com[void]
+DEF setI(uN, prevI?, i?) ==
+  IF prevI? THEN succeed(nil)
+  ELSE
+    upd(setInterpreted(uN :=_part sign, i?)) & 
+    :=_unitTable(\\T. def(uN :=_part sign, changed, T)) & 
+    upd(setInterpreted(uN :=_part impl, i?)) & 
+    :=_unitTable(\\T. def(uN :=_part impl, changed, T))
+  FI
+
+-- %$Check single proofs$
+FUN pcheckProof: denotation -> com[denotation]
+DEF pcheckProof(pprefix) == pcheckCheckI(pprefix, false, true)
+
+FUN pcheckProofIntern: denotation -> com[denotation]
+DEF pcheckProofIntern(pprefix) == pcheckCheckI(pprefix, false, false)
+
+-- %$Check and compile$
+FUN pcheckCompile: denotation -> com[denotation]
+DEF pcheckCompile(_) == pcheckCheckI("", true, true)
+
+-- %$Interactive Proo$
+FUN pcheckStartProof: denotation -> com[denotation]
+DEF pcheckStartProof(proofName) == 
+  pcheckInteractiveDo(\\uN. startProof(uN, proofName))
+
+FUN pcheckShowProof: denotation -> com[denotation]
+DEF pcheckShowProof(_) == -- pcheckInteractiveDo(handleState)
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected") 
+  ELSE
+    LET uN == uNv cont 
+    IN
+    clearDiag(uN) & (\\ _ .
+    queryUpd(handleState(uN)) & (\\ ds .
+    upd(diag(ds))) & (\\ _ .
+    succeed("")
+    ))
+  FI
+  )
+  
+
+FUN pcheckFinishProof: denotation -> com[denotation]
+DEF pcheckFinishProof(_) == -- pcheckInteractiveDo(finProof)
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected") 
+  ELSE
+    LET uN == uNv cont 
+    IN
+    clearDiag(uN) & (\\ _ .
+    queryUpd(finProof(uN)) & (\\ ds .
+    upd(diag(ds))) & (\\ _ .
+    setI(uN, false, false) &
+    succeed("")
+    ))
+  FI
+  )
+
+FUN pcheckInteractiveDo: (unitName -> repo ->
+                          com[pair[diag, repo]]) -> com[denotation]
+DEF pcheckInteractiveDo(cmd) ==
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected") 
+  ELSE
+    LET uN == uNv cont 
+    IN
+    clearDiag(uN) & (\\ _ .
+    query(interpreted?(uN)) & (\\ interp? .
+    checkDo(requireFullAbsy(uN)) & (\\ _ .
+    setI(uN, interp?, true) & (\\ _ .
+    checkDo(reloadUnits(%(uN))) & (\\ _ .
+    checkDo(checkUnits(%(uN))) & (\\ _ .
+    query(related(transitive, imports)(uN)) & (\\ rel.
+    query(\\ R. fmtSet(fmtUnitNameLong(R))(rel)) & (\\ debugT.
+    upd(debugMsg("pcheckI", \\ . "rel = " ++ pretty(debugT))) & (\\ _ .
+    checkAndCompile(rel) & (\\ _ .
+    upd(\\R. ((\\ impUnit, R1. proofSemantics(impUnit)(R1) & (\\ res. 
+              succeed(2nd(res)))), R) /& asSeq(rel)) & (\\ _ .
+    queryUpd(proofSemantics(uN)) & (\\ pce.
+    checkDo(diag(diags(pce))) & (\\ _ .
+    ensureClientT & (\\ _ .
+    query(interactiveProof) & (\\ interactiveProofUnit.
+    query(interactiveProofI) & (\\ interactiveProofUnitI.
+    now & (\\ startReq.
+    require(%(uN :=_part sign, uN :=_part impl,
+              interactiveProofUnit, interactiveProofUnitI)) & (\\ _ .
+    now & (\\ endReq.
+    writeLine(stdOut, "require needed " ++ 
+              ``(endReq - startReq, 2) ++ " sec") & (\\ _ .
+    queryUpd(cmd(uN)) & (\\ ds .
+    upd(diag(ds))) & (\\ _ .
+--     setI(uN, interp?, interp?) &
+    succeed("")
+    )))))))))))))))))))))
+--    )
+  FI
+  )
+
+FUN interactiveProof: repo -> unitName  
+DEF interactiveProof(R) == 
+  LET l == lookup?("INTERACTIVEPROOF", sign)(R)
+  IN
+  IF avail?(l) THEN cont(l)
+  ELSE ABORT("interactiveProof'PCheckerInterface: no INTERACTIVEPROOF found")
+  FI
+
+FUN interactiveProofI: repo -> unitName  
+DEF interactiveProofI(R) == 
+  LET l == lookup?("INTERACTIVEPROOF", impl)(R)
+  IN
+  IF avail?(l) THEN cont(l)
+  ELSE ABORT("interactiveProof'PCheckerInterface: no INTERACTIVEPROOF impl found")
+  FI
+
+FUN pcheckAddFormula: seq[denotation] -> com[denotation]
+DEF pcheckAddFormula(formulaParts) ==
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected") 
+  ELSE
+    LET uN == uNv cont 
+    IN
+    clearDiag(uN) & (\\ _ .
+    LET form == (+/+(" "), "") / formulaParts
+    IN
+    queryUpd(addHypothesis(uN, form)) & (\\ ds .
+    checkDo(diag(ds)) & (\\ _ .
+    succeed("")
+    )))
+  FI
+  )
+
+FUN pcheckKnownObjects: denotation -> com[denotation]
+DEF pcheckKnownObjects(rqSym) ==
+  focus? & (\\ uNv.
+  IF uNv nil? THEN succeed("no focus selected")
+  ELSE
+    LET uN == uNv cont
+    IN
+    query(\\ R. 
+           LET impUs == uN incl related(transitive, imports)(uN)(R)
+               impOs == (\\uNL, S. objects(uNL)(R) + S, {}) / impUs
+           IN
+           (\\oN. symbol(oN)(R) = rqSym) | impOs
+    ) & (\\ obs.
+    query(\\ R. fmtSet(fmtObjectNameLong(R, uN))(obs)) & (\\ t.
+   dumpFmt(lit("found these visible objects `" ++ rqSym ++ "' : "); t)
+    ))
+  FI
+  )
+
+FUN pcheckV: pair[denotation, denotation] -> com[denotation]
+DEF pcheckV(oD & iD) ==
+  LET o? == oD <| "true"
+      i? == iD <| "true"
+  IN
+  upd(\\ R. setFullness(R, o?, i?)) &
+  dumpFmt(lit("verbosity: "); lit(IF o? THEN "origin" ELSE "no origin" FI);
+          lit(","); spc(1); lit(IF i? THEN "instance" ELSE "no instance" FI))
+
+-- %$Auxiliary functions$
+
+FUN checkDo: (repo -> com[repo]) -> com[void]
+DEF checkDo(F) ==
+  clearErrors & (\\ _ .
+  upd(F) & (\\ _ .
+  errors? & (\\ checkErrors? .
+  IF checkErrors? THEN abort ELSE done FI
+  )))
+  
+FUN removeDotTrace: com[void]
+DEF removeDotTrace == unlink(".trace") ; done
+
+-- %Output 
+FUN dumpFmt : fmt -> com[denotation]
+DEF dumpFmt(Fmt) ==
+    writeLine(stdErr, (prettyC(Fmt)):string)	& succeed("")
+
+FUN pcheckDo: (unitName -> repo -> com[repo]) -> unitName -> com[denotation]
+DEF pcheckDo(f)(uN) ==
+  upd(f(uN)) & (\\ _ . succeed("ready"))
+
+-- %Diagnostics
+FUN clearDiag: unitName -> com[void]
+DEF clearDiag(uN) ==
+  diagFile(uN) & (\\ dF.
+  open(dF, "w") & (\\ f.
+  close(f)))
+
+FUN dumpDiag: diag ** unitName -> com[void]
+DEF dumpDiag(d, uN) ==
+  diagFile(uN) & (\\ dF.
+  open(dF, "a") & (\\ f.
+  LET Text == (pretty(fmtDiag(d))):string
+  IN
+  subs(Text) & (\\ Text1 .
+  writeLine(f, Text1) & (\\ _ .
+  close(f)
+  ))))
+
+-- geklaut / kopiert aus EchoEvent
+FUN subs: string -> com[string]
+DEF subs(Str) ==
+    	LET (Front, Tail) == split(\\ Ch . Ch |= !("#"), Str)
+	IN
+	IF ::?(Tail) THEN
+	    LET (Digits, Rest) == split(digit?, rt(Tail))
+	    IN
+	    asUnitName(`(ft(Tail) :: Digits))	; (\\ U? .
+	    IF okay?(U?) THEN
+	        asDeno(symbolic)(data(U?))	& (\\ Subs .
+		subs(Rest)			& (\\ Rest1 .
+		succeed(Front ++ !(Subs) ++ Rest1)
+		))
+	    ELSE
+	    	subs(Digits ++ Rest)		& (\\ Rest1 .
+		succeed(Front ++ ft(Tail)::Rest1)
+		)
+	    FI
+	    )
+	ELSE
+	    succeed(Front)
+	FI
+ 
+
+FUN diagFile: unitName -> com[denotation]
+DEF diagFile(uN) ==   
+  query(absyFile(uN)) & (\\ aF.
+  LET oF == path(aF)
+      (prefix, _) == splitSuffix(oF, ".")
+  IN
+  succeed(prefix ++ ".diag")
+  )
+
+FUN ensureClientT: com[void]
+DEF ensureClientT ==
+  now & (\\ start.
+  ensureClient & (\\ _ .
+  now & (\\ end.
+  writeLine(stdOut, "client started after " ++ ``(end - start, 2) ++ " sec")
+  )))

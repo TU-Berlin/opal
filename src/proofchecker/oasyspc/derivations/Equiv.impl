@@ -1,0 +1,210 @@
+IMPLEMENTATION Equiv
+
+IMPORT Pair ONLY & pair 1st unpair 2nd
+       RepoAbsy COMPLETELY
+       SeqReduce ONLY /
+       SeqZip ONLY zip
+       Nat ONLY |= = nat 2
+       Option ONLY nil? avail? cont option nil avail
+       SeqMap ONLY *
+       Seq ONLY % <> ++ seq # :: ft
+       SeqMap ONLY *
+       Map ONLY map {} def !? find? undef forall?
+       RepoName COMPLETELY
+       Set[objectName, <] ONLY set {<} in excl = 
+       SetConv[objectName, <] ONLY asSet
+       Denotation ONLY =
+       Fmt COMPLETELY
+       FmtMap ONLY fmtMap
+       FmtSet ONLY fmtSet
+       AbsySC ONLY =
+       SeqOfSeq ONLY partition
+       Sequent ONLY sequent
+
+DEF f1 equiv f2:formula == ok?(equiv(f1 & f2, empty))
+DEF e1 equiv e2:expr == ok?(equiv(e1 & e2, empty))
+DEF equiv(lS)(f1, f2) == ok?(equiv(f1 & f2, empty(lS)))
+
+/*
+/* %Outermost universal  quantifiers in the left formula are silently removed
+    before comparison, if the right formula is not universal quantified.
+    Useful, if matching a propsoition with a hypothesis in a sequent whose
+    quantifiers have been removed with @code{allR}.
+ */
+
+FUN equivR: formula ** formula -> bool
+DEF f1 equivR f2 ==
+  IF f2 quant? ANDIF kind(f2) forall? THEN ok?(equiv(f1 & f2, empty))
+  ELSE
+    IF f1 quant? ANDIF kind(f1) forall? THEN range(f1) equivR f2
+    ELSE
+      ok?(equiv(f1 & f2, empty))
+    FI
+  FI
+*/
+
+DEF e1:expr equal e2 == ident?(equiv(e1 & e2, empty))
+DEF f1:formula equal f2 == ident?(equiv(f1 & f2, empty))
+
+FUN equiv: pair[formula, formula] ** renaming -> renaming
+DEF equiv(f1 & f2, R) ==
+  IF R error? THEN R
+  ELSE
+    IF atomic?(f1) and atomic?(f2) ANDIF kind(f1) = (kind(f2)):atomicKind THEN
+      (equiv, R) / zip(&)(exprs(f1), exprs(f2))
+    IF connect?(f1) and connect?(f2) ANDIF
+      kind(f1) = (kind(f2)):connectKind and
+      #(formulas(f1)) = #(formulas(f2)) THEN
+      (equiv, R) / zip(&)(formulas(f1), formulas(f2))
+    IF quant?(f1) and quant?(f2) ANDIF kind(f1) = (kind(f2)):quantKind and
+      #(vars(f1)) = #(vars(f2)) THEN
+      equiv(range(f1) & range(f2), R delay(vars(f2), vars(f1)))
+    ELSE
+      error
+    FI
+  FI
+
+FUN equiv: pair[expr, expr] ** renaming -> renaming
+DEF equiv(name(_, n1) & name(_, n2), R) == R enter(n2, n1)
+DEF equiv(apply(_, f1, a1) & apply(_, f2, a2), R) ==
+  IF R error? THEN error
+  ELSE
+    equiv(a1 & a2, equiv(f1 & f2, R))
+  FI
+DEF equiv(tuple(_, els1)& tuple(_, els2), R) ==
+  IF R error? THEN error
+  ELSE
+    IF #(els1) = #(els2) THEN (equiv, R) / zip(&)(els1, els2)
+    ELSE error
+    FI
+  FI
+DEF equiv(tuple(_, e1 :: <>) & e2, R) == equiv(e1 & e2, R)
+DEF equiv(e1 & tuple(_, e2 :: <>), R) == equiv(e1 & e2, R)
+DEF equiv(den(_, t1) & den(_, t2), R) == 
+  IF R ok? ANDIF t1 = t2 THEN R ELSE error FI
+DEF equiv(cases(_, g1, e1) & cases(_, g2, e2), R) ==
+  IF R error? THEN error
+  ELSE
+    IF #(g1) |= #(g2) THEN error
+    IF (e1 nil?) and (e2 avail?) THEN error
+    IF (e1 avail?) and (e2 nil?) THEN error
+    ELSE
+      LET ifs == zip(&)(if * g1, if * g2)
+          thens == zip(&)(then * g1, then * g2)
+          elses == IF avail?(e1) THEN %(cont(e1) & cont(e2)) ELSE <> FI
+      IN
+      (equiv, R) / elses ++ thens ++ ifs
+    FI
+  FI
+DEF equiv(lambda(_, _, v1, b1) & lambda(_, _, v2, b2), R) ==
+  IF R error? THEN error
+  ELSE
+    IF #(v1) |= #(v2) THEN error
+    ELSE equiv(b1 & b2, R enter(v1, v2))
+    FI
+  FI
+DEF equiv(let(_, eq1, b1) & let(_, eq2, b2), R) ==
+  IF R error? THEN error
+  ELSE
+    IF #(eq1) |= #(eq2) THEN error
+    ELSE
+      equiv(b1 & b2, (equiv, R) / zip(&)(eq1, eq2))
+    FI
+  FI
+DEF equiv(as(_, v1, e1) & as(_, v2, e2), R) ==
+  IF R error? THEN error
+  ELSE
+    equiv(e1 & e2, R enter(v2, v1))
+  FI
+-- %@TODO: any combinations are too strictly handled (any could match any name)
+DEF equiv(any(_) & any(_), R) == R
+-- %all other cases produce an error
+DEF equiv(_else:pair[expr,expr], _) == error
+
+FUN equiv: pair[eqn, eqn] ** renaming -> renaming
+DEF equiv(eqn(_,_,l1,_,r1) & eqn(_,_,l2,_,r2), R) ==
+  IF R error? THEN error
+  ELSE
+    equiv(r1 & r2, equiv(l1 & l2, R))
+ FI
+
+
+DEF uniq(es) == ft * partition(equal)(es)
+
+
+DEF contract(sqs) == contract * sqs
+DEF contract(sequent(an, hyps, props)) == 
+  sequent(an, contract(hyps), contract(props))
+DEF contract(fs) == ft * partition(equal)(fs)
+
+DEF contract(lS)(sqs) == contract(lS) * sqs
+DEF contract(lS)(sequent(an, hyps, props)) == 
+  sequent(an, contract(lS)(hyps), contract(lS)(props))
+DEF contract(lS)(fs) == ft * partition(equiv(lS))(fs)
+
+-- %$Renamings$
+
+/* %This data type holds renamings of variables. Either the renaming is fixed,
+    then the first component is used, or the exact correspondence of two sets
+    of object names is not known. Then the two sets are stored in the second
+    component. */
+
+DATA renaming == ok(direct: map[objectName, <, objectName],
+                    delayed: map[set[objectName, <], {<}, set[objectName, <]],
+                    freeSig: option[localSignName])
+                 error
+
+FUN empty : renaming 
+DEF empty == ok({}, {}, nil)
+
+FUN empty: localSignName -> renaming
+DEF empty(lS) == ok({},{}, avail(lS))
+
+FUN delay: renaming ** seq[objectName] ** seq[objectName] -> renaming
+DEF R delay (l1, l2) == 
+  IF ok?(R) THEN ok(direct(R), (asSet(l1), asSet(l2)) def delayed(R), 
+                    freeSig(R))
+  ELSE R FI
+
+FUN enter: renaming ** seq[objectName] ** seq[objectName] -> renaming
+DEF enter(R, l1, l2) ==
+  ((\\ p, r. enter(r, 1st(p), 2nd(p))), R) / zip(&)(l1, l2)
+
+FUN enter: renaming ** objectName ** objectName -> renaming
+DEF R enter (old, new) ==
+  IF error?(R) THEN R
+  IF (old globalObjectName?) and (new globalObjectName?) THEN
+    IF old = new THEN R ELSE error FI
+  OTHERWISE
+  IF old globalObjectName? THEN error
+  IF new globalObjectName? THEN error
+  OTHERWISE
+  IF avail?(freeSig(R)) ANDIF 
+    sign(old) = cont(freeSig(R)) and sign(new) = cont(freeSig(R)) THEN
+    IF old = new THEN R ELSE error FI
+  ELSE
+    LET foundDir == direct(R) !? old
+        foundDelay == find?(\\ olds, _ . old in olds, delayed(R))
+    IN
+    IF avail?(foundDir) THEN 
+      IF cont(foundDir) = new THEN R ELSE error FI
+    IF avail?(foundDelay) THEN
+      LET (dOld, dNew) == unpair(cont(foundDelay))
+      IN
+      IF new in dNew THEN
+        ok((old, new) def direct(R),
+           (excl(old, dOld), excl(new, dNew)) def
+            (dOld undef delayed(R)),
+          freeSig(R))
+      ELSE
+        error
+      FI
+    ELSE
+      ok((old, new) def direct(R), delayed(R), freeSig(R))
+    FI
+  FI
+
+-- %True if renaming is / could be the identical renaming
+FUN ident? : renaming -> bool
+DEF ident?(error) == false
+DEF ident?(ok(dir, del, _)) == forall?(=, dir) and forall?(=, del)

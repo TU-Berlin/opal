@@ -1,0 +1,201 @@
+IMPLEMENTATION TclInterface
+
+IMPORT	Denotation	COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Char		COMPLETELY
+	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	Void		COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqFold		COMPLETELY
+	SeqMap		COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	StringFormat    COMPLETELY
+	Map		COMPLETELY
+	MapConv		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComSeqReduce	COMPLETELY
+	ComState	COMPLETELY
+
+IMPORT	Tcl[void]	COMPLETELY
+
+IMPORT	Cmdtable	COMPLETELY
+	Argspec		COMPLETELY
+	ArgspecBasic	COMPLETELY
+	ArgspecOp	COMPLETELY
+	ArgspecCompose	COMPLETELY
+	DenoExtensions	COMPLETELY
+
+IMPORT	OasysCmdtable	COMPLETELY
+
+IMPORT	RepoNameConv	COMPLETELY
+
+
+DEF initTcl ==
+    create(nil)					& (\\ Interp .
+    register(tclCmds(Interp))			& (\\ _ .
+    update(Interp)				& (\\ _ .
+    succeed(Interp)
+    )))
+
+-- %$Updating Interpreter with current Command Table$ ======================
+
+FUN update : interpreter -> com[void]
+DEF update(Interp) ==
+    oasysTable					& (\\ Table .
+    registerCmds(Interp, explode(Table))
+    )
+
+/* FIXME: ??	
+    TclInterp @ 
+    "proc ! args {if [catch $args res] {return FAILURE:$res} else"++
+       " {return OUTPUT:$res}}"				& (\\ _ .
+    succeed(nil)					))
+*/
+
+FUN registerCmds: interpreter ** seq[cmdtable[denotation]] -> com[void]
+DEF registerCmds(TclInterp,Cmds) ==
+    ((\\Cmd, _ .
+	register(TclInterp)(Cmd)
+     ),nil) /& asSeq((insertInMap,{}) \ Cmds)
+
+FUN insertInMap : cmdtable[denotation] ** 
+		  map[denotation,<,seq[cmdtable[denotation]]] -> 
+				map[denotation,<,seq[cmdtable[denotation]]]
+DEF Cmd insertInMap M ==
+    LET CmdName == prefix(argspec(Cmd))
+	OldCmdSeq == M !? CmdName
+	NewCmdSeq == IF OldCmdSeq avail?
+		       THEN Cmd :: cont(OldCmdSeq)
+		       ELSE Cmd :: <>
+		     FI
+    IN (CmdName,NewCmdSeq) def M
+
+FUN register : interpreter -> pair[denotation,seq[cmdtable[denotation]]] 
+			   -> com[void]
+DEF register(Interp)(CmdName & Cmds) ==
+    LET CmdSpec == | \ (argspec * Cmds)
+    IN undefine(Interp, CmdName) ;
+       define(Interp,
+	   CmdName,
+	   (\\ _,Args. parse(CmdSpec, ` * Args) & (\\Str.
+	    succeed(!(Str))			))
+       )
+		
+-- %$Tcl Comands$ ===========================================================
+
+FUN tclCmds : interpreter -> cmdtable[denotation]
+DEF tclCmds(Interp) ==
+    cmd((lit("oasys-intern-config-help") o var("HELPCMD") & 2nd) 
+    				  o ?(var("DISCARDPREFIX"))
+        @ config(Interp),
+	"Configure help and completion system.\n" ++
+	"HELPCMD is the name of the command used for help.\n" ++
+	"DISCARDPREFIX is a prefix of commands to be ignored\n" ++
+	"for help and top-level completion."
+    )
+    ++
+    cmd((lit("oasys-proc") o var("ARGSPEC") & 2nd)
+	 o var("HELP") o var("ARGS") o var("BODY")
+	 @ defProc(Interp),
+	"Define a new oasys command.\n" ++
+	"ARGSPEC specifies the syntax as a sequence of words. A word\n" ++
+	"is either\n" ++
+	"  STRING    -- take STRING as a literal\n" ++
+	"  @[#|^]VAR -- a variable, with VAR its name\n" ++
+	"               if # is given, use a completer for unit names,\n" ++
+	"               if ^ is given, use a completer for file names.\n" ++
+	"  ?WORD     -- take WORD as an option\n" ++
+	"  *WORD     -- take WORD as a repetition\n" ++
+	"HELP gives a string to be printed for help on the new command.\n" ++
+	"ARGS und BODY is defined similar as with the Tcl proc command,\n" ++
+	"where ARGS must be a list binding each of the words in ARGSPEC.\n" ++
+	"Options and repetitions are represented as Tcl lists." 
+    ) 
+
+FUN config  : interpreter ->
+	      pair[denotation,option[denotation]] ->
+	      com[denotation]
+DEF config(Interp)(HelpName & DiscardPrefix?) ==
+    LET DiscardPrefix == IF avail?(DiscardPrefix?) THEN cont(DiscardPrefix?)
+    						   ELSE "" FI
+    IN
+    configHelp(HelpName, DiscardPrefix)		& (\\ _ .
+    update(Interp)				& (\\ _ .
+    succeed("")
+    ))
+
+FUN defProc : interpreter ->
+	      pair[pair[pair[denotation,denotation],denotation],denotation] ->
+	      com[denotation]
+
+DEF defProc(Interp)(ArgSpec & Help & Args & Body) ==
+    getNextProcName					& (\\ ProcName .
+    Interp @ formatS("proc %s {%s} {%s}"
+			<- ProcName
+			&  Args
+			&  Body)			& (\\ _ .
+    register(
+	cmd(trans(ArgSpec, 
+		  \\CArgs. (Interp @ !(ProcName) 
+			     :: (! * CArgs)) 
+			   & (\\S. succeed(`(S)))),
+	    Help)
+    )							& (\\ _ .
+    update(Interp)					& (\\ _ .
+    succeed("")
+    ))))
+
+FUN trans : denotation ** (seq[denotation] -> com[denotation])	
+		       -> argspec[denotation]
+
+DEF trans(Spec, Cmd) ==
+    LET Words == split(Spec, space?)
+    IN
+    (\\W, S. S o transWord(W) & (\\P. 2nd(P) :: 1st(P)),
+     transWord(ft(Words)) & %) \ rt(Words)
+	@ (\\RevArgs. Cmd(revert(RevArgs)))
+
+
+FUN transWord : denotation -> argspec[denotation]
+DEF transWord(Word) ==
+    IF "@" <| Word THEN
+	LET Var == tl(Word)
+	IN
+	IF "#" <| Var THEN
+	    var(tl(Var), unitNameCompleter)
+	IF "^" <| Var THEN
+	    var(tl(Var), failCompletion)
+	ELSE
+	    var(Var)
+	FI
+    IF "?" <| Word THEN
+	?(transWord(tl(Word))) & (\\ Opt.
+	IF avail?(Opt) THEN cont(Opt) ELSE "{}" FI
+	)
+    IF "*" <| Word THEN
+	*(transWord(tl(Word))) & (\\ Seq.
+	`(asString(!'String * Seq))
+	)
+    ELSE
+	lit(Word)
+    FI
+	
+
+FUN getNextProcName : com[denotation]
+DEF getNextProcName ==
+    get(procCounter)		& (\\ Cnt .
+    with(procCounter, succ)	& (\\ _ .
+    succeed("oasys-intern-proc" ++ `(Cnt))
+    ))
+
+FUN procCounter : stateId[nat]
+DEF procCounter == EXEC(stateId(0))
+
+
+
+

@@ -1,0 +1,77 @@
+IMPLEMENTATION Sequent
+
+IMPORT Fmt COMPLETELY
+       PrettyFormatting ONLY prettyFormula
+       FmtSeq ONLY fmtSeq
+       FmtBasicTypes ONLY fmtNat
+       Pair ONLY pair &
+       Seq ONLY seq 
+       ProofAn ONLY getShortcut newSC? original?
+       Option ONLY option avail? cont
+       Nat ONLY nat 1 2
+       RepoAn ONLY fmtAn
+       RepoAbsy ONLY fmtFormula
+       SeqSupplements ONLY idx
+
+DATA sequent == sequent(an:an, hyps: seq[formula], props: seq[formula])
+-- DATA sequent== |-> (prems: seq[formula], concl: seq[formula])
+
+FUN fmtSequent : sequent -> fmt
+DEF fmtSequent(sequent(v0,v1,v2)) == ;(;(beg(2),lit("sequent")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtFormula)(v1))),;(lit(", "),fmtSeq(fmtFormula)(v2))),lit(")"))),end))
+
+DEF prettySequent(R)(sequent(_, hyps, props)) ==
+  fmtSeq(prettyFormula(R))(hyps); spc(1); lit("|-"); spc(1);
+  fmtSeq(prettyFormula(R))(props)
+
+DEF prettySequent(R, main)(sequent(_, hyps, props)) ==
+  brk; lit("subgoal:"); spc(1); fmtSeq(pfp(R, main))(idx(props));
+  brk; lit("hypotheses:"); spc(1);
+  fmtSeq(pfp(R, main))(idx(hyps))
+  
+DEF prettySequentS(R)(sequent(_, hyps, props)) ==
+  fmtSeq(prettyFormulaS(R))(hyps); spc(1); lit("|-"); spc(1);
+  fmtSeq(prettyFormulaS(R))(props)
+
+DEF prettySequentS(R, main)(sequent(_, hyps, props)) ==
+  brk; lit("subgoal:"); spc(1); fmtSeq(pfpS(R, main))(idx(props));
+  brk; lit("hypotheses:"); spc(1);
+  fmtSeq(pfpS(R, main))(idx(hyps))
+
+FUN pfp: repo ** unitName -> pair[nat, formula] -> fmt
+DEF pfp(R, main)(no & f) ==
+  lit("§"); fmtNat(no); spc(1); prettyFormula(R, main)(f)
+
+FUN pfpS: repo ** unitName -> pair[nat, formula] -> fmt
+DEF pfpS(R, main)(no & f) ==
+  lit("§"); fmtNat(no); spc(1); prettyFormulaS(R, main)(f)
+
+
+FUN prettyFormulaS: repo ** unitName -> formula -> fmt
+DEF prettyFormulaS(R, main)(f) ==
+  LET sh == getShortcut(f)
+  IN
+  IF avail?(sh) THEN cont(sh); mark(f)
+  ELSE prettyFormula(R, main)(f)
+  FI
+
+FUN prettyFormulaS: repo  -> formula -> fmt
+DEF prettyFormulaS(R)(f) ==
+  LET sh == getShortcut(f)
+  IN
+  IF avail?(sh) THEN cont(sh); mark(f)
+  ELSE prettyFormula(R)(f)
+  FI
+
+FUN mark: formula -> fmt
+DEF mark(f) == 
+  (IF original?(f) THEN lit("ø") ELSE none FI);
+  (IF newSC?(f) THEN lit("¤") ELSE none FI)
+
+FUN :=_props : sequent ** seq[formula] -> sequent
+DEF :=_props(sequent(1,2,_),new) == sequent(1,2,new)
+
+FUN :=_hyps : sequent ** seq[formula] -> sequent
+DEF :=_hyps(sequent(1,_,3),new) == sequent(1,new,3)
+
+FUN :=_an : sequent ** an -> sequent
+DEF :=_an(sequent(_,2,3),new) == sequent(new,2,3)

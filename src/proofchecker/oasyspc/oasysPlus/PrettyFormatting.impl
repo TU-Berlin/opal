@@ -1,0 +1,492 @@
+IMPLEMENTATION PrettyFormatting
+
+IMPORT RepoName COMPLETELY
+       Fmt ONLY lit ; none spc brk inc <> pretty
+       RepoPropertyAccess ONLY property
+       RepoAbsy COMPLETELY
+       Option ONLY option avail nil avail? cont nil?
+       RepoUnitAccess ONLY symbol actuals lookup?
+       FmtSeq ONLY fmtSeq list list?
+       RepoObjectAccess ONLY object symbol lookup fct
+       Nat ONLY nat 1 2 = % 8 64 + /
+       String ONLY string ! forall? :: ++
+       RepoAn ONLY an none
+       Seq ONLY seq :: <> +/+ # ft rt <>? % split
+       FmtBasicTypes ONLY fmtNat
+       FmtSet ONLY fmtSet
+       Set ONLY set arb #
+       Denotation ONLY ++ +/+
+       SeqReduce ONLY /
+       SeqMap ONLY *
+       SeqZip ONLY zip
+       Char ONLY punctuation? char |=
+       SeqFold ONLY /
+       PredefEntities ONLY true BOOL
+       RepoNameConv ONLY opalName
+       StringConv ONLY `
+       Latin1 ONLY printable?
+       PrintableChar ONLY dblquote 0
+       CharConv ONLY asNat ` 
+       NatConv ONLY asChar
+       PrettyAn ONLY infix uniq instance? origin?
+       DEBUG ONLY PRINT
+
+DEF fmtPropertyName(R)(pN AS propertyName(_, uN)) ==
+    fmtProperty(R)(property(baseName(pN))(R)); fmtOrigin(R)(uN)
+
+DEF fmtPropertyNameLong(R)(pN AS propertyName(_, uN)) ==
+    fmtProperty(R)(property(baseName(pN))(R)); fmtOriginLong(R)(uN)
+
+DEF fmtProperty(R)(freeType(_, s, _)) ==
+    lit("freeType: "); fmtObjectName(R)(s)
+DEF fmtProperty(_)(law(_, avail(s), _)) == lit("LAW "); lit(s)
+DEF fmtProperty(_)(law(_, nil, _)) == lit("LAW <unnamed>")
+
+DEF fmtUnitName(R)(uN) ==
+    lit(symbol(baseName(uN))(R)); lit("."); fmtPart(part(baseName(uN)));
+    (IF basicUnitName?(uN) THEN none 
+--     ELSE lit("["); fmtSeq(fmtObjectName(R))(actuals(uN)(R));
+--       lit("]") 
+       ELSE lit("[ #"); fmtNat(instNo(uN)); lit("]")
+     FI)
+
+DEF fmtUnitNameLong(R)(uN) ==
+    lit(symbol(baseName(uN))(R)); 
+    (IF part(baseName(uN)) impl? THEN  lit("."); fmtPart(part(baseName(uN)))
+     ELSE none FI); fmtInstance(R)(uN)
+
+DEF fmtObjectName(R)(oN) == 
+    fmtObject(R)(object(oN)(R)); fmtOrigin(R)(unitName(oN));
+    (IF globalObjectName?(oN) THEN none
+     IF localObjectName?(oN) THEN lit("#"); fmtNat(no(oN))
+     FI)
+
+DEF fmtObjectNameLong(R)(oN) == 
+    fmtObjectI(R, unitName(baseName(oN)))(object(oN)(R)); 
+    fmtOriginLong(R)(unitName(oN))
+
+DEF fmtObject(_)(o) == 
+    IF "LAW%" <| symbol(o) THEN
+      lit(tl(tl(tl(tl(symbol(o))))));lit(":LAW")
+    IF "PROOF%" <| symbol(o) THEN
+      lit(tl(tl(tl(tl(tl(tl(symbol(o))))))));lit(":PROOF")
+    ELSE
+      lit(symbol(o));
+      (IF kind(o) sort? THEN lit(":SORT") ELSE none FI)
+    FI
+
+FUN fmtOrigin: repo -> unitName -> fmt
+DEF fmtOrigin(R)(uN) ==
+  IF origin?(R) THEN lit("'"); fmtUnitName(R)(uN) ELSE none FI
+
+FUN fmtOriginLong: repo -> unitName -> fmt
+DEF fmtOriginLong(R)(uN) ==
+  IF origin?(R) THEN lit("'"); fmtUnitNameLong(R)(uN) ELSE none FI
+
+FUN fmtInstance: repo -> unitName -> fmt
+DEF fmtInstance(R)(uN) ==
+  IF instance?(R) THEN
+    (IF basicUnitName?(uN) THEN none 
+     ELSE lit("["); list(fmtObjectNameLong(R),lit(",");spc(1),actuals(uN)(R));
+       lit("]") 
+     FI)
+  ELSE none
+  FI
+
+-- %- --------------------------------------------------------------------
+
+FUN fmtObjectI: repo ** unitName -> object -> fmt
+DEF fmtObjectI(R, uN)(o) ==
+    IF "LAW%" <| symbol(o) THEN
+      lit(tl(tl(tl(tl(symbol(o))))));lit(":LAW")
+    IF "PROOF%" <| symbol(o) THEN
+      lit(tl(tl(tl(tl(tl(tl(symbol(o))))))));lit(":PROOF")
+    ELSE
+      lit(symbol(o));
+      (IF kind(o) sort? THEN 
+         LET obs == lookup(uN, symbol(o))(R)
+         IN
+         IF #(obs) = 1 THEN none ELSE lit(":SORT") FI
+       ELSE none 
+       FI)
+    FI
+
+DEF fmtPropertyNameLong(R, main)(pN AS propertyName(_, uN)) ==
+    fmtProperty(R)(property(baseName(pN))(R)); fmtOrigin(R, main)(uN)
+
+DEF fmtObjectNameLong(R, main)(oN) ==
+    fmtObjectI(R, unitName(baseName(oN)))(object(oN)(R)); 
+    fmtOrigin(R, main)(unitName(oN));
+    (IF globalObjectName?(oN) THEN none
+     IF localObjectName?(oN) THEN lit("#"); fmtNat(no(oN))
+     FI)
+
+DEF fmtUnitNameLong(R, main)(uN) ==    
+  lit(symbol(baseName(uN))(R)); 
+  (IF part(baseName(uN)) impl? THEN lit("."); fmtPart(part(baseName(uN)))
+   ELSE none FI); fmtInstance(R, main)(uN)
+
+FUN fmtOrigin: repo ** unitName -> unitName -> fmt
+DEF fmtOrigin(R, main)(uN) ==
+  IF origin?(R) THEN
+    IF uN = main THEN none ELSE lit("'"); fmtUnitNameLong(R, main)(uN) FI
+  ELSE
+    none
+  FI
+
+FUN fmtInstance: repo ** unitName -> unitName -> fmt
+DEF fmtInstance(R, main)(uN) == 
+  IF instance?(R) THEN
+    (IF basicUnitName?(uN) THEN none 
+     ELSE lit("["); list(fmtObjectNameLong(R, main),lit(",");
+                         spc(1),actuals(uN)(R));
+          lit("]") 
+     FI)
+  ELSE
+    none
+  FI
+
+
+-- %$Syntax$
+DEF prettyFormula(R)(atomic(_, dfd, e1 :: _)) ==
+  lit("DFD "); prettyExpr(R)(e1)
+DEF prettyFormula(R)(atomic(_, approx, e1 :: e2 :: _)) ==
+  prettyExpr(R)(e1); spc(1); lit("<<="); spc(1); prettyExpr(R)(e2)
+DEF prettyFormula(R)(atomic(_, cong, e1 :: e2 :: _)) ==
+  IF e2 name? ANDIF oper(e2) = oper(true(R)) THEN
+     lit("["); prettyExpr(R)(e1); lit("]")
+  ELSE
+    prettyExpr(R)(e1); spc(1); lit("==="); spc(1); prettyExpr(R)(e2)
+  FI
+DEF prettyFormula(_)(atomic(_, informal(t),  _)) ==
+  lit(""""); lit(t); lit("""")
+DEF prettyFormula(_)(atomic(_, other(id, _), _)) ==
+  lit("other[" ++ id ++ "]")
+
+DEF prettyFormula(R)(connect(_, neg, f :: _)) ==
+  lit("NOT "); prettyFormula(R)(f)
+DEF prettyFormula(R)(connect(_, conj, Fs)) ==
+  IF Fs <>? THEN none
+  IF #(Fs) = 1 THEN prettyFormula(R)(ft(Fs))
+  ELSE
+    (\\ fneu, fges. fneu; spc(1); lit("AND"); spc(1); fges) /
+    (paren * prettyFormula(R) * Fs)
+  FI
+DEF prettyFormula(R)(connect(_, disj, Fs)) ==
+  IF Fs <>? THEN none
+  IF #(Fs) = 1 THEN prettyFormula(R)(ft(Fs))
+  ELSE
+    (\\ fneu, fges. fneu; spc(1); lit("OR"); spc(1); fges) /
+    (paren * prettyFormula(R) * Fs)
+  FI
+DEF prettyFormula(R)(connect(_, impl, f1 :: f2 :: _)) ==
+  paren(prettyFormula(R)(f1)); spc(1); lit("==>"); spc(1);
+  paren(prettyFormula(R)(f2))
+DEF prettyFormula(R)(connect(_, equiv, f1 :: f2 :: _)) ==
+  paren(prettyFormula(R)(f1)); spc(1); lit("==="); spc(1);
+  paren(prettyFormula(R)(f2))
+DEF prettyFormula(R)(connect(_, other(id), Fs)) ==
+  lit(id); paren(fmtSeq(prettyFormula(R))(Fs))
+
+DEF prettyFormula(R)(quant(_, k, _, vs, F)) ==
+  (IF k forall? THEN lit("ALL")
+   IF k exist? THEN lit("EX")
+   IF k other? THEN lit(id(k))
+   FI); spc(1); list?(\\oN. nameAndFun(R)(oN), none,
+                      spc(1), none, vs); lit(".");
+  spc(1); prettyFormula(R)(F)
+
+DEF prettyExpr(R)(name(_, oN)) ==
+  IF globalObjectName?(oN) THEN fmtObjectNameLong(R)(oN)
+  ELSE lit(symbol(object(oN)(R)))
+  FI
+
+DEF prettyExpr(R)(apply(_, f, a)) ==
+  IF f name? THEN
+    LET i == infix(R)(oper(f))
+    IN
+    IF i avail? THEN 
+      LET idx == cont(i)
+          args == IF a tuple? THEN elems(a) ELSE %(a) FI
+          (preargs0, postargs0) == split(idx, args)
+          preargs == IF #(preargs0) = 1 THEN ft(preargs0)
+                     ELSE tuple(none, preargs0) FI
+          postargs == IF #(postargs0) = 1 THEN ft(postargs0)
+                      ELSE tuple(none, postargs0) FI
+      IN
+      IF preargs0 <>? THEN -- normal prefix
+        prettyExpr(R)(f);
+        (IF ~(postargs tuple?) THEN paren ELSE \\x.x FI)
+        (prettyExpr(R)(postargs))
+      IF postargs0 <>? THEN -- postfix
+        paren(prettyExpr(R)(preargs); spc(1); prettyExpr(R)(f))
+      ELSE -- infix
+        paren(prettyExpr(R)(preargs); spc(1); prettyExpr(R)(f);
+              spc(1); prettyExpr(R)(postargs))
+      FI        
+    IF i nil? THEN 
+      IF  infix?(R)(oper(f)) ANDIF tuple?(a) ANDIF #(elems(a)) = 2 THEN
+        paren(prettyExpr(R)(ft(elems(a))); spc(1); prettyExpr(R)(f);
+              spc(1); prettyExpr(R)(ft(rt(elems(a)))))
+      ELSE
+        prettyExpr(R)(f);
+        (IF ~(a tuple?) THEN paren ELSE \\x.x FI)(prettyExpr(R)(a))
+      FI
+    FI
+  ELSE
+    (IF f name? THEN \\x.x ELSE paren FI)(prettyExpr(R)(f));
+    (IF ~(a tuple?) THEN paren ELSE \\x.x FI)(prettyExpr(R)(a))
+  FI
+
+DEF prettyExpr(R)(tuple(_, es)) ==
+  list(prettyExpr(R), lit("("), lit(","), lit(")"), es)
+DEF prettyExpr(_)(den(_, d)) == lit(""""); lit(d); lit("""")
+DEF prettyExpr(R)(cases(_, gs, el)) ==
+  LET ifs == prettyExpr(R) * if * gs
+      thens == prettyExpr(R) * then * gs
+      # == \\i,t. lit("IF"); spc(1); i; spc(1); lit("THEN"); spc(1); t
+      else == IF avail?(el) THEN lit("ELSE"); spc(1);
+                                 prettyExpr(R)(cont(el)); brk ELSE none FI
+  IN ((+/+(brk), <>) /[fmt,fmt] zip(#)(ifs, thens)) ; else; lit("FI")
+DEF prettyExpr(R)(lambda(_, _, vs, bd)) ==
+  LET fmtVar == \\oN. lit(symbol(object(oN)(R))) -- fmtObjectName(R)
+  IN
+  lit("\\\\"); spc(1); list?(fmtVar, none, lit(","), none, vs);
+  lit("."); prettyExpr(R)(bd)
+DEF prettyExpr(R)(let(_, eqs, bd)) ==
+  lit("LET"); brk;
+  ((+/+(brk), <>) / ((\\f. inc(2); f) * prettyEqn(R) * eqs)) ;
+  lit("IN"); brk;
+  prettyExpr(R)(bd)
+DEF prettyExpr(R)(as(_, v, e)) ==
+  fmtObjectNameLong(R)(v); spc(1); lit("AS"); spc(1); prettyExpr(R)(e)
+DEF prettyExpr(_)(any(_)) == lit("_")
+
+DEF prettyEqn(R)(eqn(_,_, lhs, _, rhs)) ==
+  prettyExpr(R)(lhs); spc(1); lit("=="); spc(1); prettyExpr(R)(rhs)
+
+-- %with additional main parameter
+DEF prettyFormula(R, main)(atomic(_, dfd, e1 :: _)) ==
+  lit("DFD "); prettyExpr(R, main)(e1)
+DEF prettyFormula(R, main)(atomic(_, approx, e1 :: e2 :: _)) ==
+  prettyExpr(R, main)(e1); spc(1); lit("<<="); spc(1); prettyExpr(R, main)(e2)
+DEF prettyFormula(R, main)(atomic(_, cong, e1 :: e2 :: _)) ==
+  IF e2 name? ANDIF oper(e2) = oper(true(R)) THEN
+    lit("["); prettyExpr(R, main)(e1); lit("]")
+  ELSE
+    prettyExpr(R, main)(e1); spc(1); lit("===");
+    spc(1); prettyExpr(R, main)(e2)
+  FI
+DEF prettyFormula(_, main)(atomic(_, informal(t),  _)) ==
+  lit(""""); lit(t); lit("""")
+DEF prettyFormula(_, main)(atomic(_, other(id, _), _)) ==
+  lit("other[" ++ id ++ "]")
+
+DEF prettyFormula(R, main)(connect(_, neg, f :: _)) ==
+  lit("NOT "); prettyFormula(R, main)(f)
+DEF prettyFormula(R, main)(connect(_, conj, Fs)) ==
+  IF Fs <>? THEN none
+  IF #(Fs) = 1 THEN prettyFormula(R, main)(ft(Fs))
+  ELSE
+    (\\ fneu, fges. fneu; spc(1); lit("AND"); spc(1); fges) /
+    (paren * prettyFormula(R, main) * Fs)
+  FI
+DEF prettyFormula(R, main)(connect(_, disj, Fs)) ==
+  IF Fs <>? THEN none
+  IF #(Fs) = 1 THEN prettyFormula(R, main)(ft(Fs))
+  ELSE
+    (\\ fneu, fges. fneu; spc(1); lit("OR"); spc(1); fges) /
+    (paren * prettyFormula(R, main) * Fs)
+  FI
+DEF prettyFormula(R, main)(connect(_, impl, f1 :: f2 :: _)) ==
+  paren(prettyFormula(R, main)(f1)); spc(1); lit("==>"); spc(1);
+  paren(prettyFormula(R, main)(f2))
+DEF prettyFormula(R, main)(connect(_, equiv, f1 :: f2 :: _)) ==
+  paren(prettyFormula(R, main)(f1)); spc(1); lit("<=>"); spc(1);
+  paren(prettyFormula(R, main)(f2))
+DEF prettyFormula(R, main)(connect(_, other(id), Fs)) ==
+  lit(id); paren(fmtSeq(prettyFormula(R, main))(Fs))
+
+DEF prettyFormula(R, main)(quant(_, k, _, vs, F)) ==
+  (IF k forall? THEN lit("ALL")
+   IF k exist? THEN lit("EX")
+   IF k other? THEN lit(id(k))
+   FI); spc(1); list?(\\oN. nameAndFun(R, main)(oN), none,
+                      spc(1), none, vs); lit(".");
+  spc(1); prettyFormula(R, main)(F)
+
+DEF prettyExpr(R, main)(name(_, oN)) ==
+  IF globalObjectName?(oN) THEN fmtObjectNameLong(R, main)(oN)
+  ELSE lit(symbol(object(oN)(R))) -- nameAndFun(R, main)(oN) 
+  FI
+
+DEF prettyExpr(R, main)(apply(_, f, a)) ==
+  IF f name? THEN
+    LET i == infix(R)(oper(f))
+    IN
+    IF i avail? THEN 
+      LET idx == cont(i)
+          args == IF a tuple? THEN elems(a) ELSE %(a) FI
+          (preargs0, postargs0) == split(idx, args)
+          preargs == IF #(preargs0) = 1 THEN ft(preargs0)
+                     ELSE tuple(none, preargs0) FI
+          postargs == IF #(postargs0) = 1 THEN ft(postargs0)
+                      ELSE tuple(none, postargs0) FI
+      IN
+      IF preargs0 <>? THEN -- normal prefix
+        prettyExpr(R, main)(f);
+        (IF ~(postargs tuple?) THEN paren ELSE \\x.x FI)
+        (prettyExpr(R, main)(postargs))
+      IF postargs0 <>? THEN -- postfix
+        paren(prettyExpr(R, main)(preargs); spc(1); prettyExpr(R, main)(f))
+      ELSE -- infix
+        paren(prettyExpr(R, main)(preargs); spc(1); prettyExpr(R, main)(f);
+              spc(1); prettyExpr(R, main)(postargs))
+      FI        
+    IF i nil? THEN 
+      IF  infix?(R)(oper(f)) ANDIF tuple?(a) ANDIF #(elems(a)) = 2 THEN
+        paren(prettyExpr(R, main)(ft(elems(a))); spc(1);
+              prettyExpr(R, main)(f);
+              spc(1); prettyExpr(R, main)(ft(rt(elems(a)))))
+      ELSE
+        prettyExpr(R, main)(f);
+        (IF ~(a tuple?) THEN paren ELSE \\x.x FI)(prettyExpr(R, main)(a))
+      FI
+    FI
+  ELSE
+    (IF f name? THEN \\x.x ELSE paren FI)(prettyExpr(R, main)(f));
+    (IF ~(a tuple?) THEN paren ELSE \\x.x FI)(prettyExpr(R, main)(a))
+  FI
+
+/*  IF f name? ANDIF infix?(R)(oper(f)) ANDIF
+    tuple?(a) ANDIF #(elems(a)) = 2 THEN
+    paren(prettyExpr(R, main)(ft(elems(a))); spc(1); prettyExpr(R, main)(f);
+          spc(1); prettyExpr(R, main)(ft(rt(elems(a)))))
+  ELSE
+    (IF f name? THEN \\x.x ELSE paren FI)(prettyExpr(R, main)(f));
+    (IF ~(a tuple?) THEN paren ELSE \\x.x FI)(prettyExpr(R, main)(a))
+  FI
+*/
+DEF prettyExpr(R, main)(tuple(_, es)) ==
+  list(prettyExpr(R, main), lit("("), lit(","), lit(")"), es)
+DEF prettyExpr(_, main)(den(_, d)) == lit(""""); lit(d); lit("""")
+DEF prettyExpr(R, main)(cases(_, gs, el)) ==
+  LET ifs == prettyExpr(R, main) * if * gs
+      thens == prettyExpr(R, main) * then * gs
+      # == \\i,t. lit("IF"); spc(1); i; spc(1); lit("THEN"); spc(1); t
+      else == IF avail?(el) THEN lit("ELSE"); spc(1);
+                                 prettyExpr(R, main)(cont(el)); brk
+              ELSE none FI
+  IN ((+/+(brk), <>) /[fmt,fmt] zip(#)(ifs, thens)) ; else; lit("FI")
+DEF prettyExpr(R, main)(lambda(_, _, vs, bd)) ==
+  LET fmtVar == \\oN. lit(symbol(object(oN)(R))) -- fmtObjectName(R)
+  IN
+  lit("\\\\"); spc(1); list?(fmtVar, none, lit(","), none, vs);
+  lit("."); prettyExpr(R, main)(bd)
+DEF prettyExpr(R, main)(let(_, eqs, bd)) ==
+  lit("LET"); brk;
+  ((+/+(brk), <>) / ((\\f. inc(2); f) * prettyEqn(R, main) * eqs)) ;
+  lit("IN"); brk;
+  prettyExpr(R, main)(bd)
+DEF prettyExpr(R, main)(as(_, v, e)) ==
+  fmtObjectNameLong(R, main)(v); spc(1); lit("AS"); spc(1);
+  prettyExpr(R, main)(e)
+DEF prettyExpr(_, main)(any(_)) == lit("_")
+
+DEF prettyEqn(R, main)(eqn(_,_, lhs, _, rhs)) ==
+  prettyExpr(R, main)(lhs); spc(1); lit("=="); spc(1); prettyExpr(R, main)(rhs)
+
+-- %$Full Opal$
+DEF opalExpr(name(_, na)) == opalName(na)
+DEF opalExpr(apply(_, f, arg)) == 
+  paren(opalExpr(f)) ++
+  (IF tuple?(arg) THEN opalExpr(arg) ELSE paren(opalExpr(arg)) FI)
+DEF opalExpr(tuple(_, els))(R) ==
+  "(" ++ (+/+(", "), "") /  (\\x. opalExpr(x)(R)) * els ++ ")"
+DEF opalExpr(den(_, txt))(_) == "\"" ++ `(escape(txt!)) ++ "\""
+DEF opalExpr(cases(_, gds, else))(R) ==
+  (+/+("\n"), "") / (\\x. opalExpr(x)(R)) * gds ++
+  (IF else avail? THEN
+     "\nELSE " ++ opalExpr(cont(else))(R) ++ "\n"
+   ELSE ""
+   FI) ++
+  "\nFI"
+DEF opalExpr(lambda(_, _, vs, bd))(R) ==
+  "\\\\ " ++ ((+/+(", "), "") / ((\\x. opalName(x)(R)) * vs)) ++ " . " ++
+  opalExpr(bd)(R)
+DEF opalExpr(let(_, eqs, bd))(R) ==
+  "LET\n" ++
+  (+/+("\n"), "") / (\\x. opalEqn(x)(R)) * eqs ++
+  "\n" ++ opalExpr(bd)(R)
+DEF opalExpr(as(_, v, ex))(R) == opalName(v)(R) ++ " AS " ++ opalExpr(ex)(R)
+DEF opalExpr(any(_))(_) == "_"
+
+DEF opalEqn(eqn(_, _, lhs, _, rhs))(R) ==
+  opalExpr(lhs)(R) ++ " ==\n" ++ opalExpr(rhs)(R)
+
+
+FUN opalExpr: guard -> repo -> denotation
+DEF opalExpr(guard(_, i, t))(R) ==
+  "IF " ++ opalExpr(i)(R) ++ "\nTHEN " ++ opalExpr(t)(R) ++ "\n"
+
+FUN escape: string -> string
+DEF escape(<>) == <>
+DEF escape(ch :: R) ==
+  IF printable?(ch) and ch |= dblquote THEN ch :: escape(R)
+  ELSE !("\\" ++ octal(asNat(ch)))
+  FI
+  
+FUN octal: nat -> denotation
+DEF octal(n) ==
+  LET n3 == n % 8
+      n2 == (n / 8) % 8
+      n1 == (n / 64) % 8
+      C == \\ x. `(asChar(asNat(0) + x))
+  IN 
+  C(n1) ++ C(n2) ++ C(n3)
+
+
+FUN ! : denotation -> (repo -> denotation)
+DEF d! == \\ _ . d
+
+FUN ++ : (repo -> denotation) ** (repo -> denotation) -> (repo -> denotation)
+DEF (d1 ++ d2)(R) == d1(R) ++ d2(R)
+
+FUN +/+ : denotation ->
+           (repo -> denotation) ** (repo -> denotation) -> (repo -> denotation)
+DEF +/+(sep)(d1, d2)(R) == d1(R) ++ sep ++ d2(R)
+
+
+FUN paren: (repo -> denotation) -> (repo -> denotation)
+DEF paren(d1)(R) == "(" ++ d1(R) ++ ")"
+-- %$Auxiliary functions$
+FUN paren: fmt -> fmt
+DEF paren == \\fm. lit("("); fm; lit(")")
+
+FUN +/+ : fmt -> fmt ** fmt -> fmt
+DEF +/+(in)(a, b) == a; in; b
+
+FUN infix? : repo -> objectName -> bool
+DEF infix?(R)(oN) == forall?(punctuation?, !(symbol(oN)(R)))
+
+FUN nameAndFun: repo ** unitName -> objectName -> fmt
+DEF nameAndFun(R, main)(oN) ==
+  lit(symbol(object(oN)(R))); lit(":");
+  printFct(fmtObjectNameLong(R, main), false)(fct(oN)(R))
+
+--  fmtObjectNameLong(R, main)(sort(fct(oN)(R)))
+
+FUN nameAndFun: repo -> objectName -> fmt
+DEF nameAndFun(R)(oN) ==
+  lit(symbol(object(oN)(R))); lit(":");
+  printFct(fmtObjectNameLong(R), false)(fct(oN)(R))
+--  fmtObjectNameLong(R)(sort(fct(oN)(R)))
+
+FUN printFct: (objectName -> fmt) ** bool -> fct -> fmt
+DEF printFct(den, _)(name(s)) == den(s)
+DEF printFct(den, _)(cart(els)) == 
+  (+/+(lit(" ** ")), none) / printFct(den, true) * els
+DEF printFct(den, p?)(funct(d, c)) ==
+  (IF p? THEN paren ELSE \\x.x FI)
+  (printFct(den, true)(d); lit(" -> "); printFct(den, false)(c))
+  

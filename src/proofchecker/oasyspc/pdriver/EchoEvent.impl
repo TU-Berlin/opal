@@ -1,0 +1,143 @@
+IMPLEMENTATION EchoEvent
+
+IMPORT	Nat			COMPLETELY
+	Denotation		COMPLETELY
+	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	ComState  		COMPLETELY
+	Fmt			COMPLETELY
+	File			COMPLETELY
+	String			COMPLETELY
+	StringConv		COMPLETELY
+	StringFilter		COMPLETELY
+	Char			COMPLETELY
+	Seq			COMPLETELY
+	SeqReduce		COMPLETELY
+	SeqFilter		COMPLETELY
+	Void			COMPLETELY
+	
+IMPORT	RepoEvent		COMPLETELY
+	RepoDiag		COMPLETELY
+	RepoName		COMPLETELY
+	RepoNameConv		COMPLETELY
+	RepoUnitAccess		COMPLETELY
+	RepoObjectAccess	COMPLETELY
+	RepoCom			COMPLETELY
+	RepoCom1		COMPLETELY
+
+IMPORT ColourText COMPLETELY
+
+FUN diagVerbosity	: stateId[mode]
+FUN messageVerbosity	: stateId[nat]
+
+DEF diagVerbosity	== EXEC(stateId(warn))
+DEF messageVerbosity	== EXEC(stateId(1))
+
+DEF setDiagVerbosity(M) == with(diagVerbosity, \\ _ . M)
+DEF setMessageVerbosity(L) == with(messageVerbosity, \\ _ . L)
+
+DEF echoEvent(diag(Diag)) ==
+    get(diagVerbosity)				& (\\ Mode .
+    LET Show == (\\D. mode(D) = Mode or
+    		  	mode(D) < Mode) | explode(Diag)
+    IN
+    IF ::?(Show) THEN
+	LET Text == (prettyC(fmtDiag((<+,ok) / Show))):string
+        IN
+        subs(Text)					& (\\ Text1 .
+        writeLine(stdOut, Text1)
+        )
+    ELSE succeed(nil) FI
+    )
+
+    FUN subs : string -> com[string]
+    DEF subs(Str) ==
+    	LET (Front, Tail) == split(\\ Ch . Ch |= !("#"), Str)
+	IN
+	IF ::?(Tail) THEN
+	    LET (Digits, Rest) == split(digit?, rt(Tail))
+	    IN
+	    asUnitName(`(ft(Tail) :: Digits))	; (\\ U? .
+	    IF okay?(U?) THEN
+	        asDeno(symbolic)(data(U?))	& (\\ Subs .
+		subs(Rest)			& (\\ Rest1 .
+		succeed(Front ++ !(Subs) ++ Rest1)
+		))
+	    ELSE
+	    	subs(Digits ++ Rest)		& (\\ Rest1 .
+		succeed(Front ++ ft(Tail)::Rest1)
+		)
+	    FI
+	    )
+	ELSE
+	    succeed(Front)
+	FI
+    
+
+DEF echoEvent(progress(repository, Msg)) ==
+    message(Msg)
+
+DEF echoEvent(progress(unit(U), Msg)) ==
+    repr(U)				& (\\ Repr .
+    message(Msg ++ " " ++ Repr)
+    )
+
+
+DEF echoEvent(progress(object(O), Msg)) ==
+    repr(O)				& (\\ Repr .
+    message(Msg ++ " " ++ Repr)
+    )
+
+DEF echoEvent(newUnit(U)) ==
+    repr(U)				& (\\ Repr .
+    message("... created " ++ Repr)
+    )
+
+DEF echoEvent(newSource(U)) ==
+    repr(U)				& (\\ Repr .
+    message("... updated source of " ++ Repr)
+    )
+
+DEF echoEvent(newAbsy(U)) ==
+    repr(U)				& (\\ Repr .
+    message("... updated absy of " ++ Repr)
+    )
+
+DEF echoEvent(newObject(U)) ==
+    repr(U)				& (\\ Repr .
+    message("... updated object of " ++ Repr)
+    )
+
+
+
+FUN repr : unitName -> com[denotation]
+DEF repr(U) ==
+    query(symbol(U))			& (\\ Sym .
+    IF sign?(part(U)) THEN
+	succeed(Sym ++ ".sign")
+    ELSE
+	succeed(Sym ++ ".impl")
+    FI
+    )
+
+FUN repr : objectName -> com[denotation]
+DEF repr(O) ==
+    query(symbol(O))			& (\\ Sym .
+    repr(unit(O))			& (\\ UnitSym .
+    succeed(Sym ++ "'" ++ UnitSym)
+    ))
+
+
+FUN message : denotation -> com[void]
+DEF message(Msg) ==
+    get(messageVerbosity)		& (\\ Level .
+    IF dots(Msg) < Level THEN
+	writeLine(stdOut, Msg)
+    ELSE succeed(nil) FI
+    )
+
+FUN dots : denotation -> nat
+DEF dots(Msg) ==
+    IF "." <| Msg THEN succ(dots(tl(Msg)))
+    		  ELSE 0 FI
+

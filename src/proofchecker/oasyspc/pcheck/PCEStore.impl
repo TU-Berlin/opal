@@ -1,0 +1,187 @@
+IMPLEMENTATION PCEStore
+
+IMPORT RepoAn ONLY anLayer register def !?  undef
+       Nat ONLY 9 * 100 nat 15 16 + 6
+       Dyn ONLY dyn
+       Fmt ONLY fmt lit pretty
+       DynConv ONLY unpack pack
+       Option ONLY option avail? avail nil cont nil?
+       PCEnv ONLY pcEnv:SORT
+       RepoUnitAccess COMPLETELY
+       RepoEvent ONLY newAbsy? newSource? unit: event -> unitName newUnit?
+       RepoName ONLY unitName < : unitName ** unitName -> bool objectName
+       Loquacity ONLY debugMsg progress
+       Denotation ONLY ++
+       FmtSet ONLY fmtSet
+       PrettyFormatting ONLY fmtUnitName
+       Com ONLY succeed com EXEC fail? okay? data ans
+       Predicate ONLY or
+       Set ONLY incl set
+       String ONLY string
+       Seq ONLY seq
+       SetReduce ONLY /
+       OptionMap ONLY *
+       AnonPair ONLY 1st
+       ComSeqReduce ONLY /&
+       ComCompose ONLY & ;
+       RepoAdmin ONLY path notExistent? mtime
+       FileSystem ONLY stat filestat mtime
+       Pair ONLY &
+       Time ONLY <= time
+       File ONLY open close file
+       BinFile ONLY read write
+       SetConv ONLY asSeq
+       FileName ONLY splitSuffix
+       Void ONLY void
+
+
+FUN pceStoreLayer: anLayer
+DEF pceStoreLayer == EXEC(register(9 * 100, smallFmt))
+
+FUN pceTag: denotation
+DEF pceTag == "pce"
+
+FUN smallFmt: dyn -> fmt
+DEF smallFmt(_) == lit("some pcEnv")
+
+DEF set(e, uN)(R) ==
+  updateAn(uN, \\ a. def(pceStoreLayer, pack(e, pceTag), 
+                         def(pceNewLayer, pack(true, pceNewTag), a)))(R)
+
+DEF get(uN)(R) == (\\d. unpack(d, pceTag)) * an(uN)(R) !? pceStoreLayer
+DEF reset(uN)(R) ==
+  updateAn(uN, \\ a. undef(undef(a, pceStoreLayer), pceNewLayer))(R)
+
+FUN resetFR: unitName -> repo -> repo
+DEF resetFR(uN)(R) == reset(uN)(R)
+/*
+  updateAn(uN, \\ a. def(pceFileReadLayer, pack(true, pceFRtag), a))
+          (reset(uN)(R))
+*/                         
+
+DEF pceHandler(e)(R) == 
+  IF (newSource? or newAbsy?)(e) THEN
+    LET uN == unit(e)
+        recheck == related(transitive, importers)(uN)(R)
+        newR == ((\\ uN1, R1. resetFR(uN1)(R1)), R) / incl(uN, recheck)
+    IN
+    debugMsg("pceHandler", \\ . "reset pcEnv of " ++
+             pretty(fmtSet(fmtUnitName(newR))
+                    (incl(uN, recheck))))(newR)
+  IF newUnit?(e) THEN
+    debugMsg("pceHandler", \\ . "reset pcEnv of " ++
+                                pretty(fmtUnitName(R)(unit(e))))
+            (resetFR(unit(e))(R))
+  ELSE
+    succeed(R)
+  FI
+
+-- %If a unit has this flag set, it is not reread by tryRead
+FUN pceFileReadLayer: anLayer
+DEF pceFileReadLayer == EXEC(register(9 * 100 + 15, boolDyn1))
+
+FUN pceFRtag : denotation
+DEF pceFRtag == "pceFR"
+
+FUN boolDyn1: dyn -> fmt
+DEF boolDyn1(d) == lit(IF unpack(d, pceFRtag) THEN "true" ELSE "false" FI)
+
+DEF tryRead(uN)(R) ==
+  LET flag == (\\d. unpack(d, pceFRtag)) * an(uN)(R) !? pceFileReadLayer
+      U == pretty(fmtUnitName(R)(uN))
+  IN
+  IF flag avail? ANDIF cont(flag) THEN 
+    debugMsg("tryRead", \\ .  U ++ " not reloaded")(R) & (\\ R1.
+    succeed(nil & R1)
+    )
+  ELSE
+    LET pceF == pceFileName(uN)(R)
+    IN
+    IF notExistent?(sourceFile(uN)(R)) or notExistent?(absyFile(uN)(R)) THEN
+      debugMsg("tryRead", \\ .  U ++ " absy or source not found")(R) & (\\ R1.
+      succeed(nil & R1)
+      )
+    ELSE
+      stat(pceF) ; (\\ ex: ans[filestat].
+      IF fail?(ex) THEN 
+        debugMsg("tryRead", \\ .  U ++ " pce not found")(R) & (\\ R1.
+        succeed(nil & R1)
+        )
+      IF okay?(ex) THEN 
+        LET t == mtime(data(ex))
+        IN
+        IF mtime(sourceFile(uN)(R)) <= t and mtime(absyFile(uN)(R)) <= t THEN
+          open(pceF, "rb") & (\\f.
+          read(f, pceTag) & (\\ e.
+          close(f) & (\\ _ .
+          debugMsg("tryRead", \\ . U ++ " pce read")(R) & (\\ R1.
+          LET R2 == updateAn(uN, (\\ a. def(pceStoreLayer, pack(e, pceTag),
+                                            def(pceFileReadLayer,
+                                                pack(true, pceFRtag), a))))(R1)
+          IN
+          succeed(avail(e) & R2)
+          ))))
+        ELSE
+          debugMsg("tryRead", \\ . U ++ " too old")(R) & (\\ R1.
+          succeed(nil & R1)
+          )
+        FI
+      FI
+      )
+    FI
+  FI
+
+
+-- %If a unit has this flag set it is stored by storePces
+FUN pceNewLayer: anLayer
+DEF pceNewLayer == EXEC(register(9 * 100 + 16, boolDyn2))
+
+FUN pceNewTag : denotation
+DEF pceNewTag == "pceNew"
+
+FUN boolDyn2: dyn -> fmt
+DEF boolDyn2(d) == lit(IF unpack(d, pceNewTag) THEN "true" ELSE "false" FI)
+
+DEF storePces(R) == (storePce, R) /& asSeq(units(R))
+
+FUN storePce: unitName ** repo -> com[repo]
+DEF storePce(uN, R) ==
+  LET flag == (\\d. unpack(d, pceNewTag)) * an(uN)(R) !? pceNewLayer
+      U == pretty(fmtUnitName(R)(uN))
+  IN
+  IF flag avail? ANDIF cont(flag) THEN
+    LET e == get(uN)(R)
+    IN
+    IF e nil? THEN
+      progress(6, \\ . "no pce for unit " ++ U ++ " found ??")(R) & (\\ R1.
+      succeed(R1)
+      )
+    ELSE
+      debugMsg("storePce", \\ . U ++ " storing pce")(R) & (\\ R1.
+      open(pceFileName(uN)(R1), "wb") ; (\\ f.
+      IF fail?(f) THEN
+        progress(6, \\ . "could not open " ++ pceFileName(uN)(R))(R1) & (\\ R3.
+        succeed(R3)
+        )
+      IF okay?(f) THEN
+        progress(6, \\ . "writing " ++ pceFileName(uN)(R))(R1) & (\\ R3.
+        write(data(f), pceTag, cont(e)) & (\\ _ .
+        close(data(f)) & (\\ _ .
+        succeed(R3)
+        )))
+      FI
+      ))
+    FI
+  ELSE
+    progress(6, \\ . "pce for " ++ U ++ " not stored")(R) & (\\ R1.
+    succeed(R1)
+    )
+  FI
+
+  
+
+FUN pceFileName: unitName -> repo -> denotation
+DEF pceFileName(uN)(R) == 
+  LET absyF == path(absyFile(uN)(R))
+  IN
+  1st(splitSuffix(absyF, ".")) ++ ".pce"

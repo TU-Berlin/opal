@@ -1,0 +1,77 @@
+IMPLEMENTATION LSeq
+
+IMPORT Option ONLY option nil avail nil? avail? cont
+       Pair ONLY pair & 1st 2nd
+       SeqReduce ONLY /
+       Nat ONLY nat 9 0 succ 1
+       SeqConv ONLY `
+       AnonPair ONLY 1st
+       Seq ONLY seq split :: <>
+       String ONLY string
+       FmtSeq ONLY list
+       Fmt ONLY lit spc ;
+       ABORT ONLY ABORT
+
+-- %$Type implementation$
+DATA lseq == abs(rep: () -> option[pair[data, lseq]])
+DEF make == abs
+
+DEF <> == abs(\\ . nil)
+DEF f :: R == abs(\\ . avail(f & R))
+DEF ft(s) ==
+  IF s <>? THEN ABORT("ft'LSeq: empty sequence") 
+  ELSE 1st(cont(pull(s))) FI
+DEF rt(s) == 
+  IF s <>? THEN ABORT("rt'LSeq: empty sequence") 
+  ELSE 2nd(cont(pull(s))) FI
+DEF <>?(s) == nil?(pull(s))
+DEF ::?(s) == avail?(pull(s))
+
+-- %$Construct a list$
+DEF %(d) == d :: <>
+
+DEF s1 ++ s2 ==
+  abs(\\ . IF s1 <>? THEN rep(s2)() ELSE avail(ft(s1) & rt(s1) ++ s2) FI)
+
+DEF s1 ++ s2 ==
+  abs(\\ . IF s1 <>? THEN rep(s2())() ELSE avail(ft(s1) & rt(s1) ++ s2) FI)
+
+DEF s1 +^+ s2 ==
+  abs(\\ . IF s1 <>? THEN rep(s2)() ELSE avail(ft(s1) & s2 +^+ rt(s1)) FI)
+
+DEF P | s ==
+  abs(\\ . IF s <>? THEN nil 
+           ELSE LET (f, R) == pull(s)
+                IN
+                IF P(f) THEN avail(f & P | R) ELSE pull(P | R) FI
+           FI)
+
+-- %$Accessing Elements$
+DEF pull(abs(f)) == f()
+
+FUN pull: lseq -> data ** lseq
+DEF pull(s) == IF s <>? THEN (ABORT("pull'LSeq: mepty sequence"), <>)
+               ELSE (1st(cont(pull(s))), 2nd(cont(pull(s)))) FI
+
+DEF split(_, s) == (<>, s)
+DEF split(succ(n), s) == 
+  IF s <>? THEN (<>, s)
+  ELSE
+    LET (a, R) == split(n, rt(s))
+    IN
+    (ft(s) :: a, R)
+  FI
+
+-- %$Conversions$
+DEF asSeq(s) == 
+  IF nil?(pull(s)) THEN <> 
+  ELSE 1st(cont(pull(s))) :: asSeq(2nd(cont(pull(s)))) FI
+
+DEF asLSeq == :: / <>
+
+DEF fmtLSeq(f)(l) ==
+  list(f, lit("<"), lit(",");spc(1), lit("...>"), 1st(split(9, l)))
+DEF fmtLseq == fmtLSeq
+
+DEF `(f)(l) == `(9, f)(l)
+DEF `(#, f)(l) == `("<", ",", "...>")(f)(1st(split(#, l)))

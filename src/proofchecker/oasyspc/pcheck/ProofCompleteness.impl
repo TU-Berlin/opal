@@ -1,0 +1,135 @@
+IMPLEMENTATION ProofCompleteness
+
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/pcheck/ProofCompleteness.impl,v 1.1 1999-10-13 20:32:46 kd Exp $
+
+IMPORT Loquacity COMPLETELY
+       Nat COMPLETELY
+       ComCompose COMPLETELY
+       PCEStore COMPLETELY
+       Option COMPLETELY
+       RepoDiag COMPLETELY
+       Com COMPLETELY
+       Set COMPLETELY
+       PCEnv COMPLETELY
+       ComSeqMapEnv COMPLETELY
+       Map COMPLETELY
+       RepoEvent ONLY diag
+       Pair ONLY & unpair 1st 2nd
+       MapFilter ONLY partition |
+       MapMap ONLY *
+       Denotation ONLY ++ +/+ < init
+       NatConv ONLY `
+       Fmt ONLY pretty lit ; brk
+       FmtSet ONLY fmtSet
+       PrettyPCEnv ONLY pretty
+       Char ONLY char !
+       SetReduce ONLY /
+       SetMap ONLY *
+       MapReduce ONLY /
+       SeqReduce ONLY /
+       SetConv ONLY asSeq
+       MapConv ONLY asSeq
+       SeqMap ONLY *
+       FmtSeq ONLY fmtSeq
+       PCEFunctions COMPLETELY
+       NFmt ONLY fmtLatin1
+       StringConv ONLY `
+
+DEF proofCompleteness(uN)(R) ==
+  progress(1, \\ . "Computing proof completeness ...")(R) & (\\ R1.
+  LET e == get(uN)(R1)
+  IN
+  IF e nil? THEN
+    diag((error, freeRef("proof completeness")) !!
+         ("no pc-environment for unit found"))(R1) & (\\ R2.
+    succeed({} & R2)
+    )
+  ELSE
+    iterate(R1)(0, {}, pHeads(e cont)) && (\\ provableLaws, restHeads.
+    debugMsg("proofCompleteness",
+             \\ . fmtLatin1(fmtSet(pretty(R))((((laws(e cont) - provableLaws)
+                                                ) -
+                                               resolved(e cont))); brk;
+                            fmtSet(pretty(R))(laws(e cont)); brk;
+                            fmtSet(pretty(R))(provableLaws); brk;
+                            fmtSet(pretty(R))(extraLaws(e cont)); brk;
+                            fmtSet(pretty(R))(resolved(e cont)); brk
+                           )
+            )(R1) & (\\ R2.
+    LET ds == genDiag(restHeads, uN, R) *
+                asSeq(((laws(e cont) - provableLaws)) - resolved(e cont))
+    IN
+    succeed(((<+, ok) / ds) incl (e cont) & R2)
+    ))
+  FI
+  )
+
+/* %First argument is iteration count (for output/debugging),
+    second argument the proven laws, third argument proofs (with proven
+    laws removed from their premises), which are not fully resolved. */
+
+FUN iterate: repo -> nat ** set[lawName, <] ** map[proofName, <, pHead] ->
+              com[pair[set[lawName, <], map[proofName, <, pHead]]]
+DEF iterate(R)(ct, proven, M) ==
+  LET (resolved, unresolved) == partition(resolved?, M1)
+      M1 == resolve(proven) * M
+      (rProofs, new) == unpair[set[proofName, <], set[lawName, <]]
+                          (((\\ pN, pH, S.
+                                incl(pN, 1st(S)) & incl(concl(pH), 2nd(S))),
+                                {} & {}) / resolved)
+  IN
+  progress(3, \\ . "iteration " ++ (ct`))(R) & (\\ R1.
+  progress(4, \\ . "resolved proofs: " ++
+           pretty(fmtSet(pretty(R))(rProofs)))(R1) & (\\ R2.
+  progress(5, \\ . "new laws: " ++
+                   pretty(fmtSet(pretty(R))(new)))(R2) & (\\ R3.
+  IF new {}? THEN
+    succeed(proven & unresolved)
+  ELSE
+    iterate(R3)(succ(ct), proven + new, unresolved)
+  FI
+  )))
+
+/* %input is the map of unresolved proofs and a name of a proof obligation,
+    which has not been fulfilled. Return an appropriate error message. */
+FUN genDiag: map[proofName, <, pHead] ** unitName ** repo -> lawName -> diag
+DEF genDiag(M, uN, R)(lN) ==
+  (error, ref(R, uN)(lN)) !! genDiag(M, uN, R, 0)(lN)
+
+FUN genDiag: map[proofName, <, pHead] ** unitName ** repo ** nat ->
+              lawName -> denotation
+DEF genDiag(M, uN, R, depth)(lN) ==
+  LET cands == (\\ _, pH. concl(pH) = lN) | M
+      indent == IF depth > 0 THEN "\n" ++ init(2 * depth, "."!) ELSE "" FI
+  IN
+  IF cands {}? THEN
+    indent ++ "no proof with conclusion " ++
+    fmtLatin1(pretty(R, uN)(lN)) ++ " found"
+  ELSE
+    indent ++ fmtLatin1(pretty(R, uN)(lN)) ++
+    " could not be proven:\n" ++ 
+    (+/+(""), "") / mkDescr(M, R, uN, depth) * asSeq(cands)
+  FI
+
+FUN mkDescr: map[proofName, <, pHead] ** repo ** unitName ** nat ->
+              pair[proofName, pHead] -> denotation
+DEF mkDescr(M, R, uN, depth)(pN & pHead(_, prems, _)) ==
+  IF depth > 20 THEN
+    "°°° max. depth exceeded °°°"
+  ELSE
+    init(2 * depth, "."!) ++ 
+    `(fmtLatin1(0, 2 * 100,lit("unproven premises of "); pretty(R, uN)(pN);
+                lit(": "); fmtSet(pretty(R, uN))(prems))) ++
+    "  " ++ (+/+(""), "") /[denotation,<,denotation]
+       genDiag(M, uN, R, succ(depth)) * prems
+  FI
+
+
+-- %remove proven lawNames from premises
+FUN resolve: set[lawName, <] -> pHead -> pHead
+DEF resolve(proven)(pHead(an, prems, concl)) ==
+  pHead(an, prems - proven, concl)
+
+-- %true, iff premises are empty
+FUN resolved?: proofName ** pHead -> bool
+DEF resolved?(_, pHead(_, prems, _)) == prems {}?

@@ -1,0 +1,294 @@
+IMPLEMENTATION UnitHandling
+
+
+IMPORT RepoUnitAccess COMPLETELY
+       Set ONLY set {} + exist? - incl * % {<} arb
+       RepoName COMPLETELY
+       SetFilter ONLY partition |
+       Predicate ONLY ~ or and
+       IdTabReduce ONLY /
+       Denotation ONLY = < ++
+       RepoAbsy COMPLETELY
+       IdTab ONLY idtab
+       Id ONLY id:SORT
+       Seq ONLY seq :: <> exist?
+       RepoInternData ONLY pragmas unitInfo:SORT unitInfo:unitName -> repo -> unitInfo
+       FormulaHandling ONLY codedProperty?
+       RepoObjectAccess COMPLETELY
+       SeqMapEnv ONLY *
+       Pair ONLY pair & 1st 2nd
+       InstanceHandling ONLY deriveLike
+       SetConv ONLY asSeq asSet
+       SeqReduce ONLY /
+       DEBUG ONLY PRINT FIELD?
+       String ONLY string
+       Fmt ONLY pretty
+       FmtSet ONLY fmtSet
+       PrettyFormatting COMPLETELY
+       FmtSeq ONLY fmtSeq
+       SeqMap ONLY *
+       Option ONLY option avail? cont
+       ABORT ONLY ABORT
+       BoolConv ONLY `
+       FmtOption ONLY fmtOption
+       SetOfSet ONLY flat
+       SeqOfSeq ONLY flat
+       NatConv ONLY `
+       RepoAn ONLY none
+       SetMapEnv ONLY *
+
+
+-- %$Relations$
+
+FUN traceRel? traceToImpl?: bool
+DEF traceRel? == FIELD?[bool]("-ztraceRel")
+DEF traceToImpl? == FIELD?[bool]("-ztraceToImpl")
+
+DEF obligationPart(main, R) ==
+  LET (R1, _, asserts0, assumes0) == dRelations(main, R)
+      imports0 == (internalPlus(R) ~) and (theory?(R) ~) | area
+      asserts == PRINT(traceRel?, \\ . "assert/main: " ++ pretty(fmtSet(fmtUnitNameLong(R1))(asserts0)), asserts0)
+      assumes == PRINT(traceRel?, \\ . "assume/main: " ++ pretty(fmtSet(fmtUnitNameLong(R1))(assumes0)), assumes0)
+      imports == PRINT(traceRel?, \\ . "import/main: " ++ pretty(fmtSet(fmtUnitNameLong(R1))(imports0)), imports0)
+      area == ~(reflexion?(R) or proof?(R)) | trueImportedUnits(main)(R)
+      (R2, indirectAssumes) == (usedTheories(area), R1) * assumes
+      (R3, indirectAsserts) == (usedTheories(area), R2) * asserts
+      (R4, importedAsserts) == (getAsserts, R3) * imports
+  IN
+  (R4 , imports, asserts, assumes, flat(indirectAsserts) + flat(importedAsserts), flat(indirectAssumes))
+
+
+
+/* %return those theories, which are contained in the set and are in the
+    transitive import relation of unit. */
+FUN usedTheories: set[unitName, <] ->
+                   repo ** unitName -> repo ** set[unitName, <]
+DEF usedTheories(area)(R, current) ==
+  LET (R1, _, asserts, assumes) == dRelations(current, R)
+      currentU == (asserts + assumes) * area
+      (R2, transitiveU) == (usedTheories(area), R1) * currentU
+  IN
+  (R2, currentU + flat(transitiveU))
+
+FUN getAsserts: repo ** unitName -> repo ** set[unitName, <]
+DEF getAsserts(R, uN) ==
+  LET (R1, _, asserts0, _) == dRelations(uN, R)
+      asserts == PRINT(traceRel?, \\ . "assert/: " ++ pretty(fmtSet(fmtUnitNameLong(R1))(asserts0)), asserts0)
+      area == ~(reflexion?(R) or proof?(R)) | trueImportedUnits(uN)(R)
+      (R3, indirectAsserts) == (usedTheories(area), R1) * asserts
+  IN
+  (R3, asserts + flat(indirectAsserts))
+
+/* %As Above, but: given unit is not the main unit. Recursion shall follow
+    only those units given in the set. RelMode indicates how to include in
+    parent. Flag is true, if RelMode from the parent is
+    IMPORT (IMPORT|ASSERT)*. */
+
+FUN obPart: set[unitName, <] ** relMode'UnitHandling ** bool ** bool ->
+             repo ** unitName ->
+             repo ** pair[set[unitName, <], set[unitName, <]]
+DEF obPart(area, rel, line?, inAssume?)(R0, current) ==
+  LET (R, imports, asserts, assumes) == dRelations(current, R0)
+      -- xImports == asSeq(imports * area)
+      xAsserts0 == asSeq(IF inAssume? THEN asserts ELSE asserts * area FI)
+      xAssumes == asSeq(assumes) -- alle Assumes
+      xAsserts == PRINT(traceRel?, \\ . "Handling " ++ !(rel) ++ " " ++ pretty(fmtUnitNameLong(R)(current)) ++ " asserts: " ++ pretty(fmtSeq(fmtUnitNameLong(R))(xAsserts0)) ++ " assumes: " ++ pretty(fmtSeq(fmtUnitNameLong(R))(xAssumes)), xAsserts0)
+      -- (R1, importRes) == flat((obPart(area, import, line?), R) * xImports)
+      (R2, assertRes) == flat((obPart(area, assert, line?, inAssume?), R) * xAsserts)
+      (R3, assumeRes) == flat((obPart(area, assume, false, true), R2) * xAssumes)
+      ax == 1st(assertRes) + 1st(assumeRes)
+      th == 2nd(assertRes) + 2nd(assumeRes)
+  IN
+  IF rel import? THEN (R3, incl(current, ax) & th)
+  IF rel assume? THEN (R3, ax & incl(current, th))
+  IF rel assert? THEN 
+    IF line? THEN (R3, incl(current, ax) & th)
+    ELSE (R3, ax & incl(current, th))
+    FI
+  FI
+
+FUN + :  pair[set[unitName, <], set[unitName, <]] **
+         pair[set[unitName, <], set[unitName, <]] ->
+         pair[set[unitName, <], set[unitName, <]]
+DEF (s1 & t1) + (s2 & t2) == (s1 + s2 & t1 + t2)
+
+FUN flat: repo ** seq[pair[set[unitName, <], set[unitName, <]]] ->
+           repo ** pair[set[unitName, <], set[unitName, <]]
+DEF flat(R, S) == (R, (+, {} & {}) / S)
+
+DATA relMode == import assert assume
+
+FUN ! : relMode'UnitHandling -> denotation
+DEF !(import) == "IMPORT"
+DEF !(assert) == "ASSERT"
+DEF !(assume) == "ASSUME"
+
+/* %Return direct imports/asserts/assumes (with correct instantiation)
+    of given unit */
+FUN dRelations: unitName ** repo -> 
+                 repo **
+                 set[unitName, <] ** set[unitName, <] ** set[unitName, <]
+DEF dRelations(uN, R) ==
+  LET unitPragmas == pragmas(unitInfo(baseName(uN))(R))
+      (R1, asserts) == (deriveLike(uN), R)  * filter(unitPragmas, "ASSERT")
+      (R2, assumes) == (deriveLike(uN), R1) * filter(unitPragmas, "ASSUME")
+      (R3, imports) == (deriveLike(uN), R2) * 
+                         (filter(unitPragmas, "IMPORT") +
+                          lookup(%("BOOL", "DENOTATION"), sign)(R))
+  IN
+  (R3, imports, asserts, assumes)
+
+DEF relations(uN)(R) ==
+  LET allRelations == trueImportedUnits(uN)(R)
+      unitPragmas == pragmas(unitInfo(uN)(R))
+      asserts == filter(unitPragmas, "ASSERT")
+      assumes == filter(unitPragmas, "ASSUME")
+      imports == (allRelations - asserts) - assumes
+  IN
+  (imports, asserts, assumes)
+
+FUN toImpl: repo ** unitName  -> objectName -> objectName
+DEF toImpl(R, uN)(ON AS globalObjectName(no, uN1)) ==
+  IF uN ~ uN1 THEN globalObjectName(no, uN1 :=_part impl) 
+  ELSE
+    IF derivedUnitName?(uN1) THEN
+      LET newActuals == toImpl(R, uN) * actuals(ON)(R)
+          newInstance == lookupInstance(uN1, newActuals)(R)
+      IN
+      IF avail?(newInstance) THEN
+        globalObjectName(no, newInstance cont)
+      ELSE
+        ABORT("toImpl'UnitHandling: new instance not found")
+      FI
+    ELSE
+      ON
+    FI
+  FI
+DEF toImpl(_, _)(ON AS localObjectName(_,_)) == ON
+
+FUN toSign: repo ** unitName  -> objectName -> repo ** objectName
+DEF toSign(R, uN)(ON:objectName) == toSign(uN)(R, ON)
+
+FUN toSign: unitName -> repo ** objectName -> repo ** objectName
+DEF toSign(uN)(R, ON AS globalObjectName(no, uN1)) ==
+  IF uN ~ uN1 THEN (R, globalObjectName(no, uN1 :=_part sign) )
+  ELSE
+    IF derivedUnitName?(uN1) THEN
+      LET (R1, newActuals) == (toSign(uN), R) * actuals(ON)(R)
+          (newInstance, R2) == enterInstance(baseName(uN1), newActuals)(R1)
+      IN
+      (R2, globalObjectName(no, newInstance))
+    ELSE
+      (R, ON)
+    FI
+  FI
+DEF toSign(_)(R, ON AS localObjectName(_,_)) == (R, ON)
+
+DEF toImpl(R, uN)(PN0 AS propertyName(no, uN1)) ==
+  LET PN == PRINT(traceToImpl?, \\ . "toImpl: " ++ pretty(fmtPropertyNameLong(R)(PN0)) ++ " " ++ `(uN ~ uN1) ++ " " ++ `(derivedUnitName?(uN1)), PN0)
+  IN
+  IF uN ~ uN1 THEN PN -- propertyName(no, uN1 :=_part impl) 
+  ELSE
+    IF derivedUnitName?(uN1) THEN
+      LET newActuals == toImpl(R, uN) * actuals(uN1)(R)
+          newInstance0 == lookupInstance(baseName(uN1), newActuals)(R)
+          newInstance == PRINT(traceToImpl?, \\ . "newActuals: " ++ pretty(fmtSeq(fmtObjectNameLong(R))(newActuals)) ++ " newInstance" ++ pretty(fmtOption(fmtUnitNameLong(R))(newInstance0)), newInstance0)
+      IN
+      IF avail?(newInstance) THEN
+        propertyName(no, newInstance cont)
+      ELSE
+        ABORT("toImpl'UnitHandling[p]: new instance not found")
+      FI
+    ELSE
+      PN
+    FI
+  FI
+  
+DEF toSign(R, uN)(PN AS propertyName(no, uN1)) ==
+  IF uN ~ uN1 THEN (R, propertyName(no, uN1 :=_part sign))
+  ELSE
+    IF derivedUnitName?(uN1) THEN
+      LET (R1, newActuals) == (toSign(uN), R) * actuals(uN1)(R)
+          (newInstance, R2) == enterInstance(uN1, newActuals)(R1)
+      IN
+        (R2, propertyName(no, newInstance))
+    ELSE
+      (R, PN)
+    FI
+  FI
+
+DEF toImpl(R, uN)(variant(an, con, t, comps)) ==
+  variant(an, toImpl(R, uN)(con), toImpl(R, uN)(t), toImpl(R, uN) * comps)
+DEF toSign(R, uN)(variant(an, con, t, comps)) ==
+  LET (R1, nCon) == toSign(R, uN)(con)
+      (R2, nT) == toSign(R1, uN)(t)
+      (R3, nComps) == (toSign(uN), R2) * comps
+  IN
+  (R3, variant(an, nCon, nT, nComps))
+
+DEF toImpl(R, uN)(component(an, sel)) == component(an, toImpl(R, uN)(sel))
+DEF toSign(R, uN)(C:component) == toSign(uN)(R, C)
+FUN toSign: unitName -> repo ** component -> repo ** component
+DEF toSign(uN)(R, component(an, sel)) == 
+  LET (R1, nSel) == toSign(R, uN)(sel)
+  IN
+  (R1, component(an, nSel))
+
+
+FUN filter: idtab[pragma] ** denotation -> set[unitName, <]
+DEF filter(pragmas, den) == (decode(den), {}) / pragmas
+
+/* %If pragmas is of the form @code{/$ DEN [ obj'unit ] $/}, add unit to the
+    set, otherwise leave set unchanges. */
+FUN decode: denotation -> pragma ** set[unitName, <] -> set[unitName, <]
+DEF decode(den)(pragma(_, token(den1) :: objects(obj :: <>) :: <>), S) ==
+  IF den = den1 THEN incl(unitName(obj), S) ELSE S FI
+DEF decode(_)(_, S) == S
+
+-- %$Internal Opal$
+
+DEF trueImportedUnits(uN)(R) ==
+    LET (bns, dns) == partition(basicUnitName?, importedUnits(uN)(R))
+        check == \\bn. ~(exist?(\\dn. bn ~ dn, dns))
+        rbns == check | bns
+    IN (rbns + dns)
+
+DEF impObjects(main, sub)(R) ==
+  IF theory?(R)(sub) THEN
+    (deriveLike(main), R) * objects(baseName(sub))(R)
+  ELSE (R, importedObjects(main, sub)(R))
+  FI
+  
+DEF trueSorts(uN)(R) == 
+  LET isSort? == \\oN. kind(object(oN)(R)) sort?
+      trueSort? == \\oN. ~(codedProperty?(oN)(R))
+  IN
+  trueSort? | isSort? | objects(uN)(R)
+
+FUN theory? proof? reflexion? : repo -> unitName -> bool
+DEF theory?(R)(uN) ==
+  ((\\x, y. theory?(x) or y), false) / pragmas(unitInfo(baseName(uN))(R))
+FUN theory? : pragma -> bool
+DEF theory?(pragma(_,token(x) :: _)) == x = "THEORY"
+DEF theory?(_) == false -- else
+
+
+DEF proof?(R)(uN) ==
+  "PROOF" <| symbol(baseName(uN))(R) or internalPlus(R)(uN)
+DEF reflexion?(R)(uN) ==
+  "REFLEXION" <| symbol(baseName(uN))(R) or internalPlus(R)(uN)
+
+/* %try to exclude Structures which are included because they are 
+    used by PROOF/REFLEXION */
+FUN internalPlus: repo -> unitName -> bool
+DEF internalPlus(R)(uN) ==
+  IF "Repo" <| symbol(baseName(uN))(R) THEN true
+  IF "Id" <| symbol(baseName(uN))(R) THEN true
+  IF derivedUnitName?(uN) THEN
+    exist?(internalPlus(R), unitName * actuals(uN)(R))
+  ELSE
+    false
+  FI
+
+
+

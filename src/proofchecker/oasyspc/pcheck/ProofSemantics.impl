@@ -1,0 +1,581 @@
+IMPLEMENTATION ProofSemantics
+
+IMPORT Seq ONLY seq <> % ft rt ++ ::
+       RepoName COMPLETELY
+       RepoAbsy COMPLETELY
+       Set ONLY set % find? incl {}? arb {}  - + {<}
+       PCEnv COMPLETELY
+       Map ONLY map def {} init
+       UnitHandling COMPLETELY
+       SeqMap ONLY *
+       RepoObjectAccess ONLY objects object
+       RepoPropertyAccess ONLY properties
+       RepoUnitAccess ONLY formals actuals symbol
+       InstanceHandling ONLY monomorphic? instantiate instanceMap
+       ABORT ONLY ABORT
+       SeqZip ONLY zip
+       FormulaHandling COMPLETELY
+       RepoDiag ONLY error freeRef !! diag mode ref ok unitRef <+ < warn hint
+       Fmt ONLY pretty fmt
+       PrettyFormatting ONLY fmtUnitNameLong fmtObjectName fmtObjectNameLong fmtPropertyName
+       Nat ONLY nat 10 3 4 5 1 2 max 6
+       String ONLY string
+       ProofHandling ONLY codedProof? decode codedProofUniq?
+       Option ONLY cont avail? option nil?
+       ReflexTrans ONLY refl 
+       SetConv ONLY asSeq asSet
+       SetMap ONLY *
+       OptionMap ONLY *
+       SeqReduce ONLY /
+       SeqOfSeq ONLY combinations flat
+       Compose ONLY o
+       Dyn ONLY dyn
+       RepoAn ONLY an none
+       SeqFilter ONLY | partition
+       PrettyPCEnv ONLY pretty
+       RepoSource ONLY locator? unspecified locator:SORT item:SORT
+       Denotation ONLY ++ = <
+       MapFilter ONLY |
+       MapReduce ONLY /
+       SetReduce ONLY /
+       SortHandling ONLY indirectRec? variants
+       ComSeqMap ONLY *&
+       ComSeqMapEnv ONLY *& &&
+       Com ONLY com succeed
+       ComCompose ONLY &
+       Pair ONLY pair &
+       Loquacity ONLY progress debugMsg
+       PCEStore ONLY set get tryRead
+       RepoCom1 ONLY query
+       PCEFunctions COMPLETELY
+       Predicate ONLY or
+       SetMapEnv ONLY *
+       SetOfSet ONLY flat
+       SetFilter ONLY | partition
+       RepoInternData COMPLETELY
+       IdTab ONLY exists? idtab
+       RepoAdmin ONLY repoFile
+       IdMap ONLY idmap
+       DEBUG ONLY PRINT
+       FmtSet ONLY fmtSet
+       NFmt ONLY fmtLatin1
+       TypeLaws ONLY getDatatypeLaws getFreetypeLaws
+       FormInclusion ONLY includable?
+       ObjectNameMap ONLY <*
+
+DEF proofSemantics(uN)(R0) ==
+  LET oldE? == get(uN)(R0)
+      denoUnit == symbol(uN)(R0) ++ "." ++
+                  (IF part(uN) sign? THEN "sign" ELSE "impl" FI)
+  IN
+  IF oldE? avail? THEN 
+    progress(5, \\ . "found precomputed pce for " ++ denoUnit)(R0) & (\\ R2.
+    succeed(cont(oldE?) & R2)
+    )
+  ELSE
+  tryRead(uN)(R0) && (\\ oldE2?, R.
+  IF oldE2? avail? THEN
+    progress(1, \\ . "read pce from file for unit " ++ denoUnit)(R) & (\\ R3.
+    succeed(cont(oldE2?) & R3)
+    )
+  ELSE
+    progress(1, \\ . "Computing proof semantics for " ++ denoUnit
+             ++ "...")(R) & (\\ R1.
+    LET unitPragmas == pragmas(unitInfo(baseName(uN))(R))
+    IN
+    IF ~(exists?(toRegard?, unitPragmas)) THEN
+      progress(5, \\ . "ignored / empty proof semantics")(R1) & (\\ R2.
+      succeed({} & set({}, uN)(R2))
+      )
+    ELSE
+      LET (R2, imports, asserts, assumes,
+           indirectAsserts, indirectAssumes) == obligationPart(uN, R1)
+      IN
+      progress(2, \\ . "import relations ...")(R2) & (\\ R2a.
+      (relationSemantic(uN, import), R2a) *& asSeq(imports) && (\\ R3, e1.
+      progress(2, \\ . "assert relations ...")(R3) & (\\ R4.
+      (relationSemantic(uN, assert), R4) *& asSeq(asserts) && (\\ R5, e2.
+      progress(2, \\ . "assume relations ...")(R5) & (\\ R5a.
+      (relationSemantic(uN, assume), R5a) *& asSeq(assumes) && (\\ R6, e3.
+      progress(2, \\ . "indirect assert relations ...")(R6) & (\\ R7.
+      (relationSemantic(uN, indirectAssert), R7) *&
+                                     asSeq(indirectAsserts) && (\\ R8, e4.
+      progress(2, \\ . "indirect assume relations ...")(R8) & (\\ R9.
+      (relationSemantic(uN, indirectAssume), R9) *&
+                                     asSeq(indirectAssumes)&& (\\ R10, e5.
+      progress(2, \\ . "free types, proofs, specifications ...")(R10) & (\\ R11.
+      (objectSemantic(uN), R11) *& asSeq(objects(uN)(R11)) && (\\ R13, e6.
+      progress(2, \\ . "named laws ...")(R13) & (\\ R14.
+      (propertySemantic(uN), R14) *& asSeq(properties(uN)(R14)) && (\\ R15, e7.
+      progress(2, \\ . "realization relation ...")(R15) & (\\ R16.
+      realizationSemantic(uN)(R16) && (\\ R17, e8.
+      LET
+        all == flat(e1) <+ flat(e2) <+ flat(e3) <+ flat(e4) <+
+               flat(e5) <+ flat(e6) <+ flat(e7) <+ e8
+        newE == checkProofs(all)(R17)
+        R18 == set(newE, uN)(R17)
+      IN
+      progress(1, \\ . "Finished proof semantics of " ++
+                       denoUnit)(R18) & (\\ R19.
+      succeed(newE & R19)
+      )))))))))))))))))
+    FI
+    )
+  FI
+  )
+  FI
+
+FUN toRegard? : pragma -> bool
+DEF toRegard?(pragma(_, token(t) :: <>)) == t = "PROOFCHECK"
+DEF toRegard?(_) == false
+
+-- %$Handling Relations$
+/* %@code{relationSemantic(main, R, phHandler, pbHandler)(relation)}
+    compute proof obligations for @code{relation} of @code{main}.
+    The handlers define, how imported laws are to be inserted into the
+    proof obligations. */
+
+DATA relationType == import assert assume indirectAssert indirectAssume
+
+FUN relationSemantic: unitName ** relationType ->
+                       repo -> unitName -> com[pair[repo, pcEnv]]
+DEF relationSemantic(main, rType)(R)(relation) ==
+  IF reflexion?(R)(relation) THEN   -- omit special reflexion imports
+    progress(10, \\ . "omitting relation to "  ++ !(R)(relation) ++
+                      " (reflexion)")(R) & (\\ R1 . succeed(R1 & {}))
+  IF proof?(R)(relation) THEN  -- omit special proof imports
+    progress(10, \\ . "omitting relation to "  ++ !(R)(relation) ++
+                      " (proof)")(R) & (\\ R1 . succeed(R1 & {}))
+  ELSE
+    progress(3, \\ . "checking " ++ !(R)(relation))(R) & (\\ R1.
+    succeed(checkInstance(R1, relation, rType)) && (\\ R1a, e1.
+    progress(3, \\ . "included objects ...")(R1a) & (\\ R2.
+    LET (R2a, obs) == impObjects(main, relation)(R2)
+    IN
+    (checkImport(rType, main, relation), R2a) *& asSeq(obs) && (\\ R3, e2 .
+    succeed(R3 & e1 <+ flat(e2))
+    ))))
+  FI
+
+-- %$$Checking Instances$
+/* %Return all proof obligations for the given instance. 
+    Assumes are added as obligations, resolved are added as axioms, both are
+    added to own resolved. If no pce is found, an error is generated.
+    What remains,
+    is the possibility of a law in the formal parameters. In this case, we
+    demand that corresponding actual and formal parameter are structural
+    equivalent. */
+FUN checkInstance: repo ** unitName ** relationType -> pair[repo, pcEnv]
+DEF checkInstance(R, uN, rType) ==
+  IF monomorphic?(uN)(R) THEN R & {}
+  IF basicUnitName?(uN) THEN R & {}
+  ELSE
+    LET instanceE == flat(zip(instLaw(R, uN))(formals(uN)(R), actuals(uN)(R)))
+    IN
+    IF (import? or assert? or assume?)(rType) THEN
+      LET optE == get(baseName(uN))(R)
+      IN
+      IF optE nil? THEN
+        R & asPCEnv((error, freeRef("pcheck proof-semantics")) !!
+                    ("no pce found for %s",
+                     pretty(fmtUnitNameLong(R)(uN)))) <+ instanceE
+      ELSE
+        LET e == optE cont
+            (R1, ass) == (deriveLike(uN), R) * assumes(e)
+            (R2, res:set[lawName,<]) == (deriveLike(uN), R1) * resolved(e)
+        IN
+        R2 & instanceE <+ ((flat(%! * asSeq(res)) <+ ass) <+_res (ass + res))
+      FI
+    ELSE
+      R & instanceE
+    FI            
+  FI
+
+FUN instLaw: repo ** unitName -> objectName ** objectName -> pcEnv
+DEF instLaw(R, uN)(formal, actual) ==
+  IF codedProperty?(formal)(R) and codedProperty?(actual)(R) THEN
+    LET formalP == decode(formal)(R)
+        actualP == decode(actual)(R)
+        cmpFormalP == propertyName(no(formalP), uN)
+    IN
+    (inst(none, uN, actual),
+     pHead(none, %(ordinary(none, actualP)),
+           ordinary(none, cmpFormalP)), equiv(none)) incl {}
+  OTHERWISE
+  IF codedProperty?(formal)(R) THEN
+    asPCEnv((error, freeRef("pcheck")) !!
+            ("formal law %s in %s instantiated by sort",
+             pretty(fmtObjectName(R)(formal)), pretty(fmtUnitNameLong(R)(uN))))
+  IF codedProperty?(actual)(R) THEN
+    asPCEnv((error, freeRef("pcheck")) !!
+            ("formal sort %s in %s instantiated by law",
+             pretty(fmtObjectName(R)(formal)), pretty(fmtUnitNameLong(R)(uN))))
+  ELSE
+    {}
+  FI
+
+-- %$$Checking Imported Objects$
+/* %Return the proof obligation induced by the imported object. The only
+    interesting objects are coded laws and coded proofs. */
+FUN checkImport: relationType ** unitName ** unitName ->
+                  repo -> objectName ->com[pair[repo, pcEnv]]
+DEF checkImport(rType, main, uN)(R0)(oN) ==
+  progress(4, \\ . "object " ++ !(R0)(oN))(R0) & (\\ R.
+  IF codedProperty?(oN)(R) THEN
+    progress(5, \\ . "is coded property")(R) & (\\ R1.
+    LET pN0 == decode(oN)(R1)
+        pN == propertyName(no(pN0), uN)
+        lN == ordinary(none, pN)
+        (R2, newE) == IF import?(rType)THEN (R1, %!(lN))
+                      IF assert?(rType) THEN
+                        LET (Rx, pr) == property(pN)(R)
+                        IN
+                        IF mandatory?(main, pr)(Rx) THEN (Rx, %!(lN))
+                        ELSE (Rx, %(lN))
+                        FI
+                      IF indirectAssert?(rType) THEN (R1, %!(lN))
+                      IF (assume? or indirectAssume?)(rType) THEN
+                        (R1, %!(lN) <+_ass %(lN))
+                      FI
+    IN
+    debugMsg("checkImport", \\ . fmtLatin1(pretty(max)(newE)
+                                           (main)(R2)))(R2) & (\\ R3.
+    succeed(R3 & newE)
+    ))
+  IF codedProofUniq?(oN)(R) THEN
+    LET (prems, concl, script) == decode(oN)(R)
+        inst == instantiate(instanceMap(uN,R))
+        (nPrems:set[objectName, <], nConcl) == (inst * prems, inst(concl))
+-- %@TODO what about script?!
+        _nScript == cont(missing(none))
+                    ((\\ x. ordinary(none,x)) * (\\ ex. (inst <* ex)) * script)
+        (Ra, reflPrems) == (refl(main), R) * nPrems
+        (Rb, reflConcl) == refl(Ra, main)(nConcl)
+        proofN == ordinary(none, globalObjectName(no(oN), uN))
+    IN
+      progress(5, \\ . "is coded proof")(Rb) & (\\ R1.
+      succeed(R1 & %(proofN, pHead(none, reflPrems, reflConcl), axiom(none))))
+  ELSE
+    IF kind(object(oN)(R)) sort? THEN 
+      IF properties(object(oN)(R)) {}? THEN
+        msg(5, "sort without free type")(R)
+      ELSE 
+        freeTypeProps(oN, arb(properties(object(oN)(R))))(R)
+      FI
+    IF kind(object(oN)(R)) oper? THEN
+      IF properties(object(oN)(R)) {}? THEN
+        msg(5, "unspecified function")(R)
+      ELSE
+        LET pN == arb(properties(object(oN)(R)))
+            (R1, p) == property(pN)(R)
+        IN
+        IF freeType?(p) THEN
+          msg(5, "free type induced function")(R1)
+        IF law?(p) THEN
+          succeed(R1 & %!(spc(an(object(oN)(R1)), oN, pN)))
+        ELSE
+          msg(5, "is not handled")(R1)
+        FI
+      FI
+    ELSE 
+      msg(5, "is not handled")(R)
+    FI 
+  FI
+  )
+
+
+-- %$Realization Relation$
+/* %This function computes the proof obligations in the implementation.
+
+Collect laws (including free type laws!) and sorts from the interface. 
+Inclusions are added to the extra laws. All components are restricted
+and inserted in appropriate position. For freetype laws and includable laws
+a law COPY[l] |- RESTR[l] is added.
+*/
+
+FUN realizationSemantic: unitName -> repo -> com[pair[repo, pcEnv]]
+DEF realizationSemantic(uN)(R0) ==
+  IF part(uN) sign? THEN 
+    msg(3, "no realization")(R0)
+  IF part(uN) impl? THEN
+    LET interface == uN :=_part sign
+    IN
+    proofSemantics(interface)(R0) && (\\ pce, R.
+    LET sorts == trueSorts(interface)(R)
+        inclLaws == copy(none, _) * laws(pce) -- toImpl(uN, R) * laws(pce)
+        newLaws == restrict(R)(uN, sorts) * laws(pce)
+        newAssumes == restrict(R)(uN, sorts) * assumes(pce)
+        newResolved == restrict(R)(uN, sorts) * resolved(pce)
+        newExtras == restrict(R)(uN, sorts) * extraLaws(pce)
+        newHeads == (restrict(R)(uN, sorts), {}) / pHeads(pce)
+        newBodies == (restrict(R)(uN, sorts), {}) / pBodies(pce)
+        auto? == \\ lN. IF source?(lN) THEN includable?(name(lN), uN)(R)
+                        ELSE false
+                        FI
+        autolaw == \\lN, e. (axm(none, copy(none, (lN))),
+                              pHead(none, %(copy(none, lN)),
+                                    restrict(R)(uN, sorts)(lN)),
+                              axiom(none)) incl e
+        (autoLaws, nonAutoLaws) == partition(auto?, laws(pce))
+        hintsNonAuto == (incl, {}) /
+                        mkNonAutoHint(uN)(R) * source? | asSeq(nonAutoLaws)
+        ft? == \\ lN. IF freetype?(lN) THEN unitName(lN) ~ uN
+                        ELSE false
+                        FI
+        ftlaw == \\lN, e. (axm(none, restr(none, lN, sorts)),
+                              pHead(none, %(toImpl(uN, R)(lN)),
+                                    restrict(R)(uN, sorts)(lN)),
+                              axiom(none)) incl 
+                          (axm(none, copy(none, lN)),
+                              pHead(none, %(copy(none, lN)),
+                                    restrict(R)(uN, sorts)(lN)),
+                              axiom(none)) incl
+                          e
+    IN
+    progress(3, \\ . "realization of " ++ !(R)(interface))(R) & (\\ R1.
+    succeed(R1 & hintsNonAuto :=_laws newLaws
+                              :=_extraLaws inclLaws + newExtras
+                              :=_assumes newAssumes
+                              :=_resolved newResolved
+                              :=_pHeads newHeads
+                              :=_pBodies newBodies
+                              <+ (autolaw, {}) / autoLaws
+                              <+ (ftlaw, {}) / ft? | laws(pce))
+    ))
+  FI
+
+FUN mkNonAutoHint: unitName -> repo -> lawName -> diag
+DEF mkNonAutoHint(uN)(R)(lN) ==
+  (hint, unitRef(unspecified, uN)) !! 
+  (pretty(pretty(R, uN)(lN)) ++ " not copied to implementation")
+
+-- %$Object Semantics$
+/* %Free types of sorts and definitions are inserted (perhaps together
+    with their specification) and coded proofs as well. */
+FUN objectSemantic: unitName -> repo -> objectName -> com[pair[repo, pcEnv]]
+DEF objectSemantic(main)(R0)(oN) ==
+  LET o == object(oN)(R0)
+  IN
+  progress(3, \\ . "object " ++ !(R0)(oN))(R0) & (\\ R.
+  IF kind(o) sort? THEN 
+    IF impl(o) data? THEN freeTypeProps(oN, impl(o))(R)
+    ELSE
+      LET ft? == find?[propertyName, <]((\\pN. freeType?(propertyS(pN)(R))),
+                                        properties(o))
+      IN
+      IF ft? avail? THEN freeTypeProps(oN, cont(ft?))(R)
+      ELSE
+        msg(4, "sort without free type")(R)
+      FI
+    FI
+  IF kind(o) other? THEN ABORT("objectSemantic'ProofSemantics: other kind")
+  IF kind(o) oper? THEN 
+    IF codedProof?(oN)(R) THEN
+      IF codedProofUniq?(oN)(R) THEN -- codedProofUniq is proofscript
+        LET (prems, concl, expr) == decode(oN)(R)
+            (Ra, nPrems) == (refl(main), R) * prems
+            (Rb, nConcl) == refl(Ra, main)(concl)
+            pH == pHead(none, nPrems, nConcl)
+            pB == cont(missing(none))((\\ x. ordinary(an(o), x)) * expr)
+        IN
+        progress(4, \\ . "coded proof")(Rb) & (\\ R1.
+        succeed(R1 & %(ordinary(an(o), oN), pH, pB)))
+      ELSE msg(4, "twin of coded proof")(R)
+      FI
+    ELSE
+      IF impl(o) def? THEN
+        LET e == %!(def(an(impl(o)), oN)) <+ speclaw(oN, o, R)
+        IN
+        progress(4, \\ . "defined function")(R) & (\\ R1.
+        debugMsg("objectSemantic", \\ . pretty(fmtPcEnv(e)))(R1) & (\\ R2.
+        succeed(R2 & e)))
+      ELSE
+        progress(4, \\ . "undefined function")(R) & (\\ R1.
+        LET sl == speclaw(oN, o, R)
+        IN
+        IF sl {}? THEN 
+          progress(6, \\ . "no specification")(R1) & (\\ R2.
+          succeed(R2 & {})
+          )
+        ELSE 
+          progress(6, \\ . "with specification")(R1) & (\\ R2.
+          succeed(R2 & %!(arb(sl)))
+          )
+        FI)
+      FI
+    FI
+  FI
+  )
+
+FUN speclaw: objectName ** object ** repo -> set[lawName, <]
+DEF speclaw(oN, o, R) ==
+  IF properties(o) {}? THEN {}
+  ELSE 
+    LET pN == arb(properties(o))
+        p == propertyS(pN)(R)
+    IN
+    IF law?(p) THEN %(spc(none, oN, pN))
+    ELSE {}
+    FI
+  FI
+
+-- %First parameter denotes sort
+-- %@code{TYPE} properties
+FUN freeTypeProps: objectName ** propertyName -> repo -> com[pair[repo, pcEnv]]
+DEF freeTypeProps(oN, pN:propertyName)(R) ==
+  progress(4, \\ . "free type properties for " ++ !(R)(oN))(R) & (\\ R1.
+  succeed(R1 & freeTypeProps(oN)(R))
+  )
+
+FUN freeTypeProps: objectName -> repo -> pcEnv
+DEF freeTypeProps(oN)(R) ==
+  LET newLaws == getFreetypeLaws(oN)(R)
+      newProofs == axm(none, _) * newLaws
+      newPHeads == init(newProofs, \\pN. axm(law(pN)))
+      newPBodies == init(newProofs, \\ _ . axiom(none))
+      firstEnv == {} :=_laws incl(FTlaw, newLaws)
+                     :=_pHeads newPHeads :=_pBodies newPBodies
+      FTlaw == freetypeLaws(none, oN, variants(oN, R))
+  IN
+  inclGen(pHead(none, newLaws, FTlaw),
+          axiom(none),
+          ((\\lN, nEnv. inclGen(pHead(none, %(FTlaw), lN),
+                               axiom(none),
+                               nEnv)), firstEnv) / newLaws
+         )
+
+
+-- %@code{DATA} properties
+FUN freeTypeProps: objectName ** impl -> repo -> com[pair[repo, pcEnv]]
+DEF freeTypeProps(oN, data(_, vs))(R) ==
+  progress(4, \\ . "free data properties for " ++ !(R)(oN))(R) & (\\ R1.
+  succeed(R1 & dataTypeProps(oN)(R))
+  )
+
+FUN dataTypeProps: objectName -> repo -> pcEnv
+DEF dataTypeProps(oN)(R) ==
+  LET newLaws == getDatatypeLaws(oN)(R)
+      newProofs == axm(none, _) * newLaws
+      newPHeads == init(newProofs, \\pN. axm(law(pN)))
+      newPBodies == init(newProofs, \\ _ . axiom(none))
+      firstEnv == {} :=_laws incl(DTlaw, newLaws)
+                     :=_pHeads newPHeads :=_pBodies newPBodies
+      DTlaw == datatypeLaws(none, oN, variants(oN, R))
+  IN
+  inclGen(pHead(none, newLaws, DTlaw),
+          axiom(none),
+          ((\\lN, nEnv. inclGen(pHead(none, %(DTlaw), lN),
+                               axiom(none),
+                               nEnv)), firstEnv) / newLaws
+         )
+
+/* %-
+FUN sortProps: objectName -> repo -> pcEnv
+DEF sortProps(oN)(R) ==
+  LET vs == variants(oN, R)
+  IN
+  IF indirectRec?(oN)(R) THEN
+    (warn, objRef(oN, R)) !!
+      "no induction law for indirect recursive type " ++
+      pretty(fmtObjectName(R)(oN)) incl %!(gen(none, oN, vs))
+  ELSE
+    %!(gen(none, oN, vs)) -- <+ %!(ind(none,oN, vs))
+  FI
+
+FUN variantProps: objectName ** seq[variant] ** repo -> pcEnv
+DEF variantProps(tp, vs, _R) ==
+  LET vv == combinations(%(vs, vs))
+      1st == ft
+      2nd == ft o rt
+      mdisc == \\s. discr(none, tp, 1st(s), 2nd(s))
+      msel == \\s. (\\s1. sel(none, tp, 1st(s), s1)) * components(2nd(s))
+      mexcl == \\s. equiv(none, tp, 1st(s), 2nd(s))
+      mddfd == \\s. ddfd(none, tp, s)
+      -- proper? == \\ lN. ~(constructor(con1(lN)) = constructor(con2(lN)))
+      newLaws == asSet((mdisc * vv) ++ (mexcl * vv) ++ 
+                       flat(msel * vv) ++ mddfd * vs)
+      newProofs == axm(none, _) * newLaws
+  IN
+  {} :=_laws newLaws
+     :=_pHeads init(newProofs, \\pN. axm(law(pN)))
+     :=_pBodies init(newProofs, \\ _ . axiom(none))
+
+FUN cdfdProps: objectName ** seq[variant] ** repo -> pcEnv
+DEF cdfdProps(tp, vs, _R) ==
+  LET newLaws == asSet((\\v. cdfd(none, tp, v)) * vs)
+      newProofs == axm(none, _) * newLaws
+  IN
+  {} :=_laws newLaws
+     :=_pHeads init(newProofs, \\pN. axm(law(pN)))
+     :=_pBodies init(newProofs, \\ _ . axiom(none))
+
+*/
+
+-- %$Property Semantics$
+  /* %Only named laws are inserted here. Freetypes are handled with sorts,
+      unnamed laws are handled with functions (spc). */
+FUN propertySemantic: unitName -> repo -> propertyName ->
+                       com[pair[repo, pcEnv]]
+DEF propertySemantic(uN)(R0)(pN) ==
+  LET (R, p) == property(pN)(R0)
+  IN
+  IF p law? ANDIF avail?(symbol(p)) THEN
+    LET lN == ordinary(none, pN)
+    IN
+    IF parameter?(uN, p)(R) THEN
+      progress(3, \\ . "parameter "  ++ !(R)(pN))(R) & (\\ R1.
+      succeed(R1 & %!(lN) <+_ass %(lN)))
+    OTHERWISE
+    IF mandatory?(uN, p)(R) THEN 
+      progress(3, \\ . "mandatory "  ++ !(R)(pN))(R) & (\\ R1.
+      succeed(R1 & %!(lN)))
+    ELSE progress(3, \\ . "theorem "  ++ !(R)(pN))(R) & (\\ R1.
+      succeed(R1 & %(lN)))
+    FI
+  ELSE 
+    progress(3, \\ . "ignored law " ++ !(R)(pN))(R) & (\\ R1.
+    succeed(R1 & {}))
+  FI
+
+-- %$Checking Proofs$
+/* %Check, whether laws named in proof heads are known. This should be handled
+    by the compiler, but special names, like Spc, Excl, ... are
+    handled here. (One could provide more specific reasons here.) */
+FUN checkProofs: pcEnv -> repo -> pcEnv
+DEF checkProofs(e)(R) ==
+  (checkProof(laws(e) + extraLaws(e), R), ok) /
+    ((\\ pN, _ . ordinary?(pN)) | pHeads(e)) incl e
+
+FUN checkProof: set[lawName, <] ** repo -> proofName ** pHead ** diag -> diag
+DEF checkProof(knownlaws, R)(pN, pHead(_, prems,  concl), err) ==
+  LET pLaws == concl incl prems
+  IN
+  (<+, err) / (mkError(pN, R) * asSeq(pLaws - knownlaws))
+
+FUN mkError: proofName ** repo -> lawName -> diag
+DEF mkError(ordinary(_, oN), R)(lN) ==
+  IF error?(lN) THEN diag(lN)
+  ELSE (error, objRef(oN, R)) !! (pretty(pretty(R)(lN)) ++ " unknown")
+  FI
+
+-- %$Auxiliary functions$
+FUN flat: seq[pcEnv] -> pcEnv
+DEF flat(s) == (<+, {}) / s
+
+FUN objRef: objectName ** repo -> ref
+DEF objRef(oN, R) ==
+  LET loc? == locator?(an(object(oN)(R)))
+  IN
+  unitRef(cont(unspecified)(loc?), unitName(oN))
+
+FUN ! : repo -> unitName -> denotation
+DEF !(R)(uN) == pretty(fmtUnitNameLong(R)(uN))
+
+FUN ! : repo -> objectName -> denotation
+DEF !(R)(oN) == pretty(fmtObjectNameLong(R)(oN))
+
+FUN ! : repo -> propertyName -> denotation
+DEF !(R)(pN) == pretty(fmtPropertyName(R)(pN))
+
+FUN msg: nat ** denotation -> repo -> com[pair[repo, pcEnv]]
+DEF msg(lv, txt)(R) == progress(lv, \\ . txt)(R) & (\\ R1. succeed(R1 & {}))

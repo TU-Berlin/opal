@@ -1,0 +1,145 @@
+IMPLEMENTATION PrettyAn
+
+IMPORT RepoEvent ONLY newAbsy
+       RepoInternData COMPLETELY
+       IdTab ONLY codomST idtab
+       Com ONLY succeed EXEC com
+       RepoAbsy COMPLETELY
+       Seq ONLY :: seq ft #
+       Denotation ONLY = <
+       Repo ONLY repo
+       StringScan COMPLETELY
+       String ONLY ! string
+       Option ONLY nil? avail? cont option
+       SeqReduce ONLY /
+       Nat ONLY nat ! 1 =
+       RepoName COMPLETELY
+       RepoObjectAccess ONLY updateAn an objects symbol
+       RepoAn ONLY def !? anLayer register undef
+       DynConv ONLY pack unpack
+       OptionMap ONLY *
+       FmtBasicTypes ONLY fmtNat
+       Fmt ONLY fmt lit ; spc
+       Dyn ONLY dyn
+       RepoAdmin ONLY repoFile
+       IdMap ONLY idmap
+       Set ONLY set incl + {} in
+       RepoSource ONLY item itemKind
+       FmtSet ONLY fmtSet
+       RepoUnitAccess ONLY related transitive relMode relOp imports
+       SetConv ONLY asSeq asSet
+       SeqFilter ONLY |
+       SeqOfSeq ONLY partition
+       RepoGlobalAccess ONLY updateAn
+       SeqMap ONLY *
+       SetReduce ONLY /
+       BasicSupplements ONLY fmtBool
+
+DEF updatePrettyAn(newAbsy(uN))(R) ==
+  LET allPragmas == pragmas(unitInfo(uN)(R))
+      pfPragmas == codomST(allPragmas, prettyfixPragma?)
+  IN
+  succeed((insertPragma, R) / pfPragmas)
+
+DEF updatePrettyAn(_else)(R) == succeed(R)
+
+
+
+FUN prettyfixPragma? : pragma -> bool
+DEF prettyfixPragma?(pragma(_, token(txt) ::
+                               objects(_) :: token(_) :: _)) ==
+  txt = "prettyfix"
+DEF prettyfixPragma?(_else) == false
+
+FUN insertPragma: pragma ** repo -> repo
+DEF insertPragma(pragma(_, token(_) :: objects(obs) :: token(num) :: _ ), R) ==
+  LET (n?, _) == scan(num!)
+  IN
+  IF n? nil? THEN R
+  IF n? avail? THEN
+    LET n == cont(n?)
+    IN
+    (setPrettyfix(n), R) / obs
+  FI
+DEF insertPragma(_else, R) == R
+
+FUN setPrettyfix: nat -> objectName ** repo -> repo
+DEF setPrettyfix(n)(oN, R) ==
+  updateAn(oN, \\ a. def(prettyfixLayer, pack(n, prettyfixTag), a))(R)
+  
+
+DEF infix(R)(oN0) ==
+  LET oN == baseName(oN0)
+  IN
+  unpack(_, prettyfixTag) * an(oN)(R) !? prettyfixLayer
+
+
+FUN prettyfixTag: denotation
+DEF prettyfixTag == "prettyfix"
+
+FUN prettyfixLayer: anLayer
+DEF prettyfixLayer ==
+  EXEC(register("917"!,
+                \\ d. prettyfixTag $ fmtNat(unpack(d, prettyfixTag))))
+
+-- %$Uniqueness$
+
+FUN uniqLayer: anLayer
+DEF uniqLayer ==
+  EXEC(register("918"!, \\ d. uniqTag $ fmtSet[denotation, <]
+                                          (lit)(unpack(d, uniqTag))))
+
+FUN uniqTag: denotation
+DEF uniqTag == "uniq"
+
+DEF updateUniqAn(main)(R) ==
+  LET impUs == main incl related(transitive, imports)(main)(R)
+      impOs == (\\uN, S. objects(uN)(R) + S, {}) / impUs
+      impSs == (\\oN. symbol(oN)(R)) * asSeq(impOs)
+      uniqs == asSet[denotation, <]
+                    (ft * (\\ss. #(ss) = 1) | partition(=)(impSs))
+  IN
+  updateAn(\\ a. def(uniqLayer, pack(uniqs, uniqTag), a))(R)
+
+DEF resetUniqAn(R) ==
+  updateAn(\\ a. undef(a, uniqLayer))(R)
+
+DEF uniq(R)(oN) ==
+  LET u? == an(R) !? uniqLayer
+  IN
+  IF u? nil? THEN false
+  IF u? avail? THEN
+    symbol(oN)(R) in[denotation, <] unpack(cont(u?), uniqTag)
+  FI
+
+-- %$Fullness$
+
+DATA fullness == fullness(origin?: bool, instance?: bool)
+
+FUN default: fullness
+DEF default == fullness(true, true)
+
+FUN fmtFullness: fullness -> fmt
+DEF fmtFullness(fullness(o?, i?)) ==
+  lit("origin:"); fmtBool(o?); spc(1); lit("instance:"); fmtBool(i?)
+
+FUN fullnessTag:denotation
+DEF fullnessTag == "fullness"
+
+FUN fullnessLayer: anLayer
+DEF fullnessLayer ==
+  EXEC(register("921"!, \\ d. fullnessTag $ 
+                              fmtFullness(unpack(d, fullnessTag))))
+
+DEF setFullness(R, o?, i?) ==
+  updateAn(\\ a. def(fullnessLayer, pack(fullness(o?, i?), fullnessTag), a))(R)
+
+DEF origin?(R) ==
+  origin?(cont(default)(unpack(_, fullnessTag) * an(R) !? fullnessLayer))
+      
+DEF instance?(R) ==
+  instance?(cont(default)(unpack(_, fullnessTag) * an(R) !? fullnessLayer))
+      
+-- %$Auxiliary$
+FUN $ : denotation ** fmt -> fmt
+DEF t $ f == lit("<"); lit(t); lit(":"); f; lit(">")

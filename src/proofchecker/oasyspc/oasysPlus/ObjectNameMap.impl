@@ -1,0 +1,222 @@
+IMPLEMENTATION ObjectNameMap
+
+IMPORT Seq ONLY seq forall?
+       Option ONLY option avail nil nil? cont
+       SeqMap ONLY *
+       OptionMap ONLY *
+       SeqMapEnv ONLY *
+       RepoObjectAccess ONLY newLocalSign newLocalObjects object objects
+       RepoName COMPLETELY
+       OSubstitution ONLY subst <$
+       Set ONLY set
+       SetConv ONLY asSeq
+
+-- %$Check Names within formulae and expressions$
+
+
+-- %Properties
+DEF checkNames(_)(freeType(_, _, _)) == true
+DEF checkNames(ok?)(law(_, _, f)) == checkNames(ok?)(f)
+DEF checkNames(_)(other(_,_,_)) == true
+DEF checkNames(_)(removed) == true
+
+-- Formulae
+DEF checkNames(ok?)(atomic(_, _, exprs)) == 
+    forall?(checkNames(ok?), exprs)
+DEF checkNames(ok?)(connect(_, _, forms)) ==
+    forall?(checkNames(ok?), forms)
+DEF checkNames(ok?)(quant(_, _, _, _, range)) == checkNames(ok?)(range)
+
+-- %Expressions
+DEF checkNames(ok?)(name(_, oper)) == oper ok?
+DEF checkNames(ok?)(apply(_, f, a)) ==
+    checkNames(ok?)(f) and checkNames(ok?)(a)
+DEF checkNames(ok?)(tuple(_, elems)) == forall?(checkNames(ok?), elems)
+DEF checkNames(_)(den(_, _)) == true
+DEF checkNames(ok?)(cases(_, g, nil)) ==
+    forall?(checkNames(ok?), g)
+DEF checkNames(ok?)(cases(_, g, avail(e))) ==
+    forall?(checkNames(ok?), g) and checkNames(ok?)(e)
+DEF checkNames(ok?)(lambda(_, _, _, b)) == checkNames(ok?)(b)
+DEF checkNames(ok?)(let(_, es, b)) ==
+    forall?(checkNames(ok?), es) and checkNames(ok?)(b)
+DEF checkNames(ok?)(as(_, _, e)) == checkNames(ok?)(e)
+DEF checkNames(_)(any(_)) == true
+
+-- %Guards
+DEF checkNames(ok?)(guard(_, i, t)) ==
+    checkNames(ok?)(i) and checkNames(ok?)(t)
+
+-- %Equations
+DEF checkNames(ok?)(eqn(_, _, lhs, _, rhs)) ==
+    checkNames(ok?)(lhs) and checkNames(ok?)(rhs)
+
+-- %$Change names within formulae and expressions$
+DEF f <* freeType(a,s,vs) == freeType(a, f(s), (f <* _) * vs)
+DEF f <* law(a,s,fr) == law(a,s, f <* fr)
+DEF _ <* (F AS other(_, _, _)) == F
+DEF _ <* removed == removed
+
+DEF f <* variant(a, c, t, cs) == variant(a, f(c), f(t), (f <* _) * cs)
+
+DEF f <* component(a, s) == component(a, f(s))
+
+DEF f <* atomic(a, aK, es) == atomic(a, aK, (f <* _) * es)
+DEF f <* connect(a, cK, fs) == connect(a, cK, (f <* _)  * fs)
+DEF f <* quant(a, qK, lS, os, fr) == quant(a, qK, lS, os, f <* fr)
+
+DEF f <* name(a, o) == name(a, f(o))
+DEF f <* apply(a, fc, ar) == apply(a, f <* fc, f <* ar)
+DEF f <* tuple(a, es) == tuple(a, (f <* _) * es)
+DEF _ <* den(a, t) == den(a, t)
+DEF f <* cases(a, gs, oe) == cases(a, (f <* _) * gs, (f <* _) * oe)
+DEF f <* lambda(a, s, vs, b) == lambda(a, s, vs, f <* b)
+DEF f <* let(a, eqs, b) == let(a, (f <* _)  * eqs, f <* b)
+DEF f <* as(a, v, e) == as(a, v, f <* e)
+DEF _ <* any(a) == any(a)
+
+DEF f <* guard(a, i, t) == guard(a, f <* i, f <* t)
+
+DEF f <* eqn(a, s, l, ps, r) == eqn(a, s, f <* l, (f <* _) * ps, f <* r)
+
+-- %$Change names and update repository$
+
+-- %properties
+DEF f <* (R, freeType(a,s,vs)) == 
+  LET (R1, s1) == f(R, s)
+      (R2, vs1) == (\\RR, vv. f <* (RR, vv)) * (R1, vs)
+  IN
+  (R2, freeType(a, s1, vs1))
+DEF f <* (R, law(a,s,fr)) ==
+  LET (R1, fr1) == f <* (R, fr) IN (R1, law(a, s, fr1))
+DEF _ <* (R, (F AS other(_, _, _))) == (R, F)
+DEF _ <* (R, removed) == (R, removed)
+
+-- %variants
+FUN <* : (repo ** objectName -> repo ** objectName) **
+          repo ** variant -> repo ** variant
+DEF f <* (R, variant(a, c, t, coms)) ==
+  LET (R1, c1) == f(R, c)
+      (R2, t1) == f(R1, t)
+      (R3, coms1) == (\\RR, cc. f <* (RR, cc)) * (R2, coms)
+  IN
+  (R3, variant(a, c1, t1, coms1))
+
+-- %components
+FUN <* : (repo ** objectName -> repo ** objectName) **
+          repo ** component -> repo ** component
+DEF f <* (R, component(a, sel)) ==
+  LET (R1, sel1) == f(R, sel) IN (R1, component(a, sel1))
+
+-- %formulae
+DEF f <* (R, atomic(a, aK, es)) ==
+  LET (R1, es1) == f <* (R, es) IN (R1, atomic(a, aK, es1))
+DEF f <* (R, connect(a, cK, fs)) ==
+  LET (R1, fs1) == f <* (R, fs) IN (R1, connect(a, cK, fs1))
+DEF f <* (R, quant(a, qK, lS, os, fr)) ==
+  LET (lS1, R2) == newLocalSign(unit(lS))(R)
+      (R3, newObs) == (\\RR, ooX. LET (RR1, kk) == f <* (RR, kind(oo))
+                                      oo == object(ooX)(RR)
+                                  IN
+                                  (RR1, oo :=_kind kk)) * (R2, os)
+      (newObNames, R4) == newLocalObjects(lS1, newObs)(R3)
+      (R4a, newObNames1) == f * (R4, newObNames)
+      fr1 == subst(os, newObNames1) <$ fr
+      (R5, fr2) == f <* (R4a, fr1)
+  IN (R5, quant(a, qK, lS1, newObNames1, fr2))
+
+FUN <* : (repo ** objectName -> repo ** objectName) **
+          repo ** seq[formula] -> repo ** seq[formula]
+DEF f <* (R, fs:seq[formula]) == (\\RR, ff. f <* (RR, ff)) * (R, fs)
+
+-- %expressions
+DEF f <* (R, name(a, o)) ==
+  LET (R1, o1) == f(R, o) IN (R1, name(a, o1))
+DEF f <* (R, apply(a, fc, ar)) ==
+  LET (R1, fc1) == f <* (R, fc)
+      (R2, ar1) == f <* (R1, ar)
+  IN
+  (R2, apply(a, fc1, ar1))
+DEF f <* (R, tuple(a, es)) ==
+  LET (R1, es1) == f <* (R, es) IN (R1, tuple(a, es1))
+DEF _ <* (R, den(a, t)) == (R, den(a, t))
+DEF f <* (R, cases(a, gs, oe)) ==
+  LET (R1, gs1) == (\\ RR, gg. f <* (RR, gg)) * (R, gs)
+      (R2, oe1) == IF oe nil? THEN (R1, nil)
+                   ELSE LET (R22, el) == f <* (R1, cont(oe))
+                        IN
+                        (R22, avail(el))
+                   FI
+  IN
+  (R2, cases(a, gs1, oe1))
+DEF f <* (R, lambda(a, s, vs, b)) ==
+  LET (R1, b1) == f <* (R, b) 
+      (lS1, R2) == newLocalSign(unit(s))(R1)
+      (R3, NewObs) == (\\RR, ooX. LET (RR1, kk) == f <* (RR, kind(oo))
+                                      oo == object(ooX)(RR)
+                                  IN
+                                  (RR1, oo :=_kind kk)) * (R2, vs)
+      (newObNames, R4) == newLocalObjects(lS1, NewObs)(R3)
+      b2 == subst(vs, newObNames) <$ b1
+  IN
+  (R4, lambda(a, lS1, newObNames, b2))  
+DEF f <* (R, let(a, eqs, b)) ==
+  LET (R1, eqs1) == (\\RR, qq. f <* (RR, qq)) * (R, eqs)
+      (R2, b1) == f <* (R1, b)
+  IN
+  (R2, let(a, eqs1, b1))
+DEF f <* (R, as(a, v, e)) ==
+  LET (R1, e1) == f <* (R, e) IN (R1, as(a, v, e1))
+DEF _ <* (R, any(a)) == (R, any(a))
+
+FUN <* : (repo ** objectName -> repo ** objectName) **
+          repo ** seq[expr] -> repo ** seq[expr]
+DEF f <* (R, es:seq[expr]) == (\\RR, ee. f <* (RR, ee)) * (R, es)
+
+-- %guard
+DEF f <* (R, guard(a, i, t)) ==
+  LET (R1, i1) == f <* (R, i)
+      (R2, t1) == f <* (R1, t)
+  IN
+  (R2, guard(a, i1, t1)) 
+
+-- %equation
+DEF f <* (R, eqn(a, s, l, ps, r)) ==
+  LET (R1, l1) == f <* (R, l)
+      (R2, ps1) == (\\RR, pp. f <* (RR, pp)) * (R1, ps)
+      (R3, r1) == f <* (R2, r)
+      lObs == objects(s)(R3)
+      (lS1, R4) == newLocalSign(unit(s))(R3)
+      (R5, newObs) == (\\RR, ooX. LET (RR1, kk) == f <* (RR, kind(oo))
+                                      oo == object(ooX)(RR)
+                                  IN
+                                  (RR1, oo :=_kind kk)) * (R4, asSeq(lObs))
+      (newObNames, R6) == newLocalObjects(lS1, newObs)(R5)
+      sb == subst(asSeq(lObs), newObNames)
+      l2 == sb <$ l1
+      ps2 == (sb <$ _) * ps1
+      r2 == sb <$ r1
+  IN
+  (R6, eqn(a, lS1, l2, ps2, r2))
+
+-- %kind
+FUN <* : (repo ** objectName -> repo ** objectName) **
+          repo ** kind -> repo ** kind
+DEF _ <* (R, sort) == (R, sort)
+DEF f <* (R, oper(fct)) ==
+  LET (R1, fct1) == f <* (R, fct) IN (R1, oper(fct1))
+DEF _ <* (R, K AS other(_, _)) == (R, K)
+
+-- %functionality
+FUN <* : (repo ** objectName -> repo ** objectName) **
+          repo ** fct -> repo ** fct
+DEF f <* (R, name(s)) == LET (R1, s1) == f(R, s) IN (R1, name(s1))
+DEF f <* (R, cart(els)) ==
+  LET (R1, els1) == (\\RR,ee. f <* (RR, ee)) * (R, els)
+  IN
+  (R1, cart(els1))
+DEF f <* (R, funct(d, c)) ==
+  LET (R1, d1) == f <* (R, d)
+      (R2, c1) == f <* (R1, c)
+  IN
+  (R2, funct(d1, c1))

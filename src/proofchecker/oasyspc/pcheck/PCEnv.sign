@@ -1,0 +1,186 @@
+/* %The @code{PCEnv} contains all information about proofs and proof
+    obligations of a unit.
+*/
+SIGNATURE PCEnv
+
+IMPORT RepoName COMPLETELY
+       RepoAbsy ONLY expr:SORT variant:SORT component:SORT
+       Set[lawName, <] ONLY set
+       Map[proofName, <, pHead] ONLY map
+       Map[proofName, <, pBody] ONLY map
+       Fmt ONLY fmt:SORT
+       RepoDiag ONLY diag:SORT 
+       Set[objectName,<] ONLY set[objectName, <]:SORT
+       Repo ONLY repo:SORT
+       RepoAn ONLY an:SORT
+       Seq[variant] ONLY seq[variant]:SORT
+
+-- %$The Proof Checker Environment$
+/* %The proof checker environment contains all laws / proof obligations and
+    all proofs available for a specific unit. Some additional components are
+    provided (@code{assumes, resolved}) to undo (some of) the effects of the
+    flattening of the import relation by the Opal compiler. */
+-- %@itemize @bullet
+TYPE pcEnv == pcEnv(an: an,
+-- %@ITEM Diagnostics produced during obligation generation
+                    diags: diag,
+-- %@ITEM Next free no for generated proofs
+                    nextFree: nat,
+-- %@ITEM Laws to be proven (proof obligations)
+                    laws: set[lawName, <],
+-- %@ITEM Laws which may occur in proof heads without being proof obligations
+                    extraLaws: set[lawName, <],
+/* %@ITEM Laws which must be proven for instantiation (subset of @code{laws})
+(direct ASSUMES). */
+                    assumes: set[lawName, <],
+/* %@ITEM Laws which are induced by correctness of tarnsitive instantiations
+    (subset of @code{laws}. (indirect ASSUMES). */
+                    resolved: set[lawName, <],
+-- %@ITEM Heads of available proofs
+                    pHeads: map[proofName, <, pHead],
+-- %@ITEM Bodies of available proofs
+                    pBodies: map[proofName, <, pBody])
+-- %@end itemize
+
+
+-- %$Law Names$
+
+/* %Law names abstract from the concrete formulae, which are generated
+    on demand only. Apart from ordinary formulae, we have names associated
+    to functions (@code{Def, Spc}), names for free type laws
+    (@code{Discr, Sel, Gen, Ind, Equiv}), and for laws induced by
+    relations (@code{Restr, Copy}). */
+
+TYPE lawName == 
+/* %@itemize @bullet
+@ITEM The law directly given in the source code. */
+               ordinary(an:an, name: propertyName)
+/* %@ITEM The law associated with the definitional equation for
+    function @code{fun}.  */
+                def(an:an, fun: objectName)
+/* %@ITEM The specification law associated with function @code{fun}.
+@code{name} is the generated law in the abstract syntax. */
+                spc(an:an, fun: objectName, name: propertyName)
+/* %@ITEM The restrict-forget image of law @code{orig} from the signature
+    part in the implementation. The set of sorts of the signature is
+    added for faster generation. */
+                restr(an:an, orig: lawName, sorts: set[objectName, <])
+/* %@ITEM The inclusion of law @code{orig} from the signature part
+    into the implementation. */
+                copy(an:an, orig: lawName)
+/* %@ITEM Generatedness of @code{type} by the constructors. */
+                gen(an:an, type: objectName, variants: seq[variant])
+/* %@ITEM @emph{obsolete} Induction for @code{type} with given constructors. */
+                ind(an:an, type: objectName, variants: seq[variant])
+/* %@ITEM Discriminator value of @code{dis},
+    if applied to constructor @code{con} */
+                discr(an:an, type: objectName, con: variant, dis: variant)
+/* %@ITEM Selector property for given constructor and selector. */
+                sel(an:an, type: objectName, con: variant, sel: component)
+/* %@ITEM Equivalence of given constructors */
+                equiv(an:an, type: objectName, con1: variant, con2: variant)
+/* %@ITEM Definedness of constructor (@code{DATA} definitions only). */
+                cdfd(an:an, type: objectName, con: variant)
+/* %@ITEM Definedness of discriminator */
+                ddfd(an:an, type: objectName, dis: variant)
+/* %@ITEM Definedness of selector */
+                sdfd(an:an, type: objectName, sel: component)
+/* %@ITEM All laws of a free type */
+                freetypeLaws(an: an, type: objectName, variants: seq[variant])
+/* %@ITEM All laws of a data type */
+                datatypeLaws(an: an, type: objectName, variants: seq[variant])
+/* %@ITEM Erroneous law - may result from a bad application of a reflexion */
+                error(diag: diag)
+-- %@end itemize
+
+-- %$Proof Names$
+
+/* %Similar to laws, we have proofs which are given in the source code
+    (@code{ordinary}), and names for generated proofs (@code{def, axm, inst}).
+*/
+TYPE proofName == 
+/* %@itemize @bullet
+@ITEM Proofs from the source code (name of the proof script constant). */
+                  ordinary(an:an, name: objectName)
+-- %@ITEM Proof, which declares law an axiom. 
+                  axm(an:an, law: lawName)
+-- %@ITEM Proof for correctness of parameter @code{param} of instantiation.
+                  inst(an:an, inst: unitName, param: objectName)
+-- %@ITEM Generated Proof
+                  gen(an: an, no: nat)
+-- %@end itemize
+
+
+-- %$Proof Heads$
+
+-- %Assemble premises and conclusion.
+TYPE pHead == pHead(an:an, prems: set[lawName, <], concl: lawName)
+
+-- %$Proof Bodies$
+
+TYPE pBody == 
+/* %@itemize @bullet
+@ITEM Proof script from the source code. */
+              ordinary(an:an, script: expr)
+-- %@ITEM Proof is an axiom and need not be proven.
+              axiom(an: an)
+-- %@ITEM Single premise and conclusion must be equivalent
+              equiv(an: an)
+-- %@ITEM Proof script is missing.
+              missing(an: an)
+-- %@end itemize
+
+-- %$Ordering Relations and Injections and Formatting Functions$
+/* %Generated by ordinatrice and not printed here. No ordering relations on
+    types @code{pcEnv} and @code{pBody} are available. */
+-- %@ignore
+-- this is output of ordinatrice verte for free type pHead
+FUN < : pHead ** pHead -> bool
+FUN = : pHead ** pHead -> bool
+FUN fmtPHead : pHead -> fmt
+FUN :=_concl : pHead ** lawName -> pHead
+FUN :=_prems : pHead ** set[lawName,<] -> pHead
+FUN :=_an : pHead ** an -> pHead
+-- this is output of ordinatrice verte for free type pBody
+FUN fmtPBody : pBody -> fmt
+FUN :=_an : pBody ** an -> pBody
+FUN :=_script : pBody ** expr -> pBody
+-- this is output of ordinatrice verte for free type lawName
+FUN < : lawName ** lawName -> bool
+FUN = : lawName ** lawName -> bool
+FUN fmtLawName : lawName -> fmt
+FUN :=_diag : lawName ** diag -> lawName
+FUN :=_variants : lawName ** seq[variant] -> lawName
+FUN :=_type : lawName ** objectName -> lawName
+FUN :=_an : lawName ** an -> lawName
+FUN :=_sel : lawName ** component -> lawName
+FUN :=_dis : lawName ** variant -> lawName
+FUN :=_con : lawName ** variant -> lawName
+FUN :=_con2 : lawName ** variant -> lawName
+FUN :=_con1 : lawName ** variant -> lawName
+FUN :=_orig : lawName ** lawName -> lawName
+FUN :=_sorts : lawName ** set[objectName,<] -> lawName
+FUN :=_name : lawName ** propertyName -> lawName
+FUN :=_fun : lawName ** objectName -> lawName
+-- this is output of ordinatrice verte for free type proofName
+FUN < : proofName ** proofName -> bool
+FUN = : proofName ** proofName -> bool
+FUN fmtProofName : proofName -> fmt
+FUN :=_no : proofName ** nat -> proofName
+FUN :=_an : proofName ** an -> proofName
+FUN :=_param : proofName ** objectName -> proofName
+FUN :=_inst : proofName ** unitName -> proofName
+FUN :=_law : proofName ** lawName -> proofName
+FUN :=_name : proofName ** objectName -> proofName
+-- this is output of ordinatrice verte for free type pcEnv
+FUN fmtPcEnv : pcEnv -> fmt
+FUN :=_pBodies : pcEnv ** map[proofName,<,pBody] -> pcEnv
+FUN :=_pHeads : pcEnv ** map[proofName,<,pHead] -> pcEnv
+FUN :=_resolved : pcEnv ** set[lawName,<] -> pcEnv
+FUN :=_assumes : pcEnv ** set[lawName,<] -> pcEnv
+FUN :=_extraLaws : pcEnv ** set[lawName,<] -> pcEnv
+FUN :=_laws : pcEnv ** set[lawName,<] -> pcEnv
+FUN :=_nextFree : pcEnv ** nat -> pcEnv
+FUN :=_diags : pcEnv ** diag -> pcEnv
+FUN :=_an : pcEnv ** an -> pcEnv
+-- %@end ignore

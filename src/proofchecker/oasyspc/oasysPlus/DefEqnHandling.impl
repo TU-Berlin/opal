@@ -1,0 +1,364 @@
+IMPLEMENTATION DefEqnHandling
+
+IMPORT SeqMapEnv ONLY *
+       AbsySC ONLY conj1 forall1 apply1 =
+       OSubstitution ONLY subst <$ def {}  <+ 
+       RepoAn ONLY none
+       Repo ONLY repo
+       RepoAbsy COMPLETELY
+       Seq ONLY <> :: seq <>? % find? ft rt ++ forall? exist?
+       RepoName COMPLETELY
+       SeqReduce ONLY /
+       SeqOfSeq ONLY combinations flat
+       Pair ONLY pair & unpair
+       NatConv ONLY `
+       PredefEntities ONLY true false
+       Option ONLY cont avail? option nil nil avail nil?
+       SortHandling ONLY find findCon discr? sel? dataVariants variants constr?
+       SeqFilter ONLY partition
+       RepoObjectAccess ONLY symbol kind
+       SeqMap ONLY *
+       Nat ONLY nat
+       OptionMap ONLY *
+       DEBUG ONLY PRINT
+       String ONLY string
+       Fmt ONLY pretty
+       PrettyFormatting ONLY prettyExpr fmtObjectNameLong
+       BoolConv ONLY `
+       Denotation ONLY ++
+       ABORT ONLY ABORT
+       VarHandling ONLY newVars
+
+-- %$Unpacking$
+DEF transDefEqn(R)(eqs) == 
+  LET (R1, forms) == (transDefEqn, R) * eqs
+  IN
+  (R1, conj1(none, forms))
+
+-- %translate a single definitional equation
+FUN transDefEqn: repo ** eqn -> repo ** formula
+DEF transDefEqn(R, eqn(a, sig, lhs, pats, rhs)) ==
+  LET locals == IF apply?(lhs) THEN lVars(arg(lhs)) ELSE <> FI
+  IN
+  IF generated?(locals)(R) ANDIF apply?(lhs) ANDIF name?(funct(lhs)) THEN
+    LET rhs1 == PRINT(traceSimplify?, \\ . "defeqn:" ++ pretty(prettyExpr(R)(rhs)), rhs) IN
+    transDefEqnGen(lhs, locals, rhs1)(R)
+  ELSE
+    (R, forall1(a, locals, atomic(a, cong, lhs :: rhs :: <>))) 
+  FI
+
+-- %$Core$
+/* %Now we know that we found a definitional equation and can start. */
+FUN transDefEqnGen: expr ** seq[objectName] ** expr -> repo ->
+                     repo ** formula
+DEF transDefEqnGen(lhs, leftVars, rhs)(R) ==
+  LET (R1, cTerms) == (getConstrTerms(rhs1), R) * leftVars
+      rhs1 == simplify(R)(rhs)
+      substSeq == (\\c. (<+, <&>) / c) * combinations(cTerms)
+  IN (R1, conj1(none, flat(mkForm(lhs, rhs, _, R1) * substSeq)))
+
+FUN mkForm: expr ** expr ** pair[subst, seq[objectName]] **
+             repo -> seq[formula]
+DEF mkForm(lhs, rhs, S & vars, R) ==
+  IF vars <>? THEN undoCases(atomic(none, cong,
+                                    simplify(R) *
+                                    (S <$ _) *
+                                    %(lhs, rhs)))(R)
+  ELSE
+    undoCases(forall1(none, vars, 
+                      atomic(none, cong, simplify(R) *
+                                         (S <$ _) * %(lhs, rhs))))(R)
+  FI
+
+
+/* %Object is a variable. If type of the variable is a free type,
+    return a sequence of substitutions, which will replace the variable
+    with every possible constructor. 
+    
+    Variables are only replaced by constructors iff there exists a
+    cases-term, in which a discriminator is applied to it.
+*/
+FUN getConstrTerms: expr -> repo ** objectName ->
+                     repo ** seq[pair[subst, seq[objectName]]]
+DEF getConstrTerms(rhs)(R, var) ==
+  LET tp == sort(fct(kind(var)(R)))
+      vs == xVariants(tp, R)
+      lS == sign(var)
+  IN
+  IF vs <>? THEN (R, %((var, name(none, var)) def {} & %(var)))
+  OTHERWISE
+  IF ~(discrApplied(R)(rhs, var)) THEN
+    (R, %((var, name(none, var)) def {} & %(var)))
+  ELSE
+    LET (R1, nTermSeq) == (canTerm(lS, no(var)`), R) * vs
+        mkSubst == \\p. LET (e, oN) == unpair(p) IN (var, e) def {} & oN
+    IN
+    (R1, mkSubst * nTermSeq)
+  FI
+
+/* %return true, iff variable is argument of a discriminator in
+    a condition of a cases term */
+FUN discrApplied: repo -> expr ** objectName -> bool
+DEF discrApplied(R)(name(_, _), _) == false
+DEF discrApplied(R)(apply(_, f, a), V) ==
+  discrApplied(R)(f, V) or discrApplied(R)(a, V)
+DEF discrApplied(R)(tuple(_, els), V) == exist?(discrApplied(R)(_, V), els)
+DEF discrApplied(R)(den(_, _), _) == false
+DEF discrApplied(R)(cases(_, gs, el), V) ==
+  IF exist?(discrAppliedHere(R)(_, V), if * gs) THEN true
+  ELSE
+    exist?(discrApplied(R)(_, V), then * gs) or
+    (IF avail?(el) THEN discrApplied(R)(cont(el), V) ELSE false FI)
+  FI
+DEF discrApplied(R)(lambda(_, _, _, bd), V) == discrApplied(R)(bd, V)
+DEF discrApplied(R)(let(_, _, bd), V) == discrApplied(R)(bd, V)
+DEF discrApplied(R)(as(_, _, ex), V) == discrApplied(R)(ex, V)
+DEF discrApplied(R)(any(_), V) == false
+
+FUN discrAppliedHere: repo -> expr ** objectName -> bool
+DEF discrAppliedHere(R)(apply(_, name(_, f), name(_, arg)), V) ==
+  IF arg = V THEN discr?(f)(R) ELSE false FI
+DEF discrAppliedHere(_)(_else, _) == false
+ 
+/* %For a single variant return a canonical constructor term and the
+    used variables */
+FUN canTerm: localSignName ** denotation -> repo ** variant ->
+              repo ** pair[expr, seq[objectName]]
+DEF canTerm(lS, tag)(R, v) ==
+  LET (R1, nVars) == newVars(R, v, lS, tag)
+      term == apply1(none, constructor(v), nVars)
+  IN (R1, term & nVars)
+      
+/* %Simplify Term: Evaluate applications of selectors and discriminators,
+    replace let variables, remove cases */
+FUN traceSimplify? : bool
+DEF traceSimplify? == false
+
+FUN simplify: repo -> expr -> expr
+DEF simplify(_)(E AS name(_, _)) == E
+DEF simplify(R)(apply(an, f, a)) ==
+  LET f1 == simplify(R)(f)
+      a1 == simplify(R)(a)
+      visit?_ == IF f1 name? THEN 
+                  IF a1 name? THEN true
+                  IF a1 apply? THEN funct(a1) name?
+                  ELSE false
+                  FI
+                ELSE false
+                FI
+      visit? == PRINT(traceSimplify?, \\ . "Simplifying " ++ 
+                      pretty(prettyExpr(R)(f1)) ++ "<$>" ++
+                      pretty(prettyExpr(R)(a1)) ++ " §§ " ++
+                      pretty(fmtExpr(f1)) ++ "<$> " ++ pretty(fmtExpr(a1))
+                      ++ " " ++ `(visit?_),
+                      visit?_)
+  IN
+  IF visit? THEN
+    LET a1a == PRINT(traceSimplify?, \\ . "Simplifying²:" ++
+                     pretty(fmtExpr(a1)) ++ " " ++ `(apply?(a1))
+                     ++ "," ++ `(name?(a1))
+                     , a1)
+    IN
+    LET n0 == IF a1a name? THEN 
+               LET a1b == PRINT(traceSimplify?, \\ . "in name?", a1a)
+               IN oper(a1b) 
+             IF a1a apply? THEN 
+               LET a1b == PRINT(traceSimplify?, \\ . "in apply?", a1a)
+               IN oper(funct(a1b)) 
+             ELSE ABORT("simplify - this cannot happen") 
+             FI
+        n == PRINT(traceSimplify?, \\ . "n finished:" ++ 
+                                        pretty(fmtObjectNameLong(R)(n0)) ++
+                                        " " ++ `(constr?(n0)(R))
+                                        ++ `(name?(f1)) 
+                                        , n0)
+    IN
+    IF constr?(n)(R) THEN
+      LET vs == PRINT(traceSimplify?, \\ . "vs", xVariants(tp, R))
+          tp == IF nil?(tpO) THEN ABORT("tpO is nil!") ELSE cont(tpO) FI
+          tpO == PRINT(traceSimplify?, \\ . "tp", find(R)(n))
+          cO == PRINT(traceSimplify?, \\ . "c", findCon(R)(n, vs))
+          c == IF nil?(cO) THEN ABORT("cO is nil!") ELSE cont(cO) FI
+          f1a == PRINT(traceSimplify?, \\ . "simplify3:" ++ 
+                       pretty(fmtObjectNameLong(R)(oper(f1))), f1)
+          n2 == PRINT(traceSimplify?, \\ . "n2:" ++ 
+                       pretty(fmtObjectNameLong(R)(oper(f1a))), oper(f1a))
+          d? == PRINT(traceSimplify?, \\ . "d? :" ++ 
+                      `(discr?(n2)(R)), discr?(n2)(R))
+          s? == PRINT(traceSimplify?, \\ . "s? :" ++ 
+                      `(sel?(n2)(R)), sel?(n2)(R))
+      IN
+      IF d? THEN
+        IF test(c) = n2 THEN 
+          PRINT(traceSimplify?, \\ . "discr/constr/true", true(R))
+        ELSE
+          PRINT(traceSimplify?, \\ . "discr/constr/false", false(R))
+        FI
+      IF s? THEN
+        IF a1 name? THEN 
+          PRINT(traceSimplify?, \\ . "sel/constr/name!", apply(an, f1, a1))
+        ELSE
+          LET res == checkSel(selector * components(c), oper(f1),
+                              IF arg(a1) tuple? THEN elems(a1)
+                              ELSE %(arg(a1)) 
+                              FI)
+          IN
+          IF avail?(res) THEN 
+            PRINT(traceSimplify?, \\ . "sel/constr/" ++ 
+                  pretty(prettyExpr(R)(cont(res))), cont(res))
+          ELSE 
+            PRINT(traceSimplify?, \\ . "sel/constr/ #!", apply(an, f1, a1))
+          FI
+        FI
+      ELSE 
+        PRINT(traceSimplify?, \\ . "no discr, no sel", apply(an, f1, a1))
+      FI
+    ELSE 
+      PRINT(traceSimplify?, \\ . "no constr", apply(an, f1, a1))
+    FI
+  ELSE 
+    PRINT(traceSimplify?, \\ . "no visit", apply(an, f1, a1))
+  FI
+
+FUN checkSel: seq[objectName] ** objectName ** seq[expr] -> option[expr]
+DEF checkSel(<>, sel, exprS) == nil
+DEF checkSel(sel1 :: selS, sel, expr :: exprS) ==
+  IF sel1 = sel THEN avail(expr) ELSE checkSel(selS, sel, exprS) FI
+DEF checkSel(_ :: _, _, <>) == nil
+
+DEF simplify(R)(tuple(an, els)) == tuple(an, simplify(R) * els)
+DEF simplify(_)(E AS den(_, _)) == E
+DEF simplify(R)(cases(a, gs, oe)) ==
+  LET gs1 == (\\ g:guard. guard(an(g), simplify(R)(if(g)), then(g))) * gs
+      ok? == find?(\\g. IF if(g) name? THEN oper(if(g)) = oper(true(R))
+                        ELSE false FI, gs1)
+  IN
+  IF ok? avail? THEN simplify(R)(then(cont(ok?)))
+  ELSE
+    LET cases1 == (\\ g:guard. guard(an(g), if(g), simplify(R)(then(g)))) * gs1
+        else1 == simplify(R) * oe
+    IN
+    IF else1 avail? THEN
+      IF forall?(\\e. e = cont(else1), then * cases1) THEN
+        cont(else1)
+      ELSE
+        cases(a, cases1, else1)
+      FI
+    ELSE
+      cases(a, cases1, else1)
+    FI
+  FI
+
+DEF simplify(R)(lambda(an, sg, vs, bd)) ==
+  lambda(an, sg, vs, simplify(R)(bd))
+
+DEF simplify(R)(let(an, eqns, bd)) ==
+  LET eqns1 == simplify(R) * eqns
+      (renamings, trueEqns) == partition(renaming?, eqns1)
+  IN
+  IF trueEqns <>? THEN simplify(R)(mkSubst(renamings) <$ bd)
+  ELSE 
+    let(an, (mkSubst(renamings) <$ _) * trueEqns,
+        simplify(R)(mkSubst(renamings) <$ bd))
+  FI
+
+FUN simplify: repo -> eqn -> eqn
+DEF simplify(R)(eqn(a, lS, l, p, r)) == eqn(a, lS, l, p, simplify(R)(r))
+
+FUN renaming? : eqn -> bool
+DEF renaming?(eqn(_, _, l, _, r)) == name?(l) and name?(r)
+
+FUN mkSubst: seq[eqn] -> subst
+DEF mkSubst(<>) == {}
+DEF mkSubst(eqn(_, _, l, _, r) :: eqnS) == (oper(l), r) def mkSubst(eqnS)
+  
+DEF simplify(_)(E AS as(_, _, _)) == E
+DEF simplify(_)(E AS any(_)) == E
+  
+
+/* %Split @code{A = IF C1 THEN B1 ... FI} to @code{C1 ==> A = B1 ... } */
+FUN undoCases: formula -> repo -> seq[formula]
+DEF undoCases(f)(_) == %(f)
+/*
+DEF undoCases(f)(R) ==
+  IF f atomic? ANDIF kind(f) cong? THEN
+    LET e1 == ft(exprs(f))
+        e2 == ft(rt(exprs(f)))
+    IN
+    IF cases?(e2) THEN
+      (\\g. connect(none, impl,
+                    %(atomic(none, cong, %(if(g), true(R))),
+                      atomic(none, cong, %(e1, then(g)))))) * guards(e2) ++
+      (IF else(e2) nil? THEN <>
+       ELSE %(connect(none, impl,
+                      %(conj1(none, (\\ g. atomic(none, cong,
+                                                  %(if(g), false(R)))) *
+                                     guards(e2)),
+                        atomic(none, cong, %(e1, cont(else(e2))))
+                   ))) 
+       FI)
+    ELSE
+      %(f)
+    FI
+  IF f quant? ANDIF kind(f) forall? THEN
+    IF range(f) atomic? ANDIF kind(range(f)) cong? THEN
+      LET f1 == range(f)
+          e1 == ft(exprs(f1))
+          e2 == ft(rt(exprs(f1)))
+      IN
+      IF cases?(e2) THEN
+        (\\g. quant(an(f), kind(f), sign(f), vars(f),
+                    connect(none, impl,
+                            %(atomic(none, cong, %(if(g), true(R))),
+                              atomic(none, cong, %(e1, then(g))))))) *
+        guards(e2) ++
+        (IF else(e2) nil? THEN <>
+         ELSE %(quant(an(f), kind(f), sign(f), vars(f),
+                      connect(none, impl,
+                              %(conj1(none, (\\ g. atomic(none, cong,
+                                                         %(if(g), false(R)))) *
+                                      guards(e2)),
+                                atomic(none, cong, %(e1, cont(else(e2))))
+                   ))))
+         FI)
+      ELSE
+        %(f)
+      FI
+    ELSE
+      %(f)
+    FI
+  ELSE
+    %(f)
+  FI
+*/
+
+-- %$Auxiliary functions$
+-- %Hack, must be synchronized with newLocalSign'RepoInternAbsy
+FUN generated?: seq[objectName] -> repo -> bool
+DEF generated?(<>)(_) == false
+DEF generated?(n :: _)(R) == "¥_" <| symbol(n)(R)
+
+-- %collect variable names in lhs expression
+FUN lVars: expr -> seq[objectName]
+DEF lVars(name(_, n)) == IF localObjectName?(n) THEN %(n) ELSE <> FI
+DEF lVars(apply(_,f,a)) == lVars(f) ++ lVars(a)
+DEF lVars(tuple(_, elems)) == flat(lVars * elems)
+DEF lVars(as(_, v, x)) == v :: lVars(x)
+DEF lVars(any(_)) == <>
+DEF lVars(_else) == <>
+
+-- %combine a substitution and the sequence of variables
+FUN <+ : pair[subst, seq[objectName]] ** pair[subst, seq[objectName]] ->
+          pair[subst, seq[objectName]]
+DEF (s1 & vs1) <+ (s2 & vs2) == (s1 <+ s2 & vs1 ++ vs2)
+
+FUN <&> : pair[subst, seq[objectName]]
+DEF <&> == {} & <>
+
+-- %get Variants, either dataVariants or free type variants
+FUN xVariants: objectName ** repo -> seq[variant]
+DEF xVariants(oN, R0) ==
+  LET R == PRINT(traceSimplify?, \\ . "xVariants: " ++ pretty(fmtObjectNameLong(R0)(oN)), R0) 
+  IN
+  IF dataVariants(oN, R) <>? THEN variants(oN, R)
+  ELSE dataVariants(oN, R) FI

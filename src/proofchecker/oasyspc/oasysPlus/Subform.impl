@@ -1,0 +1,50 @@
+IMPLEMENTATION Subform
+
+IMPORT RepoAbsy COMPLETELY
+       LSeq ONLY <> % ++ lseq
+       Option ONLY nil? avail? cont option
+       Seq ONLY seq <> :: +% ++
+       Compose ONLY o
+       LSeqMap ONLY *
+       RepoAn ONLY an
+       RepoName ONLY objectName localSignName:SORT
+
+DATA subformula == subformula(subformula: formula,
+                              replace: formula -> formula,
+                              env: env)
+
+DEF findSubform(check, f) == findSubform(check, \\ _ . false, f)
+
+DEF findSubform(check, stop, f) ==
+  IF stop(f) THEN <>
+  ELSE
+    IF check(f) nil? THEN doFind(check, stop, f)
+    IF check(f) avail? THEN 
+      %(subformula(f, \\ ff . ff, cont(check(f)))) ++
+      (\\ . doFind(check, stop, f))
+    FI
+  FI
+
+/* %The @code{stop} predicate yields false on the formula; only proper
+    subformulae are checked here. */    
+FUN doFind: (formula -> option[env]) ** (formula -> bool) **
+             formula -> lseq[subformula]
+DEF doFind(_, _, atomic(_, _, _)) == <>
+DEF doFind(check, stop, connect(a, k, fs)) ==
+  doFindI(check, stop, a, k, <>, fs)
+DEF doFind(check, stop, quant(a, k, s, v, r)) ==
+  quant(a, k, s, v, _) *^ findSubform(check, stop, r)
+    
+FUN doFindI: (formula -> option[env]) ** (formula -> bool) **
+             an ** connectKind ** seq[formula] ** seq[formula] -> lseq[subformula]
+DEF doFindI(check, stop, a, k, preF, <>) == <>
+DEF doFindI(check, stop, a, k, preF, currF :: postF) ==
+  ((\\ ff. connect(a, k, preF ++ ff :: postF)) *^
+        findSubform(check, stop, currF)) ++
+  (\\ . doFindI(check, stop, a, k, preF +% currF, postF))
+
+-- %$Auxiliary functions$
+
+FUN *^ : (formula -> formula) ** lseq[subformula] -> lseq[subformula]
+DEF f *^ L ==
+  (\\sf. subformula(subformula(sf), f o replace(sf), env(sf))) * L

@@ -1,0 +1,283 @@
+IMPLEMENTATION ProofAsProgram
+
+IMPORT Loquacity ONLY progress debugMsg
+       Nat ONLY 4 nat = > 1
+       Denotation ONLY ++ +/+ |=
+       PrettyFormatting ONLY fmtObjectNameLong prettyExpr opalExpr
+       Com ONLY com succeed
+       ComCompose ONLY &
+       Fmt ONLY fmt pretty ; lit
+       String ONLY string
+       Seq ONLY seq % <> # <>? ft :: ::? forall?
+       RepoAbsy COMPLETELY
+       VarHandling ONLY newVars
+       RepoName COMPLETELY
+       RepoObjectAccess ONLY newLocalSign fct updateObject symbol impl
+       RepoAn ONLY none
+       DbGlobalEnv ONLY :=_unitTable
+       DbUnitTable ONLY changed unitTable unitState def
+       AbsySC ONLY apply1
+       OSubstitution ONLY <$ subst
+       ABORT ONLY ABORT
+       Void ONLY void
+       Predicate ONLY or
+       RepoDiag ONLY ref:SORT limit !! mode warn error ok <+ freeRef error?
+       RepoEvent ONLY diag event
+       RepoUnitAccess COMPLETELY
+       Set ONLY {}? set
+       SetReduce ONLY /
+       SetMap ONLY *
+       InternCompile ONLY extendUnit absy extendResult failure? diag success?
+       Pair ONLY unpair pair &
+       Check ONLY failure? success?  checkExprResult diag updateResult:SORT 
+       File ONLY open write close file
+       RepoAdmin ONLY path repoFile
+       InterOpal COMPLETELY
+       Char ONLY char
+       PCEFunctions ONLY ref
+       BinFile ONLY write read
+       PCEnv ONLY lawName
+       Map ONLY map ! def
+       MapConv ONLY asSeq
+       MapFilter ONLY |
+       SeqMap ONLY *
+       SeqFilter ONLY |
+       ExtendP ONLY extendUnitP
+       SeqMapEnv ONLY *
+       Option ONLY nil? nil avail cont option
+       ProofAn ONLY getTypes
+       PredefEntities ONLY proofscript
+       BasicSupplements ONLY asDeno
+
+/* %Note: cannot use @code{prettyExpr} here, because expression contains
+    variables which were inserted into the repository during the proving
+    proces, which does not send the resulting repository back.
+*/
+DEF handleProofAsProgram(R, main, pN, fun, body) ==
+  handleProofAsProgram(R, main, ref(R, main)(pN), fun, body, error)
+
+DEF handleProofAsProgram(R, main, fun, body) ==
+  handleProofAsProgram(R, main, freeRef("interactive proof"), fun, body, warn)
+
+FUN handleProofAsProgram:repo ** unitName ** ref ** objectName ** expr'RepoAbsy **
+                         mode -> com[pair[repo, denotation]]
+DEF handleProofAsProgram(R, main, r, fun, body, diagFn) ==
+  progress(4, \\ . pretty(lit("inserting definition for ");
+                          fmtObjectNameLong(R, main)(fun); lit(" == ");
+                          fmtExpr(body);
+                          lit("into the repository")))(R) & (\\ R2.
+  IF error?(diagFn) and def?(impl(fun)(R)) THEN
+    diag((error, r) !! "attempt to replace explicit definition")(R2) & (\\ R3.
+    succeed(R3 & "")
+    )
+  ELSE
+    LET (lS, R3) == newLocalSign(main)(R2)
+        (R4, lhs, rhs) == eta(R3, main, lS)(fct(fun)(R2),
+                                            name(none, fun), body)
+        nImpl == def(none, %(eqn(none, lS, lhs, <>, rhs)))
+        R5 == updateObject(fun, _ :=_impl nImpl)(R4)
+        warnI == (warn, r) !!
+                  "inserted definition for function " ++
+                  pretty(fmtObjectNameLong(R, main)(fun)) ++ 
+                  " into interpreter"
+        warnI2 == IF def?(impl(fun)(R2)) THEN 
+                    (warn, r) !! "replacing existing definition"
+                  ELSE ok FI
+    IN
+    :=_unitTable(\\T. def(main :=_part sign, changed, 
+                          def(main :=_part impl, changed, T))) & ( \\ _ .
+    diag(warnI <+ warnI2)(R5) & (\\ R6.
+    changeIO(R6, main, r, lhs, rhs)
+    ))
+  FI
+  )
+
+
+/* %Equations should have flat values (should they?). Until functionality
+    is a name or a cart, add variables and carry on. */
+
+FUN eta: repo ** unitName ** localSignName ->
+          fct'RepoAbsy ** expr'RepoAbsy ** expr'RepoAbsy ->
+          repo ** expr'RepoAbsy ** expr'RepoAbsy 
+DEF eta(R0, main, lS)(fc, lhs, rhs0) ==
+  LET (R, rhs) == replaceWrongLS(R0, rhs0)
+  IN
+  IF (name? or cart?)(fc) THEN (R, lhs, rhs)
+  ELSE
+    LET from == dom(fc)
+        (R1, nVars) == newVars(R, main, lS)(IF from cart? THEN elems(from)
+                                            ELSE %(from) FI)
+
+        nLhs == apply1(lhs, nVars)
+        nRhs == IF lambda?(rhs) THEN
+                  IF #(vars(rhs)) = #(nVars) THEN
+                    subst(vars(rhs), nVars) <$ body(rhs)
+                  ELSE
+                    ABORT("eta'ProofAsProgram: rhs is lambda expression with wrong number of variables")
+                  FI
+                ELSE
+                  apply1(rhs, nVars)
+                FI
+    IN
+    eta(R1, main, lS)(codom(fc), nLhs, nRhs)
+  FI
+
+/* %Try to change InterOpal accordingly (cf. @code{increment}
+    from structure @code{Increment} . */
+FUN changeIO: repo ** unitName ** ref ** expr'RepoAbsy ** expr'RepoAbsy ->
+               com[pair[repo, denotation]]
+DEF changeIO(R, mainU, r, lhs, rhs) ==
+  progress(4, \\ . "inserting definition into InterOpal")(R) & (\\ R0.
+  debugMsg("pap", \\ . "lhs = " ++ pretty(fmtExpr(lhs)) ++
+           " rhs = " ++ pretty(fmtExpr(rhs)))(R0) & (\\ R1.
+  IF sign?(part(mainU)) THEN
+    diag((limit, r) !!
+         "cannot insert definition into signature units")(R1) & (\\ R2.
+    succeed(R2 & "")
+    )
+  ELSE
+    LET newText == "DEF " ++ opalExpr(lhs)(R1) ++ " == \n" ++ opalExpr(rhs)(R1)
+    IN
+    debugMsg("pap", \\ . "inserted text: " ++ newText)(R1) & (\\ R1a.
+    extendUnitP(mainU, newText)(R1a) & (\\ ER.
+    LET (res:extendResult, R2) == unpair(ER)
+    IN
+    IF failure?(res) THEN diag(diag(res))(R2) & (\\ R3. succeed(R3 & ""))
+    IF success?(res) THEN
+/* %- This would be the normal way of doing it. Alas, reading of the
+    InterOpal file by the compiler discards all implementations.
+      open(path(absyFile(mainU)(R2)), "w") & (\\ f.
+      write(f, ioTypeKey, absy(res)) & (\\ _ .
+      close(f) & (\\ _ .
+      diag(diag(res))(R2)
+      )))
+*/
+      -- %get the original InterOpal data
+      open(path(absyFile(mainU)(R2)), "r") & (\\ f.
+      read(f, ioTypeKey) & (\\IO.
+      close(f) & (\\ _ .
+      -- %find the newly created implementation in res
+      LET oldObjs == objs(oldMain)
+          oldMain == structs(IO) ! main
+          newObSeq == asSeq((\\ _ , ob. def?(def(ob))) |
+                            objs(structs(absy(res)) ! main))
+      IN
+      IF <>?(newObSeq) THEN
+        diag((error, r) !!
+             "no definition found in result ?!?")(R2) & (\\ R3.
+        succeed(R3 & ""))
+      IF #(newObSeq) > 1 THEN
+        diag((error, r) !!
+             "ambiguous definitions found in result ?!?")(R2) & (\\ R3.
+        succeed(R3 & ""))
+      ELSE
+        -- %okay, exactly one implementation. Now fill it in.
+        LET (obId, ob) == unpair(ft(newObSeq))
+            nImpl == def(ob)
+            oldOb == oldObjs ! obId
+            newOb == object(pos(oldOb), ident(oldOb), symbol(oldOb),
+                            kind(oldOb), nImpl, props(oldOb),
+                            createdPragma :: pragmas(oldOb))
+            newObjs == def(obId, newOb, oldObjs)
+            newMain== struct(pos(oldMain), origin(oldMain), symbol(oldMain),
+                             insts(oldMain), onlys(oldMain), 
+                             newObjs, props(oldMain), pragmas(oldMain))
+            newIO == interOpal(part(IO), def(main, newMain, structs(IO)))
+            warnC == (warn, r) !! "inserted definition into compiler"
+        IN
+        IF def?(def(oldOb)) ANDIF noCreatedPragma(oldOb) THEN
+          LET errorNew == IF def?(def(oldOb)) THEN
+                            (error, r) !! "function is already defined"
+                          ELSE
+                            ok
+                          FI
+          IN
+          diag(errorNew <+ diag(res))(R2) & (\\ R3.
+          succeed(R3 & ""))
+        ELSE
+          open(path(absyFile(mainU)(R2)), "w") & (\\ f2.
+          write(f2, ioTypeKey, newIO) & (\\ _ .
+          close(f2) & (\\ _ .
+          diag(warnC <+ diag(res))(R2) & (\\ R3.
+          succeed(R3 & newText)
+          ))))
+        FI
+      FI
+      )))
+    FI
+    ))
+  FI
+  ))
+
+FUN createdMessage: denotation
+DEF createdMessage == "created / proof as program"
+
+FUN createdPragma: pragma'InterOpal
+DEF createdPragma == pragma(token(unknown, createdMessage)%)
+
+FUN noCreatedPragma: object'InterOpal -> bool
+DEF noCreatedPragma(ob) ==
+  forall?(\\d. d |= createdMessage,
+         text * token? | ft * ::? | items * pragmas(ob))
+  
+/* %Replace variables added within proof checker by new variables created
+    here. Checks for lambda expressions with proper annotation. */
+FUN replaceWrongLS: repo ** expr'RepoAbsy -> repo ** expr'RepoAbsy
+DEF replaceWrongLS(R, E AS name(_, _)) == (R, E)
+DEF replaceWrongLS(R, E AS apply(a, fc, ar)) ==
+  LET (R1, fc1) == replaceWrongLS(R, fc)
+      (R2, ar1) == replaceWrongLS(R1, ar)
+  IN
+  (R2, apply(a, fc1, ar1))
+DEF replaceWrongLS(R, E AS tuple(a, els)) ==
+  LET (R1, els1) == (replaceWrongLS, R) * els
+  IN
+  (R1, tuple(a, els1))
+DEF replaceWrongLS(R, E AS den(_, _)) == (R, E)
+DEF replaceWrongLS(R, E AS cases(a, gs, e)) ==
+  LET (R1, gs1) == (replaceWrongLS, R) * gs
+  IN
+  IF e nil? THEN
+    (R1, cases(a, gs1, nil))
+  ELSE
+    LET (R2, e1) == replaceWrongLS(R1, cont(e))
+    IN
+    (R2, cases(a, gs1, avail(e1)))
+  FI
+DEF replaceWrongLS(R, lambda(a, lS, vs, bd)) ==
+  LET (R1, bd1) == replaceWrongLS(R, bd)
+      tps == getTypes(a)
+  IN
+  IF tps nil? THEN
+    (R1, lambda(a, lS, vs, bd1))
+  ELSE
+    LET (newLs, R2) == newLocalSign(proofscript(R1))(R1)
+        tag == asDeno(no(newLs))
+        (R3, newVs) == newVars(R2, newLs, tag)(tps cont)
+        newBd == subst(vs, newVs) <$ bd
+    IN
+    (R3, lambda(a, newLs, newVs, newBd))
+  FI
+DEF replaceWrongLS(R, let(a, eqs, bd)) ==
+  LET (R1, eqs1) == (replaceWrongLS, R) * eqs
+      (R2, bd1) == replaceWrongLS(R1, bd)
+  IN
+  (R2, let(a, eqs1, bd1))
+DEF replaceWrongLS(R, as(a, v, bd)) ==
+  LET (R1, bd1) == replaceWrongLS(R, bd)
+  IN
+  (R1, as(a, v, bd1))
+DEF replaceWrongLS(R, E AS any(_)) == (R, E)
+
+FUN replaceWrongLS: repo ** guard'RepoAbsy -> repo ** guard'RepoAbsy
+DEF replaceWrongLS(R, guard(a, i, t)) ==
+  LET (R1, i1) == replaceWrongLS(R, i)
+      (R2, t1) == replaceWrongLS(R1, t)
+  IN
+  (R2, guard(a, i1, t1))
+
+FUN replaceWrongLS: repo ** eqn'RepoAbsy -> repo ** eqn'RepoAbsy
+DEF replaceWrongLS(R, eqn(a, lS, lhs, pats, rhs)) ==
+  LET (R1, rhs1) == replaceWrongLS(R, rhs)
+  IN
+  (R1, eqn(a, lS, lhs, pats, rhs1))

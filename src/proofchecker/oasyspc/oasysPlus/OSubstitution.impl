@@ -1,0 +1,82 @@
+IMPLEMENTATION OSubstitution
+
+IMPORT Map ONLY map def {} extend {}? !? <+ codom ! forall? dom undef
+       RepoName COMPLETELY
+       RepoAbsy COMPLETELY
+       Fmt ONLY lit ;
+       FmtMap ONLY fmtMap
+       PrettyFormatting ONLY fmtObjectNameLong prettyExpr
+       String ONLY string
+       MapFilter ONLY |
+       SeqMap ONLY *
+       Option ONLY avail? cont
+       OptionMap ONLY *
+       RepoAn ONLY none
+       MapMap ONLY *
+       Seq ONLY exist?
+
+
+DATA subst == abs(rep: map[objectName, <, expr])
+DEF fmtSubst(s) == lit("Subst"); fmtMap(fmtObjectName, fmtExpr)(rep(s))
+DEF prettySubst(R)(s) ==
+  lit("Subst"); fmtMap(fmtObjectNameLong(R), prettyExpr(R))(rep(s))
+
+
+DEF subst(v, e)(F) == abs(def(v, e, {})) <$ F
+DEF subst(froms, tos) == def(froms, name(none, _) * tos, {})
+
+DEF {} == abs({})
+DEF {}?(abs(m)) == {}?(m)
+DEF def(v, e, S) == abs(def(v, e, rep(S)))
+DEF def(vv, ee, S) == abs(extend(rep(S), vv, ee))
+DEF odef(v, e, S) == 
+  LET m1 == def(v, e, {}) IN abs(m1 <+ (abs(m1) <$ _ ) * rep(S))
+DEF abs(m) !? v == m !? v
+DEF abs(m1) <+ abs(m2) == abs(m1 <+ m2)
+DEF abs(m1) o abs(m2) == abs(m1 <+ (abs(m1) <$ _ ) * m2)
+
+
+DEF abs(m) - lS == abs((\\v, _ . IF globalObjectName?(v) THEN true
+                                 IF localObjectName?(v) THEN ~(sign(v) = lS)
+                                 FI)
+                       | m)
+DEF ren(old, new, abs(m)) ==
+  LET oldData == m !? old
+  IN
+  IF avail?(oldData) THEN
+    abs(def(new, cont(oldData), undef(old, m)))
+  ELSE
+    abs(m)
+  FI
+
+DEF lS | abs(m) == abs((\\v, _ . IF globalObjectName?(v) THEN false
+                                 IF localObjectName?(v) THEN sign(v) = lS
+                                 FI)
+                       | m)
+DEF P | abs(m) == abs((\\v, _ . P(v)) | m)
+DEF obs | abs(m) == abs((\\ v, _ . exist?(\\n. n = v, obs)) | m)
+
+DEF dom(abs(m)) == dom(m)
+DEF codom(abs(m)) == codom(m)
+
+DEF forall?(P, abs(m)) == forall?(P, m)
+
+-- %Applying substitutions
+DEF f <$ atomic(a, aK, es) == atomic(a, aK, (f <$ _) * es)
+DEF f <$ connect(a, cK, fs) == connect(a, cK, (f <$ _)  * fs)
+DEF f <$ quant(a, qK, lS, os, fr) == quant(a, qK, lS, os, f <$ fr)
+
+DEF f <$ name(a, o) == IF avail?(rep(f) !? o) THEN rep(f)!o ELSE name(a, o) FI
+DEF f <$ apply(a, fc, ar) == apply(a, f <$ fc, f <$ ar)
+DEF f <$ tuple(a, es) == tuple(a, (f <$ _) * es)
+DEF _ <$ den(a, t) == den(a, t)
+DEF f <$ cases(a, gs, oe) == cases(a, (f <$ _) * gs, (f <$ _) * oe)
+DEF f <$ lambda(a, s, vs, b) == lambda(a, s, vs, f <$ b)
+DEF f <$ let(a, eqs, b) == let(a, (f <$ _)  * eqs, f <$ b)
+DEF f <$ as(a, v, e) == as(a, v, f <$ e)
+DEF _ <$ any(a) == any(a)
+
+DEF f <$ guard(a, i, t) == guard(a, f <$ i, f <$ t)
+
+DEF f <$ eqn(a, s, l, ps, r) == eqn(a, s, f <$ l, (f <$ _) * ps, f <$ r)
+

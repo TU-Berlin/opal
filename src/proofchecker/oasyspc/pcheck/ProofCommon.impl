@@ -1,0 +1,99 @@
+IMPLEMENTATION ProofCommon
+
+IMPORT Loquacity ONLY progress
+       Nat ONLY 1 5 2 nat
+       ComCompose ONLY &
+       Stopwatch ONLY now
+       InternEval ONLY setRepo
+       Denotation ONLY ++
+       RealConv ONLY ``
+       Real ONLY - real 0 +
+       ReflexTrans ONLY formula
+       SeqMapEnv ONLY *
+       SetConv ONLY asSeq
+       PCEnv ONLY prems concl copy restr <  proofName spc
+       Fmt ONLY spc fmt lit
+       Option ONLY avail nil cont option avail?
+       RepoAbsy ONLY name
+       Set ONLY arb set
+       RepoObjectAccess ONLY lookup
+       RepoAn ONLY none an anLayer:SORT register def upd !?
+       RepoName ONLY sign localSignName  propertyName pragmaName itemName part
+       Com ONLY com EXEC
+       Void ONLY void
+       Seq ONLY seq
+       RepoUnitAccess ONLY lookup?
+       Dyn ONLY dyn:SORT
+       Nat ONLY !
+       DynConv ONLY unpack pack tryUnpack
+       RepoInternData COMPLETELY
+       String ONLY string
+       OptionMap ONLY *
+       UnitHandling ONLY toImpl: repo**unitName -> objectName -> objectName
+
+-- %Send Repository
+DEF sendRepo(R) ==
+  progress(1, \\ . "sending repository ...")(R) & (\\ R1.
+  now & (\\ start.
+  setRepo(R1) & (\\ _ .
+  now & (\\ end.
+  progress(1, \\ . "done [" ++ ``(end-start, 2) ++ " sec]")(R1)
+  ))))
+
+DEF transPH(R)(pH, uN) ==
+  LET trans == \\ r, l. formula(l, uN)(r)
+      (R1, nPrems) == (trans, R) * asSeq(prems(pH))
+      (R2, nConcl) == formula(concl(pH), uN)(R1)
+      specF == specFun(uN, R, concl(pH))
+  IN
+  (R2, nPrems, nConcl, specF)
+
+-- %return the specified function, if present
+DEF specFun(_ , _, spc(_, fun, _)) == avail(fun)
+DEF specFun(main, R, copy(_, orig)) == toImpl(R, main) * specFun(main, R, orig)
+DEF specFun(main, R, restr(_, orig, _)) == 
+  toImpl(R, main) * specFun(main, R, orig)
+DEF specFun(_, _, _ :lawName) == nil
+
+-- %lookups
+DEF lookup(U, fct)(R) == name(arb(lookup(U(R), fct)(R)))
+
+DEF lookup(U, n)(R) == name(none, arb(lookup(U(R), n)(R)))
+DEF `(n, U) == lookup(U, n)
+
+DEF unit(den)(R) == cont(lookup?(den, sign)(R))
+
+-- %time annotation layer
+FUN timeLayer: anLayer
+DEF timeLayer == EXEC(register("922"!, fmtTime))
+
+FUN timeTag: denotation
+DEF timeTag == "totalTime"
+
+FUN fmtTime: dyn -> fmt
+DEF fmtTime(d) == lit(``(unpack(d, timeTag)))
+
+DEF resetTime(R) ==
+  R :=_an def(timeLayer, pack(0, timeTag), an(R))
+
+DEF addTime(t)(R) ==
+  R :=_an upd(timeLayer, add(t), an(R))
+
+FUN add: real -> dyn -> dyn
+DEF add(r)(d) == 
+  LET r2 == tryUnpack(d, timeTag)
+  IN
+  IF avail?(r2) THEN
+    pack(r + cont(r2), timeTag)
+  ELSE
+    pack(r, timeTag)
+  FI
+  
+DEF getTime(R) ==
+  LET res == an(R) !? timeLayer
+  IN
+  IF avail?(res) THEN 
+    unpack(cont(res), timeTag)
+  ELSE
+    0
+  FI

@@ -1,0 +1,183 @@
+IMPLEMENTATION VarHandling-- %$Local Signatures$
+
+IMPORT Seq ONLY seq exist? <> :: % ft
+       RepoAbsy COMPLETELY
+       RepoObjectAccess COMPLETELY
+       PredefEntities ONLY proofscript
+       SetConv ONLY asSeq asSet
+       RepoName COMPLETELY
+       SeqMap ONLY *
+       SeqOfSeq ONLY flat
+       Denotation ONLY ++
+       NatConv ONLY `
+       RepoAn ONLY none
+       Set ONLY {} arb set
+       OSubstitution ONLY def <$ subst {}
+       Option ONLY nil avail
+       Nat ONLY nat
+       SeqMapEnv ONLY *
+       BasicSupplements ONLY # asDeno
+       Pair ONLY pair 1st 2nd
+       SeqSupplements ONLY idx
+
+DEF newVars(R, vs) == 
+  LET (lS, R1) == newLocalSign(proofscript(R))(R)
+      sels == asSeq(asSet[objectName, <](selector * flat(components * vs)))
+      (_, R2) == newLocalObjects(lS, asVar(R1, lS, "") * sels)(R1)
+  IN
+  (R2, lS)
+
+DEF newVars(R, v, lS, tag) ==
+  LET sels == selector * components(v)
+      (vars, R1) == newLocalObjects(lS, asVar(R, lS, tag) * sels)(R)
+  IN
+  (R1, vars)
+
+FUN asVar: repo ** localSignName ** denotation -> objectName -> object
+DEF asVar(R, lS, tag)(sel) ==
+  LET vFct == codom(fct(sel)(R))
+      vSym == symbol(sel)(R) ++ "_" ++ `(no(sel)) ++ "_" ++ no(lS) # tag
+  IN
+  object(none, vSym, oper(vFct), variable(none), {}, {})
+
+DEF asVar(R)(lS, sel) ==
+  arb(lookup(lS, (symbol(sel)(R) ++ "_" ++ `(no(sel)) ++ "_") # no(lS))(R))
+
+DEF newVars(R, v1, v2) ==
+  LET (lS, R1) == newLocalSign(proofscript(R))(R)
+      sels1 == selector * components(v1)
+      sels2 == selector * components(v2)
+      (vars1, R2) == newLocalObjects(lS, asVar(R1, lS, "") * sels1)(R1)
+      (vars2, R3) == newLocalObjects(lS, asVar(R2, lS, "¹") * sels2)(R2)
+  IN
+  (R3, lS, vars1, vars2)
+
+DEF newVars(R, main, lS)(fcts) == newVars(R, lS, "")(fcts)
+
+DEF newVars(R, lS, tag)(fcts) ==
+  LET nObj == \\p. object(none, asDeno(1st(p)) ++ tag, oper(2nd(p)),
+                          variable(none), {}, {})
+      (nVars, R2) == newLocalObjects(lS, nObj * idx(fcts))(R)
+  IN
+  (R2, nVars)
+
+
+DEF newTypeVar(tpe)(R) ==
+  LET (lS, R1) == newLocalSign(proofscript(R))(R)
+      var0 == object(none, typevarSymbol(tpe, R1), oper(name(tpe)),
+                    variable(none), {}, {})
+      (vars, R2) == newLocalObjects(lS, %(var0))(R1)
+      var == ft(vars)
+  IN
+  (var, R2)
+
+FUN typevarSymbol: objectName ** repo -> denotation
+DEF typevarSymbol(oN, R) == symbol(oN)(R) ++ "¶"
+
+
+DEF toImplVars(main)(R, f:formula) ==
+  changeVars(toImplKind(main), newLocalSign(main))(R, f)
+DEF toImplVars(main)(R, ex:expr) ==
+  changeVars(toImplKind(main), newLocalSign(main))(R, ex)
+
+DEF changeVars(f, new)(R, atomic(a, k, es)) ==
+  LET (R1, es1) == (changeVars(f, new), R) * es
+  IN
+  (R1, atomic(a, k, es1))
+DEF changeVars(f, new)(R, connect(a, k, fs)) ==
+  LET (R1, fs1) == (changeVars(f, new), R) * fs
+  IN
+  (R1, connect(a, k, fs1))
+DEF changeVars(f, new)(R, quant(a, k, _lS, vs, F)) ==
+  LET (R1, F1) == changeVars(f, new)(R, F)
+      (lS2, R2) == new(R1)
+      vs1 == f * (\\on. object(on)(R2)) * vs
+      (vs2, R3) == newLocalObjects(lS2, vs1)(R2)
+      sb == def(vs, name(none, _) * vs2, {})
+      F2 == sb <$ F1
+  IN
+  (R3, quant(a, k, lS2, vs2, F2))
+
+DEF changeVars(_f, _new)(R, else:expr) == (R, else)
+DEF changeVars(f, new)(R, apply(a, fu, ar)) ==
+  LET (R1, fu1) == changeVars(f, new)(R, fu)
+      (R2, ar1) == changeVars(f, new)(R1, ar)
+  IN
+  (R2, apply(a, fu1, ar1))
+DEF changeVars(f, new)(R, tuple(a, es)) ==
+  LET (R1, es1) == (changeVars(f, new), R) * es
+  IN
+  (R1, tuple(a, es1))
+DEF changeVars(f, new)(R, cases(a, gs, nil)) ==
+  LET (R1, gs1) == (changeVars(f, new), R) * gs
+  IN
+  (R1, cases(a, gs1, nil))
+DEF changeVars(f, new)(R, cases(a, gs, avail(e))) ==
+  LET (R1, gs1) == (changeVars(f, new), R) * gs
+      (R2, e1) == changeVars(f, new)(R1, e)
+  IN
+  (R2, cases(a, gs1, avail(e1)))
+DEF changeVars(f, new)(R, lambda(a, _lS, vs, bd)) ==
+  LET (R1, bd1) == changeVars(f, new)(R, bd)
+      (lS2, R2) == new(R1)
+      vs1 == f * (\\on. object(on)(R2)) * vs
+      (vs2, R3) == newLocalObjects(lS2, vs1)(R2)
+      sb == def(vs, name(none, _) * vs2, {})
+      bd2 == sb <$ bd1
+  IN
+  (R3, lambda(a, lS2, vs2, bd2))
+DEF changeVars(f, new)(R, let(a, eqs, bd)) ==
+  LET (R1, eqs1, bd1) == changeVars(f, new)(R, eqs, bd)
+  IN
+  (R1, let(a, eqs1, bd1))
+DEF changeVars(f, new)(R, as(a, v, e)) ==
+  LET (R1, e1) == changeVars(f, new)(R, e)
+  IN
+  (R1, as(a, v, e1))
+
+FUN changeVars: (object -> object) ** (repo -> localSignName ** repo) ->
+                 repo ** guard -> repo ** guard
+DEF changeVars(f, new)(R, guard(a, i, t)) ==
+  LET (R1, i1) == changeVars(f, new)(R, i)
+      (R2, t1) == changeVars(f, new)(R1, t)
+  IN
+  (R2, guard(a, i1, t1))
+
+FUN changeVars: (object -> object) ** (repo -> localSignName ** repo) ->
+                 repo ** seq[eqn] ** expr -> repo ** seq[eqn] ** expr
+DEF changeVars(_, _)(R, <>, bd) == (R, <>, bd)
+DEF changeVars(f, new)(R, eqn(a, _lS, lh, pat, rhs) :: eqs, bd) ==
+  LET (lS1, R1) == new(R)
+      vs == IF lh name? THEN %(oper(lh)) ELSE oper * elems(lh) FI
+      vs1 == f * (\\on. object(on)(R1)) * vs
+      (vs2, R3) == newLocalObjects(lS1, vs1)(R1)
+      sb == def(vs, name(none, _) * vs2, {})
+      eqs1 == (sb <$ _) * eqs
+      (R4, eqs2, bd1) == changeVars(f, new)(R3, eqs1, bd)
+  IN
+  (R4, eqn(a, lS1, sb <$ lh, (sb <$ _) * pat, sb <$ rhs) :: eqs2, sb <$ bd1)
+
+FUN toImplKind: unitName -> object -> object
+DEF toImplKind(uN)(ob) == ob :=_kind toImpl(uN)(kind(ob))
+
+FUN toImpl: unitName -> kind -> kind
+DEF toImpl(_)(sort) == sort
+DEF toImpl(uN)(oper(fct)) == oper(toImpl(uN)(fct))
+DEF toImpl(_)(k AS other(_,_)) == k
+
+FUN toImpl: unitName -> fct -> fct
+DEF toImpl(uN)(name(s)) == name(toImpl(uN)(s))
+DEF toImpl(uN)(cart(es)) == cart(toImpl(uN) * es)
+DEF toImpl(uN)(funct(d, c)) == funct(toImpl(uN)(d), toImpl(uN)(c))
+
+-- %toImpl(name)
+DEF toImpl(globalObjectName(no, uN)) == globalObjectName(no, uN :=_part impl)
+DEF toImpl(ON AS localObjectName(_, _)) == ON
+
+DEF toImpl(main)(globalObjectName(no, uN)) == 
+  IF main ~ uN THEN globalObjectName(no, uN :=_part impl)
+  ELSE
+    globalObjectName(no, uN)
+  FI
+DEF toImpl(_)(ON AS localObjectName(_, _)) == ON
+

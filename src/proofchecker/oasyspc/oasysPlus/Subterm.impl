@@ -1,0 +1,116 @@
+IMPLEMENTATION Subterm
+
+IMPORT Identity ONLY id
+       RepoAn ONLY an:SORT
+       Seq ONLY seq :: <> +% ++ 
+       RepoAbsy COMPLETELY
+       RepoName ONLY localSignName:SORT
+       Option ONLY avail avail? nil
+
+DEF findSubexpr(P, E) == findSubexpr(P, \\ _ . false, E)
+DEF findSubexpr(P, stop, E) == 
+  IF P(E) THEN (avail(E), id) 
+  OTHERWISE
+  IF stop(E) THEN fail()
+  ELSE doFind(P, stop, E) 
+  FI
+
+-- %These functions are called only when @code{NOT(P(E))}.
+FUN doFind: (expr -> bool) ** (expr -> bool) ** expr ->
+             option[expr] ** (expr -> expr)
+DEF doFind(_, _, name(_, _)) == fail()
+DEF doFind(P, stop, apply(a, f, ar)) ==
+  LET (f?, F1) == findSubexpr(P, stop, f)
+  IN
+  IF avail?(f?) THEN (f?, \\s. apply(a, F1(s), ar))
+  ELSE
+    LET (ar?, F2) == findSubexpr(P, stop, ar)
+    IN
+    IF avail?(ar?) THEN (ar?, \\s. apply(a, f, F2(s)))
+    ELSE
+      fail()
+    FI
+  FI
+DEF doFind(P, stop, tuple(a, elems)) == doFindI(P, stop, a, <>, elems)
+
+FUN doFindI: (expr -> bool) ** (expr -> bool) **
+              an ** seq[expr] ** seq[expr] -> option[expr] ** (expr -> expr)
+DEF doFindI(_, _, _, _, <>) == fail()
+DEF doFindI(P, stop, a, preEls, currEl :: postEls) ==
+  LET (currEl?, F) == findSubexpr(P, stop, currEl)
+  IN
+  IF avail?(currEl?) THEN (currEl?, \\s. tuple(a, preEls ++ F(s) :: postEls))
+  ELSE doFindI(P, stop, a, preEls +% currEl, postEls)
+  FI
+
+DEF doFind(_, _, den(_, _)) == fail()
+DEF doFind(P, stop, cases(a, gs, el)) == doFindC(P, stop, a, <>, gs, el)
+
+FUN doFindC: (expr -> bool) ** (expr -> bool) **
+              an ** seq[guard] ** seq[guard] ** option[expr] -> 
+              option[expr] ** (expr -> expr)
+DEF doFindC(_, _, _, _, <>, nil) == fail()
+DEF doFindC(P, stop, a, preGuards, <>, avail(else)) ==
+  LET (else?, F) == findSubexpr(P, stop, else)
+  IN
+  IF avail?(else?) THEN (else?, \\s. cases(a, preGuards, avail(F(s))))
+  ELSE fail()
+  FI
+DEF doFindC(P, stop, a, preGuards, currGuard :: postGuards, else) ==
+  LET (if?, F1) == findSubexpr(P, stop, if(currGuard))
+  IN
+  IF avail?(if?) THEN (if?,
+                       \\s. cases(a, preGuards ++
+                                  guard(an(currGuard), F1(s), 
+                                        then(currGuard)) :: postGuards ,
+                                  else))
+  ELSE
+    LET (then?, F2) == findSubexpr(P, stop, then(currGuard))
+    IN
+    IF avail?(then?) THEN (then?, \\s. cases(a, preGuards ++
+                                             guard(an(currGuard),
+                                                   if(currGuard), F2(s)) ::
+                                             postGuards,
+                                             else))
+    ELSE
+      doFindC(P, stop, a, preGuards +% currGuard, postGuards, else)
+    FI
+  FI
+
+DEF doFind(P, stop, lambda(a, lS, v, b)) ==
+  LET (b?, F) == findSubexpr(P, stop, b)
+  IN
+  IF avail?(b?) THEN (b?, \\s. lambda(a, lS, v, F(s))) ELSE fail() FI
+DEF doFind(P, stop, let(a, eqs, b)) == doFindL(P, stop, a, <>, eqs, b)
+
+FUN doFindL: (expr -> bool) ** (expr -> bool) **
+              an ** seq[eqn] ** seq[eqn] ** expr -> 
+              option[expr] ** (expr -> expr)
+DEF doFindL(P, stop, a, preEqs, <>, b) ==
+  LET (b?, F) == findSubexpr(P, stop, b)
+  IN
+  IF avail?(b?) THEN (b?, \\s. let(a, preEqs, F(s)))
+  ELSE fail()
+  FI
+DEF doFindL(P, stop, a, preEqs, currEq :: postEqs, b) ==
+  LET (rhs?, F) == findSubexpr(P, stop, rhs(currEq))
+  IN
+  IF avail?(rhs?) THEN
+    (rhs?, \\s. let(a, preEqs ++
+                    eqn(an(currEq), sign(currEq),
+                        lhs(currEq), patterns(currEq), F(s)) :: postEqs, b))
+  ELSE
+    doFindL(P, stop, a, preEqs +% currEq, postEqs, b)
+  FI
+
+DEF doFind(P, stop, as(a, v, b)) ==
+    LET (b?, F) == findSubexpr(P, stop, b)
+  IN
+  IF avail?(b?) THEN (b?, \\s. as(a, v, F(s))) ELSE fail() FI
+DEF doFind(_, _, any(_)) == fail()
+  
+  
+
+
+FUN fail: () -> option[expr] ** (expr -> expr)
+DEF fail() == (nil, id)
