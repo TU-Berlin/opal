@@ -1,0 +1,135 @@
+IMPLEMENTATION BrCommands
+-- ============================================================================
+-- Autor:       ralfi
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Aufrufmodul aller interopalabhaengigen Funktionen
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/BrCommands.impl,v 1.1 1999-10-03 17:14:22 kd Exp $
+-- ============================================================================
+
+IMPORT  Format          ONLY    format
+        InterOpal       ONLY    interOpal:SORT
+        InterOpalDump   ONLY    dump : interOpal -> format
+        Lib             ONLY    nl tab
+        Lib1            ONLY    seq2StringByList seq2StringByNewLine seq2StringBySpace
+        LookupInterOpal ONLY    getAllImportedStructures getImports : interOpal ** arguments -> string ** level -> seq listAllGlobalOrImportObj
+        LookupLib       ONLY    < complete? fct? info:SORT info2Str info2Str4 level mkLevel
+        LookupStructure ONLY    listAllApplicationsAndLocalsPerDef
+        Nat             ONLY    * 2 8 < nat
+        OptBrowser      ONLY    argument arguments level? name name?
+        Option          ONLY    cont nil? option
+        Pair            ONLY    & 1st 2nd pair
+        Seq             ONLY    % ++ :: <> <>? ft rt seq
+        SeqSort         ONLY    msort
+        SeqReduce       ONLY    /
+        SeqMap          ONLY    *
+        String          ONLY    ! : denotation -> string # ++ < string
+
+FUN tabsize : nat
+DEF tabsize == 8
+
+FUN     com11 com12 com13 com14 com15 com16 com17 com18 com19
+        comUndef : interOpal ** arguments -> seq[string]
+
+FUN comDump : interOpal ** arguments -> format
+DEF desc10 == "10             C-c C-b C-d   Dumpausgabe von InterOpal"!
+DEF comDump(IO,Args) == dump(IO)
+
+DEF desc11 == ("11 M-z         C-c C-b C-p   Anzeige der Funktionalitaet an der Cursorposition\n               C-c C-b p     Anzeige der Funktionalitaeten in der Naehe\n                             der Cursorposition\n   M-C-z       C-c C-b C-n   Anzeige aller Funktionalitaeten des aktuellen\n                             Bezeichners (Cursorposition)"!)
+DEF com11(IO,Args) == com15(IO,Args)
+
+DEF desc12 == "12             C-c C-b i     Anzeige der Importe aus der Struktur am Cursor"!
+DEF com12(IO,Args) == 
+  LET   OptName == name(Args)(name?)
+  IN    IF OptName nil? THEN %("Name: error, name not avaliable"!)
+        ELSE LET SeqPair== com12a(IO,Args)(OptName cont)
+                SortSeq == (\\A.(A 1st)++(A 2nd))*
+                                (msort(\\A,B.(A 1st)<(B 1st))(SeqPair))
+             IN IF SeqPair <>? THEN
+                        %(("getImports: Structure '"!) ++ (OptName cont) ++ 
+                                ("' import nothing (no name of structure?)"!))
+                ELSE (("IMPORT"!)++(SortSeq ft))::(SortSeq rt)
+                FI
+        FI
+
+FUN com12a : interOpal ** arguments -> string -> seq[pair[string,string]]
+-- liefert die importierten Funktionen etc. von der Struktur 'string'
+DEF com12a(IO,Args)(Name) ==
+  LET   SeqPair == getImports(IO,Args)(Name,Level)
+        OptLevel== name(Args)(level?)
+        Level   == mkLevel(OptLevel cont)
+        SeqStr  == /((\\Pair,Seq.
+                   LET  Large?  == (Level complete?)or(Level fct?)
+                        SeqName == IF Large? THEN
+                                        seq2StringByList(tab,nl++tab,""!,
+                                                info2Str4(IO))(Pair 2nd)
+                                   ELSE tab++seq2StringBySpace(info2Str4(IO))
+                                                        (Pair 2nd) FI
+                        Str1    == OptTab1++InstName++OptTab2
+                        OptTab1 == IF Large? THEN nl
+                                   ELSE tab FI
+                        Len     == #(InstName)
+                        InstName== info2Str4(IO)(Pair 1st)
+                        OptTab2 == IF Large? THEN ""!
+                                   OTHERWISE IF Len < tabsize THEN tab
+                                   OTHERWISE IF Len < (tabsize*2) THEN ""!
+                                   ELSE nl++tab++tab FI
+                        Str2    == IF Large? THEN nl
+                                   ELSE ""! FI 
+                   IN(&(Str1,tab++("ONLY"!)++Str2++SeqName))::Seq),<>)(SeqPair)
+  IN    IF OptLevel nil? THEN %(&("Name: error, level not avaliable"!,""!))
+        ELSE SeqStr
+        FI
+
+DEF desc13 == "13 M-i         C-c C-b C-i   kompletter Aufbau der Importliste"!
+DEF com13(IO,Args) ==
+  LET   SeqImp  == getAllImportedStructures(IO,Args)()
+        SeqPair == /((\\StrImp,S.(com12a(IO,Args)(StrImp)) ++ S),<>)(SeqImp)
+        SortSeq == (\\A.(A 1st)++(A 2nd))*
+                        (msort(\\A,B.(A 1st)<(B 1st))(SeqPair))
+  IN IF SeqPair <>? THEN <>
+     ELSE (("IMPORT"!)++(SortSeq ft))::(SortSeq rt)
+     FI
+
+DEF desc14 == "14             C-c C-b C-o   Anzeige aller importierten Objekte"!
+DEF com14(IO,Args) ==
+LET     Level   == mkLevel(OptLevel cont)
+        OptLevel== name(Args)(level?)
+        SeqPInfo== listAllGlobalOrImportObj(IO,Args)(Level)
+        SortSeq == msort(\\A,B.(A 1st)<(B 1st))(SeqPInfo)
+        SeqStr  == (\\Pair.seq2StringByNewLine(info2Str(IO))
+                        ((Pair 1st)::(msort(<)(Pair 2nd))))*SortSeq
+  IN    IF OptLevel nil? THEN %("Name: error, level not avaliable"!)
+        ELSE SeqStr
+        FI
+
+DEF desc15 == "15             C-c C-b C-a   Listet alle Applikationen auf die in Funktionen\n                             verwendet werden"!
+DEF com15(IO,Args) ==
+LET     Level   == mkLevel(OptLevel cont)
+        OptLevel== name(Args)(level?)
+        SeSeInfo== listAllApplicationsAndLocalsPerDef(IO,Args)(Level)
+        SeqSort == msort(\\A,B. IF A <>? THEN true
+                                IF B <>? THEN false
+                                ELSE (A ft)<(B ft)FI)(SeSeInfo)
+        SeqStr  == (\\Seq.IF Seq <>? THEN nl
+                          ELSE info2Str(IO)(Seq ft)++nl++RtStr
+                          WHERE RtStr   == seq2StringByNewLine(info2Str(IO))
+                                                                (SortRt)
+                                SortRt  == msort(<)(Seq rt)
+                          FI)*SeqSort
+  IN    IF OptLevel nil? THEN %("Name: error, level not avaliable"!)
+        ELSE SeqStr
+        FI
+
+DEF desc16 == "16                           "!
+DEF com16(IO,Args) == %("nyi"!)
+
+DEF desc17 == "17                           "!
+DEF com17(IO,Args) == %("nyi"!)
+
+DEF desc18 == "18                           "!
+DEF com18(IO,Args) == %("nyi"!)
+
+DEF desc19 == "19                           "!
+DEF com19(IO,Args) == %("nyi"!)
+
+DEF comUndef (_,_) == %("Command not defined"!)
