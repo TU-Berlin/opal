@@ -1,0 +1,121 @@
+/* %- Rcs-Info (automatically generated) 
+
+  $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/reflections/Service/OOP/Virtual.impl,v 1.1 1999-03-23 12:37:53 kd Exp $
+  $Author: kd $
+  $Date: 1999-03-23 12:37:53 $
+  $State: Exp $
+
+  $Locker:  $
+  $Revision: 1.1 $
+  $Name: not supported by cvs2svn $
+
+  $Log: not supported by cvs2svn $
+  Revision 1.1  1999/03/20 22:51:45  opaladm
+  neu eingefuehrt
+
+  Revision 1.4  1999/01/27 12:21:27  silver
+  Added new forms of virtual functions.
+
+  Revision 1.3  1998/12/10 23:58:58  silver
+  Using pragma now.
+
+  Revision 1.2  1998/11/12 14:47:13  silver
+  First documentation.
+
+*/
+
+IMPLEMENTATION Virtual [aux]
+
+-- $Author: kd $
+-- $Date: 1999-03-23 12:37:53 $
+-- $Revision: 1.1 $
+
+IMPORT	Seq			COMPLETELY
+	Array			COMPLETELY
+	SeqMap			ONLY	*
+	SeqReduce		ONLY	/
+	Nat			COMPLETELY
+	Reflection      	COMPLETELY
+	Void			ONLY	void
+
+	ABORT			COMPLETELY
+	
+	ReflectionBuild		COMPLETELY
+	SortReflection		ONLY	sortReflection unique
+
+
+DATA methodBinding	== bind (sort     : sortReflection,
+           	           	 function : reflection ** aux -> reflection)
+DATA constructorBinding	== bind (sort     : sortReflection,
+           	            	 function : aux -> reflection)
+DATA accessorBinding	== bind (sort     : sortReflection,
+           	            	 function : reflection -> aux)
+DATA binAccessorBinding	== bind (sort     : sortReflection,
+           	            	 function : reflection ** reflection -> aux)
+
+DATA method		== pack (bindings : array[methodBinding])
+DATA constructor	== pack (bindings : array[constructorBinding])
+DATA accessor		== pack (bindings : array[accessorBinding])
+DATA binAccessor	== pack (bindings : array[binAccessorBinding])
+
+
+DEF accessor (bindings) 	 == 
+  accessor (bindings, (\\ _ . ABORT("Unbound sortReflection.")))
+DEF accessor (bindings, default) ==
+  LET
+    array_size    == succ(succ(max / (0, ((\\ b. unique(sort(b))) * bindings))))
+    initial_array == init(array_size, bind(reflect[void], default))
+  IN
+    pack(  (\\ binding, arr. (arr, unique(sort(binding))) := binding) 
+	 / (initial_array, bindings))
+    
+  
+DEF binAccessor (bindings) 	 == 
+  binAccessor (bindings, (\\ _, _ . ABORT("Unbound sortReflection.")))
+DEF binAccessor (bindings, default) ==
+  LET
+    array_size    == succ(succ(max / (0, ((\\ b. unique(sort(b))) * bindings))))
+    initial_array == init(array_size, bind(reflect[void], default))
+  IN
+    pack(  (\\ binding, arr. (arr, unique(sort(binding))) := binding) 
+	 / (initial_array, bindings))
+    
+      
+DEF method (bindings) ==
+  LET
+    array_size    == succ(succ(max / (0, ((\\ b. unique(sort(b))) * bindings))))
+    initial_array == init(array_size, bind(reflect[void], (\\ self, _ . self)))
+  IN
+    pack(  (\\ binding, arr. (arr, unique(sort(binding))) := binding) 
+	 / (initial_array, bindings))
+    
+DEF constructor (bindings) ==
+  LET
+    array_size    == succ(succ(max / (0, ((\\ b. unique(sort(b))) * bindings))))
+    initial_array == init(array_size, bind(reflect[void],
+			  (\\ _ . ABORT("Unbound sortReflection."))))
+  IN
+    pack(  (\\ binding, arr. (arr, unique(sort(binding))) := binding) 
+	 / (initial_array, bindings))
+    
+
+
+DEF (m : method) ! (refl, a) ==
+  function(bindings(m) ! 
+	   (min(pred(#(bindings (m))), unique(sort(type(refl)))))) 
+    (refl, a)
+
+DEF (c : constructor) ! (sort, a) == 
+  function(bindings(c) ! 
+	   (min(pred(#(bindings (c))), unique(sort)))) 
+    (a)
+
+DEF (a : accessor) ! refl == 
+  function(bindings(a) ! 
+	   (min(pred(#(bindings (a))), unique(sort(type(refl)))))) 
+    (refl)
+
+DEF (a : binAccessor) ! (r1, r2) == 
+  function(bindings(a) ! 
+	   (min(pred(#(bindings (a))), unique(sort(type(r1)))))) 
+    (r1, r2)

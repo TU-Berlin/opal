@@ -1,0 +1,159 @@
+/* %- Rcs-Info 
+
+  $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/reflections/ReflectionCore/Reflection.impl,v 1.1 1999-03-23 12:36:54 kd Exp $
+  $Author: kd $
+  $Date: 1999-03-23 12:36:54 $
+  $State: Exp $
+
+  $Locker:  $
+  $Revision: 1.1 $
+  $Name: not supported by cvs2svn $
+
+  $Log: not supported by cvs2svn $
+  Revision 1.1  1999/03/20 22:51:23  opaladm
+  *** empty log message ***
+
+  Revision 1.11  1999/02/23 14:45:33  schintke
+  Implementation of codeReflection
+  changed product from typeReflection
+  now flattened
+
+  Revision 1.10  1999/02/22 13:50:10  schintke
+  changed internal used type from void to obj'RUNTIME
+
+  Revision 1.9  1998/12/06 20:30:04  silver
+  First version with compiler extentions.
+
+  Revision 1.8  1998/10/09 15:54:25  silver
+  Defined comparison and equality on typeReflections.
+
+  Revision 1.7  1998/09/30 17:25:30  silver
+  Worked in proposals from meeting on 30sep98.
+
+  Revision 1.6  1998/06/16 12:13:33  trancon
+  Tuple and apply implemented
+
+  Revision 1.5  1998/06/13 20:18:18  silver
+  Implementation of = function for sortReflection.
+
+  Revision 1.4  1998/06/04 17:29:59  silver
+  Incorporated some proposals from meeting on 04jun98.
+
+  Revision 1.3  1998/05/27 13:55:36  silver
+  Constructor for sortReflection now named freeType.
+
+  Revision 1.2  1998/05/22 11:08:11  silver
+  Implementation of some functions based on Till's proposal
+  for naming.
+
+  Revision 1.1  1998/05/22 08:57:54  silver
+  Initial revision
+
+*/
+
+IMPLEMENTATION Reflection
+
+IMPORT	Option			COMPLETELY
+	Seq			COMPLETELY
+	SortReflection          COMPLETELY
+
+
+-- %$Value Reflection$
+
+/* %
+A value reflection is internally a triple, consisting of a value
+"without" a specific type, a type reflection and possibly a code
+reflection.
+*/
+
+DATA reflection == reflection (value : obj,
+			       type  : typeReflection,
+			       code  : option[codeReflection])
+
+-- %$Code Reflection$
+
+DATA codeReflection == named (identifier: denotation,
+			      structure : denotation)
+		       lambda
+
+/* %
+@ignore
+*/
+-- not for user purpose -------------------------------------------
+
+DEF getValue == value
+DEF createReflection(v, t)    == reflection(v, t, nil)
+DEF createReflection(v, t, c) == reflection(v, t, avail(c))
+
+/* %
+@end ignore
+*/
+
+
+-- %$Type Reflection$
+
+/* %
+A type reflection is a straight-forward implementation of the 
+type declaration.
+*/
+DATA typeReflection == sort     (sort:     sortReflection)
+		       hidden   (factors:  seq[typeReflection])
+		       function (domain:   typeReflection, 
+		                 codomain: typeReflection)
+
+DEF product(seq) ==
+  hidden(flatten(seq))
+
+DEF product? == hidden?
+
+FUN flatten: seq[typeReflection] -> seq[typeReflection]
+DEF flatten(<>) == <>
+DEF flatten(ft :: rt) == 
+  IF ft product? THEN 
+    factors(ft) ++ flatten(rt)
+  ELSE 
+    ft :: flatten(rt)
+  FI
+
+-- % Type equality:
+
+DEF sort(s1) = sort(s2) == 
+  s1 = s2
+
+DEF hidden(seq1) = hidden(seq2) ==
+  = (= : typeReflection ** typeReflection -> bool) (seq1, seq2)
+
+DEF function(d1, c1) = function(d2, c2) ==
+  (d1 = d2) and (c1 = c2)
+
+DEF (= : typeReflection ** typeReflection -> bool)(a, b) == 
+  -- Catch-all
+  false
+
+
+-- % Type comparison:
+
+DEF t1 < t2 ==
+  IF sort? (t1)     THEN 
+    IF sort? (t2)     THEN sort(t1) < sort(t2)
+                      ELSE true
+    FI
+  IF product? (t1)  THEN
+    IF product? (t2)  THEN < (<) (factors (t1), factors (t2))
+                      ELSE function? (t2)
+    FI
+  IF function? (t1) THEN
+    IF function? (t2) THEN 
+      IF domain (t1) = domain (t2) THEN codomain (t1) < codomain (t2)
+                                   ELSE domain (t1) < domain (t2)
+      FI
+    ELSE
+      false
+    FI
+  FI
+
+
+
+-- %$Code Reflection$
+
+/* %Not yet implemented. */

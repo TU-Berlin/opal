@@ -1,0 +1,359 @@
+/* %- Rcs-Info 
+
+  $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/reflections/Service/FreeTypeStream/IOMethods.impl,v 1.1 1999-03-23 12:37:36 kd Exp $
+  $Author: kd $
+  $Date: 1999-03-23 12:37:36 $
+  $State: Exp $
+
+  $Locker:  $
+  $Revision: 1.1 $
+  $Name: not supported by cvs2svn $
+
+  $Log: not supported by cvs2svn $
+  Revision 1.1  1999/03/20 22:51:41  opaladm
+  neu eingefuehrt
+
+  Revision 1.3  1999/03/03 12:03:44  jensen
+  Final checkin
+
+  Revision 1.2  1999/02/28 17:55:17  jensen
+  *** empty log message ***
+
+  Revision 1.1  1998/12/19 17:33:23  silver
+  Initial revision
+
+
+*/
+
+IMPLEMENTATION IOMethods
+
+IMPORT	Com				COMPLETELY
+	ComCompose			COMPLETELY
+	Option				COMPLETELY
+	Stream				ONLY	output write
+	Seq				COMPLETELY
+	Denotation			COMPLETELY
+
+	Fmt				ONLY	fmt pretty : fmt -> string
+	Bool				COMPLETELY
+	Int				ONLY	int ! 0 1 > =
+        Char				ONLY	char ! digit? letgit? = !
+        String				ONLY	string ! empty? ft rt
+	Nat				COMPLETELY
+	Real				ONLY	real !
+	SmallReal			ONLY	sreal !
+	RelCmp				ONLY	rel < > =
+	Subrel				ONLY	subrel < |= =
+        Void                            ONLY    nil
+	NatConv				ONLY	`
+        IntConv 			ONLY	`
+        CharConv 			ONLY	`
+        BoolConv 			ONLY	`
+	RealConv			ONLY	``
+	RelCmpConv			ONLY	`
+	SubrelConv			ONLY	`
+	VoidConv			ONLY	`
+        StringConv			ONLY    ` 
+        Denotation			ONLY    denotation =
+	
+	VirtualEnv 			COMPLETELY
+	VirtualBindEnv			COMPLETELY
+	VirtualBind			COMPLETELY
+        Virtual 			COMPLETELY
+
+	Reflection			COMPLETELY
+	ReflectionBuild			COMPLETELY
+	ReflectionFunction		COMPLETELY
+
+
+DEF write (out, refl) ==
+  IF special ! refl THEN write ! (refl, out)
+                    ELSE writeReflection (refl, out)
+  FI
+
+-- %$Virtual functions$
+
+DEF special ==
+  accessor ((\\ i : int. true) ::
+	    (\\ n : nat. true) ::
+	    (\\ c : char. true) ::
+	    (\\ s : string. true) ::
+	    (\\ b : bool. true) ::
+	    (\\ r : real. true) ::
+	    (\\ r : rel. true) ::
+	    (\\ s : subrel. true) ::
+	    (\\ v : void. true) ::
+	    (\\ f : fmt. true) ::
+	    (\\ d : denotation. true) :: <>,
+            (\\ _ . false))
+
+DEF write == 
+  accessor ((\\ i : int, out.        write (out, i`)) :: 
+	    (\\ n : nat, out.        write (out, n`)) :: 
+	    (\\ c : char, out.       write (out, c`)) :: 
+	    (\\ s : string, out.     write (out, s)) :: 
+	    (\\ b : bool, out.       write (out, b`)) ::
+	    (\\ r : real, out.       write (out, r``)) ::
+	    (\\ r : rel, out.        write (out, r`)) ::
+	    (\\ s : subrel, out.     write (out, s`)) ::
+	    (\\ v : void, out.       write (out, v`)) :: 
+	    (\\ f : fmt, out.        write (out, pretty(f))) ::
+	    (\\ d : denotation, out. write (out, d)) :: <>,
+            (\\ _, out.              write (out, "unknown")))
+
+
+FUN writeReflection : reflection ** output -> com[void]
+DEF writeReflection (refl, out) ==
+  IF product?(type(refl))  THEN write (out, "(");
+			        writeList(out, asSeq(refl));
+				write (out, ")")
+  IF function?(type(refl)) THEN writeFunction(out, refl)
+  IF sort?(type(refl))     THEN writeSort(out, refl)
+  FI
+
+FUN writeList : output ** seq[reflection] -> com[void]
+DEF writeList (_, <>)        == succeed(nil)
+DEF writeList (out, x :: <>) == writeReflection (x, out)
+DEF writeList (out, list)    == writeReflection (ft(list), out);
+                                write (out, ", ");
+                                writeList (out, rt(list))
+
+FUN writeFunction : output ** reflection -> com[void]
+DEF writeFunction (out, refl) ==
+  IF refl code? THEN
+    IF cont(code(refl)) lambda? THEN
+      write (out, "lambda function")
+    ELSE
+      write (out, "function ");
+      write (out, identifier(cont(code(refl))));
+      write (out, "'");
+      write (out, structure(cont(code(refl))))
+    FI
+  ELSE
+    write (out, "function (no code)")
+  FI
+
+
+FUN writeSort : output ** reflection -> com[void]
+DEF writeSort (out, refl) ==
+  LET
+    s == sort(type(refl))
+    v == findSortVariants(s)
+  IN
+    printByVariant (out, v, refl)
+
+FUN printByVariant : output ** seq[sortVariant] ** reflection -> com[void]
+DEF printByVariant (out, <>, _) == write (out, "unknown object")
+DEF printByVariant (out, variant (constr, vars, discr) :: rest, refl) ==
+  IF cont(reflects?[bool] (cont(discr apply refl))) THEN
+    -- Ok, found!
+    LET 
+      name == identifier(cont(code(constr)))
+    IN
+      IF vars <>? THEN write (out, name)
+      IF vars ::? THEN
+        IF letgit?(name ! 0) or #(vars) |= 2 THEN
+          write (out, name ++ "(");
+	  printVarList (out, vars, refl);
+          write (out, ")")
+        ELSE
+          -- Print binary operators nicely!
+          writeReflection (cont(ft(vars) apply refl), out);
+          write (out, " " ++ name ++ " ");
+          writeReflection (cont(apply(last(vars), refl)), out)
+        FI
+      FI
+  ELSE
+    printByVariant (out, rest, refl)
+  FI
+
+
+FUN printVarList : output ** seq[reflection] ** reflection -> com[void]
+DEF printVarList (out, <>, _) == succeed(nil)
+DEF printVarList (out, sel :: <>, refl) == 
+  write (out, cont(sel apply refl))
+DEF printVarList (out, list, refl) ==
+  write (out, cont(ft(list) apply refl));
+  write (out, ", ");
+  printVarList (out, rt(list), refl)
+      
+
+DEF read ==
+  constructor ((\\ s : string. readInt(`(s)))        ::
+               (\\ s : string. readNat(`(s)))        ::
+               (\\ s : string. readChar(`(s)))       ::
+               (\\ s : string. readString(`(s)))     ::
+               (\\ s : string. readBool(`(s)))       ::
+               (\\ s : string. readReal(`(s)))       ::
+	       (\\ s : string. readSReal(`(s)))      ::
+	       (\\ s : string. readRel(`(s)))        ::
+	       (\\ s : string. readSubrel(`(s)))     ::
+	       (\\ s : string. readVoid(`(s)))       ::
+	       (\\ s : string. readDenotation(`(s))) :: <> )
+
+FUN readInt : denotation -> int
+DEF readInt(d) == !(d)
+
+FUN readNat : denotation -> nat
+DEF readNat(d) == !(d)
+
+FUN readChar : denotation -> char
+DEF readChar(d) == !(d)
+
+FUN readString : denotation -> string
+DEF readString(d) == !(d)
+
+FUN readBool : denotation -> bool
+DEF readBool(d) == !(d)
+
+FUN readReal : denotation -> real
+DEF readReal(d) == !(d)
+
+FUN readSReal : denotation -> sreal
+DEF readSReal(d) == !(d)
+
+FUN readRel : denotation -> rel
+DEF readRel(d) ==
+      IF d = ">" THEN >
+      IF d = "=" THEN =
+      IF d = "<" THEN <
+      FI
+
+FUN readSubrel : denotation -> subrel
+DEF readSubrel(d) ==
+      IF d = "=" THEN =
+      IF d = "|=" THEN |=
+      IF d = "<" THEN <
+      FI
+
+FUN readVoid : denotation -> void
+DEF readVoid(d) ==
+      IF d = "nil" THEN nil
+      FI
+
+FUN readDenotation : denotation -> denotation
+DEF readDenotation(d) == d       
+                
+
+FUN check: classMethod[bool, string]
+DEF check ==
+  classMethod (((reflect [nat], checkNat) ::
+               (reflect [int], checkInt) ::
+               (reflect [char], checkChar) ::
+               (reflect [string], checkString) ::
+               (reflect [bool], checkBool) ::
+               (reflect [real], checkReal) ::
+               (reflect [sreal], checkSReal) ::
+               (reflect [rel], checkRel) ::
+               (reflect [subrel], checkSubrel) ::
+               (reflect [void], checkVoid) ::
+               (reflect [denotation], checkDenotation) :: <> ),
+               (\\ _ , _ . false))
+
+
+FUN checkInt: string -> bool
+DEF checkInt (string) ==
+  IF empty?(string) THEN
+    false
+  ELSE
+    checkForIntChars (string)
+  FI
+
+FUN checkForIntChars: string -> bool
+DEF checkForIntChars(str) ==
+  IF empty?(str) THEN 
+    true
+  ELSE
+    ((digit?(ft(str))) or (ft(str)=(!("+"))) or (ft(str)=(!("-")))) and checkForIntChars (rt(str))
+  FI
+
+FUN checkNat: string -> bool
+DEF checkNat (string) ==
+  IF empty?(string) THEN
+    false
+  ELSE
+    checkForNatChars (string)
+  FI
+
+FUN checkForNatChars: string -> bool
+DEF checkForNatChars(str) ==
+  IF empty?(str) THEN 
+    true
+  ELSE
+    ((digit?(ft(str))) or (ft(str)=(!("+")))) and checkForNatChars (rt(str))
+  FI
+
+FUN checkChar : string -> bool
+DEF checkChar(str) ==
+  #(`(str)) = 1
+
+FUN checkString : string -> bool
+DEF checkString(str) == true
+
+FUN checkBool : string -> bool
+DEF checkBool(str) ==
+  IF `(str) = "true" THEN true
+  IF `(str) = "false" THEN true
+  ELSE false
+  FI
+
+FUN checkReal : string -> bool
+DEF checkReal(str) ==
+  IF empty?(str) THEN
+    false
+  ELSE
+    checkForRealChars (str)
+  FI
+
+FUN checkSReal : string -> bool
+DEF checkSReal(str) ==
+  IF empty?(str) THEN
+    false
+  ELSE
+    checkForRealChars (str)
+  FI
+
+FUN checkForRealChars: string -> bool
+DEF checkForRealChars(str) ==
+  IF empty?(str) THEN 
+    true
+  ELSE
+    ((digit?(ft(str))) or (otherRealChar?(ft(str)))) and checkForRealChars (rt(str))
+  FI
+
+FUN otherRealChar? : char -> bool
+DEF otherRealChar?(cc) ==
+-- in real numbers: digits and the characters +,-,E,e,D,d,. are allowed:
+  IF cc=(!("+")) THEN true
+  IF cc=(!("-")) THEN true
+  IF cc=(!("e")) THEN true
+  IF cc=(!("E")) THEN true
+  IF cc=(!("d")) THEN true
+  IF cc=(!("D")) THEN true
+  IF cc=(!(".")) THEN true
+  ELSE false
+  FI
+
+FUN checkRel : string -> bool
+DEF checkRel(str) ==
+  IF `(str) = "<" THEN true
+  IF `(str) = ">" THEN true
+  IF `(str) = "=" THEN true
+  ELSE false
+  FI
+
+FUN checkSubrel : string -> bool
+DEF checkSubrel(str) ==
+  IF `(str) = "<" THEN true
+  IF `(str) = "|=" THEN true
+  IF `(str) = "=" THEN true
+  ELSE false
+  FI
+
+FUN checkVoid : string -> bool
+DEF checkVoid(str) ==
+  `(str) = "nil"
+
+FUN checkDenotation : string -> bool
+DEF checkDenotation( _ ) == true
+

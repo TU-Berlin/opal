@@ -1,0 +1,129 @@
+/* %- Rcs-Info 
+
+  $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/reflections/Service/FreeTypeOrder/FreeTypeOrder.impl,v 1.1 1999-03-23 12:37:27 kd Exp $
+  $Author: kd $
+  $Date: 1999-03-23 12:37:27 $
+  $State: Exp $
+
+  $Locker:  $
+  $Revision: 1.1 $
+  $Name: not supported by cvs2svn $
+
+  $Log: not supported by cvs2svn $
+  Revision 1.1  1999/03/20 22:51:38  opaladm
+  neu eingefuehrt
+
+  Revision 1.6  1999/03/03 12:30:43  silver
+  Revised, so that special functions are used during recursion.
+
+  Revision 1.5  1999/03/03 12:01:27  jensen
+  Final checkin
+
+  Revision 1.4  1998/12/10 23:59:35  silver
+  Using pragma now.
+
+  Revision 1.3  1998/11/12 13:54:10  silver
+  Minor changes.
+
+  Revision 1.2  1998/11/11 14:32:09  silver
+  Replaced Trichotomy with RelCmp.
+
+  Revision 1.1  1998/06/13 20:06:50  silver
+  Initial revision
+
+*/
+
+IMPLEMENTATION FreeTypeOrder [alpha]
+
+IMPORT	RelCmp			COMPLETELY
+	Option			COMPLETELY
+
+	Virtual			COMPLETELY
+	VirtualBind		COMPLETELY
+
+	OrderMethods		COMPLETELY
+
+	Seq			COMPLETELY
+	Reflection		COMPLETELY
+	ReflectionBuild		COMPLETELY
+	ReflectionFunction	COMPLETELY
+
+-- %$Simple deduced functions$
+
+DEF a < b  ==   <? (compare (a,b))
+DEF a <= b == ~(>? (compare (a,b)))
+DEF a > b  ==   >? (compare (a,b))
+DEF a >= b == ~(<? (compare (a,b)))
+DEF a = b  ==   =? (compare (a,b))
+DEF a |= b == ~(=? (compare (a,b)))
+
+
+-- %$The acutal comparisons$
+
+DEF compare (a, b) ==
+  mainCompare (reflect(a), reflect(b))
+
+FUN mainCompare : reflection ** reflection -> rel
+DEF mainCompare (r1, r2) ==
+  IF special ! r1 THEN compare ! (r1, r2)
+                  ELSE compareRefls (r1, r2)
+  FI
+
+
+
+FUN compareRefls : reflection ** reflection -> rel
+DEF compareRefls (r1, r2) ==
+  -- PRE type(r1) = type(r2)
+  IF function?(type(r1)) THEN =
+  IF product? (type(r1)) THEN compareProduct (asSeq(r1), asSeq(r2))
+  IF sort?    (type(r1)) THEN
+    LET
+      s    == sort(type(r1))
+      vars == findSortVariants(s)
+    IN
+      compareByVars (vars, r1, r2)
+  FI
+
+FUN compareProduct : seq[reflection] ** seq[reflection] -> rel
+DEF compareProduct (<>, <>) == =
+DEF compareProduct (r1 :: m1, r2 :: m2) ==
+  LET
+    comp == compareRefls (r1, r2)
+  IN
+    IF comp =? THEN compareProduct (m1, m2)
+               ELSE comp
+    FI
+
+
+FUN compareByVars : seq[sortVariant] ** reflection ** reflection -> rel
+DEF compareByVars (<>, _, _) == =
+DEF compareByVars (variant (_, sels, discr) :: more, r1, r2) ==
+  LET
+    is_r1 == discr discriminates? r1
+    is_r2 == discr discriminates? r2
+  IN
+    IF is_r1 and is_r2       THEN compareBySels (sels, r1, r2)
+    IF is_r1 and ~(is_r2)    THEN <
+    IF ~(is_r1) and is_r2    THEN >
+    IF ~(is_r1) and ~(is_r2) THEN compareByVars (more, r1, r2)
+    FI
+
+
+FUN compareBySels : seq[reflection] ** reflection ** reflection -> rel
+DEF compareBySels (<>, _, _) == =
+DEF compareBySels (sel :: more, r1, r2) ==
+  LET
+    value1 == cont(sel apply r1)
+    value2 == cont(sel apply r2)
+    comp   == mainCompare (value1, value2)
+  IN
+    IF comp =? THEN compareBySels (more, r1, r2)
+               ELSE comp
+    FI
+
+
+FUN discriminates? : reflection ** reflection -> bool
+DEF discriminates? (disrc, refl) ==
+  cont(reflects?[bool] (cont(disrc apply refl)))
+
+    

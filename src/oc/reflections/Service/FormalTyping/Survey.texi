@@ -1,0 +1,102 @@
+@ignore
+
+  $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/reflections/Service/FormalTyping/Survey.texi,v 1.1 1999-03-23 12:37:19 kd Exp $
+  $Author: kd $
+  $Date: 1999-03-23 12:37:19 $
+  $State: Exp $
+
+  $Locker:  $
+  $Revision: 1.1 $
+  $Name: not supported by cvs2svn $
+
+  $Log: not supported by cvs2svn $
+  Revision 1.1  1999/03/20 22:51:36  opaladm
+  neu eingefuehrt
+
+  Revision 1.1  1998/11/11 15:06:04  silver
+  Initial revision
+
+
+@end ignore
+
+@section Overview
+
+In this system, you will find structures that are concerned with the formal
+types. Normally, in Opal formal types are judged at compile time so there is
+no need to support a runtime system for formal types. With the reflection
+system, things started to get more involved...
+
+
+@section General and specific types
+
+Consider the following problem: You write a structure @code{Foo} which takes
+as parameter a sort @code{alpha} and you which to implement a function
+@code{bar} which operates on @code{alpha}:
+@example
+SIGNATURE Foo [alpha]
+
+SORT alpha
+
+FUN bar : alpha -> com[void]
+
+
+IMPLEMENTATION Foo [alpha]
+
+DEF bar (a) ==
+  superComplicatedCalculation (a)
+@end example
+What type does @code{bar} have? In the adhoc notation used in the
+introduction we would say @code{forall alpha. alpha -> com[void]}. 
+
+Now, assume we have a further function
+@example
+FUN fast_bar : nat -> com[void]
+DEF fast_bar (n) ==
+  muchFasterCalculation (n)
+@end example
+
+which does exactly the same as @code{bar} only much fast and only for
+@code{nat} values. Obviously, we would like to use the @emph{specialized}
+version of @code{fast_bar} whenever @code{alpha} is actually a @code{nat}
+and the generic version otherwise.
+
+This is, what the structure @code{FormalTypeConvert} is all about. It takes
+two types as parameters. In our case these would be @code{nat} (the special
+one) and @code{alpha} (the general one). You can now use the function
+@example
+FUN isSpecialization?[special, general] : bool
+@end example
+which will return @code{true} iff @code{special} and @code{general} are
+actually the same type at runtime. Furthermore, you can then ask a value to
+@example
+FUN specialize : general -> option[special]
+@end example
+which will turn the value's type from the general type to the (correct)
+special type. Vice versa, you might wish to turn a value of type
+@code{special} into a value of type @code{general}. This is done using
+an inverse operation. 
+
+Note, that generalization is only possible if the special type
+is actually the same as the general one. Thus, the function
+@code{generalize} will allow you to turn a @code{nat} into an @code{alpha}
+only, if @code{alpha} is actually instantiated with @code{nat}. Thus,
+generalizing is not the same as reflecting: In formal words,
+@code{generalize} has the (rather exotic) type @code{exists
+special. (special -> forall alpha. alpha)}, whereas @code{reflect} has the
+formal type @code{forall special. (special -> exists alpha. alpha)}.
+
+Using the reflection conversion system, you could now write:
+@example
+IMPLEMENTATION Foo [alpha]
+
+DEF bar (a) ==
+  IF avail? as_nat THEN muchFasterCalculation (cont(as_nat))
+                   ELSE superComplicatedCalculation (a)
+  FI
+    WHERE as_nat == specialize[nat, alpha] (a)
+@end example
+
+There is nothing magic about the structure @code{FormalTypeConvert} -- it is
+build entirely on top of the other reflection functionality. However, using
+the structure is a little faster than the equivalent user code and perhaps a
+little clearer too. 
