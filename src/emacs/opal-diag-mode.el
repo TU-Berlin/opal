@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.12 1999-05-11 13:13:40 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.13 1999-05-11 13:32:28 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -435,7 +435,7 @@ over an overlay which has err-no set, select that error"
       (if errno
 	  (progn
 	    (if (>= errno 0)
-		(opal-diag-show-this-error errno)
+		(opal-diag-show-this-error errno t)
 	      (opal-diag-not-found)
 	      )
 	    (setq ovl nil)
@@ -476,8 +476,8 @@ over an overlay which has err-no set, toggle extended help"
 	  (progn
 	    (if (>= errno 0)
 		(progn
-		  (opal-diag-show-this-error errno)
-		  (opal-diag-toggle-extended-flag)
+		  (opal-diag-show-this-error errno t)
+		  (opal-diag-toggle-extended-flag t)
 		  )
 	      (opal-diag-not-found)
 	      )
@@ -1305,7 +1305,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.12 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.13 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
