@@ -1,5 +1,5 @@
 ;; emacs mode for processing opal diag files
-;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.2 1998-07-01 17:15:57 kd Exp $
+;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.3 1998-07-01 17:17:39 kd Exp $
 ;; Author: wg, changed by ralfi
 
 (provide 'opal-diag-mode)
@@ -765,7 +765,7 @@ these are selected"
 
 ;; -- support for extended help
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Version$*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.3 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (errmark srcmark)
