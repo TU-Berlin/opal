@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.5 1999-09-13 22:10:51 kd Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.6 1999-10-06 10:49:30 kd Exp $
  */
 
 /* FIXME: stub for strdup() */
@@ -1212,6 +1212,7 @@ static int dl_dlopen_link(char * structure){
 	  return 0;
 	}
 
+	dlerror(); /* clear dlerror pointer */
 	init = dlsym(handle, initsym);
 	if ((error = dlerror()) != NULL){
 	    sprintf(dlopen_error_buf,
