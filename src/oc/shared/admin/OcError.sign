@@ -1,0 +1,77 @@
+-- LAST EDIT: Tue Jul 30 13:12:34 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Autor:       mija
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Fehlerbehandlung fuer den Gesamtcompiler.
+--              Jede Phase des Uebersetzers kann Fehler, Warnungen und 
+--              Uebersetzerfehler (sog. fatale Fehler) in die Fehlermenge
+--              eintragen. Generell hat jeder Fehler eine Position.
+--              Die Ausgabe von Fehlermengen ist durch die Ausgabe der Sequenz
+--              der stringuellen Repraesenatationen der Fehlermeldungen 
+--              moeglich. Die Sequenz ist nach aufsteigenden Positionen 
+--              angeordnet; jedem Fehlerstring wird eine stringuelle 
+--              Repraesentation seiner Position vorangestellt.
+-- ============================================================================
+
+SIGNATURE OcError
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 2000-04-14 17:15:17 $ ($Revision: 1.1 $)
+
+IMPORT  OcPos           ONLY pos
+        String          ONLY string
+        Seq[string]     ONLY seq
+        OcOptions       ONLY options
+        Com[bool]       ONLY com
+        Nat             ONLY nat
+        Seq[diag]       ONLY seq
+        Com[seq[diag]]  ONLY com
+
+SORT err
+
+-- Konstruktionsfunktionen
+FUN ok  : err
+        -- leere Fehlermenge.
+
+FUN err : errKind ** denotation ** pos -> err
+        -- es wird eine einelementige Fehlermenge erzeugt, die das uebergebene
+        -- Position/Fehlerstring/Fehlerart-Triple enthaelt 
+        -- (s.u. Fehlerartkonst.)
+    err : errKind ** denotation ** denotation ** pos -> err
+    err : errKind ** denotation ** string ** pos -> err
+        -- wie oben, nur dass die Denotation eine Formatangabe ist, nach der
+        -- der zweite String formatiert wird (s.a. Struktur StringFormat).
+    err : errKind ** denotation ** denotation ** denotation ** pos -> err
+    err : errKind ** denotation ** string ** string ** pos -> err
+        -- wie oben, nur dass die Formatangabe fuer beide folgenden Stringe gilt.
+
+FUN +   : err ** err -> err
+        -- Vereinigung zweier Fehlermengen.
+
+-- Testfunktionen (ev. UNNOETIG !)
+FUN ok?                         -- ok?(e) <=> e enthaelt keine error-Fehler
+    warning?                    -- Test, ob e Warnungen enthaelt
+    hint? : err -> bool         -- Test, ob e Hinweise enthaelt
+
+-- Fehlerartkonstanten
+TYPE errKind == error           -- es wird kein Uebersetzungsprodukt erzeugt
+                warning         -- Stellen, die echte Fehler sein koennten
+                hint            -- Hinweise (z.B. moegl. Optimierungen)
+
+-- Umwandlungsfunktionen
+
+FUN errors : options ** err -> com[bool]
+        -- Ausgabe der Fehlermenge auf stderr und ins Diagnostics-File
+        -- liefert okay(true), falls die Menge keine error-Meldungen enthaelt,
+        -- sonst okay(false).
+
+FUN asString : err -> string
+
+
+-- Interne Diagnosen
+
+TYPE diag == diag(kind: errKind, pos: pos, msg: string)
+
+FUN getAndClearInternDiag : com[seq[diag]]
