@@ -1,0 +1,168 @@
+IMPLEMENTATION ReflectionInspect
+
+IMPORT ABORT ONLY ABORT
+       CAST ONLY cast
+       Cache COMPLETELY
+       Com COMPLETELY
+       ComCompose ONLY &
+       ComState COMPLETELY
+       Denotation COMPLETELY
+       InterOpal COMPLETELY
+       InterOpalTools ONLY loadInterOpal findSort
+       Map COMPLETELY
+       Nat COMPLETELY
+       Option COMPLETELY
+       Pair COMPLETELY
+       RUNTIME COMPLETELY
+       RUNTIMEENV[void,void] COMPLETELY
+       ReflectFunction COMPLETELY
+       ReflectInterOpal COMPLETELY
+       Reflection COMPLETELY
+       ReflectionBuild COMPLETELY
+       ReflectionLookup COMPLETELY
+       ReflectionRepository COMPLETELY
+       Seq COMPLETELY
+       SeqMap COMPLETELY
+       SeqMapEnv COMPLETELY
+       SeqZip COMPLETELY
+       Void COMPLETELY
+
+DATA variant == variant (constructorName : name'Reflection,
+			 components      : seq[type],
+			 constructor     : value -> value,
+			 discriminator   : value -> bool,
+			 deconstructor   : value -> value)
+
+
+FUN freeType? : sort -> bool
+
+DEF freeType?(sort : sort) == variants(sort) ::?
+
+
+FUN variants : sort -> seq[variant'ReflectionInspect]
+
+DEF variants(sort) == freeTypeRepository ! sort
+
+
+DEF freeType?(basic(sort)) == freeType?(sort)
+DEF freeType?(_ : type)    == false
+
+DEF variants(basic(sort)) == variants(sort)
+
+
+DEF tuple(refl :: <>) == refl
+DEF tuple(elements) == pair(values, types)
+  WHERE values == cast[seq[obj], obj](actual * elements)
+        types  == product(type * elements)
+
+
+DEF untuple(refl) ==
+  IF type(refl) product? THEN zip(pair)(values, types)
+    WHERE values == cast[obj, seq[obj]](actual(refl))
+	  types  == factors(type(refl))
+  ELSE refl :: <>
+  FI
+
+
+DEF applicable?(f, x) ==
+  IF type(f) function? THEN domain(type(f)) = type(x)
+  ELSE false
+  FI
+
+
+-- apply
+
+DEF apply(f, x) ==
+  IF applicable?(f, x) THEN
+    LET
+      seqOfObjs  == internalApply(actual(f), asObj * untuple(x))
+      codom      == codomain(type(f))
+      seqOfTypes == IF codom product? THEN factors(codom)
+		    ELSE codom :: <> 
+		    FI
+    IN 
+       tuple(zip(asValue)(seqOfObjs, seqOfTypes))
+  ELSE
+    ABORT("undefined dynamic application") 
+  FI
+
+
+FUN freeTypeRepository : cache[sort, <, seq[variant'ReflectionInspect]]
+
+DEF freeTypeRepository == cache(findVariants)
+
+
+FUN findVariants : sort -> seq[variant'ReflectionInspect]
+
+DEF findVariants(sort) ==
+  LET io? == interOpalRepository ! identifier(struct(name(sort)))
+  IN
+  IF io? avail? THEN findVariants(sort, cont(io?))
+  ELSE ABORT("cannot load interOpal file for free type " ++
+	     identifier(name(sort)) ++ "'" ++
+	     identifier(struct(name(sort))))
+  FI
+
+FUN findVariants : sort ** interOpal -> seq[variant'ReflectionInspect]
+
+DEF findVariants(sort, interOpal) ==
+  LET mainStruct  == structs(interOpal) ! main
+      sortId == findSort(identifier(name(sort)), mainStruct)
+  IN
+  IF sortId avail? THEN
+    LET
+      property == props(mainStruct) !? cont(sortId)
+    IN
+    IF property avail? ANDIF cont(property) freeType? THEN
+      LET build == buildSortVariants(basic(sort), interOpal,
+                                     instance(struct(name(sort))))
+          (_, v) == (build, 0) * variants(cont(property))
+      IN v
+    ELSE <>
+    FI
+  ELSE <>
+  FI
+
+
+FUN buildSortVariants : type ** interOpal ** seq[name'Reflection] ->
+                        nat ** variant'InterOpal ->
+                        nat ** variant'ReflectionInspect
+
+DEF buildSortVariants(free, interOpal, params)(mytag, var) ==
+  LET actual == actualParams(interOpal)(params)
+      consName == reflect(interOpal, actual)(cons(var))
+      discName == reflect(interOpal, actual)(test(var))
+      selNames == reflect(interOpal, actual) * sel * comps(var)
+      arity == #(comps(var))
+      homeStruct == structs(interOpal) ! origin(cons(var))
+      compFct == (\\ comp . codom(fct(kind(objs(homeStruct) !
+                                  ident(sel(comp)))))) * comps(var)
+      components == reflect(interOpal, actual) * compFct
+      domain == IF #(compFct) = 1 THEN ft(components)
+                ELSE product(components)
+                FI
+      reflectName == \\ name . bind(name)
+      refl == variant(consName,
+		      components,
+		      construct(reflectName(consName)),
+                      discriminate(reflectName(discName)),
+                      deconstruct(reflectName * selNames))
+  IN (succ(mytag), refl)
+
+
+FUN construct : value -> value -> value
+
+DEF construct(constructor) ==
+  IF type(constructor) function? THEN apply(constructor, _)
+  ELSE \\ _ . constructor
+  FI
+
+
+FUN discriminate : value -> value -> bool
+
+DEF discriminate(test)(x) == content[bool](apply(test, x))
+
+
+FUN deconstruct : seq[value] -> value -> value
+
+DEF deconstruct(selectors)(x) == tuple(apply(_, x) * selectors)

@@ -1,0 +1,198 @@
+IMPLEMENTATION PrettyPrintBuiltin
+
+IMPORT Denotation COMPLETELY
+       Method[value, denotation] COMPLETELY
+       MethodCompose COMPLETELY
+       NatConv COMPLETELY
+       Option COMPLETELY
+       Reflection COMPLETELY
+       ReflectionBuild COMPLETELY
+       ReflectionInspect COMPLETELY
+       ReflectionLookup COMPLETELY
+       Seq COMPLETELY
+       SeqConv COMPLETELY
+       SeqMap COMPLETELY
+       SeqReduce COMPLETELY
+
+       DEBUG COMPLETELY
+       ReflectionConv COMPLETELY
+
+
+-- FUN nat : method -> nat -> denotation
+
+DEF nat(method)(x) == x`
+
+
+-- FUN seq : method -> method
+
+DEF seq == (isSeq?, printSeq) :: _
+
+
+FUN isSeq? : value -> bool
+
+DEF refl isSeq? ==
+  IF type(refl) basic? THEN
+    LET n == name(sort(type(refl)))
+    IN
+    IF identifier(n) = "seq" THEN
+      identifier(struct(n)) = "Seq"
+    ELSE false
+    FI
+  ELSE false
+  FI
+
+
+FUN printSeq : method[value, denotation] -> value -> denotation
+
+DEF printSeq(method)(refl) ==
+  LET vars == variants(type(refl))
+      empty == ft(vars)
+      cons == ft(rt(vars))
+  IN printSeq(method)(decomposeSeq(empty, cons)(refl))
+
+
+FUN printSeq : method[value, denotation] -> seq[value] -> denotation
+
+DEF printSeq(method)(s) == "<" ++ printElems(method)(s) ++ ">"
+
+
+FUN printElems : method[value, denotation] -> seq[value] -> denotation
+
+DEF printElems(method)(<>) == ""
+DEF printElems(method)(ft :: rt) ==
+  recursion(method)(ft) ++
+  /((\\ x, y . ", " ++ x ++ y), "")(recursion(method) * rt)
+
+
+FUN decomposeSeq : variant ** variant -> value -> seq[value]
+
+DEF decomposeSeq(empty, cons)(refl) ==
+  IF discriminator(empty)(refl) THEN <>
+  ELSE
+    LET	args == untuple(deconstructor(cons)(refl))
+    IN
+    ft(args) :: decomposeSeq(empty, cons)(ft(rt(args)))
+  FI
+
+
+-- FUN set : method -> method
+
+DEF set == (isSet?, printSet) :: _
+
+
+FUN isSet? : value -> bool
+
+DEF refl isSet? ==
+  IF type(refl) basic? THEN
+    LET n == name(sort(type(refl)))
+    IN
+    IF identifier(n) = "set" THEN
+      identifier(struct(n)) = "Set"
+    ELSE false
+    FI
+  ELSE false
+  FI
+
+
+FUN printSet : method[value, denotation] -> value -> denotation
+
+DEF printSet(method)(refl) ==
+  LET seq == asSeq(refl)
+      vars == variants(type(seq))
+      empty == ft(vars)
+      cons == ft(rt(vars))
+  IN
+  "{" ++ printElems(method)(decomposeSeq(empty, cons)(seq)) ++ "}"
+
+
+FUN asSeq : value -> value
+
+DEF asSeq(refl) ==
+  LET setType == type(refl)
+      seqType == basic(sort(name("seq", sort, struct("Seq", seqInst))))
+      setInst == instance(struct(name(sort(setType))))
+      seqInst == ft(setInst) :: <>
+      asSeqType == function(setType, seqType)
+      setConv == struct("SetConv", setInst)
+      asSeqName == name("asSeq", value(asSeqType), setConv)
+  IN
+  apply(bind(asSeqName), refl)
+
+
+-- FUN default : method
+
+DEF default == method(printDefault)
+
+
+FUN printDefault : method[value, denotation] -> value -> denotation
+
+DEF printDefault(method)(refl) ==
+  IF refl reflects?[denotation] THEN "\"" ++ content(refl) ++ "\""
+  IF refl reflects?[value] THEN recursion(method)(content[value](refl))
+  ELSE printGeneric(method)(refl)
+  FI
+
+
+FUN printGeneric : method[value, denotation] -> value -> denotation
+
+DEF printGeneric(method)(refl) ==
+  IF type(refl) freeType? THEN
+    LET vars == variants(type(refl))
+	var == cont(find?(\\ v . discriminator(v)(refl), vars))
+	args == untuple(deconstructor(var)(refl))
+    IN printName(constructorName(var)) ++ printTuple(method)(args)
+  ELSE printDefault(refl)
+  FI
+
+
+FUN printDefault : value -> denotation
+
+DEF printDefault(refl) ==
+  "SOME " ++ printType(type(refl))
+
+
+FUN printTuple : method[value, denotation] -> seq[value] -> denotation
+
+DEF printTuple(method)(<>) == ""
+DEF printTuple(method)(refls) ==
+  `("(", ", ", ")")(recursion(method))(refls)
+
+
+FUN printName : name -> denotation
+
+DEF printName(name) ==
+  identifier(name) ++ printInstance(instance(struct(name)))
+
+
+FUN printWithStruct : name -> denotation
+
+DEF printWithStruct(name) ==
+  identifier(name) ++ "'" ++ identifier(struct(name)) ++
+  printInstance(instance(struct(name)))
+
+
+FUN printType : type -> denotation
+
+DEF printType(basic(sort(name))) == printName(name)
+DEF printType(product(factors)) ==
+  LET printFactor == \\ f . IF f basic? THEN printType(f)
+			    ELSE "(" ++ printType(f) ++ ")"
+			    FI
+  IN `("", " ** ", "")(printFactor)(factors)
+DEF printType(function(domain, codomain)) ==
+  LET dom == IF domain function? THEN "(" ++ printType(domain) ++ ")"
+	     ELSE printType(domain)
+	     FI
+  IN dom ++ " -> " ++ printType(codomain)
+
+
+FUN printInstance : seq[name] -> denotation
+
+DEF printInstance(instance) ==
+  LET aValue == \\ name . kind(name) value?
+  IN
+  IF instance ::? ANDIF exist?(aValue, instance) THEN
+    `("[", ", " ,"]")(printWithStruct)(instance)
+  ELSE ""
+  FI
+

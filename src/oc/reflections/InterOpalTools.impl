@@ -1,0 +1,193 @@
+IMPLEMENTATION InterOpalTools
+
+IMPORT
+       BOOL 		 COMPLETELY
+       Char              ONLY char =
+       Com 		 COMPLETELY
+       ComCompose        ONLY & ;
+       Denotation 	 ONLY = ++ slice # empty? ! %
+       InterOpal 	 COMPLETELY
+       InterOpalEquality COMPLETELY
+       InterOpalIO 	 COMPLETELY
+       Map   		 COMPLETELY
+       MapConv 		 ONLY asSeq
+       MapFilter 	 ONLY |
+       Nat 		 ONLY 0 1 - succ max
+       Option 		 ONLY avail nil cont avail? nil?
+       OptionMap 	 ONLY *
+       Pair 		 ONLY 1st 2nd
+       PrintableChar     ONLY colon
+       ProcessArgs       ONLY env noSuchEnvVar?
+       Seq 		 COMPLETELY
+       SeqFilter 	 ONLY |
+       SeqIndex          ONLY !
+       SeqMap 		 ONLY *
+       SeqOfSeq 	 ONLY flat
+       SeqZip   	 ONLY zip
+       Set 		 COMPLETELY
+
+-- %$Functions for browsing interOpal$
+DEF lookup(Structs, name(Ident, Origin, _)) ==
+  objs(Structs ! Origin) ! Ident
+
+DEF formalParams(Struct) ==
+  IF formal def? insts(Struct) THEN insts(Struct) ! formal
+  ELSE <>
+  FI
+
+DEF findStruct(name, Structs) ==
+  1st * (\\ origin, struct. (symbol(struct) = name)) find? Structs
+
+DEF findSort(name, struct) ==
+  1st * (\\ ident, obj. (kind(obj) sort?) and (symbol(obj) = name))
+        find? objs(struct)
+
+DEF Object = (Symbol, Kind) ==
+  IF symbol(Object) = Symbol THEN kind(Object) = Kind
+  ELSE false
+  FI
+
+DEF getMainStruct (inter) ==
+  structs(inter) ! main
+
+DEF findObjectsByName (namedeno, interOpal) ==
+  LET mainStruct == getMainStruct(interOpal)
+      allObjects == objs(mainStruct)
+      predicate == \\ ident, object. (symbol(object) = namedeno)
+  IN
+    *(2nd, (asSeq(| (predicate, allObjects))))
+
+--FUN getNameAsDeno : interOpal ** name -> denotation
+DEF getNameAsDeno(interOpal, name) == 
+  LET matchingStruct == structs(interOpal) ! origin(name)	
+  IN
+    symbol(objs(matchingStruct) ! ident(name))
+
+FUN getModuleNameAsDeno : interOpal ** name -> denotation  
+DEF getModuleNameAsDeno(interOpal, name) ==
+  LET matchingStruct == structs(interOpal) ! origin(name)
+  IN
+    symbol(matchingStruct)
+
+
+DEF dynamic?(Struct, N) ==
+  dynamic?(Struct, insts(Struct) ! formal ! N)
+
+DEF dynamic?(Struct, N, Ok?) ==
+  dynamic?(Struct, insts(Struct) ! formal ! N, Ok?)
+
+DEF dynamic?(Struct, Name : name) ==
+  dynamic?(Struct, Name, \\ _ . true)
+
+
+DEF dynamic?(Struct, Name, Ok?) ==
+  IF kind(objs(Struct) ! ident(Name)) sort? THEN
+    dynamic?(Name, Ok?) exist? pragmas(Struct)
+  ELSE false
+  FI
+
+
+FUN dynamic? : name ** (pragma -> bool) -> pragma -> bool
+
+DEF dynamic?(Param, Ok?)(Pragma) ==
+  IF ~(Pragma Ok?) THEN false
+  OTHERWISE
+  IF dynamic? exist? items(Pragma) THEN
+    IF objects? exist? items(Pragma) THEN
+      dynamic?(Param) exist? items(Pragma)
+    ELSE false
+    FI
+  ELSE false
+  FI
+
+
+FUN dynamic? : pragmaItem -> bool
+
+DEF dynamic?(token(_, text)) == text = keyword
+DEF dynamic?(objects(_))     == false
+
+
+FUN dynamic? : name -> pragmaItem -> bool
+
+DEF dynamic?(_)(token(_, _)) == false
+DEF dynamic?(Param)(objects(Objs)) ==
+  (_ = Param) exist? Objs
+
+
+FUN keyword : denotation
+
+DEF keyword == "DYNAMIC"
+
+
+-- %$Function to get informations for modifying interOpal$
+DEF newOriginNo(Structs) ==
+  succ(MaxOriginNo)
+  WHERE MaxOriginNo == IF dom(Structs) {}? THEN 0
+		       ELSE no(max(dom(Structs)))
+		       FI
+
+DEF newIdentNo(Struct) == succ(MaxObj)
+  WHERE MaxObj == IF ObjIds {}? THEN 0
+		  ELSE no(max(ObjIds))
+		  FI
+	ObjIds == dom(objs(Struct))
+
+DEF newInstNo(Struct) == succ(MaxInstNo)
+  WHERE MaxInstNo == IF MaxInst inst? THEN no(MaxInst)
+		     ELSE 0
+		     FI
+	MaxInst == max(dom(insts(Struct)))
+
+-- %$Functions for interOpal file handling$
+-- FUN ok? : denotation -> option[interOpal] -> com[interOpal]
+DEF ok?(_)(avail(IO)) == succeed(IO)
+DEF ok?(InterFile)(nil) == 
+  break("interopal file " ++ InterFile ++ " could not be read")
+
+-- FUN baseName : denotation -> denotation
+DEF baseName(InterFile) ==
+  InterFile slice (0, #(InterFile) - #(".????.inter") - 1)
+
+FUN splitPath : denotation -> seq[denotation]
+
+DEF splitPath(path) ==
+  IF path empty? THEN "" :: <>
+  ELSE
+    LET c == path ! 0
+	r == splitPath(tl(path))
+    IN
+    IF c = colon THEN "" :: r
+    ELSE %(c) ++ ft(r) :: rt(r)
+    FI
+  FI
+
+FUN ocs_dl_path : denotation
+
+DEF ocs_dl_path == EXEC(ocs_dl_path)
+
+FUN ocs_dl_path : com[denotation]
+
+DEF ocs_dl_path == env("OCS_DL_PATH") ; (\\ ans .
+  IF ans noSuchEnvVar? THEN succeed("")
+  ELSE yield(ans)
+  FI)
+
+
+DEF getInterOpalFileNames(structname) ==
+  (_ ++ ("/" ++ structname ++ ".sign.inter")) *
+  ((\\ p . ~(p empty?)) | splitPath(ocs_dl_path))
+
+
+DEF loadInterOpal(structure) ==
+  LET possible_names == getInterOpalFileNames(structure)
+  IN
+    firstExisting(possible_names)
+
+FUN firstExisting : seq[denotation] -> com[option[interOpal]]
+DEF firstExisting(<>) == succeed(nil)
+DEF firstExisting(ft :: rt) ==
+  readInterOpal(false, ft) & (\\ interOpal .
+  IF interOpal avail? THEN succeed(interOpal)
+  ELSE firstExisting(rt)
+  FI)
+

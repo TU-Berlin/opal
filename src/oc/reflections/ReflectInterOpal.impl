@@ -1,0 +1,77 @@
+IMPLEMENTATION ReflectInterOpal
+
+
+IMPORT InterOpal COMPLETELY
+       InterOpalEquality COMPLETELY
+       Map COMPLETELY
+       Option COMPLETELY
+       Reflection COMPLETELY
+       Seq COMPLETELY
+       SeqMap COMPLETELY
+       SeqReduce COMPLETELY
+
+
+-- FUN actualParams : interOpal -> seq[name'Reflection] ->
+--                     map[name'InterOpal, <, name'Reflection]
+
+DEF actualParams(interOpal)(params) ==
+  LET form? == insts(structs(interOpal) ! main) !? formal
+  IN
+  IF form? avail? THEN mapParams(cont(form?), params)
+  ELSE {}
+  FI
+
+
+FUN mapParams : seq[name'InterOpal] ** seq[name'Reflection] ->
+                map[name'InterOpal, <, name'Reflection]
+
+DEF mapParams(<>, <>) == {}
+DEF mapParams(formal, actual) ==
+  (ft(formal), ft(actual)) def mapParams(rt(formal), rt(actual))
+
+
+-- FUN reflect : interOpal ** map[name'InterOpal, <, name'Reflection] ->
+-- 	          name'InterOpal -> name'Reflection
+
+DEF reflect(interOpal, actual)(n) ==
+  LET param == actual !? n
+  IN
+  IF param avail? THEN cont(param)
+  ELSE
+    LET home == structs(interOpal) ! origin(n)
+        obj == objs(home) ! ident(n)
+	kindRefl == reflect(interOpal, actual)(kind(obj))
+	instRefl == reflect(interOpal, actual, origin(n))(inst(n))
+    IN
+    name(symbol(obj), kindRefl, struct(symbol(home), instRefl))
+  FI
+
+
+-- FUN reflect : interOpal ** map[name'InterOpal, <, name'Reflection] ->
+-- 	          kind'InterOpal -> kind'Reflection
+
+DEF reflect(_, _)(sort) == sort
+DEF reflect(interOpal, actual)(fct(type)) ==
+  value(reflect(interOpal, actual)(type))
+
+
+-- FUN reflect : interOpal ** map[name'InterOpal, <, name'Reflection] ->
+-- 	          fct'InterOpal -> type'Reflection
+
+DEF reflect(interOpal, actual)(sort(name)) ==
+  basic(sort(reflect(interOpal, actual)(name)))
+DEF reflect(interOpal, actual)(cart(factors)) ==
+  product(reflect(interOpal, actual) * factors)
+DEF reflect(interOpal, actual)(funct(domain, codomain)) ==
+  function(reflect(interOpal, actual)(domain),
+           reflect(interOpal, actual)(codomain))
+
+
+-- FUN reflect : interOpal ** map[name'InterOpal, <, name'Reflection] **
+-- 	          origin -> inst'InterOpal -> seq[name'Reflection]
+
+DEF reflect(_, _, _)(none) == <>
+DEF reflect(interOpal, actual, origin)(inst(n)) ==
+  reflect(interOpal, actual) * insts(structs(interOpal) ! origin) ! inst(n)
+DEF reflect(interOpal, actual, origin)(formal) ==
+  reflect(interOpal, actual) * insts(structs(interOpal) ! origin) ! formal

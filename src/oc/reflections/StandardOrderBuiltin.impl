@@ -1,0 +1,262 @@
+IMPLEMENTATION StandardOrderBuiltin
+
+IMPORT ABORT COMPLETELY
+       Com COMPLETELY
+       ComCompose COMPLETELY
+       Cache[sort, <, rel] COMPLETELY
+       Denotation COMPLETELY
+       Dynamic COMPLETELY
+       Lazy COMPLETELY
+       Map COMPLETELY
+       Method COMPLETELY
+       Option COMPLETELY
+       Pair[variant, rel] ONLY pair &
+       Reflection COMPLETELY
+       ReflectionBuild COMPLETELY
+       ReflectionInspect COMPLETELY
+       ReflectFunction COMPLETELY
+       Seq COMPLETELY
+       SeqMap COMPLETELY
+       SeqZip COMPLETELY
+
+
+DATA sto == =(x : value, y : value)
+	    <(x : value, y : value)
+
+DATA rel == rel(apply : method -> sto -> bool)
+
+
+-- FUN default : method
+
+DEF default == method(orderDefault)
+
+
+FUN orderDefault : method -> sto -> bool
+
+DEF orderDefault(method)(sto) ==
+  LET s == sort(type(x(sto)))
+  IN
+  IF s = reflectSort[denotation] THEN
+    orderDenotation(sto)
+  IF s = reflectSort[value] THEN
+    orderValue(method)(sto)
+  ELSE
+    apply(repository ! s)(method)(sto)
+  FI
+
+
+FUN repository : cache
+
+DEF repository == cache(findOrder)
+
+
+FUN orderDenotation : sto -> bool
+
+DEF orderDenotation(x = y) ==
+  content(x) ='Denotation content(y)
+DEF orderDenotation(x < y) ==
+  content(x) <'Denotation content(y)
+
+FUN orderValue : method -> sto -> bool
+
+DEF orderValue(method)(x = y) ==
+  IF type(x) = type(y) THEN
+    recursion(method)(content(x) = content(y))
+  ELSE false
+  FI
+DEF orderValue(method)(x < y) ==
+  IF type(x) < type(y) THEN true
+  IF type(y) < type(x) THEN false
+  ELSE
+    recursion(method)(content(x) < content(y))
+  FI
+
+
+FUN findOrder : sort -> rel
+
+DEF findOrder(sort) ==
+  LET vars == variants(sort)
+      rels == orderVariant * vars
+  IN
+  IF vars ::? THEN rel(computeOrder(zip(&)(vars, rels)))
+  ELSE ABORT("no free type information for " ++
+	     identifier(name(sort)) ++ "'" ++
+	     identifier(struct(name(sort))))
+  FI
+
+
+FUN orderVariant : variant -> rel
+
+DEF orderVariant(variant) ==
+  orderTuple(components(variant))
+
+
+FUN orderTuple : seq[type] -> rel
+
+DEF orderTuple(types) ==
+  rel(tuple(orderType * types))
+
+
+FUN orderType : type -> lazy[rel]
+
+DEF orderType(type) ==
+  IF type basic? THEN lazy(\\ . rel(recursion))
+  IF type product? THEN eager(orderTuple(factors(type)))
+  ELSE ABORT("no generic order on function types")
+  FI
+
+
+FUN tuple : seq[lazy[rel]] -> method -> sto -> bool
+
+DEF tuple(rels)(method)(x = y) ==
+  =_tuple(method)(rels, untuple(x), untuple(y))
+DEF tuple(rels)(method)(x < y) ==
+  <_tuple(method)(rels, untuple(x), untuple(y))
+
+FUN =_tuple <_tuple : method ->
+		       seq[lazy[rel]] ** seq[value] ** seq[value] ->
+		       bool
+
+DEF =_tuple(method)(<>, <>, <>) == true
+DEF =_tuple(method)(o :: O, x :: X, y :: Y) ==
+  IF apply(eval(o))(method)(x = y) THEN =_tuple(method)(O, X, Y)
+  ELSE false
+  FI
+
+DEF <_tuple(method)(<>, <>, <>) == false
+DEF <_tuple(method)(o :: O, x :: X, y :: Y) ==
+  IF apply(eval(o))(method)(x < y) THEN true
+  IF apply(eval(o))(method)(y < x) THEN false
+  ELSE <_tuple(method)(O, X, Y)
+  FI
+
+
+FUN computeOrder : seq[pair[variant, rel]] -> method ->
+		    sto -> bool
+
+DEF computeOrder((v & rel) :: variants)(method)(x = y) ==
+  IF discriminator(v)(x) THEN
+    IF discriminator(v)(y) THEN
+      apply(rel)(method)(deconstructor(v)(x) = deconstructor(v)(y))
+    ELSE false
+    FI
+  OTHERWISE
+  IF discriminator(v)(y) THEN false
+  ELSE computeOrder(variants)(method)(x = y)
+  FI
+DEF computeOrder((v & rel) :: variants)(method)(x < y) ==
+  IF discriminator(v)(x) THEN
+    IF discriminator(v)(y) THEN
+      apply(rel)(method)(deconstructor(v)(x) < deconstructor(v)(y))
+    ELSE true
+    FI
+  OTHERWISE
+  IF discriminator(v)(y) THEN false
+  ELSE computeOrder(variants)(method)(x < y)
+  FI
+
+-- ------------------------------------------------------------------
+
+/*
+
+-- FUN default : method
+
+DEF default == method(orderDefault)
+
+
+FUN comparison : sort
+
+DEF comparison == reflectSort[comparison[value]]
+
+
+FUN comparison : seq[variant]
+
+DEF comparison == variants(comparison)
+
+
+FUN < = ~ : variant
+
+DEF < == comparisonVariant("<")
+
+DEF = == comparisonVariant("=")
+
+DEF ~ == comparisonVariant("~")
+
+
+FUN comparisonVariant : denotation -> variant
+
+DEF comparisonVariant(op) ==
+  cont(find?((\\ v . identifier(constructorName(v)) = op), comparison))
+
+
+FUN orderDefault : method -> value -> bool
+
+DEF orderDefault(method)(refl) ==
+  IF discriminator(<)(refl) THEN
+    LET args == untuple(deconstructor(<)(refl))
+	x == ft(args)
+	y == ft(rt(args))
+	s == sort(ft(instance(struct(name(sort(type(refl)))))))
+    IN apply(<_Repository ! s)(method)(x, y)
+  IF discriminator(=)(refl) THEN
+    LET args == untuple(deconstructor(=)(refl))
+	x == ft(args)
+	y == ft(rt(args))
+	s == sort(ft(instance(struct(name(sort(type(refl)))))))
+    IN apply(=_Repository ! s)(method)(x, y)
+  IF discriminator(~)(refl) THEN
+    ~(orderDefault(method)(deconstructor(~)(refl)))
+  FI
+
+
+
+FUN orderDenotation : which -> method -> value ** value -> bool
+
+DEF orderDenotation(<)(method)(x, y) ==
+  content(x) <'Denotation content(y)
+DEF orderDenotation(=)(method)(x, y) ==
+  content(x) ='Denotation content(y)
+
+
+FUN orderValue : which -> method -> value ** value -> bool
+
+DEF orderValue(<)(method)(reflX, reflY) ==
+  LET x == content(reflX)
+      y == content(reflY)
+  IN
+  IF type(x) < type(y) THEN true
+  IF type(y) < type(x) THEN false
+  ELSE recursion(method)(constructor(<)(tuple(x :: y :: <>)))
+  FI
+DEF orderValue(=)(method)(x, y) ==
+  IF type(x) = type(y) THEN
+    recursion(method)(constructor(=)(tuple(x :: y :: <>)))
+  ELSE false
+  FI
+
+
+DATA which == < =
+
+FUN repository : which -> cache
+
+DEF repository(?) == cache(findOrder(?),
+			   (denotation, rel(orderDenotation(?))) def
+			   (value, rel(orderValue(?))) def {})
+
+FUN <_Repository =_Repository : cache
+
+DEF <_Repository == repository(<)
+
+DEF =_Repository == repository(=)
+
+
+
+DATA relatedVariant == related(variant : variant,
+			       rel : rel)
+
+
+FUN findOrder : which -> sort -> rel
+
+*/
+
+

@@ -1,0 +1,239 @@
+IMPLEMENTATION PrettyPrintStreamBuiltin
+
+IMPORT Com COMPLETELY
+       ComCompose COMPLETELY
+       Denotation COMPLETELY
+       MethodEnv[value, com[void], output] COMPLETELY
+       MethodEnvCompose COMPLETELY
+       NatConv COMPLETELY
+       Option COMPLETELY
+       Reflection COMPLETELY
+       ReflectionBuild COMPLETELY
+       ReflectionInspect COMPLETELY
+       ReflectionLookup COMPLETELY
+       Seq COMPLETELY
+       SeqReduce COMPLETELY
+       Stream COMPLETELY
+       Void COMPLETELY
+
+
+-- FUN nat : method -> output ** nat -> denotation
+
+DEF nat(method)(out, x) == write(out, x`)
+
+
+-- FUN seq : method -> method
+
+DEF seq == (isSeq?, printSeq) :: _
+
+
+FUN isSeq? : value -> bool
+
+DEF refl isSeq? ==
+  IF type(refl) basic? THEN
+    LET n == name(sort(type(refl)))
+    IN
+    IF identifier(n) = "seq" THEN identifier(struct(n)) = "Seq"
+    ELSE false
+    FI
+  ELSE false
+  FI
+
+
+FUN printSeq : method[value, com[void], output] -> output ** value -> com[void]
+
+DEF printSeq(method)(out, refl) == printSeq(method)(out, decomposeSeq(refl))
+
+
+FUN printSeq : method[value, com[void], output] -> output ** seq[value] -> com[void]
+
+DEF printSeq(method)(out, s) ==
+  write(out, "<") ; printElems(method)(out, s) ; write(out, ">")
+
+
+FUN printElems : method[value, com[void], output] -> output ** seq[value] -> com[void]
+
+DEF printElems(method)(out, <>) == succeed(nil)
+DEF printElems(method)(out, ft :: rt) ==
+  LET enum == \\ elem, next . write(out, ", ") ;
+		              recursion(method)(out, elem) ;
+			      next
+  IN recursion(method)(out, ft) ; /(enum, succeed(nil))(rt)
+
+
+FUN decomposeSeq : value -> seq[value]
+
+DEF decomposeSeq(refl) ==
+  LET var == variants(type(refl))
+      empty == ft(var)
+  IN
+  IF discriminator(empty)(refl) THEN <>
+  ELSE
+    LET cons == ft(rt(var))
+	args == untuple(deconstructor(cons)(refl))
+    IN
+    ft(args) :: decomposeSeq(ft(rt(args)))
+  FI
+
+
+-- FUN set : method -> method
+
+DEF set == (isSet?, printSet) :: _
+
+
+FUN isSet? : value -> bool
+
+DEF refl isSet? ==
+  IF type(refl) basic? THEN
+    LET n == name(sort(type(refl)))
+    IN
+    IF identifier(n) = "set" THEN
+      identifier(struct(n)) = "Set"
+    ELSE false
+    FI
+  ELSE false
+  FI
+
+
+FUN printSet : method[value, com[void], output] -> output ** value -> com[void]
+
+DEF printSet(method)(out, refl) ==
+  write(out, "{") ; printElems(method)(out, decomposeSeq(asSeq(refl))) ;
+  write(out, "}")
+
+
+FUN asSeq : value -> value
+
+DEF asSeq(refl) ==
+  LET setType == type(refl)
+      setInstance == instance(struct(name(sort(setType))))
+      seqInstance == ft(setInstance) :: <>
+      seqType == basic(sort(name("seq", sort, struct("Seq", seqInstance))))
+      asSeqType == function(setType, seqType)
+      setConv == struct("SetConv", setInstance)
+      asSeqName == name("asSeq", value(asSeqType), setConv)
+      asSeqRefl == bind(asSeqName)
+  IN
+  apply(asSeqRefl, refl)
+
+
+-- FUN default : method
+
+DEF default == method(printDefault)
+
+
+FUN printDefault : method[value, com[void], output] -> output ** value -> com[void]
+
+DEF printDefault(method)(out, refl) ==
+  IF refl reflects?[denotation] THEN
+    write(out, "\"") ; write(out, content[denotation](refl)) ;
+    write(out, "\"")
+  IF refl reflects?[value] THEN recursion(method)(out, content[value](refl))
+  ELSE printGeneric(method)(out, refl)
+  FI
+
+
+FUN printGeneric : method[value, com[void], output] -> output ** value -> com[void]
+
+DEF printGeneric(method)(out, refl) ==
+  IF type(refl) freeType? THEN
+    LET vars == variants(type(refl))
+	var == cont(find?(\\ v . discriminator(v)(refl), vars))
+	args == untuple(deconstructor(var)(refl))
+    IN printName(out, constructorName(var)) ; printTuple(method)(out, args)
+  ELSE write(out, "SOME ") ; printType(out, type(refl))
+  FI
+
+
+FUN printTuple : method[value, com[void], output] -> output ** seq[value] -> com[void]
+
+DEF printTuple(method)(out, <>) == succeed(nil)
+DEF printTuple(method)(out, ft :: rt) ==
+  LET enum == (\\ refl, next . write(out, ", ") ;
+			       recursion(method)(out, refl) ; next)
+  IN
+  write(out, "(") ; recursion(method)(out, ft) ;
+  /(enum, write(out, ")"))(rt)
+
+
+-- FUN printDefault : output ** value -> com[void]
+
+FUN printDefault : output ** value -> com[void]
+
+DEF printDefault(out, refl) ==
+  IF refl reflects?[denotation] THEN
+    write(out, "\"") ; write(out, content[denotation](refl)) ;
+    write(out, "\"")
+  IF refl reflects?[value] THEN printDefault(out, content[value](refl))
+  ELSE printGeneric(out, refl)
+  FI
+
+
+FUN printGeneric : output ** value -> com[void]
+
+DEF printGeneric(out, refl) ==
+  IF type(refl) freeType? THEN
+    LET vars == variants(type(refl))
+	var == cont(find?(\\ v . discriminator(v)(refl), vars))
+	args == untuple(deconstructor(var)(refl))
+    IN printName(out, constructorName(var)) ; printTuple(out, args)
+  ELSE write(out, "SOME ") ; printType(out, type(refl))
+  FI
+
+
+FUN printTuple : output ** seq[value] -> com[void]
+
+DEF printTuple(out, <>) == succeed(nil)
+DEF printTuple(out, ft :: rt) ==
+  LET enum == (\\ refl, next . write(out, ", ") ;
+			       printDefault(out, refl) ; next)
+  IN
+  write(out, "(") ; printDefault(out, ft) ;
+  /(enum, write(out, ")"))(rt)
+
+
+FUN printName : output ** name -> com[void]
+
+DEF printName(out, name) ==
+  write(out, identifier(name)) ; printInstance(out, instance(struct(name)))
+
+
+FUN printWithStruct : output ** name -> com[void]
+
+DEF printWithStruct(out, name) ==
+  write(out, identifier(name)) ; write(out, "'") ;
+  write(out, identifier(struct(name))) ;
+  printInstance(out, instance(struct(name)))
+
+
+FUN printType : output ** type -> com[void]
+
+DEF printType(out, basic(sort(name))) == printName(out, name)
+DEF printType(out, product(factors)) ==
+  LET printFactor == \\ type . IF type basic? THEN printType(out, type)
+			       ELSE write(out, "(") ; printType(out, type) ;
+				 write(out, ")")
+			       FI
+      enum == \\ type, next . write(out, " ** ") ;
+                              printFactor(type) ; next
+  IN /(enum, succeed(nil))(factors)
+DEF printType(out, function(domain, codomain)) ==
+  LET printDom == IF domain function? THEN
+		    write(out, "(") ; printType(out, domain) ; write(out, ")")
+		  ELSE printType(out, domain)
+		  FI
+  IN printDom ; write(out, " -> ") ; printType(out, codomain)
+
+
+FUN printInstance : output ** seq[name] -> com[void]
+
+DEF printInstance(out, instance) ==
+  LET aValue == \\ name . kind(name) value?
+  IN
+  IF instance ::? ANDIF exist?(aValue, instance) THEN
+    LET enum == \\ name, next . write(out, ", ") ;
+		                printWithStruct(out, name) ; next
+    IN write(out, "[") ; printWithStruct(out, ft(instance)) ;
+       /(enum, write(out, "]"))(rt(instance))
+  ELSE succeed(nil)
+  FI

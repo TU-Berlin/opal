@@ -1,0 +1,396 @@
+/* %- Rcs-Info (automatically generated)
+
+  $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/reflections/ReflectionFunction.impl,v 1.1 1999-10-08 19:25:58 kd Exp $
+  $Author: kd $
+  $Date: 1999-10-08 19:25:58 $
+  $State: Exp $
+
+  $Locker:  $
+  $Revision: 1.1 $
+  $Name: not supported by cvs2svn $
+
+  $Log: not supported by cvs2svn $
+  Revision 1.7  1999/03/03 11:08:45  silver
+  Documentation changes.
+
+  Revision 1.6  1999/02/24 13:53:04  schintke
+  using new strategy for finding interOpal files from InterOpalTools
+  added documentation
+
+  Revision 1.5  1999/02/23 19:18:53  schintke
+  Implemented findSortVariants
+  beautyfications
+
+  Revision 1.4  1999/02/22 14:26:01  schintke
+  arghh. Other IMPORT bugfix.
+
+  Revision 1.3  1999/02/22 14:01:39  schintke
+  tiny bugfix
+
+  Revision 1.2  1999/02/22 13:52:58  schintke
+  Implemented findFunction
+
+  Revision 1.1  1998/09/30 17:27:02  silver
+  Initial revision
+
+*/
+
+IMPLEMENTATION ReflectionFunction
+
+IMPORT	CAST                    ONLY cast
+	BasicIO			COMPLETELY
+	Com  			ONLY  EXEC succeed
+	Denotation              COMPLETELY
+	InterOpal               COMPLETELY
+	InterOpalTools          COMPLETELY
+	Map 			COMPLETELY
+	MapConv                 COMPLETELY
+	MapFilter               ONLY |
+	Nat                     COMPLETELY
+	NatConv                 COMPLETELY
+	Option			ONLY option nil avail avail? cont nil?
+	Pair                    COMPLETELY
+	RUNTIME                 COMPLETELY
+	Reflection		COMPLETELY
+	Seq			COMPLETELY
+	SeqFilter		ONLY |
+	SeqMap                  ONLY *
+	SeqZip			ONLY zip
+	SortReflection          COMPLETELY
+	Void                    COMPLETELY
+        ComCompose              COMPLETELY
+        Compose               	ONLY o
+        RUNTIMEENV[void, void]  ONLY apply default
+        SeqReduce               ONLY /
+
+-- %$Finding Function Reflections$
+
+-- % Helping data type
+
+DATA lookupResult  == asCom (command : com[obj], dim : nat)
+
+-- % Service functions for building typeReflections
+
+DEF t1 *** t2 == product(%(t1,t2)) 
+DEF t1 --> t2 == function(t1,t2)
+
+-- % Other service functions
+IMPORT DEBUG ONLY PRINT
+	String ONLY string
+-- PRINT(condition, denotation, identitaet)
+
+FUN dimension: typeReflection -> nat
+DEF dimension(refl) ==
+  IF refl sort?     THEN 1
+  IF refl product?  THEN #(factors(refl))
+  IF refl function? THEN dimension(codomain(refl))
+  FI
+
+-- %$$Finding sort variants$
+
+DATA sortVariant    == variant (constructor    : reflection,
+			  	selectors      : seq[reflection],
+				discriminator  : reflection)
+
+-- % Build one sortVariant
+
+FUN buildSortVariant : interOpal ** variant -> sortVariant
+DEF buildSortVariant(interOpal, variant(_ , cons, discr, sels)) == 
+  LET 
+    constructor   == buildFunctionReflection(interOpal, cons)
+    selectors     == (\\x. buildFunctionReflection(interOpal, sel(x))) * sels
+    discriminator == buildFunctionReflection(interOpal, discr)
+  IN
+    variant(constructor, selectors, discriminator)
+ 
+-- % Find all sortVariants
+
+DEF findSortVariants(sort) ==
+  LET 
+    o_interOpal == getInterOpal(structure(sort))
+  IN
+  IF o_interOpal nil?   THEN <>
+  IF o_interOpal avail? THEN
+    LET
+      interOpal   == cont(o_interOpal)
+      mainStruct  == getMainStruct(interOpal)
+      o_sortIdent == findSort(identifier(sort), mainStruct)
+    IN
+      IF o_sortIdent avail? THEN
+  	LET
+  	  property == props(mainStruct) !? cont(o_sortIdent)
+  	IN
+  	  IF property avail? ANDIF cont(property) freeType? THEN 
+  	    (\\x. buildSortVariant(interOpal, x)) * variants(cont(property))
+  	  ELSE
+  	    <>
+  	  FI
+      ELSE
+  	<>
+      FI
+  FI  
+
+-- %$Find functions$
+
+-- % Build one function Reflection
+FUN buildFunctionReflection : interOpal ** name -> reflection
+DEF buildFunctionReflection (interOpal, name(id, _, _)) ==
+  LET 
+    mainStruct    == getMainStruct(interOpal)
+    structurename == symbol(mainStruct)
+
+    object        == objs(mainStruct) ! id
+    type          == getTypeReflection(interOpal & fct(kind(object)))     
+    
+    looked        == asCom(lookup(structurename, no(id)), dimension(type))
+  IN
+    createReflection(cast(looked), type, named(symbol(object), structurename))
+
+-- % Find a fully specified function
+DEF findFunction(namedeno, module, signature) ==
+  LET
+    transformedToReflection == findFunction(namedeno, module)
+    matchingEntries         == (\\ x. type(x) = signature) 
+                               | transformedToReflection
+  IN
+    IF matchingEntries <>? THEN nil
+    IF matchingEntries ::? THEN avail(ft(matchingEntries))
+    FI
+
+-- % Find functions by name
+DEF findFunction(namedeno, structure) ==
+  LET 
+    o_interOpal == getInterOpal(structure)
+  IN
+    IF o_interOpal nil?   THEN <>
+    IF o_interOpal avail? THEN
+      LET 
+    	interOpal       == cont(o_interOpal)
+	mainStruct      == getMainStruct(interOpal)
+    	searchedObjects == findObjectsByName(namedeno, interOpal)
+    	onlyFunctions   == (\\ elem. fct?(kind(elem))) | searchedObjects
+      IN
+    	(\\ function. 
+    	   LET
+    	     type   == getTypeReflection(interOpal & fct(kind(function))) 
+    	     looked == asCom (lookup(structure, no(ident(function))), 
+                              dimension(type))
+    	   IN
+    	     createReflection(cast(looked), type, named(namedeno, structure)))
+    	* onlyFunctions
+   FI    
+
+-- % Build a typeReflection from fct'InterOpal
+FUN getTypeReflection: pair[interOpal, fct] -> typeReflection
+DEF getTypeReflection(&(interOpal, fct:fct)) ==
+  IF fct sort?  THEN sort(getSortReflection(interOpal, sort(fct)))
+  IF fct funct? THEN function(getTypeReflection(interOpal & dom(fct)), 
+                              getTypeReflection(interOpal & codom(fct)))
+  IF fct cart?  THEN product(getTypeReflection * 
+      ((\\entry. interOpal & entry) * elems(fct)))
+  FI
+
+-- % Build a sortReflection from name'InterOpal
+FUN getSortReflection: interOpal ** name -> sortReflection
+DEF getSortReflection(interOpal, name) ==
+  LET functionName   == getNameAsDeno(interOpal, name)
+      matchingStruct == structs(interOpal) ! origin(name)
+      structureName  == getModuleNameAsDeno(interOpal, name)
+  IN
+  IF inst(name) inst? THEN
+    LET
+      instantiations == insts(matchingStruct) ! inst(name)
+      -- This only works for instantiations with sorts. Not with function!!!
+      instances      == (\\x.getSortReflection(interOpal,x)) * instantiations
+    IN
+      sort(functionName, structureName, instances)
+  ELSE
+    sort(functionName, structureName, <>)
+  FI
+
+-- %$Applying function reflections$
+
+-- % Helping function
+
+-- % We make the EXEC of the lookup directly before apply
+FUN getObjForApply : reflection -> obj
+DEF getObjForApply (refl) ==
+  IF type(refl) function? THEN 
+    EXEC(command(cast[obj, lookupResult] (getValue (refl))))
+  ELSE 
+    getValue (refl)
+  FI
+
+/* % If the result of an apply is a function, this function is no longer
+   a named function. So we set the codeReflection to lambda and make
+   some other stuff.
+*/
+FUN fixObjAfterApply : obj ** typeReflection -> reflection
+DEF fixObjAfterApply (object, type) ==
+  IF type function? THEN 
+    createReflection(cast[lookupResult, obj](asCom(succeed(object), 
+                                                   dimension(type))), 
+                     type, 
+                     lambda)
+  ELSE
+    createReflection(object, type)
+  FI
+
+-- % Apply a reflected function
+DEF apply(f, x) ==
+    IF applicable?(f, x) THEN
+      LET
+        seqOfObjs  == internalApply(getValue(f), getObjForApply * asSeq(x))
+        codom      == codomain(type(f))
+        seqOfTypes == IF codom product? THEN factors(codom)
+ 				        ELSE %(codom) 
+                      FI
+      IN 
+        avail(asTuple(zip(fixObjAfterApply) (seqOfObjs, seqOfTypes)))
+    ELSE nil
+    FI
+
+-- % Apply a reflected function and be shure that this succeeds
+DEF apply(f, x) == cont(f apply x)
+
+-- % Some service apply with options
+DEF apply(o_f:option[reflection], x:reflection) ==
+  IF o_f avail? THEN (cont(o_f)) apply x
+                ELSE nil
+  FI        
+
+DEF apply(f:reflection, o_x:option[reflection]) ==
+  IF o_x avail? THEN (f) apply (cont(o_x))
+                ELSE nil
+  FI
+
+DEF apply(o_f:option[reflection], o_x:option[reflection]) ==
+  IF (o_f avail?) and (o_x avail?) THEN (cont(o_f)) apply (cont(o_x))
+  ELSE nil
+  FI
+
+/* % Check if type of argument matches the requested type of the
+   reflected function.
+*/
+DEF applicable?(f, x) ==
+    IF type(f) function? THEN domain(type(f)) = type(x)
+                         ELSE false
+    FI
+
+/* %
+This function needs to be handcoded, as it does the closure stuffing.
+*/
+FUN internalApply : obj ** seq[obj] -> seq[obj]
+DEF internalApply (f, x) ==
+  LET ff == cast[obj, lookupResult](f)
+      (result, _) == apply(EXEC(command(ff)), dim(ff), x, nil, default) 
+  IN
+     result
+
+-- %$Reflecting a Tuple of Values$
+
+/* %
+The empty tuple reflection.
+*/
+DEF <> == createReflection(tuple(<>), product(<>))
+DEF <>?(x) ==
+  IF product?(type(x)) THEN
+    <>?(factors(type(x)))
+  ELSE
+    false
+  FI
+
+
+/* %
+In order to provide associativity of tuple reflections, tuple creation
+comes in four different flavours: singleton vs. tuple at both
+arguments. Additional care has to be taken to avoid the construction
+of unary tuples.
+*/
+
+DEF r1 x r2 ==
+    IF r1 tuple? THEN
+       IF r2 tuple? THEN r1 xnn r2
+                    ELSE r1 xn1 r2
+       FI
+    ELSE
+       IF r2 tuple? THEN r1 x1n r2
+                    ELSE r1 x11 r2
+       FI
+    FI
+
+
+FUN x11 x1n xn1 xnn : reflection ** reflection -> reflection
+
+DEF r1 xnn r2 ==
+    LET R == asSeq(r1) ++ asSeq(r2)
+        T == factors(type(r1)) ++ factors(type(r2)) IN
+    IF T ::? ANDIF rt(T) <>? THEN ft(R)
+    ELSE
+       createReflection(tuple(R), product(T))
+    FI
+
+DEF r1 xn1 r2 ==
+    IF r1 <>? THEN r2
+    ELSE
+       createReflection(tuple(asSeq(r1) +% r2),
+                        product(factors(type(r1)) +% type(r2)))
+    FI
+
+DEF r1 x1n r2 ==
+    IF r2 <>? THEN r1
+    ELSE
+       createReflection(tuple(r1 :: asSeq(r2)),
+                        product(type(r1) :: factors(type(r2))))
+    FI
+
+DEF r1 x11 r2 ==
+    createReflection(tuple(%(r1, r2)),
+                     product(%(type(r1), type(r2))))
+
+
+/* %
+A reflection of variant @code{product} is guaranteed to have a value
+representation of type @code{seq[reflection]}, which leads to the
+following hacks:
+*/
+FUN tuple : seq[reflection] -> obj
+DEF tuple == cast[seq[reflection], obj]
+
+FUN tuple? : reflection -> bool
+DEF tuple? == product? o type
+
+/* %
+Create a tuple object. In case of sequence containing only one
+element, return that element instead.
+*/
+DEF asTuple(r :: <>) == r
+DEF asTuple(S) == /(::, <>)(S)
+
+/* %
+Adding one or a sequence of elements to the front of a tuple.
+Flattens the result if the first argument is already a tuple.
+A little faster but less safe than @code{x} because type check
+on the second argument is ommitted.
+*/
+FUN :: : reflection ** reflection -> reflection
+DEF r :: R ==
+    IF t product? THEN
+       createReflection(tuple(asSeq(r) ++ asSeq(R)),
+                        product(factors(t) ++ factors(T)))
+    ELSE
+       createReflection(tuple(r :: asSeq(R)),
+                        product(t :: factors(T)))
+    FI
+    WHERE t == type(r)
+          T == type(R)
+
+
+/* %
+Unpacking of tuples is straightforward.
+*/
+DEF asSeq(r) ==
+    IF r tuple? THEN cast[obj, seq[reflection]](getValue(r))
+                ELSE %(r)
+    FI
+

@@ -1,0 +1,125 @@
+IMPLEMENTATION ReflectionLookup
+
+IMPORT ABORT      COMPLETELY
+       CAST       COMPLETELY
+       Cache      COMPLETELY
+       Com        COMPLETELY
+       ComCompose COMPLETELY
+       ComState   COMPLETELY
+       Denotation COMPLETELY
+       InterOpal  COMPLETELY
+       InterOpalTools COMPLETELY
+       Map        COMPLETELY
+       Option     COMPLETELY
+       Pair       COMPLETELY
+       RUNTIME    COMPLETELY
+       ReflectFunction COMPLETELY
+       ReflectInterOpal COMPLETELY
+       Reflection COMPLETELY
+       ReflectionBuild COMPLETELY
+       ReflectionRepository COMPLETELY
+       Seq COMPLETELY
+       SeqFilter COMPLETELY
+       SeqMap COMPLETELY
+
+       DEBUG COMPLETELY
+       ReflectionConv COMPLETELY
+
+
+-- FUN bind : name -> value
+
+DEF bind(name) == functionRepository ! name
+
+
+FUN functionRepository : cache[name'Reflection, <, value]
+
+DEF functionRepository == cache(findFunction())
+
+
+FUN findFunction : () -> name'Reflection -> value
+
+DEF findFunction()(name) ==
+  IF kind(name) value? THEN
+    LET structName == identifier(struct(name))
+	interOpal? == interOpalRepository ! structName
+    IN
+    IF interOpal? avail? THEN
+      LET interOpal == cont(interOpal?)
+          actual == actualParams(interOpal)(instance(struct(name)))
+          id? == findName(interOpal, actual)(name)
+      IN
+      IF id? avail? THEN
+        LET id == cont(id?)
+            type == fct(kind(objs(structs(interOpal) ! main) !
+                    ident(id)))
+            typeRefl == reflect(interOpal, actual)(type)
+	    params == (\\ n . kind(n) value?) | instance(struct(name))
+            dynamic == reflect * sort * reflect(interOpal, actual) *
+	               dynamicSorts(interOpal)
+	    fun == function(lookup(structName, id),
+			    dimension(typeRefl))
+	    inst == (functionRepository ! _) * params
+	IN instantiate(cast(fun), inst ++ dynamic, typeRefl)
+      FI
+    ELSE ABORT("interOpal for structure `" ++ structName ++
+	       "' not found.")
+    FI
+  FI
+
+
+FUN findName : interOpal ** map[name'InterOpal, <, name'Reflection] ->
+               name'Reflection -> option[nat]
+
+DEF findName(interOpal, actual)(name) ==
+  LET mainStruct == structs(interOpal) ! main
+  IN
+  IF symbol(mainStruct) = identifier(struct(name)) THEN
+    LET found? == find?(findName(interOpal, actual)(name), objs(mainStruct))
+    IN
+    IF found? avail? THEN avail(no(1st(cont(found?))))
+    ELSE nil
+    FI
+  ELSE nil
+  FI
+
+
+FUN findName : interOpal ** map[name'InterOpal, <, name'Reflection] ->
+               name'Reflection -> ident ** object -> bool
+
+DEF findName(interOpal, actual)(name)(_, obj) ==
+  IF identifier(name) = symbol(obj) THEN
+    IF kind(name) sort? ANDIF kind(obj) sort? THEN true
+    IF kind(name) value? ANDIF kind(obj) fct? THEN
+      type(kind(name)) = reflect(interOpal, actual)(fct(kind(obj)))
+    ELSE false
+    FI
+  ELSE false
+  FI
+
+
+FUN instantiate : obj ** seq[value] ** type -> value
+
+DEF instantiate(f, <>, type) ==
+  LET obj == IF type function? THEN f
+	     ELSE EXEC(hook(cast(f)))
+	     FI
+  IN pair(obj, type)
+DEF instantiate(f, params, type) ==
+  LET args == asObj * params
+      obj == IF type basic? THEN ft(internalApply(f, args))
+	     IF type product? THEN cast(internalApply(f, args))
+             IF type function? THEN
+	       cast(function(succeed(ft(internalApply(f, args))),
+			     dimension(cast(f)) : function))
+	     FI
+  IN pair(obj, type)
+
+
+FUN dynamicSorts : interOpal -> seq[name'InterOpal]
+
+DEF dynamicSorts(interOpal) ==
+  LET home == structs(interOpal) ! main
+      formal == formalParams(home)
+      sorts == test? | formal
+      test? == \\ name . kind(objs(home) ! ident(name)) sort?
+  IN dynamic?(home, _) | sorts

@@ -1,0 +1,152 @@
+IMPLEMENTATION StandardOrderReflection
+
+IMPORT ABORT COMPLETELY
+       Com COMPLETELY
+       ComCompose COMPLETELY
+       Cache[sort, <, rel] COMPLETELY
+       Denotation COMPLETELY
+       Lazy COMPLETELY
+       Map COMPLETELY
+       Option COMPLETELY
+       Reflection COMPLETELY
+       ReflectionBuild COMPLETELY
+       ReflectionInspect COMPLETELY
+       ReflectFunction COMPLETELY
+       Seq COMPLETELY
+       SeqMap COMPLETELY
+       SeqZip COMPLETELY
+
+
+DEF =(type) == apply(eval(typeRel(=)(type)))
+
+DEF <(type) == apply(eval(typeRel(<)(type)))
+
+
+DATA rel == rel(apply : value ** value -> bool)
+
+
+DATA which == < =
+
+
+FUN denotation : sort
+
+DEF denotation == sort(name("denotation", sort,
+			    struct("DENOTATION", <>)))
+
+
+FUN < = : value ** value -> bool
+
+DEF x < y ==
+  content(x) <'Denotation content(y)
+DEF x = y ==
+  content(x) ='Denotation content(y)
+
+
+FUN <_Repository =_Repository : cache
+
+DEF <_Repository == init(findRel(<), (denotation, rel(<)) def {})
+
+DEF =_Repository == init(findRel(=), (denotation, rel(=)) def {})
+
+
+FUN repository : which -> cache
+
+DEF repository(<) == <_Repository
+DEF repository(=) == =_Repository
+
+
+DATA relatedVariant == related(variant : variant,
+			       rel : rel)
+
+
+FUN findRel : which -> sort -> rel
+
+DEF findRel(?)(sort) ==
+  LET domain == basic(sort)
+      vars == variants(domain)
+      rels == variantRel(?) * vars
+  IN
+  IF vars ::? THEN rel(computeRel(?)(zip(related)(vars, rels)))
+  ELSE ABORT("no free type information for " ++ identifier(name(sort)) ++
+	     "'" ++ identifier(struct(name(sort))))
+  FI
+
+
+FUN variantRel : which -> variant -> rel
+
+DEF variantRel(?)(variant) ==
+  tupleRel(?)(components(variant))
+
+
+FUN tupleRel : which -> seq[type] -> rel
+
+DEF tupleRel(?)(types) ==
+  tuple(?)(typeRel(?) * types)
+
+
+FUN typeRel : which -> type -> lazy[rel]
+
+DEF typeRel(?)(type) ==
+  IF type basic? THEN lazy(\\ . repository(?) ! sort(type))
+  IF type product? THEN eager(tupleRel(?)(factors(type)))
+  ELSE ABORT("no generic order on function types")
+  FI
+
+
+FUN tuple : which -> seq[lazy[rel]] -> rel
+
+DEF tuple(?)(rels) == rel(tuple(?)(rels))
+
+
+FUN tuple : which -> seq[lazy[rel]] -> value ** value -> bool
+
+DEF tuple(?)(rels)(x, y) ==
+  tuple(?)(rels, untuple(x), untuple(y))
+
+
+FUN tuple : which -> seq[lazy[rel]] ** seq[value] ** seq[value] ->
+	     bool
+
+DEF tuple(=)(<>, <>, <>) == true
+DEF tuple(=)(o :: O, x :: X, y :: Y) ==
+  IF apply(eval(o))(x, y) THEN tuple(=)(O, X, Y)
+  ELSE false
+  FI
+DEF tuple(<)(<>, <>, <>) == false
+DEF tuple(<)(o :: O, x :: X, y :: Y) ==
+  IF apply(eval(o))(x, y) THEN true
+  IF apply(eval(o))(y, x) THEN false
+  ELSE tuple(<)(O, X, Y)
+  FI
+
+
+FUN computeRel : which -> seq[relatedVariant] ->
+		  value ** value -> bool
+
+DEF computeRel(=)(related(variant(_, _, _, discriminator,
+				  deconstructor),
+			  rel) :: variants)(x, y) ==
+  IF discriminator(x) THEN
+    IF discriminator(y) THEN
+      apply(rel)(deconstructor(x), deconstructor(y))
+    ELSE false
+    FI
+  OTHERWISE
+  IF discriminator(y) THEN false
+  ELSE computeRel(=)(variants)(x, y)
+  FI
+
+DEF computeRel(<)(related(variant(_, _, _, discriminator,
+				 deconstructor),
+			 rel) :: variants)(x, y) ==
+  IF discriminator(x) THEN
+    IF discriminator(y) THEN
+      apply(rel)(deconstructor(x), deconstructor(y))
+    ELSE true
+    FI
+  OTHERWISE
+  IF discriminator(y) THEN false
+  ELSE computeRel(<)(variants)(x, y)
+  FI
+
+
