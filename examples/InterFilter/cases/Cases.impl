@@ -1,0 +1,78 @@
+IMPLEMENTATION Cases
+
+IMPORT ComAction ONLY -!-> 
+       ComCheck ONLY check
+       Denotation ONLY ++ =
+       ProcessArgs ONLY args
+       ComCompose ONLY &
+       Seq ONLY # ft :: % seq rt
+       Nat ONLY |= 3
+       Char ONLY lower upper char
+       Com ONLY break com
+       Void ONLY void
+       Option ONLY nil? cont option
+       MapMap ONLY *
+       Map ONLY def !
+       StringConv ONLY `
+       String ONLY string !
+       StringMap ONLY *
+
+-- from /usr/ocs/signs/oc/shared/interOpal
+       InterOpal COMPLETELY
+       InterOpalIO ONLY readInterOpal writeInterOpal
+-- %$Interaktion$
+
+-- %Hauptprogramm: Kommandozeile parsen und Kernstück aufrufen
+
+DEF cases ==
+  check(\\S. "cases failed: " ++ S,
+  args & (\\ cArgs.
+  (#(cArgs) |= 3) -!-> usage & (
+  LET interFile == ft(rt(cArgs))
+      action == ft(rt(rt(cArgs)))
+  IN
+  (IF action = "--lower" THEN doCases(lower, interFile)
+   IF action = "--upper" THEN doCases(upper, interFile)
+   ELSE break(usage())
+   FI )
+  )))
+
+-- %Kern: InterOpal-Datei lesen, ändern und wieder zurückschreiben
+FUN doCases: (char -> char) ** denotation -> com[void]
+DEF doCases(conv, interFilename) ==
+  readInterOpal(false, interFilename) & (\\ IO.
+  (nil?(IO) -!-> (\\ . "interopal file could not be read")) &
+  writeInterOpal(false, interFilename)(changeIO(conv, cont(IO)))
+  )
+
+-- %Information über korrekten Aufruf, falls was schiefgeht
+FUN usage: () -> denotation 
+DEF usage() == "usage: cases <interfile> (--lower | --upper)"
+
+-- %$InterOpal bearbeiten$
+
+-- %Ändert alle Objekte von @code{main}, fügt Markierung hinzu
+FUN changeIO: (char -> char) ** interOpal -> interOpal
+DEF changeIO(conv, IO) ==
+  LET mainStruct == structs(IO)!main
+      mainObjs == objs(mainStruct)
+      newObjs == changeObj(conv) * mainObjs
+      newStruct == struct(pos(mainStruct), origin(mainStruct),
+                          symbol(mainStruct), insts(mainStruct),
+                          onlys(mainStruct), newObjs,
+                          props(mainStruct), markPragma :: pragmas(mainStruct))
+  IN
+  interOpal(part(IO), (main, newStruct) def structs(IO))
+
+-- %Ändert Objekt entsprechend ab
+FUN changeObj: (char -> char) -> object -> object
+DEF changeObj(conv)(object(p, id, sym, k, d, pr, pg)) ==
+  object(p, id, newSym, k, d, pr, pg)
+  WHERE newSym == (conv * (sym!))`
+
+-- %Konstantes Pragma zur Markierung
+FUN markPragma: pragma
+DEF markPragma == pragma(%(token(unknown, "INTEROPAL FILTER"),
+                           token(unknown, "cases")))
+
+  
