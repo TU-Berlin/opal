@@ -1,0 +1,141 @@
+IMPLEMENTATION T2SeqEntry
+
+IMPORT WinTextEditor COMPLETELY
+       WinText ONLY text wrap wrapStyle none real
+       WinView ONLY view <|< ^-^ frame @< fillX *+ expand
+       WinConfig ONLY config with unitHeight ++ point orient vertical
+horizontal unitWidth
+       WinEmitter ONLY emitter await emit
+       WinScroller ONLY scroll scroller scrollControl
+       WinScrollbar ONLY scrollbar
+       WinEvent ONLY event button double eventInfo point modifier bind - wconfig
+
+       Seq ONLY seq :: <>
+       SeqConv ONLY `
+       String ONLY string ! <> rt 
+       StringConv ONLY `
+       StringFilter ONLY split drop
+       Char ONLY char ! = |=
+       Com ONLY com succeed break
+       ComCompose ONLY &
+       ComAgent ONLY agent 
+       Nat ONLY 10 0 1 2 20 15 pred
+       Option COMPLETELY
+       ABORT ONLY ABORT
+       Denotation ONLY ++ 
+       OptionMap ONLY *
+       WinRegulator ONLY regulator regulate
+       Pair ONLY pair 1st 2nd &
+       SeqParse ONLY preparse
+       ParseConv ONLY asParse
+       OWmisc ONLY <+
+       Void ONLY void nil
+       
+
+DATA seqEntry == seqEntry(view: view,
+                         textEditor: textEditor,
+                         regulator: regulator,
+                         sync: emitter[seq[data]],
+                         vscroll: scroller,
+                         hscroll: scroller)
+
+DEF seqEntry == seqEntry(defaultConfig)
+DEF seqEntry(w, h) == seqEntry(unitWidth(w) ++ unitHeight(h))
+DEF seqEntry(tconfig) ==
+    textEditor & (\\tE.
+    emitter[seq] & (\\sy.
+    regulator & (\\rg.
+    scroller & (\\vscr.
+    scroller & (\\hscr.
+      LET txtconfig == tconfig ++ edit(tE) ++ wrap(none) ++ regulate(rg) ++
+                        scroll(vscr, vertical) ++ scroll(hscr, horizontal)
+          txtview == expand(fillX(text with txtconfig))
+          v == (txtview <|< (scrollbar with vertical ++ scrollControl(vscr)))
+                ^-^ (expand(scrollbar with horizontal ++ scrollControl(hscr)))
+      IN
+    succeed(seqEntry(*+(frame @< v), tE, rg, sy, vscr, hscr))
+    )))))
+
+DEF defaultDim == &(10,15)
+DEF defaultConfig == unitWidth(1st(defaultDim)) ++ unitHeight(2nd(defaultDim))
+
+-- %$Control for OpalWin$
+-- FUN view: seqEntry -> view
+-- FUN regulator: seqEntry -> view
+-- selectors
+
+-- %$Accessing contents$
+-- %Note: @code{getXXX} and @code{upd} fail, if text cannot be parsed as data.
+
+/* %set the displayed value (blocked until seqEntry is displayed!, spawn an
+agent to initialize the entry! */
+
+DEF set(sE, S) ==
+    LET tE == textEditor(sE)
+        txt == !(`("","\n","")(print)(S))
+    IN
+    tE delete range(pos(1,0), end) & (\\ _ .
+    tE insert txt & (\\ _ .
+    sync(sE) emit S
+    ))
+
+DEF get(sE) ==
+    LET tE == textEditor(sE) 
+    IN
+    tE get range(pos(1,0), end) & (\\txt.
+    LET res == asParse(preparse("","\n","")(preparse))(txt`) 
+    IN
+      IF res nil? THEN break("get'SeqEntry: cannot parse sequence")
+      ELSE succeed(cont(res))
+      FI
+    )
+
+-- FUN getSelection: seqEntry -> com[seq[data]]
+DEF getSelection(sE) ==
+    LET tE == textEditor(sE) 
+    IN
+    -- %we expand selection to whole lines and therefore expand tags
+    tE tag (range(linestart(first(selection)), 
+                 lineend(last(selection))), selection) & (\\ _ .
+    tE get range(linestart(first(selection)), 
+                 lineend(last(selection))) & (\\txt.
+    LET res == asParse(preparse("","\n","")(preparse))(txt`)
+    IN
+      IF res nil? THEN break("getSelection'SeqEntry: cannot parse sequence\n"
+++ (txt`))
+      ELSE succeed(cont(res))
+      FI
+    ))
+
+
+-- FUN get: seqEntry ** point -> com[data]
+DEF get(sE, pt) ==
+    LET tE == textEditor(sE)
+    IN
+    tE get range(linestart(point(pt)), lineend(point(pt))) & (\\str.
+    tE index point(pt) & (\\ps. 
+    LET d == asParse(preparse)(str`)
+    IN
+     (IF d nil? THEN break("get'SeqEntry: cannot parse pointed entry!")
+      ELSE succeed(pred(line(ps)) & cont(d))
+      FI)
+    ))
+
+DEF upd(sE, f) == get(sE) & (\\dt. sE set (f(dt)))
+ 
+-- %$Binding Events$
+DEF bind(sE, ev, cmd) == regulator(sE) <+ bind(ev, \\eI. cmd(sE, eI)) 
+
+DEF bind(sE, ev, cmd) == 
+    regulator(sE) <+ bind(ev, \\ eI. get(sE) & (\\sq. cmd(sE, eI, sq)))
+
+-- %$Synchronize with Data Changes$
+
+DEF sync(sE, cmd) == agent(isync(sE, cmd)) & (\\ _ . succeed(nil))
+
+FUN isync: seqEntry ** (seq[data] -> com[void]) -> com[void]
+DEF isync(sE, cmd) ==
+    await(sync(sE)) & (\\sq.
+    agent(isync(sE, cmd)) & (\\ _ .
+    cmd(sq)
+    ))
