@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.20 1999-10-22 23:28:35 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.21 1999-10-25 19:09:16 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -120,11 +120,16 @@
 )
 
 (defun opal-diag-def-diag (from to buffer keymap dface dmface)
-  "create overlay with these properties and return it (keymap is ignored)"
+  "create overlay with these properties and return it (keymap is ignored if major version is less than 20)"
   (let (r)
     (setq r (make-overlay from to buffer))
+    (if (and nil ;; funktioniert nicht !##§$§!!!
+	     (boundp 'emacs-major-version)
+	     (>= emacs-major-version 20))
+	(overlay-put r 'local-map keymap)
+      )
     (overlay-put r 'face dface)
-    (overlay-put r 'mouse-face dmface)
+;;    (overlay-put r 'mouse-face dmface) ;; macht nur Sinn mit keymap :-(
     r
     )
 )
@@ -1184,7 +1189,9 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 	(set-buffer src)
 	(goto-line line)
 	(move-to-column col)
-	(backward-char)
+	(if (/= (point) (point-min))
+	    (backward-char)
+	  )
 	(setq src-start (point))
 	(if eLine
 	    (progn
@@ -1340,7 +1347,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.20 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.21 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
