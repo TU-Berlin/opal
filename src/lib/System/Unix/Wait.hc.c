@@ -4,7 +4,7 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 16:00:20 $ ($Revision: 1.1.1.1 $)
+   $Date: 2001-05-25 08:52:04 $ ($Revision: 1.2 $)
 */
 
 #include <unixconfig.h>
@@ -29,7 +29,7 @@
 /* import ProcessCtrl */
 #include "ProcessCtrl.h"
 /* import Signals */
-#include "Signal.h"
+#include "SysSignal.h"
 
 
 static int make_signal( int sig, OBJ * res )
@@ -37,43 +37,43 @@ static int make_signal( int sig, OBJ * res )
   switch(sig)
   {
   case SIGABRT:
-    copy_some(__ASignal_AsigAbrt,1); *res=__ASignal_AsigAbrt; break;
+    copy_some(__ASysSignal_AsigAbrt,1); *res=__ASysSignal_AsigAbrt; break;
   case SIGALRM:
-    copy_some(__ASignal_AsigAlrm,1); *res=__ASignal_AsigAlrm; break;
+    copy_some(__ASysSignal_AsigAlrm,1); *res=__ASysSignal_AsigAlrm; break;
   case SIGFPE :
-    copy_some(__ASignal_AsigFPE,1); *res=__ASignal_AsigFPE; break;
+    copy_some(__ASysSignal_AsigFPE,1); *res=__ASysSignal_AsigFPE; break;
   case SIGHUP :
-    copy_some(__ASignal_AsigHUp,1); *res=__ASignal_AsigHUp; break;
+    copy_some(__ASysSignal_AsigHUp,1); *res=__ASysSignal_AsigHUp; break;
   case SIGILL :
-    copy_some(__ASignal_AsigIll,1); *res=__ASignal_AsigIll; break;
+    copy_some(__ASysSignal_AsigIll,1); *res=__ASysSignal_AsigIll; break;
   case SIGINT:
-    copy_some(__ASignal_AsigInt,1); *res=__ASignal_AsigInt; break;
+    copy_some(__ASysSignal_AsigInt,1); *res=__ASysSignal_AsigInt; break;
   case SIGKILL:
-    copy_some(__ASignal_AsigKill,1); *res=__ASignal_AsigKill; break;
+    copy_some(__ASysSignal_AsigKill,1); *res=__ASysSignal_AsigKill; break;
   case SIGPIPE:
-    copy_some(__ASignal_AsigPipe,1); *res=__ASignal_AsigPipe; break;
+    copy_some(__ASysSignal_AsigPipe,1); *res=__ASysSignal_AsigPipe; break;
   case SIGQUIT:
-    copy_some(__ASignal_AsigQuit,1); *res=__ASignal_AsigQuit; break;
+    copy_some(__ASysSignal_AsigQuit,1); *res=__ASysSignal_AsigQuit; break;
   case SIGSEGV:
-    copy_some(__ASignal_AsigSegV,1); *res=__ASignal_AsigSegV; break;
+    copy_some(__ASysSignal_AsigSegV,1); *res=__ASysSignal_AsigSegV; break;
   case SIGTERM:
-    copy_some(__ASignal_AsigTerm,1); *res=__ASignal_AsigTerm; break;
+    copy_some(__ASysSignal_AsigTerm,1); *res=__ASysSignal_AsigTerm; break;
   case SIGUSR1:
-    copy_some(__ASignal_AsigUsr1,1); *res=__ASignal_AsigUsr1; break;
+    copy_some(__ASysSignal_AsigUsr1,1); *res=__ASysSignal_AsigUsr1; break;
   case SIGUSR2:
-    copy_some(__ASignal_AsigUsr2,1); *res=__ASignal_AsigUsr2; break;
+    copy_some(__ASysSignal_AsigUsr2,1); *res=__ASysSignal_AsigUsr2; break;
   case SIGCHLD:
-    copy_some(__ASignal_AsigChld,1); *res=__ASignal_AsigChld; break;
+    copy_some(__ASysSignal_AsigChld,1); *res=__ASysSignal_AsigChld; break;
   case SIGCONT:
-    copy_some(__ASignal_AsigCont,1); *res=__ASignal_AsigCont; break;
+    copy_some(__ASysSignal_AsigCont,1); *res=__ASysSignal_AsigCont; break;
   case SIGSTOP:
-    copy_some(__ASignal_AsigStop,1); *res=__ASignal_AsigStop; break;
+    copy_some(__ASysSignal_AsigStop,1); *res=__ASysSignal_AsigStop; break;
   case SIGTSTP:
-    copy_some(__ASignal_AsigTStp,1); *res=__ASignal_AsigTStp; break;
+    copy_some(__ASysSignal_AsigTStp,1); *res=__ASysSignal_AsigTStp; break;
   case SIGTTIN:
-    copy_some(__ASignal_AsigTTIn,1); *res=__ASignal_AsigTTIn; break;
+    copy_some(__ASysSignal_AsigTTIn,1); *res=__ASysSignal_AsigTTIn; break;
   case SIGTTOU:
-    copy_some(__ASignal_AsigTTOu,1); *res=__ASignal_AsigTTOu; break;
+    copy_some(__ASysSignal_AsigTTOu,1); *res=__ASysSignal_AsigTTOu; break;
   default:
     return(-1);
   }
@@ -217,5 +217,5 @@ static init_const_AWait()
  init_AOption();
  init_APair();
  init_AProcessCtrl();
- init_ASignal();
+ init_ASysSignal();
 }
