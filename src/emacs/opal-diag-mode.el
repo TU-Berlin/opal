@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.11 1999-05-11 12:23:16 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.12 1999-05-11 13:13:40 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -659,24 +659,24 @@ skipping sub errors."
     )
   )
 
-(defun opal-diag-show-current ()
+(defun opal-diag-show-current (&optional nogoto)
   "show current diagnostic"
   (interactive)
   (opal-diag-my-diag-p)
   (if opal-diag-curr-error
-      (opal-diag-show-error)
+      (opal-diag-show-error nil nogoto)
     (error "No current diagnostic")
     )
   )
 
-(defun opal-diag-show-this-error (n)
+(defun opal-diag-show-this-error (n &optional nogoto)
   "show error with specified number"
 
   (setq opal-diag-curr-error n)
-  (opal-diag-show-error)
+  (opal-diag-show-error nil nogoto)
 )
 
-(defun opal-diag-show-error (&optional nomessage)
+(defun opal-diag-show-error (&optional nomessage nogoto)
   "Make current error and corresponding source visible."
 
   (if (not opal-diag-curr-error)
@@ -695,7 +695,7 @@ skipping sub errors."
       ;; show error in source code
       (switch-to-buffer (opal-diag-src-buffer-of cDiag))
       (if (opal-diag-src-start cDiag)
-	  (goto-char (opal-diag-src-start cDiag))
+	  (if (not nogoto) (goto-char (opal-diag-src-start cDiag)))
 	(message "this diagnostic is no longer present in source")
 	)
       ;; show error message
@@ -719,7 +719,7 @@ skipping sub errors."
 	   (get-buffer-window err-buf)
 	   (get-buffer-window src-buf)
 	   (not new))
-      () ; do nothing if diag-info-buffer exists and all buffers are displayed
+      (message "opal-diag-set-windows: nothing to do") ; do nothing if diag-info-buffer exists and all buffers are displayed
     (let (dw nw)
       (switch-to-buffer src-buf)
       (delete-other-windows)
@@ -737,6 +737,7 @@ skipping sub errors."
 	)
       )
     )
+  (select-window (get-buffer-window src-buf))
 )
 
 ;;; $File Handling$
@@ -1196,12 +1197,13 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   (define-key ext-keymap "\M-n" 'opal-diag-next-main-error)
   (define-key ext-keymap "\M-p" 'opal-diag-prev-main-error)
   (define-key ext-keymap [(button1)]
-    `(lambda () (interactive) (opal-diag-show-this-error ,i)))
+    `(lambda (ev) (interactive "e") (mouse-set-point ev) (opal-diag-show-this-error ,i t)))
   (define-key ext-keymap [(button2)]
     'opal-diag-hide-diag-buffer)
   (define-key ext-keymap [(button3)]
-    `(lambda () (interactive) (opal-diag-show-this-error ,i)
-       (opal-diag-toggle-extended-flag)))
+    `(lambda (ev) (interactive "e") (mouse-set-point ev)
+       (opal-diag-show-this-error ,i t)
+       (opal-diag-toggle-extended-flag t)))
   )
 
 (defun opal-diag-parse-src-ext ()
@@ -1303,7 +1305,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.11 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.12 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
@@ -1346,7 +1348,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 )
 
 
-(defun opal-diag-toggle-extended-flag ()
+(defun opal-diag-toggle-extended-flag (&optional nogoto)
   "toggle current-value of extended-flag with appropriate action"
 
   (interactive)
@@ -1359,7 +1361,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
         )
 	(t 
 	 (setq opal-diag-extended-flag t)
-	 (opal-diag-show-current)
+	 (opal-diag-show-current nogoto)
 	)
   )
 )
