@@ -15,7 +15,7 @@ IMPORT RepoAbsy COMPLETELY
        RepoUnitAccess ONLY lookup?
        SeqFilter ONLY |
        SeqMap ONLY *
-       OSubstitution ONLY subst <$ prettySubst
+       OSubstitution ONLY subst <$ prettySubst {} def
        Minitactic ONLY liftU liftUL liftUT liftULT liftUFT
        SeqPermu ONLY nTuples
        Nat ONLY 2 1 0 pred <
@@ -38,7 +38,7 @@ IMPORT RepoAbsy COMPLETELY
        Weight ONLY <
        Sequent ONLY prettySequent props hyps :=_props :=_hyps
        PredefEntities ONLY false true
-       AbsySC ONLY dfd? cong? dfd impl?
+       AbsySC ONLY dfd? cong? dfd impl? !
        SeqSupplements ONLY sd idx idxL
        TripleMapPlus ONLY map1 map2
        PairMapPlus ONLY map1 map2
@@ -115,6 +115,42 @@ DEF equiv_refl_u(R, unknownSig, freeSig)(sq) ==
                                  \\ . pretty:fmt->denotation
                                       (prettyExpr(R)(sd(exprs(f)))),
                                   sd(exprs(f)))
+                 IN unify(R)(freeSig, unknownSig)(e1, e2)
+      mk == \\sb. &(<>, sb, (IF longInfo?(R) THEN prettySubst(R)(sb)
+                             ELSE none FI))
+  IN
+  mk * flat((uC * asLSeq(congs)))
+
+FUN traceeqf? : bool
+DEF traceeqf? == false
+
+DEF equiv_refl_f == abs(\\ st.
+  LET unskolemVar == getUnskol(st)
+      unskolemFun == getSpecFun(st)
+      fixSubst0 == IF avail?(unskolemVar) and avail?(unskolemFun) THEN
+                     (cont(unskolemVar), cont(unskolemFun)!) def {}
+                   ELSE
+                     {}
+                   FI
+      fixSubst == PRINT(traceeqf?, \\ . "eqf/subst: " ++
+                        pretty(prettySubst(repo(st))(fixSubst0)), fixSubst0)
+  IN
+  rep(liftUT(lit("equiv_refl_f"), equiv_refl_f(fixSubst)))(st)
+  )
+
+FUN equiv_refl_f: subst -> repo ** localSignName ** localSignName ->
+                   sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF equiv_refl_f(fixSubst)(R, unknownSig, freeSig)(sq) ==
+  LET congs0 == PRINT(traceeqf?, \\ . "---", checkF(exist?)(Xcong?)(props(sq)))
+      congs == PRINT(traceeqf?, \\ . pretty:fmt->denotation(fmtSeq(prettyFormula(R))(congs0)), congs0)
+      uC == \\f. LET e1 == PRINT(traceeqf?,
+                                 \\ . pretty:fmt->denotation
+                                            (prettyExpr(R)(ft(exprs(f)))),
+                                            ft(exprs(f)))
+                     e20 == fixSubst <$ sd(exprs(f))
+                     e2 == PRINT(traceeqf?,
+                                 \\ . pretty:fmt->denotation
+                                      (prettyExpr(R)(e20)), e20)
                  IN unify(R)(freeSig, unknownSig)(e1, e2)
       mk == \\sb. &(<>, sb, (IF longInfo?(R) THEN prettySubst(R)(sb)
                              ELSE none FI))

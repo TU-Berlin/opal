@@ -7,6 +7,7 @@
 (defun opal-mode-indent ()
   "indent current line according to opal-mode.
 Return the amount the indentation changed by."
+  (interactive)
 
 ;; copied in parts from cperl-mode
 
@@ -33,7 +34,7 @@ Return the amount the indentation changed by."
   )
 
 (defconst opal-indent-major-keyword
-  "^[ \t]*\\(SIGNATURE\\|IMPLEMENTATION\\|IMPORT\\|FUN\\|DEF\\|PROOF\\|TYPE\\|DATA\\|SORT\\|LAW\\|EXTERNAL\\|INTERNAL\\|/\\*\\|--\\)[ \n]"
+  "^[ \t]*\\(SIGNATURE\\|IMPLEMENTATION\\|IMPORT\\|FUN\\|DEF\\|PROOF\\|TYPE\\|DATA\\|SORT\\|LAW\\|EXTERNAL\\|INTERNAL\\|/\\*\\|--\\|LEMMA\\)[ \n]"
   "*regexp to match keywords with constant indentation 0")
 
 (defconst opal-indent-indent-keyword
@@ -118,6 +119,8 @@ Return the amount the indentation changed by."
     (cond ((looking-at "^\\(FUN[ \t]*.*:\\).*\\(\\*\\*\\|->\\)[ \t]*$")
 	   (setq newindent (+ opal-indent-width (opal-match-len 1))))
 	  ((looking-at "^\\(PROOF[ \t]*[^:]*:\\)")
+	   (setq newindent (+ opal-indent-width (opal-match-len 1))))
+	  ((looking-at "^\\(LEMMA[ \t]*[^:]*:\\)")
 	   (setq newindent (+ opal-indent-width (opal-match-len 1))))
 	  ((looking-at "^\\([ \t]*IMPORT[ \n]+\\)[^ \t]")
 	   (setq newindent (opal-match-len 1)))
