@@ -86,14 +86,15 @@
    '("^Trace of .*" (0 'modeline-mousable t t))
 ;   '("^Trace of \\(.*\\)" (1 'font-lock-comment-face t t))
    '("[a-zA-Z]+[¡¿]" (0 'italic t t))
-   '("§[0-9]+" (0 'font-lock-reference-face t t))
+   '("§[0-9]+ \\(ALL\\|EX\\)?" (0 'font-lock-reference-face t t))
    '("§[0-9]+ [^¤§]*¤" (0 'secondary-selection t t))   ;; new formula
    '("§[0-9]+ [^ø§]*ø" (0 'font-lock-string-face t t)) ;; original formula
    '("subgoal #.*$" (0 'italic t t)) 
    '("finished subgoal, 0.*$" (0 'italic t t))
-   '("finished subgoal, [1-9].*$" (0 'font-lock-comment-face t t))   
+   '("finished subgoals?, [1-9].*$" (0 'font-lock-comment-face t t))   
    '("FAILURE PATH" (0 'font-lock-comment-face t t))   
    '("bt #[0-9].*$" (0 'font-lock-comment-face t t))   
+   '("[a-z]+¿" (0 'font-lock-function-name-face t t))
    )
   )
 
@@ -227,7 +228,7 @@
   (save-excursion
     (if (looking-at "^\\Proofstate")
 	(opal-current-line)
-      (search-backward-regexp "^\\Proofstate")
+      (search-backward-regexp "^\\Proofstate" nil t)
       (opal-current-line)
       )
     )
@@ -238,7 +239,7 @@
   (save-excursion
     (if (looking-at "^\\Trace")
 	(opal-current-line)
-      (search-backward-regexp "^\\Trace")
+      (search-backward-regexp "^\\Trace" nil t) 
       (opal-current-line)
       )
     )
