@@ -91,6 +91,7 @@ IMPORT INLINE ONLY INLINE
        Stopwatch ONLY now
        Real ONLY real -
        RealConv ONLY ``
+       CheckSignature ONLY delUserId inclUserId userIdSet
 
 FUN compileTime: denotation
 DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
@@ -140,6 +141,13 @@ DEF pcheckerCmdtable ==
         | (lit("reset") @ pcheckDebugReset)
         ) & 2nd, 
         "add, remove, show, reset to default of debug tags")
+    ++
+    cmd(lit("pcheck-uid") o
+        ( (lit("add") o *(var("user id")) & 2nd @ pcheckUidIncl)
+        | (lit("rm") o *(var("user id")) & 2nd @ pcheckUidExcl)
+        | (lit("show")  @ pcheckUidShow)
+        ) & 2nd, 
+        "add, remove, show uid to set of registered user ids for certification") 
     ++
     cmd(lit("pcheck-log") o
         ( (lit("on")  @ (\\ _ . loggingOn & succeed("logging on")))
@@ -252,6 +260,20 @@ DEF pcheckDebugShow(_) ==
 FUN pcheckDebugReset: denotation -> com[denotation]
 DEF pcheckDebugReset(_) == setDebug({}) & pcheckDebugShow("")
 
+-- %$Uid commands$
+FUN pcheckUidIncl: seq[denotation] -> com[denotation]
+DEF pcheckUidIncl(<>) == pcheckUidShow("")
+DEF pcheckUidIncl(tag :: tags) == inclUserId(tag) & pcheckUidIncl(tags)
+  
+FUN pcheckUidExcl: seq[denotation] -> com[denotation]
+DEF pcheckUidExcl(<>) == pcheckUidShow("")
+DEF pcheckUidExcl(tag :: tags) == delUserId(tag) & pcheckUidExcl(tags)
+
+FUN pcheckUidShow: denotation -> com[denotation]
+DEF pcheckUidShow(_) ==
+  userIdSet & (\\ tags.
+  dumpFmt(lit("currently registered user ids: "); fmtSet(lit)(tags))
+  )
 -- %$Proof Obligations$
 FUN pcheckObligations: unitName -> com[denotation]
 DEF pcheckObligations(uN) ==

@@ -1,12 +1,12 @@
 IMPLEMENTATION CheckSignature
 
 IMPORT Seq ONLY seq <>? rt ft # :: <> %
-       Com ONLY com succeed okay? error ans
+       Com ONLY com succeed okay? error ans exit EXEC
        Void ONLY void
        RepoAbsy COMPLETELY
        RepoAn ONLY an
        Loquacity ONLY progress
-       Nat ONLY 6 >= 2 nat
+       Nat ONLY 6 >= 2 nat 1
        Fmt ONLY pretty fmt
        ComCompose ONLY & ;
        ComSeqMapEnv ONLY &&
@@ -15,8 +15,8 @@ IMPORT Seq ONLY seq <>? rt ft # :: <> %
        RepoObjectAccess ONLY symbol
        SeqSupplements ONLY sd
        SeqFilter ONLY |
-       Stream ONLY store
-       String ONLY ! string ::
+       Stream ONLY store load
+       String ONLY ! string :: +/+ <> revert
        SeqMap ONLY *
        ComAction ONLY done
        IdTabReduce ONLY /
@@ -26,15 +26,22 @@ IMPORT Seq ONLY seq <>? rt ft # :: <> %
        IdTab ONLY idtab
        RepoAdmin ONLY repoFile
        IdMap ONLY idmap
-       Set ONLY set
-       Pair ONLY &
+       Set ONLY set {} incl excl in
+       Pair ONLY & 2nd pair
        Denotation ONLY = ++
        PredicateX ONLY and
        Char ONLY = char
-       PrintableChar ONLY colon L A W
+       PrintableChar ONLY colon L A W dblquote
        DEBUG ONLY PRINT
        StringConv ONLY `
        Control ONLY ^
+       ProcessCtrl COMPLETELY
+       File ONLY stdErr writeLine file
+       Wait ONLY wait exited? status childstat
+       WaitConv ONLY `
+       Option ONLY option
+       SeqReduce ONLY /
+       ComState ONLY stateId ? =>
 
 DEF checkSignature(R, main, pN, r, sigexpr) ==
   progress(6, \\ . "extracting proof source ...")(R) & (\\ R1.
@@ -73,14 +80,14 @@ DEF extractProofSource(R, main, r, pN) ==
       succeed(R & ((error, r) !!
                    ("no PROOFSOURCE pragma found for `%s' ?!?", pName)))
     ELSE
-      store(".proof",
+      store("OCS/.proof",
             !((tl^6)(pName)) :: 
               (rmLaw * ! * text * rt(rt(comps(ft(pPrag)))))); (\\ a?.
       IF a? okay? THEN
         succeed(R & ok)
       ELSE
         succeed(R & ((error, r) !!
-                     ("could not write `.proof' : %s ?!?", error(a?))))
+                     ("could not write `OCS/.proof' : %s ?!?", error(a?))))
       FI
       )
     FI
@@ -94,11 +101,12 @@ FUN extractSignature: repo ** unitName ** ref ** expr ->
                        com[pair[repo, diag]]
 DEF extractSignature(R, main, r, ex) ==
   IF ex apply? ANDIF arg(ex) den? THEN
-    store(".signature", !(text(arg(ex)))% ); (\\ a? .
+    store("OCS/.signature", !(text(arg(ex)))% ); (\\ a? .
     IF a? okay? THEN succeed(R & ok)
     ELSE 
       succeed(R &  ((error, r) !! 
-                    ("could not write `.signature' : %s ?!?", error(a?))))
+                    ("could not write `OCS/.signature' : %s ?!?",
+                     error(a?))))
     FI
     )
   ELSE
@@ -108,15 +116,68 @@ DEF extractSignature(R, main, r, ex) ==
 /* %call gpg to verify @file{.proof} with signature in @file{.signature}.
     write output to file @file{.gpg} */
 FUN internalCheck: repo ** unitName ** ref -> com[pair[repo, diag]]
-DEF internalCheck(R, main, r) == succeed(R & ok)
+DEF internalCheck(R, main, r) == 
+  fork & (\\ I.
+  IF child?(I) THEN
+    execP("oasys-verify", %("oasys-verify")) ; (\\ res.
+    writeLine(stdErr, "could not call gpg: " ++ error(res)) &
+    exit(1)
+    )
+  IF parent?(I) THEN
+    wait & (\\ wRes.
+    LET ret == 2nd(wRes)
+    IN
+    IF ret exited? THEN
+      IF status(ret) success? THEN
+        succeed(R & ok)
+      IF status(ret) failure? THEN
+        load("OCS/.gpg") & (\\ cont.
+        succeed(R & (error, r) !! "verification of signature failed: " ++ 
+                                  `((+/+("\n"), <>)/cont))
+        )
+      FI
+    ELSE
+      succeed(R & (error, r) !!
+                  "verification of signature ABORTED: " ++ `(ret))
+    FI
+    )
+  FI
+  )
+    
 
 /* %check author in output from previous call to gpg */
 FUN checkAuthor: repo ** unitName ** ref -> com[pair[repo, diag]]
-DEF checkAuthor(R, main, r) == succeed(R & ok)
+DEF checkAuthor(R, main, r) == 
+  load("OCS/.gpg") & (\\ lines.
+  LET sigLine == (\\l. "gpg: Good signature" <| `(l)) | lines
+  IN
+  IF sigLine <>? THEN
+    succeed(R & (error, r) !! "no signature found in OCS/.gpg ?!?")
+  ELSE
+    userIdSet & (\\ uids.
+    IF extractSig(ft(sigLine)) in uids THEN
+      succeed(R & ok)
+    ELSE
+      succeed(R & (error, r) !! 
+                  ("author `%s' not registered", extractSig(ft(sigLine))))
+    FI
+    )
+  FI
+  )
+  
 
 /* %remove all intermediate files */
 FUN clean: com[void]
 DEF clean == done
+
+-- %$Manage User Ids$
+FUN uidsetId: stateId[set[denotation, <]]
+DEF uidsetId == EXEC(stateId({}))
+
+DEF userIdSet == uidsetId ?
+
+DEF inclUserId(uid) == uidsetId => incl(uid, _)
+DEF delUserId(uid) == uidsetId => excl(uid, _)
 
 -- %$Auxiliary functions$
 FUN srcPragmas: repo ** unitName -> seq[pragma]
@@ -137,3 +198,16 @@ DEF rmLaw(c1 :: C AS (c2 :: c3 :: c4 :: S)) ==
   FI
 DEF rmLaw(c1 :: else) == c1 :: rmLaw(else)
 DEF rmLaw(<>) == <>
+
+-- %extract author from GPG output
+FUN extractSig: string -> denotation
+DEF extractSig(<>) == ""
+DEF extractSig(c :: S) ==
+  IF c = dblquote THEN extractSig2(<>, S) ELSE extractSig(S) FI
+
+FUN extractSig2: string ** string -> denotation
+DEF extractSig2(accu, <>) == `(revert(accu))
+DEF extractSig2(accu, c :: S) == 
+  IF c = dblquote THEN `(revert(accu))
+  ELSE extractSig2(c :: accu, S)
+  FI
