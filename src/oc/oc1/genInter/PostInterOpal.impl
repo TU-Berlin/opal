@@ -1,80 +1,129 @@
 IMPLEMENTATION PostInterOpal
-/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+/* %- Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-03-09 11:53:40 $ ($Revision: 1.2 $)
+-- % $Date: 1999-09-21 19:47:32 $ ($Revision: 1.3 $)
 
-IMPORT MapReduce ONLY /
-       Error ONLY ok err errKind errors + hint warning error
-       AGSig ONLY getExternalNames
+IMPORT Error ONLY ok err errKind errors + hint warning error
        ComAction ONLY done
-       Map ONLY map
-       Name ONLY name < extName
-       Seq ONLY seq :: ft rt <>
-       Pos ONLY pos firstPos
-       String ONLY string
-       SetByBST[name, <] ONLY set in
-       SetByBSTConv[name, <] ONLY asSet
+       Map ONLY map def def? ! {} {}?
+       InterOpal COMPLETELY
+       Seq ONLY seq :: ft rt <> ++ #
+       Pos ONLY pos firstPos unknown mkPos mkReg unknownP part
        Denotation ONLY +/+ =
-       Rep ONLY ` rep < : rep ** rep -> bool
-       GlobPragma[name] ONLY lexem? globPragma prag lexem identify pns pragS ide
-       Char ONLY char
-       GlobSig ONLY impPragmas
        ComCompose ONLY &
        SeqFilter ONLY |
        SeqMap ONLY *
        Com ONLY com break
        SeqReduce ONLY /
-       ABORT ONLY ABORT
-       Nat ONLY 0 nat
        Objects ONLY inst struct impDecl
        OcExit ONLY languageError
+       InterOpalAccess ONLY transStructs objects laws
+       Pair ONLY pair 1st 2nd &
+       String ONLY string
+       Char ONLY char
+       Nat ONLY > 1 =
+       Option ONLY nil avail
 
-/* %Alle importierten Pragmas auf Msgs überprüfen, ggf. Fehler erzeugen und
-    diese alle ausgeben. */ 
-DEF postInterOpal(Opts)(Sig) == 
-  errors(Opts, (checkMsg(Opts, Sig), ok) / impPragmas(Sig)) & (\\ok.
-  IF ok THEN done
-  ELSE break(languageError)
-  FI)
 
-/* %Alle Pragmas überprüfen auf HINT oder WARNING, falls der Name auch
-    importiert wurde, dann jeweils pasenden Fehler erzeugen */
-FUN checkMsg: options ** globSig -> rep ** seq[globPragma] ** err -> err 
-DEF checkMsg(_Opts, Sig)(_strRep, Ps, oldErrors) ==
-  LET hints == imported?(Sig, extNames) | checkPragma("HINT") | Ps
-      warnings == imported?(Sig, extNames) | checkPragma("WARNING") | Ps
-      errors == imported?(Sig, extNames) | checkPragma("ERROR") | Ps
-      extNames == asSet(equalInst * getExternalNames(Sig))
-      hintErrors == (+, ok) / mkDiag(hint) * hints
-      warnErrors == (+, ok) / mkDiag(warning) * warnings
-      errorErrors == (+, ok) / mkDiag(error) * errors
+DEF checkInfoPragmas(Opts)(Io) ==
+  LET diagMap == (addDiag, {}) / (++, <>) / pragmas * transStructs(Io)
   IN
-    hintErrors + warnErrors + errorErrors + oldErrors
+  IF diagMap {}? THEN done
+  ELSE
+    LET obs == objects(Io)
+        props == laws(Io)
+    IN
+    errors(Opts, (genErr(diagMap), ok) / obs + 
+                 (genErr(diagMap), ok) / props)   & (\\ ok.
+    IF ok THEN done
+    ELSE break(languageError)
+    FI)
+  FI
 
-/* % true wenn Pragma als erstes das angegebene Wort und als zweites
-     genau einen Namen enthält */
-FUN checkPragma: denotation -> globPragma -> bool
-DEF checkPragma(_)(prag(<>)) == false
-DEF checkPragma(txt)(prag(lexem(i, _) :: identify(_ :: <>) :: _)) ==
-  `(i) = txt 
-DEF checkPragma(_)(_else) == false
+/* %If pragma designates a diagnostic, add it to map */
 
-/* %Nicht mehr so intelligent, wie zuerst gedacht. True, falls der
-    Name des Pragmas appliziert wird */
-FUN imported? : globSig ** set[name, <] -> globPragma -> bool
-DEF imported?(_Sig, extNames)(P) ==
-  LET o == ft(pns(ft(rt(pragS(P)))))  -- muss gehen, wenn checkPragma ok ist
-  IN
-  equalInst(o) in extNames
+FUN addDiag: pragma ** map[name, <, pair[errKind, denotation]] ->
+              map[name, <, pair[errKind, denotation]]
+DEF addDiag(pragma(pItems), M) ==
+  IF (pItems #) > 1 THEN 
+    IF (ft(pItems) token?) and (ft(rt(pItems)) objects?) 
+      ANDIF #(objects(ft(rt(pItems)))) = 1 THEN
+      LET n == clearInst(ft(objects(ft(rt(pItems)))))
+          t == (+/+(" "), "") / text * token? | rt(rt(pItems))
+          e == text(ft(pItems))
+      IN
+      IF e = "HINT" THEN (n, hint & t) def M
+      IF e = "WARNING" THEN (n, warning & t) def M
+      IF e = "ERROR" THEN (n, error & t) def M
+      ELSE M        
+      FI
+    ELSE
+      M
+    FI
+  ELSE
+    M
+  FI
+            
+FUN clearInst: name -> name
+DEF clearInst(name(id, org, _)) == name(id, org, none)
 
-/* %aus dem Pragma eine passende Fehlermeldung machen. */
-FUN mkDiag: errKind -> globPragma -> err
-DEF mkDiag(eK)(prag(_ :: _ :: pragS)) ==  
-  err(eK, (+/+(" "), "") / (` * ide * lexem? | pragS), firstPos)
-DEF mkDiag(_)(_else) == ABORT("mkDiag'PostInterOpal: falsches Pragma!")
+FUN genErr: map[name, <, pair[errKind, denotation]] -> 
+             object ** err -> err
+DEF genErr(M)(ob, E) ==
+  IF def(ob) def? THEN
+    (genErr(M), E) / rhs * eqns(def(ob))
+  ELSE
+    ok
+  FI
 
-/* %Vereinheitlicht die Instanz auf Null. Hack. */
-FUN equalInst: name -> name
-DEF equalInst(extName(str,iD,_)) == extName(str,iD,inst(0))
+FUN genErr: map[name, <,pair[errKind, denotation]] -> 
+             property ** err -> err 
+DEF genErr(M)(p, E) ==
+  IF p freeType? THEN E
+  IF p law? THEN genErr(M)(formula(p), E)
+  FI
+
+FUN genErr: map[name, <,pair[errKind, denotation]] -> 
+             formula ** err -> err 
+DEF genErr(M)(dfd(_, e), E) == genErr(M)(e, E)
+DEF genErr(M)(approx(_, l, r), E) == genErr(M)(l, genErr(M)(r, E))
+DEF genErr(M)(cong(_, l, r), E) == genErr(M)(l, genErr(M)(r, E))
+DEF genErr(M)(neg(_, f), E) == genErr(M)(f, E)
+DEF genErr(M)(conj(_, l, r), E) == genErr(M)(l, genErr(M)(r, E))
+DEF genErr(M)(disj(_, l, r), E) == genErr(M)(l, genErr(M)(r, E))
+DEF genErr(M)(impl(_, l, r), E) == genErr(M)(l, genErr(M)(r, E))
+DEF genErr(M)(equiv(_, l, r), E) == genErr(M)(l, genErr(M)(r, E))
+DEF genErr(M)(forall(_, _, b), E) == genErr(M)(b, E)
+DEF genErr(M)(exist(_, _, b), E) == genErr(M)(b, E)
+DEF genErr(_)(informal(_, _), E) == E
+DEF genErr(_)(other(_, _, _), E) == E
+
+FUN genErr: map[name, <,pair[errKind, denotation]] -> 
+             expr ** err -> err 
+DEF genErr(M)(name(p, n), E) ==
+  IF def?(clearInst(n), M) THEN
+    E + err(1st(M!clearInst(n)), 2nd(M!clearInst(n)), back(p))
+  ELSE
+    E
+  FI
+DEF genErr(_)(den(_, _), E) == E
+DEF genErr(M)(tuple(_, els), E) == (genErr(M), E) / els
+DEF genErr(M)(apply(_,f, a), E) == genErr(M)(f, genErr(M)(a, E))
+DEF genErr(M)(cases(_, gs, nil), E) == (genErr(M), E) / gs
+DEF genErr(M)(cases(_, gs, avail(e)), E) == genErr(M)(e, (genErr(M), E) / gs)
+DEF genErr(M)(lambda(_, _, b), E) == genErr(M)(b, E)
+DEF genErr(M)(block(_, eqs, b), E) == genErr(M)(b, (genErr(M), E) / rhs * eqs)
+
+FUN genErr: map[name, <,pair[errKind, denotation]] -> 
+             guard ** err -> err
+DEF genErr(M)(guard(_, t, e), E) == genErr(M)(e, genErr(M)(t, E))
+
+
+/* %translate Interopal pos back to globSig pos */
+FUN back: pos'InterOpal -> pos'Pos
+DEF back(unknown) == unknown
+DEF back(part(_)) == unknown
+DEF back(pos(_, r, c)) == mkPos(r, c)
+DEF back(region(_, r1, c1, r2, c2)) == mkReg(unknownP, r1, c1, r2, c2)
