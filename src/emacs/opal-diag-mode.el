@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.17 1999-05-11 15:24:57 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.18 1999-05-11 16:05:55 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -418,7 +418,11 @@
   (define-key opal-mode-map "\C-c\C-d\C-h" 'opal-toggle-extended-flag)
   (define-key opal-mode-map "\C-c\C-d\C-m" 'opal-diag-insert-missing-item)
   (define-key opal-mode-map "\C-c\C-d0" 'opal-diag-clear-diags)
-  (define-key opal-mode-map [mouse-1] 'opal-diag-mouse-select-error)
+  (if (and (boundp 'emacs-major-version)
+	   (>= emacs-major-version 20))
+      (define-key opal-mode-map [mouse-1] 'opal-diag-mouse-select-error)
+    (define-key opal-mode-map [down-mouse-1] 'opal-diag-mouse-select-error)
+    )
   (define-key opal-mode-map [mouse-2] 'opal-diag-mouse-hide-diags)
   (define-key opal-mode-map [mouse-3] 'opal-diag-mouse-help)
 
@@ -1228,6 +1232,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
        (opal-diag-toggle-extended-flag )))
   )
 
+
 (defun opal-diag-parse-src-ext ()
   (let (sface)
     (cond ((equal 'hint (opal-diag-parse-type type))
@@ -1329,7 +1334,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.17 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.18 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
