@@ -4,15 +4,13 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 2001-05-30 17:48:01 $ ($Revision: 1.2 $)
+   $Date: 2001-06-07 12:51:08 $ ($Revision: 1.3 $)
 */
 
 #include <unixconfig.h>
 
 /* vgl. Real.hc.c (kd) */
-#ifdef 0
-extern double strtod(const char*, char **);
-#endif
+/* extern double strtod(const char*, char **); */
 
 #include "Real.h"
 
