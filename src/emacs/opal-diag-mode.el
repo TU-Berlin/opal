@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.14 1999-05-11 13:53:38 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.15 1999-05-11 14:01:36 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -1270,7 +1270,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 	(opal-diag-def-errno new-src-ext -1 t)
 	(opal-diag-def-errno new-err-ext -1 t)
 	)
-    (opal-diag-parse-ext-keymap)
+    (if opal-running-xemacs (opal-diag-parse-ext-keymap))
     (opal-diag-parse-src-ext)
     (opal-diag-parse-err-ext)
     (opal-diag-def-errno new-src-ext i t)
@@ -1325,7 +1325,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.14 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.15 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
