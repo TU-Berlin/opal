@@ -1,11 +1,10 @@
 IMPLEMENTATION TIVI
 
 IMPORT T2AEntry COMPLETELY
-       Com ONLY com exit break succeed EXEC okay? ans
+       Com ONLY com exit break succeed EXEC okay? ans yield
        ComAgent ONLY agent
        ComCheckWin ONLY check notify
        ComCompose ONLY & ;
-       Env ONLY arg argCount
        Identity ONLY id
        InterOpalEntry COMPLETELY
        InterOpalIO ONLY readInterOpal
@@ -24,7 +23,7 @@ IMPORT T2AEntry COMPLETELY
        Denotation ONLY ++ empty empty? slice #
        MONITOR ONLY genMonitor
        WinImage ONLY image photo file iconfig
-       Seq ONLY .. seq
+       Seq ONLY .. seq <> ::
        SeqFold ONLY /
        ComTimeout ONLY timeout
        ComAction ONLY done
@@ -32,6 +31,13 @@ IMPORT T2AEntry COMPLETELY
        FileSystem ONLY stat filestat
        ABORT ONLY ABORT
        ComCheck ONLY check
+       DEBUG ONLY PRINT
+       String ONLY string !
+       ProcessArgs ONLY env arg argCount
+       PrintableChar ONLY colon
+       Char ONLY =
+       StringConv ONLY `
+       StringFilter ONLY split
 
 DEF tivi2 ==
 check'ComCheck(\\x.x, 
@@ -110,21 +116,32 @@ DEF bild(bD) == EXEC(
 -- % return directory, where @file{tivi.gif} can be found.
 FUN baseDir: denotation -> com[denotation]
 DEF baseDir(prgname) ==
-  LET n1 == dirName(prgname)
-      n2 == dirName(front(dirName(prgname))) ++ "lib/images/"
-      n3 == "./"
+  IF empty?(dirName(prgname)) THEN -- search in PATH
+    env("PATH") & (\\path.
+    searchDir(split(\\c. c = colon , path!))
+    )
+  ELSE
+    checkDir(dirName(prgname))
+  FI
+
+
+FUN checkDir: denotation -> com[denotation]
+DEF checkDir(n1) ==
+  LET n2 == dirName(front(n1)) ++ "lib/images/"
   IN
   stat(n1 ++ "tivi.gif"); (\\ a1.
   IF a1 okay? THEN succeed(n1)
   ELSE stat(n2 ++ "tivi.gif"); (\\ a2.
     IF a2 okay? THEN succeed(n2)
-    ELSE stat(n3 ++ "tivi.gif"); (\\ a3.
-      IF a3 okay? THEN succeed(n3)
-      ELSE break("tivi2-ERROR: tivi.gif and tivi.xbm not found in " ++
-                 n1 ++", " ++ n2 ++ ", " ++ n3)
-      FI)
+    ELSE break("tivi2-ERROR: tivi.gif and tivi.xbm not found")
     FI)
   FI)
+
+FUN searchDir: seq[string] -> com[denotation]
+DEF searchDir(<>) == break("tivi2-ERROR: tivi.gif and tivi.xbm not found")
+DEF searchDir(d :: R) ==
+  checkDir(d`) ; (\\ a. IF okay?(a) THEN yield(a) ELSE searchDir(R) FI)
+  
   
 
 FUN front: denotation -> denotation
