@@ -2,6 +2,7 @@
 ;;; calling the interpreter from within emacs
 
 (provide 'oasys-mode)
+(require 'oasys-expr-mode)
 (require 'easymenu)
 (require 'tq)
 
@@ -41,36 +42,50 @@
 	  (start-process "oasys"
 			 (get-buffer-create oasys-raw-output) oasys-binary))
     (set-process-sentinel oasys-process 'oasys-sentinel)
+    (process-kill-without-query oasys-process)
     (get-buffer-create oasys-output)
     (get-buffer-create oasys-answer-buffer)
+    (get-buffer-create oasys-expr-buffer)
     (save-excursion
       (set-buffer oasys-output)
       (delete-region (point-min) (point-max))
       (oasys-mode)
+      (set-buffer oasys-raw-output)
+      (oasys-mode)
+      (set-buffer oasys-answer-buffer)
+      (opal-diag-mode)
+      (setq buffer-read-only nil)
+      (set-buffer oasys-expr-buffer)
+      (opal-mode)
+      (set-buffer oasys-expr-buffer)
+      (oasys-expr-mode)
       )
     (setq oasys-tq (tq-create oasys-process))
-    (oasys-enqueue-i "")
+    (oasys-enqueue-i "") ; wait for first prompt
     )
   )
 
-(defun oasys-enqueue (command)
+(defun oasys-enqueue (command &optional expr)
   "send command to oasys process"
 
   (interactive "sCommand:")
-  (oasys-enqueue-i (concat command "\n"))
+  (oasys-enqueue-i (concat command "\n") expr)
 )
 
-(defun oasys-enqueue-i (command)
+(defun oasys-enqueue-i (command &optional expr)
   "send command to oasys process"
 
   (if oasys-process
       (progn 
 	(save-excursion
-	  (set-buffer oasys-output)
+;	  (if expr
+;	      (set-buffer oasys-output)
+	    (set-buffer oasys-raw-output)
+;	    )
 	  (goto-char (point-max))
 	  (insert command)
 	  )
-	(tq-enqueue oasys-tq command oasys-prompt nil 'oasys-process-answer)
+	(tq-enqueue oasys-tq command oasys-prompt expr 'oasys-process-answer)
 	)
     (message "oasys is not running!")
     )
@@ -84,20 +99,44 @@
 (defun oasys-process-answer (closure answer)
   "function to handle oasys transactions"
 
-  (pop-to-buffer oasys-output) 
-  (goto-char (point-max))
-  (insert answer)
-;  (save-excursion
+  (save-excursion
+    (if closure
+	(set-buffer oasys-output)
+      (set-buffer oasys-raw-output) 
+      )
+    (goto-char (point-max))
+    (insert answer)
+    )
+  (if closure 
+      (progn 
+	(pop-to-buffer oasys-output)
+	(beginning-of-line)
+	(kill-line)
+	)
+    )
+  (save-excursion
     (set-buffer oasys-answer-buffer)
     (delete-region (point-min) (point-max))
     (insert answer "\n")
+    (let (unit)
+      (re-search-backward oasys-prompt)
+      (setq unit (buffer-substring (match-beginning 1) (match-end 1)
+				    oasys-answer-buffer))
+;      (replace-match "")
+      (set-buffer oasys-output)
+      (setq mode-name (concat "oasys(v2): " unit))
+      )
+    (setq opal-diag-hide oasys-output)
+    (setq opal-diag-source nil)
     (setq opal-diag-buffer oasys-answer-buffer)
-    (setq ok (opal-diag-parse t))
-;    )
+    (setq opal-diag-buffer-may-kill nil)
+    (setq ok (opal-diag-parse t (get-buffer oasys-expr-buffer)))
+    )
   (if (car ok)
       (progn
 	(opal-diag-next-main-error)
 	(opal-diag-show-error)
+	(message "correct expression and type C-c c")
 	)
     )
 )
@@ -116,8 +155,6 @@
     )
   )
 
-(add-hook 'kill-emacs-hook 'oasys-kill)
-
 ;;; oasys-mode
 
 (defvar oasys-mode-map nil "keymap for oasys mode")
@@ -133,7 +170,12 @@
   (define-key oasys-mode-map "\M-f" 'oasys-focus)
   (define-key oasys-mode-map "\M-q" 'oasys-quit)
   (define-key oasys-mode-map "\M-b" 'oasys-back)
-  (define-key oasys-mode-map "\M-x" 'oasys-cmd)
+  (define-key oasys-mode-map "\M-k" 'oasys-cmd)
+  ; similar to Opal
+  (define-key oasys-mode-map "\M-n" 'opal-diag-next-main-error)
+  (define-key oasys-mode-map "\M-p" 'opal-diag-prev-main-error)
+  (define-key oasys-mode-map "\C-c\C-a\C-r" 'opal-oasys-raw)
+  
 )
 
 (defun oasys-mode-menu ()
@@ -149,7 +191,11 @@
 	      ["Quit" oasys-quit t]
 	      ["Command ..." oasys-cmd t]
 	      "---"
-	      ["back to Opal" oasys-back t]))
+	      ["Back to Opal" oasys-back t]
+	      "---"
+	      (list "Expert"
+		    ["Raw output" opal-oasys-raw t])
+	      ))
   (set-buffer-menubar (copy-sequence current-menubar))
   (add-submenu nil oasys-mode-menu)
 )
@@ -163,13 +209,12 @@
   (oasys-mode-map)
   (use-local-map oasys-mode-map)
   (oasys-mode-menu)
+  (opal-toolbar-install)
   (run-hooks 'oasys-mode-hook)
 )
   
 ;; 
 
-(defvar oasys-expr-buffer "*oasys-expr*" 
-  "Buffer used for temporary storing of input expression")
 
 (defun oasys-eval (expr)
   "evaluate expression in current oasys focus"
@@ -182,14 +227,29 @@
       (set-buffer oasys-expr-buffer)
       (delete-region (point-min) (point-max))
       (insert expr)
+      (set-buffer oasys-output)
+      (let (a b)
+	(setq a (point))
+	(insert expr)
+	(setq b (point))
+	(insert "\n")
+	(set-extent-face (make-extent a b (get-buffer oasys-output))
+			 'oasys-input-face)
+	)
       ) 
     (while (string-match "[{}]" escexpr)
       (replace-match "\\\\\\&")
       )
+    (while (string-match "\n" escexpr)
+      (replace-match "")
+      )
     (setq opal-diag-source oasys-expr-buffer)
-    (oasys-enqueue (concat "e {" escexpr "}"))
+    (oasys-enqueue (concat "e {" escexpr "}") t)
     )
   )
+
+(make-face 'oasys-input-face)
+(set-face-background 'oasys-input-face "lightblue")
 
 (defun oasys-check ()
   "check units"
@@ -217,6 +277,13 @@
   (interactive "sCommand:")
   (oasys-start t)
   (oasys-enqueue cmd)
+  (pop-to-buffer oasys-raw-output)
+)
+
+(defun oasys-add-path (path)
+  "add path to oasys internal path"
+  (oasys-start t)
+  (oasys-enqueue (concat "oasys-path add ocs " path))
 )
 
 (defun oasys-back ()
@@ -226,10 +293,17 @@
   (let (source)
     (save-excursion
       (set-buffer oasys-answer-buffer)
-      (goto-char (point-min))
-      (search-forward oasys-prompt)
+      (goto-char (point-max))
+      (re-search-backward oasys-prompt)
       (setq source (buffer-substring (match-beginning 1) (match-end 1)))
       )
-    (opal-opalfile "" source)
+    (setq fullname (opal-find-structure source))
+    (if fullname
+	(progn
+	  (opal-diag-clear-diags)
+	  (find-file fullname)
+	  )
+      (message "Could not find %s" source)
+      )
     )
   )

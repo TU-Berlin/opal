@@ -21,6 +21,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (defvar opal-mode-map nil)   ; Create a mode-specific keymap
 (defvar opal-mode-alist nil) ; True if alist is expand 
 (defvar opal-novice nil) ; true, if user should see only simple things
+(defvar opal-pchecker nil) ; true if pchecker support should be activated
 
 (require 'opal-parser)
 ;(require 'opal-abbrev-mode)
@@ -44,8 +45,11 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
       (require 'opal-oasys)
       (require 'opal-toolbar)
       (require 'oasys-mode)
+      (if opal-pchecker
+	  (require 'opal-trace-mode)
+	)
       )
-)
+  )
 
 ;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
@@ -76,6 +80,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   )
   ;; reverse order of appearance in OPAL menu! (for FSF only)
   (opal-mode-misc-keymap)
+  (if opal-running-xemacs (opal-mode-oasys-keymap))
   (opal-mode-import-keymap)
   (opal-mode-switch-keymap)
   (opal-mode-filehandling-keymap)
@@ -527,7 +532,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
     (if (or
 	 (equal (assoc 'major-mode blv) '(major-mode . opal-mode))
 	 (equal (assoc 'major-mode blv) '(major-mode . opal-defs-mode)))
-	(if (buffer-modified-p buffer)
+	(if (and (buffer-modified-p buffer) (buffer-file-name buffer))
 	    (if (or dontask
 		    (y-or-n-p (concat "Save OPAL unit " 
 				      (file-name-nondirectory 

@@ -105,15 +105,22 @@
 
 
 (defun opal-switch-opal-files-menu (x)
-	 (append
-	  (list (concat "Current dir: " (file-name-directory (buffer-file-name))))
-	  (mapcar (function opal-switch-opal-file) 
-		  (directory-files "." t "\\(\\.sign\\|\\.impl\\)$" nil t)
-		  )
-	  (list "----")
-	  (mapcar (function opal-switch-opal-dir) opal-hook-path)
-	  )
-   )
+  (if (buffer-file-name)
+      (append
+       (list (concat "Current dir: " (file-name-directory (buffer-file-name))))
+       (mapcar (function opal-switch-opal-file) 
+	       (directory-files "." t "\\(\\.sign\\|\\.impl\\)$" nil t)
+	       )
+       (list "----")
+       (mapcar (function opal-switch-opal-dir) opal-hook-path)
+       )
+    ; else - no buffer-file-name
+    (append
+     (list "Opal files in:")
+     (mapcar (function opal-switch-opal-dir) opal-hook-path)
+     )
+  )
+)
 
 (defun opal-switch-opal-file (fname)
   "make file name to menu item"
