@@ -54,6 +54,7 @@ IMPORT  RepoInternData  COMPLETELY
        StringFilter ONLY split
        StringConv ONLY `
        DEBUG ONLY PRINT
+       SeqConv ONLY `
 
 
 -- FIXME: reloading of objects
@@ -179,16 +180,16 @@ DEF registerStructure(Symbol, Force?)(R) ==
         -- structure already present
         succeed(R)
     ELSE
-        searchStructure(Symbol, Force?, searchPath(R))(R)
+        searchStructure(Symbol, Force?, searchPath(R), searchPath(R))(R)
     FI
 
 -- %$$Searching Structure$
 
-FUN searchStructure  : denotation ** bool ** seq[folder] 
+FUN searchStructure  : denotation ** bool ** seq[folder] ** seq[folder]
                                      -> repo 
                                      -> com[repo]
                                                         
-DEF searchStructure(Symbol, Force?, Folder :: Folders)(R) ==
+DEF searchStructure(Symbol, Force?, Folder :: Folders, FF)(R) ==
     -- allow a break exactly here
     breakOnInterrupt(succeed(nil:void))                 & (\\ _ .
     IF libFolder?(kind(Folder)) THEN
@@ -201,7 +202,7 @@ DEF searchStructure(Symbol, Force?, Folder :: Folders)(R) ==
             registerLibStructure(Symbol, Folder)(R)
         ELSE
             -- try next system
-            searchStructure(Symbol, Force?, Folders)(R)
+            searchStructure(Symbol, Force?, Folders, FF)(R)
         FI
         )
     ELSE
@@ -226,21 +227,31 @@ DEF searchStructure(Symbol, Force?, Folder :: Folders)(R) ==
             FI)
         ELSE
             -- unit not located in this system, try next one
-            searchStructure(Symbol, Force?, Folders)(R)
+            searchStructure(Symbol, Force?, Folders, FF)(R)
         FI
         ))
     FI
     )
 
-DEF searchStructure(Symbol, true, <>)(R) ==
+DEF searchStructure(Symbol, true, <>, FF)(R) ==
     -- structure not found, create new one
     initStructure(Symbol, ft(searchPath(R)))(R)         & (\\ _, R1 .
     succeed(R1)
     )
 
-DEF searchStructure(Symbol, false, <>)(R) ==
+DEF searchStructure(Symbol, false, <>, FF)(R) ==
     -- structure not found, generate diagnostic
-    diag((error, maintain) !! ("Cannot locate structure `%s'", Symbol))(R)
+    LET dMsg == "Cannot locate structure `%s' in " ++
+                  `("<", ",", ">")(asDeno)(FF)
+    IN
+    diag((error, maintain) !! (dMsg, Symbol))(R)
+
+  FUN asDeno: folder -> denotation
+  DEF asDeno(folder(_, k, sP, oP)) ==
+    (IF k repoFolder? THEN "[repo:"
+     IF k ocsFolder?  THEN "[ocs:"
+     IF k libFolder?  THEN "[lib:"
+     FI) ++ sP ++ ", " ++ oP ++ "]"
 
 FUN dupStructures: denotation ** seq[folder] ** set[denotation, <] -> 
                    com[set[denotation, <]]
