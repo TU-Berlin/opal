@@ -7,32 +7,52 @@ IMPORT EQUALITY ONLY wEqual
        BoolConv ONLY `
        RepoCom1 ONLY with
        Com ONLY succeed com
-       RepoDiag ONLY error !! ok <+ ref diag hint mode ok? unitRef? unit unitRef
+       RepoDiag COMPLETELY
        Repo ONLY repo
-       RepoName ONLY unitName objectName = pragmaName part
+       RepoName COMPLETELY
        RepoAbsy COMPLETELY
-       Seq ONLY :: <> ft rt seq revert # forall? % exist? ++
-       Loquacity ONLY progress
-       Nat ONLY nat 10 |= 2 1 =
+       Seq ONLY :: <> ft rt seq revert # forall? % exist? ++ <>? ::?
+       Loquacity ONLY progress debugMsg
+       Nat ONLY nat 10 |= 2 1 = 0 6 max succ
        Denotation ONLY ++
        NFmt ONLY fmtLatin1
-       InternEval ONLY eval okay? undefined? unknown? msg data result
+       InternEval COMPLETELY
        ComSeqMapEnv ONLY &&
        SeqReduce ONLY /
-       RepoObjectAccess ONLY actuals kind fct
+       RepoObjectAccess ONLY actuals kind fct lookup
        SeqMap ONLY *
-       Pair ONLY pair &
+       Pair ONLY pair & 1st
        SeqZip ONLY zip
-       Option ONLY option cont avail?
+       Option ONLY option cont avail? avail nil
        OSubstitution ONLY subst def {} <$
        ABORT ONLY ABORT
        String ONLY string
-       Expression ONLY expr:SORT
+       Expression ONLY expr:SORT repo obj tupleExpr apply tpos tuple
        RUNTIME ONLY obj
        ComCompose ONLY &
        SeqOfSeq ONLY flat
        OptionMap ONLY *
        RepoSource ONLY locator? locator
+       Set ONLY set arb #
+       PredefEntities ONLY proofscript
+       DbGlobalEnv ONLY identTable
+       DbConvEnv ONLY init @ env
+       DbImpl2Expr ONLY expr2expr
+       CAST ONLY cast
+       Stopwatch ONLY start elapsed
+       RealConv ONLY ``
+       FmtSeq ONLY fmtSeq
+       PROOFSCRIPT ONLY caseTests resultT diags: resultT -> diag
+       Void ONLY void
+       Real ONLY real
+       Fmt ONLY pretty
+       SeqSupplements ONLY sd td
+       RepoAn ONLY none
+       AbsySC ONLY ! tuple1
+       RepoUnitAccess ONLY lookup? enterInstance
+       StringConv ONLY `
+       ComAction ONLY done
+       NatConv ONLY `
 
 -- %$Evaluating formulae$
 
@@ -225,7 +245,7 @@ DEF conforms(R, f, vars) ==
     false
   FI
 
-FUN conforms: repo ** fct ** seq[objectName] -> bool
+FUN conforms: repo ** fct'RepoAbsy ** seq[objectName] -> bool
 DEF conforms(R, name(sr), var :: <>) == sr = sort(fct(var)(R))
 DEF conforms(R, cart(els), vars) ==
   IF #(els) = #(vars) ANDIF forall?(name?, els) THEN
@@ -236,19 +256,19 @@ DEF conforms(R, cart(els), vars) ==
   
 /* %return a sequence of arguments to given function within expr. */
 FUN findArgs: objectName ** expr'RepoAbsy -> seq[expr'RepoAbsy]
-DEF findArgs(f, name(_, _)) == <>
+DEF findArgs(_f, name(_, _)) == <>
 DEF findArgs(f, apply(_, f1, args)) ==
   IF f1 name? ANDIF oper(f1) = f THEN %(args)
   ELSE findArgs(f, f1) ++ findArgs(f, args)
   FI
 DEF findArgs(f, tuple(_, elems)) == flat(findArgs(f, _) * elems)
-DEF findArgs(f, den(_, _)) == <>
+DEF findArgs(_f, den(_, _)) == <>
 DEF findArgs(f, cases(_, ifs, optelse)) ==
   flat(findArgs(f, _) * then * ifs) ++ cont(<>)(findArgs(f, _) * optelse)
-DEF findArgs(f, lambda(_, _, _, _)) == <>
-DEF findArgs(f, let(_,_,_)) == <>
+DEF findArgs(_f, lambda(_, _, _, _)) == <>
+DEF findArgs(_f, let(_,_,_)) == <>
 DEF findArgs(f, as(_, _, e)) == findArgs(f, e)
-DEF findArgs(f, any(_)) == <>
+DEF findArgs(_f, any(_)) == <>
 
 /* %Replace variables in formula by expression(s).
     Error checking here is over-engineering: these conditions should have
@@ -279,26 +299,64 @@ DEF hasQ(f) ==
 FUN checkF: formula -> bool
 DEF checkF(f) == IF f quant? THEN kind(f) forall? ELSE false FI
 
-FUN flat: fct -> fct
+FUN flat: fct'RepoAbsy -> fct'RepoAbsy
 DEF flat(F AS name(_)) == F
 DEF flat(cart(elems)) == cart(flat * elems)
 DEF flat(funct(d, c)) == cart(%(flat(d), flat(c)))
 
+/* %$Formal test$ */
 /* %Perform a formal test */
 
 DEF checkFormalTest(R, main, F, re, e) ==
-  LET fct == ft(actuals(oper(funct(e)))(R))
-      caseTest == ft(elems(arg(e)))
-  IN               
-  setRepo(R) & (\\ _ .
+  LET func == ft(elems(arg(e)))  -- %function to be tested
+      caseTest == sd(elems(arg(e))) -- %function to compute case tests
+  IN       
+  IF ~(checkF(F)) THEN succeed(R & (error, re) !! "malformed formula for test")
+  ELSE
+    IF hasQ(range(F)) THEN 
+      succeed(R & (error, re) !! "range may not contain quantifiers")
+    ELSE
+      IF ~(conforms(R, oper(func), vars(F))) THEN
+        succeed(R & (error, re) !! "mismatch of function functionality" ++
+                " and types of quantified variables")
+      ELSE 
+        doEvalTestCases(R, main, caseTest, oper(func), re) & (\\ tr.
+        LET (R2, dg, testFs) == untriple(tr)
+        IN
+        IF ~(ok?(dg)) THEN succeed(R & dg)
+        ELSE
+          LET actParams == actuals(oper(funct(e)))(R)
+              (R5, ctF) == findCheckTestFun(R2, ft(actParams), sd(actParams))
+          IN
+          IF avail?(ctF) THEN
+            doCheckTestCases(R5, main, cont(ctF), re, e)
+                            (testFs, <>) && (\\ R6, dg1.
+            IF ok?(dg1) THEN
+              doPerformFormalTest(R6, main, re, F, e)
+            ELSE
+              succeed(R6 & dg1)
+            FI
+            )
+          ELSE
+            succeed(R5 & (error, re) !! "function `checkTestCases' not found")
+          FI
+        FI
+        )
+      FI
+    FI
+  FI
+
+FUN doEvalTestCases: repo ** unitName ** expr'RepoAbsy ** objectName ** ref ->
+                      com[triple[repo, diag, seq[expr'RepoAbsy]]]
+DEF doEvalTestCases(R, main, caseTest, fctName, re) ==
   identTable & (\\ iTab.
   LET E0 == init(R, iTab)
-      (E1, main, _) == expr2expr(E0, caseTest)
+      (E1, cTest, _) == expr2expr(E0, caseTest)
       (E2, arg0) == E1 @ repo(_)
-      (E3, arg1) == E2 @ obj(_, cast(fct))
+      (E3, arg1) == E2 @ obj(_, cast(fctName))
       (E4, args) == E3 @ tuple(_, %(tupleExpr(arg0, 0),
                                     tupleExpr(arg1, 1)), 2)
-      (_E5, top) == E4 @ apply(_, main, args, 1)
+      (_E5, top) == E4 @ apply(_, cTest, args, 1)
   IN
   start & (\\ _ .
   debugMsg("checkFormalTest", \\ . "evaluating case tests ...")(R) & (\\ R1.
@@ -308,18 +366,216 @@ DEF checkFormalTest(R, main, F, re, e) ==
   debugMsg("timer", \\ . "elapsed time: " ++ 
            ``(diff, 6) ++ " sec")(R2) & (\\ R3 . 
   IF res undefined? THEN
-    succeed(R & (error, re) !! "undefined case test evaluator: " ++ msg(res))
+    succeed(&(R, (error, re) !! "undefined case test evaluator: " ++ msg(res),
+              <>))
   IF res unknown? THEN
-    succeed(R & (error, re) !! msg(res))
+    succeed(&(R, (error, re) !! msg(res), <>))
   IF res okay? THEN
     LET testFs == caseTests(cast(data(res)))
+        dg == diags(cast[obj, resultT](data(res)))
     IN
     debugMsg("checkFormalTest", \\ . "resulting case tests: " ++
-             fmtSeq(prettyExpr(R3, main))(testFs))(R3) & (\\ R4.
-    succeed(R4 & ok)
+             pretty(fmtSeq(prettyExpr(R2, main))(testFs)))(R3) & (\\ R4.
+    succeed(&(R4, dg, testFs))
     )
   FI
-  ))))))))
+  )))))))
+  
 
-FUN resultT: repo -> fct
+FUN doCheckTestCases: repo ** unitName ** objectName ** ref ** expr'RepoAbsy ->
+                       seq[expr'RepoAbsy] ** seq[expr'RepoAbsy] ->
+                       com[pair[repo, diag]]
+DEF doCheckTestCases(R, main, ctFun, re, e)(testFs, notFulfilled) ==
+  IF testFs <>? THEN
+    IF notFulfilled <>? THEN succeed(R & ok)
+    IF notFulfilled ::? THEN 
+      succeed(R & (<+, ok) / noTestData(R, main, re) * notFulfilled)
+    FI
+  IF testFs ::? THEN
+    LET testF == ft(testFs)
+        testData == td(elems(arg(e)))
+        iExpr == apply(none, ctFun!, tuple1(%(testF, testData)))
+    IN
+    start & (\\ _ .
+    debugMsg("doCheckTestCases", \\ . "checking test case " ++
+              pretty(prettyExpr(R, main)(testF)))(R) & (\\ R1a.
+    with(R1a, eval(main, iExpr)) && (\\ res, R2.
+    elapsed & (\\ diff.
+    debugMsg("timer", \\ . "elapsed time: " ++ 
+             ``(diff, 6) ++ " sec")(R2) & (\\ R3 . 
+    IF res undefined? THEN
+      debugMsg("doCheckTestCases", \\ . "returned undefined")(R3) & (\\ R4.
+      doCheckTestCases(R4, main, ctFun, re, e)
+                      (rt(testFs), testF :: notFulfilled)
+      )
+    IF res unknown? THEN
+      succeed(R3 & (error, re) !! msg(res))
+    IF res okay? THEN
+      LET ires:bool == cast(data(res)) 
+      IN
+      debugMsg("doCheckTestCases", \\ . "returned " ++ `(ires))(R3) & (\\ R4.
+      IF ires THEN
+        doCheckTestCases(R4, main, ctFun, re, e)(rt(testFs), notFulfilled)
+      ELSE
+        doCheckTestCases(R4, main, ctFun, re, e)
+                        (rt(testFs), testF :: notFulfilled)
+      FI
+      )
+    FI
+    )))))
+  FI
+
+    
+FUN doPerformFormalTest: repo ** unitName ** ref ** formula ** expr'RepoAbsy ->
+                          com[pair[repo, diag]]
+DEF doPerformFormalTest(R, main, re, F, e) ==
+  LET testData == td(elems(arg(e)))
+      errorFunct == \\ den. (error, re) !! den
+      aParams == actuals(oper(funct(e)))(R)
+      (R2, aFuns) == findAuxFuns(R, sd(aParams), td(aParams))
+  IN
+  IF error?(aFuns) THEN
+    succeed(R2 & diags(aFuns))
+  ELSE
+    doFT(R2, main, F, re, errorFunct, aFuns)(testData, ok, 0)
+  FI
+
+FUN doFT: repo ** unitName ** formula ** ref **
+           (denotation -> diag) ** auxFuns ->
+           expr'RepoAbsy ** diag ** nat -> com[pair[repo, diag]]
+DEF doFT(R, main, F, re, diagF, aFuns)
+        (restTestData, dg, no) ==
+  LET testEmpty == apply(none, <>?(aFuns) !, restTestData)
+  IN
+  debugMsg("doFT", \\ . "#" ++ `(no) ++
+                        " testing for empty test data")(R) & (\\ R1.
+  with(R1, eval(main, testEmpty)) && (\\ res, R2.
+  IF res undefined? THEN succeed(R2 & dg <+ diagF("doFT: <>? undefined ?!?"))
+  IF res unknown? THEN succeed(R2 & dg <+ diagF("doFT: <>? unknown ?!? " ++
+                                                msg(res)))
+  IF res okay? THEN
+    LET isEmpty? == cast(data(res))
+    IN
+    debugMsg("doFT", \\ . "returned " ++ `(isEmpty?))(R2) & (\\ R3.
+    IF isEmpty? THEN succeed(R3 & dg)
+    ELSE
+      LET ftData == apply(none, ft(aFuns)!, restTestData)
+          tupleArgs == tuple(none, %(apply(none, 1st(aFuns)!, ftData),
+                                     apply(none, 2nd(aFuns)!, ftData)))
+          thisF == instF(range(F), vars(F))(tupleArgs)
+          newRest == apply(none, rt(aFuns)!, restTestData)
+          continue == \\r.doFT(r, main, F, re, diagF, aFuns)
+      IN
+      debugMsg("doFT", \\ . "testing current input data")(R3) & (\\ R4.
+      evaluate(R4, main, re)(thisF) & (\\ trRes.
+      LET (R5, dg0, valid?) == untriple(trRes)
+      IN
+      IF valid? THEN
+        debugMsg("doFT", \\ . "test successful")(R5) & (\\ R6.
+        continue(R6)(newRest, dg <+ dg0, succ(no))
+        )
+      ELSE
+        with(R5, evalD(main, ftData)) && (\\resD, R6.
+        LET xmsg == IF resD undefined? THEN "[representation undefined:" ++
+                                            msg(resD) ++ "]"
+                    IF resD unknown? THEN "[no representation:" ++
+                                          msg(resD) ++ "]"
+                    IF resD okay? THEN data(resD)
+                    FI
+        IN 
+--        (LET xmsg == "" R6 == R5 IN   -- %obiges funktioniert leider nicht
+        continue(R6)(newRest,
+                     dg <+ dg0 <+ diagF("test failed for input data no " ++
+                                        `(no) ++ " " ++ xmsg),
+                     succ(no))
+        )
+      FI
+      ))
+    FI
+    )
+  FI
+  ))    
+
+DATA auxFuns == error(diags:diag)
+                okay(pair: objectName, 1st: objectName, 2nd: objectName,
+                     ft: objectName, rt: objectName, <>? : objectName)
+            
+    
+FUN findAuxFuns: repo ** objectName ** objectName -> repo ** auxFuns
+DEF findAuxFuns(R, data1, data2) ==
+  LET (R1, pairI) == findON(R, "Pair", %(data1, data2), "pair")
+      (R2, 1stI) == findON(R1, "Pair", %(data1, data2), "1st")
+      (R3, 2ndI) == findON(R2, "Pair", %(data1, data2), "2nd")
+  IN
+  IF avail?(pairI) THEN
+    LET (R4, ftI) == findON(R3, "Seq", %(cont(pairI)), "ft")
+        (R5, <>?_I) == findON(R4, "Seq", %(cont(pairI)), "<>?")
+        (R6, rt_I) == findON(R5, "Seq", %(cont(pairI)), "rt")
+    IN
+    IF avail?(1stI) and avail?(2ndI) and
+         avail?(ftI) and avail?(<>?_I) and avail?(rt_I) THEN
+      (R6, okay(cont(pairI), cont(1stI), cont(2ndI), 
+                cont(ftI), cont(rt_I), cont(<>?_I)))
+    ELSE
+      LET dg2 == IF avail?(1stI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "1st not found ?!?" FI
+          dg3 == IF avail?(2ndI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "2nd not found ?!?" FI
+          dg4 == IF avail?(ftI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "ft not found ?!?" FI
+          dg5 == IF avail?(<>?_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "<>? not found ?!?" FI
+          dg6 == IF avail?(rt_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "rt not found ?!?" FI
+      IN
+      (R6, error(dg2 <+ dg3 <+ dg4 <+ dg5 <+ dg6))
+    FI
+  ELSE
+      LET dg1 == (error, freeRef("findAuxFuns'Testing")) !!
+                  "pair not found ?!?" 
+          dg2 == IF avail?(1stI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "1st not found ?!?" FI
+          dg3 == IF avail?(2ndI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "2nd not found ?!?" FI
+      IN
+      (R3, error(dg1 <+ dg2 <+ dg3))
+  FI
+   
+FUN findON: repo ** denotation ** seq[objectName] ** denotation ->
+             repo ** option[objectName]
+DEF findON(R, unit, instance, name) ==
+  LET u == lookup?(unit, sign)(R)
+  IN
+  IF u avail? THEN
+    LET n == lookup(cont(u), name)(R)
+    IN
+    IF #(n) = 1 THEN
+      LET (u2, R1) == enterInstance(cont(u), instance)(R)
+      IN
+      (R1, avail(globalObjectName(no(arb(n)), u2)))
+    ELSE
+      (R, nil)
+    FI
+  ELSE
+    (R, nil)
+  FI
+
+FUN noTestData: repo ** unitName ** ref -> expr'RepoAbsy -> diag
+DEF noTestData(R, main, re)(e) ==
+  (error, re) !! 
+  ("no test data for test case " ++ `(pretty(1, max, prettyExpr(R, main)(e))))
+
+FUN findCheckTestFun: repo ** objectName ** objectName ->
+                       repo ** option[objectName]
+DEF findCheckTestFun(R, data1, data2) ==
+  findON(R, "CheckTestCases2", %(data1, data2), "checkTestCases")
+
+FUN resultT: repo -> fct'RepoAbsy
 DEF resultT(R) == name(arb(lookup(proofscript(R), "resultT")(R)))

@@ -10,28 +10,37 @@ IMPORT DefEqnHandling ONLY lVars
        Nat ONLY 1 |=
        RepoDiag ONLY error freeRef !! ok mode ref
        Fmt ONLY pretty
-       PrettyFormatting ONLY fmtObjectNameLong
+       PrettyFormatting ONLY fmtObjectNameLong prettyEqn prettyExpr
        SeqMap ONLY *
-       Option ONLY avail? cont option
+       Option ONLY avail? cont option avail
        RepoAn ONLY none
-       PredefEntities ONLY true not and
+       PredefEntities ONLY true not and false
        String ONLY string
        AbsySC ONLY apply1 tuple1
+       DEBUG ONLY PRINT
+       Denotation ONLY ++
+
+
+FUN dbWhiteBox? : bool
+DEF dbWhiteBox? == false
 
 DEF whiteBox(R, oN) ==
   LET i == impl(oN)(R)
   IN
   IF i def? THEN
-    IF #(eqns(i)) |= 1 THEN <> & ((error, freeRef("whiteBox")) !! 
-                                  ("need 1! equation for `%s'", 
-                                   pretty(fmtObjectNameLong(R)(oN))))
+    IF #(eqns(i)) |= 1 THEN okay(<>,((error, freeRef("whiteBox")) !! 
+                                     ("need 1! equation for `%s'", 
+                                      pretty(fmtObjectNameLong(R)(oN)))))
     ELSE
-      unfoldEqn(R)(ft(eqns(i))) & ok
+      LET dg == PRINT(dbWhiteBox?, \\ . "whiteBox: " ++
+                      pretty(prettyEqn(R)(ft(eqns(i)))), ok)
+      IN
+      okay(unfoldEqn(R)(ft(eqns(i))), dg)
     FI
   ELSE
-    <> & ((error, freeRef("whiteBox")) !! 
-          ("no definition found for `%s'", 
-           pretty(fmtObjectNameLong(R)(oN))))
+    okay(<>, ((error, freeRef("whiteBox")) !! 
+              ("no definition found for `%s'", 
+               pretty(fmtObjectNameLong(R)(oN)))))
   FI
 
 FUN unfoldEqn: repo -> eqn -> seq[expr]
@@ -59,7 +68,11 @@ DEF negate(R, gs) ==
   mkAnd / mkNot * ifs
 
 FUN unfoldGuard: repo -> guard -> seq[expr]
-DEF unfoldGuard(R)(guard(_, i, t)) ==
+DEF unfoldGuard(R)(guard(_, i, t0)) ==
+  LET t == PRINT(dbWhiteBox?, \\ . "unfolding guard: " ++ 
+                 "IF " ++ pretty(prettyExpr(R)(i)) ++ " THEN " ++
+                 pretty(prettyExpr(R)(t0)), t0)
+  IN
   IF t cases? THEN
     LET iExprs == flat(unfoldGuard(R) * guards(t))
         elseExpr == IF else(t) avail? THEN
@@ -69,7 +82,8 @@ DEF unfoldGuard(R)(guard(_, i, t)) ==
                       <>
                     FI
     IN
-    (\\ e. apply1(and(R), tuple1(%(i, e)))) * (iExprs ++ elseExpr)
+    (\\ e. cases(none, %(guard(none, i, e)), avail(false(R))) ) *
+    (iExprs ++ elseExpr)
   ELSE
     %(i)
   FI

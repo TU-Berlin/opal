@@ -34,11 +34,16 @@ IMPORT DbComm ONLY ensureClient rpc
        String ONLY string
        Seq ONLY seq
        SetMap ONLY *
+       Pair ONLY pair unpair &
 
 -- %$The result type$
 DATA result == okay(data: obj)  
                undefined(msg: denotation)  
                unknown(msg: denotation) 
+
+DATA resultD == okay(data: denotation)  
+                undefined(msg: denotation)  
+                unknown(msg: denotation) 
 
 -- %$Evaluating expressions$
 DEF eval(uN, Expr) ==
@@ -60,6 +65,34 @@ DEF eval(uN, EExpr, Fct) ==
     IF a broken? THEN succeed(unknown("broken evaluation"))
     IF a aborted? THEN succeed(undefined(reason(a)))
     IF a iResult? THEN succeed(okay(result(a)))
+    FI
+  FI
+  ))) ; (\\ res:ans .
+  IF res okay? THEN yield(res)
+  IF res fail? THEN succeed(unknown(error(res)))
+  FI
+  )
+
+-- %$Evaluating expressions for denotation$
+DEF evalD(uN, Expr) ==
+  identTable & (\\ iTab.
+  query(\\R. &(asExpr(R, iTab, Expr))) & (\\ EExprEFct.
+  query(\\R. fct(R, Expr)) & (\\ Fct.
+  evalD(uN, unpair(EExprEFct), Fct)
+  )))
+
+DEF evalD(uN, EExpr, EFct, Fct) == 
+  newEval("<INTERN>", Fct) & (\\ id.
+  rpc(eval'ChannelData(id, EExpr, EFct), evalAnswer?) ; (\\ res.
+  rmEval(id) & (\\ _ .
+  IF res fail? THEN
+    succeed(unknown(error(res)))
+  ELSE
+    LET a == data(res)
+    IN
+    IF a broken? THEN succeed(unknown("broken evaluation"))
+    IF a aborted? THEN succeed(undefined(reason(a)))
+    IF a result? THEN succeed(okay(result(a)))
     FI
   FI
   ))) ; (\\ res:ans .
@@ -138,3 +171,7 @@ DEF internEvalAnswer? == aborted? or broken? or iResult?
 
 FUN internExecAnswer? : answer -> bool
 DEF internExecAnswer? == aborted? or broken? or iResult? or fail?
+
+-- %should be calling function from DbEvaluation
+FUN evalAnswer? : answer -> bool
+DEF evalAnswer? == result? or broken? or aborted?
