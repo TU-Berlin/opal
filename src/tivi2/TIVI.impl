@@ -1,15 +1,15 @@
 IMPLEMENTATION TIVI
 
 IMPORT T2AEntry COMPLETELY
-       Com ONLY com exit break succeed EXEC
+       Com ONLY com exit break succeed EXEC okay? ans
        ComAgent ONLY agent
-       T2ComCheckWin ONLY check notify
-       ComCompose ONLY &
+       ComCheckWin ONLY check notify
+       ComCompose ONLY & ;
        Env ONLY arg argCount
        Identity ONLY id
        InterOpalEntry COMPLETELY
        InterOpalIO ONLY readInterOpal
-       Nat ONLY nat 0 100 20 - 1 > pred 64 128
+       Nat ONLY nat 0 100 20 - 1 > pred 64 128 2
        OWmisc ONLY label 
        Option COMPLETELY
        ProcessCtrl ONLY getCWD
@@ -21,20 +21,27 @@ IMPORT T2AEntry COMPLETELY
        WinRegulator COMPLETELY
        WinView COMPLETELY
        WinWindow COMPLETELY
-       Denotation ONLY ++ empty
+       Denotation ONLY ++ empty empty? slice #
        MONITOR ONLY genMonitor
        WinImage ONLY image photo file iconfig
        Seq ONLY .. seq
        SeqFold ONLY /
        ComTimeout ONLY timeout
        ComAction ONLY done
+       FileName ONLY dirName
+       FileSystem ONLY stat filestat
+       ABORT ONLY ABORT
+       ComCheck ONLY check
 
 DEF tivi2 ==
+check'ComCheck(\\x.x, 
     genMonitor(false) & (\\ _ .
     aEntryLong[denotation, mypreparse, myprint](64) & (\\fname.
     emitter[void] & (\\quit.
     emitter[void] & (\\trg.
-    photo(file(baseDir ++ "/tivi.gif")) & (\\ p.
+    arg(0) & (\\prgname.
+    baseDir(prgname) & (\\bD. 
+    photo(file(bD ++ "tivi.gif")) & (\\ p.
     regulator(fname) set bind(key("Return"), \\ _ . trg emit nil) ++ 
                          bind(key("KP_Enter"), \\ _ . trg emit nil) & (\\ _ .
     argCount & (\\ ac.
@@ -55,16 +62,17 @@ DEF tivi2 ==
     window(initState ++ 
            titleName(title) ++ 
            iconName("TIVI/E") ++ 
-           icon(file(baseDir ++ "/tivi.xbm")), 
-           v ^-^ label("Filename:", view(fname)) ^-^ bild ^-^ 
+           icon(file(bD ++ "tivi.xbm")), 
+           v ^-^ label("Filename:", view(fname)) ^-^ bild(bD) ^-^ 
         (  load <|< quitb)) & (\\w.
     focus(w) & (\\ _ .
     await(quit) & (\\ _ .
     delete(w) & (\\ _ .
     exit(0)
     )))))
-    ))))))
+    ))))))))
     ))
+)
 
 FUN 80:nat
 DEF 80 == 100 - 20
@@ -93,11 +101,35 @@ DEF mypreparse(d) == (avail(d), empty)
 FUN myprint: denotation -> denotation
 DEF myprint == id
 
-FUN bild: view
-DEF bild == EXEC(
-            photo(file(baseDir ++ "/tivi.gif")) & (\\ p.
-            succeed(frame with image(p)))
-            )
+FUN bild: denotation -> view
+DEF bild(bD) == EXEC(
+                     photo(file(bD ++ "tivi.gif")) & (\\ p.
+                     succeed(frame with image(p)))
+                    )
 
-FUN baseDir: denotation
-DEF baseDir == "/home/uebb/opal/2.3b.beta/lib/images" 
+-- % return directory, where @file{tivi.gif} can be found.
+FUN baseDir: denotation -> com[denotation]
+DEF baseDir(prgname) ==
+  LET n1 == dirName(prgname)
+      n2 == dirName(front(dirName(prgname))) ++ "lib/images/"
+      n3 == "./"
+  IN
+  stat(n1 ++ "tivi.gif"); (\\ a1.
+  IF a1 okay? THEN succeed(n1)
+  ELSE stat(n2 ++ "tivi.gif"); (\\ a2.
+    IF a2 okay? THEN succeed(n2)
+    ELSE stat(n3 ++ "tivi.gif"); (\\ a3.
+      IF a3 okay? THEN succeed(n3)
+      ELSE break("tivi2-ERROR: tivi.gif and tivi.xbm not found in " ++
+                 n1 ++", " ++ n2 ++ ", " ++ n3)
+      FI)
+    FI)
+  FI)
+  
+
+FUN front: denotation -> denotation
+DEF front(d) == 
+  IF empty?(d) THEN ABORT("front'TIVI: empty denotation")
+  IF empty?(tl(d)) THEN ""
+  ELSE slice(d, 0, #(d) - 2)
+  FI
