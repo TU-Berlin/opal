@@ -1,5 +1,5 @@
 IMPLEMENTATION ReflexTrans 
--- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/pcheck/ReflexTrans.impl,v 1.4 2000-09-25 20:49:13 kd Exp $
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/pcheck/ReflexTrans.impl,v 1.5 2001-02-03 20:45:27 kd Exp $
 
 IMPORT RepoObjectAccess COMPLETELY
        Denotation ONLY = ++
@@ -12,7 +12,7 @@ IMPORT RepoObjectAccess COMPLETELY
        FormulaHandling COMPLETELY
        Nat ONLY nat 4
        RepoUnitAccess ONLY symbol
-       PrettyFormatting ONLY fmtObjectNameLong  fmtUnitNameLong
+       PrettyFormatting COMPLETELY
        Fmt ONLY fmt pretty
        RepoAn ONLY an none
        String ONLY string
@@ -47,6 +47,7 @@ IMPORT RepoObjectAccess COMPLETELY
        ProofHandling ONLY codedProof?
        OSubstitution ONLY subst <$
        FmtSet ONLY fmtSet
+       FmtSeq ONLY fmtSeq
 
 -- %$Decode Reflexion$
 
@@ -455,9 +456,12 @@ DEF formula0(closed(_, f), main)(R) ==
 DEF formula0(cong(_, f), main)(R) ==
   LET tpe == target(fct(f)(R))
       (lS, R1) == newLocalSign(main)(R)   
-      (R2, vs, cTerm1) == mkCanTerm(R1, f!, fct(f)(R), <>, lS)
-      doubles == (\\ v. hasCong(sort(fct(v)(R2)))(R2)) | vs
-      (R3, nDoubles) == (mkDoubles, R) * doubles
+      (R2, vsX, cTerm1) == mkCanTerm(R1, f!, fct(f)(R1), <>, lS)
+      vs == PRINT(false, \\ . "formula0/cong" ++ 
+                              pretty(prettyExpr(R2)(cTerm1)) ++ "::" ++
+                              pretty(fmtSeq(\\v.prettyFct(R2)(fct(v)(R2)))(vsX)),                              vsX)
+      doubles == (\\ v. hasCong(R2, fct(v)(R2))) | vs
+      (R3, nDoubles) == (mkDoubles, R2) * doubles
       cTerm2 == subst(doubles, nDoubles) <$ cTerm1
       right == IF avail?(getCong(tpe, cTerm1, cTerm2)(R3)) THEN
                  cont(getCong(tpe, cTerm1, cTerm2)(R3))
@@ -468,7 +472,7 @@ DEF formula0(cong(_, f), main)(R) ==
   IF doubles <>? THEN
     (R3, forall1(vs, right))
   ELSE
-    (R3, forall1(vs ++ doubles, 
+    (R3, forall1(vs ++ nDoubles, 
                  impl(conj1(zip(\\d, nD. cont(getCong(sort(fct(d)(R3)),
                                                       d!, nD!)(R3)))
                                (doubles, nDoubles)),
@@ -603,6 +607,10 @@ DEF mkCanTerm(R, ex, funct(d, c), vs, lS) ==
                            FI)
   IN
   mkCanTerm(R2, apply1(ex, vs2), c, vs ++ vs2, lS)
+
+FUN hasCong: repo ** fct -> bool
+DEF hasCong(R, name(n)) == hasCong(n)(R)
+DEF hasCong(_, _else) == false
 
 FUN mkDoubles: repo ** objectName -> repo ** objectName
 DEF mkDoubles(R, oN) ==

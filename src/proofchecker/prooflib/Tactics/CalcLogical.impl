@@ -172,7 +172,7 @@ DEF match_deep(R, unknownSig, freeSig)(sq, testHs)(prop) ==
 
 -- %Call function for all sequents
 FUN quantX: fmt ** (objectName ** repo ->
-                    sequent -> lseq[pair[sequent, objectName]]) -> proofscript
+                    sequent -> lseq[pair[sequent, fct]]) -> proofscript
 DEF quantX(name, f) ==
   abs(\\st.
   LET (st1, lV) == newFV(st)
@@ -186,7 +186,7 @@ DEF quantX(name, f) ==
 /* %Handle single sequent. Arguments are new global variable, repository
     and the sequent. Returns a lazy sequence of new sequents and the 
     sort required for the global variable. */
-FUN allR: objectName ** repo -> sequent -> lseq[pair[sequent, objectName]]
+FUN allR: objectName ** repo -> sequent -> lseq[pair[sequent, fct]]
 DEF allR(lV, R)(sq) ==
   LET iRes == lift(<>, props(sq), quantX(forall?)(lV, R))
       newHyps == dfd(lV) :: hyps(sq)
@@ -194,7 +194,7 @@ DEF allR(lV, R)(sq) ==
   IN
   mk * iRes
 
-FUN exL: objectName ** repo -> sequent -> lseq[pair[sequent, objectName]]
+FUN exL: objectName ** repo -> sequent -> lseq[pair[sequent, fct]]
 DEF exL(lV, R)(sq) ==
   LET iRes == lift(<>, hyps(sq), quantX(exist?)(lV, R))
       mk == map1(\\ fs. sq :=_hyps dfd(lV) :: fs)
@@ -204,12 +204,12 @@ DEF exL(lV, R)(sq) ==
 /* %If formula is quantified as desired, replace one of the variables 
     by the global variable. Return lazy sequence of all possibilities. */
 FUN quantX: (quantKind -> bool) ->
-             objectName ** repo -> formula -> lseq[pair[formula, objectName]]
+             objectName ** repo -> formula -> lseq[pair[formula, fct]]
 DEF quantX(k?)(lV, R)(F) ==
   IF F quant? ANDIF k?(kind(F)) THEN
     IF #(vars(F)) = 1 THEN
       LET v == ft(vars(F))
-          srt == sort(fct(v)(R))
+          srt == fct(v)(R)
       IN
       %(subst(v, name(none, lV))(range(F)) & srt)
     ELSE
@@ -221,8 +221,8 @@ DEF quantX(k?)(lV, R)(F) ==
 /* %Input: Pre- and postsubgoals, function to apply. Returns a lazy
     sequence of pairs of resulting subgoals and corresponding sort */
 FUN by: seq[sequent] ** seq[sequent] **
-         (sequent -> lseq[pair[sequent, objectName]]) ->
-         lseq[pair[seq[sequent], objectName]]
+         (sequent -> lseq[pair[sequent, fct]]) ->
+         lseq[pair[seq[sequent], fct]]
 DEF by(_, <>, _) == <>
 DEF by(preSq, currSq :: postSq, mu) ==
   LET mk == \\p. preSq ++ 1st(p) :: postSq & 2nd(p)
@@ -231,8 +231,8 @@ DEF by(preSq, currSq :: postSq, mu) ==
 
 -- %The same on formula level
 FUN lift: seq[formula] ** seq[formula] **
-           (formula -> lseq[pair[formula, objectName]]) ->
-           lseq[pair[seq[formula], objectName]]
+           (formula -> lseq[pair[formula, fct]]) ->
+           lseq[pair[seq[formula], fct]]
 DEF lift(_, <>, _) == <>
 DEF lift(preF, currF :: postF, f) ==
   LET mk == map1(\\ f1. preF ++ f1 :: postF)
@@ -241,10 +241,10 @@ DEF lift(preF, currF :: postF, f) ==
 
 FUN every: objectName ** repo -> an ** quantKind ** localSignName ** formula ->
             seq[objectName] ** seq[objectName] ->
-            lseq[pair[formula, objectName]]
+            lseq[pair[formula, fct]]
 DEF every(_, _)(_, _, _, _)(_, <>) == <>
 DEF every(lV, R)(a, q, lS, F)(preVars, currVar :: postVars) ==
-  LET srt == sort(fct(currVar)(R))
+  LET srt == fct(currVar)(R)
   IN
   clearFormAn(quant(a, q, lS, preVars ++ postVars,
                     subst(currVar, name(none, lV))(F))) & srt :: 
