@@ -11,7 +11,7 @@ IMPLEMENTATION PostParser
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1998-10-26 15:25:47 $ ($Revision: 1.2 $)
 
 IMPORT  ZOpts           COMPLETELY
        Options ONLY pchecker?: bool
@@ -432,30 +432,33 @@ DEF doProofBodies(error & RT) == error & RT
 DEF doProofBodies((ST AS mkstruct(hd, im, sig, specs, sortIm, funIm, freeT,
                                   laws, prg, pH, pB, rels, p, part)) & RT) ==
   IF pchecker? THEN
-    LET nFunIms == proofDef(RT) * pB
+    LET (RT1, nFunIms) == (proofDef, RT) * pB
     IN
     mkstruct(hd, im, sig, specs, sortIm, nFunIms ++ funIm, freeT,
-             laws, prg, pH, pB, rels, p, part) & RT
+             laws, prg, pH, pB, rels, p, part) & RT1
   ELSE
     ST & RT
   FI
 
 -- % PROOF P == s  ==> DEF PROOF%P:proofscript'PROOFSCRIPT == s
-FUN proofDef: repTab -> proofBody -> eq
-DEF proofDef(RT)(proofBody(name, script, pos)) ==
-  LET lhs == typed(val(codeP(RT, codeP, name), pos),
-                   sort(partName(proofscript, avail(PROOFSCRIPT),
-                                 <>, firstPos, sort, noPragma, firstPos)),
-                   pos)
+FUN proofDef: repTab ** proofBody -> repTab ** eq
+DEF proofDef(RT, proofBody(name, script, pos)) ==
+  LET 
+    (RT1, pName) == codeP(RT, codeP, name)
+    lhs == typed(val(pName, pos),
+                 sort(partName(proofscript, avail(PROOFSCRIPT),
+                               <>, firstPos, sort, noPragma, firstPos)),
+                 pos)
   IN
-  eq(lhs, script, pos)
+  (RT1, eq(lhs, script, pos))
 
-FUN codeP: repTab ** (repTab ** rep -> repTab ** rep) ** partName -> partName
-DEF codeP(_, _, noName) == noName
+FUN codeP: repTab ** (repTab ** rep -> repTab ** rep) ** partName ->
+            repTab ** partName
+DEF codeP(RT, _, noName) == (RT, noName)
 DEF codeP(RT, f, partName(ide, sIde, paramS, instPos, k, prg, pos)) ==
-  LET (_, newIde) == f(RT, ide)
+  LET (RT1, newIde) == f(RT, ide)
   IN
-  partName(newIde, sIde, paramS, instPos, k, prg, pos)
+  (RT1, partName(newIde, sIde, paramS, instPos, k, prg, pos))
 
 -- %$Spezifikationen verarbeiten%
 /* %Alle Spezifikationsgesetze mit erzeugten Namen versehen.
