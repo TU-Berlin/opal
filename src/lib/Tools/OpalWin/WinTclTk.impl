@@ -3,105 +3,105 @@ IMPLEMENTATION WinTclTk
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-03-09 11:52:22 $ ($Revision: 1.2 $)
 
-IMPORT	DEBUG		COMPLETELY
+IMPORT  DEBUG           COMPLETELY
 
-IMPORT	Void		COMPLETELY
-	Env		ONLY	arg
+IMPORT  Void            COMPLETELY
+        ProcessArgs     ONLY    arg
 
-IMPORT	Nat		COMPLETELY
-	NatConv		COMPLETELY
-	Real		COMPLETELY
-	BTUnion		COMPLETELY
-	Array		COMPLETELY
-	Denotation	COMPLETELY
-	Char		COMPLETELY
-	String		COMPLETELY
-	StringConv	COMPLETELY
-	StringFormat	COMPLETELY
-	StringFilter	COMPLETELY
-	StringMap	COMPLETELY
-	Seq		COMPLETELY
-	Option		COMPLETELY
-	Pair		COMPLETELY
+IMPORT  Nat             COMPLETELY
+        NatConv         COMPLETELY
+        Real            COMPLETELY
+        BTUnion         COMPLETELY
+        Array           COMPLETELY
+        Denotation      COMPLETELY
+        Char            COMPLETELY
+        String          COMPLETELY
+        StringConv      COMPLETELY
+        StringFormat    COMPLETELY
+        StringFilter    COMPLETELY
+        StringMap       COMPLETELY
+        Seq             COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
 
-IMPORT 	Com		COMPLETELY
-	ComCompose	COMPLETELY
-	ComAction	ONLY	done
-	ComState	COMPLETELY
-	ComStateWith	COMPLETELY
+IMPORT  Com             COMPLETELY
+        ComCompose      COMPLETELY
+        ComAction       ONLY    done
+        ComState        COMPLETELY
+        ComStateWith    COMPLETELY
 
 
-IMPORT	Tk[void]	ONLY	createApp
-				retain submit update
+IMPORT  Tk[void]        ONLY    createApp
+                                retain submit update
 
-	Tcl[void]	COMPLETELY
+        Tcl[void]       COMPLETELY
 
 
 
 
 -- %$Callbacks and Widgets$ ==================================================
 
-DATA callback	== callback(no: nat, asTk: string)
-DATA widget	== widget(parent: widget, callback: callback, asTk: string)
-		   root(asTk: string)
+DATA callback   == callback(no: nat, asTk: string)
+DATA widget     == widget(parent: widget, callback: callback, asTk: string)
+                   root(asTk: string)
 
-FUN callback	: nat	-> callback
+FUN callback    : nat   -> callback
 DEF callback(No) == callback(No, !("@") :: !(`(No)))
 
-FUN widget	: widget ** callback -> widget
+FUN widget      : widget ** callback -> widget
 DEF widget(Parent, Callback) ==
     widget(Parent, Callback, asTk(Parent) ++ (!(".") :: asTk(Callback)))
-DEF root	== root(<>)
+DEF root        == root(<>)
 
-DATA oper 	== oper(com: seq[string] -> com[string])
-FUN  nop	: oper
-DEF  nop	== oper(\\ _ . succeed(<>))
+DATA oper       == oper(com: seq[string] -> com[string])
+FUN  nop        : oper
+DEF  nop        == oper(\\ _ . succeed(<>))
 
-DATA state	== state(
-			opers 		: array[oper],
-			nextNo		: nat,
-			freeList	: seq[callback]
-		   )
+DATA state      == state(
+                        opers           : array[oper],
+                        nextNo          : nat,
+                        freeList        : seq[callback]
+                   )
 
-FUN state	: stateId[state]
-DEF state	== EXEC(stateId(state(init(100, nop), 0, <>)))
+FUN state       : stateId[state]
+DEF state       == EXEC(stateId(state(init(100, nop), 0, <>)))
 
 
 
 DEF callback ==
     with(state, \\ S .
-	-- the following calculation must be atomic!
-	IF ::?(freeList(S)) THEN
-	    (state(opers(S), nextNo(S), rt(freeList(S))), 
-	     ft(freeList(S)) & done)
-	ELSE
-	    LET NewOpers == IF nextNo(S) >= #(opers(S)) THEN
-	    			extend(opers(S), #(opers(S)) / 2, nop)
-			    ELSE opers(S) FI
-		Callback == callback(nextNo(S))
-	    IN
-	    (state(NewOpers, succ(nextNo(S)), freeList(S)),
-	     Callback & define(tclTk, `(asTk(Callback)), call(nextNo(S))))
+        -- the following calculation must be atomic!
+        IF ::?(freeList(S)) THEN
+            (state(opers(S), nextNo(S), rt(freeList(S))), 
+             ft(freeList(S)) & done)
+        ELSE
+            LET NewOpers == IF nextNo(S) >= #(opers(S)) THEN
+                                extend(opers(S), #(opers(S)) / 2, nop)
+                            ELSE opers(S) FI
+                Callback == callback(nextNo(S))
+            IN
+            (state(NewOpers, succ(nextNo(S)), freeList(S)),
+             Callback & define(tclTk, `(asTk(Callback)), call(nextNo(S))))
         FI
-    )							& (\\ Callback_Act .
-    2nd(Callback_Act) 					&
+    )                                                   & (\\ Callback_Act .
+    2nd(Callback_Act)                                   &
     succeed(1st(Callback_Act))
     )
 
     FUN call : nat -> interpreter ** seq[string] -> com[string]
     DEF call(No)(_, Args) ==
-	get(state, \\ S . opers(S) ! No)		& (\\ Oper .
-	com(Oper)(rt(Args))
-	)
+        get(state, \\ S . opers(S) ! No)                & (\\ Oper .
+        com(Oper)(rt(Args))
+        )
 
 DEF freeCallback(Callback) ==
     with(state, \\ S. state(upd(no(Callback), nop, opers(S)),
-    			    nextNo(S), Callback :: freeList(S)))
+                            nextNo(S), Callback :: freeList(S)))
 
 DEF widget(Parent) ==
-    callback							& (\\ Callback.
+    callback                                                    & (\\ Callback.
     succeed( widget(Parent, Callback) )
     )
 
@@ -121,29 +121,29 @@ DEF define(Com : com[void]) ==
 
 DEF define(Callback, Com : seq[string]->com[string]) ==
     with(state, \\ S. state(upd(no(Callback), oper(Com), opers(S)),
-    			    nextNo(S), freeList(S)))
+                            nextNo(S), freeList(S)))
 
 DEF define(Callback, Com : com[string]) ==
     with(state, \\ S. state(upd(no(Callback), oper(\\ _ . Com), opers(S)),
-    			    nextNo(S), freeList(S)))
+                            nextNo(S), freeList(S)))
 
 DEF define(Callback, Com : com[void]) ==
     with(state, \\ S. state(upd(no(Callback), 
                                 oper(\\ _ . Com & succeed(<>)), opers(S)),
-    			    nextNo(S), freeList(S)))
+                            nextNo(S), freeList(S)))
 
 DEF extDefine(Callback, Act:com[void]) ==
     with(state, \\ S. state(upd(no(Callback),
-    		    	        \\Oper. oper(\\Args. Act; com(Oper)(Args)),
-    		    	        opers(S)),
-			    nextNo(S), freeList(S)))
+                                \\Oper. oper(\\Args. Act; com(Oper)(Args)),
+                                opers(S)),
+                            nextNo(S), freeList(S)))
 
 DEF extDefine(Callback, Act:seq[string]->com[void]) ==
     with(state, \\ S. 
-    	 state(upd(no(Callback),
-       	           \\Oper . oper(\\Args. Act(Args); com(Oper)(Args)),
-    		   opers(S)),
-	       nextNo(S), freeList(S))
+         state(upd(no(Callback),
+                   \\Oper . oper(\\Args. Act(Args); com(Oper)(Args)),
+                   opers(S)),
+               nextNo(S), freeList(S))
     )
 
 
@@ -177,7 +177,7 @@ DEF act(Script:denotation) == tclTk @ Script & done
 -- FUN + : script ** nat -> script
 
 DEF format(mkScript(Pattern,Args)) ==
-	format'StringFormat(Pattern, revert(Args))
+        format'StringFormat(Pattern, revert(Args))
 
 DEF mkScript(Pattern,Args) + Den == mkScript(Pattern, denotation(Den)::Args)
 DEF mkScript(Pattern,Args) + Str == mkScript(Pattern, string(Str)::Args)
@@ -203,18 +203,18 @@ DEF Pattern <- (Widget:widget) ==
 
 -- FUN convList: string -> seq[string]
 DEF convList(String) ==
-	LET Ans == asList(String) IN
-	IF okay?(Ans) THEN data(Ans) ELSE <> FI
+        LET Ans == asList(String) IN
+        IF okay?(Ans) THEN data(Ans) ELSE <> FI
 
 -- FUN convNat: string -> nat
 DEF convNat(Number) ==
-	LET Ans == asNat(Number) IN
-	IF okay?(Ans) THEN data(Ans) ELSE 0 FI	-- "0" may be a bad choice
+        LET Ans == asNat(Number) IN
+        IF okay?(Ans) THEN data(Ans) ELSE 0 FI  -- "0" may be a bad choice
 
 -- FUN convReal: string -> real
 DEF convReal(Number) ==
-	LET Ans == asReal(Number) IN
-	IF okay?(Ans) THEN data(Ans) ELSE 0 FI	-- "0" may be a bad choice
+        LET Ans == asReal(Number) IN
+        IF okay?(Ans) THEN data(Ans) ELSE 0 FI  -- "0" may be a bad choice
 
 
 -- %$TclTk Interpreter $ ====================================================
@@ -222,18 +222,18 @@ DEF convReal(Number) ==
 FUN tclTk: interpreter
 DEF tclTk ==
     EXEC(
-    	arg(0)					& (\\ ApplName .
-    	-- create interpreter 
-    	create(nil)				& (\\ Interp .
-    	-- create Tk application
-	-- we should consider "-screen" option
-	-- of application ??
-	createApp(Interp, nil, ApplName)	& (\\ _ .
-	-- set main window to state withdrawn; 
-	-- we dont need it for displaying
-	Interp @ ("wm withdraw .")		& (\\ _ .
-	succeed(Interp)
-	))))
+        arg(0)                                  & (\\ ApplName .
+        -- create interpreter 
+        create(nil)                             & (\\ Interp .
+        -- create Tk application
+        -- we should consider "-screen" option
+        -- of application ??
+        createApp(Interp, nil, ApplName)        & (\\ _ .
+        -- set main window to state withdrawn; 
+        -- we dont need it for displaying
+        Interp @ ("wm withdraw .")              & (\\ _ .
+        succeed(Interp)
+        ))))
     )
 
 

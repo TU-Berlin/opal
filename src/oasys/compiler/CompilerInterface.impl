@@ -47,6 +47,11 @@ IMPORT  OasysCmdtable   COMPLETELY
        SetReduce ONLY /
        ComState COMPLETELY
        ComAction ONLY done
+       InternIOFilter COMPLETELY
+       SeqMap ONLY *
+       SeqConv ONLY `
+       NatConv ONLY `
+       SeqIndex ONLY !
 
 DEF initCompiler ==
     register(compilerCmdtable)
@@ -98,8 +103,15 @@ DEF compilerCmdtable ==
     cmd(lit("oasys-intern-show-options") @ getOpts,
         "show options previoulsy set with oasys-intern-set-options"
     )
-    /*
     ++
+    cmd(lit("oasys-intern-iofilter") o 
+        ((addCmd @ ciAdd) | (rmCmd @ ciRm) |
+         (queryCmd @ ciShow) | (onOffCmd @ ciFlag)
+        ) & 2nd,
+        "add, remove, query InterOpal filter;" ++ 
+         "switch InterOpal filters `on' or `off'"
+       )
+    /*
     cmd(lit("oasys-run") o var("NAME") & 2nd @ run,
         "Run object"
     )
@@ -108,6 +120,20 @@ DEF compilerCmdtable ==
         "Check expression"
     )
     */
+
+FUN addCmd: argspec[pair[option[nat], pair[denotation, seq[denotation]]]]
+DEF addCmd == lit("add") o 
+              ?(nat("IDX", noCompletion)) o 
+              (var("PROG") o *(var("ARGS"))) & 2nd
+
+FUN rmCmd: argspec[nat]
+DEF rmCmd == lit("rm") o nat("IDX", noCompletion) & 2nd
+
+FUN onOffCmd: argspec[denotation]
+DEF onOffCmd == lit("on") | lit("off")
+
+FUN queryCmd: argspec[denotation]
+DEF queryCmd == lit("query")
 
 
 FUN check : set[unitName,<]     -> com[denotation]
@@ -269,3 +295,42 @@ DEF getOpts(_) ==
   getOptions & (\\ opts. 
   succeed((+/+(" "), "") / opts)
   )
+
+FUN ciAdd: pair[option[nat], pair[denotation, seq[denotation]]] ->
+            com[denotation]
+DEF ciAdd(idx & (prog & args)) ==
+  (IF avail?(idx) THEN addFilterAt(prog, args, idx cont) 
+   IF nil?(idx) THEN addFilter(prog, args)
+   FI) & succeed("")
+
+FUN ciRm: nat -> com[denotation]
+DEF ciRm(idx) == delFilterAt(idx) & succeed("")
+
+FUN ciFlag: denotation -> com[denotation]
+DEF ciFlag(cmd) ==
+  (IF cmd = "on" THEN enableFilter
+   IF cmd = "off" THEN disableFilter
+   FI) & succeed("")
+
+FUN ciShow: denotation -> com[denotation]
+DEF ciShow(_) ==
+  queryFilters & (\\res.
+  LET (flag, filters) == unpair(res)
+      flagText == IF flag THEN "InterOpal filters are active\n"
+                  ELSE "InterOpal filters are not active\n" FI
+      progText == `("","\n","")(show)(idx(merge * filters))
+  IN
+  succeed(flagText ++ progText)
+  )
+
+
+FUN merge: pair[denotation, seq[denotation]] -> denotation
+DEF merge(prog & args) ==
+  prog ++ " <InterOpal file> " ++ `("", " ", "")(\\x.x)(args)
+
+FUN show: pair[nat, denotation] -> denotation
+DEF show(n & txt) == "#" ++ `(n) ++ " " ++ txt
+      
+-- %geklaut vom Proofchecker
+FUN idx: seq[denotation] -> seq[pair[nat, denotation]]
+DEF idx(fs) == IF fs <>? THEN <> ELSE (0 .. pred(#(fs)))(\\x. x & fs ! x) FI

@@ -33,6 +33,7 @@ IMPORT
         OasysInterface  COMPLETELY
         TclInterface    COMPLETELY
         EchoEvent       COMPLETELY
+       ColourText COMPLETELY
 
 
 -- should got to the library
@@ -46,12 +47,12 @@ DEF exists?(FileName) ==
 
 FUN oasysbin : com[void]
 DEF oasysbin ==
-    write(stdOut, "oasys version 1.1c (ocs version 2.3c), ")    & (\\ _ .
-    writeLine(stdOut, "(c) 1989-1999 The OPAL Group, TU-Berlin")& (\\ _ .
-    check(\\Msg . "top-level error: " ++ Msg,
+    write(stdOut, title("oasys version 1.1d (ocs version 2.3d), "))  & (\\ _ .
+    writeLine(stdOut, title("(c) 1989-1999 The OPAL Group, TU Berlin"))&(\\ _ .
+    check(\\Msg . errorText("top-level error: " ++ Msg),
         argCount                                & (\\Argc.
         IF false -- Argc <= 1
-          THEN write(stdErr,"Syntax: oasys [option]* repoPath\n") &
+          THEN write(stdErr,errorText("Syntax: oasys [option]* repoPath\n")) &
                 exit(1)
           ELSE -- command line syntax is ok
                -- ignore the options at first
@@ -97,14 +98,20 @@ DEF loadStartupFiles(TclInterp) ==
         succeed(normPath(HomeDir)  ++ ".oasysrc"))          & (\\ UsrRc .
     exists?(SysRc)                                          & (\\ HaveSysRc.
     (IF HaveSysRc THEN
-         source(TclInterp, SysRc)
+         xsource(TclInterp, SysRc)
      ELSE succeed(<>) FI)                                   & (\\ _ .
     exists?(UsrRc)                                          & (\\ HaveUsrRc.
     (IF HaveUsrRc THEN
-         source(TclInterp, UsrRc)
+         xsource(TclInterp, UsrRc)
      ELSE succeed(<>) FI)                                   & (\\ _ .
     succeed(nil)                                            ))))))))
         
+FUN xsource: interpreter ** denotation -> com[string]
+DEF xsource(TclInterp, fname) ==
+  source(TclInterp, fname); (\\res.
+  IF okay?(res) THEN succeed(data(res))
+  ELSE break("Tcl error in " ++ fname)
+  FI)
 
 -- %$Command Loop$ ========================================================
 
@@ -144,14 +151,14 @@ DEF readLines ==
     (IF avail?(UName?) THEN
          asDeno(symbolic)(cont(UName?))
      ELSE succeed("") FI)                       & (\\ Prompt .
-    readLine(Prompt ++ ">",completer) & readOtherLines(Prompt)
+    readLine(prompt(Prompt ++ ">"),completer) & readOtherLines(Prompt)
     ))
 
 FUN readOtherLines: denotation -> denotation -> com[string]
 DEF readOtherLines(Prompt)(ReadInput) ==
     IF !(ReadInput) commandComplete?
       THEN succeed(!(ReadInput)) 
-      ELSE readLine(Prompt ++ "?") & (\\Line.
+      ELSE readLine(prompt2(Prompt ++ " (cont'd)>")) & (\\Line.
            readOtherLines(Prompt)(ReadInput++Line))
     FI
 

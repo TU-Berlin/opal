@@ -1,20 +1,21 @@
 ;;; Define a Toolbar for Opal buffers
-;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
+;;; Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.3 1998-11-19 10:45:51 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.4 1999-03-09 11:51:09 kd Exp $
 
-;;; This file is written for XEmacs and may not work with other Emacsen.
 
 (provide 'opal-toolbar)
 
 (defvar opal-toolbar-position 'left
   "*position in which the Opal toolbar is displayed (one of 'left or 'right)")
 
-(defvar opal-toolbar-icon-set ""
+;; empty string for normal size
+(defvar opal-toolbar-icon-set "half-"
   "*prefix to mark a specific icon set. Note that opal-toolbar-icon-width must be changed accordingly." )
 
-(defvar opal-toolbar-icon-width 68
+;; 68 for normal size
+(defvar opal-toolbar-icon-width 40
   "*width of icons in currently selected icon set.")
 
 (if opal-toolbar-position
@@ -212,7 +213,7 @@
 	  "print message in echo area"
 	  
 	  (interactive)
-	  (message "OCS system 2.3b.beta")
+	  (message "OCS system 2.3d.beta")
 	  )
 	
 	(defun opal-toolbar-sign-impl ()

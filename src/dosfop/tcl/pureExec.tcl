@@ -182,6 +182,13 @@ proc pureTexi2htmlX {redirect extra1 extra2 extra3} {
       exit $retCode
   }
 
+    if {[regexp index.texi $outputFileName]} { 
+    } else {
+	regsub ".texi" $outputFileName ".html" newName
+	regsub "DOSFOP" $newName "doc" newName
+        exec cp $newName "index.html"
+    }
+
 #  del DOSFOP/dosfop.switches
 #  catch {exec sh -c "mv [glob [getSRCname]/[file rootname [file tail [getOutputFileName]]]*.html] [getDOCname]"}
     cd ..

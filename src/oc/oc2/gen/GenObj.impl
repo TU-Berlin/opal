@@ -1,60 +1,61 @@
-
+-- % Generate C code for IC objects
 
 IMPLEMENTATION GenObj
-/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+/* %- Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-03-09 11:59:04 $ ($Revision: 1.2 $)
 
--- subject: generate C code for IC objects
--- author:  wg 6-92
+-- %- author:  wg 6-92
 
-IMPORT	Compose		COMPLETELY
-	Nat		COMPLETELY
-	Denotation	ONLY ++ !
-	Char		ONLY char ! = |=
-	String		ONLY string exist? ! : denotation -> string ::? rt
-	StringFilter	ONLY split
-	StringConv	ONLY `
-	Triple		COMPLETELY
-	Option		COMPLETELY
-	Seq		COMPLETELY
-	SeqZip		COMPLETELY
-	SeqMap		COMPLETELY
-	SeqReduce	COMPLETELY
-	SeqFilter	ONLY | partition
-	SeqCompare	ONLY eq?
-	Set[nat,<]	ONLY set #
-	ABORT		COMPLETELY
-	DEBUG		ONLY FIELD?
-
-
-IMPORT	SeqMapEnv	ONLY *
-	NatMap 		ONLY natMap ! def
-	NatMapReduce    ONLY /
-	NatMapMap       ONLY *
-
-IMPORT  Ide		ONLY ide = : ide**ide->bool global? local?
-					origin:SORT origin:ide->origin
-					= : origin**origin->bool target
-				 # global
-	IdeMap		ONLY ideMap {} def extend ! !? def? undef
-	SourceAn	ONLY pos:SORT errorKind never?
-	Store		COMPLETELY
-	Ic		COMPLETELY	
-	IcFun		ONLY obj symbol kind objs
-	PreparedOptions ONLY popts maxSubFrees positions?
-			     foreignTemplate? tailModCons?
-			     traceExpEntries? traceAllEntries?
-	Builtin		ONLY consTuple INLINE
+IMPORT  Compose         COMPLETELY
+        Nat             COMPLETELY
+        Denotation      ONLY ++ !
+        Char            ONLY char ! = |=
+        String          ONLY string exist? ! : denotation -> string ::? rt
+        StringFilter    ONLY split
+        StringConv      ONLY `
+        Triple          COMPLETELY
+        Option          COMPLETELY
+        Seq             COMPLETELY
+        SeqZip          COMPLETELY
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqFilter       ONLY | partition
+        SeqCompare      ONLY eq?
+        Set[nat,<]      ONLY set #
+        ABORT           COMPLETELY
+        DEBUG           ONLY FIELD? PRINT
 
 
-IMPORT	BoxedText	COMPLETELY
-	Macros		COMPLETELY
-	RecAna		COMPLETELY
-	GenEvalMethod	ONLY genEvalMethodTabInit
-	SymbolMap	ONLY symbolMap
+IMPORT  SeqMapEnv       ONLY *
+        NatMap          ONLY natMap ! def
+        NatMapReduce    ONLY /
+        NatMapMap       ONLY *
+
+IMPORT  Ide             ONLY ide = : ide**ide->bool global? local?
+                                        origin:SORT origin:ide->origin
+                                        = : origin**origin->bool target
+                                 # global
+        IdeMap          ONLY ideMap {} def extend ! !? def? undef
+        SourceAn        ONLY pos:SORT errorKind never?
+        Store           COMPLETELY
+        Ic              COMPLETELY      
+        IcFun           ONLY obj symbol kind objs
+        PreparedOptions ONLY popts maxSubFrees positions?
+                             foreignTemplate? tailModCons?
+                             traceExpEntries? traceAllEntries?
+        Builtin         ONLY consTuple INLINE
+
+
+IMPORT  BoxedText       COMPLETELY
+        Macros          COMPLETELY
+        RecAna          COMPLETELY
+        GenEvalMethod   ONLY genEvalMethodTabInit
+        SymbolMap       ONLY symbolMap
+       BoolConv ONLY `
+       SeqConv ONLY `
 
 
 -- ==========================================================================
@@ -62,60 +63,60 @@ IMPORT	BoxedText	COMPLETELY
 -- ==========================================================================
 
 DATA inh == 
-    inh(popts:		popts,			-- compilation options
-	mod: 		mod,			-- target module
-    	this:  		ide,			-- target objects ide
-	recursion:	recursion,		-- kind of recursion
-	ins:		seq[ide:SORT],		-- input ides
-    	outs:		seq[ide:SORT],		-- output ides
-	selMap:		ideMap[seq[sel:SORT]],  -- performed selections
-	last?:		bool,			-- last statement?
-	tmcs:		seq[ide:SORT],		-- ins of next cons or reuse
-						-- defined by tmc call
-	excl?:		ideMap[bool],		-- objects which are known
-						-- to be exclusive/shared
-	corigins:	natMap[denotation]		-- for all origins
-						-- their symbolic C name 
+    inh(popts:          popts,                  -- compilation options
+        mod:            mod,                    -- target module
+        this:           ide,                    -- target objects ide
+        recursion:      recursion,              -- kind of recursion
+        ins:            seq[ide:SORT],          -- input ides
+        outs:           seq[ide:SORT],          -- output ides
+        selMap:         ideMap[seq[sel:SORT]],  -- performed selections
+        last?:          bool,                   -- last statement?
+        tmcs:           seq[ide:SORT],          -- ins of next cons or reuse
+                                                -- defined by tmc call
+        excl?:          ideMap[bool],           -- objects which are known
+                                                -- to be exclusive/shared
+        corigins:       natMap[denotation]              -- for all origins
+                                                -- their symbolic C name 
     )
 
 
-		     
+                     
 -- ...........................................................................
 FUN newInh : popts ** mod ** ide ** recursion 
-		   ** seq[ide:SORT] ** seq[ide:SORT] ** natMap[denotation] -> inh
+                   ** seq[ide:SORT] ** seq[ide:SORT] ** natMap[denotation] -> inh
 DEF newInh(o,M,t,r,is,os,corigins) == 
     inh(o,M,t,r,is,os,{}[seq[sel:SORT]],true,<>[ide:SORT],{}[bool],corigins)
-				 
+                                 
 -- ...........................................................................
 FUN setLast : inh ** bool -> inh
 DEF setLast(C,b) ==
     inh(popts(C),mod(C),this(C),recursion(C),ins(C),outs(C),selMap(C),
-	b,tmcs(C),excl?(C),corigins(C))
+        b,tmcs(C),excl?(C),corigins(C))
 
 -- ...........................................................................
 FUN setTmcs : inh ** seq[ide:SORT] -> inh
 DEF setTmcs(C,tmcs) ==
     inh(popts(C),mod(C),this(C),recursion(C),ins(C),outs(C),
-	selMap(C),last?(C),tmcs,excl?(C),corigins(C))
+        selMap(C),last?(C),tmcs,excl?(C),corigins(C))
 
 -- ...........................................................................
 FUN setExcl : inh ** ide ** bool -> inh
 DEF setExcl(C,i,ex?) ==
     inh(popts(C),mod(C),this(C),recursion(C),ins(C),outs(C),
-	selMap(C),last?(C),tmcs(C),def(i,ex?,excl?(C)),corigins(C))
+        selMap(C),last?(C),tmcs(C),def(i,ex?,excl?(C)),corigins(C))
 
 -- ...........................................................................
 FUN extendSelMap : inh ** ide ** seq[sel:SORT] -> inh
 DEF extendSelMap(C,i,s) ==
     inh(popts(C),mod(C),this(C),recursion(C),ins(C),outs(C),
-	def(i,s,selMap(C)),last?(C),tmcs(C),excl?(C),corigins(C))
+        def(i,s,selMap(C)),last?(C),tmcs(C),excl?(C),corigins(C))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 DATA thr ==
-    thr(dsgMap:		ideMap[box],		-- mapping of local ides
-						-- to C designators
-	decMap:		ideMap[box]		-- mapping of local ides
-						-- to C declarations
+    thr(dsgMap:         ideMap[box],            -- mapping of local ides
+                                                -- to C designators
+        decMap:         ideMap[box]             -- mapping of local ides
+                                                -- to C declarations
    )
 
 -- ...........................................................................
@@ -155,32 +156,32 @@ FUN genDec : popts ** mod ** obj -> box
 DEF genDec(o,M,procedure(i,st,md,sy,is,os,s)) ==
     words(%(entryDec,varDec))
     WHERE entryDec == cProcDec(external?(o,md),entry,inTypes,resArity)
-	  inTypes  == cType * ins(st)
-	  resArity == #(outs(st))
+          inTypes  == cType * ins(st)
+          resArity == #(outs(st))
           varDec   == cVar(sy,external?(o,md),cType(st),global)
-	  msy      == symbolMap(symbol(M,origin(i)))
-	  (entry,global) ==
-		IF foreignTemplate?(o) THEN
-		    LET osy == symbolMap(sy)
-		    IN
-		    (cEntrySym(msy,i,osy),cGlobalSym(msy,i,osy))
-		ELSE (cEntry(msy,i),cGlobal(msy,i)) FI
+          msy      == symbolMap(symbol(M,origin(i)))
+          (entry,global) ==
+                IF foreignTemplate?(o) THEN
+                    LET osy == symbolMap(sy)
+                    IN
+                    (cEntrySym(msy,i,osy),cGlobalSym(msy,i,osy))
+                ELSE (cEntry(msy,i),cGlobal(msy,i)) FI
 
 DEF genDec(o,M,constant(i,st,md,sy,s)) ==
     cVar(sy,external?(o,md),cType(st),global)
     WHERE msy      == symbolMap(symbol(M,origin(i)))
-	  global   ==
-		IF foreignTemplate?(o) THEN
-		    cGlobalSym(msy,i,symbolMap(sy))
-		ELSE cGlobal(msy,i) FI
+          global   ==
+                IF foreignTemplate?(o) THEN
+                    cGlobalSym(msy,i,symbolMap(sy))
+                ELSE cGlobal(msy,i) FI
 
 DEF genDec(o,M,Ob AS denotation(i,st,md,sy,s)) ==
     cVar(sy,external?(o,md),cType(st),global)
     WHERE msy      == symbolMap(symbol(M,origin(i)))
-	  global   ==
-		IF foreignTemplate?(o) THEN
-		    cGlobalSym(msy,i,symbolMap(sy))
-		ELSE cGlobal(msy,i) FI
+          global   ==
+                IF foreignTemplate?(o) THEN
+                    cGlobalSym(msy,i,symbolMap(sy))
+                ELSE cGlobal(msy,i) FI
 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -191,13 +192,13 @@ DEF genExternDec(o,M,ob) ==
     IF clos?(st) THEN
         words(%(entryDec,varDec))
         WHERE entryDec == cProcDec(true,cEntry(msy,id),inTypes,resArity)
-	      inTypes  == cType * ins(st)
-	      resArity == #(outs(st))
+              inTypes  == cType * ins(st)
+              resArity == #(outs(st))
     ELSE varDec FI
     WHERE varDec   == cExternVarDec(cType(st),cGlobal(msy,id))
-	  st	   == store(ob)
-	  id	   == ide(ob)
-	  msy      == symbolMap(symbol(M,origin(id)))
+          st       == store(ob)
+          id       == ide(ob)
+          msy      == symbolMap(symbol(M,origin(id)))
 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -205,51 +206,51 @@ FUN genInterfaceDec : popts ** mod ** obj -> box
 DEF genInterfaceDec(o,M,procedure(i,st,md,sy,is,os,s)) ==
     lines(%(varAlias,entryAlias) ++ macroAlias ++ decs)
     WHERE varAlias   == cAlias(cGlobalSym(msy,i,osy),cGlobal(msy,i))
-	  entryAlias == cAlias(cEntrySym(msy,i,osy),cEntry(msy,i))
-	  macroAlias == 
-    			IF foreignTemplate?(o) THEN
-			   -- map numeric name to symbolic name
-	  		   %(cAlias(cMacro(msy,i),cMacroSym(msy,i,osy)))
-    			ELSE
-			   <>
-    			FI
-	  decs       == IF external?(o,md) THEN
-			    %(cExternVarDec(cType(st),cGlobalSym(msy,i,osy)),
-	  		      cProcDec(true,cEntrySym(msy,i,osy),
-				       inTypes,resArity))
-			ELSE <> FI
-	  inTypes    == cType * ins(st)
-	  resArity   == #(os)
-	  msy 	     == symbolMap(symbol(M))
-	  osy	     == symbolMap(sy)
+          entryAlias == cAlias(cEntrySym(msy,i,osy),cEntry(msy,i))
+          macroAlias == 
+                        IF foreignTemplate?(o) THEN
+                           -- map numeric name to symbolic name
+                           %(cAlias(cMacro(msy,i),cMacroSym(msy,i,osy)))
+                        ELSE
+                           <>
+                        FI
+          decs       == IF external?(o,md) THEN
+                            %(cExternVarDec(cType(st),cGlobalSym(msy,i,osy)),
+                              cProcDec(true,cEntrySym(msy,i,osy),
+                                       inTypes,resArity))
+                        ELSE <> FI
+          inTypes    == cType * ins(st)
+          resArity   == #(os)
+          msy        == symbolMap(symbol(M))
+          osy        == symbolMap(sy)
 
 DEF genInterfaceDec(o,M,constant(i,st,md,sy,s)) ==
     lines(%(varAlias) ++ varDec)
     WHERE varAlias   == cAlias(cGlobalSym(msy,i,osy),cGlobal(msy,i))
-	  varDec     == IF external?(o,md) THEN
-			    %(cExternVarDec(cType(st),cGlobalSym(msy,i,osy)))
-			ELSE <> FI
-	  msy	     == symbolMap(symbol(M))
-	  osy	     == symbolMap(sy)
+          varDec     == IF external?(o,md) THEN
+                            %(cExternVarDec(cType(st),cGlobalSym(msy,i,osy)))
+                        ELSE <> FI
+          msy        == symbolMap(symbol(M))
+          osy        == symbolMap(sy)
 
 DEF genInterfaceDec(o,M,Ob AS denotation(i,st,md,sy,r)) ==
     lines(%(varAlias) ++ varDec)
     WHERE varAlias   == cAlias(cGlobalSym(msy,i,osy),cGlobal(msy,i))
-	  varDec     == IF external?(o,md) THEN
-			    %(cExternVarDec(cType(st),cGlobalSym(msy,i,osy)))
-			ELSE <> FI
-	  msy	     == symbolMap(symbol(M))
-	  osy	     == symbolMap(sy)
+          varDec     == IF external?(o,md) THEN
+                            %(cExternVarDec(cType(st),cGlobalSym(msy,i,osy)))
+                        ELSE <> FI
+          msy        == symbolMap(symbol(M))
+          osy        == symbolMap(sy)
 
 
 FUN external? : popts ** mode -> bool
 DEF external?(_,external) == true
 DEF external?(Opts,_) == true -- ... for the moment, because of 
-			      -- dynamic linking
-	-- foreignTemplate?(Opts)
-	-- when generating templates, we treat anything as external,
-	-- to make the template also valid for changed optimization 
-	-- levels. 
+                              -- dynamic linking
+        -- foreignTemplate?(Opts)
+        -- when generating templates, we treat anything as external,
+        -- to make the template also valid for changed optimization 
+        -- levels. 
 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -257,58 +258,58 @@ FUN genMacroDef : popts ** mod ** obj -> box
 DEF genMacroDef(o,M,procedure(i,st,md,sy,is,os,s)) ==
     cMacroDef(macro,cIns,cOuts,entry)
     WHERE
-	cIns  == cLocal * is
-	cOuts == cLocal * os
-	entry == cEntrySym(msy,i,osy)
-	macro == cMacroSym(msy,i,osy)
-	msy   == symbolMap(symbol(M))
-	osy   == symbolMap(sy)
+        cIns  == cLocal * is
+        cOuts == cLocal * os
+        entry == cEntrySym(msy,i,osy)
+        macro == cMacroSym(msy,i,osy)
+        msy   == symbolMap(symbol(M))
+        osy   == symbolMap(sy)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genProcCode : popts ** mod ** obj -> box
 DEF genProcCode(opts,M,ob AS procedure(p,st,md,sy,is,os,s)) == 
-    LET r    == analyzeRecursion(ob)	
-	C    == newInh(opts,M,p,r,is,os,genCOrigins(M))	
-	T    == newThr
-	cIns == cLocal * is
-	T1   == extendDsgMap(T,is,cIns)
-	msy  == corigins(C) ! #(origin(M))
-	cpn  == cEntry(msy,p)
-	cp   == IF foreignTemplate?(opts) THEN cEntrySym(msy,p,symbolMap(sy))
-				          ELSE cpn FI
+    LET r    == analyzeRecursion(ob)    
+        C    == newInh(opts,M,p,r,is,os,genCOrigins(M)) 
+        T    == newThr
+        cIns == cLocal * is
+        T1   == extendDsgMap(T,is,cIns)
+        msy  == corigins(C) ! #(origin(M))
+        cpn  == cEntry(msy,p)
+        cp   == IF foreignTemplate?(opts) THEN cEntrySym(msy,p,symbolMap(sy))
+                                          ELSE cpn FI
         trace?  == traceExpEntries?(opts) or traceAllEntries?(opts)
     IN
     IF tailRec?(r) or someRec?(r) THEN
-	LET T2     == IF #(os) > 1 THEN
-			  extendDsgMap(T1,os,(\\n.cTupField(cResult,n))
-				   			*((1.. #(os))(\\X.X)))
-		      ELSE
-			  extendDsgMap(T1,ft(os),cResult)
-		      FI
-	    (_,cs) == gen(C)(T2,s)
-	    entry  == IF tailRec?(r) THEN
-	    		  cTailProc(sy,trace?,
-				    external?(opts,md),cp,cIns,#(os),cs)
-		      ELSE
-	    		  cProc(sy,trace?,external?(opts,md),cp,cIns,#(os),cs)
-		      FI
-	IN
-	IF #(os) > 1 THEN
-	    lines(%(entry,genClosEntry(sy,trace?,cpn,cIns,#(os))))
-	ELSE
-	    entry
-	FI
+        LET T2     == IF #(os) > 1 THEN
+                          extendDsgMap(T1,os,(\\n.cTupField(cResult,n))
+                                                        *((1.. #(os))(\\X.X)))
+                      ELSE
+                          extendDsgMap(T1,ft(os),cResult)
+                      FI
+            (_,cs) == gen(C)(T2,s)
+            entry  == IF tailRec?(r) THEN
+                          cTailProc(sy,trace?,
+                                    external?(opts,md),cp,cIns,#(os),cs)
+                      ELSE
+                          cProc(sy,trace?,external?(opts,md),cp,cIns,#(os),cs)
+                      FI
+        IN
+        IF #(os) > 1 THEN
+            lines(%(entry,genClosEntry(sy,trace?,cpn,cIns,#(os))))
+        ELSE
+            entry
+        FI
     ELSE
-	-- tmcRec?(r)
-	LET T2     == extendDsgMap(T1,os,(cRef o cTmc)*((1.. #(os))(\\X.X)))
-	    (_,cs) == gen(C)(T2,s)
-	    entry  == cTmcProc(sy,trace?,external?(opts,md),cp,cIns,#(os),cs)
-	IN
-	IF #(os) > 1 THEN
-	    lines(%(entry,genClosEntry(sy,trace?,cpn,cIns,#(os))))
-	ELSE
-	    entry
-	FI
+        -- tmcRec?(r)
+        LET T2     == extendDsgMap(T1,os,(cRef o cTmc)*((1.. #(os))(\\X.X)))
+            (_,cs) == gen(C)(T2,s)
+            entry  == cTmcProc(sy,trace?,external?(opts,md),cp,cIns,#(os),cs)
+        IN
+        IF #(os) > 1 THEN
+            lines(%(entry,genClosEntry(sy,trace?,cpn,cIns,#(os))))
+        ELSE
+            entry
+        FI
     FI
 
 -- ...........................................................................
@@ -323,14 +324,14 @@ FUN genClosEntry : denotation ** bool ** box ** seq[box] ** nat -> box
 DEF genClosEntry(sy,trace?,cp,cIns,on) ==
     cProc(sy,trace?,true,ce,cIns,1,body)
     WHERE 
-  	ce   == cClosEntry(cp)
-	body == cBlock(%(dec),prd::ass)
-	dec  == cInitDec(cTupType(on),cTmp(0),cCall(cp,cIns,1))
-	prd  == cCons(st,cResult)
-	ass  == zip(cAssign)((cTmp(0) cTupField _) * ind,
-				       cFieldC(cResult,st) * ind)
-	st   == closResultStore(on) 
-	ind  == (1 .. on)(\\X.X)
+        ce   == cClosEntry(cp)
+        body == cBlock(%(dec),prd::ass)
+        dec  == cInitDec(cTupType(on),cTmp(0),cCall(cp,cIns,1))
+        prd  == cCons(st,cResult)
+        ass  == zip(cAssign)((cTmp(0) cTupField _) * ind,
+                                       cFieldC(cResult,st) * ind)
+        st   == closResultStore(on) 
+        ind  == (1 .. on)(\\X.X)
 
 
 FUN closResultStore : nat -> store
@@ -349,9 +350,9 @@ FUN genModCode : popts ** mod ** seq[triple[nat,nat,nat]] ** seq[box] -> box
 DEF genModCode(o,M,Methods,Consts) ==
     cModInit(symbolMap(symbol(M)),usesSyms,initCode ++ Consts)
     WHERE usesSyms == /(addNoBultin, <>, uses(M))
-	  mttInit  == (\\Mth. genEvalMethodTabInit(o,Mth)) * Methods
-	  initCode == (genInit(o,M) \ mttInit)
-		      (objs(\\ob.procedure?(ob) or denotation?(ob),M))
+          mttInit  == (\\Mth. genEvalMethodTabInit(o,Mth)) * Methods
+          initCode == (genInit(o,M) \ mttInit)
+                      (objs(\\ob.procedure?(ob) or denotation?(ob),M))
 
   FUN addNoBultin: mod ** seq[denotation:SORT] -> seq[denotation:SORT]
   DEF addNoBultin(M,ts) ==
@@ -361,43 +362,43 @@ DEF genModCode(o,M,Methods,Consts) ==
   FUN genInit : popts ** mod -> obj ** seq[box] -> seq[box]
   DEF genInit(o,M)(procedure(p,st,md,sy,is,os,s),rest) ==
     LET (entry,var) ==
-		IF false and foreignTemplate?(o) THEN
-		    (cEntrySym(msy,p,symbolMap(sy)),
-		     cGlobalSym(msy,p,symbolMap(sy)))
-		ELSE
-		    (cEntry(msy,p),cGlobal(msy,p))
-		FI
-	actEntry == 
-		IF #(os) > 1 THEN
-		    cClosEntry(entry)
-		ELSE entry FI
-	lazy? ==
-		IF clos?(st) THEN
-		    IF tup?(last(ins(st))) THEN comps(last(ins(st)))<>? 
-					   ELSE false FI
-		ELSE false FI
-	msy == symbolMap(symbol(M))
-	
+                IF false and foreignTemplate?(o) THEN
+                    (cEntrySym(msy,p,symbolMap(sy)),
+                     cGlobalSym(msy,p,symbolMap(sy)))
+                ELSE
+                    (cEntry(msy,p),cGlobal(msy,p))
+                FI
+        actEntry == 
+                IF #(os) > 1 THEN
+                    cClosEntry(entry)
+                ELSE entry FI
+        lazy? ==
+                IF clos?(st) THEN
+                    IF tup?(last(ins(st))) THEN comps(last(ins(st)))<>? 
+                                           ELSE false FI
+                ELSE false FI
+        msy == symbolMap(symbol(M))
+        
     IN
     IF lazy? THEN
         cClosLazy(msy,actEntry,#(is),#(os),var)::rest
     ELSE 
-	cClos(msy,actEntry,#(is),#(os),var)::rest 
+        cClos(msy,actEntry,#(is),#(os),var)::rest 
     FI
   DEF genInit(o,M)(Ob AS denotation(d,st,md,sy,r),rest) ==
     cDeno(cString(r),cGlobal(symbolMap(symbol(M)),d))::rest
   DEF genInit(o,M)(constant(c,st,md,sy,s),rest) ==
     LET C      == newInh(o,M,c,someRec,<>[ide:SORT],%(c),genCOrigins(M))
-	T      == newThr
-	(_,init) == gen(C)(T,s)
+        T      == newThr
+        (_,init) == gen(C)(T,s)
     IN
     IF foreignTemplate?(o) THEN
-	-- add a comment what becomrs initialized
-	LET comment == cComment(genIde(C,T)(c))
-	IN
-	lines(%(comment,init))::rest
+        -- add a comment what becomrs initialized
+        LET comment == cComment(genIde(C,T)(c))
+        IN
+        lines(%(comment,init))::rest
     ELSE
-	init::rest
+        init::rest
     FI
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -412,27 +413,34 @@ DEF genConstInitCall(Opts,Mod) ==
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genConstCode : popts ** mod ** obj -> box
-DEF genConstCode(Opts,Mod,Const AS constant(Id, _, _, Sym, Init)) ==
+DEF genConstCode(Opts,Mod,Const AS constant(Id, St, M, Sym, Init)) ==
     IF complexConst?(Init)
     THEN
-	-- init code in auxiliary function: call it  
-	cConstAuxCall(symbolMap(symbol(Mod)), Id)
+        -- init code in auxiliary function: call it  
+        cConstAuxCall(symbolMap(symbol(Mod)), Id)
     ELSE
-	-- init code inline
-        ft(genInit(Opts,Mod)(Const,<>))
+        -- init code inline
+        LET Const1 == constant(Id, St, M, Sym, HaltToWarn(Init))
+        IN
+        ft(genInit(Opts,Mod)(Const1,<>))
     FI
+
+  FUN HaltToWarn: stm -> stm
+  DEF HaltToWarn(halt(m, k)) == warn(m, k)
+  DEF HaltToWarn(block(Vars, Stms)) == block(Vars, HaltToWarn * Stms)
+  DEF HaltToWarn(_else) == _else
 
 FUN genConstAuxCode : popts ** mod ** obj -> box
 DEF genConstAuxCode(Opts,Mod,Const AS constant(Id, _, _, Sym, Init)) ==
     IF complexConst?(Init) 
     THEN
-	-- generate init code
-	cConstAuxDef(symbolMap(symbol(Mod)), Id,
-		     ft(genInit(Opts,Mod)(Const,<>)))
+        -- generate init code
+        cConstAuxDef(symbolMap(symbol(Mod)), Id,
+                     ft(genInit(Opts,Mod)(Const,<>)))
     ELSE
-	word("")
+        word("")
     FI
-		
+                
 FUN complexConst? : stm -> bool
 DEF complexConst?(block(<>, Stms)) == exist?(complexConst?, Stms)
 DEF complexConst?(block(_,_)) == true
@@ -472,16 +480,16 @@ DEF genInterfaceFooter(o,M) == cInterfaceFooter(symbol(M))
 FUN genIde : inh ** thr -> ide -> box
 DEF genIde(C,T)(i) ==
     IF global?(i) THEN
-	IF foreignTemplate?(popts(C)) and (origin(i) = target) THEN
-	    cGlobalSym(msy,i,osy) 
-	    WHERE osy == symbolMap(symbol(obj(mod(C),i)))
-	ELSE
-	    cGlobal(msy,i)
-	FI
-	WHERE msy == corigins(C) ! #(origin(i))
+        IF foreignTemplate?(popts(C)) and (origin(i) = target) THEN
+            cGlobalSym(msy,i,osy) 
+            WHERE osy == symbolMap(symbol(obj(mod(C),i)))
+        ELSE
+            cGlobal(msy,i)
+        FI
+        WHERE msy == corigins(C) ! #(origin(i))
     ELSE
-	-- every local aliased in dsgMap
-	dsgMap(T) ! i
+        -- every local aliased in dsgMap
+        dsgMap(T) ! i
     FI
 
 FUN genEntry : inh ** thr -> ide -> box
@@ -514,7 +522,7 @@ DEF i in s == exist?((_ = i),s)
 FUN undeclared? : inh ** thr -> ide -> bool
 DEF undeclared?(C,T)(i) ==
     IF i def? decMap(T) THEN false 
-			ELSE ~(i in outs(C)) FI
+                        ELSE ~(i in outs(C)) FI
 
 
 -- ===========================================================================
@@ -532,11 +540,15 @@ DEF gen(C)(T,nop) ==
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 DEF gen(C)(T,pos(p)) == 
-    (T,cPos(p))	
+    (T,cPos(p)) 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 DEF gen(C)(T,halt(m,k)) == 
     (T,lines(%(cHalt(cString(m)))))
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF gen(C)(T,warn(m,k)) == 
+    (T,lines(%(cWarn(cString(m)))))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 DEF gen(C)(T,ass(is,os)) == 
@@ -568,9 +580,9 @@ DEF gen(C)(T,block(vs,ss)) ==
     IN
     IF avail?(cd?) THEN
         -- C declaration demanded
-    	LET (T1,restdecs) == genDecs(C,undefDecMap(T,ide(v)),vs)
-    	IN
-    	(T1,cont(cd?)::restdecs)
+        LET (T1,restdecs) == genDecs(C,undefDecMap(T,ide(v)),vs)
+        IN
+        (T1,cont(cd?)::restdecs)
     ELSE
         genDecs(C,T,vs)
     FI
@@ -578,7 +590,7 @@ DEF gen(C)(T,block(vs,ss)) ==
 -- ...........................................................................
 
 FUN genSequ : inh ** thr ** bool ** seq[ide:SORT] ** seq[stm:SORT] 
-						-> thr ** seq[box:SORT]
+                                                -> thr ** seq[box:SORT]
 DEF genSequ(C,T,lastAfter?,is,<>) ==
     (T,<>[box:SORT])
 DEF genSequ(C,T,lastAfter?,is,(p AS pos(_)) :: (pos(_) :: ss)) ==
@@ -604,26 +616,26 @@ DEF genSequ(C,T,lastAfter?,is,s::ss) ==
               FI
     IN
     IF <>?(ss) THEN
-	-- last statement in sequence: reset last?(C)
-   	LET (T2,cs) == gen(setLast(C,lastAfter?))(T1,s)
-	IN
-	(T2,%(cs))
+        -- last statement in sequence: reset last?(C)
+        LET (T2,cs) == gen(setLast(C,lastAfter?))(T1,s)
+        IN
+        (T2,%(cs))
     OTHERWISE
     IF (lastAfter? and (tailModCons?(popts(C)))) and
-	   (<>?(rt(ss)) and (call?(s) 
-				and (cons?(ft(ss)) or 
-						reuse?(ft(ss))))) THEN
+           (<>?(rt(ss)) and (call?(s) 
+                                and (cons?(ft(ss)) or 
+                                                reuse?(ft(ss))))) THEN
         -- tail call "modulo constructor"
         LET (C1,T2)   == prepareTmc(C,T1,s,ft(ss))
-	    (T3,cons) == gen(C1)(T2,ft(ss))
-	    (T4,call) == gen(setLast(C1,true))(T3,s)
-	IN
-	(T4,%(cons,call))
+            (T3,cons) == gen(C1)(T2,ft(ss))
+            (T4,call) == gen(setLast(C1,true))(T3,s)
+        IN
+        (T4,%(cons,call))
     ELSE
         LET (T2,cs)  == gen(C)(T1,s)
             (T3,css) == genSequ(C,T2,lastAfter?,is,ss)
-	IN
-	(T3,cs::css)
+        IN
+        (T3,cs::css)
     FI
 
   FUN sampleDefaultDec : inh -> ide ** thr -> thr
@@ -639,31 +651,31 @@ DEF genSequ(C,T,lastAfter?,is,s::ss) ==
 
 FUN prepareTmc : inh ** thr ** stm ** stm -> inh ** thr
 DEF prepareTmc(C,T,call,cons) ==
-    LET os 	   == outs(call) 
-	is 	   == ins(cons)
-	(T1,tmcis) == prepTmc(C,T,outs(call),
-				  store(cons),ins(cons),
-				  genIde(C,T)(out(cons)),1)
+    LET os         == outs(call) 
+        is         == ins(cons)
+        (T1,tmcis) == prepTmc(C,T,outs(call),
+                                  store(cons),ins(cons),
+                                  genIde(C,T)(out(cons)),1)
     IN
     (setTmcs(C,tmcis),T1)
 
   FUN prepTmc : inh ** thr ** seq[ide:SORT] ** 
-				store ** seq[ide:SORT] ** box ** nat 
-			-> thr ** seq[ide:SORT]
+                                store ** seq[ide:SORT] ** box ** nat 
+                        -> thr ** seq[ide:SORT]
   DEF prepTmc(C,T,outs,store,ins,cob,i) ==
     IF <>?(ins) THEN (T,<>[ide:SORT])
     OTHERWISE
     IF ft(ins) in outs THEN
-	-- 1. overwrite designator for ft(ins) by field selection on cob
-	-- 2. define declaration of ft(ins) by cNop to
-	--    prevent the call generator to grab it for tuple results
-	LET T1 == extendDsgMap(T,ft(ins),cField(cob,store,i))
-	    T2 == extendDecMap(T1,ft(ins),cNop)
-	    (T3,tmcis) == prepTmc(C,T2,outs,store,rt(ins),cob,succ(i))
-	IN
-	(T3,ft(ins)::tmcis)
+        -- 1. overwrite designator for ft(ins) by field selection on cob
+        -- 2. define declaration of ft(ins) by cNop to
+        --    prevent the call generator to grab it for tuple results
+        LET T1 == extendDsgMap(T,ft(ins),cField(cob,store,i))
+            T2 == extendDecMap(T1,ft(ins),cNop)
+            (T3,tmcis) == prepTmc(C,T2,outs,store,rt(ins),cob,succ(i))
+        IN
+        (T3,ft(ins)::tmcis)
     ELSE
-	prepTmc(C,T,outs,store,rt(ins),cob,succ(i))
+        prepTmc(C,T,outs,store,rt(ins),cob,succ(i))
     FI
 
 -- ===========================================================================
@@ -672,164 +684,164 @@ DEF prepareTmc(C,T,call,cons) ==
 
 DEF gen(C)(T,eval(i,is,os)) == 
     IF #(os) = 1 THEN
-	-- arity 1
+        -- arity 1
         LET eval == cEval(genIde(C,T)(i),genIde(C,T)*is,1)
-	    T1   == IF undeclared?(C,T)(ft(os)) THEN
-			extendDecMap(T,ft(os),cDec(cType(some),co))
-		    ELSE T FI
-	    co   == genIde(C,T)(ft(os))
-	IN
-	(T1,cAssign(eval,co))
+            T1   == IF undeclared?(C,T)(ft(os)) THEN
+                        extendDecMap(T,ft(os),cDec(cType(some),co))
+                    ELSE T FI
+            co   == genIde(C,T)(ft(os))
+        IN
+        (T1,cAssign(eval,co))
     ELSE
-	-- arity > 1
-	LET dec   == cInitDec(cType(someProd),cTmp(0),eval)
+        -- arity > 1
+        LET dec   == cInitDec(cType(someProd),cTmp(0),eval)
             eval  == cEval(genIde(C,T)(i),genIde(C,T)*is,1)
-	    ass   == zip(cAssign)(cFieldC(cTmp(0),st) * ((1 .. #(os))(\\X.X)),
- 			 	  cos)
-	    free  == IF (#(is) = 1) and (ft(is) = consTuple(0)) THEN
-			  -- this is an evaluation of a lazy closure,
-			  -- and the result tuple may be shared
-		          cIte(cExcl(cTmp(0),1),
-			       cDisposeFlat(cTmp(0),st),
-			       words(cDecr(cTmp(0),st,1)::
-					((\\o.cCopy(o,some,1))*cos)))
-		     ELSE 
-			  -- the result tuple of a none-lazy closure may never
-			  -- be shared, believe me ...
-			  cDisposeFlat(cTmp(0),st)
-		     FI
-	    T1    == extendDecMap(T,os1,((cType(some) cDec _) o genIde(C,T))*os1)
-	    os1	  == undeclared?(C,T) | os
-	    st	  == closResultStore(#(os))
-	    cos	  == genIde(C,T)*os
-	IN
-	(T1,cBlock(%(dec),ass+%free))
+            ass   == zip(cAssign)(cFieldC(cTmp(0),st) * ((1 .. #(os))(\\X.X)),
+                                  cos)
+            free  == IF (#(is) = 1) and (ft(is) = consTuple(0)) THEN
+                          -- this is an evaluation of a lazy closure,
+                          -- and the result tuple may be shared
+                          cIte(cExcl(cTmp(0),1),
+                               cDisposeFlat(cTmp(0),st),
+                               words(cDecr(cTmp(0),st,1)::
+                                        ((\\o.cCopy(o,some,1))*cos)))
+                     ELSE 
+                          -- the result tuple of a none-lazy closure may never
+                          -- be shared, believe me ...
+                          cDisposeFlat(cTmp(0),st)
+                     FI
+            T1    == extendDecMap(T,os1,((cType(some) cDec _) o genIde(C,T))*os1)
+            os1   == undeclared?(C,T) | os
+            st    == closResultStore(#(os))
+            cos   == genIde(C,T)*os
+        IN
+        (T1,cBlock(%(dec),ass+%free))
     FI
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 DEF gen(C)(T,call(p,is,os)) == 
     IF last?(C) and (this(C) = p) THEN
-	genTailCall(C,T,is,os)
+        genTailCall(C,T,is,os)
     OTHERWISE
     IF builtin?(kind(mod(C),origin(p))) 
-			or foreign?(kind(mod(C),origin(p))) THEN
-	genExpand(C,T,p,is,os)
+                        or foreign?(kind(mod(C),origin(p))) THEN
+        genExpand(C,T,p,is,os)
     ELSE
         genPlainCall(C,T,p,is,os)
     FI
 
 -- ...........................................................................
 FUN genPlainCall : inh ** thr ** ide ** seq[ide:SORT] ** seq[ide:SORT] 
-							-> thr ** box
+                                                        -> thr ** box
 DEF genPlainCall(C,T,p,is,os) ==
     LET cp == genEntry(C,T)(p)
     IN
     IF ~(tmcRec?(recursion(C)))  
-		and (~(this(C) = ft(outs(C)))
-		and eq?(= : ide**ide->bool)(outs(C),os)) THEN
+                and (~(this(C) = ft(outs(C)))
+                and eq?(= : ide**ide->bool)(outs(C),os)) THEN
         /* Result of call is linear directed to result ides,
-	   thus we can use the result ide directly, i.e.: 
-		cResult = cTarget(...);
-	*/
-	(T,cAssign(cCall(cp,genIde(C,T)*is,#(os)),cResult))
+           thus we can use the result ide directly, i.e.: 
+                cResult = cTarget(...);
+        */
+        (T,cAssign(cCall(cp,genIde(C,T)*is,#(os)),cResult))
     OTHERWISE
     IF #(os) = 1 THEN
-	-- arity 1
-	LET call == cCall(cp,genIde(C,T)*is,1)
-	    co   == genIde(C,T)(ft(os))
-	    T1   == IF undeclared?(C,T)(ft(os)) THEN
-	    	        extendDecMap(T,ft(os),cDec(cType(some),co))
-		    ELSE T FI
-	IN
-	(T1,cAssign(call,co))
+        -- arity 1
+        LET call == cCall(cp,genIde(C,T)*is,1)
+            co   == genIde(C,T)(ft(os))
+            T1   == IF undeclared?(C,T)(ft(os)) THEN
+                        extendDecMap(T,ft(os),cDec(cType(some),co))
+                    ELSE T FI
+        IN
+        (T1,cAssign(call,co))
     ELSE
-	-- arity > 1
+        -- arity > 1
         LET x? ==(undeclared?(C,T)) find?(os) 
         IN
         IF avail?(x?) THEN
-	    /* Result of call is directed to at least one
-	       undeclared ide. This one is used to declare a 
-	       TUP variable. All undeclared ides are
-	       then mapped to components of this tuple, declared
-	       are copied (in genResultAssigns).
-	    */
-	    LET x         == cont(x?) 
-	        cx        == genIde(C,T)(x)
-		call	  == cCall(cp,genIde(C,T)*is,#(os))
-		(T1,as)   == genResultAssigns(C,T,x,cx,os,1)
-		T2        == extendDecMap(T1,x,cDec(cTupType(#(os)),cx))
-	    IN
-	    (T2,words(cAssign(call,cx)::as))
-	ELSE
-	    /* Result of call is directed only to declared ides.
-	       Generate:
-	       { tupN cTmp = cTarget(..); 
-	         o1 = cTmp.c1; o2 = cTmp.c2; ...}
-	    */
-	    LET dec == cInitDec(cTupType(#(os)),cTmp(0),
-			        cCall(cp,genIde(C,T)*is,#(os)))
-		ass == zip(cAssign)((cTmp(0) cTupField _)*((1.. #(os))(\\X.X)),
-				    genIde(C,T)*os)
-			   
-	    IN
-	    (T,cBlock(%(dec),ass))
-	FI
+            /* Result of call is directed to at least one
+               undeclared ide. This one is used to declare a 
+               TUP variable. All undeclared ides are
+               then mapped to components of this tuple, declared
+               are copied (in genResultAssigns).
+            */
+            LET x         == cont(x?) 
+                cx        == genIde(C,T)(x)
+                call      == cCall(cp,genIde(C,T)*is,#(os))
+                (T1,as)   == genResultAssigns(C,T,x,cx,os,1)
+                T2        == extendDecMap(T1,x,cDec(cTupType(#(os)),cx))
+            IN
+            (T2,words(cAssign(call,cx)::as))
+        ELSE
+            /* Result of call is directed only to declared ides.
+               Generate:
+               { tupN cTmp = cTarget(..); 
+                 o1 = cTmp.c1; o2 = cTmp.c2; ...}
+            */
+            LET dec == cInitDec(cTupType(#(os)),cTmp(0),
+                                cCall(cp,genIde(C,T)*is,#(os)))
+                ass == zip(cAssign)((cTmp(0) cTupField _)*((1.. #(os))(\\X.X)),
+                                    genIde(C,T)*os)
+                           
+            IN
+            (T,cBlock(%(dec),ass))
+        FI
     FI
 
   FUN genResultAssigns : inh ** thr ** ide ** box ** seq[ide:SORT] ** nat 
-				      -> thr ** seq[box:SORT]
+                                      -> thr ** seq[box:SORT]
   DEF genResultAssigns(C,T,x,cx,os,i) ==
     IF <>?(os) THEN (T,<>[box:SORT])
     OTHERWISE
     IF undeclared?(C,T)(ft(os)) THEN
-	LET T1 == extendDsgMap(T,ft(os),cTupField(cx,i))
-			-- overwrite designator mapping
-	    T2 == IF ~(ft(os) = x) THEN
-			-- set to empty declaration
-			extendDecMap(T1,ft(os),cNop)
-		  ELSE T1 FI
-	IN
-	genResultAssigns(C,T2,x,cx,rt(os),succ(i))
+        LET T1 == extendDsgMap(T,ft(os),cTupField(cx,i))
+                        -- overwrite designator mapping
+            T2 == IF ~(ft(os) = x) THEN
+                        -- set to empty declaration
+                        extendDecMap(T1,ft(os),cNop)
+                  ELSE T1 FI
+        IN
+        genResultAssigns(C,T2,x,cx,rt(os),succ(i))
     ELSE
-	LET (T1,as1) == genResultAssigns(C,T,x,cx,rt(os),succ(i))
-	IN
-	(T1,cAssign(cTupField(cx,i),genIde(C,T)(ft(os)))::as1)
+        LET (T1,as1) == genResultAssigns(C,T,x,cx,rt(os),succ(i))
+        IN
+        (T1,cAssign(cTupField(cx,i),genIde(C,T)(ft(os)))::as1)
     FI
-	
+        
 -- ...........................................................................
 FUN genExpand : inh ** thr ** ide ** seq[ide:SORT] ** seq[ide:SORT] 
-					-> thr ** box
+                                        -> thr ** box
 DEF genExpand(C,T,i,is,os) == 
     (T1,cExpand(genMacro(C,T)(i),genIde(C,T)*is,genIde(C,T)*os))
     WHERE 
-	  T1    == extendDecMap(T,osNew,((cType(some) cDec _) o cLocal)*osNew)
-	  osNew == undeclared?(C,T) | os
+          T1    == extendDecMap(T,osNew,((cType(some) cDec _) o cLocal)*osNew)
+          osNew == undeclared?(C,T) | os
 
 -- ===========================================================================
 -- Inline
 -- ===========================================================================
 
 DEF gen(C)(T,inlineStatic(m,i,out)) == 
-    LET	T1    == extendDecMap(T,osNew,((cType(some) cDec _) o cLocal)*osNew)
-	osNew == undeclared?(C,T) | %(out)
-	oGen == genIde(C,T)(out)
+    LET T1    == extendDecMap(T,osNew,((cType(some) cDec _) o cLocal)*osNew)
+        osNew == undeclared?(C,T) | %(out)
+        oGen == genIde(C,T)(out)
     IN
     LET (Macro, Type) == split(\\Ch. Ch |= !(":"), !(m))
     IN     
     IF ::?(Type) THEN
         -- literal
-	(T1, cAssign(cCall(word(`(Macro)), 
-			       %(cCall(word(`(rt(Type))), 
-				       %(word(i)), 1)), 1),
-			 oGen))
+        (T1, cAssign(cCall(word(`(Macro)), 
+                               %(cCall(word(`(rt(Type))), 
+                                       %(word(i)), 1)), 1),
+                         oGen))
     ELSE
         (T1, cAssign(cCall(word(m), %(cString(i)), 1), oGen))
     FI
 
 DEF gen(C)(T,inlineDynamic(m,i,out)) == 
-    LET	T1    == extendDecMap(T,osNew,((cType(some) cDec _) o cLocal)*osNew)
-	osNew == undeclared?(C,T) | %(out)
-	oGen == genIde(C,T)(out)
+    LET T1    == extendDecMap(T,osNew,((cType(some) cDec _) o cLocal)*osNew)
+        osNew == undeclared?(C,T) | %(out)
+        oGen == genIde(C,T)(out)
     IN
     (T1, cAssign(cCall(word(m), %(genIde(C,T)(i)), 1), oGen))
 
@@ -844,13 +856,13 @@ DEF genTailCall(C,T,is,os) ==
     /* Reassign to input and (probably) tmc output arguments and restart.
     */
     LET iAss == genMultAssign(C,T,is,ins(C),false)
-	T1   == extendDsgMap(T,outs(C),cTmc * ((1 .. #(os))(\\X.X)))
-	oAss == genMultAssign(C,T1,os,outs(C),true)
+        T1   == extendDsgMap(T,outs(C),cTmc * ((1 .. #(os))(\\X.X)))
+        oAss == genMultAssign(C,T1,os,outs(C),true)
     IN
     (T,words(%(iAss,oAss,cRestart)))
 
   FUN genMultAssign : inh ** thr ** seq[ide:SORT] 
-			** seq[ide:SORT] ** bool -> box
+                        ** seq[ide:SORT] ** bool -> box
   DEF genMultAssign(C,T,is,os,result?) ==
     /* Generate multiple argument assignment with eventually overlapping 
        objects. 
@@ -858,50 +870,50 @@ DEF genTailCall(C,T,is,os) ==
     LET (cAss,noOfTmps) == genMultAssign1(C,T,is,os,result?,0) 
     IN
     IF noOfTmps > 0 THEN
-	-- temporarys required
-	LET tmps == ((ctype cDec _) o cTmp) * ((1 .. noOfTmps)(\\X.X))
-	    ctype == IF result? THEN cPtrType(some) ELSE cType(some) FI
-	IN
-	cBlock(tmps,cAss)
+        -- temporarys required
+        LET tmps == ((ctype cDec _) o cTmp) * ((1 .. noOfTmps)(\\X.X))
+            ctype == IF result? THEN cPtrType(some) ELSE cType(some) FI
+        IN
+        cBlock(tmps,cAss)
     ELSE
-	words(cAss)
+        words(cAss)
     FI
 
   FUN genMultAssign1 : inh ** thr ** seq[ide:SORT] ** seq[ide:SORT] 
-			       ** bool ** nat -> seq[box:SORT] ** nat
+                               ** bool ** nat -> seq[box:SORT] ** nat
   DEF genMultAssign1(C,T,is,os,result?,cnt) ==
     IF <>?(is) THEN (<>[box:SORT],cnt)
     OTHERWISE
     IF ft(is) = ft(os) THEN
-	-- Skip obsolete assignment 
-	genMultAssign1(C,T,rt(is),rt(os),result?,cnt)
+        -- Skip obsolete assignment 
+        genMultAssign1(C,T,rt(is),rt(os),result?,cnt)
     OTHERWISE 
     IF result? and ~(tmcRec?(recursion(C))) THEN
-	-- for safety
-	(ABORT("genMultAssign'GenObj: expected tmc kind"),cnt)
+        -- for safety
+        (ABORT("genMultAssign'GenObj: expected tmc kind"),cnt)
     ELSE
-	LET ci == IF result? and (ft(is) in tmcs(C)) THEN
-		      -- source is the address of cell field.
-		      cAdr(genIde(C,T)(ft(is)))
-		  ELSE genIde(C,T)(ft(is)) FI
-	    co == genIde(C,T)(ft(os))
-	IN
+        LET ci == IF result? and (ft(is) in tmcs(C)) THEN
+                      -- source is the address of cell field.
+                      cAdr(genIde(C,T)(ft(is)))
+                  ELSE genIde(C,T)(ft(is)) FI
+            co == genIde(C,T)(ft(os))
+        IN
         IF ft(os) in rt(is) THEN
     -- !!!!!!!!!!!!! elaborate for TMC !!!!!!!!!!!!!!
-	    -- need to save co
-	    (s1::(s2::rest),cnt1)
-	    WHERE
-	        s1 == cAssign(co,cTmp(succ(cnt)))
-	        s2 == cAssign(ci,co)
-	        T1 == extendDsgMap(T,ft(os),cTmp(succ(cnt)))
-			-- overwrite designator for ft(os) with ctmp
-		(rest,cnt1) == genMultAssign1(C,T1,rt(is),rt(os),result?,
-						succ(cnt))
-    	ELSE
-	    (cAssign(ci,co)::rest,cnt1)
-	    WHERE 
-		(rest,cnt1) == genMultAssign1(C,T,rt(is),rt(os),result?,cnt)
-	FI
+            -- need to save co
+            (s1::(s2::rest),cnt1)
+            WHERE
+                s1 == cAssign(co,cTmp(succ(cnt)))
+                s2 == cAssign(ci,co)
+                T1 == extendDsgMap(T,ft(os),cTmp(succ(cnt)))
+                        -- overwrite designator for ft(os) with ctmp
+                (rest,cnt1) == genMultAssign1(C,T1,rt(is),rt(os),result?,
+                                                succ(cnt))
+        ELSE
+            (cAssign(ci,co)::rest,cnt1)
+            WHERE 
+                (rest,cnt1) == genMultAssign1(C,T,rt(is),rt(os),result?,cnt)
+        FI
     FI
 
 -- ===========================================================================
@@ -913,25 +925,25 @@ DEF gen(C)(T,case(i,st,ms,df)) ==
         (primMatches,prodMatches) == partition(primMatch?,ms)
         (T1,primPathes) == (genMatch(C,i))*(T,primMatches)
         (T2,prodPathes) == (genMatch(C,i))*(T1,prodMatches)
-	n == #(primPathes)  
-	m == #(prodPathes)
+        n == #(primPathes)  
+        m == #(prodPathes)
     IN
     IF neverReached?(df) THEN
-	IF m = 0 THEN
-	    (T2,genTotalSwitch(ci,somePrim,n,primPathes))
-	IF n = 0 THEN
-	    (T2,genTotalSwitch(ci,someProd,m,prodPathes))
-	ELSE
-	    (T2,cIte(cTest(ci,somePrim),
-		     genTotalSwitch(ci,somePrim,n,primPathes),
-		     genTotalSwitch(ci,someProd,m,prodPathes)))
-	FI
+        IF m = 0 THEN
+            (T2,genTotalSwitch(ci,somePrim,n,primPathes))
+        IF n = 0 THEN
+            (T2,genTotalSwitch(ci,someProd,m,prodPathes))
+        ELSE
+            (T2,cIte(cTest(ci,somePrim),
+                     genTotalSwitch(ci,somePrim,n,primPathes),
+                     genTotalSwitch(ci,someProd,m,prodPathes)))
+        FI
     ELSE
-	LET (T3,default) == gen(C)(T2,df)
-	IN
-	(T3,genSwitch(ci,st,n,m,primPathes,prodPathes,default))
+        LET (T3,default) == gen(C)(T2,df)
+        IN
+        (T3,genSwitch(ci,st,n,m,primPathes,prodPathes,default))
     FI
-	    
+            
 
   FUN primMatch? : match -> bool
   DEF primMatch?(m) == LET s==store(m) IN
@@ -941,32 +953,32 @@ DEF gen(C)(T,case(i,st,ms,df)) ==
   DEF neverReached?(s) == 
     IF halt?(s)  THEN never?(kind(s)) 
     IF block?(s) THEN exist?(neverReached?,stms(s)) 
-		 ELSE false FI
+                 ELSE false FI
 
   FUN genTotalSwitch : box ** store ** nat 
-			 ** seq[triple[set[nat,<],store,box]] -> box
+                         ** seq[triple[set[nat,<],store,box]] -> box
   DEF genTotalSwitch(ci,store,n,pathes) ==
     IF n = 1 THEN 3rd(ft(pathes))
     IF n = 2 and #(1st(ft(pathes))) = 1 
-	     THEN cIte(cTestTag(ci,store,1st(ft(pathes)),2nd(ft(pathes))),
-		       3rd(ft(pathes)),
-		       3rd(ft(rt(pathes))))
-	     ELSE cSwitch(cTag(ci,store),
-			  (\\p. cCase(1st(p),2nd(p),3rd(p))) * rt(pathes),
-			  3rd(ft(pathes)))
-	     FI
+             THEN cIte(cTestTag(ci,store,1st(ft(pathes)),2nd(ft(pathes))),
+                       3rd(ft(pathes)),
+                       3rd(ft(rt(pathes))))
+             ELSE cSwitch(cTag(ci,store),
+                          (\\p. cCase(1st(p),2nd(p),3rd(p))) * rt(pathes),
+                          3rd(ft(pathes)))
+             FI
 
   FUN genSwitch : box ** store ** nat ** nat **
-  		  seq[triple[set[nat,<],store,box]] ** 
-		  seq[triple[set[nat,<],store,box]] ** box -> box
+                  seq[triple[set[nat,<],store,box]] ** 
+                  seq[triple[set[nat,<],store,box]] ** box -> box
   DEF genSwitch(ci,caseSt,n,m,primPathes,prodPathes,default) ==
     genItes(ci,caseSt,primPathes,
-	     genItes(ci,caseSt,prodPathes,default))
+             genItes(ci,caseSt,prodPathes,default))
 
   FUN genItes : box ** store ** seq[triple[set[nat,<],store,box]] ** box -> box
   DEF genItes(ci,caseSt,&(tags,matchSt,path) :: rest,default) ==
     cIte(cTestTag(ci,caseSt,tags,matchSt),path, 
-	 genItes(ci,caseSt,rest,default))
+         genItes(ci,caseSt,rest,default))
   DEF genItes(ci,caseSt,<>,default) ==
     default
 
@@ -976,30 +988,30 @@ DEF gen(C)(T,case(i,st,ms,df)) ==
      the type of the discriminator to make this variant work :-(
   DEF genSwitch(ci,caseSt,n,m,primPathes,prodPathes,default) ==
     IF n+m = 0 THEN
-	default
+        default
     OTHERWISE
     IF n = 1 ANDIF onePrim?(2nd(ft(primPathes))) THEN
-   	-- onePrim has no actual tag and cannot be handled over cSwitch
-	cIte(cTestTag(ci,caseSt,1st(ft(primPathes)),2nd(ft(primPathes))),
-	     3rd(ft(primPathes)),
-	     genSwitch(ci,someProd,0,m,<>,prodPathes,default))
+        -- onePrim has no actual tag and cannot be handled over cSwitch
+        cIte(cTestTag(ci,caseSt,1st(ft(primPathes)),2nd(ft(primPathes))),
+             3rd(ft(primPathes)),
+             genSwitch(ci,someProd,0,m,<>,prodPathes,default))
     IF m = 1 ANDIF oneProd?(2nd(ft(prodPathes))) THEN
-   	-- simular for oneProd
-	cIte(cTestTag(ci,caseSt,1st(ft(prodPathes)),2nd(ft(prodPathes))),
-	     3rd(ft(prodPathes)),
-	     genSwitch(ci,somePrim,n,0,primPathes,<>,default))
+        -- simular for oneProd
+        cIte(cTestTag(ci,caseSt,1st(ft(prodPathes)),2nd(ft(prodPathes))),
+             3rd(ft(prodPathes)),
+             genSwitch(ci,somePrim,n,0,primPathes,<>,default))
     ELSE
         -- no more onePrims or oneProds
-	LET pathes == prodPathes ++ primPathes
-	IN
+        LET pathes == prodPathes ++ primPathes
+        IN
         IF (n+m) > 1 or exist?(\\p. #(1st(p)) > 1,pathes) THEN
-	    cSwitch(cTag(ci,caseSt),
-		    (\\p. cCase(1st(p),2nd(p),3rd(p))) * pathes,
-		    default)
-    	ELSE
+            cSwitch(cTag(ci,caseSt),
+                    (\\p. cCase(1st(p),2nd(p),3rd(p))) * pathes,
+                    default)
+        ELSE
             cIte(cTestTag(ci,caseSt,1st(ft(pathes)),2nd(ft(pathes))),
-	     	 3rd(ft(pathes)),default)
-    	FI
+                 3rd(ft(pathes)),default)
+        FI
     FI
     */
 
@@ -1009,97 +1021,97 @@ DEF gen(C)(T,case(i,st,ms,df)) ==
 -- ===========================================================================
 
 FUN genMatch : inh ** ide -> thr ** match 
-				-> thr ** triple[set[nat,<],store,box]
+                                -> thr ** triple[set[nat,<],store,box]
 DEF genMatch(C,ob)(T,match(tags,st,sls,ss)) == 
     LET ci          == genIde(C,T)(ob)
-	(T1,cdecs)  == genSelDecs(C,T,ci,st,sls,1)
-	plainCopys  == (genPlainCopy(C,T1)/ <>[box:SORT])(sls)
-	C1          == setLast(
-			IF ::?(sls) THEN extendSelMap(C,ob,sls)
-				    ELSE C FI,false)
+        (T1,cdecs)  == genSelDecs(C,T,ci,st,sls,1)
+        plainCopys  == (genPlainCopy(C,T1)/ <>[box:SORT])(sls)
+        C1          == setLast(
+                        IF ::?(sls) THEN extendSelMap(C,ob,sls)
+                                    ELSE C FI,false)
     IN
     IF <>?(cdecs) or ::?(plainCopys) THEN
-	-- plain selection or no selection
-	(T2,&(tags,st,cBlock(cdecs,
-			words(plainCopys)::rest)))
-	WHERE
-	  (T2,rest) == genSequ(C1,T1,last?(C),<>[ide:SORT],ss)
+        -- plain selection or no selection
+        (T2,&(tags,st,cBlock(cdecs,
+                        words(plainCopys)::rest)))
+        WHERE
+          (T2,rest) == genSequ(C1,T1,last?(C),<>[ide:SORT],ss)
     ELSE
-	-- borrow/reuse selection	
-	LET exclCopys   == (genExclCopy(C1,T1)/ <>[box:SORT])(sls)
-	    sharedCopys == (genSharedCopy(C1,T1)/ <>[box:SORT])(sls)
-	    lazySels    == genLazySels(C1,T1,ci,st,sls,1)
-	    (n,until,after)  == findFreeOrReuse(C1,ob,ss)
+        -- borrow/reuse selection       
+        LET exclCopys   == (genExclCopy(C1,T1)/ <>[box:SORT])(sls)
+            sharedCopys == (genSharedCopy(C1,T1)/ <>[box:SORT])(sls)
+            lazySels    == genLazySels(C1,T1,ci,st,sls,1)
+            (n,until,after)  == findFreeOrReuse(C1,ob,ss)
         IN
-	IF n > 0 THEN
-	    -- free or reuse in near distance: distribute statements 
-	    -- into pathes of exclusive test. 
-	    (T4,&(tags,st,cBlock(cdecs,exclIte::rest)))
-	    WHERE
-	      exclIte   == cIte(cExcl(ci,n),
-			        lines(words(exclCopys)::exclCase),
-			        lines(words(lazySels++sharedCopys)
-				      			::sharedCase))
-	      (T2,exclCase)  == genSequ(setExcl(C1,ob,true),T1,after<>?,
-					<>[ide:SORT],until)
-	      (T3,sharedCase) == genSequ(setExcl(C1,ob,false),T2,after<>?,
-					<>[ide:SORT],until)
-	      (T4,rest)	== genSequ(C1,T3,last?(C),<>[ide:SORT],after)
-	ELSE
-	    -- introduce sharing variable.
-	    (T2,&(tags,st,cBlock(cdecs+%sdec,exclIte::rest)))
-	    WHERE
-	      sdec      == cInitDec(cFlagType,cExclVar(ci),cExcl(ci,1))
-	      exclIte   == cIte(cExclVar(ci),
-				words(exclCopys),
-				words(lazySels++sharedCopys))
-	      (T2,rest) == genSequ(C1,T1,last?(C),<>[ide:SORT],ss)
+        IF n > 0 THEN
+            -- free or reuse in near distance: distribute statements 
+            -- into pathes of exclusive test. 
+            (T4,&(tags,st,cBlock(cdecs,exclIte::rest)))
+            WHERE
+              exclIte   == cIte(cExcl(ci,n),
+                                lines(words(exclCopys)::exclCase),
+                                lines(words(lazySels++sharedCopys)
+                                                        ::sharedCase))
+              (T2,exclCase)  == genSequ(setExcl(C1,ob,true),T1,after<>?,
+                                        <>[ide:SORT],until)
+              (T3,sharedCase) == genSequ(setExcl(C1,ob,false),T2,after<>?,
+                                        <>[ide:SORT],until)
+              (T4,rest) == genSequ(C1,T3,last?(C),<>[ide:SORT],after)
+        ELSE
+            -- introduce sharing variable.
+            (T2,&(tags,st,cBlock(cdecs+%sdec,exclIte::rest)))
+            WHERE
+              sdec      == cInitDec(cFlagType,cExclVar(ci),cExcl(ci,1))
+              exclIte   == cIte(cExclVar(ci),
+                                words(exclCopys),
+                                words(lazySels++sharedCopys))
+              (T2,rest) == genSequ(C1,T1,last?(C),<>[ide:SORT],ss)
         FI
     FI
 
   FUN genSelDecs : inh ** thr ** box ** store ** seq[sel:SORT] ** nat 
-				     -> thr ** seq[box:SORT]
+                                     -> thr ** seq[box:SORT]
   DEF genSelDecs(C,T,ci,st,sls,i) ==
     IF <>?(sls) THEN (T,<>[box:SORT])
     OTHERWISE
     IF dead?(ft(sls)) THEN
-	-- skip
-	genSelDecs(C,T,ci,st,rt(sls),succ(i))
+        -- skip
+        genSelDecs(C,T,ci,st,rt(sls),succ(i))
     ELSE
-	IF select? THEN
-	    (T2,cInitDec(cType(store(s)),cs,cField(ci,st,i)) :: rest)
-	ELSE
-	    (T2,cDec(cType(store(s)),cs) :: rest)
-	FI
-	WHERE
-	  select?   == IF reuse?(s) THEN times(s) > 1 ELSE true FI
-	  cs        == cLocal(ide(s))
-	  T1        == extendDsgMap(T,ide(s),cs)
-	  (T2,rest) == genSelDecs(C,T1,ci,st,rt(sls),succ(i))
-	  s         == ft(sls)
+        IF select? THEN
+            (T2,cInitDec(cType(store(s)),cs,cField(ci,st,i)) :: rest)
+        ELSE
+            (T2,cDec(cType(store(s)),cs) :: rest)
+        FI
+        WHERE
+          select?   == IF reuse?(s) THEN times(s) > 1 ELSE true FI
+          cs        == cLocal(ide(s))
+          T1        == extendDsgMap(T,ide(s),cs)
+          (T2,rest) == genSelDecs(C,T1,ci,st,rt(sls),succ(i))
+          s         == ft(sls)
     FI
 
   FUN genLazySels : inh ** thr ** box ** store ** seq[sel:SORT] ** nat
-				       -> seq[box:SORT]
+                                       -> seq[box:SORT]
   DEF genLazySels(C,T,ci,st,sls,i) ==
     IF <>?(sls) THEN <>[box:SORT]
     ELSE
-	LET s     == ft(sls)
-	    lazy? == IF reuse?(s) THEN times(s)=1 ELSE false FI
-	IN
-	IF lazy? THEN
-	    cAssign(cField(ci,st,i),genIde(C,T)(ide(s)))::rest
-	ELSE rest FI
-	    WHERE rest == genLazySels(C,T,ci,st,rt(sls),succ(i))
+        LET s     == ft(sls)
+            lazy? == IF reuse?(s) THEN times(s)=1 ELSE false FI
+        IN
+        IF lazy? THEN
+            cAssign(cField(ci,st,i),genIde(C,T)(ide(s)))::rest
+        ELSE rest FI
+            WHERE rest == genLazySels(C,T,ci,st,rt(sls),succ(i))
     FI
-	
+        
 
   FUN genExclCopy : inh ** thr -> sel ** seq[box:SORT] -> seq[box:SORT]
   DEF genExclCopy(C,T)(s,bs) ==
     IF borrow?(s) or reuse?(s) THEN
-	IF times(s) > 1 THEN
-	    cCopy(genIde(C,T)(ide(s)),store(s),pred(times(s)))::bs
-	ELSE bs FI
+        IF times(s) > 1 THEN
+            cCopy(genIde(C,T)(ide(s)),store(s),pred(times(s)))::bs
+        ELSE bs FI
     ELSE bs FI
 
   FUN genSharedCopy : inh ** thr -> sel ** seq[box:SORT] -> seq[box:SORT]
@@ -1109,63 +1121,63 @@ DEF genMatch(C,ob)(T,match(tags,st,sls,ss)) ==
     ELSE bs FI
 
   FUN genPlainCopy : inh ** thr -> sel ** seq[box:SORT] 
-				-> seq[box:SORT]
+                                -> seq[box:SORT]
   DEF genPlainCopy(C,T)(s,bs) ==
     IF plain?(s) THEN
-	cCopy(genIde(C,T)(ide(s)),store(s),times(s))::bs
+        cCopy(genIde(C,T)(ide(s)),store(s),times(s))::bs
     ELSE bs FI
 
   FUN findFreeOrReuse: inh ** ide ** seq[stm:SORT] 
-				-> nat ** seq[stm:SORT] ** seq[stm:SORT]
+                                -> nat ** seq[stm:SORT] ** seq[stm:SORT]
   DEF findFreeOrReuse(C,i,ss) ==
     IF <>?(ss) THEN
-	(0,ss,ss)
+        (0,ss,ss)
     ELSE
-	LET s 	==  ft(ss)
-	    n 	==  IF free?(s) THEN
-			IF ide(s) = i THEN times(s) ELSE 0 FI
-		    IF reuse?(s) THEN
-			IF cand(s) = i THEN 1 ELSE 0 FI
-		    ELSE 0 FI
-	    
-	IN
-	IF n > 0 THEN
-	    (n,s%,rt(ss))
-	OTHERWISE
-	IF block?(s) and <>?(rt(ss)) THEN
+        LET s   ==  ft(ss)
+            n   ==  IF free?(s) THEN
+                        IF ide(s) = i THEN times(s) ELSE 0 FI
+                    IF reuse?(s) THEN
+                        IF cand(s) = i THEN 1 ELSE 0 FI
+                    ELSE 0 FI
+            
+        IN
+        IF n > 0 THEN
+            (n,s%,rt(ss))
+        OTHERWISE
+        IF block?(s) and <>?(rt(ss)) THEN
             LET (n1,ss1,ss2) == findFreeOrReuse(C,i,stms(s))
-	    IN
-	    IF (n1 > 0) and (ss2<>?) THEN
-	        (n1,ss,<>[stm:SORT])
-	    ELSE
-	        (0,ss,<>[stm:SORT])
-	    FI
-	ELSE
-	    LET (n1,ss1,ss2) == findFreeOrReuse(C,i,rt(ss))
-	    IN
-	    (n1,s::ss1,ss2)
-	FI
+            IN
+            IF (n1 > 0) and (ss2<>?) THEN
+                (n1,ss,<>[stm:SORT])
+            ELSE
+                (0,ss,<>[stm:SORT])
+            FI
+        ELSE
+            LET (n1,ss1,ss2) == findFreeOrReuse(C,i,rt(ss))
+            IN
+            (n1,s::ss1,ss2)
+        FI
     FI
 
   /*
   FUN freeOrReuseDistance : inh ** ide ** seq[stm:SORT] ** nat -> nat
   DEF freeOrReuseDistance(C,i,ss,p) ==
     IF ::?(ss) THEN
-	LET found? == IF free?(ft(ss))  THEN ide(ft(ss))=i 
-		      IF reuse?(ft(ss)) THEN cand(ft(ss))=i
-					ELSE false FI
-	IN
-	IF found? THEN 
-	    p
-	OTHERWISE
-	IF block?(ft(ss)) or case?(ft(ss)) THEN
-	    -- dont walk on (popts shall be used!!!)
-	    max:nat
-	ELSE
-	    freeOrReuseDistance(C,i,rt(ss),succ(p))
-	FI
+        LET found? == IF free?(ft(ss))  THEN ide(ft(ss))=i 
+                      IF reuse?(ft(ss)) THEN cand(ft(ss))=i
+                                        ELSE false FI
+        IN
+        IF found? THEN 
+            p
+        OTHERWISE
+        IF block?(ft(ss)) or case?(ft(ss)) THEN
+            -- dont walk on (popts shall be used!!!)
+            max:nat
+        ELSE
+            freeOrReuseDistance(C,i,rt(ss),succ(p))
+        FI
     ELSE
-	max:nat
+        max:nat
     FI
     */
 
@@ -1179,39 +1191,39 @@ DEF gen(C)(T,copy(i,st,n)) ==
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 DEF gen(C)(T,free(i,st,n)) == 
     LET ci       == genIde(C,T)(i)
-	sls?	 == selMap(C) !? i
+        sls?     == selMap(C) !? i
     IN
     IF avail?(sls?) THEN 
-	-- selected from this object: special free
-	LET ex? == excl?(C) !? i
-	IN
+        -- selected from this object: special free
+        LET ex? == excl?(C) !? i
+        IN
         IF avail?(ex?) THEN
-	    -- sharing known in this context
-	    IF cont(ex?) THEN
-	        (T,genDispose(C,T,ci,st,cont(sls?)))
-	    ELSE
-		(T,cFree(ci,st,n))
-	    FI
-	ELSE
-	    (T,cIte(exclTest,dispose,free))
-	    WHERE
-	      exclVar? == exist?(borrowOrReuse?,cont(sls?))
-	      exclTest == IF exclVar? THEN cExclVar(ci) ELSE cExcl(ci,n) FI
-	      dispose  == genDispose(C,T,ci,st,cont(sls?))
-	      free     == IF exclVar? THEN
-			      cFree(ci,st,n)
-				-- we cannot use cDecr since object
-				-- might have become exclusive since 
-				-- exclusive var initialization. 
-		      	  ELSE cDecr(ci,st,n) FI
-	FI
+            -- sharing known in this context
+            IF cont(ex?) THEN
+                (T,genDispose(C,T,ci,st,cont(sls?)))
+            ELSE
+                (T,cFree(ci,st,n))
+            FI
+        ELSE
+            (T,cIte(exclTest,dispose,free))
+            WHERE
+              exclVar? == exist?(borrowOrReuse?,cont(sls?))
+              exclTest == IF exclVar? THEN cExclVar(ci) ELSE cExcl(ci,n) FI
+              dispose  == genDispose(C,T,ci,st,cont(sls?))
+              free     == IF exclVar? THEN
+                              cFree(ci,st,n)
+                                -- we cannot use cDecr since object
+                                -- might have become exclusive since 
+                                -- exclusive var initialization. 
+                          ELSE cDecr(ci,st,n) FI
+        FI
     ELSE
-	(T,cFree(ci,st,n))
+        (T,cFree(ci,st,n))
     FI
 
 FUN borrowOrReuse? : sel -> bool
 DEF borrowOrReuse?(sel) == borrow?(sel) or reuse?(sel)
-	
+        
 -- ...........................................................................
 
 FUN genDispose : inh ** thr ** box ** store ** seq[sel:SORT] -> box
@@ -1220,46 +1232,46 @@ DEF genDispose(C,T,ci,st,sls) ==
     WHERE (ops,_) == genDispose1(C,T,ci,st,sls,1,0)
 
   FUN genDispose1 : inh ** thr ** box ** store ** seq[sel:SORT] ** nat ** nat
-				  -> seq[box] ** nat
+                                  -> seq[box] ** nat
   DEF genDispose1(C,T,ci,st,sls,i,j) ==
     IF <>?(sls) THEN 
-   	IF j <= maxSubFrees(popts(C)) and (prod?(st) or oneProd?(st)) THEN
-	    -- number of desired subfrees ok, and store of object unique:
-	    -- flat dispose
-    	    (%(cDisposeFlat(ci,st)),j)
-	ELSE
-	    -- number of grantable subfrees exceeded, or store not unique
-    	    (%(cDispose(ci,st)),max:nat)
-	FI
+        IF j <= maxSubFrees(popts(C)) and (prod?(st) or oneProd?(st)) THEN
+            -- number of desired subfrees ok, and store of object unique:
+            -- flat dispose
+            (%(cDisposeFlat(ci,st)),j)
+        ELSE
+            -- number of grantable subfrees exceeded, or store not unique
+            (%(cDispose(ci,st)),max:nat)
+        FI
     ELSE
-	LET sl == ft(sls)
-	IN
-	IF borrow?(sl) THEN
-	    LET (subOps,j1) == genDispose1(C,T,ci,st,rt(sls),succ(i),j)
-	    IN
-	    IF j1 < max:nat or isPrim?(store(sl)) THEN
-		-- flat dispose or primitive, no clear required
-	        (subOps,j1)
-	    ELSE
-		-- clear required
-		(cAssign(cNil,cField(ci,st,i))::subOps,j1)
-	    FI
-	OTHERWISE
-	IF ~(isPrim?(store(sl))) and (prod?(st) or oneProd?(st)) THEN
-	    -- subfree desired
-	    LET (subOps,j1) == genDispose1(C,T,ci,st,rt(sls),succ(i),succ(j))
-	    IN
-	    IF j1 < max:nat THEN
-		-- subfree granted
-		(cFree(cField(ci,st,i),store(sl),1)::subOps,j1)
-	    ELSE
-		(subOps,j1)
-	    FI
-	ELSE
-	    genDispose1(C,T,ci,st,rt(sls),succ(i),j)
-	FI
+        LET sl == ft(sls)
+        IN
+        IF borrow?(sl) THEN
+            LET (subOps,j1) == genDispose1(C,T,ci,st,rt(sls),succ(i),j)
+            IN
+            IF j1 < max:nat or isPrim?(store(sl)) THEN
+                -- flat dispose or primitive, no clear required
+                (subOps,j1)
+            ELSE
+                -- clear required
+                (cAssign(cNil,cField(ci,st,i))::subOps,j1)
+            FI
+        OTHERWISE
+        IF ~(isPrim?(store(sl))) and (prod?(st) or oneProd?(st)) THEN
+            -- subfree desired
+            LET (subOps,j1) == genDispose1(C,T,ci,st,rt(sls),succ(i),succ(j))
+            IN
+            IF j1 < max:nat THEN
+                -- subfree granted
+                (cFree(cField(ci,st,i),store(sl),1)::subOps,j1)
+            ELSE
+                (subOps,j1)
+            FI
+        ELSE
+            genDispose1(C,T,ci,st,rt(sls),succ(i),j)
+        FI
     FI
-	    
+            
 -- ===========================================================================
 -- Cons, Reuse
 -- ===========================================================================
@@ -1270,79 +1282,79 @@ DEF gen(C)(T,cons(st,is,o)) ==
       co == genIde(C,T)(o)
       cass == genConsAssigns(C,T,co,st,is,1)
       T1   == IF undeclared?(C,T)(o) THEN extendDecMap(T,o,
-						cDec(cType(st),co))
-				     ELSE T FI
+                                                cDec(cType(st),co))
+                                     ELSE T FI
 
 -- ...........................................................................
 FUN genConsAssigns : inh ** thr ** box ** store ** seq[ide:SORT] ** nat
-				       -> seq[box:SORT]
+                                       -> seq[box:SORT]
 DEF genConsAssigns(C,T,co,st,is,i) ==
     IF <>?(is) THEN <>[box:SORT]
     OTHERWISE
     IF ft(is) in tmcs(C) THEN
-	-- skip
-	genConsAssigns(C,T,co,st,rt(is),succ(i))
+        -- skip
+        genConsAssigns(C,T,co,st,rt(is),succ(i))
     ELSE 
-	cAssign(genIde(C,T)(ft(is)),cField(co,st,i))
-			::genConsAssigns(C,T,co,st,rt(is),succ(i))
+        cAssign(genIde(C,T)(ft(is)),cField(co,st,i))
+                        ::genConsAssigns(C,T,co,st,rt(is),succ(i))
     FI
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 DEF gen(C)(T,reuse(st,c,stc,is,o)) == 
     IF avail?(ex?) THEN
-	-- sharing known in this context
-	IF cont(ex?) THEN
-	    (T1,words(exclPath))
-	ELSE
-	    (T1,words(sharedPath))
-	FI
+        -- sharing known in this context
+        IF cont(ex?) THEN
+            (T1,words(exclPath))
+        ELSE
+            (T1,words(sharedPath))
+        FI
     ELSE
         (T1,cIte(exclTst,words(exclPath),words(sharedPath)))
     FI
     WHERE
-      ex?	 == excl?(C) !? c
+      ex?        == excl?(C) !? c
       sls        == selMap(C) ! c
       exclVar?   == exist?(borrowOrReuse?,sls)
       exclTst    == IF exclVar? THEN cExclVar(cc) ELSE cExcl(cc,1) FI
       sharedPath == free::(cCons(st,co)::genConsAssigns(C,T,co,st,is,1))
-      free	 == IF exclVar? THEN -- with sharing variable,
-					 -- cc might have become exclusive
-					 cFree(cc,stc,1)
-				    ELSE -- without sharing var, 
-					 -- cc definitely not exclusive
-					 cDecr(cc,stc,1)
-				    FI
+      free       == IF exclVar? THEN -- with sharing variable,
+                                         -- cc might have become exclusive
+                                         cFree(cc,stc,1)
+                                    ELSE -- without sharing var, 
+                                         -- cc definitely not exclusive
+                                         cDecr(cc,stc,1)
+                                    FI
 
       exclPath   == cReuse(cc,stc,st,co)::updates
       updates    == genReuseUpdates(C,T,co,stc,is,sls,1)
 
-      cc	 == genIde(C,T)(c)
-      co	 == genIde(C,T)(o)
+      cc         == genIde(C,T)(c)
+      co         == genIde(C,T)(o)
       T1         == IF undeclared?(C,T)(o) THEN 
-			extendDecMap(T,o,cDec(cType(st),co))
-		    ELSE T FI
+                        extendDecMap(T,o,cDec(cType(st),co))
+                    ELSE T FI
 
   FUN genReuseUpdates : inh ** thr ** box ** store
-		   ** seq[ide:SORT] ** seq[sel:SORT] ** nat -> seq[box:SORT]
+                   ** seq[ide:SORT] ** seq[sel:SORT] ** nat -> seq[box:SORT]
   DEF genReuseUpdates(C,T,co,st,ins,sls,i) ==
     IF <>?(ins) THEN <>[box:SORT]
     ELSE
-	LET sel  == ft(sls)
-	    inp  == ft(ins)
-	IN
-	LET free == IF borrow?(sel) or reuse?(sel) THEN
-			-- borrowed from co; no free
-			cNop
-		    ELSE cFree(cField(co,st,i),store(sel),1) FI
-	    ass  == IF inp in tmcs(C) THEN
-			-- tmc update; assign delayed
-			cNop
-		    IF inp = ide(sel) THEN
-			-- inp already at its place
-			cNop
-		    ELSE
-		        cAssign(genIde(C,T)(inp),cField(co,st,i))
-		    FI
-	IN
-	free::(ass::genReuseUpdates(C,T,co,st,rt(ins),rt(sls),succ(i)))
+        LET sel  == ft(sls)
+            inp  == ft(ins)
+        IN
+        LET free == IF borrow?(sel) or reuse?(sel) THEN
+                        -- borrowed from co; no free
+                        cNop
+                    ELSE cFree(cField(co,st,i),store(sel),1) FI
+            ass  == IF inp in tmcs(C) THEN
+                        -- tmc update; assign delayed
+                        cNop
+                    IF inp = ide(sel) THEN
+                        -- inp already at its place
+                        cNop
+                    ELSE
+                        cAssign(genIde(C,T)(inp),cField(co,st,i))
+                    FI
+        IN
+        free::(ass::genReuseUpdates(C,T,co,st,rt(ins),rt(sls),succ(i)))
     FI

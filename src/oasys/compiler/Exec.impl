@@ -1,77 +1,77 @@
 IMPLEMENTATION Exec
 
-IMPORT	Pair			COMPLETELY
-	Set			COMPLETELY
-	SetReduce		COMPLETELY
-	Pair			COMPLETELY
-	Option			COMPLETELY
-	Seq			COMPLETELY
-	SeqReduce		COMPLETELY
-	NatConv			COMPLETELY
-	Denotation		COMPLETELY
+IMPORT  Pair                    COMPLETELY
+        Set                     COMPLETELY
+        SetReduce               COMPLETELY
+        Pair                    COMPLETELY
+        Option                  COMPLETELY
+        Seq                     COMPLETELY
+        SeqReduce               COMPLETELY
+        NatConv                 COMPLETELY
+        Denotation              COMPLETELY
 
-IMPORT	Com			COMPLETELY
-	ComCheck		ONLY |
-	Env			COMPLETELY
-	ComCompose		COMPLETELY
-	ComPairCompose		COMPLETELY
-	ProcessCtrl		COMPLETELY
-	Wait			COMPLETELY
-	WaitConv		COMPLETELY
-	FileName		COMPLETELY
+IMPORT  Com                     COMPLETELY
+        ComCheck                ONLY |
+        ProcessArgs             COMPLETELY
+        ComCompose              COMPLETELY
+        ComPairCompose          COMPLETELY
+        ProcessCtrl             COMPLETELY
+        Wait                    COMPLETELY
+        WaitConv                COMPLETELY
+        FileName                COMPLETELY
 
-IMPORT	RepoUnitAccess		COMPLETELY
-	RepoDiag		COMPLETELY
-	RepoComAbort		COMPLETELY
-	RepoEvent		COMPLETELY
-	RepoEvent		COMPLETELY
-	RepoName		COMPLETELY
-	RepoGlobalAccess	COMPLETELY
+IMPORT  RepoUnitAccess          COMPLETELY
+        RepoDiag                COMPLETELY
+        RepoComAbort            COMPLETELY
+        RepoEvent               COMPLETELY
+        RepoEvent               COMPLETELY
+        RepoName                COMPLETELY
+        RepoGlobalAccess        COMPLETELY
 
-IMPORT	InternExec		COMPLETELY
-	Check			COMPLETELY
-	Compile			COMPLETELY
+IMPORT  InternExec              COMPLETELY
+        Check                   COMPLETELY
+        Compile                 COMPLETELY
 
 
 DEF guessExecObject(O)(R) ==
     guessCompileUnits(incl(unit(O), guessCheckUnitsForExec(%(unit(O)))(R)))(R)
 
 DEF execObject(O, Params, StdIn, StdOut, StdErr)(R) ==
-    clearErrors					& (\\ _ .
+    clearErrors                                 & (\\ _ .
     LET (Check, Compile) == unpair(guessExecObject(O)(R))
     IN
-    compileUnits(Check + Compile)(R)		& (\\ R1 .
+    compileUnits(Check + Compile)(R)            & (\\ R1 .
     -- FIXME: check if O is a com[void]
-    errors?					& (\\ Err? .
+    errors?                                     & (\\ Err? .
     IF Err? THEN
-	succeed(nil & R1)
+        succeed(nil & R1)
     ELSE
-	/*
-	LET LoadStructs == (\\Us, Si. 
-			     (\\U, Sj.
-				symbol(U)(R) ++ ":" ++ Si,
-			      Si) / Us,
-			    symbol(unit(O))(R)) / 
-			topSort(implImports, loadStruct?(R))   
-			       (related(transitive, implImports,
-					loadStruct?(R))(unit(O))(R))
-			       (R)
-	IN	
-	*/					    
-	LET ActParams == symbol(unit(O))(R) :: `(no(O)) :: Params
-	IN
-	oasysLibDir				& (\\ Dir .
-	exec(normPath(Dir) ++ "executor",
-	     "executor" :: ActParams,
-	     StdIn, StdOut, StdErr)(R1)		; (\\ Proc? .
-	IF okay?(Proc?) THEN
-	    succeed(avail(data(Proc?)) & R1)
-	ELSE
-	    diag(!!(error,freeRef("exec"), error(Proc?)))(R1) & (\\ R2 .
-	    succeed(nil & R2)
-	    )
-	FI
-	))
+        /*
+        LET LoadStructs == (\\Us, Si. 
+                             (\\U, Sj.
+                                symbol(U)(R) ++ ":" ++ Si,
+                              Si) / Us,
+                            symbol(unit(O))(R)) / 
+                        topSort(implImports, loadStruct?(R))   
+                               (related(transitive, implImports,
+                                        loadStruct?(R))(unit(O))(R))
+                               (R)
+        IN      
+        */                                          
+        LET ActParams == symbol(unit(O))(R) :: `(no(O)) :: Params
+        IN
+        oasysLibDir                             & (\\ Dir .
+        exec(normPath(Dir) ++ "executor",
+             "executor" :: ActParams,
+             StdIn, StdOut, StdErr)(R1)         ; (\\ Proc? .
+        IF okay?(Proc?) THEN
+            succeed(avail(data(Proc?)) & R1)
+        ELSE
+            diag(!!(error,freeRef("exec"), error(Proc?)))(R1) & (\\ R2 .
+            succeed(nil & R2)
+            )
+        FI
+        ))
     FI
     )))
 
@@ -79,15 +79,15 @@ DEF execObject(O, Params, StdIn, StdOut, StdErr)(R) ==
 DEF callObject(O, Params, StdIn, StdOut, StdErr)(R) ==
     execObject(O, Params, StdIn, StdOut, StdErr)(R) & (\\Proc?, R1.
     IF avail?(Proc?) THEN
-	wait(cont(Proc?))					& (\\ Res .
-	IF exited?(2nd(Res)) ANDIF success?(status(2nd(Res))) THEN
-	    succeed(R1)
-	ELSE
-	    diag(!!(error,freeRef("exec"), "%s", `(2nd(Res))))(R1)
-	FI
-	)
+        wait(cont(Proc?))                                       & (\\ Res .
+        IF exited?(2nd(Res)) ANDIF success?(status(2nd(Res))) THEN
+            succeed(R1)
+        ELSE
+            diag(!!(error,freeRef("exec"), "%s", `(2nd(Res))))(R1)
+        FI
+        )
     ELSE
-	succeed(R1)
+        succeed(R1)
     FI
     )
 

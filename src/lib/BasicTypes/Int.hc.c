@@ -4,7 +4,7 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 15:59:57 $ ($Revision: 1.1.1.1 $)
+   $Date: 1999-03-09 11:51:17 $ ($Revision: 1.2 $)
 */
 extern OBJ _AInt_Sm_O1(OBJ x1) /* -,1 */
 {OBJ r;
@@ -110,6 +110,32 @@ extern OBJ _AInt_AuncheckedMod(OBJ x1,OBJ x2) /* uncheckedMod */
 {OBJ r;
  AInt_AuncheckedMod(x1,x2,r);
  return r;}
+
+extern OBJ _AInt_Apow(OBJ x1,OBJ x2) /* pow */
+{INT x,y,r,sign, rsign = 1;
+
+ x = unpack_int(x1);
+ y = unpack_int(x2);
+ if (y == 0) {
+   r = 1;}
+ else if (y < 0) {
+   HLT("^'Int: cannot raise integer to a negative power");
+ }
+ else if (x == 0) { 
+   r = 0;
+ }
+ else { 
+   if (x > 0) {sign = 1;} else {sign = -1; x = -x;}
+   for(r = 1, rsign = 1; y > 0; y--) {
+     if (max_sword / x < r) {
+       HLT("^'Int: result too large");
+     };
+     r *= x; rsign *= sign;
+   }
+ };
+ r *= rsign;
+ return pack_int(r);
+}
 
 extern OBJ _AInt_S1(OBJ d) /* ! */ {
     int n = 0, i = 0, l = leng_denotation(d);

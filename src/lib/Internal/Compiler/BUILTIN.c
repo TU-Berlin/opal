@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.2 1998-10-26 12:38:25 maeder Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.3 1999-03-09 11:51:30 kd Exp $
  */
 
 /* FIXME: stub for strdup() */
@@ -1095,11 +1095,18 @@ extern void free_aux(void* p){
  * tracing & debugging
  */
 
+static void (*warn_func)(char *msg);
 static void (*halt_func)(char *msg);
 static void (*exit_func)(int code);
 static void (*trace_enter_func)(char *msg);
 static void (*trace_exit_func)(char *msg);
 static void (*trace_msg_func)(char *msg);
+
+void (*ocs_warn_def_method(void (*func)(char *)))(char *){
+    void (*old)(char *) = warn_func;
+    warn_func = func;
+    return old;
+}
 
 void (*ocs_halt_def_method(void (*func)(char *)))(char *){
     void (*old)(char *) = halt_func;
@@ -1121,6 +1128,10 @@ void ocs_trace_def_method(void (*enter)(char *),
     trace_msg_func = msg;
 }
 
+
+void ocs_warn(char *msg){
+    (*warn_func)(msg);
+}
 
 void ocs_halt(char *msg){
     (*halt_func)(msg);
@@ -1181,11 +1192,18 @@ static void default_halt(char *msg){
     abort();
 }
 
+static void default_warn(char *msg){
+    fflush(stdout);
+    fputs("\nUNDEFINED CONSTANT: ",stderr); fputs(msg,stderr); fputc('\n',stderr);
+    fputs("this may lead to unpredictable behaviour\n", stderr);
+}
+
 static void default_exit(int code){
     exit(code);
 }
 
 static void init_debug(){
+    ocs_warn_def_method(default_warn);
     ocs_halt_def_method(default_halt);
     ocs_exit_def_method(default_exit);
     ocs_trace_def_method(default_trace_enter,default_trace_exit, 

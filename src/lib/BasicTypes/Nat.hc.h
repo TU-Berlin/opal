@@ -1,9 +1,9 @@
 /* hand-coded interface part of Nat */
 
-/* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
+/* Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 15:59:58 $ ($Revision: 1.1.1.1 $)
+   $Date: 1999-03-09 11:51:19 $ ($Revision: 1.2 $)
 */
   /* representation */
 

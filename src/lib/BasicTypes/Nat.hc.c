@@ -4,7 +4,7 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 15:59:57 $ ($Revision: 1.1.1.1 $)
+   $Date: 1999-03-09 11:51:19 $ ($Revision: 1.2 $)
 */
 
 
@@ -92,6 +92,27 @@ extern OBJ _ANat_AuncheckedMod(OBJ x1,OBJ x2) /* uncheckedMod */
 {OBJ r;
  ANat_AuncheckedMod(x1,x2,r);
  return r;}
+
+extern OBJ _ANat_Apow(OBJ x1,OBJ x2) /* pow */
+{NAT x,y,r;
+
+ x = unpack_nat(x1);
+ y = unpack_nat(x2);
+ if (y == 0) {
+   r = 1;}
+ else if (x == 0) {
+   r = 0;}
+ else { 
+   for(r = 1; y > 0; y--) {
+     if (max_word / x < r) {
+       HLT("^'Nat:nat**nat->nat: result too large");
+	 };
+     r *= x;
+   }
+ };
+ return pack_nat(r);
+}
+
 
 extern OBJ inline_opal_nat(OBJ d) 
 { NAT n = 0, i = 0; 

@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.2 1998-06-23 11:42:51 maeder Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.h,v 1.3 1999-03-09 11:51:31 kd Exp $
  */
     
 
@@ -617,6 +617,7 @@ extern void ocs_halt(char*),
             ocs_trace_enter(char*), ocs_trace_exit (char*),
 	    ocs_trace_msg(char *);
 
+#define WRN(m) ocs_warn(m)
 #define HLT(m) ocs_halt(m)
 #define ENTER(m) ocs_trace_enter(m)
 #define EXIT(m) ocs_trace_exit(m)

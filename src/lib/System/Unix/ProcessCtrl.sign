@@ -1,10 +1,10 @@
+-- %Low-level access to process control mechanisms
 SIGNATURE ProcessCtrl
 /* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 16:00:18 $ ($Revision: 1.1.1.1 $)
--- low-level access to process control mechanisms
+-- % $Date: 1999-03-09 11:52:05 $ ($Revision: 1.2 $)
 
 IMPORT
   Void                ONLY void: SORT
@@ -40,141 +40,164 @@ TYPE fission == parent(child: process)
                 child
 
 
--- CREATION, TERMINATION, MUTATION --
+-- %$Creation and Termination and Mutation$
 
 FUN fork  : com[fission]
-            -- creates a new process
-            -- see POSIX fork()
+            /* %creates a new process
+            (see POSIX @emph{fork()}) */
 
 FUN exit  : procstat -> com[void]
-            -- terminates the process yielding its status
-            -- see POSIX exit()
+            /* % terminates the process yielding its status
+            (see POSIX @emph{exit()}) */
 
 FUN exec  : denotation ** seq[denotation] -> com[void]
-            -- execute the given programme with given arguments
-            -- see POSIX execv()/execl()
+            /* %execute the given programme with given arguments
+            (see POSIX @emph{execv()/execl()}) */
     execE : denotation ** seq[denotation] ** seq[denotation] -> com[void]
-            -- as above, but also specify a new environment
-            -- see POSIX execve()/execle()
+            /* % as above, but also specify a new environment
+            (see POSIX @emph{execve()/execle()}) */
     execP : denotation ** seq[denotation] -> com[void]
-            -- use PATH environment variable to search for the specified prog
-            -- see POSIX execvp()/execlp()
-    -- NOTE that, by convention, you must supply the executable's name
-    --      WITHOUT PATH PREFIX as the first component of the argument
-    --      sequence to all of these calls.
+            /* % use PATH environment variable to search for the specified prog
+            (see POSIX @emph{execvp()/execlp()}) 
 
--- RELATIONS --
+          @b{Note} that, by convention, you must supply the executable's name
+          @emph{without path prefix} as the first component of the argument
+          sequence to all of these calls. 
+
+          @b{Attention:} the @code{exec} commands return only in case
+          of failure. Therefore, do not append the failure handling commands 
+          with @code{&'ComCompose}, rather use @code{;'ComCompose}, e.g.
+          @code{exec(prog, args) ; exit(failure)}
+*/
+
+-- %$Relations$
 
 FUN getPId
-    -- get ID of this process
-    -- see POSIX getpid()
+    /* % get ID of this process
+    (see POSIX @emph{getpid()}) */
     getPPId  : com[process]
-    -- get ID of parent process
-    -- see POSIX getppid()
+    /* % get ID of parent process
+    (see POSIX @emph{getppid()}) */
     
--- INFORMATION --
+-- %$Information$
 
 FUN clock   : com[real]
-              -- returns approx processor time used by this process in seconds
-              -- NOTE that you may not assume that processes start with 0.0
-              --      seconds of elapsed processor time, but computing a
-              --      difference works fine.
-              -- NOTE that -1 is returned to indicate that the system has
-              --      no idea about the elapsed processor time
-              -- see POSIX clock()
+              /* % returns approx processor time used by this process in 
+                   seconds
+               
+@b{Note}  that you may not assume that processes start with 0.0
+                    seconds of elapsed processor time, but computing a
+                    difference works fine.
+               
+@b{Note}  that -1 is returned to indicate that the system has
+                    no idea about the elapsed processor time
+              (see POSIX @emph{clock()}) */
 
     times  : com[quad[real,real,real,real]]
-             -- returns user and system time in seconds for this process
-             -- and all children for which a wait... has been done
-             -- see POSIX times()
-             -- NOTE that these are absolute values
+             /* % returns user and system time in seconds for this process
+              and all children for which a wait... has been done
+             (see POSIX @emph{times()}) */
+              
+@b{Note}  that these are absolute values
     uptime : com[real]
-             -- returns the real time in seconds since system startup
-             -- see POSIX times()
+             /* % returns the real time in seconds since system startup
+             (see POSIX @emph{times()}) */
 
--- BREAK --
+-- %$Break$
 
 FUN pause : com[void]
-            -- suspends execution until a signal occurs which is not ignored
-            -- NOTE that in most cases you should use sigSuspend'Signal instead
-            -- NOTE that this call never returns successfully
-            -- see POSIX pause()
+            /* % suspends execution until a signal occurs which is not ignored
+             
+@b{Note}  that in most cases you should use sigSuspend'Signal instead
+             
+@b{Note}  that this call never returns successfully
+           
+ (see POSIX @emph{pause()}) */
     sleep : nat -> com[nat]
-            -- suspends execution for (at least) n seconds.
-            -- Returns the number of unslept seconds if a signal occurs.
-            -- NOTE: The maximum portable argument is 65535 seconds
-            -- NOTE: May or may not be implemented by using sigAlrm
-            -- NOTE that this call always succeeds
-            -- see POSIX sleep()
+            /* % suspends execution for (at least) n seconds.
+             Returns the number of unslept seconds if a signal occurs.
+             
+@b{Note} : The maximum portable argument is 65535 seconds
+             
+@b{Note} : May or may not be implemented by using sigAlrm
+             
+@b{Note}  that this call always succeeds
 
--- WORKING DIRECTORY --
+            (see POSIX @emph{sleep()}) */
+
+-- %$Working Directory$
 
 FUN chDir  : denotation -> com[void]
-             -- change working directory
-             -- see POSIX chdir()
+             /* % change working directory
+             (see POSIX @emph{chdir()}) */
     getCWD : com[denotation]
-             -- returns the current working directory
-             -- see POSIX getcwd()
+             /* % returns the current working directory
+             (see POSIX @emph{getcwd()}) */
 
--- PERMISSIONS & STUFF --
+-- %$Permissions And Stuff$
 
 FUN access   : denotation ** filemode -> com[bool]
-               -- legal values for <filemode> are _________ "up to" rwx______.
-               -- true if the process can perform the specified operation(s)
-               -- (if <filemode> = _________ the file's existence is tested)
-               -- on the given file BASED ON REAL USER AND GROUP IDs!
-               -- Useful for setUIdOnExec/setGIdOnExec processes in order
-               -- to check if an operation is legal even without the
-               -- effective UId/GId. There is, of course, no guarantee
-               -- that the process can perform the operation without
-               -- restoring the real UId/GId as the system uses the effective
-               -- UId and GId to check permissions. For processes where
-               -- UId = EUId and GId = EGId the result is reliable unless
-               -- some other process changes access permissions or removes
-               -- the file afterwards. See POSIX access()
+               /* % legal values for @code{<filemode>}
+                    are _________  "up to" rwx______.
+                @emph{true}
+                if the process can perform the specified operation(s)
+                (if @code{<filemode>}
+                 = _________ the file's existence is tested)
+                on the given file @emph{based on real user and group ids!}
+                Useful for setUIdOnExec/setGIdOnExec processes in order
+                to check if an operation is legal even without the
+                effective UId/GId. There is, of course, no guarantee
+                that the process can perform the operation without
+                restoring the real UId/GId as the system uses the effective
+                UId and GId to check permissions. For processes where
+                UId = EUId and GId = EGId the result is reliable unless
+                some other process changes access permissions or removes
+                the file afterwards. (See POSIX @emph{access()}) */
 
 FUN umask    : filemode -> com[filemode]
-               -- set permission mask for file creation
-               -- return the previous mask
-               -- see POSIX umask()               
+               /* % set permission mask for file creation
+                return the previous mask
+                (see POSIX @emph{umask()} */
 
 FUN getUId   : com[userid]
-               -- return real user id
-               -- see POSIX getuid()
+               /* % return real user id
+               (see POSIX @emph{getuid()}) */
     getEUId  : com[userid]
-               -- return effective user id
-               -- see POSIX geteuid()
+               /* % return effective user id
+               (see POSIX @emph{geteuid()}) */
 FUN setUId   : userid -> com[void]
-               -- sets user id; RESTRICTED
-               -- see POSIX setuid()
+               /* % sets user id; RESTRICTED
+               (see POSIX @emph{setuid()}) */
 
 FUN getGId   : com[groupid]
-               -- get real group id
-               -- see POSIX getgid()
+               /* % get real group id
+               (see POSIX @emph{getgid()}) */
     getEGId  : com[groupid]
-               -- get effective group id
-               -- see POSIX getegid()
+               /* % get effective group id
+               (see POSIX @emph{getegid()}) */
 FUN setGId   : groupid -> com[void]
-               -- sets group id; RESTRICTED
-               -- see POSIX setgid()
+               /* % sets group id; RESTRICTED
+               (see POSIX @emph{setgid()}) */
 
 FUN getPGrp  : com[process]
-               -- get process group id
-               -- see POSIX getpgrp()
+               /* % get process group id
+               (see POSIX @emph{getpgrp()}) */
 FUN setPGrp  : com[void]
-               -- set process group to process id
+               /* % set process group to process id */
     setPGrp  : process ** process -> com[void]
-               -- set process group id of specified process to specified group
-    -- THESE CALLS MAY FAIL ON SYSTEMS NOT SUPPORTING JOB CONTROL
-    -- see POSIX setpgid()
+               /* % set process group id of specified 
+                    process to specified group.
+     @emph{These calls may fail on systems not supporting job control!}
+    (see POSIX @emph{setpgid()}) */
 
 FUN setSId   : com[process]
-               -- creates a new session and sets the process group accordingly
-               -- returns the new process group
-               -- see POSIX setsid()
+               /* % creates a new session and sets the process group 
+                    accordingly
+                returns the new process group
+               (see POSIX @emph{setsid()}) */
 
 FUN getLogin : com[denotation]
-               -- returns the user's login name
-               -- set by login and rlogin, but not su
-               -- traditionally used to determine home directory etc
-               -- see POSIX getlogin()
+               /* % returns the user's login name
+                set by login and rlogin, but not su
+                traditionally used to determine home directory etc
+               (see POSIX @emph{getlogin()}) */

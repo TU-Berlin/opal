@@ -27,14 +27,8 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 ;(require 'opal-abbrev-mode)
 (require 'opal-browser)
 (require 'opal-filehandling)
-(if opal-running-xemacs
-    (progn
-      (require 'opal-x-diag-mode)
-      (require 'opal-x-compile)
-      )
-  (require 'opal-diag-mode)
-  (require 'opal-compile)
-)
+(require 'opal-diag-mode)
+(require 'opal-compile)
 ;(require 'opal-dired)
 (require 'opal-dosfop)   ;;; DOSFOP
 (require 'opal-switch)
@@ -729,16 +723,15 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
       ();
     (define-key opal-mode-map [menu-bar opal misc]
       (cons "Misc" (make-sparse-keymap "Misc")))
-;    (define-key opal-mode-map [menu-bar opal misc opal-misc-indent-std]
-;      '("Standard Indentation" . opal-misc-indent ))
-;    (define-key opal-mode-map [menu-bar opal misc opal-misc-indent-opal]
-;      '("Opal Indentation" . opal-misc-indent ))
+    (define-key opal-mode-map [menu-bar opal misc opal-misc-indent]
+      '("Standard Indentation" . opal-misc-indent ))
+    (define-key opal-mode-map [menu-bar opal misc opal-misc-indent-on]
+      '("Opal Indentation" . opal-misc-indent-on ))
     (define-key opal-mode-map [menu-bar opal misc opal-misc-hilit-all]
       '("Hilit19" . opal-misc-hilit-all))
 
-;    (put 'opal-misc-indent-opal 'menu-enable 'opal-misc-std-indent-q)
-;    (put 'opal-misc-indent-std  'menu-enable 'opal-misc-opal-indent-q)
-
+    (put 'opal-misc-indent-on 'menu-enable '(not opal-indent-flag))
+    (put 'opal-misc-indent  'menu-enable 'opal-indent-flag)
     )
   )
 

@@ -1,39 +1,39 @@
 IMPLEMENTATION RepoDiag
--- version 1.1 Thu Sep	5 20:59:26 1996
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oasys/repo/RepoDiag.impl,v 1.3 1999-03-09 11:53:11 kd Exp $
 
-IMPORT	Nat		COMPLETELY
-	NatConv		COMPLETELY
-	Int		COMPLETELY
-	IntConv		COMPLETELY
-	Denotation	COMPLETELY
-	String		COMPLETELY
-	StringConv	COMPLETELY
-	StringFormat	COMPLETELY
-	BTUnion		COMPLETELY
-	Seq		COMPLETELY
-	SeqMap		COMPLETELY
-	SeqReduce	COMPLETELY
-	Fmt		COMPLETELY
-	FmtSeq		COMPLETELY
-	FmtBasicTypes	COMPLETELY
-	Com		COMPLETELY
-	ComCompose	COMPLETELY
-	ComSeqReduce	COMPLETELY
-	File		COMPLETELY
-	Void		COMPLETELY
-	Id		COMPLETELY
-	Option		COMPLETELY
+IMPORT  Nat             COMPLETELY
+        NatConv         COMPLETELY
+        Int             COMPLETELY
+        IntConv         COMPLETELY
+        Denotation      COMPLETELY
+        String          COMPLETELY
+        StringConv      COMPLETELY
+        StringFormat    COMPLETELY
+        BTUnion         COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        FmtBasicTypes   COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        ComSeqReduce    COMPLETELY
+        File            COMPLETELY
+        Void            COMPLETELY
+        Id              COMPLETELY
+        Option          COMPLETELY
 
-IMPORT	RepoName	COMPLETELY
-	RepoSource	COMPLETELY	
-       PrintableChar ONLY % s
-       Char ONLY =
-	
+IMPORT  RepoName        COMPLETELY
+        RepoSource      COMPLETELY      
+        PrintableChar ONLY % s
+        Char ONLY =
+        ColourText ONLY errorText limitText warnText hintText
+        
 
 DATA diag == diag(mode: mode, msgs : seq[msg])
 
 DATA msg  == msg(mode: mode, ref: ref, cont: denotation)
-     FUN fmtMsg : msg -> fmt
 
 DEF error < M == ~(error?(M))
 DEF limit < M == warn?(M) or hint?(M)
@@ -43,32 +43,39 @@ DEF hint  < M == false
 DEF fmtDiag(diag(_, Msgs)) ==
     list(fmtMsg, none, brk, none, Msgs)
 
+FUN fmtMsg : msg -> fmt
 DEF fmtMsg(msg(M, R, Cont)) ==
-    beg(0); fmtMode(M); lit(" ["); fmtRef(R); lit("]: "); lit(Cont); end
+  LET mFmt == IF M error? THEN errorText
+              IF M limit? THEN limitText
+              IF M warn? THEN warnText
+              IF M hint? THEN hintText
+              FI
+  IN
+  beg(0);  mFmt(fmtMode(M); lit(" ["); fmtRef(R); lit("]: "); lit(Cont)); end
 
 DEF fmtRef(freeRef(Descr)) == lit(Descr)
 DEF fmtRef(unitRef(Loc, U)) == lit("#"); fmtNat(no(internId(U)));
-			       lit(" at ");fmtLocator(Loc)
+                               lit(" at ");fmtLocator(Loc)
 DEF fmtRef(itemRef(Loc, I)) == lit("#"); fmtNat(no(internId(unit(I))));
-			       lit("i"); fmtNat(no(I));
-			       lit(" at ");fmtLocator(Loc)
+                               lit("i"); fmtNat(no(I));
+                               lit(" at ");fmtLocator(Loc)
 DEF fmtRef(textRef(Loc))    == lit("at ");fmtLocator(Loc)
-				
+                                
 DEF fmtMode(error) == ;(;(beg(2),lit("ERROR")),end)
 DEF fmtMode(limit) == ;(;(beg(2),lit("LIMIT")),end)
 DEF fmtMode(warn) == ;(;(beg(2),lit("WARNING")),end)
 DEF fmtMode(hint) == ;(;(beg(2),lit("HINT")),end)
 
 
-DEF ok			== diag(hint, <>)
-DEF ok?(diag(M, _))	== M = warn or M = hint
+DEF ok                  == diag(hint, <>)
+DEF ok?(diag(M, _))     == M = warn or M = hint
 DEF ref(diag(_, M :: _)) == ref(M)
 DEF msg(diag(_, M :: _)) == cont(M)
 DEF noDiag?(diag(_, S)) == <>?(S)
 
-DEF (M, R) !! S		== (M, R) !! `(S)
-DEF (M, R) !! D		== diag(M, %(msg(M, R, D)))
-DEF (M, R) !! (D, A1)	== (M, R) !! format(escape(1, D!), %(denotation(A1)))
+DEF (M, R) !! S         == (M, R) !! `(S)
+DEF (M, R) !! D         == diag(M, %(msg(M, R, D)))
+DEF (M, R) !! (D, A1)   == (M, R) !! format(escape(1, D!), %(denotation(A1)))
 DEF (M, R) !! (D, A1, A2) ==
   (M, R) !! format(escape(2, D!), %(denotation(A1), denotation(A2)))
 
@@ -92,28 +99,28 @@ DEF explode(diag(_, Msg)) ==
 
 DEF failOnError(Diag) ==
     (\\Msg, _ .
-	writeLine(stdErr, (pretty(fmtMsg(Msg))):string),
-     nil) /& msgs(Diag)			& ( \\ _ .
+        writeLine(stdErr, (pretty(fmtMsg(Msg))):string),
+     nil) /& msgs(Diag)                 & ( \\ _ .
     IF ok?(Diag) THEN
-	succeed(nil)
+        succeed(nil)
     ELSE
-	break("aborted")
+        break("aborted")
     FI
     )
 
 DEF transDiag(Fun, diag(_, Msgs)) ==
     (\\Msg, R.
-    	LET Trans? == Fun(diag(mode(Msg), %(Msg)))
-	IN
-	IF avail?(Trans?) THEN
-	    cont(Trans?) <+ R
-	ELSE R FI,
+        LET Trans? == Fun(diag(mode(Msg), %(Msg)))
+        IN
+        IF avail?(Trans?) THEN
+            cont(Trans?) <+ R
+        ELSE R FI,
      ok) / Msgs
     
     
 DEF shift(LOfs, COfs)(diag(M, Msgs)) == 
     diag(M, (\\Msg. msg(mode(Msg), shift(LOfs, COfs)(ref(Msg)), cont(Msg)))
-    			* Msgs)
+                        * Msgs)
     
 
 DEF shift(_,_)(Ref AS freeRef(_)) == Ref
@@ -129,7 +136,7 @@ DEF shift(LOfs, COfs)(Ref AS textRef(R)) ==
 
 
 DEF shift(LOfs, COfs)(Loc:locator) == shift(Loc, LOfs, COfs)
-	-- brain damaged ...
+        -- brain damaged ...
 
 FUN shift : locator ** int ** int -> locator
 DEF shift(pos(P, Alt), LOfs, COfs) == 
@@ -153,7 +160,7 @@ DEF shiftPos(pos(L, C), LOfs, COfs) ==
     pos(asNat(max(0, NewL)), asNat(max(0, NewC)))
 
 
-	
+        
 /* %
 @ignore
 */
@@ -161,12 +168,12 @@ DEF shiftPos(pos(L, C), LOfs, COfs) ==
 DATA mode == error limit warn hint 
 
 DATA ref ==
-	freeRef		(descr	 : denotation)
-	unitRef		(locator : locator,
-			 unit	 : unitName)
-	itemRef		(locator : locator,
-			 item	 : itemName)
-	textRef		(locator : locator)
+        freeRef         (descr   : denotation)
+        unitRef         (locator : locator,
+                         unit    : unitName)
+        itemRef         (locator : locator,
+                         item    : itemName)
+        textRef         (locator : locator)
 
  
 

@@ -36,9 +36,9 @@ IMPORT  Com                     COMPLETELY
         
 IMPORT  -- oc admin
         Options                 COMPLETELY
-                OcBinStream                             COMPLETELY
+        OcBinStream             COMPLETELY
         InterOpal               COMPLETELY
-                InterOpalDump                   COMPLETELY
+        InterOpalDump           COMPLETELY
         Error                   COMPLETELY
         Pos                     COMPLETELY
 
@@ -53,7 +53,7 @@ IMPORT  -- oc1
         ImplementationAnalysis  ONLY implAna
         PatternAnalysis         ONLY pattAna
         InterOpalGeneration     ONLY dumpInterOpal gen
-                Translation                             COMPLETELY
+        Translation                             COMPLETELY
 
 IMPORT  -- oc2
         PreparedOptions         ONLY popts prepareOptions options
@@ -79,6 +79,7 @@ IMPORT  -- oasys
 IMPORT  DEBUG                   COMPLETELY
         RepoNameConv            COMPLETELY
         ComSeqReduce            COMPLETELY
+        InternIOFilter ONLY callFilters
 
 FUN traceCompile : bool
 DEF traceCompile == FIELD?[bool]("-ztraceCompile")
@@ -110,10 +111,15 @@ DEF checkUnit(U)(R) ==
               \\ Loc. unitRef(Loc, U),
               IF fail?(Ans) THEN error(Ans)
                             ELSE "" FI)         & (\\ Diag .
-    succeed(Diag & R)
+    IF fail?(Ans) THEN
+      succeed(Diag & R)
+    ELSE
+      succeed(1st(data(Ans)) <+ Diag & 2nd(data(Ans)))
+    FI
     )))
 
-FUN checkUnit1 : unitName ** set[unitName,<] ** options -> repo -> com[void]
+FUN checkUnit1 : unitName ** set[unitName,<] ** options -> 
+                  repo -> com[pair[diag, repo]]
 DEF checkUnit1(Name, Deps, Opts)(R) ==
     scan(Opts)                                  & (\\ Tokens .
     (IF sign?(part(Name)) THEN
@@ -125,8 +131,9 @@ DEF checkUnit1(Name, Deps, Opts)(R) ==
     implAna(Opts,1st(StructAndTab))
            (SignGlobSig)                        & (\\ ImplGlobSig .
     pattAna(Opts)(ImplGlobSig)                  & (\\ PattGlobSig .
-    dumpInterOpal(Opts)(PattGlobSig)
-    )))))
+    dumpInterOpal(Opts)(PattGlobSig)            & (\\ _ .
+    callFilters(path(absyFile(Name)(R)))(R)     
+    ))))))
 
 
 
@@ -489,9 +496,9 @@ DEF getRef(MkRef, Pos) ==
     IF Pos region? THEN MkRef(region(region(pos(lin(Pos), col(Pos)),
                                             pos(eLin(Pos), eCol(Pos))),
                                      unspecified))
-    ELSE
+    ELSE 
       MkRef(pos(pos(lin(Pos), col(Pos)), unspecified))
-    FI
+    FI 
     
         
 -- %$Calling the C Compiler$ ==============================================

@@ -1,47 +1,47 @@
 
 IMPLEMENTATION OptimLazySel
-/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+/* %- Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-03-09 11:59:32 $ ($Revision: 1.2 $)
 
 -- subject: Selection optimization on AC 
 -- author:  wg 6-93
 
-IMPORT	Nat		COMPLETELY
-	Seq		COMPLETELY
-	SeqIndex	ONLY !
-	SeqFilter	ONLY |
-	SeqMap		COMPLETELY
-	SeqReduce	COMPLETELY
-	Pair		COMPLETELY
-	Option		COMPLETELY
-	Void		COMPLETELY
+IMPORT  Nat             COMPLETELY
+        Seq             COMPLETELY
+        SeqIndex        ONLY !
+        SeqFilter       ONLY |
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        Pair            COMPLETELY
+        Option          COMPLETELY
+        Void            COMPLETELY
 
-IMPORT	SeqMapEnv	ONLY *
-	NatMap		COMPLETELY
+IMPORT  SeqMapEnv       ONLY *
+        NatMap          COMPLETELY
 
-IMPORT	Ide		ONLY ide local local? = : ide ** ide -> bool
-	IdeMap		ONLY ideMap {} def def? undef ! !? extend dom
-	IdeSet		ONLY ideSet {} incl excl * explode implode - +
-	An		ONLY an none source set:an**sourceAn->an
-			     optim set:an**optimAn->an
-	SourceAn	ONLY sourceAn pos:SORT noPos
-			     error error? kind errorKind never never?
-	OptimAn		ONLY optimAn bindingAn? bindingAn complexity rank
-			     maxIdeNo
-	Ac 		COMPLETELY
-	AcFun		ONLY =
+IMPORT  Ide             ONLY ide local local? = : ide ** ide -> bool
+        IdeMap          ONLY ideMap {} def def? undef ! !? extend dom
+        IdeSet          ONLY ideSet {} incl excl * explode implode - +
+        An              ONLY an none source set:an**sourceAn->an
+                             optim set:an**optimAn->an
+        SourceAn        ONLY sourceAn pos:SORT noPos
+                             error error? kind errorKind never never?
+        OptimAn         ONLY optimAn bindingAn? bindingAn complexity rank
+                             maxIdeNo
+        Ac              COMPLETELY
+        AcFun           ONLY =
 
 
 /*
 IMPORT AcAnaScheme[void,thr,ideSet,
-		   leaf,
-		   enterBlock,returBlock,exitBlock,
-		   enterBind,exitBind,
-		   enterCase,returCase,exitCase,
-		   enterMatch,exitMatch] ONLY df
+                   leaf,
+                   enterBlock,returBlock,exitBlock,
+                   enterBind,exitBind,
+                   enterCase,returCase,exitCase,
+                   enterMatch,exitMatch] ONLY df
 */
 
 IMPORT AcAnaScheme COMPLETELY
@@ -50,8 +50,8 @@ IMPORT AcAnaScheme COMPLETELY
 -- Data Type to represent strict-sets of local ides
 -- ==========================================================================
 
-DATA sset == all 	-- all is the strictness info for error
-	     some(set: ideSet)
+DATA sset == all        -- all is the strictness info for error
+             some(set: ideSet)
 
 FUN * : sset ** sset -> sset
 DEF all * S == S
@@ -64,8 +64,8 @@ DEF S + all == S
 DEF some(S1) + some(S2) == some(S1 + S2)
 
 FUN \ : sset ** sset -> sset
-DEF all \ S == some({})	-- this is counter-intuitive, but serves well
-			-- for our application
+DEF all \ S == some({}) -- this is counter-intuitive, but serves well
+                        -- for our application
 DEF some(S) \ all == some({})
 DEF some(S1) \ some(S2) == some(S1 - S2)
 
@@ -83,43 +83,43 @@ DEF explode(some(S)) == explode(S)
 -- ==========================================================================
 
 FUN sa : void ** natMap[sset] ** exp ** sset 
-					-> natMap[sset] ** sset
+                                        -> natMap[sset] ** sset
 DEF sa == anaScheme
-		   [void,natMap[sset],sset,
-		    leaf,
-		    enterBlock,returBlock,exitBlock,
-		    enterBind,exitBind,
-		    enterCase,returCase,exitCase,
-		    enterMatch,exitMatch,
-		    enterDefault,exitDefault]
+                   [void,natMap[sset],sset,
+                    leaf,
+                    enterBlock,returBlock,exitBlock,
+                    enterBind,exitBind,
+                    enterCase,returCase,exitCase,
+                    enterMatch,exitMatch,
+                    enterDefault,exitDefault]
 
 
 -- some annoying signatures ...
 
 FUN leaf : void ** natMap[sset] ** nat ** exp ** sset 
-				-> natMap[sset] ** sset
+                                -> natMap[sset] ** sset
 
 FUN enterBlock: void ** natMap[sset] ** nat ** an -> void ** natMap[sset] 
     returBlock: void ** natMap[sset] ** an -> natMap[sset] 
     exitBlock : void ** natMap[sset] ** nat ** an ** sset 
-					   -> natMap[sset] ** sset
+                                           -> natMap[sset] ** sset
 FUN enterBind: void ** natMap[sset] ** nat ** an ** ide -> void ** natMap[sset]
     exitBind : void ** natMap[sset] ** nat ** an ** ide ** sset 
-					-> natMap[sset] ** sset
+                                        -> natMap[sset] ** sset
 
 FUN enterCase: void ** natMap[sset] ** nat ** an ** exp -> void ** natMap[sset]
     returCase: void ** natMap[sset] ** an ** exp -> natMap[sset]
     exitCase : void ** natMap[sset] ** nat ** an ** exp 
-			** seq[sset] ** sset -> natMap[sset] ** sset
+                        ** seq[sset] ** sset -> natMap[sset] ** sset
 
 FUN enterMatch: void ** natMap[sset] ** nat ** exp ** ide ** seq[dec] 
-						-> void ** natMap[sset]
+                                                -> void ** natMap[sset]
     exitMatch : void ** natMap[sset] ** nat ** exp ** ide ** seq[dec] ** sset 
-						-> natMap[sset] ** sset
+                                                -> natMap[sset] ** sset
 
 FUN enterDefault: void ** natMap[sset] ** nat ** exp  -> void ** natMap[sset]
     exitDefault : void ** natMap[sset] ** nat ** exp ** sset 
-						-> natMap[sset] ** sset
+                                                -> natMap[sset] ** sset
 
 
 -- leaf expressions
@@ -184,17 +184,17 @@ FUN ml : inh ** thr ** exp ** void -> thr ** void
 
 
 DEF ml == anaScheme
-		   [inh,thr,void,
-		    leaf,
-		    enterBlock,returBlock,exitBlock,
-		    enterBind,exitBind,
-		    enterCase,returCase,exitCase,
-		    enterMatch,exitMatch,
-		    enterDefault,exitDefault]
+                   [inh,thr,void,
+                    leaf,
+                    enterBlock,returBlock,exitBlock,
+                    enterBind,exitBind,
+                    enterCase,returCase,exitCase,
+                    enterMatch,exitMatch,
+                    enterDefault,exitDefault]
 
 
 DATA inh == inh(map: natMap[sset], strict: sset, sels: ideMap[sel],
-		subs: ideMap[ide], lazySels: seq[sel])
+                subs: ideMap[ide], lazySels: seq[sel])
 DATA sel == sel(discr: exp, cons: ide, vars: seq[dec])
 DATA thr == thr(stack:seq[exp], free:nat)
 
@@ -210,11 +210,11 @@ FUN enterBind: inh ** thr ** nat ** an ** ide -> inh ** thr
 FUN enterCase: inh ** thr ** nat ** an ** exp -> inh ** thr
     returCase: inh ** thr ** an ** exp -> thr
     exitCase : inh ** thr ** nat ** an ** exp ** seq[void] ** void 
-					-> thr ** void
+                                        -> thr ** void
 
 FUN enterMatch: inh ** thr ** nat ** exp ** ide ** seq[dec] -> inh ** thr
     exitMatch : inh ** thr ** nat ** exp ** ide ** seq[dec] ** void 
-						-> thr ** void
+                                                -> thr ** void
 
 FUN enterDefault: inh ** thr ** nat ** exp  -> inh ** thr
     exitDefault : inh ** thr ** nat ** exp ** void -> thr ** void
@@ -224,7 +224,7 @@ FUN enterDefault: inh ** thr ** nat ** exp  -> inh ** thr
 
 DEF leaf(I,thr(Rest,Free),Node,apply(An,Fun,Args),S) ==
     LET NewApply == apply(An,substitute(subs(I))(Fun),
-			     substitute(subs(I)) * Args)
+                             substitute(subs(I)) * Args)
     IN
     (thr(NewApply :: Rest,Free),S)
 
@@ -248,7 +248,7 @@ DEF exitBlock(I:inh,T,Node,An,S) == (T,S)
 DEF enterBind(I:inh,T,Node,An,Lhs) == (I,T)
 
 DEF exitBind(I,thr(Rhs :: (block(BlkAn,Binds,Scope) :: Rest),Free),
-	     						Node,An,Lhs,S) ==
+                                                        Node,An,Lhs,S) ==
     (thr(block(BlkAn,binding(An,Lhs,local,Rhs) :: Binds,Scope) :: Rest,Free),
      S)
 
@@ -262,69 +262,69 @@ DEF returCase(I,thr(Default :: Rest,Free),An,Discr) ==
 DEF exitCase(I,T,Node,An,Discr,MSs,DS) == (T,nil)
 
 DEF enterMatch(inh(Map,Strict,Sels,Subs,_),thr(Stack,Free),
-					Node,Discr,Cons,Vars) ==
+                                        Node,Discr,Cons,Vars) ==
     LET (NewStrict,NewFree,LazySels,NewSubs) ==
-		calcLazySels(Map!Node,Strict,Free,Sels,Subs)
-	Sel == sel(Discr,Cons,Vars)
+                calcLazySels(Map!Node,Strict,Free,Sels,Subs)
+        Sel == sel(Discr,Cons,Vars)
         NewSels == ( (\\Var,S. def(ide(Var),Sel,S)) / Sels )(Vars)
     IN
     (inh(Map,NewStrict,NewSels,NewSubs,LazySels),thr(Stack,NewFree))
 
 DEF exitMatch(inh(Map,Strict,Sels,Subs,LazySels),
-	      thr(Scope :: (case(An,Discr,Matches,Default) :: Rest),Free),
-	      Node,_,Cons,Vars,S) ==
+              thr(Scope :: (case(An,Discr,Matches,Default) :: Rest),Free),
+              Node,_,Cons,Vars,S) ==
     LET NewScope == (genLazySel(Subs) / Scope)(LazySels)
     IN
     (thr(case(An,Discr,match(Cons,Vars,NewScope) :: Matches,Default) :: Rest,
-	 Free),
+         Free),
      S)
 
 DEF enterDefault(inh(Map,Strict,Sels,Subs,_),thr(Stack,Free),
-					Node,Discr) ==
+                                        Node,Discr) ==
     LET (NewStrict,NewFree,LazySels,NewSubs) ==
-		calcLazySels(Map!Node,Strict,Free,Sels,Subs)
+                calcLazySels(Map!Node,Strict,Free,Sels,Subs)
     IN
     (inh(Map,NewStrict,Sels,NewSubs,LazySels),thr(Stack,NewFree))
 
 DEF exitDefault(inh(Map,Strict,Sels,Subs,LazySels),
-	        thr(Default ::  Rest,Free),Node,_,S) ==
+                thr(Default ::  Rest,Free),Node,_,S) ==
     LET NewDefault == (genLazySel(Subs) / Default)(LazySels)
     IN
     (thr(NewDefault :: Rest,Free),S)
 
 
   FUN calcLazySels : sset ** sset ** nat ** ideMap[sel] ** ideMap[ide] ->
-				sset ** nat ** seq[sel] ** ideMap[ide]
+                                sset ** nat ** seq[sel] ** ideMap[ide]
   DEF calcLazySels(PathStrict,Strict,Free,Sels,Subs) ==
     LET NewStrict == Strict + PathStrict
-	Snapped   == NewStrict \ Strict
-	LazyIdes  == explode(some(implode(dom(Sels))) * Snapped)
-	(NewFree,LazySels,NewSubs) == mergeLazySels(Sels,Free,<>,Subs,LazyIdes)
+        Snapped   == NewStrict \ Strict
+        LazyIdes  == explode(some(implode(dom(Sels))) * Snapped)
+        (NewFree,LazySels,NewSubs) == mergeLazySels(Sels,Free,<>,Subs,LazyIdes)
     IN
     (NewStrict,NewFree,LazySels,NewSubs)
 
 
   FUN mergeLazySels : ideMap[sel] ** nat ** seq[sel] ** ideMap[ide] ** seq[ide]
-				-> nat ** seq[sel] ** ideMap[ide]
+                                -> nat ** seq[sel] ** ideMap[ide]
   DEF mergeLazySels(Sels,Free,CurrSels,Subs,Ide::Ides) ==
     LET Sel         == Sels!Ide
-	SameMatch   == (\\S. (discr(S) = discr(Sel)) and (cons(S) = cons(Sel)))
-				| CurrSels
-		-- see if their is already a selection based on same
-		-- match and constructor
+        SameMatch   == (\\S. (discr(S) = discr(Sel)) and (cons(S) = cons(Sel)))
+                                | CurrSels
+                -- see if their is already a selection based on same
+                -- match and constructor
     IN
     IF ::?(SameMatch) THEN
-	LET NewIde == ide(vars(ft(SameMatch)) ! pos(Ide,vars(Sel)))
-	IN
-	mergeLazySels(Sels,Free,CurrSels,def(Ide,NewIde,Subs),Ides)
+        LET NewIde == ide(vars(ft(SameMatch)) ! pos(Ide,vars(Sel)))
+        IN
+        mergeLazySels(Sels,Free,CurrSels,def(Ide,NewIde,Subs),Ides)
     ELSE
-	-- construct selection with fresh variables
-	LET (NewFree,NewVars) ==
-		(\\F,V. (succ(F),variable(an(V),local(F))))*(Free,vars(Sel))
-	    NewSel == sel(discr(Sel),cons(Sel),NewVars)
-	    NewIde == ide(NewVars ! pos(Ide,vars(Sel)))
-	IN
-	mergeLazySels(Sels,NewFree,NewSel::CurrSels,def(Ide,NewIde,Subs),Ides)
+        -- construct selection with fresh variables
+        LET (NewFree,NewVars) ==
+                (\\F,V. (succ(F),variable(an(V),local(F))))*(Free,vars(Sel))
+            NewSel == sel(discr(Sel),cons(Sel),NewVars)
+            NewIde == ide(NewVars ! pos(Ide,vars(Sel)))
+        IN
+        mergeLazySels(Sels,NewFree,NewSel::CurrSels,def(Ide,NewIde,Subs),Ides)
     FI
   DEF mergeLazySels(Sels,Free,CurrSels,Subs,<>) ==
     (Free,CurrSels,Subs)
@@ -332,10 +332,10 @@ DEF exitDefault(inh(Map,Strict,Sels,Subs,LazySels),
   FUN genLazySel : ideMap[ide] -> sel ** exp -> exp
   DEF genLazySel(Subs)(Sel,Exp) ==
     case(an(Exp),substitute(Subs)(discr(Sel)),
-	 %(match(cons(Sel),vars(Sel),Exp)),neverReached)
+         %(match(cons(Sel),vars(Sel),Exp)),neverReached)
 
 
-	
+        
 -- ==========================================================================
 -- Entry Point
 -- ==========================================================================
@@ -345,24 +345,24 @@ DEF optimLazySel(Opts,Unit,Dec AS binding(An,Lhs,Mode,Rhs)) ==
     IF deno?(Rhs) THEN Dec
     OTHERWISE
     IF ~(bindingAn?(optim(An))) THEN
-	-- require maxIdeNo for this optimization
-	Dec
+        -- require maxIdeNo for this optimization
+        Dec
     ELSE
-	LET Exp == IF lambda?(Rhs) THEN scope(Rhs) ELSE Rhs FI
-	    (Map,Strict) == sa(nil,{},Exp,some({}))
-	    I == inh(Map,Strict,{},{},<>)
-	    T == thr(<>,succ(maxIdeNo(optim(An))))
-	    (T1,_) == ml(I,T,Exp,nil)
-	    NewRhs ==
-		IF lambda?(Rhs) THEN
-		    lambda(an(Rhs),vars(Rhs),ft(stack(T1)))
-		ELSE ft(stack(T1)) FI
-	    NewMaxIdeNo == pred(free(T1))
-	    NewAn ==
-		An set bindingAn(complexity(optim(An)),rank(optim(An)),
-				 NewMaxIdeNo)
-	IN
-	binding(NewAn,Lhs,Mode,NewRhs)
+        LET Exp == IF lambda?(Rhs) THEN scope(Rhs) ELSE Rhs FI
+            (Map,Strict) == sa(nil,{},Exp,some({}))
+            I == inh(Map,Strict,{},{},<>)
+            T == thr(<>,succ(maxIdeNo(optim(An))))
+            (T1,_) == ml(I,T,Exp,nil)
+            NewRhs ==
+                IF lambda?(Rhs) THEN
+                    lambda(an(Rhs),vars(Rhs),ft(stack(T1)))
+                ELSE ft(stack(T1)) FI
+            NewMaxIdeNo == pred(free(T1))
+            NewAn ==
+                An set bindingAn(complexity(optim(An)),rank(optim(An)),
+                                 NewMaxIdeNo)
+        IN
+        binding(NewAn,Lhs,Mode,NewRhs)
     FI
 
 -- ==========================================================================
@@ -387,17 +387,17 @@ DEF neverReached?(_) == false
 FUN substitute: ideMap[ide] -> exp -> exp
 DEF substitute(Subs)(case(An,Discr,Matches,Default)) ==
     case(An,substitute(Subs)(Discr),
-	    SubsMatch * Matches,
-	    substitute(Subs)(Default))
+            SubsMatch * Matches,
+            substitute(Subs)(Default))
      WHERE SubsMatch == 
-	\\Match.
-    	  (LET NewSubs == ( (\\Var,S. undef(ide(Var),S)) / Subs)(vars(Match))
-    	   IN match(cons(Match),vars(Match),substitute(NewSubs)(scope(Match))))
+        \\Match.
+          (LET NewSubs == ( (\\Var,S. undef(ide(Var),S)) / Subs)(vars(Match))
+           IN match(cons(Match),vars(Match),substitute(NewSubs)(scope(Match))))
 DEF substitute(Subs)(block(An,Binds,Scope)) ==
     block(An,SubsBind * Binds,substitute(NewSubs)(Scope))
       WHERE SubsBind == \\Bind.binding(an(Bind),ide(Bind),mode(Bind),
-				       substitute(Subs)(def(Bind)))
-	    NewSubs == ( (\\Bind,S. undef(ide(Bind),S)) / Subs )(Binds)
+                                       substitute(Subs)(def(Bind)))
+            NewSubs == ( (\\Bind,S. undef(ide(Bind),S)) / Subs )(Binds)
 DEF substitute(Subs)(apply(An,Fun,Args)) ==
     apply(An,substitute(Subs)(Fun),substitute(Subs) * Args)
 DEF substitute(Subs)(ide(An,Ide)) ==
