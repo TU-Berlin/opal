@@ -2,7 +2,7 @@
 ;;; Copyright 1989 - 1999 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.4 1999-03-09 11:51:09 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-toolbar.el,v 1.5 1999-04-28 12:55:43 kd Exp $
 
 
 (provide 'opal-toolbar)
@@ -17,6 +17,9 @@
 ;; 68 for normal size
 (defvar opal-toolbar-icon-width 40
   "*width of icons in currently selected icon set.")
+
+(defvar opal-toolbar-unsaved nil
+  "t iff some opal buffers have been modified")
 
 (if opal-toolbar-position
     (progn
@@ -62,7 +65,7 @@
 	(defvar opal-toolbar-save-icon
 	  (toolbar-make-button-list (opal-toolbar-make-file "save.gif")))
 	(defvar opal-toolbar-save-button
-	  [opal-toolbar-save-icon opal-toolbar-save t
+	  [opal-toolbar-save-icon opal-toolbar-save opal-toolbar-unsaved
            "save all changed Opal sources"])
 
 	(defvar opal-toolbar-load-icon
@@ -229,6 +232,8 @@
 	(defun opal-toolbar-save ()
 	  (interactive)
 	  (opal-ask-save-opal-buffers)
+	  (setq opal-toolbar-unsaved nil)
+	  (opal-toolbar-install)
 	  )
 
 	(defun opal-toolbar-load ()
@@ -305,3 +310,54 @@
 	(put 'opal-diag-next-main-error 'menu-enable '(opal-ersatz-enabled-p))
 
 )); not running-xemacs
+
+(defun opal-toolbar-save-necessary ()
+  " return t, iff some Opal buffers contain unsaved changes"
+  (interactive)
+
+  (let ((bl (buffer-list))
+	(unsaved nil)
+	(old opal-toolbar-unsaved)
+	b blv
+	)
+    (while (and bl (not unsaved))
+      (setq b (car bl))
+      (setq bl (cdr bl))
+      (setq blv  (buffer-local-variables b))
+      (setq unsaved (and
+		     (or
+		      (equal (assoc 'major-mode blv) 
+			     '(major-mode . opal-mode))
+		      (equal (assoc 'major-mode blv) 
+			     '(major-mode . opal-defs-mode))
+		      )
+		     (buffer-modified-p b)
+		     (buffer-file-name b)
+		     )
+	    )
+      )
+    (setq opal-toolbar-unsaved unsaved)
+    (if (or (and (not old) unsaved) (and old (not unsaved)))
+	(progn 
+;	  (popup-dialog-box (list "Some Opal files changed status" ["ok" 'b t]))
+	  (opal-toolbar-install)
+	  )
+      )
+    )
+  )
+	    
+(defun opal-toolbar-mark-change ()
+  "set unsaved variable to t and make save button pop up"
+  
+  (let ((blv (buffer-local-variables (current-buffer))))
+    (if (or
+	 (equal (assoc 'major-mode blv) '(major-mode . opal-mode))
+	 (equal (assoc 'major-mode blv) '(major-mode . opal-defs-mode))
+	 )
+	(progn
+	  (setq opal-toolbar-unsaved t)
+	  (opal-toolbar-install)
+	  )
+      )
+    )
+  )

@@ -678,6 +678,8 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
       nil
     (opal-misc-hilit-all)
     )
+  (add-hook 'first-change-hook 'opal-toolbar-mark-change)
+  (add-hook 'after-save-hook 'opal-toolbar-save-necessary)
   (run-hooks 'opal-mode-hook)
   (run-hooks 'opal-mode-hooks)  ; for backwards compatibility
   )
