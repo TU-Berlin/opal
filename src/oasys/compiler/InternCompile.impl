@@ -20,6 +20,7 @@ IMPORT  Nat                     COMPLETELY
 
 IMPORT  Com                     COMPLETELY
         ComCompose              COMPLETELY
+        ComState                COMPLETELY
         ComPairCompose          COMPLETELY
         File                    COMPLETELY
         FileName                COMPLETELY
@@ -35,9 +36,9 @@ IMPORT  Com                     COMPLETELY
         
 IMPORT  -- oc admin
         Options                 COMPLETELY
-		OcBinStream				COMPLETELY
+                OcBinStream                             COMPLETELY
         InterOpal               COMPLETELY
-		InterOpalDump			COMPLETELY
+                InterOpalDump                   COMPLETELY
         Error                   COMPLETELY
         Pos                     COMPLETELY
 
@@ -52,7 +53,7 @@ IMPORT  -- oc1
         ImplementationAnalysis  ONLY implAna
         PatternAnalysis         ONLY pattAna
         InterOpalGeneration     ONLY dumpInterOpal gen
-		Translation				COMPLETELY
+                Translation                             COMPLETELY
 
 IMPORT  -- oc2
         PreparedOptions         ONLY popts prepareOptions options
@@ -64,7 +65,7 @@ IMPORT  -- oc2
         Generate                ONLY generate
 
 IMPORT  -- oasys
-	RepoDiag                COMPLETELY
+        RepoDiag                COMPLETELY
         RepoName                COMPLETELY
         RepoAdmin               COMPLETELY
         RepoSource              COMPLETELY
@@ -72,7 +73,7 @@ IMPORT  -- oasys
         RepoUnitAccess          COMPLETELY
         RepoInternData          COMPLETELY
         RepoEvent               COMPLETELY
-	InternExec		COMPLETELY
+        InternExec              COMPLETELY
 
 
 IMPORT  DEBUG                   COMPLETELY
@@ -88,12 +89,14 @@ DEF diagFile == FIELD?[bool]("-zdiagFile")
 FUN dontEvalAll : bool
 DEF dontEvalAll == FIELD?[bool]("-zoldOc2")
 
+FUN pchecker: bool
+DEF pchecker == FIELD?[bool]("-zpchecker")
 
 -- %$Checking Entire Units$ =================================================
 
 DEF checkUnit(U)(R) ==
     LET Deps == related(direct, imports)(U)(R) 
-                        + lookup(%("BOOL", "DENOTATION"), sign)(R)
+                        + predefinedStructs(R)
     IN
     /*
     (\\D, _ . writeLine'File(stdErr, asDeno(symbolic)(D)(R)), nil)
@@ -140,7 +143,7 @@ DATA extendResult ==
 
 DEF extendUnit(U, Text, Deps)(R) ==
     makeExtendOptions(U, Deps +
-                         lookup(%("BOOL", "DENOTATION"),sign)(R))(R) &(\\ Opts.
+                         predefinedStructs(R))(R) &(\\ Opts.
     breakOnInterrupt(
         extendUnit1(U, Text, Deps, Opts)(R)
     )                                           ; (\\ Ans .
@@ -168,7 +171,7 @@ DEF extendUnit(U, Text, Deps)(R) ==
             LET Ref == ref(Diag)
             IN
             IF textRef?(Ref) 
-                   ANDIF locator(Ref) in region(pos(0,0), pos(1,!("200"))) THEN
+                   ANDIF locator(Ref) in region(pos(0,0), pos(1, maxCol)) THEN
                 nil
             ELSE
                 avail(shift(!("-1"), 0)(Diag))
@@ -212,7 +215,7 @@ DEF compileUnit(U)(R) ==
     LET Deps == related(direct, implImports, \\UI. library?(UI)(R) 
                                                         or released?(UI)(R))
                        (U)(R) 
-                   + lookup(%("BOOL", "DENOTATION"), sign)(R)
+                   + predefinedStructs(R)
     IN
     makeCompileOptions(U, Deps)(R)              & (\\ Opts .
     breakOnInterrupt(
@@ -252,13 +255,13 @@ DEF compileUnit(U)(R) ==
 FUN compileUnit1 : unitName ** set[unitName,<] ** options -> repo -> com[void]
 DEF compileUnit1(Name, Deps, DraftOpts)(R) ==
     LET Opts == prepareOptions(DraftOpts)
-		oOpts == options(Opts)
+                oOpts == options(Opts)
     IN
     optread(oOpts,myInterOpalFile(oOpts), ioTypeKey)    & (\\Inter?.
     IF avail?(Inter?) THEN
-	LET Inter == cont(Inter?)
-	IN dump(Inter) & (\\ _ .
-        unit(oOpts)(Inter) 								& (\\ AnaUnit.
+        LET Inter == cont(Inter?)
+        IN dump(Inter) & (\\ _ .
+        unit(oOpts)(Inter)                                                              & (\\ AnaUnit.
         optimize(Opts)(AnaUnit)                         & (\\ OptUnit_+_Err.
         failOnError(Opts,2nd(OptUnit_+_Err))            & (\\ _ .
         translate(Opts)(1st(OptUnit_+_Err))             & (\\ TransMod_+_Err .
@@ -289,7 +292,8 @@ FUN makeExtendOptions : unitName ** set[unitName,<] -> repo -> com[options]
 FUN makeCompileOptions : unitName ** set[unitName,<] -> repo -> com[options]
 
 DEF makeCheckOptions(U, Deps)(R) ==
-    LET Args == defaultCheckPrefix ++ 
+    getOptions & (\\userOpts.
+    LET Args == userOpts ++ defaultCheckPrefix ++ 
                 makeCheckOptionMode(part(U)) ++
                 makeOptionStruct(U)(R) ++
                 ((\\IU, Res . makeOptionStruct(IU)(R) ++ Res, <>) 
@@ -308,11 +312,12 @@ DEF makeCheckOptions(U, Deps)(R) ==
     IN
     create(DiagName)                                    & (\\ Diag .
     succeed(file(Opts, Diag))
-    ))       
+    )))      
                                 
 
 DEF makeExtendOptions(U, Deps)(R) ==
-    LET Args == defaultExtendPrefix ++ 
+    getOptions & (\\userOpts.
+    LET Args == userOpts ++ defaultExtendPrefix ++ 
                 makeExtendOptionMode(part(U)) ++
                 %("-zforeignExp:" ++ path(absyFile(U)(R))) ++
                 makeOptionStruct(U)(R) ++
@@ -325,10 +330,11 @@ DEF makeExtendOptions(U, Deps)(R) ==
     )                                                   & (\\ Opts .
     create("/dev/null")                                 & (\\ Diag .
     succeed(file(Opts, Diag))
-    ))
+    )))
 
 DEF makeCompileOptions(U, Deps)(R) ==
-    -- FIXME: clean solution for identifcation of handcoded structures
+    getOptions & (\\ userOpts.
+    -- FIXME: clean solution for identification of handcoded structures
     --        (use a unitFlag to determine if a structure is handcoded?)
     LET (Base, _) == splitSuffix(path(sourceFile(U)(R)), ".")
         HcFile    == Base ++ ".hc.c"
@@ -347,7 +353,7 @@ DEF makeCompileOptions(U, Deps)(R) ==
                      ELSE
                          %("-zevalAll")
                      FI
-        Args == defaultCompilePrefix ++ 
+        Args == userOpts ++ defaultCompilePrefix ++ 
                 OptOpts ++
                 HcOpts ++
                 makeOptionStruct(U)(R) ++
@@ -361,7 +367,12 @@ DEF makeCompileOptions(U, Deps)(R) ==
     )                                                   & (\\ Opts .
     create("/dev/null")                                 & (\\ Diag .
     succeed(file(Opts, Diag))
-    )))
+    ))))
+
+FUN predefinedStructs: repo -> set[unitName, <]
+DEF predefinedStructs ==
+  lookup(IF pchecker? THEN %("BOOL", "DENOTATION", "PROOFSCRIPT")
+         ELSE %("BOOL", "DENOTATION") FI, sign)
 
 FUN defaultCheckPrefix : seq[denotation]
 FUN defaultExtendPrefix : seq[denotation]
@@ -486,18 +497,18 @@ DEF codeUnit(U)(R) ==
         (Base, _)  == splitSuffix(ObjFile, ".")
         SrcFile    == Base ++ ".c"
         IncludePath == (\\F, P. 
-			   IF sourcePath(F) |= objectPath(F) THEN
-			       dirName1(sourcePath(F)) ::
-			       dirName1(objectPath(F)) :: P
-			   ELSE
-			       dirName1(sourcePath(F)) :: P
-			   FI,
-			<>) / searchPath(R)
+                           IF sourcePath(F) |= objectPath(F) THEN
+                               dirName1(sourcePath(F)) ::
+                               dirName1(objectPath(F)) :: P
+                           ELSE
+                               dirName1(sourcePath(F)) :: P
+                           FI,
+                        <>) / searchPath(R)
     IN
-    oasysLibDir						& (\\ Dir.
+    oasysLibDir                                         & (\\ Dir.
     call(normPath(Dir) ++ "ccompiler", 
          "ccompiler" :: SrcFile :: ObjFile :: IncludePath, 
-	 stdIn, stdOut, stdErr)(R) 			; (\\ Ans .
+         stdIn, stdOut, stdErr)(R)                      ; (\\ Ans .
     IF okay?(Ans) THEN
         succeed(ok & R)
     ELSE
@@ -574,3 +585,11 @@ DEF call(Prog, Args) ==
     FI
     )
 */
+
+-- %$User-definable compiler options$
+
+FUN optionsId: stateId[seq[denotation]]
+DEF optionsId == EXEC(stateId(<>))
+
+DEF setOptions(s) == optionsId => (\\ _ . s)
+DEF getOptions == get(optionsId)
