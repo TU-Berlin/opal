@@ -3,7 +3,7 @@ IMPLEMENTATION PrioTab
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-11 14:59:38 $ ($Revision: 1.2 $)
 
 IMPORT Seq ONLY seq % # :: ft <> ++ forall? ::? last revert
        Pair ONLY pair & unpair 1st 2nd
@@ -20,7 +20,6 @@ IMPORT Seq ONLY seq % # :: ft <> ++ forall? ::? last revert
        Error ONLY ok? ok + err error errKind
        SeqMap ONLY *
        SeqOfSeq ONLY flat
-       Options ONLY rassoc? : bool lassoc? : bool
        Char ONLY char
        String ONLY string
        Pos ONLY `
@@ -71,13 +70,6 @@ DEF conflict?(r1, r2) ==
   
 
 -- %$Prioritätentabelle$
-/*
-DATA prioTab == pT(tab: map[name, <! , map[name, <! , rule]])
-
-FUN <! : name ** name -> bool
-DEF <!(n1, n2) ==
-  IF eqBase(n1, n2) THEN false ELSE n1 < n2 FI
-*/
 
 DEF `(gS)(pT) == (asD(gS), empty) / tab(pT)
   
@@ -149,7 +141,7 @@ DEF (n1, n2, r) ?&! prT ==
 
 /* %Bilde transitiven Abschluß, liefere ggf. Fehlermenge bei Konflikten
     zurück */
--- FUN tClosure: globSig ** pos -> prioTab -> prioTab ** err
+FUN tClosure: globSig ** pos -> prioTab -> prioTab ** err
 DEF tClosure(gS, pos)(prT) ==
   LET (newPT, err, stable?) == compose(gS, pos)(pT(M), M, M)
       M == tab(prT)
@@ -257,56 +249,9 @@ DEF insertRight(gS)(N1s, N2s, pT, pos) ==
   IN
     (pt2, E1 + E2)
 
--- %$Nachfragen$
-
--- %@zoindex debugPrio
-DEF prio(gS)(n1, n2, pT) == 
-  LET r? == PRINT(FIELD?[bool]("-zdebugPrio"),
-                  \\ . "prio: looking up: " ++ `(gS, standard)(n1) ++
-                       " and " ++ `(gS, standard)(n2) ++
-                       "\nfound: " ++ 
-                       `(`)(pT !? (n1, n2)) ,
-                  pT !? (n1, n2) )
-  IN
-  IF r? nil? THEN
-    IF eq(gS)(n1, n2) THEN
-      IF rassoc? THEN (right, assumed(right))
-      IF lassoc? THEN (left, assumed(left))
-      ELSE (both, none)
-      FI
-    ELSE
-      (both, none)
-    FI
-  ELSE
-    (what(r? cont), r? cont)
-  FI
-
--- %kopiert aus TypeDepExprAnalysis
-FUN eq: globSig -> name**name -> bool
--- sollte aus globSig kommen! (Gibt's fast identisch in FunDefAnalysis!)
-
-DEF eq(sig)(var(id1),var(id2)) == id1=id2
-DEF eq(sig)(var(id1),name2) == false
-DEF eq(sig)(name1,var(id2)) == false
-DEF eq(sig)(name1,name2) ==
-  IF eqBase(name1,name2) THEN
-    IF name1 internal? THEN true
-    ELSE eq?(eq(sig))(origInst(sig,name1),origInst(sig,name2))
-    FI
-  ELSE false
-  FI
-
-DEF left?(gS)(n1, n2, pT) == 
-  LET (p, r) == prio(gS)(n1, n2, pT)
-  IN (p left?, r)
-
-DEF right?(gS)(n1, n2, pT) == 
-  LET (p, r) == prio(gS)(n1, n2, pT)
-  IN (p right?, r)
-
 -- %$Testen$
 
--- FUN conflicts: globSig -> seq[name] ** seq[name] -> seq[pair[name, name]]
+FUN conflicts: globSig -> seq[name] ** seq[name] -> seq[pair[name, name]]
 DEF conflicts(gS)(N1, N2) ==
   LET lift == \\F. \\n. F(fct(gS, n))
       P1 == lift(abb?) | lift(infixPossible?) | N1
@@ -316,7 +261,7 @@ DEF conflicts(gS)(N1, N2) ==
   IN
     open? | cf? | pair(P1, P2)
 
--- FUN conflict? : globSig -> name ** name -> bool
+FUN conflict? : globSig -> name ** name -> bool
 DEF conflict?(gS)(n1, n2) ==
   LET lFct == fct(gS, n1)
       rFct == fct(gS, n2)
@@ -392,9 +337,3 @@ DEF asDeno(left) == "left"
 DEF asDeno(right) == "right"
 DEF asDeno(both) == "(??)"
 
-/*
-/* %make uniform instance 0 in external names */
-FUN $ : name -> name
-DEF $(extName(s, iD, _)) == extName(s, iD, inst(0))
-DEF $(X) == X
-*/
