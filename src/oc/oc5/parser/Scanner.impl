@@ -4,7 +4,7 @@ IMPLEMENTATION Scanner
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-13 10:41:03 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-13 16:34:51 $ ($Revision: 1.3 $)
 
 /* %@table @asis
 @item author: 
@@ -40,12 +40,9 @@ IMPORT
         Greek 			ONLY punctuation? letgit? printable? space?
         Nat                     COMPLETELY
         NatConv 		ONLY asChar `
-        NatMap[char] 		ONLY natMap def {} !
         Pair[seq[token],repTab] ONLY pair & 1st 2nd 
 	Predicate 		ONLY or ~
         PrintableChar           COMPLETELY
-        Set[char,<]        COMPLETELY
-        SetFilter 		ONLY |
         Seq                     COMPLETELY
        	SeqFilter 		ONLY drop split
         SeqMap                  ONLY * 
@@ -62,7 +59,7 @@ IMPORT
 IMPORT
         ZOpts                   COMPLETELY
         Token                   COMPLETELY
-        Terminal                COMPLETELY
+        Terminal                ONLY terminal ! eof deno ide =
         Rep                     COMPLETELY
 
 -- %$IO$
@@ -70,17 +67,9 @@ IMPORT
 -- %Scan @sc{Opal} file which is given in the options
 FUN scan: options -> com[pair[seq[token],repTab]]
 DEF scan(Opt) ==
-  verb(Opt,subphase,"scanning ...") & (\\ _ . 
+  verb(Opt,subphase,"scanning ...") & (\\ _ .
   load(myFile(Opt)) & (\\Contents.    -- whole file as seq[string]
-	LET ClearContents == clearHeading(Contents)
-	    Scan == scan(ClearContents, initArg())
-  	IN scan(Scan, Opt)))
-
--- %Scan the given string.
-FUN scan: options ** string -> com[pair[seq[token],repTab]]
-DEF scan(Opt,Str) ==
-  verb(Opt,subphase,"scanning ...") & (\\ _ . 
-  scan(scanStr(Str, initArg()), Opt))
+  scan(scan(clearHeading(Contents), initArg()), Opt)))
 
 -- %process scanning result 
 FUN scan: sc ** options -> com[pair[seq[token],repTab]]
@@ -143,11 +132,6 @@ DEF final(sc(RT,TS,P,E,C)) ==
                    IF C deno? THEN sErr(dNotC,op(C))
                    ELSE ok   
                    FI
-
--- %Scan string (be aware that string may contain several lines!)
-FUN scanStr: string ** sc -> sc
-DEF scanStr(Str, Init) == final(scan(Str, Init))
-
 -- --------------------------------------------------------------------------
 -- Now scanning 
     -- Hints for short parameter names
@@ -350,9 +334,9 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
               NP2 == nextPosUni(NP, CS)
               CS2 == rtUni(CS)
           IN
-          IF Ch2 in escapes THEN -- ok, add corresponding character
+          IF Ch2 escapes? THEN -- ok, add corresponding character
             scan(CS2,RT,TS,NP2,E+chE, deno(op(C), ESCCH :: sf(C), dot?))
-            WHERE ESCCH == escape!asNat(Ch2)
+            WHERE ESCCH == escape(Ch2)
           IF Ch2 = x THEN -- hex number
             scanHex(CS2, RT, TS, NP2, E + chE, C, P, 0, x :: <> )
           IF 0 <= Ch2 and Ch2 <= 7 THEN -- oct number
@@ -675,40 +659,34 @@ DEF cHigh(s, p) == sErr("`\\" ++ (revert(s)`) ++
 -- %- -----------------------------------------------------------------------
 
 -- %graphic characters which are allowed for identifiers
-FUN special : set[char,<]
-DEF special == LET allChars == (0 .. 256 - 1)(asChar)
-                   check == IF latin1? THEN punctuation?'Latin1
+
+FUN special? : char -> bool
+DEF Ch special? == 
+	LET       check? == IF latin1? THEN punctuation?'Latin1
                             IF greek? THEN punctuation?'Greek
                             ELSE punctuation?'Char
                             FI
-               IN
-               excl(dblquote, (check | allChars) - extra)
-
-FUN special? : char -> bool
-DEF Ch special? == Ch in special
+	IN IF check?(Ch) THEN 
+		IF extra?(Ch) THEN false ELSE dblquote |= Ch FI
+	   ELSE false FI
 
 -- %delimiters which have predefined meaning to @sc{Opal}
-FUN extra: set[char,<]
-DEF extra ==  incl(lbrace,incl(rbrace,incl(comma,
-                   incl(rsngquote,incl(lsqbrace,(rsqbrace %))))))
 
 FUN extra?: char -> bool
-DEF Ch extra? == Ch in extra
+DEF Ch extra? == IF Ch = lbrace ORIF Ch = rbrace ORIF Ch = comma ORIF 
+		 Ch = rsngquote ORIF Ch = lsqbrace ORIF Ch = rsqbrace THEN
+		true ELSE false FI
 
 -- %alphanumeric characters 
-FUN alphanum: set[char, <]
-DEF alphanum == 
- LET allChars == (0 .. 256 - 1)(asChar)
-     check == IF latin1? THEN letgit?'Latin1
+
+FUN alphanum?: char -> bool
+DEF alphanum?(ch) == 
+ LET check? == IF latin1? THEN letgit?'Latin1
               IF greek? THEN letgit?'Greek
               ELSE letgit?'Char
               FI
-     check2 == check or usc?
- IN
- incl(?, check2 | allChars)
-
-FUN alphanum?: char -> bool
-DEF alphanum?(ch) == ch in alphanum
+ IN IF check?(ch) ORIF usc?(ch) ORIF ch = ? THEN true
+	ELSE false FI
 
 FUN scanLetgit? : char -> bool
 DEF scanLetgit? == IF latin1? THEN letgit?'Latin1
@@ -717,17 +695,13 @@ DEF scanLetgit? == IF latin1? THEN letgit?'Latin1
                    FI
 
 -- %Other characters, generally only allowed in comments
-FUN other: set[char, <]
-DEF other == 
- LET allChars == (0 .. 256 - 1)(asChar)
-     check == IF latin1? THEN ~(printable?'Latin1 or space?'Latin1)
+
+FUN other?: char -> bool
+DEF other? == 
+              IF latin1? THEN ~(printable?'Latin1 or space?'Latin1)
               IF greek? THEN ~(printable?'Greek or space?'Greek)
               ELSE ~(printable?'Char or space?'Char)
               FI
- IN check | allChars
-
-FUN other?: char -> bool
-DEF Ch other? == Ch in other
 
 -- %space (needed for adapting to different character sets)
 FUN scanSpace?: char -> bool
@@ -740,27 +714,22 @@ FUN usc? : char -> bool
 DEF Ch usc? == Ch = underscore
 
 /* %Single Characters allowed after a backslash. */
-FUN escapes: set[char, <]
-DEF escapes == incl(n, incl(t, incl(v, incl(b, incl(r, incl(f, incl(a, 
-               incl(\, incl(?, incl(rsngquote, incl(dblquote,
-               {})))))))))))
+FUN escapes?: char -> bool
+DEF escapes?(ch) == 
+IF ch = n ORIF ch = t ORIF ch = v ORIF ch = b ORIF ch = r ORIF
+   ch = f ORIF ch = a ORIF ch = \ ORIF ch = ? ORIF ch = rsngquote
+   ORIF ch = dblquote THEN true ELSE false FI
 
-FUN ord : denotation -> nat
-DEF ord(D) == asNat(D!) 
-FUN escape: natMap[char]
-DEF escape ==
-  def("n" ord, "\n"!,
-  def("t" ord, "\t"!,
-  def("v" ord, "\v"!,
-  def("b" ord, "\b"!,
-  def("r" ord, "\r"!,
-  def("f" ord, "\f"!,
-  def("a" ord, "\a"!,
-  def("\\" ord, "\\"!,
-  def("?" ord, "?"!,
-  def("'" ord, "'"!,
-  def("""" ord, """"!,
-  {})))))))))))
+FUN escape: char -> char
+DEF escape(ch) ==
+  IF ch = n THEN "\n"!
+  IF ch = t THEN "\t"!
+  IF ch = v THEN "\v"!
+  IF ch = b THEN "\b"!
+  IF ch = r THEN "\r"!
+  IF ch = f THEN "\f"!
+  IF ch = a THEN "\a"!
+  ELSE ch FI
 
 -- %$Functions to handle Unicode-Escapes$
 
