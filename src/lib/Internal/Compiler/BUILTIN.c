@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.1.1.1 1998-06-16 16:00:15 wg Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.2 1998-10-26 12:38:25 maeder Exp $
  */
 
 /* FIXME: stub for strdup() */
@@ -872,22 +872,29 @@ char * link_closure(OBJ Clos){
 #include <dlfcn.h>
 /* FIXME: put include to unixconfig.h */
 
-static void * dlopen_handle = NULL;
+static void * dlopen_handle[512] = {NULL};
+static int handle_counter = 0;
 static char dlopen_error_buf[256] = {0};
 
 static void dl_lazy_open(){
-    if (dlopen_handle == NULL){
-	dlopen_handle = dlopen(NULL, RTLD_NOW|RTLD_GLOBAL);
+    if (dlopen_handle[0] == NULL){
+	dlopen_handle[0] = dlopen(NULL, RTLD_NOW|RTLD_GLOBAL);
     }
 }
 
 static void * dl_dlopen_resolve(char * sym){
-    void *res;
+    void *res = NULL;
+    int i = 0;
     dl_lazy_open();
-    res = dlsym(dlopen_handle, sym);
-    if (res == NULL) {
+    for (i = 0; i <= handle_counter && res == NULL; i++) {
+      res = dlsym(dlopen_handle[i], sym);
+      if (res == NULL) {
 	strncpy(dlopen_error_buf, dlerror(), sizeof(dlopen_error_buf)-1);
-	return NULL;
+	DLDDEBUG(fprintf(stderr, "not resolved by dlopen: %s\n", sym));
+      }
+    };
+    if (res == NULL) {
+      return NULL;
     } else {
 	/* Call init entry -- it is possible that the initialization entry of
 	 * the structure defining this symbol has not yet been called,
@@ -994,6 +1001,7 @@ static int dl_dlopen_link(char * structure){
     {
 	void *handle;
 	char initsym[128];
+	char *error;
 	void (*init)();
 	handle = dlopen(charbuf, RTLD_NOW|RTLD_GLOBAL);
 	if (handle == NULL){
@@ -1004,11 +1012,16 @@ static int dl_dlopen_link(char * structure){
 	    return 0;
 	}
 	ocs_dl_make_init_entry(structure, initsym, sizeof(initsym)-1);
+
+	/* next three lines inserted */
+	handle_counter++;
+	if (handle_counter >= 512) handle_counter = 1; /* restart to avoid overflow */
+	dlopen_handle[handle_counter] = handle;
 	init = dlsym(handle, initsym);
-	if (init == NULL){
+	if ((error = dlerror()) != NULL){
 	    sprintf(dlopen_error_buf,
 		    "cannot find structure `%s' in shared object `%s' (%s)", 
-		    structure, charbuf, dlerror());
+		    structure, charbuf, error);
 	    if (transient) unlink(charbuf);
 	    return 0;
 	}
