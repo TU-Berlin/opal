@@ -4,7 +4,7 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 2001-05-25 08:52:04 $ ($Revision: 1.2 $)
+   $Date: 2001-05-25 12:06:11 $ ($Revision: 1.3 $)
 */
 #include "unixconfig.h"
 #include <fcntl.h>
@@ -18,7 +18,8 @@ static int mkFifo(char * name){
     int res;
 #ifndef HAVE_MKFIFO
     char buf[1024];
-    res = system(sprintf(buf, "mkfifo %s", name));
+    sprintf(buf, "mkfifo %s", name);
+    res = system(buf);
 #else
     res = mkfifo(name, 0666);
 #endif
