@@ -306,8 +306,14 @@ DEF flat(funct(d, c)) == cart(%(flat(d), flat(c)))
 
 /* %$Formal test$ */
 /* %Perform a formal test */
+DEF checkFormalTest1 == checkFormalTestX(1)
+DEF checkFormalTest2 == checkFormalTestX(2)
+DEF checkFormalTest3 == checkFormalTestX(3)
+DEF checkFormalTest4 == checkFormalTestX(4)
 
-DEF checkFormalTest(R, main, F, re, e) ==
+FUN checkFormalTestX: nat -> repo ** unitName ** formula ** ref ** expr ->
+                       com[pair[repo, diag]]
+DEF checkFormalTestX(argNo)(R, main, F, re, e) ==
   LET func == ft(elems(arg(e)))  -- %function to be tested
       caseTest == sd(elems(arg(e))) -- %function to compute case tests
   IN       
@@ -326,13 +332,14 @@ DEF checkFormalTest(R, main, F, re, e) ==
         IF ~(ok?(dg)) THEN succeed(R & dg)
         ELSE
           LET actParams == actuals(oper(funct(e)))(R)
-              (R5, ctF) == findCheckTestFun(R2, ft(actParams), sd(actParams))
+              (R5, ctF) == findCheckTestFun(argNo)
+                                           (R2, ft(actParams), sd(actParams))
           IN
           IF avail?(ctF) THEN
             doCheckTestCases(R5, main, cont(ctF), re, e)
                             (testFs, <>) && (\\ R6, dg1.
             IF ok?(dg1) THEN
-              doPerformFormalTest(R6, main, re, F, e)
+              doPerformFormalTest(argNo)(R6, main, re, F, e)
             ELSE
               succeed(R6 & dg1)
             FI
@@ -346,6 +353,7 @@ DEF checkFormalTest(R, main, F, re, e) ==
     FI
   FI
 
+/* %Liefert die Prädikate ab, mit denen die Testfälle beschrieben werden */
 FUN doEvalTestCases: repo ** unitName ** expr'RepoAbsy ** objectName ** ref ->
                       com[triple[repo, diag, seq[expr'RepoAbsy]]]
 DEF doEvalTestCases(R, main, caseTest, fctName, re) ==
@@ -381,7 +389,7 @@ DEF doEvalTestCases(R, main, caseTest, fctName, re) ==
   FI
   )))))))
   
-
+/* Aufgerufen mit den Prädikaten und den schon abgelehnten Prädikaten */
 FUN doCheckTestCases: repo ** unitName ** objectName ** ref ** expr'RepoAbsy ->
                        seq[expr'RepoAbsy] ** seq[expr'RepoAbsy] ->
                        com[pair[repo, diag]]
@@ -426,24 +434,33 @@ DEF doCheckTestCases(R, main, ctFun, re, e)(testFs, notFulfilled) ==
   FI
 
     
-FUN doPerformFormalTest: repo ** unitName ** ref ** formula ** expr'RepoAbsy ->
-                          com[pair[repo, diag]]
-DEF doPerformFormalTest(R, main, re, F, e) ==
+FUN doPerformFormalTest: nat ->
+                          repo ** unitName ** ref **
+                          formula ** expr'RepoAbsy -> com[pair[repo, diag]]
+DEF doPerformFormalTest(argNo)(R, main, re, F, e) ==
   LET testData == td(elems(arg(e)))
       errorFunct == \\ den. (error, re) !! den
       aParams == actuals(oper(funct(e)))(R)
-      (R2, aFuns) == findAuxFuns(R, ft(aParams), sd(aParams))
+      (R2, aFuns) == 
+        IF argNo = 1 THEN findAuxFuns(R, ft(aParams))
+        IF argNo = 2 THEN findAuxFuns(argNo)(R, ft(aParams), sd(aParams))
+        IF argNo = 3 THEN findAuxFuns(argNo)(R, ft(aParams), sd(aParams),
+                                             ft(rt(rt(aParams))))
+        IF argNo = 4 THEN findAuxFuns(argNo)(R, ft(aParams), sd(aParams),
+                                             ft(rt(rt(aParams))),
+                                             ft(rt(rt(rt(aParams)))))
+        FI
   IN
   IF error?(aFuns) THEN
     succeed(R2 & diags(aFuns))
   ELSE
-    doFT(R2, main, F, re, errorFunct, aFuns)(testData, ok, 0)
+    doFT(argNo)(R2, main, F, re, errorFunct, aFuns)(testData, ok, 0)
   FI
 
-FUN doFT: repo ** unitName ** formula ** ref **
+FUN doFT: nat -> repo ** unitName ** formula ** ref **
            (denotation -> diag) ** auxFuns ->
            expr'RepoAbsy ** diag ** nat -> com[pair[repo, diag]]
-DEF doFT(R, main, F, re, diagF, aFuns)
+DEF doFT(argNo)(R, main, F, re, diagF, aFuns)
         (restTestData, dg, no) ==
   LET testEmpty == apply(none, <>?(aFuns) !, restTestData)
   IN
@@ -460,8 +477,24 @@ DEF doFT(R, main, F, re, diagF, aFuns)
     IF isEmpty? THEN succeed(R3 & dg)
     ELSE
       LET ftData == apply(none, ft(aFuns)!, restTestData)
-          tupleArgs == tuple(none, %(apply(none, 1st(aFuns)!, ftData),
-                                     apply(none, 2nd(aFuns)!, ftData)))
+          tupleArgs == IF argNo = 1 THEN
+                         ftData
+                       IF argNo = 2 THEN
+                         tuple(none, %(apply(none, 1st(aFuns)!, ftData),
+                                       apply(none, 2nd(aFuns)!, ftData)))
+                       IF argNo == 3 THEN
+                         tuple(none, %(apply(none, 1st(aFuns)!, ftData),
+                                       apply(none, 2nd(aFuns)!, ftData),
+                                       apply(none, 3rd(aFuns)!, ftData)))
+                       IF argNo == 4 THEN
+                         tuple(none, %(apply(none, 1st(aFuns)!, ftData),
+                                       apply(none, 2nd(aFuns)!, ftData),
+                                       apply(none, 3rd(aFuns)!, ftData),
+                                       apply(none, 4th(aFuns)!, ftData)))
+                       ELSE
+                         ABORT("doFT'Testing: argNo too big (max 4, found " ++
+                                                             `(argNo) ++ ")")
+                       FI
           thisF == instF(range(F), vars(F))(tupleArgs)
           newRest == apply(none, rt(aFuns)!, restTestData)
           continue == \\r.doFT(r, main, F, re, diagF, aFuns)
@@ -496,10 +529,40 @@ DEF doFT(R, main, F, re, diagF, aFuns)
   ))    
 
 DATA auxFuns == error(diags:diag)
-                okay(pair: objectName, 1st: objectName, 2nd: objectName,
-                     ft: objectName, rt: objectName, <>? : objectName)
+                okay1(ft: objectName, rt: objectName, <>? : objectName)
+                okay2(pair: objectName, 1st: objectName, 2nd: objectName,
+                      ft: objectName, rt: objectName, <>? : objectName)
+                okay3(triple: objectName, 1st: objectName,
+                      2nd: objectName, 3rd: objectName,
+                      ft: objectName, rt: objectName, <>? : objectName)
+                okay4(quad: objectName, 1st: objectName,
+                      2nd: objectName, 3rd: objectName, 4th: objectName)
+                      ft: objectName, rt: objectName, <>? : objectName)
             
-    
+-- %1 argument
+FUN findAuxFuns: repo ** objectName -> repo ** auxFuns
+DEF findAuxFuns(R, data1) ==
+  LET (R4, ftI) == findON(R, "Seq", %(data1), "ft")
+      (R5, <>?_I) == findON(R4, "Seq", %(data1), "<>?")
+      (R6, rt_I) == findON(R5, "Seq", %(data1), "rt")
+    IN
+    IF avail?(ftI) and avail?(<>?_I) and avail?(rt_I) THEN
+      (R6, okay(cont(ftI), cont(rt_I), cont(<>?_I)))
+    ELSE
+      LET dg4 == IF avail?(ftI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "ft'Seq not found ?!?" FI
+          dg5 == IF avail?(<>?_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "<>?'Seq not found ?!?" FI
+          dg6 == IF avail?(rt_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "rt'Seq not found ?!?" FI
+      IN
+      (R6, error(dg4 <+ dg5 <+ dg6))
+    FI
+
+-- %2 arguments    
 FUN findAuxFuns: repo ** objectName ** objectName -> repo ** auxFuns
 DEF findAuxFuns(R, data1, data2) ==
   LET (R1, pairI) == findON(R, "Pair", %(data1, data2), "pair")
@@ -513,38 +576,159 @@ DEF findAuxFuns(R, data1, data2) ==
     IN
     IF avail?(1stI) and avail?(2ndI) and
          avail?(ftI) and avail?(<>?_I) and avail?(rt_I) THEN
-      (R6, okay(cont(pairI), cont(1stI), cont(2ndI), 
+      (R6, okay2(cont(pairI), cont(1stI), cont(2ndI), 
                 cont(ftI), cont(rt_I), cont(<>?_I)))
     ELSE
       LET dg2 == IF avail?(1stI) THEN ok
                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
-                       "1st not found ?!?" FI
+                       "1st'Pair not found ?!?" FI
           dg3 == IF avail?(2ndI) THEN ok
                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
-                       "2nd not found ?!?" FI
+                       "2nd'Pair not found ?!?" FI
           dg4 == IF avail?(ftI) THEN ok
                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
-                       "ft not found ?!?" FI
+                       "ft'Seq not found ?!?" FI
           dg5 == IF avail?(<>?_I) THEN ok
                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
-                       "<>? not found ?!?" FI
+                       "<>?'Seq not found ?!?" FI
           dg6 == IF avail?(rt_I) THEN ok
                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
-                       "rt not found ?!?" FI
+                       "rt'Seq not found ?!?" FI
       IN
       (R6, error(dg2 <+ dg3 <+ dg4 <+ dg5 <+ dg6))
     FI
   ELSE
       LET dg1 == (error, freeRef("findAuxFuns'Testing")) !!
-                  "pair not found ?!?" 
+                  "pair'Pair not found ?!?" 
           dg2 == IF avail?(1stI) THEN ok
                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
-                       "1st not found ?!?" FI
+                       "1st'Pair not found ?!?" FI
           dg3 == IF avail?(2ndI) THEN ok
                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
-                       "2nd not found ?!?" FI
+                       "2nd'Pair not found ?!?" FI
       IN
       (R3, error(dg1 <+ dg2 <+ dg3))
+  FI
+
+-- %3 arguments
+FUN findAuxFuns: repo ** objectName ** objectName ** objectName ->
+                  repo ** auxFuns
+DEF findAuxFuns(R, data1, data2, data3) ==
+  LET (R1, tripleI) == findON(R, "Triple", %(data1, data2, data3), "triple")
+      (R2, 1stI) == findON(R1, "Triple", %(data1, data2, data3), "1st")
+      (R3, 2ndI) == findON(R2, "Triple", %(data1, data2, data3), "2nd")
+      (R3a, 3rdI) == findON(R3, "Triple", %(data1, data2, data3), "3rd")
+  IN
+  IF avail?(tripleI) THEN
+    LET (R4, ftI) == findON(R3a, "Seq", %(cont(tripleI)), "ft")
+        (R5, <>?_I) == findON(R4, "Seq", %(cont(tripleI)), "<>?")
+        (R6, rt_I) == findON(R5, "Seq", %(cont(tripleI)), "rt")
+    IN
+    IF avail?(1stI) and avail?(2ndI) and avail?(3rdI) and 
+         avail?(ftI) and avail?(<>?_I) and avail?(rt_I) THEN
+      (R6, okay3(cont(pairI), cont(1stI), cont(2ndI), cont(3rdI),
+                cont(ftI), cont(rt_I), cont(<>?_I)))
+    ELSE
+      LET dg2 == IF avail?(1stI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "1st'Triple not found ?!?" FI
+          dg3 == IF avail?(2ndI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "2nd'Triple not found ?!?" FI
+          dg3a == IF avail?(3rdI) THEN ok
+                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                    "   3rd'Triple not found ?!?" FI
+          dg4 == IF avail?(ftI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "ft'Seq not found ?!?" FI
+          dg5 == IF avail?(<>?_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "<>?'Seq not found ?!?" FI
+          dg6 == IF avail?(rt_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "rt'Seq not found ?!?" FI
+      IN
+      (R6, error(dg2 <+ dg3 <+ <+ dg3a <+ dg4 <+ dg5 <+ dg6))
+    FI
+  ELSE
+      LET dg1 == (error, freeRef("findAuxFuns'Testing")) !!
+                  "Triple not found ?!?" 
+          dg2 == IF avail?(1stI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "1st'Triple not found ?!?" FI
+          dg3 == IF avail?(2ndI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "2nd'Triple not found ?!?" FI
+          dg4 == IF avail?(3rdI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "3rd'Triple not found ?!?" FI
+      IN
+      (R3, error(dg1 <+ dg2 <+ dg3 <+ dg4))
+  FI
+   
+-- %4 arguments
+FUN findAuxFuns: repo ** objectName ** objectName **
+                  objectName ** objectName -> repo ** auxFuns
+DEF findAuxFuns(R, data1, data2, data3, data4) ==
+  LET params == %(data1, data2, data3, data4)
+      F == \\rr, nn. findON(rr, "Quadruple", params, nn)                  
+      (R1, quadI) == F(R, "quad")
+      (R2, 1stI) == F(R1, "1st")
+      (R3, 2ndI) == F(R2, "2nd")
+      (R3a, 3rdI) == F(R3, "3rd")
+      (R3b, 2ndI) == F(R3a, "4th")
+  IN
+  IF avail?(quadI) THEN
+    LET (R4, ftI) == findON(R3b, "Seq", %(cont(quadI)), "ft")
+        (R5, <>?_I) == findON(R4, "Seq", %(cont(quadI)), "<>?")
+        (R6, rt_I) == findON(R5, "Seq", %(cont(quadI)), "rt")
+    IN
+    IF avail?(1stI) and avail?(2ndI) and avail?(3rdI) and avail(4thI) and
+         avail?(ftI) and avail?(<>?_I) and avail?(rt_I) THEN
+      (R6, okay4(cont(pairI), cont(1stI), cont(2ndI), cont(3rdI), cont(4thI),
+                cont(ftI), cont(rt_I), cont(<>?_I)))
+    ELSE
+      LET dg2 == IF avail?(1stI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "1st'Quadruple not found ?!?" FI
+          dg3 == IF avail?(2ndI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "2nd'Quadruple not found ?!?" FI
+          dg3a == IF avail?(3rdI) THEN ok
+                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                    "   3rd'Quadruple not found ?!?" FI
+          dg3b == IF avail?(4thI) THEN ok
+                  ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                    "   4th'Quadruple not found ?!?" FI
+          dg4 == IF avail?(ftI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "ft'Seq not found ?!?" FI
+          dg5 == IF avail?(<>?_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "<>?'Seq not found ?!?" FI
+          dg6 == IF avail?(rt_I) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "rt'Seq not found ?!?" FI
+      IN
+      (R6, error(dg2 <+ dg3 <+ <+ dg3a <+ dg3b <+ dg4 <+ dg5 <+ dg6))
+    FI
+  ELSE
+      LET dg1 == (error, freeRef("findAuxFuns'Testing")) !!
+                  "Triple not found ?!?" 
+          dg2 == IF avail?(1stI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "1st'Quadruple not found ?!?" FI
+          dg3 == IF avail?(2ndI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "2nd'Quadruple not found ?!?" FI
+          dg4 == IF avail?(3rdI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "3rd'Quadruple not found ?!?" FI
+          dg5 == IF avail?(4thI) THEN ok
+                 ELSE (error, freeRef("findAuxFuns'Testing")) !!
+                       "4th'Quadruple not found ?!?" FI
+      IN
+      (R3, error(dg1 <+ dg2 <+ dg3 <+ dg4 <+ dg5))
   FI
    
 FUN findON: repo ** denotation ** seq[objectName] ** denotation ->
