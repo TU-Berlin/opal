@@ -1,0 +1,111 @@
+IMPLEMENTATION FctEntry
+
+IMPORT AEntry ONLY aEntry get set view aEntryLong
+       AEntryNE ONLY aEntry get set view
+       DataWindow ONLY dataWindow
+       OWmisc ONLY label
+       WinSelector ONLY selector get set select enable sync
+       AEntry ONLY aEntry get set view aEntryLong
+       AEntryNE ONLY aEntryLong aEntry get set view bind
+       IOSmallEntries ONLY preparsePos printPos preparseId printId preparseN preparseD printD dummyFct
+printN printSeqVar printForm dummyForm shortVar printFct
+       Id ONLY id
+       OptionConv ONLY `
+       Denotation ONLY empty? empty # delete !
+       PrintableChar ONLY rsqbrace
+       BasicParse COMPLETELY
+       ParseComb COMPLETELY
+       InterOpal COMPLETELY
+       Option ONLY option nil avail
+       Char ONLY char =
+       Com ONLY com succeed fail break
+       WinConfig ONLY config with text ++ union fg black grey color
+       Seq ONLY seq <>
+       ComCompose ONLY &
+       ComAction ONLY done
+       Nat ONLY pred nat 32 1 15 5
+       WinButton ONLY radioButton
+       ComAgent ONLY agent
+       ComCheckWinData ONLY check
+       BindAEntryNE ONLY bindAEntryNE
+       FormulaEntry ONLY formulaWindow formulaEntry get
+       IOordinatrice ONLY :=_formula :=_variants :=_elems :=_dom :=_codom
+       WinEvent COMPLETELY
+       ControlAOW ONLY ctrl
+       SeqEntryNE ONLY seqEntry get set view bind
+       Pair COMPLETELY
+       BindSeq ONLY bindSeq
+       VariantEntry ONLY variantEntry variantWindow get
+       WinView ONLY ^-^ <|< view label
+       OWstate ONLY enableC
+
+DATA fctEntry ==
+    fctEntry(view: view,
+             sel: selector[ftype],
+             sortEntry: aEntry[name, preparseN, printN],
+             elemsEntry: seqEntry[fct, printFct],
+             domEntry: aEntry[fct, printFct],
+             codomEntry: aEntry[fct, printFct])
+
+DATA ftype == _init _sort _cart _funct
+
+DEF fctEntry(f) ==
+    aEntryLong(32) & (\\ sortE.
+    seqEntry(<>, 32, 5) & (\\elemsE.
+    aEntry(dummyFct, 32) & (\\ domE.
+    aEntry(dummyFct, 32) & (\\ codomE.
+    selector(_init) & (\\ sel.
+    LET 
+      sortButton == radioButton with text("sort") ++ select(sel, _sort?, _sort)
+      cartButton == radioButton with text("cart") ++ select(sel, _cart?, _cart)
+      functButton == radioButton with text("funct") ++ 
+                        select(sel, _funct?, _funct)
+      topRow == sortButton <|< cartButton <|< functButton
+    IN LET
+      sortV == label("sort:", view(sortE)) with enableC(sel, _sort?)
+      elemsV == label("elems:", view(elemsE)) with enableC(sel, _cart?)
+      domV == label("dom:", view(domE)) with enableC(sel, _funct?)
+      codomV == label("codom:", view(codomE)) with enableC(sel, _funct?)
+    IN LET
+      V == label with text("fct") ^-^ 
+            topRow ^-^ sortV ^-^ elemsV ^-^ domV ^-^ codomV
+      fctE == fctEntry(V, sel, sortE, elemsE, domE, codomE)
+    IN
+      agent(fctE set f) &
+      succeed(fctE)
+    )))))
+
+DEF fE set sort(s) ==
+    sel(fE) set _sort &
+    sortEntry(fE) set s
+
+DEF fE set cart(e) ==
+    sel(fE) set _cart &
+    elemsEntry(fE) set e
+
+DEF fE set funct(d, c) ==
+    sel(fE) set _funct &
+    domEntry(fE) set d &
+    codomEntry(fE) set c
+
+DEF get(fE) ==
+    check(
+    get(sel(fE)) & (\\ et.
+    IF et _init? THEN break("get'FctEntry: called with _init")
+    IF et _sort? THEN get(sortEntry(fE)) & (\\s. succeed(sort(s)))
+    IF et _cart? THEN get(elemsEntry(fE)) & (\\e. succeed(cart(e)))
+    IF et _funct? THEN 
+        get(domEntry(fE)) & (\\d.
+        get(codomEntry(fE)) & (\\ c.
+        succeed(funct(d, c))))
+    FI
+    ))
+
+DEF fctWindow(FC, fE)(wname, f) ==
+    LET bindF == bindAEntryNE(FC)(fctEntry, get, fctWindow)
+    IN
+    elemsEntry(fE) bind (button(1), bindSeq(FC)(fctEntry, get, fctWindow)
+                                        (elems, :=_elems, cart?)) &
+    domEntry(fE) bind(button(1), bindF(dom, :=_dom, funct?)) &
+    codomEntry(fE) bind(button(1), bindF(codom, :=_codom, funct?)) &
+    dataWindow(FC, fE, view, get, set)(wname, f)

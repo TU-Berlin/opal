@@ -1,0 +1,126 @@
+IMPLEMENTATION InterOpalEntry
+
+IMPORT MapEntryNE COMPLETELY
+       AEntry COMPLETELY
+       IOSmallEntries COMPLETELY
+       InterOpal COMPLETELY
+       Map ONLY map {} ! !? def def?
+       OWmisc COMPLETELY
+
+       Com ONLY com succeed break
+       ComCompose ONLY & 
+       ComAction ONLY done
+       Undef COMPLETELY
+       Option COMPLETELY
+
+       WinView ONLY view label ^-^ frame @< <|<
+       Nat ONLY nat 15 20 10 1 = 2
+       WinConfig ONLY config with text union unitWidth ++
+       WinRegulator ONLY regulator set get
+       String ONLY string
+       Seq ONLY seq <>
+       WinEvent ONLY event eventInfo buttonInfo? point button modifier C -
+                     button 
+       Pair ONLY pair 1st 2nd 
+       WinWindow ONLY window titleName focus delete  wconfig raise set ++ state normal stateRequest
+       WinEmitter ONLY emit await emitter
+       StructEntry COMPLETELY
+       Void ONLY void nil
+       Denotation ONLY ++
+       ComCheckWin ONLY notify
+       IOordinatrice ONLY :=_structs
+       ControlAOW COMPLETELY
+       ConnectControl ONLY connect
+       ComAgent ONLY agent
+       InterOpalIO ONLY readInterOpal writeInterOpal
+       MONITOR ONLY monitor 
+       Multiplexer ONLY muxOut await
+       RootControl ONLY rootCtrl
+       BindMap ONLY bindMap
+       WinButton ONLY button
+
+DATA interOpalEntry == 
+        interOpalEntry(view: view,
+                partEntry: aEntry[part, preparseP, printP],
+                structEntry: mapEntry[origin, <, struct, printO, shortStr]
+               )
+
+DEF interOpalEntry ==
+    partEntry & (\\pE.
+    mapEntry({}, 20, 10) & (\\mE. 
+    LET
+      v == label with text("interOpal") ^-^
+           (label("part: ", view(pE)) ^-^ label("structs: ", view(mE)))
+    IN
+      succeed(interOpalEntry(v, pE, mE))
+    ))
+
+DEF set(ioE, IO) == 
+    partEntry(ioE) set part(IO) & (\\ _ . 
+    structEntry(ioE) set structs(IO)
+    )
+
+DEF get(ioE) ==
+    get(partEntry(ioE)) & (\\p.
+    get(structEntry(ioE)) & (\\s.
+    succeed(interOpal(p, s))
+    ))
+
+
+-- %$Relocated from IOSmallEntries due to OPAL error$
+FUN partEntry: com[aEntry[part, preparseP, printP]]
+DEF partEntry == aEntry[part, preparseP, printP](stdLen)
+
+FUN stdLen: nat
+DEF stdLen == 15
+
+-- %$The InterOpal Window$
+DEF interOpalWindow(fname, IO) ==
+    interOpalEntry & (\\ IOE.
+    agent(IOE set IO) & (\\ _ .
+    ctrl[interOpal]("interOpal <" ++ fname ++ ">")(\\ . get(IOE)) & (\\IOC.
+    LET doneB == button("Done", IOC perform quit)
+        applyB == button("Save", notify(get(IOE) & (\\aIO. IOsave(fname, aIO))))
+        cancelB == button("Reload", IOC perform reget)
+--        showPB == button("Show parent", IOC perform showS)
+        showCB == button("Show children", IOC perform show)
+        V == view(IOE) ^-^
+             (frame @< (doneB <|< applyB <|< cancelB <|< showCB))
+        bindStruct == bindMap(IOC)(structEntry, get, structWindow)
+                             (structs, :=_structs)
+    IN
+    structEntry(IOE) bind (button(1), bindStruct) & (\\ _ .
+    window(titleName("interOpal <" ++ fname ++ ">"), V) & (\\ w.
+    LET delA == \\ . delete(w)
+        setA == \\d. IOE set d
+    IN
+    rootCtrl(delA, setA, regetIO(fname), 
+                \\ . w set raise ++ state(normal))(IOC)
+    )))))
+
+FUN regetIO: denotation -> () -> com[interOpal]
+DEF regetIO(fname)() ==
+        readInterOpal(false, fname) & (\\inop.
+        IF inop nil? THEN break("Could not read InterOpal file")
+        ELSE monitor("Read InterOpal Successfully") & ( \\ _ .
+             succeed(cont(inop)))
+        FI
+        )
+
+FUN IOsave: denotation ** interOpal-> com[void]
+DEF IOsave(fn, IO) ==
+  emitter[bool] & (\\choice.
+  LET V == label with text("Save InterOpal file\n" ++ fn)
+      VV == V ^-^ (
+              button("Proceed and save", choice emit true) <|<
+              button("Cancel", choice emit false))
+   IN
+     window(titleName("Save ?"), VV) & (\\ w.
+     await(choice) & (\\ch.
+     delete(w) & (
+     IF ch THEN writeInterOpal(false, fn)(IO)
+     ELSE done
+     FI
+     )))
+   )   
+        

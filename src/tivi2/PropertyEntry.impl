@@ -1,0 +1,200 @@
+IMPLEMENTATION PropertyEntry
+
+IMPORT WinView ONLY <|< ^-^ label 
+       DataWindow ONLY dataWindow
+       OWmisc ONLY label
+       WinSelector ONLY selector get set select enable sync
+       AEntry ONLY aEntry get set view aEntryLong
+       AEntryNE ONLY aEntryLong aEntry get set view bind
+       IOSmallEntries ONLY preparsePos printPos preparseId printId preparseN preparseD printD printPragma
+printN printSeqVar printForm dummyForm shortVar
+       Id ONLY id
+       OptionConv ONLY `
+       Denotation ONLY empty? empty # delete !
+       PrintableChar ONLY rsqbrace
+       BasicParse COMPLETELY
+       ParseComb COMPLETELY
+       InterOpal COMPLETELY
+       Option ONLY option nil avail
+       Char ONLY char =
+       Com ONLY com succeed fail break
+       WinConfig ONLY config with text ++ union fg black grey color
+       Seq ONLY seq <>
+       ComCompose ONLY &
+       ComAction ONLY done
+       Nat ONLY pred nat 32 1 15 5 4 * 10 8
+       WinButton ONLY radioButton
+       ComAgent ONLY agent
+       ComCheckWinData ONLY check
+       BindAEntryNE ONLY bindAEntryNE
+       FormulaEntry ONLY formulaWindow formulaEntry get
+       IOordinatrice ONLY :=_formula :=_variants :=_pragmas
+       WinEvent COMPLETELY
+       ControlAOW ONLY ctrl
+       SeqEntryNE ONLY seqEntry get set view bind
+       Pair COMPLETELY
+       BindSeq ONLY bindSeq
+       VariantEntry ONLY variantEntry variantWindow get
+       PragmaEntry ONLY seqPragmaEntry set get pragmaEntry pragmaItemEntry view pragmaWindow
+       DynConv[void] ONLY pack
+       OWstate ONLY enableC
+       Void ONLY nil
+
+DATA propertyEntry  == 
+    propertyEntry(view: view,
+                  sel: selector[ptype], 
+                  dyn: selector[dyn],
+                  posEntry: aEntry[pos, preparsePos, printPos],
+                  identEntry: aEntry[ident, preparseId, printId],
+                  sortEntry: aEntry[name, preparseN, printN],
+                  variantsEntry: seqEntry[variant, shortVar],
+                  symbolEntry: aEntry[option[denotation],
+                                             preparseOD, printOD],
+                  formulaEntry: aEntry[formula, printForm],
+                  idEntry: aEntry[denotation, preparseD, printD],
+                  pragmasEntry: seqEntry[pragma, printPragma])
+
+DATA ptype == _ft _law _init _other
+
+DEF propertyEntry(pr) ==
+    aEntry(32) & (\\ pE.
+    aEntry & (\\ idE.
+    aEntryLong(32) & (\\ sE.
+    seqEntry(<>, 32, 5) & (\\ vE.
+    aEntry & (\\ syE.
+    aEntryLong(dummyForm) & (\\ fE.
+    aEntry & (\\ iE.
+    seqEntry(pragmas(pr), 4 * 10, 8) & (\\ spE.
+    selector(_init) & (\\ sel: selector[ptype]. 
+    selector(dummyDyn) & (\\ dy.
+    LET
+      ftButton == radioButton with text("freeType") ++ 
+                    select(sel, _ft?, _ft) 
+      lawButton == radioButton with text("law") ++ select(sel, _law?, _law)
+      otherButton == radioButton with text("other") ++
+                     select(sel, _other?, _other)
+    IN LET
+      pV == label("pos:", view(pE)) 
+      idV == label("ident:", view(idE)) with
+                enableC(sel, \\x. _law?(x) or _ft?(x))
+      sV == label("sort:", view(sE)) with 
+                enable(sel, _ft?) ++ sync(sel, _ft?, fg(black), fg(grey))
+      vV == label("variants:", view(vE)) with 
+                enable(sel, _ft?) ++ sync(sel, _ft?, fg(black), fg(grey))
+      syV == label("symbol:", view(syE)) with 
+                enable(sel, _law?) ++ sync(sel, _law?, fg(black), fg(grey))
+      iV == label("id:", view(iE)) with enableC(sel, _other?)
+      spV == view(spE)
+    IN LET
+      fV == label("formula:", view(fE)) with 
+                enable(sel, _law?) ++ sync(sel, _law?, fg(black), fg(grey))
+    
+      V == label with text("property") ^-^
+               (ftButton <|< lawButton <|< otherButton) ^-^ 
+                pV ^-^ idV ^-^ sV ^-^ vV ^-^ syV ^-^ fV ^-^ iV ^-^ spV
+      propE == propertyEntry(V, sel, dy, pE, idE, sE, vE, syE, fE, iE, spE)
+    IN
+      agent(propE set pr) & ( \\ _ .
+      succeed(propE)
+      )
+    ))))))))))
+
+DEF pE set freeType(p, id, s, vs, ps) ==
+    sel(pE) set _ft & ( \\ _ .
+    posEntry(pE) set p & ( \\ _ .
+    identEntry(pE) set id & ( \\ _ .
+    sortEntry(pE) set s & ( \\ _ .
+    variantsEntry(pE) set vs & (\\ _ .
+    pragmasEntry(pE) set ps & (\\ _ .
+    done
+    ))))))
+
+DEF pE set law(p, id, sy, form, ps) ==
+    sel(pE) set _law & ( \\ _ .
+    posEntry(pE) set p & ( \\ _ .
+    identEntry(pE) set id & ( \\ _ .
+    symbolEntry(pE) set sy & ( \\ _ .
+    formulaEntry(pE) set form & (\\ _ .
+    pragmasEntry(pE) set ps & (\\ _ .
+    done
+    ))))))
+
+DEF pE set other(p, id, data, ps) ==
+  sel(pE) set _other & (\\ _ .
+  posEntry(pE) set p & (\\ _ .
+  idEntry(pE) set id & (\\ _ .
+  dyn(pE) set data & (\\ _ .
+  pragmasEntry(pE) set ps & (\\ _ .
+  done
+  )))))
+
+DEF get(pE) ==
+    check(
+    get(sel(pE)) & (\\pt.
+    get(posEntry(pE)) & (\\ p.
+    IF pt _ft? THEN
+      get(identEntry(pE)) & (\\ id.
+        get(sortEntry(pE)) & (\\ s.
+        get(variantsEntry(pE)) & (\\ vs.
+        get(pragmasEntry(pE)) & (\\ ps.
+        succeed(freeType(p, id, s, vs, ps))
+        ))))
+    IF pt _law? THEN
+      get(identEntry(pE)) & (\\ id.
+        get(symbolEntry(pE)) & (\\ sy.
+        get(formulaEntry(pE)) & (\\ form.
+        get(pragmasEntry(pE)) & (\\ ps.
+        succeed(law(p, id, sy, form, ps))
+        ))))
+    IF pt _other? THEN
+      get(idEntry(pE)) & (\\ id.
+      get(dyn(pE)) & (\\ data.
+      get(pragmasEntry(pE)) & (\\ ps.
+      succeed(other(p, id, data, ps))
+      )))
+    IF pt _init? THEN
+        break("get'PropertyEntry: called with _init")
+    FI
+    ))
+    )
+    
+DEF propertyWindow(pC, pE)(wname, pr) ==
+    LET bindF == bindAEntryNE(pC)(formulaEntry, get, formulaWindow)
+                                (formula, :=_formula, law?)
+        bindV == bindSeq(pC)(variantEntry, get, variantWindow)
+                                (variants, :=_variants, freeType?)
+        bindPrag == bindSeq(pC)(pragmaEntry, get, pragmaWindow)
+                           (pragmas, :=_pragmas, \\ _ . true)
+    IN
+    formulaEntry(pE) bind (button(1), bindF) &
+    variantsEntry(pE) bind (button(1), bindV) &
+    pragmasEntry(pE) bind (button(1), bindPrag) & 
+    dataWindow(pC, pE, view, get, set)(wname, pr)
+
+FUN preparseOD: denotation -> option[option[denotation]] ** denotation
+DEF preparseOD == asPreparse("nil", nil) |
+                  (\\x. XX ((( "[" <| preparseD ) |> "]")(x)))
+FUN XX : option[denotation] ** denotation -> option[option[denotation]] ** denotation
+DEF XX(nil, d) == (nil, d)
+DEF XX(avail(d1), d) == (avail(avail(d1)), d)
+
+/*
+DEF preparseOD(d) ==
+    IF d empty? THEN (nil, empty)
+    ELSE LET (d1, c) == (delete(d, pred(d#), pred(d#)), d!(pred(d#)))
+         IN
+         IF c = rsqbrace THEN
+           LET (od, rest) == ("[" <| preparse)(d1)
+           IN
+              (avail(od), rest)
+         ELSE
+           asPreparse("nil", nil)(d)
+         FI
+    FI
+*/
+
+FUN printOD: option[denotation] -> denotation
+DEF printOD == `(printD)
+
+FUN dummyDyn: dyn
+DEF dummyDyn == pack(nil:void, "void")

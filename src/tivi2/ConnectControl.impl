@@ -1,0 +1,74 @@
+IMPLEMENTATION ConnectControl
+
+IMPORT ControlAOW COMPLETELY
+       Com ONLY com succeed break
+       ComCompose ONLY &
+       ComCheckWin ONLY notify check
+       ComAgent ONLY agent
+       Void ONLY void nil
+       ComChoice ONLY +
+       Denotation ONLY ++
+       MONITOR ONLY monitor
+       Multiplexer ONLY await muxOut
+
+DEF connect(master, slave, part, merge, filter) ==
+    register(master) & (\\ mChannel .
+    register(slave) & (\\ sChannel.
+    agent(connectAgent(master, mChannel, slave, sChannel,
+                        part, merge, filter)) & (\\ _ .
+    succeed(nil))))
+
+FUN connectAgent: ctrl[masterData] ** 
+                  muxOut[outRequest[masterData]] ** 
+                  ctrl[slaveData] **
+                  muxOut[outRequest[slaveData]] ** 
+                  (masterData -> slaveData) **
+                  (masterData ** slaveData -> masterData) **
+                  (masterData -> bool) -> com[void]
+DEF connectAgent(master, mChannel, slave, sChannel, part, merge, filter) ==
+    (
+    (mChannel await) & (\\ mOut.
+    monitor("connect/master: " ++ (mOut`) ++
+            "\n   " ++ name(master) ++ " -> " ++ name(slave)) & (\\ _ .
+    IF mOut quit? THEN slave perform quit
+    IF mOut newData? THEN
+        IF filter(data(mOut)) THEN
+            slave perform newData(part(data(mOut))) & (\\ _ .
+            connectAgent(master, mChannel, slave, sChannel, 
+                            part, merge, filter))
+        ELSE
+            slave perform quit
+        FI
+    IF (mOut newDataS?) or (mOut sendData?) or
+       (mOut showS?) or (mOut showView?) THEN -- ignore
+         connectAgent(master, mChannel, slave, sChannel, 
+                         part, merge, filter)
+    IF mOut show? THEN slave perform show &
+         connectAgent(master, mChannel, slave, sChannel, 
+                         part, merge, filter)
+    FI
+    )))
+    +
+    (
+    (sChannel await) & (\\ sOut:outRequest[slaveData].
+    monitor("connect/slave: " ++ (sOut`) ++
+            "\n   " ++ name(master) ++ " -> " ++ name(slave)) & (\\ _ .    
+    IF sOut quit? THEN succeed(nil)
+    IF (sOut newData?) or (sOut show?) or (sOut showView?) THEN -- ignore
+        connectAgent(master, mChannel, slave, sChannel, part, merge, filter)
+    IF sOut newDataS? THEN
+         master perform updDataS(\\m. 
+            IF filter(m) THEN merge(m, data(sOut)) ELSE m FI) & (\\ _ .
+         connectAgent(master, mChannel, slave, sChannel, part, merge, filter))
+    IF sOut sendData? THEN 
+         master perform sendData & ( \\ _ .
+         connectAgent(master, mChannel, slave, sChannel, part, merge, filter)
+         )
+    IF sOut showS? THEN 
+        master perform showView & ( \\ _ .
+         connectAgent(master, mChannel, slave, sChannel, part, merge, filter)
+         )
+    FI
+    )))
+
+

@@ -1,0 +1,58 @@
+IMPLEMENTATION Multiplexer
+
+-- %$Imports$
+IMPORT ComService ONLY sap @ =>
+       Seq ONLY seq <> ::
+       SeqMap ONLY *
+       SeqReduce ONLY /
+       ComCompose ONLY &
+       ComChoice ONLY +
+       ComAgent ONLY agent
+       Com ONLY com succeed
+       Void ONLY void nil
+       ComMap[sap[void, data], muxOut] ONLY *
+       ComAction ONLY done
+
+-- %$Sort mux and Constructors$
+
+DATA mux == mux(input: sap[data, void],
+                register: sap[void, muxOut])
+
+DEF mux == sap[data, void] & (\\ input.
+           sap[void, muxOut] & (\\ register.
+           LET m == mux(input, register) IN
+           agent(muxAgent(m, <>)) & (\\ _ .
+           succeed(m)
+           )))
+
+-- %$Input$
+
+DEF mux emit d == agent(input(mux) @ d) & done
+
+-- %$Output$
+DATA muxOut == muxOut(output: sap[void, data])
+
+DEF register(mux) == register(mux) @ nil
+
+DEF await(mO) == output(mO) @ nil
+
+-- %$The associated agent$
+FUN muxAgent: mux ** seq[muxOut] -> com[void]
+DEF muxAgent(mux, clients) ==
+    ((input(mux) => supply(clients)) & ( \\ _ .
+    muxAgent(mux, clients)
+    ))
+    +
+    ((register(mux) => newMuxOut) & ( \\ new .
+    muxAgent(mux, new :: clients)
+    ))
+
+FUN supply: seq[muxOut] -> data -> com[void]
+DEF supply(clients)(d) ==
+    LET cmd == \\ mO. output(mO) => (\\ _ . succeed(d))
+        ag == \\c. agent(c) & done
+    IN (&, done) / ag * cmd * clients
+
+FUN newMuxOut: void -> com[muxOut]
+DEF newMuxOut(nil) == muxOut * sap[void, data] 
+                        

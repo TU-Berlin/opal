@@ -1,0 +1,320 @@
+IMPLEMENTATION ExprEqnGuardEntry
+
+IMPORT AEntry ONLY aEntry set get view aEntryLong
+       AEntryNE ONLY aEntry view get set bind aEntryLong
+       BindAEntryNE ONLY bindAEntryNE
+       BindSeq ONLY bindSeq
+       Com ONLY succeed break com
+       ComAgent ONLY agent
+       ComCheckWinData ONLY check
+       ComCompose ONLY &
+       ControlAOW ONLY ctrl
+       DataWindow ONLY dataWindow
+       IOSmallEntries COMPLETELY
+       IOordinatrice ONLY  :=_elems :=_funct :=_arg :=_else :=_vars :=_body :=_eqns :=_lhs :=_patterns :=_guards :=_if :=_then :=_rhs
+       InterOpal COMPLETELY
+       Nat ONLY nat nat 1 4 10 * 32 5 15 64 7 
+       OWmisc ONLY label
+       Option ONLY option nil? avail? nil avail cont
+       Pair ONLY pair
+       PatternEntry ONLY patternEntry get patternWindow
+       Predicate ONLY or true
+       Seq ONLY seq <>
+       SeqEntry ONLY seqEntry view get set
+       SeqEntryNE ONLY seqEntry set get view bind
+       WinButton ONLY radioButton
+       WinConfig ONLY config ++ fg black grey color with text string union point
+       WinEvent ONLY event eventInfo button modifier
+       WinSelector ONLY selector select set get sync enable
+       WinView ONLY view <|< ^-^  label frame @<
+       VarEntry ONLY varEntry get varWindow
+       ControlAOW ONLY ctrl
+       OWstate ONLY enableC
+       Compose ONLY o
+       ComAction ONLY done
+
+-- %$Expr$
+
+DATA exprEntry ==
+    exprEntry(view: view,
+                 sel: selector[etype],
+                 posEntry: aEntry[pos, preparsePos, printPos],
+                 nameEntry: aEntry[name, preparseN, printN],
+                 repEntry: aEntry[denotation, preparseD, printD],
+                 elemsEntry: seqEntry[expr, printExpr],
+                 functEntry: aEntry[expr, printExpr],
+                 argEntry: aEntry[expr, printExpr],
+                 guardsEntry: seqEntry[guard, printG],
+                 elseEntry: aEntry[expr, printExpr],
+                 varsEntry: seqEntry[var, printV],
+                 bodyEntry: aEntry[expr, printExpr],
+                 eqnsEntry: seqEntry[eqn, shortEqn])
+
+DATA etype == _init _name _den _tuple _apply _casesN _casesA _lambda _block
+FUN _cases? : etype -> bool
+DEF _cases? == _casesN? or _casesA?
+
+DEF exprEntry(ex) ==
+    aEntry(32) & (\\posE.
+    aEntryLong(32) & (\\nameE.
+    aEntryLong(32) & (\\repE.
+    seqEntry(<>, 32, 5) & (\\elemsE.
+    aEntry(dummyExpr, 32) & (\\functE.
+    aEntry(dummyExpr, 32) & (\\argE.
+    seqEntry(<>, 32, 5) & (\\guardsE.
+    aEntry(dummyExpr, 32) & (\\elseE.
+    seqEntry(<>, 32, 5) & (\\varsE.
+    aEntry(dummyExpr, 32) & (\\bodyE.
+    seqEntry(<>, 32, 5) & (\\eqnsE.
+    selector(_init) & (\\ sel.
+    LET
+      nameButton == radioButton with text("name") ++ select(sel, _name?, _name)
+      denButton == radioButton with text("den") ++ select(sel, _den?, _den)
+      tupleButton == radioButton with text("tuple") ++ 
+                        select(sel, _tuple?, _tuple)
+      applyButton == radioButton with text("apply") ++ 
+                        select(sel, _apply?, _apply)
+      casesButton == (radioButton with text("cases / no else") ++ 
+                        select(sel, _casesN?, _casesN)) <|<
+                     (radioButton with text("cases / with else") ++
+                        select(sel, _casesA?, _casesA))
+      lambdaButton == radioButton with text("lambda") ++ 
+                        select(sel, _lambda?, _lambda)
+      blockButton == radioButton with text("block") ++ 
+                        select(sel, _block?, _block)
+      topRow == (nameButton <|< denButton <|< tupleButton <|< applyButton) ^-^
+                (casesButton <|< lambdaButton <|< blockButton)
+    IN LET
+      posV == label("pos:", view(posE))  
+      nameV == label("name:", view(nameE)) with enableC(sel, _name?)
+      repV == label("rep:", view(repE)) with enableC(sel, _den?)
+      elemsV == label("elems:", view(elemsE)) with enableC(sel, _tuple?)
+      functV == label("funct:", view(functE)) with enableC(sel, _apply?)
+      argV == label("arg:", view(argE)) with enableC(sel, _apply?)
+    IN LET
+      guardsV == label("guards:", view(guardsE)) with enableC(sel, _cases?)
+      elseV1 == label with text("else:") ++ enableC(sel, _cases?)
+      elseV2 == radioButton with text("nil") ++ 
+                  select(sel, _casesN?, \\ _ . _casesN, \\ _ . _casesA) ++
+                  enableC(sel, _cases?)
+      elseV3 == view(elseE) with enableC(sel, _casesA?)
+      elseV == (elseV1 <|< elseV2 <|< elseV3)
+    IN LET
+      varsV == label("vars:", view(varsE)) with enableC(sel, _lambda?)
+      bodyV == label("body:", view(bodyE)) with 
+                enableC(sel, _lambda? or _block?)
+      eqnsV == label("eqns:", view(eqnsE)) with enableC(sel, _block?)
+    IN LET
+      V == label with text("expr") ^-^
+             topRow ^-^ (posV ^-^ nameV ^-^ repV ^-^ (elemsV ^-^ functV ^-^
+                argV ^-^ (guardsV ^-^ elseV ^-^ (varsV ^-^ bodyV ^-^ eqnsV))))
+      exprE == exprEntry(V, sel, posE, nameE, repE, elemsE, 
+                        functE, argE, guardsE, elseE, varsE, bodyE, eqnsE)
+    IN
+      agent(exprE set ex) & ( \\ _ .
+      succeed(exprE)
+      )
+    ))))))))))))
+
+DEF eE set name(p, n) ==
+    sel(eE) set _name &
+    posEntry(eE) set p &
+    nameEntry(eE) set n 
+
+DEF eE set den(p, r) ==
+    sel(eE) set _den &
+    posEntry(eE) set p &
+    repEntry(eE) set r 
+
+DEF eE set tuple(p, e) ==
+    sel(eE) set _tuple & 
+    posEntry(eE) set p &
+    elemsEntry(eE) set e
+
+DEF eE set apply(p, f, a) ==
+    sel(eE) set _apply & 
+    posEntry(eE) set p &
+    functEntry(eE) set f &
+    argEntry(eE) set a   
+
+DEF eE set cases(p, g, e) ==
+    (sel(eE) set (IF e nil? THEN _casesN
+                 IF e avail? THEN _casesA
+                 FI)) &
+    (posEntry(eE) set p) &
+    (guardsEntry(eE) set g) &
+    (IF e avail? THEN elseEntry(eE) set cont(e) ELSE done FI)
+
+DEF eE set lambda(p, v, b) ==
+    sel(eE) set _lambda &
+    posEntry(eE) set p &         
+    varsEntry(eE) set v &
+    bodyEntry(eE) set b
+
+DEF eE set block(p, e, b) ==
+    sel(eE) set _block &
+    posEntry(eE) set p &
+    eqnsEntry(eE) set e &
+    bodyEntry(eE) set b
+
+DEF get(eE) ==
+    check(
+      get(sel(eE)) & (\\ et.
+      get(posEntry(eE)) & ( \\ p.
+      IF et _init? THEN break("get'exprEntry: called with _init")
+      IF et _name? THEN
+        get(nameEntry(eE)) & (\\ n.
+        succeed(name(p, n)))
+      IF et _den? THEN
+        get(repEntry(eE)) & (\\r.
+        succeed(den(p, r)))
+      IF et _tuple? THEN
+        get(elemsEntry(eE)) & (\\ e.
+        succeed(tuple(p, e)))
+      IF et _apply? THEN
+        get(functEntry(eE)) & (\\ ex.
+        get(argEntry(eE)) & (\\ a.
+        succeed(apply(p, ex, a))))
+      IF et _casesN? THEN
+        get(guardsEntry(eE)) & (\\ g.
+        succeed(cases(p, g, nil)))
+      IF et _casesA? THEN
+        get(guardsEntry(eE)) & (\\ g.
+        get(elseEntry(eE)) & (\\ e.
+        succeed(cases(p, g, avail(e)))))
+      IF et _lambda? THEN
+        get(varsEntry(eE)) & (\\ v.
+        get(bodyEntry(eE)) & (\\ b.
+        succeed(lambda(p, v, b))))
+      IF et _block? THEN
+        get(eqnsEntry(eE)) & (\\ e.
+        get(bodyEntry(eE)) & (\\ b.
+        succeed(block(p, e, b))))
+      FI
+      ))
+    )
+
+DEF exprWindow(EC, eE)(wname, ex) ==
+    LET bindE == bindAEntryNE(EC)(exprEntry, get, exprWindow)
+        bindElems == bindSeq(EC)(exprEntry, get, exprWindow)
+                            (elems, :=_elems, tuple?)
+        bindFunct == bindE(funct, :=_funct, apply?)
+        bindArg == bindE(arg, :=_arg, apply?)
+    IN LET
+        bindGuards == bindSeq[expr, guard, printG, guardEntry]
+                        (EC)(guardEntry, get, guardWindow)
+                        (guards, :=_guards, cases?)
+        bindElse == bindE(cont o else, 
+                          \\e0, e1. e0 :=_else avail(e1), 
+                          \\e. IF e cases? THEN else(e) avail? ELSE false FI)
+        bindVars == bindSeq(EC)(varEntry, get, varWindow)
+                        (vars, :=_vars, lambda?)
+     IN LET
+        bindBody == bindE(body, :=_body, lambda? or block?)
+        bindEqns == bindSeq(EC)(eqnEntry, get, eqnWindow)
+                        (eqns, :=_eqns, block?)
+    IN
+    (elemsEntry(eE) bind (button(1), bindElems)) &
+    (functEntry(eE) bind (button(1), bindFunct)) &
+    (argEntry(eE) bind (button(1), bindArg)) &
+    (guardsEntry(eE) bind (button(1), bindGuards)) &
+    (elseEntry(eE) bind (button(1), bindElse)) &
+    (varsEntry(eE) bind (button(1), bindVars)) &
+    (bodyEntry(eE) bind (button(1), bindBody)) &
+    (eqnsEntry(eE) bind (button(1), bindEqns)) &
+    dataWindow(EC, eE, view, get, set)(wname, ex)
+
+-- %$Guard$
+
+DATA guardEntry == 
+    guardEntry(view: view,
+               posEntry: aEntry[pos, preparsePos, printPos],
+               ifEntry: aEntry[expr, printExpr],
+               thenEntry: aEntry[expr, printExpr])
+
+DEF guardEntry(g) ==
+    aEntry(32) & (\\posE.
+    aEntry(dummyExpr, 32) & (\\ifE.
+    aEntry(dummyExpr, 32) & (\\thenE.
+    LET V == label with text("guard") ^-^
+             label("pos:", view(posE)) ^-^
+             label("if:", view(ifE)) ^-^
+             label("then:", view(thenE))
+        gE == guardEntry(V, posE, ifE, thenE)
+   IN
+     agent(gE set g) &
+     succeed(gE)
+   )))
+
+DEF gE set guard(p, i, t) ==
+    posEntry(gE) set p &
+    ifEntry(gE) set i &
+    thenEntry(gE) set t
+
+DEF get(gE) ==
+    get(posEntry(gE)) & (\\ p.
+    get(ifEntry(gE)) & (\\ i.
+    get(thenEntry(gE)) & (\\ t.
+    succeed(guard(p, i, t)))))
+
+DEF guardWindow(GC, gE)(wname, g) ==
+    LET bindE == bindAEntryNE(GC)(exprEntry, get, exprWindow)
+    IN
+    ifEntry(gE) bind (button(1), bindE(if, :=_if, true)) &
+    thenEntry(gE) bind (button(1), bindE(then, :=_then, true)) &
+    dataWindow(GC, gE, view, get, set)(wname, g)
+
+-- %$Eqn$
+
+-- %$$The data type$
+DATA eqnEntry == 
+    eqnEntry(view: view,
+                 posEntry: aEntry[pos, preparsePos, printPos],
+                 lhsEntry: aEntry[pattern, printPat],
+                 patternsEntry: seqEntry[pattern, printPat],
+                 rhsEntry: aEntry[expr, printExpr])
+
+DEF eqnEntry(e) ==
+    aEntry(32) & (\\posE.
+    aEntryLong(lhs(e), 64) & (\\lhsE.
+    seqEntry(patterns(e), 64, 7) & (\\patternsE.
+    aEntryLong(rhs(e), 64) & (\\rhsE.
+    LET
+      V == label with text("eqn") ^-^
+           label("pos:", view(posE)) ^-^
+           label("lhs:", view(lhsE)) ^-^
+           label("patterns:", view(patternsE)) ^-^
+           label("rhs:", view(rhsE))
+      eE == eqnEntry(V, posE, lhsE, patternsE, rhsE)
+    IN
+      agent(eE set e) &
+      succeed(eE)
+    ))))
+
+-- %$$The basic functions$
+DEF eE set eqn(p, c, t, cs) ==
+    (posEntry(eE) set p) &
+    (lhsEntry(eE) set c) &
+    (patternsEntry(eE) set t) &
+    (rhsEntry(eE) set cs)
+
+DEF get(eE) ==
+    get(posEntry(eE)) & (\\ p.
+    get(lhsEntry(eE)) & (\\ c.
+    get(patternsEntry(eE)) & (\\ t.
+    get(rhsEntry(eE)) & (\\ cs.
+    succeed(eqn(p, c, t, cs))
+    ))))
+
+DEF eqnWindow(eC, eE)(wname, e) ==
+    LET bindLhs == bindAEntryNE(eC)(patternEntry, get, patternWindow)
+                               (lhs, :=_lhs, true)
+        bindPatterns == bindSeq(eC)(patternEntry, get, patternWindow)
+                               (patterns, :=_patterns, true)
+        bindRhs == bindAEntryNE(eC)(exprEntry, get, exprWindow)
+                        (rhs, :=_rhs, true)
+    IN
+    lhsEntry(eE) bind (button(1), bindLhs) &
+    patternsEntry(eE) bind (1 button, bindPatterns) &
+    rhsEntry(eE) bind (button(1), bindRhs) &
+    dataWindow(eC, eE, view, get, set)(wname, e)

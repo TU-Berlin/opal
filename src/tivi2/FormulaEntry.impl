@@ -1,0 +1,296 @@
+IMPLEMENTATION FormulaEntry
+
+IMPORT AEntry ONLY aEntry set get view aEntryLong
+       AEntryNE ONLY aEntry view get set bind aEntryLong
+       BindAEntryNE ONLY bindAEntryNE
+       BindSeq ONLY bindSeq
+       Com ONLY succeed break com
+       ComAgent ONLY agent
+       ComCheckWinData ONLY check
+       ComCompose ONLY &
+       ControlAOW ONLY ctrl
+       DataWindow ONLY dataWindow
+       IOSmallEntries ONLY preparsePos printPos printExpr printForm printSeqV dummyExpr dummyForm printV preparseD printD
+       IOordinatrice ONLY :=_formula :=_left :=_premise :=_range :=_right :=_conclusion :=_vars :=_expr
+       InterOpal COMPLETELY
+       Nat ONLY nat nat 1 4 10 * 64 8
+       OWmisc ONLY label
+       Option ONLY option
+       Pair ONLY pair
+       Predicate ONLY or
+       Seq ONLY seq <>
+       SeqEntryNE ONLY seqEntry view get set bind
+       VarEntry ONLY varEntry get varWindow
+       WinButton ONLY radioButton
+       WinConfig ONLY config ++ fg black grey color with text string union point
+       WinEvent ONLY event eventInfo button modifier
+       WinSelector ONLY selector select set get sync enable
+       WinView ONLY view <|< ^-^ 
+       ExprEqnGuardEntry ONLY get exprEntry exprWindow eqnEntry guardEntry
+       OWstate ONLY enableC
+       DynConv ONLY pack
+       Void ONLY nil void:SORT
+
+DATA formulaEntry ==
+    formulaEntry(view: view,
+                 sel: selector[ftype],
+                 dyn: selector[dyn],
+                 posEntry: aEntry[pos, preparsePos, printPos],
+                 leftExprEntry: aEntry[expr, printExpr],
+                 rightExprEntry: aEntry[expr, printExpr],
+                 leftFormEntry: aEntry[formula, printForm],
+                 rightFormEntry: aEntry[formula, printForm],
+                 varsEntry: seqEntry[var, printV],
+                 idEntry: aEntry[denotation, preparseD, printD]
+                 )
+
+DATA ftype == _init _dfd _approx _cong _neg 
+                _conj _disj _impl _equiv _forall _exist _informal _other
+FUN _lE? _rE? _lF? _rF? _vars? _id? : ftype -> bool
+DEF _lE?(x) == _dfd?(x) or _approx?(x) or _cong?(x) 
+DEF _rE?(x) == _approx?(x) or _cong?(x) 
+DEF _lF?(x) == _neg?(x) or _conj?(x) or _disj?(x) or _impl?(x) or _equiv?(x) or
+                    _forall?(x) or _exist?(x)
+DEF _rF?(x) == _conj?(x) or _disj?(x) or _impl?(x) or _equiv?(x)
+DEF _vars?(x) == _forall?(x) or _exist?(x)
+DEF _id?(x) == _informal?(x) or _other?(x)
+
+FUN lF? rF? : formula -> bool
+DEF lF?(x) == neg?(x) or conj?(x) or disj?(x) or impl?(x) or equiv?(x) or
+                    forall?(x) or exist?(x)
+DEF rF?(x) == conj?(x) or disj?(x) or impl?(x) or equiv?(x)
+
+DEF formulaEntry(form) ==
+    aEntry(4 * 10) & (\\posE.
+    aEntryLong(dummyExpr) & (\\leftExprE.
+    aEntryLong(dummyExpr) & (\\rightExprE.
+    aEntryLong(dummyForm) & (\\leftFormE.
+    aEntryLong(dummyForm) & (\\rightFormE.
+    aEntryLong & (\\idE.
+    seqEntry(<>,64, 8) & (\\varsFormE.
+    selector(_init) & (\\ sel.
+    selector(dummyDyn) & (\\ dy.
+    LET
+      dfdButton == radioButton with text("dfd") ++ select(sel, _dfd?, _dfd)
+      approxButton == radioButton with text("approx") ++ 
+                            select(sel, _approx?, _approx)
+      congButton == radioButton with text("cong") ++ 
+                            select(sel, _cong?, _cong)
+      negButton == radioButton with text("neg") ++ select(sel, _neg?, _neg)
+    IN LET
+      conjButton == radioButton with text("conj") ++ 
+                            select(sel, _conj?, _conj)
+      disjButton == radioButton with text("disj") ++ 
+                            select(sel, _disj?, _disj)
+      implButton == radioButton with text("impl") ++ 
+                            select(sel, _impl?, _impl)
+      equivButton == radioButton with text("equiv") ++ 
+                            select(sel, _equiv?, _equiv)
+      forallButton == radioButton with text("forall") ++ 
+                            select(sel, _forall?, _forall)
+      existButton == radioButton with text("exist") ++ 
+                            select(sel, _exist?, _exist)
+      informalButton == radioButton with text("informal") ++
+                             select(sel, _informal?, _informal)
+      otherButton == radioButton with text("other") ++
+                             select(sel, _other?, _other)
+    IN LET
+      topRow == (dfdButton <|< approxButton <|< congButton) ^-^
+                (negButton <|< 
+                conjButton <|< disjButton <|< implButton <|< equivButton) ^-^ 
+                (forallButton <|< existButton) ^-^
+                (informalButton <|< otherButton)
+      posV == label("pos:", view(posE)) 
+      leftExprV == label("(left) expr:", view(leftExprE)) with
+                    enable(sel, _lE?) ++ sync(sel, _lE?, fg(black), fg(grey))
+      rightExprV == label("right expr:", view(rightExprE)) with
+                    enable(sel, _rE?) ++ sync(sel, _rE?, fg(black), fg(grey))
+    IN LET
+      leftFormV == label("(left) formula / premise / range:", 
+                        view(leftFormE)) with
+                    enable(sel, _lF?) ++ sync(sel, _lF?, fg(black), fg(grey))
+      rightFormV == label("right formula / conclusion:", view(rightFormE)) with
+                    enable(sel, _rF?) ++ sync(sel, _rF?, fg(black), fg(grey))
+      varsFormV == label("vars:", view(varsFormE)) with
+                    enable(sel, _vars?) ++ 
+                        sync(sel, _vars?, fg(black), fg(grey))
+      idV == label("text/id:", view(idE)) with enableC(sel, _id?)
+    IN LET
+      V == topRow ^-^ posV ^-^ leftExprV ^-^ rightExprV ^-^ 
+            leftFormV ^-^ rightFormV ^-^ varsFormV ^-^ idV
+      formE == formulaEntry(V, sel, dy, posE, leftExprE, rightExprE,
+                            leftFormE, rightFormE, varsFormE, idE)
+    IN
+      agent(formE set form) & ( \\ _ .
+      succeed(formE)
+      )
+    )))))))))
+
+DEF fE set dfd(p, e) ==
+    sel(fE) set _dfd & 
+    posEntry(fE) set p &
+    leftExprEntry(fE) set e
+
+DEF fE set approx(p, l, r) ==
+    sel(fE) set _approx &
+    posEntry(fE) set p &
+    leftExprEntry(fE) set l &
+    rightExprEntry(fE) set r
+
+DEF fE set cong(p, l, r) ==
+    sel(fE) set _cong &
+    posEntry(fE) set p &
+    leftExprEntry(fE) set l &
+    rightExprEntry(fE) set r
+
+DEF fE set neg(p, f) ==
+    sel(fE) set _neg & 
+    posEntry(fE) set p &
+    leftFormEntry(fE) set f
+
+DEF fE set conj(p, l, r) ==
+    sel(fE) set _conj & 
+    posEntry(fE) set p &
+    leftFormEntry(fE) set l &
+    rightFormEntry(fE) set r
+
+DEF fE set disj(p, l, r) ==
+    sel(fE) set _disj & 
+    posEntry(fE) set p &
+    leftFormEntry(fE) set l &
+    rightFormEntry(fE) set r
+
+DEF fE set impl(p, l, r) ==
+    sel(fE) set _impl & 
+    posEntry(fE) set p &
+    leftFormEntry(fE) set l &
+    rightFormEntry(fE) set r
+
+DEF fE set equiv(p, l, r) ==
+    sel(fE) set _equiv & 
+    posEntry(fE) set p &
+    leftFormEntry(fE) set l &
+    rightFormEntry(fE) set r
+
+DEF fE set forall(p, v, r) ==
+    sel(fE) set _forall &
+    posEntry(fE) set p &
+    varsEntry(fE) set v &
+    leftFormEntry(fE) set r
+
+DEF fE set exist(p, v, r) ==
+    sel(fE) set _exist &
+    posEntry(fE) set p &
+    varsEntry(fE) set v &
+    leftFormEntry(fE) set r
+
+DEF fE set informal(p, t) ==
+  sel(fE) set _informal &
+  posEntry(fE) set p &
+  idEntry(fE) set t
+
+DEF fE set other(p, i, d) ==
+  sel(fE) set _other &
+  posEntry(fE) set p &
+  idEntry(fE) set i &
+  dyn(fE) set d
+
+DEF get(fE) ==
+    check(
+      get(sel(fE)) & (\\ ft.
+      get(posEntry(fE)) & ( \\ p.
+      IF ft _init? THEN break("get'formulaEntry: called with _init")
+      IF ft _dfd? THEN
+        get(leftExprEntry(fE)) & (\\ lE.
+        succeed(dfd(p, lE)))
+      IF ft _approx? THEN
+        get(leftExprEntry(fE)) & (\\ lE.
+        get(rightExprEntry(fE)) & (\\ rE.
+        succeed(approx(p, lE, rE))))
+      IF ft _cong? THEN
+        get(leftExprEntry(fE)) & (\\ lE.
+        get(rightExprEntry(fE)) & (\\ rE.
+        succeed(cong(p, lE, rE))))
+      IF ft _neg? THEN
+        get(leftFormEntry(fE)) & (\\ lF.
+        succeed(neg(p, lF)))
+      IF ft _conj? THEN
+        get(leftFormEntry(fE)) & (\\ lF.
+        get(rightFormEntry(fE)) & (\\ rF.
+        succeed(conj(p, lF, rF))))
+      IF ft _disj? THEN
+        get(leftFormEntry(fE)) & (\\ lF.
+        get(rightFormEntry(fE)) & (\\ rF.
+        succeed(disj(p, lF, rF))))
+      IF ft _impl? THEN
+        get(leftFormEntry(fE)) & (\\ lF.
+        get(rightFormEntry(fE)) & (\\ rF.
+        succeed(impl(p, lF, rF))))
+      IF ft _equiv? THEN
+        get(leftFormEntry(fE)) & (\\ lF.
+        get(rightFormEntry(fE)) & (\\ rF.
+        succeed(equiv(p, lF, rF))))
+      IF ft _forall? THEN
+        get(leftFormEntry(fE)) & (\\ lF.
+        get(varsEntry(fE)) & (\\ vs.
+        succeed(forall(p, vs, lF))))
+      IF ft _exist? THEN
+        get(leftFormEntry(fE)) & (\\ lF.
+        get(varsEntry(fE)) & (\\ vs.
+        succeed(exist(p, vs, lF))))
+      IF ft _informal? THEN
+        get(idEntry(fE)) & (\\ t.
+        succeed(informal(p, t)))
+      IF ft _other? THEN
+        get(idEntry(fE)) & (\\ t.
+        get(dyn(fE)) & (\\data.
+        succeed(other(p, t, data))))
+      FI
+      ))
+    )
+
+DEF formulaWindow(FC, fE)(wname, str) ==
+    LET bindF == bindAEntryNE(FC)(formulaEntry, get, formulaWindow)
+        bindLF == bindF(\\f. IF f neg? THEN formula(f)
+                             IF (f conj?) or 
+                                (f disj?) or (f equiv?) THEN left(f)
+                             IF f impl? THEN premise(f)
+                             IF (f forall?) or (f exist?) THEN range(f)
+                             FI,
+                        \\f, s. IF f neg? THEN f :=_formula s
+                                IF (f conj?) or (f disj?) or 
+                                   (f equiv?) THEN f :=_left s
+                             IF f impl? THEN f :=_premise s
+                             IF (f forall?) or (f exist?) THEN f :=_range s
+                             FI,
+                        lF?)
+        bindRF == bindF(\\ f.IF (f conj?) or 
+                                (f disj?) or (f equiv?) THEN right(f)
+                             IF f impl? THEN conclusion(f)
+                             FI,
+                        \\f, s. IF (f conj?) or (f disj?) or 
+                                   (f equiv?) THEN f :=_right s
+                                IF f impl? THEN f :=_conclusion s
+                                FI,
+                        rF?)
+        bindE == bindAEntryNE(FC)(exprEntry, get, exprWindow)
+        bindLE == bindE(\\f. IF f dfd? THEN expr(f)
+                             IF (f approx?) or (f cong?) THEN left(f)
+                             FI,
+                         \\f, e. IF f dfd? THEN f :=_expr e
+                                 IF (f approx?) or (f cong?) THEN f :=_left e
+                                 FI,
+                         dfd? or approx? or cong?)
+        bindRE == bindE(right, :=_right, approx? or cong?)
+    IN
+    leftFormEntry(fE) bind (button(1), bindLF) &
+    rightFormEntry(fE) bind (button(1), bindRF) &
+    leftExprEntry(fE) bind (button(1), bindLE) &
+    rightExprEntry(fE) bind (button(1), bindRE) &
+    varsEntry(fE) bind (button(1), 
+                        bindSeq(FC)(varEntry, get, varWindow)
+                        (vars, :=_vars, forall? or exist?)) &
+    dataWindow(FC, fE, view, get, set)(wname, str)
+
+FUN dummyDyn: dyn
+DEF dummyDyn == pack(nil:void, "void")

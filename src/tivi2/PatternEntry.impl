@@ -1,0 +1,171 @@
+IMPLEMENTATION PatternEntry
+
+IMPORT AEntry ONLY aEntry set get view aEntryLong
+       AEntryNE ONLY aEntry view get set bind aEntryLong
+       BindAEntryNE ONLY bindAEntryNE
+       BindSeq ONLY bindSeq
+       Com ONLY succeed break com
+       ComAgent ONLY agent
+       ComCheckWinData ONLY check
+       ComCompose ONLY &
+       DataWindow ONLY dataWindow
+       IOSmallEntries ONLY preparsePos printPos printExpr printForm printSeqV dummyExpr dummyForm printN preparseN printV printPat dummyN dummyV dummyPat
+       IOordinatrice ONLY :=_pattern :=_left :=_premise :=_range :=_right :=_conclusion :=_funct :=_arg :=_elems :=_var
+       InterOpal COMPLETELY
+       Nat ONLY nat nat 1 4 10 * 32 5
+       OWmisc ONLY label
+       Option ONLY option
+       Pair ONLY pair
+       Predicate ONLY or
+       Seq ONLY seq <>
+       SeqEntryNE ONLY seqEntry set get view bind
+       WinButton ONLY radioButton
+       WinConfig ONLY config ++ fg black grey color with text string union point
+       WinEvent ONLY event eventInfo button modifier
+       WinSelector ONLY selector select set get sync enable
+       WinView ONLY view <|< ^-^  label
+       VarEntry ONLY varEntry get varWindow
+       ControlAOW ONLY ctrl
+
+DATA patternEntry ==
+    patternEntry(view: view,
+                 sel: selector[ptype],
+                 posEntry: aEntry[pos, preparsePos, printPos],
+                 nameEntry: aEntry[name, preparseN, printN],
+                 varEntry: aEntry[var, printV],
+                 ipatternEntry: aEntry[pattern, printPat],
+                 argEntry: aEntry[pattern, printPat],
+                 elemsEntry: seqEntry[pattern, printPat])
+
+DATA ptype == _init _any _name _var _as _apply _tuple 
+
+DEF patternEntry(pat) ==
+    aEntry(32) & (\\posE.
+    aEntryLong(32) & (\\nameE.
+    aEntryLong(dummyV, 32) & (\\varE.
+    aEntryLong(dummyPat, 32) & (\\ipatternE.
+    aEntryLong(dummyPat, 32) & (\\argE.
+    seqEntry(<>,32,5) & (\\elemsE.
+    selector(_init) & (\\ sel.
+    LET
+      anyButton == radioButton with text("any") ++ select(sel, _any?, _any)
+      nameButton == radioButton with text("name") ++ 
+                            select(sel, _name?, _name)
+      varButton == radioButton with text("var") ++ 
+                            select(sel, _var?, _var)
+      asButton == radioButton with text("as") ++ select(sel, _as?, _as)
+      applyButton == radioButton with text("apply") ++ 
+                            select(sel, _apply?, _apply)
+      tupleButton == radioButton with text("tuple") ++ 
+                            select(sel, _tuple?, _tuple)
+      topRow == (anyButton <|< nameButton <|< varButton) <|<
+                (asButton <|< applyButton <|< tupleButton)
+    IN LET
+      posV == label("pos:", view(posE))  
+      nameV == label("name:", view(nameE)) with
+                    enable(sel, _name?) ++ 
+                    sync(sel, _name?, fg(black), fg(grey))
+      varV == label("var:", view(varE)) with
+                    enable(sel, _var? or _as?) ++ 
+                    sync(sel, _var? or _as?, fg(black), fg(grey))
+    IN LET
+      ipatternV == label("pattern / funct:", view(ipatternE)) with
+                    enable(sel, _as? or _apply?) ++ 
+                    sync(sel, _as? or _apply?, fg(black), fg(grey))
+      argV == label("arg:", view(argE)) with
+                    enable(sel, _apply?) ++ 
+                    sync(sel, _apply?, fg(black), fg(grey))
+      elemsV == label("elems:", view(elemsE)) with
+                    enable(sel, _tuple?) ++ 
+                        sync(sel, _tuple?, fg(black), fg(grey))
+    IN LET
+      V ==  label with text("pattern") ^-^ 
+            topRow ^-^ ((posV ^-^ nameV ^-^ varV ^-^ 
+            ipatternV ^-^ argV) ^-^ elemsV)
+      patE == patternEntry(V, sel, posE, nameE, varE, ipatternE,
+                            argE, elemsE)
+    IN
+      agent(patE set pat) & ( \\ _ .
+      succeed(patE)
+      )
+    )))))))
+
+DEF pE set any(p) ==
+    sel(pE) set _any & 
+    posEntry(pE) set p 
+
+DEF pE set name(p, n) ==
+    sel(pE) set _name &
+    posEntry(pE) set p &
+    nameEntry(pE) set n 
+
+DEF pE set var(p, v) ==
+    sel(pE) set _var &
+    posEntry(pE) set p &
+    varEntry(pE) set v
+
+DEF pE set as(p, v, pat) ==
+    sel(pE) set _as & 
+    posEntry(pE) set p &
+    varEntry(pE) set v &
+    ipatternEntry(pE) set pat
+
+DEF pE set apply(p, f, a) ==
+    sel(pE) set _apply & 
+    posEntry(pE) set p &
+    ipatternEntry(pE) set f &
+    argEntry(pE) set a    
+
+DEF pE set tuple(p, e) ==
+    sel(pE) set _tuple & 
+    posEntry(pE) set p &
+    elemsEntry(pE) set e
+
+DEF get(pE) ==
+    check(
+      get(sel(pE)) & (\\ ft.
+      get(posEntry(pE)) & ( \\ p.
+      IF ft _init? THEN break("get'patternEntry: called with _init")
+      IF ft _any? THEN
+        succeed(any(p))
+      IF ft _name? THEN
+        get(nameEntry(pE)) & (\\ n.
+        succeed(name(p, n)))
+      IF ft _var? THEN
+        get(varEntry(pE)) & (\\ v.
+        succeed(var(p, v)))
+      IF ft _as? THEN
+        get(varEntry(pE)) & (\\ v.
+        get(ipatternEntry(pE)) & (\\ pat.
+        succeed(as(p, v, pat))))
+      IF ft _apply? THEN
+        get(ipatternEntry(pE)) & (\\ pat.
+        get(argEntry(pE)) & (\\ a.
+        succeed(apply(p, pat, a))))
+      IF ft _tuple? THEN
+        get(elemsEntry(pE)) & (\\ e.
+        succeed(tuple(p, e)))
+      FI
+      ))
+    )
+
+DEF patternWindow(PC, pE)(wname, pat) ==
+    LET bindP == bindAEntryNE(PC)(patternEntry, get, patternWindow)
+        bindPattern == bindP(\\p. IF p as? THEN pattern(p)
+                                  IF p apply? THEN funct(p)
+                                  FI,
+                             \\p, s. IF p as? THEN p :=_pattern(s)
+                                     IF p apply? THEN p :=_funct(s)
+                                     FI,
+                             as? or apply?)
+        bindArg == bindP(arg, :=_arg, apply?)
+        bindElems == bindSeq(PC)(patternEntry, get, patternWindow)
+                         (elems, :=_elems, tuple?)
+    IN
+    (ipatternEntry(pE) bind (button(1), bindPattern)) &
+    (argEntry(pE) bind (button(1), bindArg)) &
+    (elemsEntry(pE) bind (button(1), bindElems)) &
+    varEntry(pE) bind 
+      (button(1), bindAEntryNE(PC)(varEntry, get, varWindow)
+                                  (var, :=_var, var? or as?)) &
+    dataWindow(PC, pE, view, get, set)(wname, pat)

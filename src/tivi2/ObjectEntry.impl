@@ -1,0 +1,151 @@
+IMPLEMENTATION ObjectEntry
+
+IMPORT AEntry COMPLETELY
+       AEntryNE COMPLETELY
+       Seq ONLY seq <>
+       InterOpal COMPLETELY
+       Com ONLY com succeed
+       ComCompose ONLY &
+       OWmisc ONLY label 
+       WinView ONLY view ^-^ label <|< @< frame
+       IOSmallEntries COMPLETELY
+       SeqParse ONLY preparse
+       SeqConv ONLY ` string
+       Option COMPLETELY
+       ComAgent ONLY agent
+       WinConfig ONLY config with ++ text union point
+       Nat ONLY nat 5 15 12 4 10 * 1 8
+       Denotation ONLY ++ empty
+       ControlAOW ONLY ctrl perform quit? quit reget inRequest outRequest
+register data newData? newDataS
+       Multiplexer ONLY muxOut await emit
+       WinWindow ONLY window wconfig titleName delete
+       Void ONLY void nil
+       ComCheckWin ONLY check
+       ComCheckWinData ONLY check
+       DataWindow ONLY dataWindow
+       BasicParse ONLY preparse : denotation -> 
+                                    option[denotation] ** denotation
+                        real char int -- bug in Opal!
+       MONITOR ONLY monitor
+       Predicate ONLY true
+       ImplEntry ONLY implEntry get implWindow
+       IOordinatrice ONLY :=_def :=_kind :=_pragmas
+       BindAEntryNE ONLY bindAEntryNE
+       WinEvent ONLY button eventInfo event modifier
+       WinSelector ONLY selector set get select
+       OWstate ONLY enableC
+       WinButton ONLY radioButton button
+       Compose ONLY o
+       FctEntry ONLY fctEntry get fctWindow
+       PragmaEntry ONLY seqPragmaEntry view set get pragmaEntry pragmaItemEntry pragmaWindow
+       DynConv ONLY pack
+       SeqEntryNE ONLY seqEntry view get set bind
+       BindSeq ONLY bindSeq
+       Pair ONLY pair
+
+DATA objectEntry ==
+    objectEntry(view: view,
+                sel: selector[ktype], 
+                dyn: selector[dyn],
+                posEntry: aEntry[seq[pos], preparseSeqPos, printSeqPos],
+                identEntry: aEntry[ident, preparseId, printId],
+                symbolEntry: aEntry[denotation, preparseD, printD],
+                kindEntry: aEntry[fct, printFct],
+                defEntry: aEntry[impl, shortIm],
+                propsEntry: aEntry[seq[ident], preparseSeqId, printSeqId],
+                pragmasEntry: seqEntry[pragma, printPragma],
+                idEntry: aEntry[denotation, preparseD, printD]
+               )
+
+DATA ktype == _init _sort _fct _other
+
+DEF objectEntry(o) ==
+    selector(_init) & (\\ sel.
+    selector(pack(nil:void, "void")) & (\\ dyn.
+    aEntryLong[seq[pos], preparseSeqPos, printSeqPos](4 * 10) & (\\posE: aEntry[seq[pos], preparseSeqPos, printSeqPos].
+    aEntry[ident, preparseId, printId] & (\\ identE: aEntry[ident, preparseId, printId].
+    aEntry[denotation, preparseD, printD] & ( \\ symbolE: aEntry[denotation, preparseD, printD].
+    aEntry(dummyFct) & ( \\ kindE: aEntry[fct, printFct].
+    aEntry[impl, shortIm](def(o)) & ( \\ defE: aEntry[impl, shortIm].
+    aEntryLong[seq[ident], preparseSeqId, printSeqId] & ( \\ propsE: aEntry[seq[ident], preparseSeqId, printSeqId].
+    seqEntry(pragmas(o), 4 * 10, 8) & ( \\ pragsE .
+    aEntry & (\\ idE: aEntry[denotation, preparseD, printD].
+    LET
+      v == label with text("object") ^-^ (
+           label("pos:", view(posE)) ^-^ (
+           label("ident:", view(identE)) ^-^ (
+           label("symbol:", view(symbolE)) ^-^(
+           kindV ^-^ (
+           label("def:", view(defE)) ^-^ 
+           label("props:", view(propsE)) ^-^
+           view(pragsE)
+           )))))
+      kindV == ((label with text("kind:")) <|< 
+               (radioButton with text("sort") ++ 
+                        select(sel, _sort?, _sort)) <|<
+               (radioButton with text("fct") ++ select(sel, _fct?, _fct)) <|<
+               (view(kindE) with enableC(sel, _fct?))) <|<
+               (radioButton with text("other") ++
+                select(sel, _other?, _other) <|<
+                view(idE))
+      oE == objectEntry(v, sel, dyn, posE, identE, symbolE,
+                        kindE, defE, propsE, pragsE, idE)
+    IN
+      agent(oE set o) &
+      succeed(oE)
+    ))))))))))
+
+DEF set(oE, o) ==
+    posEntry(oE) set pos(o) & (
+    identEntry(oE) set ident(o) & (
+    symbolEntry(oE) set symbol(o) & ((
+    IF kind(o) sort? THEN sel(oE) set _sort
+    IF kind(o) fct? THEN sel(oE) set _fct & kindEntry(oE) set fct(kind(o))
+    IF kind(o) other? THEN sel(oE) set _other &
+                           idEntry(oE) set id(kind(o)) & dyn(oE) set data(kind(o))
+    FI) & (
+    defEntry(oE) set def(o) &
+    propsEntry(oE) set props(o) &
+    pragmasEntry(oE) set pragmas(o)
+    ))))
+
+DEF get(oE) == check(\\d. "get'ObjectEntry:" ++ d, iget(oE))
+
+FUN iget: objectEntry -> com[object]
+DEF iget(oE) ==
+    get(posEntry(oE)) & ( \\ po.
+    get(identEntry(oE)) & ( \\ id.
+    get(symbolEntry(oE)) & ( \\ sy.
+    get(sel(oE)) & (\\ ot. (
+    IF ot _sort? THEN succeed(sort)
+    IF ot _fct? THEN get(kindEntry(oE)) & (\\f. succeed(fct(f)))
+    IF ot _other? THEN get(idEntry(oE)) & (\\i. 
+                       get(dyn(oE)) & (\\ data.
+                       succeed(other(i, data))))
+    FI) & ( \\ ki.
+    get(defEntry(oE)) & ( \\ de.
+    get(propsEntry(oE)) & ( \\ pr.
+    get(pragmasEntry(oE)) & ( \\ prg.
+    succeed(object(po, id, sy, ki, de, pr, prg))
+    ))))))))
+
+/*
+FUN printD: denotation -> denotation
+DEF printD == \\x.x
+
+FUN preparseD: denotation -> option[denotation] ** denotation
+DEF preparseD == preparse
+*/
+
+-- %$Windows with object$
+DEF objectWindow(OBC, oE)(wname, obj) ==
+    defEntry(oE) bind (button(1), bindAEntryNE(OBC)(implEntry, get, implWindow)
+                                                    (def, :=_def, true)) & (
+    kindEntry(oE) bind (button(1), bindAEntryNE(OBC)(fctEntry, get, fctWindow)
+        (fct o kind, \\o,s. o :=_kind fct(s), fct? o kind)) & (
+    pragmasEntry(oE) bind (button(1),
+                           bindSeq(OBC)(pragmaEntry, get, pragmaWindow)
+                           (pragmas, :=_pragmas, \\ _ . true)) & 
+    dataWindow(OBC, oE, view, get, set)(wname, obj)
+    ))

@@ -1,0 +1,141 @@
+IMPLEMENTATION ImplEntry
+
+IMPORT 
+       AEntry COMPLETELY
+       BasicParse ONLY preparse string real char int
+       BindSeq ONLY bindSeq
+       Com ONLY succeed com
+       ComAgent ONLY agent
+       ComCompose ONLY &
+       ControlAOW ONLY ctrl
+       DataWindow ONLY dataWindow
+       ExprEqnGuardEntry ONLY eqnEntry eqnWindow get  guardEntry exprEntry
+       IOSmallEntries ONLY preparsePos printPos preparseN printN shortVar shortEqn preparseD printD
+       IOordinatrice ONLY :=_variants :=_eqns
+       InterOpal COMPLETELY
+       Nat ONLY nat 32 13 15 1 5 8
+       NatConv ONLY `
+       OWmisc ONLY label
+       OWstate ONLY enableC
+       Option ONLY option
+       Predicate ONLY or
+       Seq ONLY seq <>
+       SeqEntryNE ONLY seqEntry get pair point view set bind
+       VariantEntry ONLY variantEntry get variantWindow
+       WinButton ONLY radioButton
+       WinConfig ONLY config with text ++ union
+       WinEvent ONLY button modifier
+       WinSelector ONLY selector select set get
+       WinView ONLY <|< ^-^ label
+       DynConv ONLY pack
+       Void ONLY nil void
+
+DATA implEntry == 
+    implEntry(view: view,
+              sel: selector[itype],
+              dyn: selector[dyn],
+              posEntry: aEntry[pos, preparsePos, printPos],
+              noEntry: aEntry[nat, preparseNat, printNat],
+              sortEntry: aEntry[name, preparseN, printN],
+              variantsEntry: seqEntry[variant, shortVar],
+              eqnsEntry: seqEntry[eqn, shortEqn],
+              idEntry: aEntry[denotation, preparseD, printD]
+             )
+
+DATA itype == _init _missing _imported _parameter _induced _data _def _other
+
+DEF implEntry(i) ==
+    selector(_init) & (\\ sel.
+    selector(pack(nil, "void")) & (\\ dyn.
+    aEntry(32) & (\\ posE.
+    aEntry & (\\ noE.
+    aEntry(32) & (\\ sortE.
+    seqEntry(<>, 32, 5) & (\\ variantsE.
+    seqEntry(<>, 32, 8) & (\\ eqnsE.
+    aEntry & (\\ idE.
+    LET
+      missingB == radioButton with text("missing") ++ 
+                    select(sel, _missing?, _missing)
+      importedB == radioButton with text("imported") ++ 
+                    select(sel, _imported?, _imported)
+      parameterB == radioButton with text("parameter") ++  
+                    select(sel, _parameter?, _parameter)
+      inducedB == radioButton with text("induced") ++  
+                    select(sel, _induced?, _induced)
+      dataB == radioButton with text("data") ++ select(sel, _data?, _data)
+      defB == radioButton with text("def") ++ select(sel, _def?, _def)
+      otherB == radioButton with text("other") ++ select(sel, _other?, _other)
+      posV == label("pos:", view(posE)) with 
+                    enableC(sel, _parameter? or _induced? or _other?)
+      noV == label("no:", view(noE)) with enableC(sel, _parameter?)
+      sortV == label("sort:", view(sortE)) with enableC(sel, _induced?)
+      variantsV == label("variants:", view(variantsE)) with 
+                        enableC(sel, _data?)
+      eqnsV == label("eqns:", view(eqnsE)) with
+                        enableC(sel, _def?)
+      idV == label("id:", view(idE)) with enableC(sel, _other?)
+      topRow == missingB <|< importedB <|< 
+                    parameterB <|< inducedB <|< dataB <|< defB <|< otherB
+      left == posV ^-^ noV ^-^ sortV ^-^ variantsV ^-^ idV
+      right == eqnsV
+      V == (label with text("impl")) ^-^ topRow ^-^ (left <|< right)
+      implE == implEntry(V, sel, dyn, posE, noE, sortE, variantsE, eqnsE, idE)
+    IN
+      agent(implE set i) & (\\ _ .
+      succeed(implE)
+      )
+    ))))))))
+
+DEF implE set missing == sel(implE) set _missing
+DEF implE set imported == sel(implE) set _imported
+DEF implE set parameter(p, n) ==
+    (sel(implE) set _parameter) & 
+    (posEntry(implE) set p) &
+    (noEntry(implE) set n)
+DEF implE set induced(p, s) ==
+    sel(implE) set _induced &
+    posEntry(implE) set p &
+    sortEntry(implE) set s
+DEF implE set data(vs) == (sel(implE) set _data) & (variantsEntry(implE) set vs)
+DEF implE set def(eqs) == (sel(implE) set _def) & (eqnsEntry(implE) set eqs)
+DEF implE set other(p, i, d) ==
+  sel(implE) set _other &
+  posEntry(implE) set p &
+  idEntry(implE) set i &
+  dyn(implE) set d
+
+DEF get(implE) ==
+    get(sel(implE)) & (\\it.
+    IF it _missing? THEN succeed(missing)
+    IF it _imported? THEN succeed(imported)
+    IF it _parameter? THEN
+        get(posEntry(implE)) & (\\ p.
+        get(noEntry(implE)) & (\\ n.
+        succeed(parameter(p, n))))
+    IF it _induced? THEN 
+        get(posEntry(implE)) & (\\ p.
+        get(sortEntry(implE)) & (\\ s.
+        succeed(induced(p, s))))
+    IF it _data? THEN get(variantsEntry(implE)) & (\\ vs. succeed(data(vs)))
+    IF it _def? THEN get(eqnsEntry(implE)) & (\\ eqs. succeed(def(eqs)))
+    IF it _other? THEN
+        get(posEntry(implE)) & (\\ p.
+        get(idEntry(implE)) & (\\ i.
+        get(dyn(implE)) & (\\ d.
+        succeed(other(p, i, d)))))
+    FI
+    )
+
+DEF implWindow(iC, iE)(wname, im) ==
+    variantsEntry(iE) bind (button(1), bindSeq(iC)(variantEntry, get,
+                        variantWindow)(variants, :=_variants, data?)) &
+    eqnsEntry(iE) bind 
+        (button(1), bindSeq(iC)(eqnEntry, get, eqnWindow)
+                           (eqns, :=_eqns, def?)) &
+    dataWindow(iC, iE, view, get, set)(wname, im)
+
+FUN preparseNat: denotation -> option[nat] ** denotation
+DEF preparseNat == preparse
+
+FUN printNat: nat -> denotation
+DEF printNat == `

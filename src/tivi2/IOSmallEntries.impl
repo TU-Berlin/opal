@@ -1,0 +1,226 @@
+IMPLEMENTATION IOSmallEntries
+
+IMPORT AEntry ONLY aEntry
+    
+       InterOpal COMPLETELY
+       IOordinatrice ONLY fmtOrigin fmtPart fmtInst fmtIdent fmtPos fmtName  fmtFct fmtGuard fmtPragma fmtPragmaItem
+                          fmtVariant fmtFormula fmtExpr fmtVar fmtComp
+                            fmtKind fmtImpl fmtPattern
+       Nat ONLY nat 15 0 4 20 * pred max
+       Option COMPLETELY
+       OptionMap COMPLETELY
+       Compose ONLY o
+       ParseComb ONLY <| |> asPreparse |
+       ParseConv ONLY asParse
+       BasicParse COMPLETELY
+       Format ONLY fmt pretty
+       String ONLY string  ! ++ <> <>
+       StringConv ONLY `
+       StringFilter ONLY split
+       Seq ONLY seq
+       Denotation ONLY < delete # ++ ! empty?
+       Map ONLY map
+       Com ONLY com
+       WinConfig ONLY config
+       WinView ONLY view
+       Char ONLY ! |= char
+       OptionConv ONLY `
+       DEBUG ONLY PRINT
+       NatConv ONLY `
+       Fun1Parse ONLY preparse
+       Fun2Parse ONLY preparse
+       Fun3Parse ONLY preparse
+       Fun5Parse ONLY preparse
+       SeqConv ONLY `
+       SeqParse ONLY preparse
+       SeqReduce ONLY /
+       CharConv ONLY `
+
+-- %$Denotation$
+DEF preparseD(d) == IF """" <| d THEN ppD(tl(d), "") ELSE (nil, d) FI
+
+FUN ppD: denotation ** denotation -> 
+         option[denotation] ** denotation
+DEF ppD(d, acc) ==
+    IF d empty? THEN (nil, """" ++ acc)
+    OTHERWISE
+    IF """" <| d THEN (avail(acc), tl(d))
+    ELSE ppD(tl(d), acc ++ `(d!0))
+    FI
+
+DEF printD(d) == """" ++ d ++ """"
+
+DEF dummyD == printD("")
+       
+-- %$Part$
+FUN partEntry: com[aEntry[part, preparseP, printP]]
+DEF partEntry == aEntry[part, preparseP, printP](stdLen)
+
+DEF parseP   == asParse(preparseP)
+DEF preparseP == asPreparse("signature", signature) |
+                 asPreparse("implementation", implementation) |
+                 asPreparse("extProperties", extProperties) |
+                 asPreparse("intProperties", intProperties)
+
+DEF printP(p) == `(fmtPart(p))
+
+-- %$Origin$
+
+FUN originEntry: com[aEntry[origin, preparseO, printO]]
+DEF originEntry == aEntry[origin, preparseO, printO](stdLen)
+
+DEF parseO == asParse(preparseO)
+DEF preparseO == asPreparse("local", local) |
+                 asPreparse("main", main) |
+                 preparse("origin", origin)(preparse)
+
+DEF printO(o) == `(fmtOrigin(o))
+
+
+-- %$Inst$
+
+DEF parseI == asParse(preparseI)
+FUN preparseI: denotation -> option[inst] ** denotation
+DEF preparseI == asPreparse("none", none) |
+                 asPreparse("formal", formal) |
+                 preparse("inst", inst)(preparse)
+
+DEF printI(i) == `(fmtInst(i))
+
+-- %$Ident$
+
+DEF parseId == asParse(preparseId)
+DEF preparseId == preparse("ident", ident)(preparse)
+DEF preparseSeqId(d) == preparse(preparseId)(d)
+
+DEF printId(i) == `(fmtIdent(i))
+DEF printSeqId == `(printId)
+
+-- %$Pos$
+
+DEF parsePos == asParse(preparsePos)
+DEF preparsePos ==  asPreparse("unknown", unknown) |
+                    preparse("part", part)(preparseP) |
+                    preparse("pos", pos)(preparseP, preparse, preparse) |
+                    preparse("region", region)
+                            (preparseP, preparse, preparse, preparse, preparse)
+DEF preparseSeqPos(d) == preparse(preparsePos)(d)
+
+DEF printPos(p) == `(fmtPos(p))
+DEF printSeqPos == `(printPos)
+
+-- %$Name: not supported by cvs2svn $
+
+DEF parseN == asParse(preparseN)
+DEF preparseN == preparse("name", name)(preparseId, preparseO, preparseI)
+
+DEF printN(n) == `(fmtName(n))
+DEF printSeqN == `(printN)
+
+DEF dummyN == name(ident(0), local, none)
+-- %$Kind$
+
+
+DEF printK(k) == `(fmtKind(k))
+DEF shortK(k) ==
+    IF k sort? THEN "sort"
+    IF k fct? THEN "fct(...)"
+    IF k other? THEN "other(" ++ id(k) ++ ", ...)"
+    FI
+DEF dummyK == sort
+
+-- %$Impl$
+
+DEF printIm(i) == `(fmtImpl(i))
+DEF shortIm(d) ==
+    IF d data? THEN "data(...)"
+    IF d def? THEN "def(...)"
+    ELSE printIm(d)
+    FI
+
+-- %$Struct$
+
+DEF shortStr == symbol
+
+-- %$Object$
+
+DEF shortObj == symbol
+
+-- %$Property$
+
+DEF shortProp(pr) == 
+    IF pr freeType? THEN "freetype"
+    IF pr law? THEN IF symbol(pr) avail? THEN "LAW " ++ cont(symbol(pr))
+                    ELSE "law"
+                    FI
+    IF pr other? THEN "other(" ++ id(pr) ++ ", ...)"
+    FI
+
+-- %$Variant$
+
+DEF printVar(v) == `(fmtVariant(v))
+DEF shortVar(v) == `(fmtName(cons(v)))
+DEF printSeqVar == `(printVar)
+
+-- %$Formula$
+
+DEF printForm(f) == `(fmtFormula(f))
+DEF dummyForm == dfd(unknown, dummyExpr)
+
+-- %$Expr$
+
+DEF printExpr(e) == `(fmtExpr(e))
+DEF dummyExpr == den(unknown, "")
+
+-- %$Var$
+
+DEF printV(v) == `(fmtVar(v))
+DEF printSeqV == `(printV)
+DEF dummyV == var(unknown, ident(0), "<dummy>", sort(dummyN))
+
+-- %$Eqn$
+
+DEF shortEqn(eq) == `(fmtPos(pos(eq)))
+
+-- %$Comp$
+
+DEF preparseComp == preparse("comp", comp)(preparsePos, preparseN)
+DEF printComp(c) == `(fmtComp(c))
+
+-- %$Pattern$
+
+DEF printPat(p) == `(fmtPattern(p))
+/*
+DEF preparsePat == preparse("any", any)(preparsePos) |
+                   preparse("name", name)(preparsePos, preparseN) |
+                   preparse("var", var)(preparsePos, preparseV) |
+                   preparse("as", as)(preparsePos, preparseV, preparsePat) |
+                   preparse("apply", apply)
+                           (preparsePos, preparsePat, preparsePat) |
+                   preparse("tuple", preparsePos, preparseSeqPat)
+
+DEF preparseSeqPat == preparse(preparsePat)
+*/
+DEF dummyPat == any(unknown)
+
+-- %$Fct$
+
+DEF printFct(f) == `(fmtFct(f))
+
+DEF dummyFct == sort(dummyN)
+
+-- %$Guard$
+
+DEF printG(g) == `(fmtGuard(g))
+
+-- %$Pragmas$
+
+DEF printPragma(p) == `(fmtPragma(p))
+DEF printPragmaItem(pI) == `(fmtPragmaItem(pI))
+
+-- %$Auxiliary functions$
+FUN ` : fmt -> denotation
+DEF `(f) == LET d == `((++, <>) / pretty(0, max, f)) IN d
+
+FUN stdLen: nat
+DEF stdLen == 15

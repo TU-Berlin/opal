@@ -1,0 +1,141 @@
+IMPLEMENTATION PragmaEntry
+
+IMPORT AEntry ONLY aEntry get set view aEntryLong
+       AEntryNE ONLY aEntry get set view
+       DataWindow ONLY dataWindow
+       OWmisc ONLY label
+       WinSelector ONLY selector get set select enable sync
+       AEntry ONLY aEntry get set view aEntryLong
+       AEntryNE ONLY aEntryLong aEntry get set view bind
+       IOSmallEntries ONLY preparsePos printPos preparseId printId preparseN preparseD printD dummyFct printPragma printPragmaItem
+printN printSeqVar printForm dummyForm shortVar printFct
+       Id ONLY id
+       OptionConv ONLY `
+       Denotation ONLY empty? empty # delete !
+       PrintableChar ONLY rsqbrace
+       BasicParse COMPLETELY
+       ParseComb COMPLETELY
+       InterOpal COMPLETELY
+       Option ONLY option nil avail
+       Char ONLY char =
+       Com ONLY com succeed fail break
+       WinConfig ONLY config with text ++ union fg black grey color
+       Seq ONLY seq <>
+       ComCompose ONLY &
+       ComAction ONLY done
+       Nat ONLY pred nat 32 1 15 5 4 * 10 20
+       WinButton ONLY radioButton
+       ComAgent ONLY agent
+       ComCheckWinData ONLY check
+       BindAEntryNE ONLY bindAEntryNE
+       FormulaEntry ONLY formulaWindow formulaEntry get
+       IOordinatrice ONLY :=_formula :=_variants :=_elems :=_dom :=_codom
+       WinEvent COMPLETELY
+       ControlAOW ONLY ctrl
+       SeqEntryNE ONLY seqEntry get set view bind defaultDim
+       Pair COMPLETELY
+       BindSeq ONLY bindSeq
+       VariantEntry ONLY variantEntry variantWindow get
+       WinView ONLY ^-^ <|< view label
+       OWstate ONLY enableC
+       NameEntry ONLY seqNameEntry get set view
+
+DATA pragmaItemEntry ==
+  pragmaItemEntry(view: view,
+                  sel: selector[pitype],
+                  objectsEntry: seqNameEntry,
+                  posEntry: aEntry[pos, preparsePos, printPos],
+                  textEntry: aEntry[denotation, preparseD, printD])
+
+DATA pitype == _init _objects _token
+
+DEF pragmaItemEntry(pi) ==
+  seqNameEntry(<>,20,5) & (\\oE.
+  aEntry(32) & (\\posE: aEntry[pos, preparsePos, printPos].
+  aEntryLong(32) & (\\textE: aEntry[denotation, preparseD, printD].
+  selector(_init) & (\\ sel: selector[pitype].
+  LET
+    objectsButton == radioButton with text("objects") ++
+                     select(sel, _objects?, _objects)
+    tokenButton == radioButton with text("token") ++
+                     select(sel, _token?, _token)
+    
+    objectsV == label("objects:", view(oE)) with enableC(sel, _objects?)
+    posV == label("pos:", view(posE)) with enableC(sel, _token?)
+    textV == label("text:", view(textE)) with enableC(sel, _token?)
+    
+    V == (label with text("pragmaItem:")) ^-^
+         ((objectsButton ^-^ objectsV) <|<
+          (tokenButton ^-^ posV ^-^ textV))
+    piE == pragmaItemEntry(V, sel, oE, posE, textE)
+  IN
+    agent(piE set pi) & (\\ _ .
+    succeed(piE)
+    )
+  ))))
+
+DEF piE set objects(obs) ==
+  (sel(piE) set _objects) &
+  (objectsEntry(piE) set obs)
+
+DEF piE set token(p, d) ==
+  sel(piE) set _token &
+  posEntry(piE) set p &
+  textEntry(piE) set d
+
+DEF get(piE) ==
+  check(
+        get(sel(piE)) & (\\ pit.
+        IF pit _init? THEN break("get'pragmaEntry[Item]: called with _init")
+        IF pit _objects? THEN
+          get(objectsEntry(piE)) & (\\ obs.
+          succeed(objects(obs)))
+        IF pit _token? THEN
+          get(posEntry(piE)) & (\\ pos.
+          get(textEntry(piE)) & (\\ txt.
+          succeed(token(pos, txt))))
+        FI
+        )
+       )
+
+DEF pragmaItemWindow(PIC, piE)(wname, pI) ==
+  dataWindow(PIC, piE, view, get, set)(wname, pI)
+
+DATA pragmaEntry == pragmaEntry(view: view,
+                                itemsEntry: seqEntry[pragmaItem,
+                                                     printPragmaItem])
+
+DEF pragmaEntry(p) ==
+  seqEntry(items(p)) & (\\ iE.
+  succeed(pragmaEntry(label with text("pragma:") ^-^ view(iE), iE))
+  )
+
+DEF set(pE, p) == itemsEntry(pE) set items(p)
+DEF get(pE) == get(itemsEntry(pE)) & (\\ is. succeed(pragma(is)))
+
+DEF pragmaWindow(PC, pE)(wname, p) ==
+  itemsEntry(pE) bind (button(1),
+                       bindSeq(PC)
+                              (pragmaItemEntry, get, pragmaItemWindow)
+                              (items, \\ _, x. pragma(x), \\ _ . true)
+                      ) &
+  dataWindow(PC, pE, view, get, set)(wname, p)
+
+-- %- --------
+
+DATA seqPragmaEntry == abs(rep: seqEntry[pragma, printPragma])
+
+DEF seqPragmaEntry(p) == seqEntry(p, 4 * 10,
+                                  2nd(defaultDim[pragma,
+                                                 printPragma])) & (\\ pE.
+                         succeed(abs(pE))
+                         )
+
+DEF view(spe) == label with text("seq[pragma]") ^-^ view(rep(spe))
+DEF set(spe,p) == rep(spe) set p
+DEF get(spe) == get(rep(spe))
+
+DEF seqPragmaWindow(SPC, spE)(wname, sp) ==
+    rep(spE) bind (button(1), bindSeq(SPC)(pragmaEntry, get, pragmaWindow)
+                                          (\\x.x,\\ _, x. x,\\ _ . true)) &
+    dataWindow(SPC, spE, view, get, set)(wname, sp)

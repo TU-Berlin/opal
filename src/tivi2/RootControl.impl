@@ -1,0 +1,48 @@
+IMPLEMENTATION RootControl
+
+IMPORT ControlAOW[data] COMPLETELY
+       Com ONLY com ans okay? fail? data
+       ComCompose ONLY & ;
+       ComAgent ONLY agent
+       Multiplexer[outRequest] ONLY muxOut await
+       MONITOR ONLY monitor
+       ComAction ONLY done
+       Denotation ONLY ++
+
+DEF rootCtrl(deleteAct, setDataAct, getDataAct, showAct)(c) ==
+    register(c) & (\\ ch. 
+    agent(rootAgent(deleteAct, setDataAct, 
+                    getDataAct, showAct)(c, ch)) & ( \\ _ .
+    done
+    ))
+
+FUN rootAgent:(() -> com[void]) ** (data -> com[void]) ** 
+              (() -> com[data]) ** (() -> com[void])->
+                ctrl[data] ** muxOut -> com[void] 
+DEF rootAgent(deleteAct, setDataAct, getDataAct, showAct)(c, ch) ==
+    (ch await) & (\\ out.
+    monitor("rootAgent: " ++ (out`)) & ( \\ _ .
+    IF out quit? THEN deleteAct()
+    IF out newData? THEN setDataAct(data(out)) & ( \\ _ .
+                         rootAgent(deleteAct, setDataAct, 
+                                    getDataAct, showAct)(c, ch))
+    IF out newDataS? THEN c perform newData(data(out)) & ( \\ _ .
+                          rootAgent(deleteAct, setDataAct, 
+                                    getDataAct, showAct)(c, ch) & ( \\ _ .
+                          done))
+    IF out sendData? THEN
+        agent(rootAgent(deleteAct, setDataAct, 
+                        getDataAct, showAct)(c, ch)) & ( \\ _ .
+        getDataAct() ; (\\ ans.
+        IF ans okay? THEN c perform newData(data(ans))
+        IF ans fail? THEN done
+        FI
+        ))
+    IF (out show?) or (out showS?) or (out showView?) THEN 
+        showAct() & (
+        agent(rootAgent(deleteAct, setDataAct, getDataAct, showAct)(c, ch)) & 
+        done
+        )
+    FI
+    ))
+    

@@ -1,0 +1,43 @@
+IMPLEMENTATION DataWindow
+
+IMPORT WinWindow ONLY window wconfig titleName delete set raise ++ state normal stateRequest
+       Multiplexer ONLY muxOut await
+       ControlAOW COMPLETELY
+       WinView ONLY view ^-^ <|< @< frame
+       WinButton ONLY button
+       Com ONLY com succeed
+       ComCompose ONLY &
+       ComAgent ONLY agent
+       ComAction ONLY done
+       Denotation ONLY slice
+       Nat ONLY 0 32 nat
+  
+DEF dataWindow(DC, dE, viewD, getD, setD)(wname, d) ==
+    LET doneB == button("Done", DC perform quit)
+        applyB == button("Apply", getD(dE) & (\\s. DC perform newDataS(s)))
+        cancelB == button("Cancel", DC perform reget)
+        showPB == button("Show parent", DC perform showS)
+        showCB == button("Show children", DC perform show)
+        BV == frame @< (doneB <|< applyB <|< cancelB <|< showPB <|< showCB)
+        title == slice(wname, 0, 32)
+    IN
+      window(titleName(title), viewD(dE) ^-^ BV) & (\\ w.
+      register(DC) & (\\ DCout.
+      agent(dataAgent(w, DC, dE, setD, DCout)) & ( \\ _ .
+      done
+      )))
+
+FUN dataAgent: window ** ctrl[data] ** dataEntry **
+                (dataEntry ** data -> com[void]) **
+                muxOut[outRequest[data]] -> com[void]
+DEF dataAgent(w, DC, dE, setD, DCout) ==
+    (DCout await) & (\\ out.
+        IF out quit? THEN delete(w)
+        IF out newData? THEN dE setD data(out) & ( \\ _ .
+                             dataAgent(w, DC, dE, setD, DCout))
+        IF (out showView?) or (out show?) THEN 
+            w set raise ++ state(normal) & ( \\ _ .
+            dataAgent(w, DC, dE, setD, DCout))
+        ELSE dataAgent(w, DC, dE, setD, DCout)
+        FI
+        )

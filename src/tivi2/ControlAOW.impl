@@ -1,0 +1,110 @@
+IMPLEMENTATION ControlAOW
+
+IMPORT Com ONLY com succeed break
+       ComCompose ONLY &
+       WinEmitter ONLY emitter emit await
+       ComCheckWin ONLY notify 
+       ComAgent ONLY agent
+       Denotation ONLY ++
+       Multiplexer COMPLETELY
+       MONITOR ONLY monitor
+       ComCheckWinData ONLY check
+
+-- %$Generate Control$
+
+DATA ctrl == ctrl(name: denotation,
+                  get: () -> com[data],
+                  in: emitter[inRequest],
+                  out: mux[outRequest]
+                 )
+DEF ctrl(get) == ctrl("")(get)
+
+DEF ctrl(name)(get) ==
+    emitter[inRequest] & (\\ in.
+    mux[outRequest] & ( \\ out.
+    LET c == ctrl(name, get, in, out)
+    IN
+    agent(ctrlAgent(c)) & (\\ _ .
+    succeed(c)
+    )))
+
+-- %$Incoming Requests$
+
+DATA inRequest == 
+    quit 
+    reget
+    newData(data: data)  
+    updData(f: data -> data) 
+    newDataS(data: data)  
+    updDataS(f: data -> data) 
+    sendData
+    show
+    showS
+    showView
+
+DEF ctrl perform act == in(ctrl) emit act
+
+DEF iR:inRequest` ==
+    IF iR quit? THEN "quit"
+    IF iR reget? THEN "reget"
+    IF iR newData? THEN "newData"
+    IF iR updData? THEN "updData"
+    IF iR newDataS? THEN "newDataS"
+    IF iR updDataS? THEN "updDataS"
+    IF iR sendData? THEN "sendData"
+    IF iR show? THEN "show"
+    IF iR showS? THEN "showS"
+    IF iR showView? THEN "showView"
+    FI
+
+-- %$Outgoing Requests$
+
+DATA outRequest ==
+    quit
+    newData(data: data)
+    newDataS(data: data)
+    sendData
+    show
+    showS
+    showView
+
+DEF ctrl register == out(ctrl) register
+
+-- %$The controlling agent$
+FUN ctrlAgent: ctrl -> com[void]
+DEF ctrlAgent(c) ==
+   await(in(c)) & (\\act.
+    monitor("ctrlAgent: " ++ "<" ++ name(c) ++ ">" ++ (act`)) & ( \\ _ .
+    IF act quit? THEN out(c) emit quit 
+    ELSE
+      (
+      IF act reget? THEN out(c) emit sendData
+      IF act newData? THEN out(c) emit newData(data(act))
+      IF act updData? THEN check(get(c)()) & (\\ old.
+                           out(c) emit newData(f(act)(old)))
+      IF act newDataS? THEN out(c) emit newDataS(data(act))
+      IF act updDataS? THEN check(get(c)()) & (\\ old.
+                            out(c) emit newDataS(f(act)(old)))
+      IF act sendData? THEN check(get(c)()) & (\\ d. 
+                            out(c) emit newData(d))
+      IF act show? THEN out(c) emit show
+      IF act showS? THEN out(c) emit showS
+      IF act showView? THEN out(c) emit showView
+      FI
+      ) & ( \\ _ .
+      ctrlAgent(c)
+      )
+   FI
+   ))
+
+
+
+DEF oR:outRequest` == 
+    IF oR quit? THEN "quit/o"
+    IF oR newData? THEN "newData/o"
+    IF oR newDataS? THEN "newDataS/o"
+    IF oR sendData? THEN "sendData/o"
+    IF oR show? THEN "show/o"
+    IF oR showS? THEN "showS/o"
+    IF oR showView? THEN "showView/o"
+    FI
