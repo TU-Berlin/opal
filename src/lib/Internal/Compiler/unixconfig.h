@@ -235,7 +235,7 @@
 #define HAVE_DIFFTIME 1
 
 /* Define if you have the dlopen function.  */
-/* #undef HAVE_DLOPEN */
+#define HAVE_DLOPEN 1
 
 /* Define if you have the getcwd function.  */
 #define HAVE_GETCWD 1
@@ -250,7 +250,7 @@
 #define HAVE_RMDIR 1
 
 /* Define if you have the strdup function.  */
-/* #undef HAVE_STRDUP */
+#define HAVE_STRDUP 1
 
 /* Define if you have the strerror function.  */
 #define HAVE_STRERROR 1
@@ -279,7 +279,7 @@
 #define GETPGRP_VOID 1 
 
 /* Define if memcmp is 8-bit clean */
-/* #undef HAVE_CLEAN_MEMCMP */ 
+#define HAVE_CLEAN_MEMCMP 1 
 
 #ifndef HAVE_CLEAN_MEMCMP
   extern int ocsmemcmp(const void *, const void *, size_t);
