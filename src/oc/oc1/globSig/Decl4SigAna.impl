@@ -1,0 +1,181 @@
+/* %-
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     
+-- ============================================================================
+-- ============================================================================
+*/
+
+IMPLEMENTATION Decl4SigAna
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Objects         COMPLETELY
+        GlobSigImpl     ONLY impl:SORT none parameter data
+        Attributes      ONLY attr:SORT isParameter initAttr setParameter
+        Name            COMPLETELY
+        GlobSig         COMPLETELY
+        DeclEntry       COMPLETELY
+        Name4SigAna     COMPLETELY
+        Maps4SigAna     COMPLETELY
+        -- absy/token
+        Fct             ONLY fct
+        Impl[name]      ONLY sortImpl:SORT
+        Rep             ONLY rep ord
+        Pos             ONLY pos firstPos
+        -- lib
+        SeqMap          ONLY *
+        SeqReduce       COMPLETELY
+        Compose         COMPLETELY
+        Table           COMPLETELY
+        Nat             COMPLETELY
+        Seq             COMPLETELY
+        Pair            COMPLETELY
+        Option          COMPLETELY
+
+-- ---------------------------------------------------------------------------
+-- Deklarationen
+
+DEF addDecl(gS, ide, pos) == 
+-- Sortendeklarationen duerfen nicht mehrfach in der Tabelle stehen,
+--   damit sie nicht bei Reduktionen ueber die Tabelle mehrfach gefunden werden
+--              Andreas
+        IF (ord(ide) !? lookupTable(gS)) nil? THEN
+          (updDecls(updLookups(gS, newLookups), newDecls), decl(newDecl))
+        ELSE LET lookE == cont(ord(ide) !? lookupTable(gS)) IN
+          IF sortDeclS(lookE) ::? THEN (gS,ft(sortDeclS(lookE)))
+          ELSE (updDecls(updLookups(gS, newLookups), newDecls), decl(newDecl))
+          FI
+        FI
+        WHERE 
+        (newDecl, newDecls) == sort(ide,pos,initAttr,none, none) incl decls(gS)
+        newLookups == updLookupSort(ide, newDecl, lookupTable(gS))
+
+DEF addDecl(gS, ide, pos, fct) == 
+        (updDecls(updLookups(gS, newLookups), newDecls), decl(newDecl))
+        WHERE 
+        (newDecl, newDecls) == op(ide, pos,initAttr, none, fct, nil) incl decls(gS)
+        newLookups == updLookupOp(ide, newDecl, lookupTable(gS))
+
+DEF addDecl(gS, ide, pos, fct, orep) == 
+        (updDecls(updLookups(gS, newLookups), newDecls), decl(newDecl))
+        WHERE 
+        (newDecl, newDecls) == op(ide, pos,initAttr, none, fct, orep) incl decls(gS)
+        newLookups == updLookupOp(ide, newDecl, lookupTable(gS))
+
+DEF addSignSort(gS, impDecl, ide, attr, type) == 
+        updDecls(updLookups(gS, newLookups), newDecls)
+        WHERE 
+        newDecls == 
+          (no(impDecl), sort(ide, firstPos, attr, impl, free)) def decls(gS)
+        free == IF type nil? THEN none ELSE data(cont(type)) FI
+        impl == IF attr isParameter THEN parameter ELSE none FI
+        newLookups == updLookupSort(ide, no(impDecl), lookupTable(gS))
+
+DEF addSignOper(gS, impDecl, ide, attr, fct) == 
+        updDecls(updLookups(gS, newLookups), newDecls)
+        WHERE 
+        newDecls == 
+          (no(impDecl), op(ide, firstPos, attr, impl, fct, nil)) def decls(gS)
+        impl == IF attr isParameter THEN parameter ELSE none FI
+        newLookups == updLookupOp(ide, no(impDecl), lookupTable(gS))
+
+DEF addSignOper(gS, impDecl, ide, attr, fct, orep) == 
+        updDecls(updLookups(gS, newLookups), newDecls)
+        WHERE 
+        newDecls == 
+          (no(impDecl), op(ide, firstPos, attr, impl, fct, orep)) def decls(gS)
+        impl == IF attr isParameter THEN parameter ELSE none FI
+        newLookups == updLookupOp(ide, no(impDecl), lookupTable(gS))
+
+DEF addSignOperCons(gS, impDecl, ide, attr, fct, test, selS) ==
+        updDecls(updLookups(gS, newLookups), newDecls)
+        WHERE 
+        newDecls == 
+          (no(impDecl), opCons(ide, firstPos, attr, none, fct, 
+                               decl(no(test)),(decl:nat->decl o no:impDecl->nat) * selS))
+          def decls(gS)
+        newLookups == updLookupOp(ide, no(impDecl), lookupTable(gS))
+
+DEF setFormParam(decl, gS) == updDecls(gS, newDecls)
+-- pre: Implementierung ist 'none' oder 'parameter'
+        WHERE 
+        n == no(realDecl(gS, decl))
+        newDecls == (n, newDeclE) upd decls(gS)
+        newDeclE == 
+          IF declE sort? THEN
+            sort(ide(declE), pos(declE), finAttr, parameter, type(declE))
+          IF declE op? THEN
+            op(ide(declE), pos(declE), finAttr, parameter, fct(declE), nil)
+          IF declE opCons? THEN 
+            opCons(ide(declE), pos(declE), finAttr, parameter, fct(declE),
+                   test(declE), selS(declE))
+          FI
+        declE == n ! decls(gS)
+        finAttr == setParameter(attr(declE))
+
+DEF formParam?(gS, decl) == isParameter(attr(no(realDecl(gS,decl))!decls(gS)))
+
+DEF updDecl(gS, decl, fct) == updDecls(gS, newDecls)
+        WHERE 
+        n == no(realDecl(gS, decl))
+        newDecls == (n, newDeclE) upd decls(gS)
+        newDeclE == 
+          IF declE op? THEN
+            op(ide(declE), pos(declE), attr(declE), impl(declE),
+               fct, spc(declE))
+          IF declE opCons? THEN 
+            opCons(ide(declE), pos(declE), attr(declE), impl(declE), fct,
+                   test(declE), selS(declE))
+          FI
+        declE == n ! decls(gS)
+
+DEF fct(gS, decl) == fct(no(realDecl(gS,decl)) ! decls(gS))
+
+DEF setDoubleDecl(master)(slave, gS) == updDecls(gS, newDecls)
+        WHERE 
+        newDecls == (no(slave), newDeclE) upd decls(gS)
+        newDeclE == double(no(master), no(master) ! decls(gS))
+
+DEF updAttr(gS,name,F) == updDecls(gS,finDecls)
+        WHERE
+        n == no(realDecl(gS, decl(name)))
+        declE == n ! decls(gS)
+        finDecls == upd(n, updAttr(declE,F(attr(declE))), decls(gS))
+
+-- ---------------------------------------------------------------------------
+-- Hilfsfunktionen
+
+
+FUN updLookupSort : rep ** nat ** table[lookupE:SORT] -> table[lookupE:SORT]
+DEF updLookupSort(ide, declNo, tab) == (ord(ide), newLookE) upd tab
+        WHERE
+        newLookE == 
+          IF lookEO nil? THEN
+            lookupE(nil[struct:SORT], %(decl(declNo)), <>[decl:SORT],
+                    <>[pair[struct:SORT, seq[impDecl:SORT]]],
+                    <>[pair[struct:SORT, seq[impDecl:SORT]]])
+          ELSE LET lookE == cont(lookEO) IN
+            IF sortDeclS(lookE) ::? THEN lookE
+            ELSE  lookupE(struct(lookE),decl(declNo) %, opDeclS(lookE),
+                        sortImpDeclS(lookE), opImpDeclS(lookE)) FI
+          FI
+        lookEO == ord(ide) !? tab
+
+FUN updLookupOp : rep ** nat ** table[lookupE:SORT] -> table[lookupE:SORT]
+DEF updLookupOp(ide, declNo, tab) == (ord(ide), newLookE) upd tab
+        WHERE
+        newLookE == 
+          IF lookEO nil? THEN
+            lookupE(nil[struct:SORT], <>[decl:SORT], %(decl(declNo)),
+                    <>[pair[struct:SORT, seq[impDecl:SORT]]],
+                    <>[pair[struct:SORT, seq[impDecl:SORT]]])
+          ELSE lookupE(struct(lookE),sortDeclS(lookE), decl(declNo) ::
+                    opDeclS(lookE),sortImpDeclS(lookE), opImpDeclS(lookE)) 
+            WHERE lookE == cont(lookEO)
+          FI
+        lookEO == ord(ide) !? tab

@@ -1,0 +1,400 @@
+IMPLEMENTATION PrioTab
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Seq ONLY seq % # :: ft <> ++ forall? ::? last revert
+       Pair ONLY pair & unpair 1st 2nd
+       Triple ONLY triple untriple 1st &
+       Map ONLY map {} !? def
+       Option ONLY option nil? cont nil avail
+       Nat ONLY > 1 nat = 0
+       ABORT ONLY ABORT
+       Denotation ONLY ++ empty +/+
+       SeqConv ONLY `
+       AnalyzedGlobSig ONLY eqBase standard level ` origInst internal? fct
+       Name ONLY < var  extName `
+       MapReduce ONLY /
+       Error ONLY ok? ok + err error errKind
+       SeqMap ONLY *
+       SeqOfSeq ONLY flat
+       Options ONLY rassoc? : bool lassoc? : bool
+       Char ONLY char
+       String ONLY string
+       Pos ONLY `
+       MapConv ONLY `
+       SeqReduce ONLY \
+       SeqCompare ONLY eq?
+       GlobSig COMPLETELY
+       OptionConv ONLY `
+       DEBUG ONLY PRINT FIELD?
+       Fct[name] COMPLETELY
+       SeqFilter ONLY |
+       Objects ONLY inst struct impDecl unparam = instPN sortPN
+       ImpExpEntry ONLY impDecls insts impDeclE instE  mtInstE
+       Table ONLY table !?
+
+-- %$Prioritäten$
+
+
+
+FUN = : prio ** prio -> bool
+DEF left = left == true
+DEF right = right == true
+DEF both = both == true
+DEF _ = _ == false
+
+-- %$Gründe$
+
+
+DEF assumedLAssoc?(assumed(left)) == true
+DEF assumedLAssoc?(_) == false
+DEF assumedRAssoc?(assumed(right)) == true
+DEF assumedRAssoc?(_) == false
+
+DEF assumedLAssoc == assumed(left)
+DEF assumedRAssoc == assumed(right)
+
+
+
+FUN conflict? : rule ** rule -> bool
+DEF conflict?(r1, r2) ==
+  IF none?(r1) and none?(r2) THEN false
+  OTHERWISE
+  IF none?(r1) THEN true
+  IF none?(r2) THEN true
+  ELSE
+    ~(what(r1) = what(r2))
+  FI
+  
+
+-- %$Prioritätentabelle$
+/*
+DATA prioTab == pT(tab: map[name, <! , map[name, <! , rule]])
+
+FUN <! : name ** name -> bool
+DEF <!(n1, n2) ==
+  IF eqBase(n1, n2) THEN false ELSE n1 < n2 FI
+*/
+
+DEF `(gS)(pT) == (asD(gS), empty) / tab(pT)
+  
+FUN asD: globSig -> name ** map[name, <! , rule] ** denotation -> denotation
+DEF asD(gS)(ln, M, d) ==
+  +/+("\n")
+     (`("->")("", ",\n", "")((\\rn. "(" ++ $(gS, standard)(ln) ++ ", " ++
+                                           $(gS, standard)(rn) ++ ")"), `)(M),
+      d)
+
+/* %gefährlich: Namen in Prioritätentabelle sind nicht unbedingt in der
+    globSig enthalten */
+FUN $ :globSig ** level -> name -> denotation
+DEF $(gS, l)(N AS extName(struct(s),impDecl(iD),inst(i))) ==
+  LET oSE == s !? structures(gS)
+  IN
+  IF oSE nil? THEN N`
+  ELSE LET oID == iD !? impDecls(oSE cont)
+           oI == IF inst(i) = unparam THEN 
+                   avail(mtInstE)
+                 ELSE
+                   i !? insts(oSE cont)
+                 FI
+       IN
+       IF (oID nil?) or (oI nil?) THEN N`
+       ELSE `(gS, l)(N)
+       FI
+  FI
+  
+DEF $(gS, l)(n) == `(gS, l)(n)
+
+-- %$Eintragen$
+
+-- %definiere Priorität für Paar
+FUN def: name ** name ** rule ** prioTab -> prioTab
+DEF (n1, n2, r) def prT ==
+  LET M == tab(prT)
+      M1 == M !? n1
+  IN
+  IF nil?(M1) THEN pT((n1, def(n2, r, {})) def M)
+  ELSE pT((n1, def(n2, r, M1 cont)) def M)
+  FI
+
+-- %siehe nach, ob Paar in PrioTab enthalten ist, falls ja, gibt Wert zurück
+FUN !? : prioTab ** name ** name -> option[rule]
+DEF pT !? (n1, n2) ==
+  LET M == tab(pT)
+      M1 == M !? n1
+  IN
+  IF M1 nil? THEN nil
+  ELSE cont(M1) !? n2
+  FI
+
+/* %definiere Paar, falls undefiniert. Rückgabe: ggf. neue Tabelle, sowie Wert
+    von !? vor dem Einfügen */
+FUN ?&! : name ** name ** rule ** prioTab -> prioTab ** option[rule]
+DEF (n1, n2, r) ?&! prT ==
+  LET M == tab(prT)
+      M1 == M !? n1 
+  IN
+  IF M1 nil? THEN (pT((n1, def(n2, r, {})) def M), nil)
+  ELSE
+    LET r? == cont(M1) !? n2
+    IN
+    IF r? nil? THEN (pT((n1, def(n2, r, M1 cont)) def M), nil)
+    ELSE (pT(M), r?)
+    FI
+  FI
+
+/* %Bilde transitiven Abschluß, liefere ggf. Fehlermenge bei Konflikten
+    zurück */
+-- FUN tClosure: globSig ** pos -> prioTab -> prioTab ** err
+DEF tClosure(gS, pos)(prT) ==
+  LET (newPT, err, stable?) == compose(gS, pos)(pT(M), M, M)
+      M == tab(prT)
+  IN
+  IF ~(err ok?) THEN (pT(M), err)
+  ELSE
+    IF stable? THEN (newPT, err)
+    ELSE tClosure(gS, pos)(newPT)
+    FI
+  FI
+
+FUN compose: globSig ** pos -> prioTab ** map[name, <!, map[name, <!, rule]] **
+              map[name, <!, map[name, <!, rule]] ->
+              prioTab ** err ** bool
+DEF compose(gS, pos)(pT, M1, M2) ==
+  untriple((compose(gS, pos), &(pT, ok, true)) / M1)
+
+FUN compose: globSig ** pos -> name ** map[name, <!, rule] **
+              triple[prioTab, err, bool] -> triple[prioTab, err, bool]
+DEF compose(gS, pos)(n1, M2, trip) ==  (compose(gS, pos, n1), trip) / M2
+
+FUN compose: globSig ** pos ** name ->
+              name ** rule ** triple[prioTab, err, bool] ->
+              triple[prioTab, err, bool]
+DEF compose(gS, pos, n1)(n2, r, trip) ==
+  LET n2Defs == tab(1st(trip)) !? n2
+  IN
+  IF n2Defs nil? THEN trip
+  ELSE (compose(gS, pos, n1, r), trip) / cont(n2Defs)
+  FI
+
+FUN compose: globSig ** pos ** name ** rule ->
+              name ** rule ** triple[prioTab, err, bool] ->
+              triple[prioTab, err, bool]
+DEF compose(gS, pos, n1, r1)(n3, r3, &(pT, E, stable?)) ==
+  IF what(r1) = what(r3) THEN
+    LET r == r1 ++ r3
+        (newPT, l) == (n1, n3, r) ?&! pT
+    IN
+    IF l nil? THEN &(newPT, E, false)
+    ELSE
+      IF conflict?(l cont, r) THEN
+        &(newPT, E + pTConflict(gS, pos)(n1, n3, r, l cont), stable?)
+      ELSE
+        &(newPT, E, stable?)
+      FI
+    FI
+  ELSE
+    &(pT, E, stable?)
+  FI
+
+/* %schon getrimmt für Benutzung in reduce:
+    @code{insert(gS, r)(n1 & n2, pT & E)} 
+    fügt (n1, n2, r) in pT ein, falls (n1, n2) dort nicht definiert,
+    E ist in diesem Fall unverändert.
+    Falls (n1, n2) schon definiert ist, bleibt pT unverändert. Wenn
+    zugeordnetes mit dem Tabelleneintrag in Konflikt steht, wird
+    E entsprechend vergrößert. */
+
+FUN insert: globSig ** rule -> pair[name, name] ** pair[prioTab, err] ->
+                                                   pair[prioTab, err]
+DEF insert(gS, r)(n1 & n2, pT & E) ==
+  LET (newPT, lookup) == (n1, n2, r) ?&! pT
+  IN
+  IF lookup nil? THEN 
+    LET (newPT2, E2) == (newPT, ok) -- tClosure(gS)(newPT)
+    IN 
+      newPT2 & E + E2
+  ELSE
+    IF ~(conflict?(r, lookup cont)) THEN (pT & E)
+    ELSE
+      (pT & E + pConflict(gS)(r, n1, n2)(lookup cont))
+    FI
+  FI
+
+DEF insertLeft(gS)(n1, n2, pT, pos) ==
+  LET (pt1, E1) == unpair(insert(gS, direct(left, pos))(n1 & n2, pT & ok))
+      (pt2, E2) == (pt1, E1) -- Effizienz! tClosure(gS, pos)(pt1)
+  IN
+    (pt2, E1 + E2)
+
+DEF insertRight(gS)(n1, n2, pT, pos) ==
+  LET (pt1, E1) == unpair(insert(gS, direct(right, pos))(n1 & n2, pT & ok))
+      (pt2, E2) == (pt1, E1) -- Effizienz! tClosure(gS, pos)(pt1)
+  IN
+    (pt2, E1 + E2)
+
+FUN pair: name ** seq[name] -> seq[pair[name, name]]
+DEF pair(n, Ns) == (\\n2. n & n2) * Ns
+
+FUN pair: seq[name] ** seq[name] -> seq[pair[name, name]]
+DEF pair(N1s, N2s) == flat((\\n. pair(n, N2s)) * N1s)
+
+DEF insertLeft(gS)(N1s, N2s, pT, pos) ==
+  LET (pt1, E1) == unpair((insert(gS, direct(left, pos)),
+                           pT & ok) \ pair(N1s, N2s))
+      (pt2, E2) == (pt1, E1) -- Effizienz! tClosure(gS, pos)(pt1)
+  IN
+    (pt2, E1 + E2)
+
+DEF insertRight(gS)(N1s, N2s, pT, pos) ==
+  LET (pt1, E1) ==  unpair((insert(gS, direct(right, pos)),
+                            pT & ok) \ pair(N1s, N2s))
+      (pt2, E2) == (pt1, E1) -- Effizienz! tClosure(gS, pos)(pt1)
+  IN
+    (pt2, E1 + E2)
+
+-- %$Nachfragen$
+
+-- %@zoindex debugPrio
+DEF prio(gS)(n1, n2, pT) == 
+  LET r? == PRINT(FIELD?[bool]("-zdebugPrio"),
+                  \\ . "prio: looking up: " ++ `(gS, standard)(n1) ++
+                       " and " ++ `(gS, standard)(n2) ++
+                       "\nfound: " ++ 
+                       `(`)(pT !? (n1, n2)) ,
+                  pT !? (n1, n2) )
+  IN
+  IF r? nil? THEN
+    IF eq(gS)(n1, n2) THEN
+      IF rassoc? THEN (right, assumed(right))
+      IF lassoc? THEN (left, assumed(left))
+      ELSE (both, none)
+      FI
+    ELSE
+      (both, none)
+    FI
+  ELSE
+    (what(r? cont), r? cont)
+  FI
+
+-- %kopiert aus TypeDepExprAnalysis
+FUN eq: globSig -> name**name -> bool
+-- sollte aus globSig kommen! (Gibt's fast identisch in FunDefAnalysis!)
+
+DEF eq(sig)(var(id1),var(id2)) == id1=id2
+DEF eq(sig)(var(id1),name2) == false
+DEF eq(sig)(name1,var(id2)) == false
+DEF eq(sig)(name1,name2) ==
+  IF eqBase(name1,name2) THEN
+    IF name1 internal? THEN true
+    ELSE eq?(eq(sig))(origInst(sig,name1),origInst(sig,name2))
+    FI
+  ELSE false
+  FI
+
+DEF left?(gS)(n1, n2, pT) == 
+  LET (p, r) == prio(gS)(n1, n2, pT)
+  IN (p left?, r)
+
+DEF right?(gS)(n1, n2, pT) == 
+  LET (p, r) == prio(gS)(n1, n2, pT)
+  IN (p right?, r)
+
+-- %$Testen$
+
+-- FUN conflicts: globSig -> seq[name] ** seq[name] -> seq[pair[name, name]]
+DEF conflicts(gS)(N1, N2) ==
+  LET lift == \\F. \\n. F(fct(gS, n))
+      P1 == lift(abb?) | lift(infixPossible?) | N1
+      P2 == lift(bcb?) | lift(infixPossible?) | N2
+      cf? == \\p. =(<!>)(res(fct(gS, 1st(p))), res(fct(gS, 2nd(p))))
+      open? == \\p. nil?(prioTab(gS) !? (1st(p), 2nd(p)))
+  IN
+    open? | cf? | pair(P1, P2)
+
+-- FUN conflict? : globSig -> name ** name -> bool
+DEF conflict?(gS)(n1, n2) ==
+  LET lFct == fct(gS, n1)
+      rFct == fct(gS, n2)
+  IN
+  IF infixPossible?(lFct) and infixPossible?(rFct) THEN
+    IF abb?(lFct) and bcb?(rFct) THEN
+      =(<!>)(res(lFct), res(rFct))
+    ELSE
+      false
+    FI
+  ELSE
+    false
+  FI
+
+/* %grobe Abschätzung: keine höherwertige Funktion und Argumenttupel 
+    hat mehr Stellen als das Resultat. */
+FUN infixPossible?: fct -> bool
+DEF infixPossible?(funct(cart(els), sort(_))) == #(els) > 1
+DEF infixPossible?(funct(cart(elsL), cart(elsR))) ==
+  #(elsL) > #(elsR) and forall?(sort?, elsL) and
+  forall?(sort?, elsR) and ::?(elsR)
+DEF infixPossible?(_) == false
+
+/* %ist Funktion vom Typ a ** b -> b? */
+FUN abb? : fct -> bool
+DEF abb?(funct(cart(els), sort(n))) == =(<!>)(last(els), sort(n))
+DEF abb?(funct(cart(elsL), cart(elsR))) == revert(elsR) <| revert(elsL)
+DEF abb?(_) == false
+
+/* %ist Funktion vom Typ b ** c -> b? */
+FUN bcb? : fct -> bool
+DEF bcb?(funct(cart(els), sort(n))) == =(<!>)(ft(els), sort(n))
+DEF bcb?(funct(cart(elsL), cart(elsR))) == elsR <| elsL
+DEF bcb?(_) == false
+
+/* ist erste Sequenz Präfix der zweiten? */
+FUN <| : seq[fct] ** seq[fct] -> bool
+DEF <> <| <> == false
+DEF <> <| (_ :: _) == true
+DEF (_ :: _) <| <> == false
+DEF (f1 :: F1) <| (f2 :: F2) == IF =(<!>)(f1, f2) THEN F1 <| F2 ELSE false FI
+
+-- %$Fehler$
+
+FUN pConflict: globSig -> rule ** name ** name -> rule -> err
+DEF pConflict(gS)(r, n1, n2)(origR) ==
+  LET p == IF r direct? THEN where(r) 
+           IF r closure? THEN ft(where(r))
+           FI
+      origP == IF origR direct? THEN %(where(origR))
+               IF origR closure? THEN where(origR)
+               FI
+  IN
+      err(error,
+          asDeno(what(r)) ++ " bracketing is in conflict " ++
+          "with bracketings at %s for\n%s",
+          `("", ",", "")(`)(origP),
+          `(gS, standard)(n1) ++ "\n" ++ `(gS, standard)(n2),
+          p)
+
+FUN pTConflict: globSig ** pos -> name ** name ** rule ** rule -> err
+DEF pTConflict(gS, pos)(n1, n2, r1, r2) ==
+  err(error,
+      "transitive bracketing conflict for %s:\n%s",
+      `(gS, standard)(n1) ++ " and " ++
+      `(gS, standard)(n2),
+      `(r1) ++ "\n" ++ `(r2),
+      pos
+     )
+
+FUN asDeno: prio -> denotation
+DEF asDeno(left) == "left"
+DEF asDeno(right) == "right"
+DEF asDeno(both) == "(??)"
+
+/*
+/* %make uniform instance 0 in external names */
+FUN $ : name -> name
+DEF $(extName(s, iD, _)) == extName(s, iD, inst(0))
+DEF $(X) == X
+*/

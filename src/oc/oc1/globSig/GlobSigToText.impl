@@ -1,0 +1,182 @@
+/* %-
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     dump of global signature
+-- ============================================================================
+-- ============================================================================
+*/
+
+IMPLEMENTATION GlobSigToText
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  GlobSig         COMPLETELY
+        Attributes      ONLY ` attr
+        GlobPragma[name]        ONLY ` pragmaItem
+        Objects         ONLY decl:SORT struct:SORT impDecl:SORT inst:SORT no
+                                sortPN:SORT instPN:SORT
+        Name            ONLY name `
+
+        Table           ONLY table `
+        UniqueTable     ONLY table'UniqueTable `
+        -- absy
+
+        Impl[name]      COMPLETELY
+        -- token
+        Pragma          ONLY pragma `
+        Rep             ONLY rep lexem
+
+        -- err
+        Pos             ONLY pos `
+        -- lib
+        Denotation      ONLY ++
+        Nat             ONLY nat 0 
+        NatConv         ONLY ` 
+        Compose         ONLY o
+
+        Option          ONLY option nil? cont
+        OptionConv      ONLY ` 
+
+        Pair            COMPLETELY
+        PairConv        ONLY ` 
+
+        Map             ONLY {}? map
+        MapConv         ONLY ` 
+
+        Seq             ONLY <>? seq
+        SeqConv         ONLY ` string
+
+        PartNameEntry   ONLY ` sortPNE:SORT flatPnEle:SORT pN:SORT onlyPNE:SORT
+                         instPNE:SORT
+        GlobSigImpl     ONLY ` : locSig -> denotation locSig
+        DeclEntry       ONLY ` declE
+        ImpExpEntry     ONLY ` instE instAppl impDeclE structE
+
+-- %- ------------------------------------------------------------------------
+-- %$globSig$
+DEF `(gS)() ==
+        IF gS errGlobSig? THEN 
+                "************ erroneous global signature ************\n"
+        ELSE 
+        LET
+        startLine == "************ begin of global signature *************\n"
+        structHead == "Structure name: " ++ lexem(structIde(gS)) ++ "\n"
+        params == IF <>?(formParams(gS)) THEN "unparamterized\n"
+                        ELSE "Formal parameters ..." ++
+                         `("\n","\n","\n")(`)(formParams(gS)) 
+                  FI
+        declS ==  "Declarations ...\n" ++
+                  `("", ` : declE->denotation, decls(gS)) 
+        imports == "\nImported Structures ...\n" ++
+                  `("", ` : structE->denotation, structures(gS)) 
+        lookup ==  "\nLookup table ...\n" ++
+                    `("", ` :lookupE->denotation, lookupTable(gS))
+        (sortPN, instPN, onlyPN, implicits) ==
+          IF gS sigGlobSig? THEN
+            ("\nApplications of sorts ...\n" ++
+                `("", ` :sortPNE->denotation, sortPartNames(gS)),
+             "\nApplications in instanzes ...\n" ++
+                `("", ` :instPNE->denotation, instPartNames(gS)),
+             "\nTable of all only-tables ...\n" ++
+                `("", ` :onlyTab -> denotation, onlyPartNames(gS)),
+                "Identifier of implicit imports: " ++ 
+                lexem(boolR(gS)) ++ " " ++
+                lexem(denotationR(gS)) ++ " " ++
+                lexem(BOOL(gS)) ++ " " ++
+                lexem(DENOTATION(gS)) ++ "\n")
+          IF gS implGlobSig? THEN
+            ("", "", "",
+                "Identifier of implicit objects: " ++ 
+                `'Name(bool(gS)) ++ " " ++ `'Name(denotation(gS)) ++"\n")
+          FI
+        GlobPragS == IF <>?(pragmas(gS)) THEN ""
+                      ELSE
+                        "Global pragmas ...\n" ++
+                        `'SeqConv("", "\n", "\n")
+                        (`'GlobPragma(`'Name))(pragmas(gS)) 
+                        ++ "\n"
+                      FI
+        Laws ==  IF gS implGlobSig? THEN 
+                        IF {}?(laws(gS)) THEN ""
+                        ELSE "Laws ...\n" ++
+                        `'MapConv(lexem, 
+                                  `'PairConv(`'Impl(`'Name),`'GlobSigImpl))
+                                 (laws(gS)) ++"\n"
+                        FI
+                 ELSE "" FI
+        ImpPragmas == IF {}?(impPragmas(gS)) THEN ""
+                      ELSE
+                        "ImpPragmas ...\n" ++ 
+                        `'MapConv(lexem, `'SeqConv(`'GlobPragma(`'Name)))
+                        (impPragmas(gS)) 
+                        ++ "\n"
+                      FI
+        ImpLaws == IF {}?(impLaws(gS)) THEN ""
+                      ELSE
+                        "ImpLaws ...\n" ++ 
+                        `'MapConv(lexem,
+                                  `'SeqConv(`'PairConv(`'Impl(`'Name),`'GlobSigImpl)))
+                        (impLaws(gS))
+                        ++ "\n"
+                      FI
+        endLine == "************ end of global signature ************\n"
+        IN
+          (startLine ++ structHead ++ params ++ declS ++ imports) ++ sortPN ++
+          (instPN ++ onlyPN ++ lookup) ++ 
+                (implicits ++ Laws ++ GlobPragS ++ ImpPragmas) ++
+                (ImpLaws ++  endLine) 
+        FI
+
+-- %- ------------------------------------------------------------------------
+-- %$onlyTab$
+
+FUN ` : onlyTab -> denotation
+DEF `(tab) == LET (Struct, Inst) == context(tab) IN
+        "\n(" ++ `(no(Struct)) ++ c ++ `(no(Inst)) ++ ")" ++
+                `("  ", `, tabOf(tab))
+
+-- %- ------------------------------------------------------------------------
+-- %$formParam$
+
+FUN ` : formParam -> denotation
+DEF `(fP:formParam) == 
+        IF fP unIdentified? THEN 
+          `(1st[onlyPNE,pragma](fPof(fP))) ++ 
+                `'Pragma(2nd[onlyPNE,pragma](fPof(fP)))
+        ELSE -- adaption to new formParam-type        
+             IF nil?(partialFp(fP)) THEN 
+                `(no(1st[decl,pragma](fPof(fP)))) ++ 
+                `'Pragma(2nd[decl,pragma](fPof(fP)))
+             ELSE `(cont(partialFp(fP))) ++ "(" ++ 
+                    `(no(cont(fullFp(fP)))) ++ ")" ++
+                    `'Pragma(pragmaFp(fP))
+             FI
+        FI
+
+-- %- ------------------------------------------------------------------------
+-- %$lookupE$
+
+FUN ` : lookupE -> denotation
+DEF `(lookupE(Struct, SortDeclS, OpDeclS, SortImpDeclS, OpImpDeclS)) == 
+        (`'OptionConv(`'NatConv o no)(Struct) ++ c ++ 
+        `'SeqConv(` o no)(SortDeclS)) ++ c ++
+        (`(` o no)(OpDeclS) ++ c ++ 
+        `'SeqConv(`'PairConv(` o no, 
+                `'SeqConv("", " ", "")(` o no)))(SortImpDeclS)) ++ 
+        c ++ `'SeqConv(`'PairConv(` o no, 
+                `'SeqConv("", " ", "")(` o no)))(OpImpDeclS)
+
+DEF `_l == `
+/* %Lieber nicht ` benennen, da alle Strukturen, die GlobSig umwandeln wollen,
+    auch lookupE importieren müßten. */
+
+-- %- ------------------------------------------------------------------------
+-- %$Hilfsfunktionen$
+
+DEF c == ","
+FUN c : denotation
+

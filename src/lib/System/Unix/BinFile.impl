@@ -1,0 +1,62 @@
+IMPLEMENTATION BinFile[data]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:20 $ ($Revision: 1.1.1.1 $)
+-- reading/writing (nearly) arbitrary data objects to files
+
+
+IMPORT 	Nat		ONLY nat
+       	Denotation 	ONLY # ++ 
+	String		ONLY string ! : denotation -> string =
+	StringConv	ONLY `
+	Com		ONLY com ans yield okay fail call error fail? okay?
+	ComCompose	ONLY &
+	File		ONLY file read:file**nat->com[string]
+				  write:file**denotation->com[void]
+				  write:file**string->com[void]
+	EQUALITY	ONLY equal
+
+FUN internalTag: denotation
+DEF internalTag == "-25/10/94"
+
+
+DEF write(f,tag,d) ==
+    write(f,tag ++ internalTag) & call(writeData(f,d))
+
+DEF read(f,tag) ==
+    LET actTag == tag ++ internalTag
+    IN
+    read(f,#(actTag)) & (\\s.
+    IF s = !(actTag) THEN call(readData(f))
+	 	     ELSE yield(tagMismatches(s`, actTag)) FI
+    )
+
+
+DEF tagMismatches?(Ans) == 
+	IF Ans okay? THEN false
+	IF Ans fail? THEN "binary IO tag mismatches" <| error(Ans)
+	FI
+
+DEF invalidFormat?(Ans) == Ans equal invalidFormat
+
+FUN tagMismatches: denotation ** denotation -> ans[data]
+DEF tagMismatches(found, expected) == 
+	fail("binary IO tag mismatches, found '" ++ (found ++
+	     "', expected '" ++ (expected ++ "'")))
+
+FUN invalidFormat: ans[data]
+DEF invalidFormat == fail("binary IO file format invalid")
+
+
+DEF cannotLinkFun?(Ans) == linkErrorPrefix <| error(Ans) 
+
+FUN linkErrorPrefix: denotation
+DEF linkErrorPrefix == "cannot runtime-link `"
+
+
+-- hand-coded
+FUN writeData : file ** data -> void -> ans[void]
+FUN readData : file -> void -> ans[data]
+

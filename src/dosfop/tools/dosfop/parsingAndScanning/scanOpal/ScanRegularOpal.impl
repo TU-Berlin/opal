@@ -1,0 +1,409 @@
+/* %Due to the fact that we only scan context-correct @OPAL-source-code error
+handling on lexical level is not necessary. Nevertheless we implemented an
+error detection mechanism without error-recovery for reasons of completeness and
+because of possible extensions of DOSFOP (applicability to non-context-correct
+sources) in the future. */
+IMPLEMENTATION ScanRegularOpal
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/scanOpal/ScanRegularOpal.impl,v 1.1.1.1 1998-06-16 16:00:39 wg Exp $
+
+IMPORT 
+  Nat    COMPLETELY       Char   	COMPLETELY
+  String COMPLETELY       Denotation	COMPLETELY
+  Seq    COMPLETELY
+
+IMPORT 
+  CharClass    	COMPLETELY       Token 	COMPLETELY
+  Pos          	COMPLETELY
+       StringFilter COMPLETELY
+       Compose COMPLETELY
+       Option COMPLETELY
+       MyString COMPLETELY
+       NatConv COMPLETELY
+       StringConv ONLY `
+
+-- %$Handle Line Comments$
+-- %----------------------
+
+-- %The function
+FUN lineComment :
+      string ** string ** pos ** pos -> token ** string ** pos
+/* %scans the contents! of a line comment according to the specification in the 
+@OPAL-language-report, with the exception that characters with a special meaning for our
+intermediate-language Texinfo have to be escaped. 
+
+Although this handling contadicts the language-report, we accept line-comments
+that are ended by an @eof. (The @OPAL-compiler works the same way!) */
+DEF lineComment( <>, lexem, start, act ) == 
+  (lineComment(lexem, start), <>, act) 
+
+DEF lineComment( c::rtSrc, lexem, start, act ) ==
+  IF texinfoSpecial?(c) THEN
+    lineComment(rtSrc, lexem ++ (escChar % c), start, upd(act, c))
+-- %@newline is put into the representation of a line-comment! 
+  IF newline?(c) THEN   
+    (lineComment(lexem +% c, start), rtSrc, upd(act, c)) 
+  ELSE
+    lineComment(rtSrc, lexem +% c, start, upd(act, c))
+  FI
+
+
+-- %$Handle Nested Comments$
+-- %------------------------
+
+/* %
+In nested comments the inner nested comments are handled as a part of the outermost
+nested comment. The cont-part of the outermost nested comment contains the whole comment
+including the inner comments. */
+FUN comment : string ** string ** pos ** pos ** string ** string ** string ->
+               token ** string ** pos
+
+/* %Initially the depth of the currently started nested-comment is zero. */
+DEF comment( src, lexem, start, act, lcStart, cStart, cEnd ) == 
+  commentIntern(src, lexem, start, act, 0,  lcStart, cStart, cEnd )
+
+-- %The current @c{depth} of the nested-comment is passed to each call of :
+FUN commentIntern : 
+  string ** string ** pos ** pos ** nat ** string ** string ** string ->
+  token ** string ** pos
+
+/* %Texinfo-special-characters have to be escaped and an increase
+or decrease of nesting has to be handled properly as well as line comments. */
+DEF commentIntern( src AS c::rtSrc, lexem, start, act, depth,
+                  lcStart, cStart, cEnd ) ==
+-- %Test for lineComment
+  IF avail?(lcStart <?| src) THEN
+    LET (line, next) == split(~ o newline?, src)
+    IN
+    commentIntern(next, lexem ++ line, start, upd(act, line), depth,
+                  lcStart, cStart, cEnd)
+  OTHERWISE
+-- %Test for depth decrease or end-of-nested-comment:
+  IF avail?(cEnd <?| src) THEN
+    IF depth > 0 THEN
+      commentIntern(cont(cEnd <?| src), lexem ++ cEnd,
+                    start, upd(act, cEnd),  depth - 1, lcStart, cStart, cEnd)
+    ELSE -- depth = 0
+      (comment(lexem ++ cEnd, start), cont(cEnd <?| src), upd(act, cEnd))
+    FI
+-- %Test for depth increase of nested comment:
+  IF avail?(cStart <?| src) THEN
+      commentIntern(cont(cStart <?| src), lexem ++ cStart,
+                    start, upd(act, cStart),  depth + 1, lcStart, cStart, cEnd)
+  OTHERWISE
+-- %Skip identifiers if necessary
+  IF special?(c) THEN
+    LET (newRtSrc, newLexem, newAct) == 
+            commentInternIdent(special?, src, lexem, act)
+    IN
+    commentIntern(newRtSrc, newLexem, start, newAct,
+                  depth, lcStart, cStart, cEnd)
+  IF letgit?(c) THEN
+    LET (newRtSrc, newLexem, newAct) ==
+            commentInternIdent(letgit?, src, lexem, act)
+    IN
+    commentIntern(newRtSrc, newLexem, start, newAct,
+                  depth, lcStart, cStart, cEnd)
+  OTHERWISE
+-- %Do escaping if Texinfo-special-character is encountered:
+  IF texinfoSpecial?(c) THEN
+    commentIntern(rtSrc, lexem ++ (escChar % c), start, upd(act, c),
+                  depth, lcStart, cStart, cEnd)
+-- %Read "normal" characters into the representation accumulator of the nested comment:
+  ELSE
+    commentIntern(rtSrc, lexem +% c, start, upd(act, c), depth,
+                  lcStart, cStart, cEnd)
+  FI
+
+/* %Improperly terminated nested-comments lead to a scanning error: */
+DEF commentIntern( <>, _, _, act, depth, _, _, _ ) == 
+  makeScanError("unexpected end of file in comment (nesting depth: " ++
+                                                   (depth`) ++ ") at ", act) 
+
+/* %We need to skip identifiers as a whole, otherwise identifiers like
+    @sample{**--} will be regarded as line comment starters. */
+FUN commentInternIdent: (char -> bool) ** string ** string ** pos ->
+                         string ** string ** pos
+DEF commentInternIdent( kind?, src AS c::rtSrc, lexem, act ) ==
+  IF kind?(c) THEN
+    IF texinfoSpecial?(c) THEN
+      commentInternIdent(kind?, rtSrc, lexem ++ (escChar % c), upd(act, c))
+    ELSE
+      commentInternIdent(kind?, rtSrc, lexem +% c, upd(act, c))
+    FI
+  ELSE
+    (src, lexem, act)
+  FI
+  
+DEF commentInternIdent( _, <>, lexem, act) == (<>, lexem, act)
+
+/* %-
+-- %Only if the actual character is a @c{/}-symbol the function
+FUN possibleDepthDecreaseOfComment :
+      string ** string ** pos ** pos ** nat -> token ** string ** pos
+/* %detects a depth @b{de}crease of the nested-comment. Otherwise the preceeding @c{*} is
+handled as a "normal" comment character. */
+DEF possibleDepthDecreaseOfComment(c::rtSrc, lexem, start, act, depth) ==
+  IF slash?(c) THEN
+    commentIntern(rtSrc, lexem +% c, start, upd(act, c), depth-1)
+  ELSE  
+    commentIntern(rtSrc, lexem +% c, start, upd(act, c), depth)
+  FI
+
+DEF possibleDepthDecreaseOfComment(<>, lexem, _, act, _) ==
+  (makeScanError("unexpected end of file while scanning comment`" ++ (lexem`) ++ " at ", act) )
+
+
+/* %The depth of the comment has to be counted here in order to stick to the @sc{OPAL}
+syntax for nested comments, but the inner comments are added to the content of the 
+outermost comment. */
+FUN possibleDepthIncreaseOfComment :
+      string ** string ** pos ** pos ** nat -> token ** string ** pos  
+
+DEF possibleDepthIncreaseOfComment( c::rtSrc, lexem, start, act, depth)==
+  IF star?(c) THEN
+    commentIntern(rtSrc, lexem +% c, start, upd(act, c), depth+1)
+  ELSE
+    commentIntern(rtSrc, lexem +% c, start, upd(act, c), depth)
+  FI
+DEF possibleDepthIncreaseOfComment( <>, lexem, _, act, _) ==
+  ( makeScanError("unexpected end of file while scanning comment`" ++ (lexem`) ++ "at ", act) )
+
+
+-- %The end of a nested-comment is detected in the function
+FUN possibleEndOfComment: string ** string ** pos ** pos ** nat ->
+                            token ** string ** pos
+/* %If the preceeding @c{*} is followed by a @c{/} on @c{depth}-level @c{0} the
+nested-comment is terminated and we return a comment-token. Otherwise the reading
+of "normal" comment contents is resumed. Be aware that we have to pass the full
+source to a recursive call of @c{commentIntern} as  a @c{*} character might be read
+immediately after the preceeding @c{*} symbol! */
+DEF possibleEndOfComment( src AS c::rtSrc, lexem, start, act, depth ) ==
+  IF slash?(c) THEN
+    (comment(lexem +% c, start), rtSrc, upd(act, c))
+  ELSE
+    commentIntern(src, lexem, start, act, depth)
+  FI
+DEF possibleEndOfComment( <>, lexem, _, act, _ ) == 
+  ( makeScanError("unexpected end of file while scanning comment`" ++ (lexem`) ++ "at ", act) )
+
+*/
+
+-- %$Handle Pragma$ 
+-- %---------------
+
+/* %Pragmas are handled the same way as one-level nested-@OPAL-comments including
+the Texinfo escape-mechanism. */
+FUN pragma :
+      string ** string ** pos ** pos -> token ** string ** pos
+
+DEF pragma( <>, lexem, _, act ) == 
+  ( makeScanError("unexpected end of file while scanning comment`" ++ (lexem`) ++ "at ", act) )
+DEF pragma( c::rtSrc, lexem, start, act ) ==
+  IF texinfoSpecial?(c) THEN
+    pragma(rtSrc, lexem ++ (escChar % c), start, upd(act, c))
+  IF dollar?(c) THEN
+    possibleEndOfPragma(rtSrc, lexem +% c,  start, upd(act, c))
+  ELSE
+    pragma(rtSrc, lexem +% c, start, upd(act, c))
+  FI
+
+
+FUN possibleEndOfPragma :
+      string ** string ** pos ** pos -> token ** string ** pos
+
+DEF possibleEndOfPragma( <>, lexem, _, act ) == 
+  ( makeScanError("unexpected end of file while scanning comment`" ++ (lexem`) ++ "at ", act) )
+DEF possibleEndOfPragma( c::rtSrc, lexem, start, act ) ==
+  IF slash?(c) THEN
+    (pragma(lexem +% c, start), rtSrc, upd(act, c))
+  ELSE
+    pragma(rtSrc, lexem +% c, start, upd(act, c))
+  FI
+
+
+-- %$Handle denotation$ 
+-- %-------------------
+
+FUN denotation : string ** string ** pos ** pos -> token ** string ** pos
+
+/* %@Precondition: A @c{"} has been read and is put into the @c{lexem} string. 
+
+All quote-characters are included in the lexem-representation. Texinfo-special characters
+are escaped by applying the Texinfo escape mechanism. 
+
+Double quotes are detected in the function @c{quoteInDenotation}. */
+DEF denotation( c::rtSrc, lexem, start, act ) ==
+  IF  texinfoSpecial?(c) THEN
+    denotation(rtSrc, lexem ++ (escChar % c), start, upd(act, c))
+  IF quote?(c) THEN
+    quoteInDenotation(rtSrc, lexem +% c, start, upd(act, c))
+  IF backslash?(c) and ::?(rtSrc) THEN
+    denotation(rt(rtSrc), lexem +% c +% ft(rtSrc),
+               start, upd(upd(act, c), ft(rtSrc)))
+  ELSE
+    denotation(rtSrc, lexem +% c, start, upd(act, c))
+  FI
+
+-- %We face a non-terminated denotation at @eof. This is a lexicalic-error: 
+DEF denotation( <>, lexem, _, act ) == 
+  ( makeScanError("unexpected end of file while scanning denotation`" ++ (lexem`) ++ "' at ", act) )
+
+FUN quoteInDenotation :
+      string ** string ** pos ** pos -> token ** string ** pos
+
+/* %We read a terminating quote character and the source-file ends. That is
+lexically correct and we return the appropriate token. */
+DEF quoteInDenotation( <>, lexem, start, act ) ==
+  (denotation(lexem, start), <>, act)
+/* %The detection of another quote leads back to the denotation scanning state. If no
+second quote is encountered, the denotation ends and the proper token is returned. */
+IMPORT DEBUG COMPLETELY CharConv ONLY `
+DEF quoteInDenotation( src AS c::rtSrc, lexem, start, act ) ==
+  IF quote?(c) THEN
+    denotation(rtSrc, lexem +% c, start, upd(act, c))
+  ELSE
+    (PRINT(false, \\ . "deno: `" ++ (lexem`) ++ "'", denotation(lexem, start)), src, act)
+  FI
+
+
+-- %$Scan identifer types and test if keyword$ 
+-- %------------------------------------------
+
+/* %
+@tex
+The following picture describes a finite automaton for the scanning
+process of identifiers:
+@end tex
+
+@graphic{/home/parrus/diplomarbeit/dosfop/tools/dosfop/parsingAndScanning/scanOpal/pict/ideAutomaton.eps}
+*/
+
+FUN ideStart ideLetgit ideQuest ideSpecial ideEnd :
+    string ** string ** pos ** pos -> token ** string ** pos
+
+DEF ideStart( src AS c::rtSrc, lexem, start, act ) ==
+  IF letgit?(c) or underline?(c) or iso?(c) THEN
+    ideLetgit(rtSrc, lexem +% c, start, upd(act, c))
+  IF special?(c) THEN
+    ideSpecial(src, lexem, start, act)  -- full src because of possible esc !
+  ELSE
+    ideEnd(src, lexem, start, act)
+  FI
+
+DEF ideStart( <>, lexem, start, act ) ==
+  ideEnd(<>, lexem, start, act)
+
+
+DEF ideLetgit( src AS c::rtSrc, lexem, start, act ) ==
+  IF letgit?(c) or iso?(c) THEN
+    ideLetgit(rtSrc, lexem +% c, start, upd(act, c))
+  IF underline?(c) THEN
+    ideStart(rtSrc, lexem +% c, start, upd(act, c))
+  IF questionmark?(c) THEN
+    ideQuest(rtSrc, lexem +% c, start, upd(act, c))
+  ELSE
+    ideEnd(src, lexem, start, act)
+  FI
+
+DEF ideLetgit( <>, lexem, start, act ) ==
+  ideEnd(<>, lexem, start, act)
+
+
+DEF ideQuest( src AS c::rtSrc, lexem, start, act ) ==
+  IF questionmark?(c) THEN
+    ideQuest(rtSrc, lexem +% c, start, upd(act, c))
+  IF underline?(c) THEN
+    ideStart(rtSrc, lexem +% c, start, upd(act, c))
+  ELSE
+    ideEnd(src, lexem, start, act)
+  FI
+
+DEF ideQuest( <>, lexem, start, act ) ==
+  ideEnd(<>, lexem, start, act)
+
+
+DEF ideSpecial( src AS c::rtSrc, lexem, start, act ) ==
+  IF special?(c) THEN
+    IF  texinfoSpecial?(c) THEN
+      ideSpecial(rtSrc, lexem ++ (escChar % c), start, upd(act, c))
+    ELSE
+      ideSpecial(rtSrc, lexem +% c, start, upd(act, c))
+    FI
+  IF underline?(c) THEN
+    ideStart(rtSrc, lexem +% c, start, upd(act, c))
+  ELSE
+    ideEnd(src, lexem, start, act)
+  FI
+
+DEF ideSpecial( <>, lexem, start, act ) ==
+  ideEnd(<>, lexem, start, act)
+
+
+DEF ideEnd( src, lexem, start, act ) ==
+  IF isKeyword(lexem) THEN
+    (keyword(lexem, start), src, act)
+  ELSE
+    (identifier(lexem, start), src, act)
+  FI
+
+
+-- %$Tokenize layout$
+-- %-----------------
+/* %We scan @newline into single tokens, whereas other layout-characters
+are concatenated into a coherent token representation. This simplifies the detection
+of line-breaks significant in the translation process implemented on top of the
+token representations. */
+
+FUN layout: string ** string ** pos ** pos -> token ** string ** pos
+DEF layout( <> , lexem, start, act ) ==  (layout(lexem, start), <>, act)
+DEF layout( src AS c::rtSrc, lexem, start, act ) ==
+  IF newline?(c) THEN
+    (layout(c%, start), rtSrc, upd(act, c))
+  ELSE
+    blankOrTab(src, lexem, start, act)
+  FI
+
+
+FUN blankOrTab : string ** string ** pos ** pos -> token ** string ** pos
+/* %If the source ends while @tab or @blank characters are read the token contaning the
+layout characters is returned. */
+DEF blankOrTab( <> , lexem, start, act ) ==  (layout(lexem, start), <>, act)
+
+/* %If @tab or @blank characters are encountered a recursive call is executed. A @tab
+character is translated into the proper amount of blanks as the intermediate language
+Texinfo has some problem with proper @tab handling. The amount of blanks depends
+on the current source-file position. Actually the tab-size is hard-coded to an amount
+of eight blanks. This might be a subject of change for future releases of DOSFOP. */
+DEF blankOrTab( src AS c::rtSrc, lexem, start, act ) ==
+  IF blank?(c) or tab?(c) THEN
+    IF tab?(c) THEN
+        blankOrTab(rtSrc, lexem ++ tabspace, start, upd(act, c))
+      WHERE tabspace == init(tabskip(col(act)), blank)
+    ELSE
+      blankOrTab(rtSrc, lexem +% c, start, upd(act, c))
+    FI
+  ELSE
+    (layout(lexem, start), src, act)
+  FI
+
+
+
+
+-- %$Output of Scanning Errors$
+-- %---------------------------
+
+/* %These two functions provide a convenient measure for returning error-token in
+scanner-state-functions. Moreover a unique error-preamble for the whole module is defined.
+
+As we do not implement an error-recovering scanner, we return an empty rest-source and
+an invalid position (@c{initial}) as this position is never been looked at again. */
+
+FUN makeScanError : denotation ** pos -> token ** string ** pos
+DEF makeScanError( reason, p ) ==
+  ( error(preamble ++ reason ++ !(p)), <>, initial )
+
+FUN preamble : denotation
+DEF preamble == "internal OPAL Scanning error\n" ++
+                "(this should not happen for context-correct sources!):\n"
+
+

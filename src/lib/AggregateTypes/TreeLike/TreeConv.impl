@@ -1,0 +1,317 @@
+IMPLEMENTATION TreeConv
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:09 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Tree ONLY tree node left right nil val node? nil?
+       IndexingOfTrees ONLY right left
+IMPORT Denotation ONLY ++ # init slice empty +/+
+IMPORT String ONLY ! : denotation -> string ++ :: <> #  .. % +/+
+IMPORT StringConv ONLY `
+IMPORT Compose[data,string,denotation] ONLY ;
+IMPORT Seq ONLY seq :: ++ <> +% % ft .. <>? # ::? rt
+        SeqMap ONLY *
+        SeqReduce ONLY / reduce
+IMPORT Nat ONLY nat 0 odd? even? succ pred double < max 1 half + - <= 0? = >
+IMPORT Char ONLY char newline blank !
+IMPORT PrintableChar ONLY comma  dot - ^
+       Pair COMPLETELY
+       ABORT ONLY ABORT
+       Pair ONLY 1st 2nd pair &
+       TreeReduce ONLY /
+       SeqZip ONLY zip
+       Compose ONLY o
+
+
+-- %$Converting into textual representation$
+FUN ` : (data -> denotation) -> tree[data] -> denotation
+DEF `(_)(nil) == "[/\\]"
+DEF `(f)(node(d,nil,nil)) == "[/" ++ f(d) ++ "\\]"
+DEF `(f)(node(d,t1,t2)) == 
+        "[/" ++ f(d) ++ "," ++ `(f)(t1) ++ "," ++ `(f)(t2) ++ "\\]"
+
+FUN ` : (data -> string)     -> tree[data] -> string
+DEF `(_)(nil) == "[/\\]"!
+DEF `(f)(node(d,nil,nil)) == !("[/") ++ f(d) ++ !("\\]") 
+DEF `(f)(node(d,t1,t2)) ==  (!("[/") ++ f(d) ++ (comma :: `(f)(t1)))
+     ++ ((comma :: `(f)(t2)) ++ !("\\]"))
+
+DEF graphic(_ :data->denotation)(nil) == "nil"
+DEF graphic(f:data->denotation)(T AS node(_, _, _)) == asDeno(asTBox(f)(T))
+
+FUN asTBox: (data -> denotation) -> tree -> tbox
+DEF asTBox(_)(nil) == empty
+DEF asTBox(f)(node(v, l, r)) ==
+  IF (l node?) and (r node?) THEN
+    LET head == asTBox(f(v))
+        body == asTBox(f)(l) /|\ asTBox(f)(r)
+        (head1, body1) == head >|< body
+        (head2, body2) == head1 |<->| body1
+    IN
+    head2 // body2
+  IF (l nil?) and (r nil?) THEN
+    asTBox(f(v))
+  OTHERWISE
+  IF l nil? THEN
+    LET head == asTBox(f(v))
+        body == empty |\ asTBox(f)(r)
+        (head1, body1) == head >|< body
+        (head2, body2) == head1 |<->| body1
+    IN
+    head2 // body2
+  IF r nil? THEN
+    LET head == asTBox(f(v))
+        body == asTBox(f)(l) /| empty
+        (head1, body1) == head >|< body
+        (head2, body2) == head1 |<->| body1
+    IN
+    head2 // body2
+  FI
+
+
+DEF graphic(_ :data -> string)(nil) == "nil"!
+DEF graphic(f:data -> string)(t) == !(graphic(` o f)(t))
+
+-- %$$Handling TBoxes$
+/* %We introduce @code{tbox}, to represent trees in two dimensions. 
+A @code{tbox} is a sequence of denotations of equal length, together with a
+position which indicates the place of the hook. The sequence may not be empty.
+*/
+
+DATA tbox == tbox(mid: nat, cont: seq[denotation])
+
+-- %Empty tbox
+FUN empty: tbox
+DEF empty == tbox(0, %(" "))
+
+-- %Convert a denotation into a tbox.
+FUN asTBox: denotation -> tbox
+DEF asTBox == \\ d. tbox(mid(#(d)), d :: <>)
+
+-- %Convert a tbox into a denotation.
+FUN asDeno: tbox -> denotation
+DEF asDeno == \\ t. reduce(+/+("\n"), empty)(cont(t))
+
+-- %Align both boxes, so that mids are equal.
+FUN >|<   : tbox ** tbox -> tbox ** tbox
+DEF >|< == \\t1, t2.
+    LET m1 == mid(t1)
+        m2 == mid(t2)
+    IN
+      IF m1 = m2 THEN (t1, t2)
+      IF m1 < m2 THEN (shift(m2 - m1, t1), t2)
+      IF m1 > m2 THEN (t1, shift(m1 - m2, t2))
+      FI
+    
+-- %Make both boxes of equal width (by appending spaces at the right).
+FUN |<->| : tbox ** tbox -> tbox ** tbox
+DEF |<->| == \\t1, t2.
+    LET l1 == t1 #
+        l2 == t2 #
+    IN
+      IF l1 = l2 THEN (t1, t2)
+      IF l1 < l2 THEN (enlarge(l2 - l1, t1), t2)
+      IF l1 > l2 THEN (t1, enlarge(l1 - l2, t2))
+      FI
+
+-- %Put both boxes side by side with a brace above them.
+FUN /|\   : tbox ** tbox -> tbox
+DEF /|\ == \\ t0, t2.
+    LET t1 == enlarge(1, t0)
+        m1 == mid(t1)
+        m2 == l1 + mid(t2)
+        m  == m1 + mid((m2 - m1) +1)
+        l1 == t1 #
+        l2 == t2 #
+        klammer == init(l1 + l2,
+                        \\n. IF n < m1 THEN " "!
+                             IF n = m1 THEN "."!
+                             IF n > m1 and n < m THEN "-"!
+                             IF n = m THEN "^"!
+                             IF n > m and n < m2 THEN "-"!
+                             IF n = m2 THEN "."!
+                             IF n > m2 THEN " "!
+                             FI)
+        c == zip(space(l1), space(l2))(cont(t1), cont(t2))
+    IN tbox(m, klammer :: c)
+
+-- %Put both boxes side by side with left part of a brace above them.
+FUN /|   : tbox ** tbox -> tbox
+DEF /| == \\ t0, t2.
+    LET t1 == enlarge(1, t0)
+        m1 == mid(t1)
+        m2 == l1 + mid(t2)
+        m  == m1 + mid((m2 - m1) +1)
+        l1 == t1 #
+        l2 == t2 #
+        klammer == init(l1 + l2,
+                        \\n. IF n < m1 THEN " "!
+                             IF n = m1 THEN "."!
+                             IF n > m1 and n < m THEN "-"!
+                             IF n = m THEN "^"!
+                             IF n > m and n < m2 THEN " "!
+                             IF n = m2 THEN " "!
+                             IF n > m2 THEN " "!
+                             FI)
+        c == zip(space(l1), space(l2))(cont(t1), cont(t2))
+    IN tbox(m, klammer :: c)
+
+-- %Put both boxes side by side with right part of a brace above them.
+FUN |\   : tbox ** tbox -> tbox
+DEF |\ == \\ t0, t2.
+    LET t1 == enlarge(1, t0)
+        m1 == mid(t1)
+        m2 == l1 + mid(t2)
+        m  == m1 + mid((m2 - m1) +1)
+        l1 == t1 #
+        l2 == t2 #
+        klammer == init(l1 + l2,
+                        \\n. IF n < m1 THEN " "!
+                             IF n = m1 THEN " "!
+                             IF n > m1 and n < m THEN " "!
+                             IF n = m THEN "^"!
+                             IF n > m and n < m2 THEN "-"!
+                             IF n = m2 THEN "."!
+                             IF n > m2 THEN " "!
+                             FI)
+        c == zip(space(l1), space(l2))(cont(t1), cont(t2))
+    IN tbox(m, klammer :: c)
+
+/* %Put first box above second; width and mid should be equal. */        
+FUN //    : tbox ** tbox -> tbox 
+DEF // == \\ t1, t2.
+    tbox(mid(t1), cont(t1) ++ cont(t2))
+
+-- %Add an index line, i.e. a line with | at mid position.
+FUN index : tbox -> tbox
+DEF index == \\t.
+    LET i == init(#(t), \\n. IF n = mid(t) THEN "|"! ELSE " "! FI)
+    IN 
+       tbox(mid(t), i :: cont(t))
+
+-- %Shift mid by n positions to the left.
+FUN shift: nat ** tbox -> tbox
+DEF shift == \\ n, t.
+    LET c == (\\d. space(n) ++ d) * cont(t)
+        m == mid(t) + n
+    IN
+       tbox(m, c)
+
+-- %Enlarge by @code{n} spaces to the right.
+FUN enlarge: nat ** tbox -> tbox
+DEF enlarge == \\ n,t.
+    LET c ==  (\\d. d ++ space(n)) * cont(t)
+    IN
+        tbox(mid(t), c)
+
+-- %Shrink contents by @code{n} positions
+FUN shrink: nat ** tbox -> tbox
+DEF shrink(n, t) == tbox(mid(t),
+                         (\\d. slice(d, 0, (#(d) - 1) - n)) * cont(t))
+
+-- %Width of box.
+FUN # : tbox -> nat
+DEF #(t) == #(ft(cont(t)))
+
+-- %Compute optic middle
+FUN mid: nat -> nat
+DEF mid == \\n.
+    IF odd?(n) THEN half(n)
+    IF even?(n) THEN half(n) - 1
+    FI
+
+-- %We need this variant of @code{zip}.
+FUN zip: denotation ** denotation -> 
+         seq[denotation] ** seq[denotation] -> seq[denotation]
+DEF zip == \\e1, e2. \\s1, s2.
+    IF <>?(s1) and <>?(s2) THEN <>
+    IF <>?(s1) and ::?(s2) THEN (e1 ++ ft(s2)) :: zip(e1, e2)(<>, rt(s2))
+    IF ::?(s1) and <>?(s2) THEN (ft(s1) ++ e2) :: zip(e1, e2)(rt(s1), <>)
+    IF ::?(s1) and ::?(s2) THEN 
+               (ft(s1) ++ ft(s2)) :: zip(e1, e2)(rt(s1), rt(s2))
+    FI
+
+-- %Denotation of @code{n} spaces.
+FUN space: nat -> denotation
+DEF space(n) == init(n, \\ _ . " "!)
+
+    
+
+
+-- %$Converting into a sequence$
+FUN asSeqIn  asSeqPre asSeqPost : tree[data] -> seq[data]
+DEF asSeqIn(t) == asSeqIn(t, <>)
+DEF asSeqPre(t) == asSeqPre(t, <>)
+DEF asSeqPost(t) == asSeqPost(t, <>)
+
+/* % idea to these functions comes from: Stephen Adams, Functional
+pearls: Efficient sets - a balancing act, Journal of Functional
+Programming, 3(4), 553 - 561, October 1993 */
+
+FUN asSeqIn asSeqPre asSeqPost: tree[data] ** seq[data] -> seq[data]
+DEF asSeqIn(nil, s) == s
+DEF asSeqIn(node(v, l, r), s) == asSeqIn(l, v :: asSeqIn(r, s))
+
+DEF asSeqPre(nil, s) == s
+DEF asSeqPre(node(v, l, r), s) == v :: asSeqPre(l, asSeqPre(r, s))
+
+DEF asSeqPost(nil, s) == s
+DEF asSeqPost(node(v, l, r), s) == asSeqPost(l, asSeqPost(r, v :: s))
+
+FUN asSeqBreadth : tree[data] -> seq[seq[data]]
+DEF asSeqBreadth(nil) == <>
+DEF asSeqBreadth(node(v, l, r)) == 
+    LET seq1 == asSeqBreadth(l)
+        seq2 == asSeqBreadth(r)
+    IN 
+        (v%) :: zip(seq1, seq2)
+
+-- %Auxiliary function: like zip(++), but works for different lengths
+FUN zip: seq[seq[data]] ** seq[seq[data]] -> seq[seq[data]]
+DEF zip(<>, <>) == <>
+DEF zip(s1, <>) == s1
+DEF zip(<>, s2) == s2
+DEF zip(f1 :: s1, f2 :: s2) == (f1 ++ f2) :: zip(s1, s2)
+
+
+/* %- not used, as arrays are above sets and tree shall be below sets 
+-- %$Converting into an array$
+
+
+
+FUN asArray: tree[data] -> array[option[data]]
+DEF asArray(nil) == init(1, nil)
+DEF asArray(t) == LET m == t asMap(0, {})
+                      # == (max, 0) / dom(m)
+                  IN init(succ(#), 
+                          \\i. IF i def? m THEN m ! i ELSE nil FI)
+
+FUN asMap: tree ** nat ** map -> map
+DEF asMap(nil, p, m) == def(p, nil, m)
+DEF asMap(node(d, t1, t2), p, m) ==
+    LET m1 == def(p, avail(d), m)
+        m2 == asMap(t1, left(p), m1)
+        m3 == asMap(t2, right(p), m2)
+    IN
+        m3
+
+FUN asTree: array[option[data]] -> tree[data]
+DEF asTree(A) == asTree(A, 0)
+
+-- %convert the array, with given index as the root 
+FUN asTree: array[option[data]] ** nat -> tree[data]
+DEF asTree(A, i) == 
+    IF i < #(A) THEN
+        LET d == A!i
+        IN IF d nil? THEN nil
+           IF d avail? THEN node(cont(d), 
+                                 asTree(A, left(i)),
+                                 asTree(A, right(i)))
+           FI
+    ELSE
+      ABORT("asTree'TreeConv: array too short")
+    FI
+      
+*/

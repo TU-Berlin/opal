@@ -1,0 +1,85 @@
+IMPLEMENTATION DbDebugState
+
+
+IMPORT Void			COMPLETELY
+       Seq			COMPLETELY
+       Option			COMPLETELY
+       Com			COMPLETELY
+       Map			COMPLETELY
+       MapFilter		COMPLETELY
+       Fmt			COMPLETELY
+       Com			COMPLETELY
+       ComCompose		COMPLETELY
+       ComState			COMPLETELY
+       ComStateWith		COMPLETELY
+
+IMPORT RepoEvent		COMPLETELY
+       RepoName			COMPLETELY
+       RepoAbsy			COMPLETELY
+       RepoMaintain		COMPLETELY
+       RepoCom			COMPLETELY
+       RepoCom1			COMPLETELY
+
+
+FUN debugTableId : stateId[map[objectName,<,debugState]]
+DEF debugTableId == EXEC(stateId({}))
+
+FUN outdatedSeqId : stateId[seq[debugState]]
+DEF outdatedSeqId == EXEC(stateId(<>))
+
+DATA debugState == 
+    -- temporary state to mark that debugging should be reset
+    noDebug	
+    -- normal debugging states
+    debug		(source : denotation, unit: unitName)
+    break		(source : denotation, unit: unitName)
+    guardedBreak	(source: denotation, unit: unitName,
+			 guardSource : denotation, 
+			 guard : expr)
+
+
+
+DEF debugState(O) ==
+    get(debugTableId)		& (\\ T.
+    IF avail?(T !? O) THEN 
+	succeed(cont(T !? O))
+    ELSE succeed(noDebug) FI
+    )
+
+DEF setDebugState(O, S) ==
+    with(debugTableId, \\T. def(O, S, T))	& (\\ _ .
+    IF ~(noDebug?(S)) THEN	
+	upd(requireSource(baseName(unit(O))))		& (\\ _ .
+	upd(requireFullAbsy(baseName(unit(O))))		& (\\ _ .
+	succeed(nil)
+	))
+    ELSE succeed(nil) FI
+    )
+
+DEF debugObjects ==
+    get(debugTableId)		& (\\ T.
+    succeed(dom(T))
+    )
+
+DEF resetDebugStates ==
+    with(debugTableId, \\ _ . {})
+
+DEF outdatedDebugStates ==
+    get(outdatedSeqId)
+
+DEF setOutdatedDebugStates(Seq) ==
+    with(outdatedSeqId, \\ _ .Seq)
+
+DEF debugStateHandler(newAbsy(U)) ==
+    with(debugTableId, \\T.
+	LET (T1, T2) == partition(\\O, _ . ~(baseName(unit(O)) = U),
+				  T)
+        IN
+	(T1, codom(T2))
+    )					& (\\ Outdated.
+    with(outdatedSeqId, \\Old. Old ++ Outdated)
+    )
+    		
+DEF debugStateHandler(_) ==
+    succeed(nil)
+    

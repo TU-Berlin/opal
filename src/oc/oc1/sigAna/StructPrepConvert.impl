@@ -1,0 +1,784 @@
+/* %Zweck:       Umcodierung der gelesenen Exportstruktur anhand der
+            Indextabellen und Erweiterung der RepTab um die neuen Namen */
+
+-- %-$LAST EDIT: Mon Aug 12 16:34:25 1996 by Christian Maeder (andromache!maeder$) 
+-- %-==========================================================================
+-- %-Author:      mija$
+-- %-Project:     OPAL1-Compiler (context analysis$)
+-- %-Purpose:     renumber and convert imported structures$ 
+-- %-Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab$
+-- %- =========================================================================
+
+IMPLEMENTATION StructPrepConvert
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Objects         COMPLETELY
+        Maps4SigAna     COMPLETELY
+        ImpDecl4SigAna  COMPLETELY
+        GlobSigImpl     ONLY impl:SORT data none {} + %
+        ImpExpEntry     COMPLETELY 
+        InterOpal       COMPLETELY
+        InterOpalModifier       COMPLETELY
+        Name            COMPLETELY
+        Table           COMPLETELY
+        GlobSig         ONLY BOOL DENOTATION impPragmas updImpPragmas
+                                impLaws updImpLaws 
+        GlobPragma COMPLETELY
+        -- absy, etc.
+        Rep             COMPLETELY
+        Pragma          COMPLETELY
+        Fct             ONLY fct anyFct
+
+        -- lib
+        Nat             COMPLETELY
+        NatConv         ONLY `
+        NatMap          COMPLETELY
+        Compose         COMPLETELY
+        Quadruple       COMPLETELY
+        Seq             COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqOfSeq        ONLY flat
+        SeqMap          ONLY *
+        SeqMapEnv       ONLY *
+        SeqConv         ONLY `
+        SeqReduce       COMPLETELY
+        SetByBST        COMPLETELY
+        SetByBSTConv    COMPLETELY
+        SetByBSTReduce  COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        DEBUG           ONLY PRINT FIELD?
+        GlobSigToText   ONLY ` -- : globSig -> () -> denotation
+        Denotation      ONLY ++ 
+        GlobPragma[name'Name] COMPLETELY
+        Map ONLY map ! !? def codom {} def? extend undef
+        Pos ONLY firstPos mkPos
+       GlobSigImpl ONLY locSig
+       Impl COMPLETELY
+       Triple COMPLETELY
+       ABORT ONLY ABORT
+       OptionConv ONLY `
+       SeqZip ONLY unzip
+       BoolConv ONLY `
+
+-- %- ------------------------------------------------------------------------
+
+-- %@zoindex convertSign
+FUN convertSign? : bool
+DEF convertSign? == FIELD?[bool]("-zconvertSign")
+
+-- %@zoindex convertSignBlip
+FUN convertSign : 
+        quad[strDecTab,seq[instAppl],interOpal,bool] ** pair[globSig, repTab]
+                  -> pair[globSig, repTab]
+        -- Umcodierung der gelesenen Exportstruktur anhand der Indextabellen
+DEF convertSign(&(tab0,explInstApplS,sign0,hasComp), PGR) == 
+        LET 
+        (gS, RT) == unpair(PGR)
+        Sym == symbol(sign0)
+        sign == PRINT(FIELD?[bool]("-zconvertSignBlip"), 
+                        \\ . "Blip : " ++ Sym, sign0) 
+        tab == PRINT(convertSign?, \\ . Sym ++ "\n" ++ `(tab0), tab0) 
+        Objs == objects(sign1)
+        (structG, _) == tab ! mainStruct
+        Params == params(sign1)
+        iDM == getImpDeclMap(gS, structG)
+        Laws == laws(sign)
+        -- Laws benennen und in RT und interOpal eintragen
+        (RT0, Laws1) == (nameLaw, RT) * Laws
+        sign1 == ( interOpal(part(sign), def(main, newMain, structs(sign)))
+                   WHERE newMain == struct(pos(oldMain), origin(oldMain),
+                                           symbol(oldMain), insts(oldMain),
+                                           onlys(oldMain), objs(oldMain),
+                                           newProps, pragmas(oldMain))
+                         oldMain == structs(sign)!main
+                         newProps == extend(props(oldMain), unzip(><)(Laws1))
+                         >< == \\l. (ident(l), l)
+                 )
+        GsParamP == (toImpDecl * Params) & 
+                ((\\P. asKind(convertName(sign1,tab), kind(P))) * Params)
+        gSiM == (convertSpc(RT0,sign1,mainStruct(sign1),
+                            reverseOnlys(mainStruct(sign1)),
+                            structG,tab,explInstApplS) 
+                \ (gS & iDM))(Objs)
+        -- Eintragen des expliziten Imports
+        Gs1 == defImport(1st(gSiM),  structG, 2nd(gSiM), <>, GsParamP)
+        (GR2, Re) == unpair( 
+             (convertTrans(sign1, ::?(Params), tab,hasComp,explInstApplS) 
+                        \ &(Gs1 & RT0,{}[name,<]))(transStructs(sign1)))
+        (Gs2, RT2) == unpair(GR2)
+        -- Eintragen der direkt importierten Objekte
+        iDM2 == getImpDeclMap(Gs2, structG)
+        Gs3 == defImport(Gs2, structG, iDM2, asSeq(Re), GsParamP)
+/*
+        /* %Pragmas und Laws werden immer zur G"anze eingetragen
+            - einmal reicht also. */
+-- geht leider nicht, da evtl. schon asu insertOwnSignature einzelne Pragmas und/oder Gesetze bekannt sind
+        -- Eintragen der Pragmas der importierten Struktur
+        (Gs4, RT3) == LET r == getRep(RT, symbol(sign1))
+                      IN
+                      IF def?(r, impPragmas(Gs3)) THEN (Gs3, RT2)
+                      ELSE unpair(addPragmas(tab,
+                                             structs(sign1)!main, sign1,
+                                             Gs3, RT2))
+                      FI
+        -- Eintragen der Formeln der importierten Struktur
+        (Gs5, RT4) == LET r == getRep(RT, symbol(sign1))
+                      IN
+                      IF def?(r, impLaws(Gs4)) THEN (Gs4, RT3)
+                      ELSE unpair(addLaws(tab, Laws1, sign1, Gs4, RT3))
+                      FI
+*/
+        r == getRep(RT, symbol(sign1))
+        -- Eintragen der Pragmas der importierten Struktur
+        (Gs4, RT3) == LET Gs3a == IF def?(r, impPragmas(Gs3)) THEN 
+                                    updImpPragmas(Gs3,
+                                                  undef(r, impPragmas(Gs3)))
+                                  ELSE Gs3 FI
+
+                      IN
+                      unpair(addPragmas(tab, structs(sign1)!main, sign1,
+                                             Gs3a, RT2))
+        -- Eintragen der Formeln der importierten Struktur
+        (Gs5, RT4) ==  LET Gs4a == IF def?(r, impLaws(Gs4)) THEN 
+                                     updImpLaws(Gs4, undef(r, impLaws(Gs4)))
+                                   ELSE Gs4 FI
+                      IN
+                      unpair(addLaws(tab, Laws1, sign1, Gs4a, RT3))
+        -- Ende
+        (finGS, nRT) == (Gs5, RT4)
+        IN PRINT(convertSign?,`(finGS), finGS) & nRT
+
+        FUN toImpDecl : object -> pair[impDecl,pragma'Pragma]
+        DEF toImpDecl(p) == impDecl(no(ident(p))) & noPragma
+
+
+/* %Der erste Parameter ist nur Flickwerk und kann weg, wenn die eigene
+    Signatur nicht mehr ueber die Exportschiene eingelesen wird. 
+
+Nun nicht mehr - in der RepTab stehen die Reps der ggf. assoziierten Laws 
+des Objekts. (kd) */
+FUN convertSpc : repTab ** interOpal ** struct'InterOpal **
+                 natMap[seq[inst'InterOpal]] **
+                 struct'Objects ** strDecTab ** seq[instAppl]
+                 -> object ** pair[globSig,impDeclMap:SORT] 
+                 -> pair[globSig,impDeclMap:SORT]
+        -- Einfuegen einer Spezifikation
+DEF convertSpc(RT, Inter, Structio, Onlys, struct, tab, InstS0)
+                   (Obj,gS & iDM) ==
+        LET 
+        ImpDecl == impDecl(no(ident(Obj)))
+        InstS == IF param?(Structio, Obj) THEN <> ELSE InstS0 FI
+        Kind == kind(Obj)
+        convertSpc? == FIELD?[bool]("-zconvertSpc")
+        Rep == PRINT(convertSpc?, \\ . "convertSpc:" ++ symbol(Obj) ++ "," ++
+                     `(Rep0) ++ "," ++ (IF sort?(Kind) THEN "sort" ELSE "fct" FI), Rep0)
+        finGs == PRINT(convertSpc?, `(finGs0), finGs0)
+        Rep0 == getRep(RT, symbol(Obj))
+        (finGs0, finIDM) ==
+          IF sort?(Kind) THEN 
+                        IF freeType?(Structio, Obj) THEN
+                        LET Prop == freeType(Structio, Obj)
+                            Impl == asImpl(Inter,convertName(Inter, tab), Prop)
+                        IN
+                                defImpDeclSort(gS,struct,iDM,ImpDecl,
+                                Rep,InstS,data(Impl))
+                        ELSE defImpDeclSort(gS,struct,iDM,ImpDecl,
+                                Rep,InstS,none)
+                        FI
+          ELSE LET Fct == 
+                   IF fct?(Kind) THEN
+                     asFct(convertName(Inter, tab), fct(Kind))
+                   ELSE
+                     anyFct
+                   FI
+               IN 
+                IF constructor?(Structio, Obj) THEN
+                        LET Variant == variant(Structio, Obj)
+                            Test == impDecl(no(ident(test(Variant))))
+                            Sels == (impDecl o (no o (ident o sel))) 
+                                                * comps(Variant)
+                        IN defImpDeclOpCons(gS, struct, iDM, ImpDecl,
+                                        Rep, InstS, Fct, Test, Sels) 
+                ELSE 
+                  LET Spc == IF props(Obj) <>? THEN nil
+                             OTHERWISE
+                             IF ~(law?(props(Structio)!ft(props(Obj)))) THEN
+                               nil
+                             ELSE
+                               LET 
+                                 p == props(Structio)!ft(props(Obj)) 
+                               IN
+                               avail(getRep(RT, cont(symbol(p))))
+                             FI
+                  IN
+                  defImpDeclOp(gS, struct, iDM, ImpDecl, Rep, InstS, Fct, Spc)
+                FI
+          FI
+        IN (finGs & finIDM)
+
+FUN convertName : interOpal ** strDecTab -> name'InterOpal -> name'Name
+        -- konvertieren einer Applikation (nicht Inst. eines trans. Imports)
+DEF convertName(Inter, tab)(Name) ==
+        LET Orig == origin(Name)
+            No == IF main?(Orig) THEN 0 ELSE no(Orig) FI
+            (Struct,instDecTab) == tab ! struct(No)
+            ImpDecl == impDecl(no(ident(Name)))
+        IN
+        IF param?(Inter, Name) THEN 
+                formParam(Struct, ImpDecl, paramNo(Inter, Name))
+        ELSE
+                IF main?(Orig) THEN 
+                        extName(Struct, ImpDecl, unparam)
+                        -- noInst bei parametrisierten heisst alle Instanzen
+                ELSE LET Inst == instDecTab ! asInst(inst(Name))
+                     IN extName(Struct, ImpDecl, Inst)
+                FI
+        FI
+
+
+FUN convertTrans : interOpal ** bool ** 
+                   strDecTab ** bool ** seq[instAppl]
+                   -> struct'InterOpal:SORT **
+                      pair[pair[globSig,repTab], set[name'Name,<]] 
+                   -> pair[pair[globSig,repTab], set[name'Name,<]]
+        -- Umcodierern eines transitiven Imports
+
+-- %@zoindex convertTrans
+DEF convertTrans(Inter, Param?, tab, hasCompl, instApplS)
+                        (Structio, (gS & RT) & prevNameS) == 
+        -- das oberste IF ist ueberfluesssig, wenn BOOL und DENOTATION nicht
+        -- mehr reexportiert werden.
+        LET 
+        strRep == getRep(RT, symbol(Structio)) 
+--      IF strRep = BOOL(gS) THEN env
+--      IF strRep = DENOTATION(gS) THEN env ELSE
+        ownStruct == struct(no(origin(Structio)))
+        -- Umcodierungsinfo fuer die transitiv importierte Struktur
+        (transStr, instDecTab) == tab ! ownStruct
+        -- Auf jeden Fall muessen die neuen Aktualisierungen umgewandelt werden
+        (Struct, _) == tab ! mainStruct
+        -- und auch die Liste der Reexporte wird immer gebraucht
+        Params == params(Structio)
+        Objs == objects(Structio)
+        Onlys == reverseOnlys(Structio)
+        gSiM == (convertTransSpc(RT,Inter,Structio,Onlys,
+                        transStr,instDecTab,tab,hasCompl) \
+                      (gS & getImpDeclMap(gS, transStr)))(Objs)
+        Gs2 == 1st(gSiM)
+        ImpDeclMap == 2nd(gSiM)
+        Direct0? == directImported?(Gs2, transStr)
+        Direct? == PRINT(FIELD?[bool:SORT]("-zconvertTrans"),  \\ .
+                         "trans: " ++ symbol(Structio) ++ " params:" ++
+                         `(Params ::?) ++ " direct:" ++ `(Direct0?) ++
+                         `(Gs2)(),
+                         Direct0?)
+        (Gs3, genReExps) ==   
+          IF Params <>? THEN    -- unparametrisierte Struktur
+            (IF Direct? THEN    -- unparam
+              mergeImpDecls(Gs2,transStr,ImpDeclMap) 
+            ELSE                                -- unparamTrans
+              defTransImport(Gs2,transStr,ImpDeclMap)
+            FI, <>[name:SORT])
+          ELSE
+            LET Insts == insts(Structio)
+                identActS == (\\P. no(1st(P)) > 0) | Insts
+                InstMap0 == getInstMap(Gs2,transStr)
+                InstMap1 == IF exist?(\\P. no(1st(P)) = 0, Insts)
+                        THEN instMap(upd(no(instDecTab ! asInst(inst(0))), 
+                                        identUninst(<>), tabOf(InstMap0)))
+                        ELSE InstMap0 FI
+                (finInstMap,newGenIAS) == 
+                  *(convertIdentAct(Inter,Param?,Struct,instDecTab, 
+                                 tab,instApplS), InstMap1, identActS)
+                finGenIAS == cont * (avail? | newGenIAS)
+                ImpDeclParams == toImpDecl * Params
+                finIDMap == addTransInstS(ImpDeclMap,transStr,<>,finGenIAS,
+                                1st * ImpDeclParams)
+                finIAS == flat(2nd * finGenIAS)
+                genReExps2 == flat(toName(transStr,finIAS) * 
+                                (imported?(Onlys) | Objs))
+            IN
+            IF Direct? THEN     -- param
+              (updImport(Gs2,transStr,finInstMap,finIDMap), genReExps2)
+            ELSE                                -- paramTrans or preStruct
+                LET formParas ==
+                &(ImpDeclParams, 
+                        (\\P. asKind(convertName(Inter,tab), kind(P))) * Params)
+                IN 
+                (defTransImport(Gs2,transStr,finInstMap,finIDMap,formParas)
+                        , genReExps2)
+            FI
+          FI
+        (finGS, nRT) == IF Direct? THEN (Gs3, RT)
+                        OTHERWISE
+                        IF def?(strRep, impPragmas(Gs3)) THEN (Gs3, RT)
+                        ELSE unpair(addPragmas(tab, Structio, Inter, Gs3, RT))
+                        FI
+        finReExps == \ (spcToName(Onlys,transStr,instDecTab), 
+                              prevNameS, Objs) 
+                        + asSet(genReExps)
+        finReExps0 == PRINT(FIELD?[bool:SORT]("-zconvertTrans"), 
+                                ``(transStr,genReExps),finReExps)
+         IN &(finGS & nRT, finReExps0)
+
+
+FUN `` : struct'Objects ** seq[name'Name] -> () -> denotation
+DEF ``(struct,nameS)() ==
+        "transStruct: " ++ `(no(struct)) ++ "  genReExps: "
+        ++ `(`'Name)(nameS)
+
+FUN convertTransSpc : repTab ** interOpal ** struct'InterOpal ** 
+                 natMap[seq[inst'InterOpal]] ** struct'Objects ** 
+                instDecTab ** strDecTab ** bool 
+                 -> object ** pair[globSig,impDeclMap:SORT]
+                 -> pair[globSig,impDeclMap:SORT]
+            -- in den Objekten sind die Instanzenlisten, die zu Applikationen
+            -- werden muessen und bei einem expliziten COMPlETELY-Import als
+            -- appliziert vorbesetzt werden.
+
+DEF convertTransSpc(RT,Inter,Struct,Onlys,transStr,iDTab, tab, hasCompl)
+    (Obj,iDM) ==
+        LET convFun == IF hasCompl THEN applied o toInstAppl'ImpExpEntry 
+                        ELSE toInstAppl'ImpExpEntry FI
+            Insts == Onlys ! no(ident(Obj))
+            instApplS == (convFun o (!(iDTab, _) o asInst)) * Insts
+        IN
+        convertSpc(RT,Inter,Struct,Onlys,transStr,tab,instApplS)(Obj,iDM)
+
+FUN spcToName : natMap[seq[inst'InterOpal]] ** 
+                struct'Objects ** instDecTab 
+                -> object ** set[name'Name,<] -> set[name'Name,<]
+        -- Erzeugen einer von Applikationen (name) aus einer Deklaration
+        -- fuer die Erzeugung der Reexportliste
+
+DEF spcToName(Onlys,struct,instDecTab)(Obj, nameS) == 
+        LET
+            No == no(ident(Obj))
+            Insts == Onlys ! No
+            ImpDecl == impDecl(No)
+        IN
+        asSet((h3(struct,instDecTab,ImpDecl)) o asInst * Insts) + nameS
+
+        FUN h3 : struct'Objects ** instDecTab ** impDecl -> 
+                        inst'Objects -> name'Name
+        DEF h3(struct,instDecTab,impDecl)(inst) == 
+                extName(struct,impDecl,instDecTab ! inst)
+
+
+FUN convertIdentAct : interOpal ** bool **
+                struct'Objects ** instDecTab ** strDecTab ** seq[instAppl]
+                       -> instMap ** pair[inst'InterOpal,seq[name'InterOpal]]
+                        -> instMap ** option[pair[inst'Objects,seq[instAppl]]]
+        -- Einfuegen der Aktualisierungen der transienten Importe
+DEF convertIdentAct(Inter, Param?,oStr,instTab,tab,instApplS)
+        (instMap,Instio & Names) ==
+          LET 
+              convNameS == convertName(Inter, tab) * Names
+              inst == instTab ! asInst(Instio)
+          IN
+          IF Param? ANDIF exist?(\\N. main?(origin(N)), Names) THEN
+                LET 
+                (finInstMap, newIAS) == 
+                *'SeqMapEnv(convertWRTexplInst(oStr, convNameS),
+                        instMap, instApplS)
+                IN
+              (defGenericTransitives(finInstMap, inst, 
+                                instOf * newIAS,convNameS),
+                                        avail(inst & newIAS))
+          ELSE 
+            (defTransInst(instMap,inst, convNameS), nil) 
+                -- nil[pair[inst:SORT,seq[instAppl]]])
+          FI
+
+
+FUN imported? : natMap[seq[inst'InterOpal]] -> object -> bool
+DEF imported?(Onlys)(Obj) ==
+        ::?(Onlys ! no(ident(Obj)))
+
+
+FUN toName : struct'Objects ** seq[instAppl] 
+                -> object -> seq[name'Name]
+DEF toName(Struct,IAs)(Obj) == (extName(Struct, impDecl(no(ident(Obj))), _) o
+                        instOf) * IAs
+                                                        
+
+FUN convertWRTexplInst : struct'Objects ** seq[name'Name] 
+                         -> instMap ** instAppl -> instMap ** instAppl
+        -- Es wird die instAppl eines expliziten Imports benutzt, um die 
+        -- Applikationen der transitiven Instanz, in der mindestens eine
+        -- ownActParam-Applikation vorkommt, eintragen und eine
+        -- neue instAppl erzeugen zu koennen.
+DEF convertWRTexplInst(oStr, nameS)(instMap,instAppl) == 
+        (finInstMap, transferApplyCount(applyCount(instAppl),newIA))
+        WHERE
+        oInst == instOf(instAppl)
+        -- Erzeugen eines neuen Inst-Eintrags
+        (instMap1, newIA) == addPreInst(instMap)
+        -- Endgueltiges Eintragen der neuen transitiven Instanz
+        finInstMap == 
+          defGenTransInst(instMap1, instOf(newIA), oStr,oInst,
+                          setInstance(oStr,oInst) * nameS)
+
+FUN setInstance : struct'Objects ** inst'Objects -> name'Name -> name'Name
+  -- Einsetzen der aktuellen Instanz fuer Namen aus der Struktur
+  -- Die Namen stammen aus der Instanzenliste eines generischen transitiven
+  -- Imports
+DEF setInstance(oStruct, oInst)(name) ==
+        IF name extName? THEN
+          IF struct(name) = oStruct THEN extName(oStruct,impDecl(name),oInst)
+          ELSE name FI
+        ELSE name FI
+
+-- %Einfügen der globalen Pragmas der Struktur in die globSig
+FUN addPragmas: strDecTab ** struct'InterOpal **
+                 interOpal ** globSig ** repTab -> pair[globSig, repTab]
+DEF addPragmas(tab, structIO, IO, gS, RT) ==
+  (addPragmas(tab, IO, getRep(RT, symbol(structIO))), gS & RT) /
+      pragmas(structIO)
+
+FUN addPragmas: strDecTab ** interOpal ** rep ->
+                 pragma'InterOpal ** pair[globSig, repTab] ->
+                 pair[globSig, repTab]
+DEF addPragmas(tab, IO, Rep)(p, gS & RT) ==
+  LET (NRT, gpItems) == (addPragmas(tab, IO), RT) * items(p)
+      newImpPragmas == def(Rep, prag(gpItems) :: (impPragmas(gS)!!Rep),
+                           impPragmas(gS))
+      gS1 == PRINT(FIELD?[bool]("-zaddPragmas"),
+                   \\ . "adding Pragma to " ++ (Rep`) ++
+                        " " ++ `(`)(prag(gpItems)), gS)
+  IN updImpPragmas(gS1, newImpPragmas) & NRT
+
+
+FUN !! : map[rep, <, seq[globPragma[name'Name]]] ** rep -> seq[globPragma[name'Name]]
+DEF M !! R == IF avail?(M !? R) THEN cont(M!?R) ELSE <>[globPragma] FI
+
+-- %adding Pragmaitem
+FUN addPragmas: strDecTab ** interOpal ->
+                 repTab ** pragmaItem'InterOpal ->
+                 repTab ** pragmaItem'GlobPragma[name'Name]
+DEF addPragmas(tab, IO)(RT,objects(obs)) ==
+  (RT, identify(convertName(IO, tab) * obs))
+DEF addPragmas(_, _)(RT, token(p, T)) == 
+  LET (newRT, R) == insert(RT, T) IN (newRT, lexem(R, p@))
+
+-- %$Laws$
+
+-- %ggf. symbol fuer Namen erzeugen und in RepTab eintragen
+FUN nameLaw: repTab ** property -> repTab ** property
+DEF nameLaw(rT, law(p, id, sym, f, prs)) ==
+  LET (RT1, nSym) == IF sym avail? THEN (rT, sym)
+                     ELSE LET (newRT, den) == generate(rT, "unnamed")
+                              (RT2, _) == insertGen(newRT, den)
+                          IN
+                          (RT2, avail(den))
+                     FI
+  IN
+  (RT1, law(p, id, nSym, f, prs))
+
+FUN nameLaws: pair[repTab, interOpal] ** origin -> pair[repTab, interOpal]
+DEF nameLaws(rT & IO, orig) ==
+  LET
+    Laws == laws(structs(IO)!orig)
+    (RT0, Laws1) == (nameLaw, rT) * Laws
+    IO1 == ( interOpal(part(IO), def(orig, newStruct, structs(IO)))
+            WHERE newStruct == struct(pos(oldStruct), origin(oldStruct),
+                                      symbol(oldStruct), insts(oldStruct),
+                                      onlys(oldStruct), objs(oldStruct),
+                                      newProps, pragmas(oldStruct))
+                  oldStruct == structs(IO)!orig
+                  newProps == extend(props(oldStruct), unzip(><)(Laws1))
+                  >< == \\l. (ident(l), l)
+           )
+  IN
+  RT0 & IO1
+      
+
+FUN addLaws: strDecTab ** seq[property] **
+                 interOpal ** globSig ** repTab -> pair[globSig, repTab]
+DEF addLaws(tab, props, IO, gS, RT) ==
+  (addLaw(tab, IO), gS & RT) / props
+
+-- %@zoindex addLaw
+FUN addLaw: strDecTab ** interOpal ->
+             property ** pair[globSig, repTab] -> pair[globSig, repTab]
+DEF addLaw(tab, IO)(law(p, id, sym0, f, prags), gS & RT) ==
+    LET (newF, lSig, _, RT1) == form2Form(f, {}, 0, {},convertName(IO,tab), RT)
+        structRep == getRep(RT, symbol(structs(IO)!main))
+        sym == PRINT(FIELD?[bool]("-zaddLaw"), \\ . "LAW: " ++ `(\\x.x)(sym0), sym0)
+        (RT2, lawRep) == IF sym avail? THEN
+                           insert(RT1, cont(sym))
+                         ELSE
+                           genAndIns(RT1, "unnamed")
+                         FI
+        newLaw == law(lawRep, newF, p@)
+        newImpLaws == def(structRep, newLaw & lSig :: (impLaws(gS)!!structRep),
+                          impLaws(gS))
+    IN 
+    updImpLaws(gS, newImpLaws) & RT2
+
+
+FUN !! : map[rep, <, seq[pair[law[name'Name], locSig]]] ** rep -> seq[pair[law[name'Name], locSig]]
+DEF M !! R == IF avail?(M !? R) THEN cont(M!?R) ELSE <> [pair[law, locSig]] FI
+-- %$Formulae$
+/* %Bedeutung der Parameter:
+@table @code
+@item formula
+die zu bearbeitende Formel
+@item locSig
+aktuelle lokale Signatur - Ergebnis wird wieder hochgereicht
+@item nat
+naechster freier Index in der @code{locSig} - wird ebenfalls hochgereicht
+@item map
+Abb. von Interopal-Idents lokaler Variablen nach globSig-Namen - wird ergaenzt
+@item Funktion
+Umwandlung von InterOpal-Namen in globSig-Namen - konstant
+@item repTab
+muss wegen evtl. einzutragender Identifier mitgegeben werden, wird wieder hochgereicht
+@end table
+*/
+FUN form2Form:
+  formula'InterOpal ** locSig ** nat ** map[ident, <, name'Name] ** (name'InterOpal -> name'Name) ** repTab ->
+    formula'Impl[name'Name] ** locSig ** nat ** repTab
+DEF form2Form(dfd(p, e), lS, no, M, F, RT) ==
+  LET (newE, newLS, newNo, newRT) == expr2Expr(e, lS, no, M, F, RT)
+  IN
+  (dfd(newE, p@), newLS, newNo, newRT)
+
+DEF form2Form(approx(p, l, r), lS, no, M, F, RT) ==
+  LET (newL, LS1, NO1, RT1) == expr2Expr(l, lS, no, M, F, RT)
+      (newR, LS2, NO2, RT2) == expr2Expr(r, LS1, NO1, M, F, RT1)
+  IN
+  (ineq(newL, newR, p@), LS2, NO2, RT2)
+
+DEF form2Form(cong(p, l, r), lS, no, M, F, RT) ==
+  LET (newL, LS1, NO1, RT1) == expr2Expr(l, lS, no, M, F, RT)
+      (newR, LS2, NO2, RT2) == expr2Expr(r, LS1, NO1, M, F, RT1)
+  IN
+  (equal(newL, newR, p@), LS2, NO2, RT2)
+
+DEF form2Form(neg(p, f), lS, no, M, F, RT) ==
+  LET (newF, newLS, newNo, newRT) == form2Form(f, lS, no, M, F, RT)
+  IN
+  (neg(newF, p@), newLS, newNo, newRT)
+
+DEF form2Form(conj(p, l, r), lS, no, M, F, RT) ==
+  LET (newL, LS1, NO1, RT1) == form2Form(l, lS, no, M, F, RT)
+      (newR, LS2, NO2, RT2) == form2Form(r, LS1, NO1, M, F, RT1)
+  IN
+  (and(newL, newR, p@), LS2, NO2, RT2)
+
+DEF form2Form(disj(p, l, r), lS, no, M, F, RT) ==
+  LET (newL, LS1, NO1, RT1) == form2Form(l, lS, no, M, F, RT)
+      (newR, LS2, NO2, RT2) == form2Form(r, LS1, NO1, M, F, RT1)
+  IN
+  (or(newL, newR, p@), LS2, NO2, RT2)
+
+DEF form2Form(impl(p, l, r), lS, no, M, F, RT) ==
+  LET (newL, LS1, NO1, RT1) == form2Form(l, lS, no, M, F, RT)
+      (newR, LS2, NO2, RT2) == form2Form(r, LS1, NO1, M, F, RT1)
+  IN
+  (imply(newL, newR, p@), LS2, NO2, RT2)
+
+DEF form2Form(equiv(p, l, r), lS, no, M, F, RT) ==
+  LET (newL, LS1, NO1, RT1) == form2Form(l, lS, no, M, F, RT)
+      (newR, LS2, NO2, RT2) == form2Form(r, LS1, NO1, M, F, RT1)
+  IN
+  (eqv(newL, newR, p@), LS2, NO2, RT2)
+
+DEF form2Form(forall(p, vs, f), lS, no, M, F, RT) ==
+  LET (newNoAndNewRT, locSigS) ==
+         (var2LocSig(F), no & RT) * vs
+      (newNo, newRT) == unpair(newNoAndNewRT)
+      newNoAndMap == (\\nm, v. var2Map(newRT)(nm,v), no & M) / vs
+      newMap == 2nd(newNoAndMap)
+      (_, vars) == (var2name(RT), no) * vs
+      newLS == (+, lS) / locSigS
+      (newF, LS1, NO1, RT1) == form2Form(f, newLS, newNo, newMap, F, newRT)
+  IN
+    (all(vars, newF, p@), LS1, NO1, RT1)
+
+DEF form2Form(exist(p, vs, f), lS, no, M, F, RT) ==
+  LET (newNoAndNewRT, locSigS) ==
+         (var2LocSig(F), no & RT) * vs
+      (newNo, newRT) == unpair(newNoAndNewRT)
+      newNoAndMap == (\\nm, v. var2Map(newRT)(nm,v), no & M) / vs
+      newMap == 2nd(newNoAndMap)
+      (_, vars) == (var2name(RT), no) * vs
+      newLS == (+, lS) / locSigS
+      (newF, LS1, NO1, RT1) == form2Form(f, newLS, newNo, newMap, F, newRT)
+  IN
+    (ex(vars, newF, p@), LS1, NO1, RT1)
+
+DEF form2Form(informal(p, t), lS, no, M, F, RT) ==
+  LET (newRT, newRep) == insert(RT, t)
+  IN
+  (informal(newRep, p@), lS, no, newRT)
+
+DEF form2Form(other(p, i, d), lS, no, M, F, RT) ==
+  (none(p@), lS, no, RT)
+
+-- %Expressions
+FUN expr2Expr:
+  expr'InterOpal ** locSig ** nat ** map[ident, <, name'Name] ** (name'InterOpal -> name'Name) ** repTab ->
+    expr'Impl[name'Name] ** locSig ** nat ** repTab
+
+DEF expr2Expr(name(p, n), lS, no, M, F, RT) ==
+  LET newN == IF def?(ident(n), M) THEN M ! ident(n) ELSE F(n) FI
+  IN 
+  (val(newN, p@), lS, no, RT)
+
+DEF expr2Expr(den(p, r), lS, no, M, F, RT) ==
+  LET (newRT, newR) == insert(RT, r)
+  IN
+  (den(newR, p@), lS, no, newRT)
+
+DEF expr2Expr(tuple(p, els), lS, no, M, F, RT) ==
+  LET (LSandNOandRT, newEls) == 
+         ((\\tr, ex. 
+             LET 
+               (mLS, mNO, mRT) == untriple(tr)
+               (uE, uLS, uNO, uRT) == expr2Expr(ex, mLS, mNO, M, F, mRT)
+             IN
+             (&(uLS, uNO, uRT), uE)
+          ), &(lS, no, RT)) * els
+  IN
+  (tuple(newEls, p@), untriple(LSandNOandRT))
+
+DEF expr2Expr(apply(p, f, a), lS, no, M, F, RT) ==
+  LET (newF, LS1, NO1, RT1) == expr2Expr(f, lS, no, M, F, RT)
+      (newA, LS2, NO2, RT2) == expr2Expr(a, LS1, NO1, M, F, RT1)
+  IN
+  (apply(newF, newA, p@), LS2, NO2, RT2)
+
+DEF expr2Expr(cases(p, gs, e), lS, no, M, F, RT) ==
+  LET (LSandNOandRT, newGs) == 
+         ((\\tr, grd. 
+             LET 
+               (mLS, mNO, mRT) == untriple(tr)
+               (uG, uLS, uNO, uRT) == guard2Guard(grd, mLS, mNO, M, F, mRT)
+             IN
+             (&(uLS, uNO, uRT), uG)
+          ), &(lS, no, RT)) * gs
+       (LS1, NO1, RT1) == untriple(LSandNOandRT)
+       (newE, LS2, NO2, RT2) ==
+           IF e avail? THEN
+             expr2Expr(cont(e), LS1, NO1, M, F, RT1)
+           ELSE
+             (none(p@), LS1, NO1, RT1)
+           FI
+   IN 
+   (cases(newGs, newE, p@), LS2, NO2, RT2)
+
+DEF expr2Expr(lambda(p, vs, b), lS, no, M, F, RT) ==
+  LET (newNoAndNewRT, locSigS) ==
+         (var2LocSig(F), no & RT) * vs
+      (newNo, newRT) == unpair(newNoAndNewRT)
+      newNoAndMap == (\\nm, v. var2Map(newRT)(nm,v), no & M) / vs
+      newMap == 2nd(newNoAndMap)
+      (_, vars) == (var2name(RT), no) * vs
+      newLS == (+, lS) / locSigS
+      (newB, LS1, NO1, RT1) == expr2Expr(b, newLS, newNo, newMap, F, newRT)
+  IN
+    (lambda(vars, newB, p@), LS1, NO1, RT1)
+
+DEF expr2Expr(block(p, eqns, b), lS, no, M, F, RT) ==
+  LET (LSandNOandRTandM, newEqs) == 
+         ((\\qu, eq. 
+             LET 
+               (mLS, mNO, mRT, mM) == unquad(qu)
+               (uE, uLS, uNO, uRT,uM) == eqn2Eqn(eq, mLS, mNO, mM, F, mRT)
+             IN
+             (&(uLS, uNO, uRT, uM), uE)
+          ), &(lS, no, RT, M)) * eqns
+      (LS1, NO1, RT1, M1) == unquad(LSandNOandRTandM)
+      (newB, LS2, NO2, RT2) == expr2Expr(b, LS1, NO1, M1, F, RT1)
+  IN
+  (block(newEqs, newB, p@), LS2, NO2, RT2)
+
+-- %$Guards$
+
+FUN guard2Guard:
+  guard'InterOpal ** locSig ** nat ** map[ident, <, name'Name] ** (name'InterOpal -> name'Name) ** repTab ->
+    guard'Impl[name'Name] ** locSig ** nat ** repTab
+DEF guard2Guard(guard(p, if, then), lS, no, M, F, RT) ==
+  LET (newIf, LS1, NO1, RT1) == expr2Expr(if, lS, no, M, F, RT)
+      (newThen, LS2, NO2, RT2) == expr2Expr(then, LS1, NO1, M, F, RT1)
+  IN
+  (guard(newIf, newThen, p@), LS2, NO2, RT2)
+
+-- %$Equations$
+/* %funktioniert so leider nur bei geordneten Gleichungen (kd) */
+FUN eqn2Eqn: eqn'InterOpal** locSig ** nat ** map[ident, <, name'Name] ** (name'InterOpal -> name'Name) ** repTab ->
+              eq'Impl[name'Name] ** locSig ** nat ** repTab ** map[ident, <, name'Name]
+DEF eqn2Eqn(eqn(p, lhs, patterns, rhs), lS, no, M, F, RT) ==
+  LET
+    (newLhs, LS1, NO1, RT1, M1) == pattern2Expr(lhs, lS, no, M, F, RT)
+    (newRhs, LS2, NO2, RT2) == expr2Expr(rhs, LS1, NO1, M1, F, RT1)
+  IN
+  (eq(newLhs, newRhs, p@), LS2, NO2, RT2, M1)
+
+-- %$Patterns$
+
+FUN pattern2Expr: pattern'InterOpal ** locSig ** nat ** map[ident, <, name'Name] ** (name'InterOpal -> name'Name) ** repTab ->
+                      expr'Impl[name'Name] ** locSig ** nat ** repTab ** map[ident, <, name'Name]
+DEF pattern2Expr(any(p), lS, no, M, F, RT) ==
+  (ABORT("pattern2Expr'StructPrepConvert: any cannot be converted"), lS, no, RT, M)
+-- %das liegt darn, daß die Funktionalität fehlt! !#$@ (kd)
+
+DEF pattern2Expr(var(p, V), lS, no, M, F, RT) ==
+  LET
+    (NOandRT, LS1) == var2LocSig(F)(no & RT, V)
+    (NO1, RT1) == unpair(NOandRT)
+    (_, M1) == unpair(var2Map(RT1)(V, no & M))
+    (_, newName) == var2name(RT)(no, V)
+  IN
+    (val(newName, p@), LS1 + lS, NO1, RT1, M1)
+
+DEF pattern2Expr(tuple(p, els), lS, no, M, F, RT) ==
+   LET (LSandNOandRTandM, newEls) == 
+         ((\\qu, pt. 
+             LET 
+               (mLS, mNO, mRT, mM) == unquad(qu)
+               (uE, uLS, uNO, uRT, uM) ==
+                   pattern2Expr(pt, mLS, mNO, mM, F, mRT)
+             IN
+             (&(uLS, uNO, uRT, uM), uE)
+          ), &(lS, no, RT, M)) * els
+  IN
+  (tuple(newEls, p@), unquad(LSandNOandRTandM))
+                        
+DEF pattern2Expr(_, lS, no, M, F, RT) ==
+  (ABORT("pattern2Expr'StructPrepConvert: name, as, apply NYI"),
+   lS, no, RT, M)
+      
+
+-- %Variables
+
+FUN var2LocSig: (name'InterOpal -> name'Name) ->
+                 pair[nat, repTab] ** var'InterOpal ->
+                 pair[nat, repTab] ** locSig
+DEF var2LocSig(F)(no & RT, var(p, i, sym, fct)) ==
+  LET newFct == asFct(F, fct)  
+      (newRT, newRep) == insert(RT, sym)
+  IN
+  (succ(no) & newRT, %(no, newRep, newFct))
+
+FUN var2Map: repTab -> var'InterOpal ** pair[nat, map[ident, <, name'Name]] ->
+              pair[nat, map[ident, <, name'Name]]
+DEF var2Map(RT)(var(p, i, sym, fct), no & M) ==
+  succ(no) & def(i, local(no), M)
+
+FUN var2name: repTab -> nat ** var'InterOpal -> nat ** name'Name
+DEF var2name(RT)(no, var(p, i, sym, fct)) == (succ(no), local(no))
+              
+-- %converting Pos
+FUN @ : pos'InterOpal -> pos'Pos
+DEF @(unknown) == firstPos
+DEF @(part(_)) == firstPos
+DEF @(pos(_,r,c)) == mkPos(r, c)
+DEF @(region(_,r,c,_,_)) == mkPos(r,c)

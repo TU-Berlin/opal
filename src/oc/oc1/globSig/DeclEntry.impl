@@ -1,0 +1,109 @@
+-- LAST EDIT: Wed Sep  9 17:11:43 1992 by Michael Jatzeck (trabi!michel) 
+-- ============================================================================
+-- Autor:       mija
+-- Projekt:     OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION DeclEntry
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Fct[name]       ONLY fct = `
+        Name            COMPLETELY
+-- Neu fuer die dumps
+        Objects         COMPLETELY
+        Attributes      COMPLETELY
+        Compose         ONLY o
+        NatConv         ONLY `
+        SeqConv         ONLY ` string
+        Seq             ONLY seq
+        Denotation      ONLY ++
+        Rep             ONLY lexem `
+        Option          COMPLETELY
+        OptionConv      ONLY `
+        GlobSigImpl     ONLY ` : impl -> denotation impl:SORT
+
+-- ---------------------------------------------------------------------------
+
+DATA declE ==                   -- deklarierte Namen des Programms
+        sort(                   -- Sorten
+                ide : rep,              -- Bezeichner
+                pos : pos,              -- Position der Deklaration
+                attr : attr,            -- binaere Attribute
+                impl : impl,            -- Implementierung
+                type : impl)            -- Free Type
+        op(                     -- Operationen
+                ide : rep,              -- Bezeichner
+                pos : pos,              -- Position der Deklaration
+                attr : attr,            -- binaere Attribute
+                impl : impl,            -- Implementierung
+                fct : fct,              -- Typ des dekl. Namens
+                spc : option[rep])      -- optional assoziiertes Spez.-LAW
+        opCons(                 -- freie Konstruktoren
+                ide : rep,              -- Bezeichner
+                pos : pos,              -- Position der Deklaration
+                attr : attr,            -- binaere Attribute
+                impl : impl,            -- Implementierung
+                fct : fct,              -- Typ des dekl. Namens
+                test : decl,            -- Testoperation
+                selS : seq[decl])       -- Selektoren
+        double(                 -- (ehemalige) Doppeldeklaration
+                no : nat,               -- Zeiger auf identischen declEntry
+                same : declE )          -- identischer declEntry
+
+-- ---------------------------------------------------------------------------
+
+DEF updFct(fct)(d) == updFct(d,fct)
+DEF updFct(d, fct) ==
+        IF d op? THEN op(ide(d), pos(d), attr(d), impl(d), fct, spc(d))
+        IF d opCons? THEN 
+          opCons(ide(d), pos(d), attr(d), impl(d), fct, test(d), selS(d))
+        FI
+
+DEF updCons(d, test, selS) ==
+          opCons(ide(d), pos(d), attr(d), impl(d), fct(d), test, selS)
+
+DEF updAttr(d, attr) ==
+        IF d sort? THEN sort(ide(d), pos(d), attr, impl(d), type(d))
+        IF d op? THEN op(ide(d), pos(d), attr, impl(d), fct(d), spc(d))
+        IF d opCons? THEN 
+          opCons(ide(d), pos(d), attr, impl(d), fct(d), test(d), selS(d))
+        IF d double? THEN d
+        FI
+
+FUN ` : declE -> denotation
+DEF `(decl:declE) == head ++ ((":") ++ normal)
+        WHERE
+        head == IF decl sort? THEN "SORT"
+                IF decl op? THEN "OPER"
+                IF decl opCons? THEN "OPCONS"
+                IF decl double? THEN "DOUBLE"
+                FI
+        normal == IF decl double? THEN 
+                    `(same(decl))
+                  ELSE lexem(ide(decl)) ++
+                       ("," ++ (`'Attributes(attr(decl)) ++ (","++special)))
+                       WHERE special == IF decl sort? THEN 
+                                          `'GlobSigImpl(impl(decl)) ++ 
+                                          "," ++  `'GlobSigImpl(type(decl))
+                                        ELSE 
+                                          `'GlobSigImpl(impl(decl)) ++ "," ++ 
+                                          `'Fct(`'Name)(fct(decl)) ++
+                                          opSpecial
+                                          WHERE
+                                            opSpecial == IF decl op? THEN 
+                                                           IF spc(decl) avail? THEN
+                                                             "SPC:" ++ 
+                                                             `(cont(spc(decl)))
+                                                           ELSE
+                                                             ""
+                                                           FI
+                                                         ELSE 
+                                                           "," ++ `'NatConv(no(test(decl))) ++ `'SeqConv(`'NatConv o no)(selS(decl))
+                                                         FI
+                                        FI
+                  FI
+

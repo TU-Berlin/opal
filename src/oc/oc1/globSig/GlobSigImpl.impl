@@ -1,0 +1,95 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     representation of implementational aspects 
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+IMPLEMENTATION GlobSigImpl
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Table	COMPLETELY
+	Pair	COMPLETELY
+	Option  COMPLETELY
+	Name 	COMPLETELY
+	Rep			ONLY lexem
+	Fct			ONLY fct `
+	NatConv                 ONLY `
+        OptionConv              ONLY `
+        PairConv                ONLY `
+        SeqConv                 ONLY ` string
+        Denotation              ONLY ++
+        SeqZip                  ONLY zip
+        Name                    ONLY `
+        Compose                 ONLY o
+	Seq			ONLY seq
+	SeqMap			ONLY *
+	Impl[name]		ONLY `
+
+
+-- ---------------------------------------------------------------------------
+
+DATA impl == 	
+	none				-- ohne Implementierung
+	parameter			-- Strukturparameter
+	canonical(pos : pos)		-- kanonische Operation
+	data( 	impl : sortImpl )	-- DATA Statement
+	def( 				-- Pattern-Definition
+		eqs : seq[eq],			-- Gleichungen
+		locals : locSig,		-- lokale Signatur
+		freeLocal : nat)		-- kleinster freier 'local'
+	anaDef( 			-- analysierte Pattern-Definition
+		eqs : seq[eq],			-- Gleichungen
+		locals : locSig,		-- lokale Signatur
+		freeLocal : nat,		-- kleinster freier 'local'
+ 		patts : seq[seq[pattDescr]],	-- fuer jede Gleichung eine
+						--  eine Patternsequenz
+		newEq : eq)
+
+-- ---------------------------------------------------------------------------
+
+DATA locSig == locSig( tab:table[pair[rep,fct[name]]] )
+
+-- ---------------------------------------------------------------------------
+
+DEF {} == locSig( {} )
+DEF %(n, ide, fct) == locSig( (n, (ide & fct)) def {} :table)
+DEF lS1 + lS2 == locSig( tab(lS1) + tab(lS2) )
+
+DEF locSigComplete(lS) == locSig( tab(lS) toStatic )
+
+DEF lS ! n == (1st(ideFct),2nd(ideFct)) 
+	WHERE ideFct == n ! tab(lS)
+
+FUN ` : locSig -> denotation
+DEF `(locSig:locSig) == 
+         `'Table("    ",`'PairConv(lexem,`'Fct(`'Name)),tab(locSig))
+
+FUN ` : impl -> denotation
+DEF `(Impl:impl) == 
+        IF Impl none? THEN "none"
+        IF Impl canonical? THEN "canonical"
+        IF Impl data? THEN "data(" ++ `(`'Name)(impl(Impl)) ++ ")"
+        IF Impl def? THEN "def"
+        IF Impl parameter? THEN "parameter"
+	ELSE "anaDef"
+        FI
+
+/*
+FUN !!!!! : sortImpl -> denotation
+DEF !!!!!(sI:sortImpl) ==
+        "(" ++ `(sort(sI)) ++ ":" ++ (`'SeqConv("<",",",">")(!!!!)
+                (variants(sI))) ++ ")"
+
+FUN !!!! : variant -> denotation
+DEF !!!!(variant:variant) ==
+         `'Name(cons(variant)) ++ ":" ++ `'Name(test(variant)) ++ ":" ++ 
+         `'SeqConv("<",",",">")(`'Name)(sel * comps(variant))
+*/
+

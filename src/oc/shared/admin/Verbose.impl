@@ -1,0 +1,105 @@
+-- %- LAST EDIT: Tue May 18 18:31:28 1993 by OPAL compiler (athene!opal) 
+
+IMPLEMENTATION Verbose
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:35 $ ($Revision: 1.1.1.1 $)
+/* %-
+-- author:      ws/fetti
+-- project:     opal-1/common
+-- purpose:     verbose option support
+*/
+
+IMPORT  Options ONLY verbLevel
+        Com ONLY com okay yield ans EXEC succeed
+        OcStream ONLY output write stdOut stdErr writeLine
+        ComCompose ONLY &
+        Nat     COMPLETELY
+        Denotation COMPLETELY
+        String ONLY string
+        Char    COMPLETELY
+        Void    COMPLETELY
+        ProcessCtrl ONLY times 
+        Real ONLY real -
+        Quadruple ONLY quad 1st
+        ComAction ONLY done
+        ComState COMPLETELY
+       RealConv COMPLETELY
+       OptionConv COMPLETELY
+       Map COMPLETELY
+       DEBUG ONLY FIELD?[bool]
+       Option COMPLETELY
+
+DEF phase==1 
+DEF subphase==2
+DEF definition==3
+
+DEF verb(o,l,t) ==
+        IF verbLevel(o)>=l THEN checkU(o, l, t, stdOut) &
+                                writeLine(o,stdOut,init(l,blank)++t)
+                           ELSE yield(okay(nil)) FI
+DEF begVerb(o,l,t) ==
+        IF verbLevel(o)>=l THEN write(o,stdOut,init(l,blank)++t)
+                           ELSE yield(okay(nil)) FI
+
+DEF conVerb(o,l,t) ==
+        IF verbLevel(o)>=l THEN write(o,stdOut,t)
+                           ELSE yield(okay(nil)) FI
+
+DEF endVerb(o,l,t) ==
+        IF verbLevel(o)>=l THEN checkU(o, l, t, stdOut) & writeLine(o,stdOut,t) 
+                           ELSE yield(okay(nil)) FI
+
+
+-- %Verwaltung von Zeiten und Zeitdifferenzen
+
+FUN timeMap: stateId[map[nat, <, real]]
+DEF timeMap == EXEC(stateId({}))
+
+FUN msgMap: stateId[map[nat, <, denotation]]
+DEF msgMap == EXEC(stateId({}))
+
+DEF initU(opts, t) == 
+    times & (\\q.
+    timeMap => (\\ tm . def(0, 1st(q), tm)) & (\\ _ .
+    msgMap => (\\ mm. def(0, t, mm))
+    ))
+  
+DEF finishU(opts) == checkU(opts, 0, "", stdOut)
+
+FUN checkU: options ** nat ** denotation ** output -> com[void]
+DEF checkU(o, l, msg, out) == 
+  IF FIELD?[bool]("-zutime") THEN 
+    times & (\\q.
+    get(timeMap) & (\\m.
+    get(msgMap) & (\\mM.
+    checkM(o, out, m, l, definition, 1st(q), mM) & (\\ m1.
+    checkM(o, out, m1, l, subphase, 1st(q), mM) & (\\ m2.
+    checkM(o, out, m2, l, phase, 1st(q), mM) & (\\ m3.
+    checkM(o, out, m3, l, 0, 1st(q), mM) & (\\ m4.
+    timeMap => (\\ _ . def(l, 1st(q), m4)) & (\\ _ .
+    msgMap => (\\ mm. def(l, msg, mm))
+    ))))))))
+  ELSE
+    done
+  FI
+
+-- %@code{checkM(options, outputFile, timeMap, currentLevel, testLevel, currentUtime, currentMsg)}
+FUN checkM: options ** output ** map[nat, <, real] **
+             nat ** nat ** real ** map[nat, <, denotation] ->
+             com[map[nat, <, real]]
+DEF checkM(opts, out, tM, l, tL, zeit, mM) ==
+  IF l <= tL THEN
+    IF nil?(tM !? tL) THEN
+      succeed(tM)
+    ELSE
+      writeLine(opts, out, init(tL, blank) ++
+                        "![" ++ ``(zeit - cont(tM !? tL), 6) ++ "u]" ++
+                        " finished " ++ `(\\x.x)(mM !? tL)) &
+      succeed(undef(tL, tM))
+    FI
+  ELSE
+    succeed(tM)
+  FI

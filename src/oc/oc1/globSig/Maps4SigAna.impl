@@ -1,0 +1,297 @@
+/* %-
+-- LAST EDIT: Sat Aug 10 17:23:12 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     tables to be used in globale signature
+-- ============================================================================
+-- ============================================================================
+*/
+IMPLEMENTATION Maps4SigAna
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Attributes      ONLY    attr setExported
+        Compose         ONLY    o
+        Denotation      ONLY    ++
+        Fct             ONLY    fct
+        GlobSig         COMPLETELY
+        GlobSigImpl     ONLY    data impl none none?
+        ImpExpEntry     COMPLETELY
+        Impl[name]      ONLY    cons pos sort sortImpl variant variants
+        MySeqFun1       ONLY    union
+        MySeqFun2       ONLY    in
+        Name            ONLY    = name
+        Nat             ONLY    0 1 nat |= !
+        NatConv         ONLY    `
+        Objects         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        PairConv        ONLY    `
+        PartNameEntry   COMPLETELY
+        Pos             ONLY    pos
+        Rep             ONLY    ord rep
+        Seq             COMPLETELY
+        SeqFilter       ONLY    split |
+        SeqMap          ONLY    *
+        SeqOfSeq        ONLY    flat
+        SeqReduce       ONLY    /
+        Table           COMPLETELY
+        TableFun2       COMPLETELY
+
+-- ---------------------------------------------------------------------------
+-- Untertabelle (importierte Namen eines Imports)
+
+DATA impDeclMap == impDeclMap( tabOf : table[impDeclE] )
+
+DEF mtImpDeclMap(_) == impDeclMap({})
+
+DEF defImpDeclSort(gS,struct,map, iD, rep, insts, type) ==
+        (updLookupSort(gS, rep, struct, iD),
+        impDeclMap(upd(no(iD), finImpDecl, tabOf(map))))
+        WHERE 
+        finImpDecl == mergeImpDecls(iD,map,sort(rep,insts,type))
+DEF defImpDeclOp(gS,struct,map, iD, rep, insts, fct, spc) ==
+        (updLookupOp(gS, rep, struct, iD),
+        impDeclMap(upd(no(iD), finImpDecl, tabOf(map))))
+        WHERE 
+        finImpDecl == mergeImpDecls(iD,map,op(rep,insts,fct, spc))
+DEF defImpDeclOpCons(gS,struct,map, iD, rep, insts, fct, test, sels) ==
+        (updLookupOp(gS, rep, struct, iD),
+        impDeclMap(upd(no(iD), finImpDecl,tabOf(map))))
+        WHERE 
+        finImpDecl == mergeImpDecls(iD,map,opCons(rep,insts,fct,test,sels))
+
+
+FUN mergeImpDecls : impDecl ** impDeclMap ** impDeclE -> impDeclE
+DEF mergeImpDecls(iD,map,iDE2) ==
+        LET iDE10 == no(iD) !? tabOf(map) IN
+        IF iDE10 avail? THEN mergeImpDecls(cont(iDE10),iDE2)
+        ELSE iDE2 FI
+
+FUN mergeImpDecls:impDeclE ** impDeclE-> impDeclE
+DEF mergeImpDecls(iE1, iE2) == 
+        LET NewInst == union(addApplyCounts, =)(instS(iE1), instS(iE2))
+        IN 
+        IF iE1 opCons? THEN updInstS(NewInst)(iE1)
+        IF iE2 opCons? THEN updInstS(NewInst)(iE2)
+        IF sort?(iE1) and sort?(iE1) THEN
+                sort(ide(iE2), NewInst, mergeTypes(type(iE1),type(iE2)))
+        ELSE updInstS(NewInst)(iE2)
+        FI
+
+
+FUN mergeTypes : impl ** impl -> impl
+  -- PRE:beide sind data
+DEF mergeTypes(i1,i2) == 
+        IF i1 none? THEN i2
+        IF i2 none? THEN i1
+        ELSE data(finSI)
+          WHERE
+          (sI1,sI2) == (impl:impl->sortImpl(i1),impl:impl->sortImpl(i2))
+          finSI == sortImpl(sort(sI1),finVariants, pos(sI1))
+          finVariants == union(ID,eqVariant)(variants(sI1),variants(sI2))
+        FI
+
+        FUN ID : variant ** variant -> variant
+        DEF ID(v1, _) == v1
+        FUN eqVariant : variant ** variant -> bool
+        DEF eqVariant(v1,v2) == cons(v1) = cons(v2)
+
+FUN insert : seq[instAppl] ** seq[instAppl] -> seq[instAppl]
+  -- effiziente Set-Bildung + Uebernahme des apply-Zaehlers
+DEF insert(S, newS) ==
+        IF newS <>? THEN S
+        ELSE
+          IF back <>? THEN insert(ele :: front, rt(newS))
+          ELSE insert(newEle :: (front ++ rt(back)), rt(newS))
+            WHERE newEle == addApplyCounts(ft(back), ele)
+          FI
+          WHERE 
+          ele == ft(newS)
+          (front, back) == split(notEq(ele), S)
+        FI
+
+        FUN notEq : instAppl -> instAppl -> bool
+        DEF notEq(iA1)(iA2) == no(instOf(iA1)) |= no(instOf(iA2))
+
+DEF defSignImpSort(gS,struct,map, iD, rep, type, insts) ==
+        (updLookupSort(gS, rep,struct, iD),
+        impDeclMap(upd(no(iD), sort(rep,toAppls(insts),impl), tabOf(map))))
+        WHERE impl == IF type nil? THEN none
+                       ELSE data(cont(type)) FI
+DEF defSignImpOp(gS,struct,map, iD, rep, fct, insts, spc) ==
+        (updLookupOp(gS, rep,struct, iD),
+        impDeclMap(upd(no(iD), op(rep,toAppls(insts),fct, spc), tabOf(map))))
+DEF defSignImpOpCons(gS,struct,map, iD, rep, fct, insts, test, sels) ==
+        (updLookupOp(gS, rep,struct, iD),
+        impDeclMap(upd(no(iD), opCons(rep,toAppls(insts),fct,test,sels),
+                       tabOf(map))))
+FUN toAppls : seq[inst] -> seq[instAppl]
+
+DEF toAppls(instS) == (updAttr(setExported) o 
+                       (applied o toInstAppl)) * instS
+
+DEF addTransInstS(map, _, insts, genInsts, formParamS) == 
+    LET Tab == tabOf(map)
+    IN                                              
+        impDeclMap(/(addInsts(insts,genInsts,formParamS),Tab)
+                        (Tab))
+
+FUN addInsts : seq[instAppl] ** seq[pair[inst,seq[instAppl]]]
+                ** seq[impDecl]
+                -> nat ** impDeclE ** table[impDeclE] -> table[impDeclE]
+  -- partiell auf sort, op und opCons
+DEF addInsts(newInsts, newGenInsts,formParamS)(n,iDE,tab) ==
+        -- erst abtesten, ob der IDE ein formaler Parameter ist.
+        -- spaeter nicht mehr noetig, wenn auch die impDeclE Flags haben.
+        IF in(= :impDecl**impDecl->bool,impDecl(n))(formParamS) THEN tab
+        ELSE upd(n, finIDE, tab)
+          WHERE
+          finIDE == 
+            IF iDE sort? THEN sort(ide(iDE), finInsts, type(iDE))
+            IF iDE op? THEN op(ide(iDE), finInsts, fct(iDE), spc(iDE))
+            IF iDE opCons? THEN
+              opCons(ide(iDE), finInsts, fct(iDE),test(iDE),selS(iDE))
+            FI
+          Insts0 == union(addApplyCounts,= :instAppl**instAppl->bool)
+                                    (newInsts, instS(iDE))
+          tmpInsts == flat(2nd[inst,seq[instAppl]] * 
+                             (hasInst(Insts0) | newGenInsts))
+          finInsts == union(addApplyCounts,= :instAppl**instAppl->bool)
+                                    (tmpInsts, Insts0)
+        FI
+
+        FUN hasInst : seq[instAppl] -> pair[inst,seq[instAppl]] -> bool
+        DEF hasInst(instS)(genInstP) ==
+                in(= :inst**inst->bool,1st[inst,seq[instAppl]](genInstP))(instOf * instS)
+
+-- ---------------------------------------------------------------------------
+-- Untertabelle (Instanzen)
+
+DATA instMap == instMap( tabOf : table[instE] )
+
+FUN firstInst : nat     -- erste echte Instanzennummer (hier falsch !!!!)
+DEF firstInst == 1
+
+DEF mtInstMap == instMap({}(firstInst))
+DEF addPreInst(map) == 
+        LET tab == tabOf(map)
+            (n, newTab) == incl(mtInstE, tab)
+        IN (instMap(newTab), toInstAppl(inst(n)))
+
+DEF isGenTransInsts(map, myInst) ==
+        (no(myInst) ! tabOf(map)) genericTransitives?
+DEF defGenTransInst(map, myInst, struct, inst, pattern) ==
+        instMap( upd(no(myInst), entry, tabOf(map)))
+        WHERE entry == genericTransitive(struct, inst, pattern)
+DEF defGenericTransitives(map, inst, instS, nameS) ==
+        LET OptEntry == no(inst) !? tabOf(map) IN
+        IF nil?(OptEntry) THEN
+        instMap( upd(no(inst), genericTransitives(instS,true,nameS), 
+                tabOf(map)))
+        ELSE IF isGenTransInsts(map, inst) THEN 
+                LET OldInstE == no(inst) ! tabOf(map) IN
+                        instMap( upd(no(inst), genericTransitives(
+                                union((\\1, _ .1), =)
+                                (instS, otherInsts(OldInstE)),true,nameS), 
+                                tabOf(map)))
+             ELSE
+                instMap( upd(no(inst), genericTransitives(instS,true,nameS), 
+                tabOf(map)))
+             FI
+        FI
+
+DEF defTransInst(map, inst, nameS) ==
+        instMap( upd(no(inst), transitive(nameS), tabOf(map)))
+DEF defSignIdentInst(instNameS, map) ==
+        instMap( def(no(inst), transitive(nameS), tabOf(map)))
+        WHERE (inst, nameS) == (1st[inst,seq[name]](instNameS), 2nd[inst,seq[name]](instNameS))
+DEF defSignGenTransInst(instInstS,nameS, map) ==
+        instMap( def(no(inst), genericTransitives(instS,true,nameS), tabOf(map)))
+        WHERE (inst, instS) == (1st[inst,seq[inst]](instInstS), 2nd[inst,seq[inst]](instInstS))
+
+-- ---------------------------------------------------------------------------
+-- Untertabelle (Only-Applikationen)
+
+DATA onlyMap == onlyMap( tabOf : table[onlyPNE] )
+
+
+DEF mtOnlyMap == onlyMap({})
+DEF addOnly(map, ide,pos, pN) == onlyMap( newTab )
+        WHERE (_, newTab) == incl(onlyPNE(pN,errInfo(ide,pos)), tabOf(map))
+
+-- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- Umcodiertabellen fuer das Eintragen der Importe
+
+DATA strDecTab == strDecTab( tabOf:table[pair[struct,instDecTab]] )
+DEF mtStrDecTab == strDecTab({} :table[pair[struct,instDecTab]])
+DEF def(tab,index,struct,insts) == 
+        strDecTab(def(no(index), struct & insts, tabOf(tab)))
+DEF tab:strDecTab ! index == (1st(structInsts), 2nd(structInsts))
+        WHERE structInsts == no(index) ! tabOf(tab)
+DEF turbo(tab) == tab
+
+DEF `(tab:strDecTab) == 
+        "StrDecTab..\n" ++ 
+        `'Table("", `'PairConv("","\n","")(`'NatConv o no,`), tabOf(tab))
+
+DATA instDecTab == instDecTab( tabOf:table[inst] )
+DEF mtInstDecTab == instDecTab(def(0,inst(0),{}))
+DEF def(tab, index, entry) == instDecTab(def(no(index), entry, tabOf(tab)))
+DEF tab:instDecTab ! index == !(no(index), tabOf(tab))
+
+FUN ` : instDecTab -> denotation
+DEF `(tab:instDecTab) == `'Table("  ", `'NatConv o no, tabOf(tab))
+
+-- ---------------------------------------------------------------------------
+-- Hilfsfunktionen
+
+FUN updLookupSort : globSig ** rep ** struct ** impDecl -> globSig
+DEF updLookupSort(gS, ide, Struct, iD) == updLookups(gS, newLookups)
+        WHERE
+        newLookups == (ord(ide), newLookE) upd lookupTable(gS)
+        newLookE == 
+          IF lookEO nil? THEN lookupE(nil, <>, <>,pattern%,<>)
+          ELSE LET lookE == cont(lookEO) IN
+            lookupE(struct(lookE), sortDeclS(lookE), opDeclS(lookE),
+                    pattern ins sortImpDeclS(lookE), opImpDeclS(lookE))
+          FI
+        lookEO == ord(ide) !? lookupTable(gS)
+        pattern == Struct & %(iD)
+
+FUN updLookupOp : globSig ** rep ** struct ** impDecl -> globSig
+DEF updLookupOp(gS, ide, Struct, iD) == updLookups(gS, newLookups)
+        WHERE
+        newLookups == (ord(ide), newLookE) upd lookupTable(gS)
+        newLookE == 
+          IF lookEO nil? THEN lookupE(nil, <>, <>, <>,pattern%)
+          ELSE lookupE(struct(lookE),sortDeclS(lookE),opDeclS(lookE),
+                       sortImpDeclS(lookE), pattern ins opImpDeclS(lookE)) 
+            WHERE lookE == cont(lookEO)
+          FI
+        lookEO == ord(ide) !? lookupTable(gS)
+        pattern == Struct & %(iD)
+
+FUN ins : pair[struct, seq[impDecl]] 
+          ** seq[pair[struct, seq[impDecl]]]
+          -> seq[pair[struct, seq[impDecl]]]
+DEF ins(p, S) ==
+        LET (front, back) == split(noEqStruct(1st(p)), S) IN
+        IF back <>? THEN p :: front
+        ELSE front ++ (finP :: rt(back)) 
+          WHERE 
+          finP == IF exist?(eqId(ft(2nd(p))),2nd(ft(back))) THEN ft(back)  
+                  ELSE (1st(p) & (2nd(p)++2nd(ft(back)))) FI
+        FI
+
+        FUN noEqStruct : struct -> pair[struct, seq[impDecl]] -> bool
+        DEF noEqStruct(struct)(p) == (no(struct) |= no(1st(p)))
+
+        FUN eqId : impDecl -> impDecl -> bool
+        DEF eqId(iD1)(iD2) == iD1 = iD2
+

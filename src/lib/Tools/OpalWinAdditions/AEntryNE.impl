@@ -1,0 +1,119 @@
+IMPLEMENTATION AEntryNE
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:26 $ ($Revision: 1.1.1.1 $)
+
+IMPORT WinView ONLY view ^-^
+       WinConfig ONLY config with ++ text state disabled
+                        seq union unitWidth horizontal orient
+       WinText ONLY entry
+       WinTextEditor ONLY textEditor get index range edit range index pos
+                          lineend delete: textEditor ** range -> com[void] 
+                          insert: textEditor ** string -> com[void]
+
+       Com ONLY com succeed break
+       ComCompose ONLY &
+       Nat ONLY 0 1 ! 20
+       Option ONLY avail? nil? cont
+       Pair ONLY pair & 1st 2nd
+       String ONLY string !
+       StringConv ONLY `
+       WinRegulator ONLY regulator regulate get set
+       WinSelector ONLY selector set get
+       WinScroller ONLY scroller scroll scrollControl
+       WinScrollbar ONLY scrollbar
+       WinEvent ONLY bind wconfig:SORT
+       WinEmitter ONLY emitter emit await
+       ComAgent ONLY agent
+       Void ONLY nil
+
+DATA aEntry == aEntry(data: selector[data],
+                      view: view, 
+                      textEditor: textEditor,
+                      regulator: regulator,
+                      sync: emitter[data])
+
+DEF aEntry(d) == aEntry(d, defaultConfig)
+DEF aEntry(d, n) == aEntry(d, unitWidth(n))
+DEF aEntry(d, c) ==
+    textEditor & (\\ tE.
+    regulator & (\\reg.
+    emitter & (\\syn.
+    agent(tE insert !(print(d))) & (\\ _ .
+    selector(d) & (\\dt.
+    LET
+      v == entry with edit(tE) ++ regulate(reg) ++ c
+    IN 
+      succeed(aEntry(dt, v, tE, reg, syn))
+    )))))
+
+DEF aEntryLong(d) == aEntryLong(d, defaultConfig)
+DEF aEntryLong(d, n) == aEntryLong(d, unitWidth(n))
+DEF aEntryLong(d, c) == 
+    textEditor & (\\ tE.
+    regulator & (\\reg.
+    scroller & (\\scr.
+    emitter & (\\syn.
+    agent(tE insert !(print(d))) & (\\ _ .
+    selector(d) & (\\dt.
+    LET
+      v == entry with edit(tE) ++ regulate(reg) ++ 
+                        scroll(scr, horizontal) ++ c
+      s == scrollbar with horizontal ++ scrollControl(scr)
+    IN 
+      succeed(aEntry(dt, v ^-^ s, tE, reg, syn))
+    ))))))
+
+DEF defaultDim == 20
+DEF defaultConfig == unitWidth(defaultDim)
+
+-- %$Control for OpalWin$
+-- DEF view: aEntry -> view == ...
+-- DEF regulator: aEntry -> regulator == ...
+-- both selectors of DATA ==
+
+
+-- %$Accessing contents$
+-- %Note: @code{get} and @code{upd} fail, if text cannot be parsed as data.
+
+-- %set the displayed value
+DEF aE set d == 
+    LET tE == textEditor(aE)
+    IN
+      delete(tE, range(pos(1,0), lineend(pos(1,0)))) & (\\ _ .
+      insert(tE, print(d)!) & (\\ _ .
+      sync(aE) emit d & (\\ _ .
+      data(aE) set d
+      )))
+
+-- %get the displayed value
+DEF get(aE) == get(data(aE))
+
+-- %update data as specified by function
+DEF aE upd f ==  get(aE) & (\\d. aE set f(d))
+
+
+-- %$Binding Events$
+-- FUN bind: aEntry ** event ** 
+--          (aEntry ** eventInfo -> com[void]) -> com[void]
+-- FUN bind: aEntry ** event ** 
+--          (aEntry ** eventInfo ** data -> com[void]) -> com[void]
+
+DEF bind(aE, ev, f) ==
+    regulator(aE) set bind(ev, \\eI. f(aE, eI))
+
+DEF bind(aE, ev, f) ==
+    regulator(aE) set bind(ev, \\eI. get(aE) & (\\d. f(aE, eI, d)))
+
+-- %$Synchronize with Data Changes$
+DEF sync(aE, cmd) == agent(isync(aE, cmd)) & (\\ _ . succeed(nil))
+
+FUN isync: aEntry ** (data -> com[void]) -> com[void]
+DEF isync(aE, cmd) == 
+    await(sync(aE)) & (\\d. 
+    agent(isync(aE, cmd)) & ( \\ _ .
+    cmd(d)
+    ))
+    

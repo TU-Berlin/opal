@@ -1,0 +1,91 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     attributes for names in global signature
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+IMPLEMENTATION Attributes
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Bitset		ONLY set incl in {} +
+	Nat		ONLY succ nat 0  
+	DEBUG		ONLY ASSERT string
+	Denotation	ONLY ++
+
+-- ---------------------------------------------------------------------------
+
+DATA attr == attr( bitset : set)
+
+-- ---------------------------------------------------------------------------
+
+FUN parameter exported closed unclosed 
+    used4Op used4Constr used4Generated : nat
+DEF parameter == 0
+DEF exported == succ(parameter)
+DEF closed == succ(exported)
+DEF unclosed == succ(closed)
+DEF used4Op == succ(unclosed)
+DEF used4Constr == succ(used4Op)
+DEF used4Generated == succ(used4Constr)
+
+-- ---------------------------------------------------------------------------
+
+DEF initAttr == attr({})
+
+DEF attr(par?, exp?, clos?, unclos?, op?, cons?, gen?) == attr(finSet)
+	WHERE
+	finSet == IF par? THEN parameter incl set1 ELSE set1 FI
+	set1 == IF exp? THEN exported incl set2 ELSE set2 FI
+	set2 == IF op? THEN used4Op incl set3 ELSE set3 FI
+	set3 == IF cons? THEN used4Constr incl set4 ELSE set4 FI
+	set4 == IF gen? THEN used4Generated incl set5 ELSE set5 FI
+	set5 == IF clos? THEN closed incl set6 ELSE set6 FI
+	set6 == IF unclos? THEN unclosed incl {} ELSE {} FI
+
+DEF isParameter(attr) == parameter in bitset(attr)
+DEF isExported(attr) == exported in bitset(attr)
+DEF isClosed(attr) == closed in bitset(attr)
+DEF isUnclosed(attr) == unclosed in bitset(attr)
+DEF isUsed4Op(attr) == used4Op in bitset(attr)
+DEF isUsed4Constr(attr) == used4Constr in bitset(attr)
+DEF isUsed4Generated(attr) == used4Generated in bitset(attr)
+
+DEF setParameter(Attr) == attr(parameter incl bitset(Attr))
+DEF setExported(Attr) == attr(exported incl bitset(Attr))
+DEF setClosed(Attr) == 
+	ASSERT(isUnclosed(Attr)~, closedError, attr(closed incl bitset(Attr)))
+DEF setUnclosed(Attr) == -- attr(unclosed incl bitset(Attr))
+	ASSERT(isClosed(Attr)~, closedError, attr(unclosed incl bitset(Attr)))
+DEF setUsed4Op(Attr) == attr(used4Op incl bitset(Attr))
+DEF setUsed4Constr(Attr) == attr(used4Constr incl bitset(Attr))
+DEF setUsed4Generated(Attr) == attr(used4Generated incl bitset(Attr))
+
+FUN closedError: denotation
+DEF closedError == 
+	"The closed and unclosed attribute cannot be set simultanously !"
+
+DEF +(A1, A2) == 
+LET Attr == attr(bitset(A1) + bitset(A2)) 
+IN ASSERT(~(isClosed(Attr) and isUnclosed(Attr)), closedError, Attr)
+
+FUN ` : attr -> denotation
+DEF `(a) == 
+	("("++isP++c++isE++c++isCl)++(c++isO++c++isC++c++isG++")")
+	WHERE
+	isP == IF a isParameter THEN "par" ELSE not FI
+	isE == IF a isExported THEN "exp" ELSE not FI
+	isCl == IF a isClosed THEN "cls" ELSE 
+			IF a isUnclosed THEN "uncl" ELSE not FI 
+		FI
+	isO == IF a isUsed4Op THEN "4Op" ELSE not FI
+	isC == IF a isUsed4Constr THEN "4Con" ELSE not FI
+	isG == IF a isUsed4Generated THEN "4Gen" ELSE not FI
+	not == "-"
+	c == ","

@@ -1,0 +1,63 @@
+IMPLEMENTATION InternExec
+
+IMPORT	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	Char		COMPLETELY
+	Denotation	COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqFold		COMPLETELY
+	SeqMap		COMPLETELY
+	Pair		COMPLETELY
+	Compose		COMPLETELY
+
+IMPORT	FileName	COMPLETELY
+	File		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY	
+	ComCheck	COMPLETELY
+	ProcessCtrl	COMPLETELY
+	Wait		COMPLETELY
+	Void		COMPLETELY
+	Env		COMPLETELY
+
+IMPORT	RepoAdmin	COMPLETELY
+	RepoGlobalAccess COMPLETELY
+
+IMPORT	DEBUG		COMPLETELY
+
+FUN traceExec? : bool
+DEF traceExec? == FIELD?[bool]("-ztraceExec")
+
+
+DEF exec(Prog, Params, StdIn, StdOut, StdErr)(R) ==
+    LET Path	   == (\\L, P . L ++ ":" ++ P)
+			/ ((dirName1 o objectPath) * searchPath(R))
+	ActParams  == ft(Params) :: Path :: rt(Params)
+    IN
+    fork						& (\\ Fission .
+    IF parent?(Fission) THEN
+	succeed(child(Fission))
+    ELSE
+	-- FIXME: dup of file channels
+	check(\\ M . M,
+	    PRINT(traceExec?, \\ . (\\A, S. A ++ " " ++ S, "") 
+					/ (Prog :: ActParams),
+		  exec(Prog, ActParams)
+	    )							    & (\\ _ .
+	    -- never reached ...
+	    exec(Prog, Params, StdIn, StdOut, StdErr)(R)
+	    )
+	)
+    FI
+    )
+
+DEF call(Prog, Params, StdIn, StdOut, StdErr)(R) ==
+    exec(Prog, Params, StdIn, StdOut, StdErr)(R)	& (\\ Proc.
+    wait(Proc)						& (\\ Res .
+    IF exited?(2nd(Res)) ANDIF success?(status(2nd(Res))) THEN
+	succeed(nil)
+    ELSE
+	break(Prog ++ " exited abnormally")
+    FI
+    ))

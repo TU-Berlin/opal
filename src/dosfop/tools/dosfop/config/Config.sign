@@ -1,0 +1,179 @@
+/* %Here we define the internal representation (abstract syntax) 
+of the DOSFOP configuration language.
+This representation has to be used for all further functions that work on the
+contents of the configuration language. The setting for the default mechanism
+that is used by upper level modules (scanner, parser) is stored here, too. These
+defaults enable DOSFOP to translate a specified project even if no specific options
+for single structures or global layout specifications are given. */
+SIGNATURE Config
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/config/Config.sign,v 1.1.1.1 1998-06-16 16:00:33 wg Exp $
+
+IMPORT String 			    ONLY string <
+       Option[string] 		ONLY option
+       Option[structs] 		ONLY option
+       Option[library] 		ONLY option
+       Seq[subsystem] 		ONLY seq
+       Seq[struct] 		    ONLY seq
+       Seq[string] 		    ONLY seq
+       Map[opt,<,optSetting] 	ONLY map
+       Map[string,<,macroDef]	ONLY map
+       Map[string, <, map[opt, <, optSetting]]  ONLY map
+
+
+-- %$The Structures of the Abstract Syntax$ 
+-- %---------------------------------------
+
+/* %Not all combinations of @opt and @optSetting in
+the following @map-definitions are semantically correct. The definition 
+of the @opt-type enumerates all
+the allowed option-setting. The semantics of each
+structure element should be evident after reading the syntax definition of
+the configuration language of the corresponding text of the Diplomarbeit. */
+
+/* %The top-structure of the configuration language abstract syntax is given
+below. This
+abstract syntax element is used only @emph{once} in the syntax tree: */
+TYPE config == config(
+                 location   : string,
+                 survey     : option[string],
+                 macros     : map[string,<,macroDef],
+                 globalOpts : map[opt,<,optSetting],
+                 structs    : option[structs],
+                 subsystems : seq[subsystem],
+                 library    : option[library]
+               )
+               none
+
+/* %These additional structures allow access to the set of names and the
+associated options (taking inheritance into account) of all structures
+resp. subsystems defined by the user or from the library */ 
+FUN flatStructs       : config -> map[string, <, map[opt, <, optSetting]]
+FUN flatSubsystems    : config -> map[string, <, map[opt, <, optSetting]]
+FUN flatLibStructs    : config -> map[string, <, map[opt, <, optSetting]]
+FUN flatLibSubsystems : config -> map[string, <, map[opt, <, optSetting]]
+
+/* %The definition */
+TYPE macroDef == noParam( substitution : string )
+                 withParam(
+                    preParamSubstitution  : string,
+                    postParamSubstitution : string
+                 )   
+/* %destinguishes parametrized and not-parametrized macro definitions by
+defining a variant for each option of parameter definition. The elements of
+each variant contain the plain text that has to be substituted in case of
+a macro application. The domain @string of the macro @map defined above
+(@c{config} ff.) contains a set of @c{@@}-prefixed macro names that are mapped
+to the respective @c{macroDef}. 
+
+Structure for the collection of structures of one abstraction level: */
+TYPE structs == structs(
+                  structsOpts : map[opt,<,optSetting],
+                  structs     : seq[struct]
+                )
+                none
+
+/* %Storing the information on one single structure: */
+TYPE struct == struct(
+                 name       : string,
+                 structOpts : map[opt,<,optSetting]
+               )
+               none
+
+/* %Structure for the administration of configuration
+information for a subsystem and
+---if present--- all subordinate sub-subsystems: */
+TYPE subsystem == subsystem(
+                    name          : string,
+                    location      : string,
+                    survey        : option[string],
+                    subsystemOpts : map[opt,<,optSetting],
+                    structs       : option[structs],
+                    subsystems    : seq[subsystem]
+                  )
+                  none
+
+/* %The top-structure of the library subtree of the configuration language. This
+abstract syntax element is used only @emph{once} in the syntax tree: */
+TYPE library == library(
+                  libSurvey     : option[string],
+                  libOpts       : map[opt,<,optSetting],
+                  libSubsystems : seq[subsystem]
+                )
+
+-- %$Options and their Settings$ 
+-- %----------------------------
+/* %Please refer to the text of the corresponding Diplomarbeit to get information on
+the semantics of each option and its allowed settings. */
+ 
+                                     -- Allowed settings:
+TYPE opt == TopStructureName         -- cont
+            OutputFileName           -- cont | Off
+            ProjectName              -- cont
+            AuthorsNames             -- cont
+            Date                     -- cont
+            FunctionalityIndex       -- On | Off
+            ConceptIndex             -- On | Off
+            ApplicationIndex         -- On | OnMediumInst | OnNoInst |
+                                     -- OnNoLibs | OnNoLibsMediumInst |
+                                     -- OnNoLibsNoInst | Off
+            StructureIndex           -- On | Off
+            LibraryInclude           -- On | Off
+            SubsystemsInclude        -- On | Off
+            PropertiesInclude        -- On | Off
+            OnlyInterfaces           -- On | Off
+            Language                 -- German | English
+            HierarchyVisu            -- On | OnNoStructs | OnNoSubs | Off
+            NewPages                 -- On | Off
+            ImportReferences         -- On | OnNoLibs | Off
+            UsedFunctionTables       -- On | OnMediumInst | OnLowInst | 
+                                     -- OnNoInst | OnNoLibs | 
+                                     -- OnNoLibMediumInst | OnNoLibsLowInst | 
+                                     -- OnNoLibsNoInst | Off
+            Levels                   -- contSeq | Off
+            DropEmptyLines           -- On | Off
+            SortStructures           -- TopDown | BottomUp | Alphabetically
+                                     -- UserDefined | Off
+            SingleNode               -- On | Off
+            none
+
+/* %The ordering function */
+FUN < : opt ** opt -> bool
+/* %is an artificial ordering on @opt in order to be able to use maps
+with @opt as domain. */
+
+TYPE optSetting == On
+                   Off
+                   German
+                   English
+                   cont( cont : string )
+                   contSeq( cont : seq[string] )
+                   OnNoSubs
+                   OnNoStructs
+                   OnMediumInst
+                   OnLowInst
+                   OnNoInst
+                   OnNoLibs
+                   OnNoLibsMediumInst
+                   OnNoLibsLowInst
+                   OnNoLibsNoInst
+                   TopDown
+                   BottomUp
+                   Alphabetically
+                   UserDefined
+                   none
+
+-- %The constant
+FUN globalOptsDefault : map[opt,<,optSetting]
+/* %contains a mapping that is initially stored in the map for the global option
+setting in the top-level configuration type @c{config}. Refer to the implementation
+of the configuration-language parser for the concrete 
+application-environment of the constant (One can use the application-index as 
+reference!). */
+
+
+
+
+
+
+
+

@@ -1,0 +1,59 @@
+IMPLEMENTATION Pos
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/basics/Pos.impl,v 1.1.1.1 1998-06-16 16:00:37 wg Exp $
+
+IMPORT Nat 		COMPLETELY
+       NatConv 		COMPLETELY
+       Denotation       COMPLETELY
+       String		COMPLETELY
+
+IMPORT CharClass  ONLY newline? tab?
+
+
+DATA pos == pos( line : nat, col  : nat )
+
+DATA area == validArea( startPos : pos, endPos : pos )
+             emptyArea
+
+/* %We stipulate that the first position in a file is @c{(1,1)}. */
+DEF initial == pos(1,1)
+
+/* %When updating a position w.r.t. a character we have to handle @newline and @tab
+properly. The correct @tab-position is calculated via @c{tabskip}. */
+DEF upd( inputPos, inputChar ) ==
+  IF newline?(inputChar) THEN
+    pos(succ(line(inputPos)), 1)
+  IF tab?(inputChar) THEN
+    pos(line(inputPos), col(inputPos)+tabskip(col(inputPos)))
+  ELSE
+    pos(line(inputPos), succ(col(inputPos)))
+  FI
+
+/* %The updating on strings is reduced to a repeated updating on characters: */
+DEF upd( inputPos, <> ) == inputPos
+DEF upd( inputPos, c::rest ) ==
+  upd(upd(inputPos, c), rest)
+
+
+FUN ! : pos -> denotation
+DEF !( pos(l, c)) ==
+  "(" ++ (l`) ++ ", " ++ (c`) ++ ")"
+  
+/* %Watch out for the precondition! */
+DEF prev( inputPos ) ==
+  pos(line(inputPos), pred(col(inputPos)))
+
+FUN tabconst : nat
+DEF tabconst == 8
+
+/* %
+@center @c{pred(x) % tabconst} = p
+denotes the number of character positions that are used since the
+previous tabulator position was reached. Consequently @c{tabconst} - p
+is the number of spaces needed to reach the next tabulator position. */
+FUN tabskip : nat -> nat
+DEF tabskip( x ) == tabconst - ( pred(x) % tabconst )
+
+
+
+
+

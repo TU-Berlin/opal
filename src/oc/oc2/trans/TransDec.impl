@@ -1,0 +1,666 @@
+
+IMPLEMENTATION TransDec
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject: Translate Ac declarations to Ic objects
+-- author:  wg+ws 6-92
+
+IMPORT	Nat		COMPLETELY
+	Seq		COMPLETELY
+	SeqSort		ONLY msort
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqZip		ONLY zip
+	SeqMapEnv	ONLY *
+	Set[nat,<]	ONLY set %
+	Pair		COMPLETELY
+	Option		COMPLETELY
+	
+IMPORT	Format		ONLY format
+
+
+IMPORT	Ide		ONLY ide global? local? local origin:SORT
+			     = : ide ** ide -> bool
+			     = : origin ** origin -> bool
+	IdeBag		ONLY ideBag {} in ct incl excl exclAll - + U 
+			     explodeCt implodeCt
+	IdeMap		ONLY ideMap {} def def? ! !? extend
+	IdeSet		ONLY ideSet {} incl +
+	An		ONLY an none source trans optim
+	TypeAn		ONLY typeDec:SORT type:SORT fun? tup? args res comps
+			     gen? scope
+	TypeAnFun	ONLY typeOfDec typeDecAss structure
+	Store 		ONLY store some someClos someProd somePrim clos comps
+			     oneProd? oneProd prod? prod tag onePrim
+	SourceAn	ONLY sourceAn pos:SORT = noPos
+			     pos:sourceAn->pos pos?:sourceAn->bool 
+			     error?
+			     message:sourceAn->denotation kind:sourceAn->errorKind
+			     errorKind always
+			     symbol:sourceAn->denotation
+	OptimAn		ONLY optimAn hiddenAn? bindingAn? maxIdeNo rank
+	TransAn		ONLY transAn store constructorAn?
+	TransAnFun	ONLY constructorStore
+	SourceAnFun	ONLY symbol
+	Ac 		COMPLETELY
+	AcFun		ONLY dec atomic?
+	Ic		COMPLETELY
+	Builtin		ONLY consTuple INLINE
+	PreparedOptions	ONLY popts positions? options
+	Options		ONLY options cop?
+	Builtin		ONLY BUILTIN
+
+IMPORT	TransType	ONLY type2Store
+
+
+
+-- ==========================================================================
+-- Environments
+-- ==========================================================================
+
+DATA inh ==
+    /* inherited context of trans.
+    */
+    inh(popts:		popts,		 	-- prepared options
+	unit:		unit,			-- target unit
+	this:		ide,			-- ide of dec translated
+	target: 	seq[ide:SORT],		-- target identifiers
+	stores: 	ideMap[store:SORT],	-- constrainded stores
+	delayed: 	ideMap[exp:SORT],	-- delayed tuple expressions
+	after:		ideBag,			-- usage after current expr 
+	origin:		ideMap[ide]		-- mapping of ides
+						-- to what ides they
+						-- are selected from 
+       )
+
+-- ..........................................................................
+
+FUN newInh : popts ** unit ** ide -> inh
+DEF newInh(o,U,i) ==
+    inh(o,U,i,<>[ide:SORT],{}[store:SORT],{}[exp:SORT],{},{})
+
+FUN target: seq[ide:SORT] ** inh -> inh
+DEF target(is,C) ==
+    inh(popts(C),unit(C),this(C),is,stores(C),delayed(C),after(C),origin(C))
+
+FUN store: ide ** store ** inh -> inh
+DEF store(i,st,C) ==
+    inh(popts(C),unit(C),this(C),target(C),def(i,st,stores(C)),
+	delayed(C),after(C),origin(C))
+
+FUN delay: ide ** exp ** inh -> inh
+DEF delay(i,e,C) ==
+    inh(popts(C),unit(C),this(C),target(C),stores(C),def(i,e,delayed(C)),
+	after(C),origin(C))
+
+FUN after : ideBag ** inh -> inh
+DEF after(used,C) ==
+    inh(popts(C),unit(C),this(C),target(C),stores(C),delayed(C),used,origin(C))
+
+FUN origin : ideMap[ide] ** inh -> inh
+DEF origin(orig,C) ==
+    inh(popts(C),unit(C),this(C),target(C),stores(C),delayed(C),after(C),orig)
+
+
+FUN store : inh -> ide -> store
+DEF store(C)(i) ==
+    LET st? == stores(C) !? i 
+    IN
+    IF avail?(st?) THEN
+	cont(st?)
+    OTHERWISE
+    IF global?(i) THEN
+	-- unconstrained global
+	LET d == dec(unit(C),i)
+	IN
+	IF constructor?(d) and constructorAn?(trans(an(d))) THEN
+	    -- use store of constructed object
+	    store(trans(an(d)))
+	ELSE
+	    -- calculate store from type
+	    type2Store(unit(C))(typeOfDec(d))
+	FI
+    ELSE
+	some:store
+    FI
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+DATA syn == 
+    /* synthesized context of trans.
+    */
+    syn(used:	ideBag,
+	globals:ideSet,
+	stms:	seq[stm:SORT]
+       )
+
+-- ..........................................................................
+
+FUN newSyn : inh -> syn
+DEF newSyn(C) == syn(after(C),{},<>)
+
+FUN gen : stm ** syn -> syn
+DEF s gen S ==
+    syn(used(S),globals(S),s::stms(S))
+
+FUN use : ide ** syn -> syn
+DEF i use S ==
+    syn(newUsed,newGlobals,stms(S))
+    WHERE newUsed == incl(i,used(S))
+	  newGlobals == IF global?(i) THEN incl(i,globals(S)) 
+				      ELSE globals(S) FI
+
+FUN useGlobal : ide ** syn -> syn
+DEF i useGlobal S ==
+    syn(used(S),incl(i,globals(S)),stms(S))
+
+FUN genPos : inh ** an ** syn -> syn
+DEF (C,a) genPos S == 
+    IF positions?(popts(C)) THEN
+        IF pos?(source(a)) or error?(source(a)) THEN
+	    IF pos(source(a)) = noPos THEN
+	        S
+	    ELSE
+	        pos(pos(source(a))) gen S
+	    FI
+	ELSE S FI
+    ELSE S FI
+
+-- =========================================================================
+-- Translation of sequential expressions
+-- =========================================================================
+
+FUN trans : inh -> exp -> syn
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF trans(C)(error(a)) == 
+    IF error?(sa) THEN
+	(C,a) genPos (halt(message(sa),kind(sa)) gen newSyn(C))
+    ELSE
+	(C,a) genPos 
+	     (halt("RUNTIME ERROR: unknown source",always) 
+			gen newSyn(C))
+    FI
+    WHERE sa == source(a)
+    
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF trans(C)(ide(a,i)) == 
+    LET delayed? == delayed(C) !? i
+    IN
+    IF avail?(delayed?) THEN
+	-- delayed expression, translate it now
+	trans(C)(cont(delayed?))
+    ELSE
+	(C,a) genPos (ass(%(i),target(C)) gen (i use newSyn(C)))
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF trans(C)(apply(a,f,as)) == 
+    IF ide?(f) ANDIF ide(f) = INLINE THEN
+	-- special treatment of INLINE builtin
+	IF deno?(ft(rt(rt(as)))) THEN
+	    (C,a) genPos (inlineStatic(repr(ft(rt(as))), repr(ft(rt(rt(as)))),
+	    			       ft(target(C)))
+			       gen newSyn(C))
+        ELSE
+	    (C,a) genPos (inlineDynamic(repr(ft(as)), ide(ft(rt(rt(as)))),
+	    			        ft(target(C)))
+			       gen (ide(ft(rt(rt(as)))) use newSyn(C)))
+        FI
+    ELSE
+	LET is     == ide:exp->ide * as
+	    argUse == (use/newSyn(C))(is)
+	IN
+	IF global?(ide(f)) THEN
+	    LET d 	   == dec(unit(C),ide(f))
+		oa	   == optim(an(d))
+		full?  == IF ~(origin(ide(f)) = BUILTIN)
+				and (cop?("evalAll", options(popts(C)))
+			          	or lazyApply?(f,as)) THEN
+			     -- dont call if evalAll is set
+			     -- dont call lazy applys, eval them
+			     false
+			  OTHERWISE
+			  IF bindingAn?(oa) or hiddenAn?(oa) THEN
+			      rank(oa) = #(is) 
+			  OTHERWISE
+			  IF constructor?(d) THEN
+			      order(d) = #(is)
+			  ELSE false FI
+	    IN
+	    IF full? THEN
+		IF constructor?(d) THEN
+		    LET t  == structure(typeDecAss(unit(C)))(typeOfDec(d))
+			rt == structure(typeDecAss(unit(C)))(res(t))
+		    IN
+		    IF tup?(rt) THEN
+			-- tuple constructor
+			IF <>?(comps(rt)) THEN
+			    -- unit 
+			    (C,a) genPos
+				 (cons(onePrim(0),is,ft(target(C))) gen argUse)
+			ELSE
+			    -- multiple result ...	
+			    (C,a) genPos (ass(is,target(C)) gen argUse)
+			FI
+		    ELSE
+			-- plain constructor: use stores of arguments
+			-- to specialize store of constructor
+			LET cst == store(trans(an(d)))
+			    asts == store(C) * is
+			    actst ==
+				IF oneProd?(cst) THEN oneProd(tag(cst),asts)
+				IF prod?(cst)    THEN prod(tag(cst),asts) FI
+			IN
+			(C,a) genPos (cons(actst,is,ft(target(C))) gen argUse)
+		    FI
+		ELSE
+		    -- call
+		    (C,a) genPos (call(ide(f),is,target(C)) 
+				    gen (ide(f) useGlobal argUse))
+		FI
+	    ELSE
+		-- eval of global
+		(C,a) genPos (eval(ide(f),is,target(C)) gen (ide(f) use argUse))
+	    FI
+	ELSE
+	    -- eval of local
+	    (C,a) genPos (eval(ide(f),is,target(C)) gen (ide(f) use argUse))
+	FI
+    FI
+	    
+    FUN lazyApply? : exp ** seq[exp] -> bool
+    DEF lazyApply?(f,ide(a,id) :: <>) == id = consTuple(0)
+    DEF lazyApply?(f,as) 	      == false
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF trans(C)(block(a,bs,s)) == 
+    IF atomic?(s) THEN
+	-- scope of block is atomic: one binding is immediatly 
+	-- referred in scope or all bindings are dead code.
+	-- For convenience of tail-recursion detection (in the case
+	-- Ic alias elimination is off) delay all bindings ...
+	-- This, however, works only for one level of aliasing.
+	LET C1 == (delayBind/C)(bs)
+	IN
+   	trans(C1)(s)
+    ELSE
+	LET sortedbs == sortBinds(C,bs)
+	    (S,obs) == transBlock(C,sortedbs,s)
+	IN
+	syn(used(S),globals(S),%(block(obs,stms(S))))
+    FI
+
+  FUN sortBinds : inh ** seq[dec] -> seq[dec]
+  DEF sortBinds(C,bs) == 
+    LET < == \\b1,b2. IF apply?(def(b2)) THEN
+			  IF ide?(fun(def(b2))) THEN
+			      ide(fun(def(b2))) = this(C)
+			  ELSE false FI
+		      ELSE false FI
+    IN
+    msort(<)(bs)
+
+  FUN transBlock: inh ** seq[dec] ** exp -> syn ** seq[obj]
+
+  DEF transBlock(C,<>,s) ==
+    LET S == trans(C)(s)
+    IN
+    IF block?(ft(stms(S))) THEN
+	-- fuse block
+	(syn(used(S),globals(S),stms(ft(stms(S)))++rt(stms(S))),
+	 vars(ft(stms(S))))
+    ELSE 
+	(S,<>)
+    FI
+
+  DEF transBlock(C,(b AS binding(a,lhs,md,rhs))::bs,s) ==
+     LET t  == structure(typeDecAss(unit(C)))(typeOfDec(b))
+     IN
+     IF tup?(t) THEN
+	 -- binding of tuple expression: delay until application point
+	 transBlock((lhs,rhs) delay C,bs,s)
+     ELSE
+        LET (C1,ob)  == genVar(C,b)
+	     (S,obs) == transBlock(C1,bs,s)
+        IN
+        IF ~(lhs in used(S)) THEN
+	    -- dead code
+	    (S,obs)
+        ELSE
+	    LET (u,copys)== genCopyOrFree(C1)(used(S),%(lhs))
+	        S1       == trans(u after (%(lhs) target C))(rhs)
+	    IN
+	    ((C,a) genPos
+	     	    syn(used(S1),globals(S1)+globals(S),
+			(stms(S1)++copys)++stms(S)),
+	     ob::obs)
+	FI
+    FI
+
+  FUN fuseBlocks : seq[obj:SORT] ** seq[stm:SORT] ** seq[stm:SORT]
+				-> stm
+  DEF fuseBlocks(obs,stms1,stms2) ==
+    IF <>?(stms2) THEN block(obs,stms1)
+    ELSE LET l == last(stms2)
+	 IN
+	 IF block?(l) THEN
+	     -- for convenience of tail-mod-cons detection
+	     -- fuse last block in sequence with outer one
+	     block(obs++vars(l),stms1++(front(stms2)++stms(l)))
+	 ELSE
+	     block(obs,stms1++stms2)
+	 FI
+     FI
+
+
+  FUN delayBind : dec ** inh -> inh
+  DEF delayBind(b,C) ==
+    (ide(b),def(b)) delay C
+	
+
+
+-- .........................................................................
+
+FUN genCopyOrFree : inh -> ideBag ** seq[ide:SORT] -> ideBag ** seq[stm:SORT]
+DEF genCopyOrFree(C)(u,is) ==
+    IF <>?(is) THEN (u,<>[stm:SORT])
+    ELSE
+        LET i == ft(is)
+	    n == i ct u
+        IN
+        IF n = 0 THEN
+	    LET (u1,ss) == genCopyOrFree(C)(u,rt(is))
+	    IN
+	    (u1,free(i,store(C)(i),1)::ss)
+        IF n = 1 THEN
+	    genCopyOrFree(C)(excl(i,u),rt(is))
+        ELSE
+	    LET (u1,ss) == genCopyOrFree(C)(exclAll(i,u),rt(is))
+	    IN
+	    (u1,copy(i,store(C)(i),pred(n))::ss)
+        FI
+   FI 
+
+FUN genVar : inh ** dec -> inh ** obj
+DEF genVar(C,d) ==
+    ((ide(d),st) store C,variable(ide(d),st))
+	WHERE st == type2Store(unit(C))(typeOfDec(d))
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF trans(C)(case(a,t,ms,d)) == 
+    LET delayed? == delayed(C) !? ide(t)
+    IN
+    IF avail?(delayed?) THEN
+	-- tuple deconstruction of delayed expression
+	LET vs         == vars(ft(ms))
+	    is	       == ide:dec->ide * vs
+	    (C1,obs)   == (genVar)*(C,vs)
+	    S          == trans(C1)(scope(ft(ms)))
+	    (u,copys)  == genCopyOrFree(C1)(used(S),is)
+	    S1         == trans(u after (is target C))(cont(delayed?))
+	IN
+	syn(used(S1),globals(S)+globals(S1),
+	    %(fuseBlocks(obs,stms(S1)++copys,stms(S))))
+    ELSE
+	-- normal case
+	LET (maxU,globs,c) == 
+		transMatches(C,ide(t),ms,d,incl(ide(t),{} :ideBag))
+            newGlobs == IF global?(ide(t)) THEN incl(ide(t),globs) 
+                                           ELSE globs FI
+	IN
+	(C,a) genPos syn(maxU,newGlobs,%(c))
+    FI
+
+  FUN transMatches: inh ** ide ** seq[match'Ac:SORT] ** exp ** ideBag
+				-> ideBag ** ideSet ** stm
+  DEF transMatches(C,t,ms,d,currMaxU) ==
+    IF <>?(ms) THEN
+	-- translate default
+	IF error?(d) THEN
+	    -- dont account any usage information.
+	    LET S == trans(C)(d)
+	    IN
+	    (currMaxU,globals(S),
+			case(t,store(C)(t),<>[match'Ic:SORT],
+			     block(<>[obj:SORT],stms(S))))
+	ELSE
+	    LET S        == trans(C)(d)
+	        maxU     == joinUsage(t,currMaxU,used(S))
+	        frees    == genFree(C) * explodeCt(maxU - used(S))
+	        copys    == genCopy(C) * explodeCt(used(S) - maxU)
+	        default  == block(<>[obj:SORT],frees++(copys++stms(S)))
+	    IN
+	    (maxU,globals(S),
+		  case(t,store(C)(t),<>[match'Ic:SORT],default))
+	FI
+    ELSE
+	-- translate this match
+	LET (C1,u,globs,m)  == transMatch(C,t,ft(ms))
+	    currMaxU1 == joinUsage(t,currMaxU,u)
+	    (maxU,globs1,c)  == transMatches(C,t,rt(ms),d,currMaxU1)
+	    frees     == genFree(C1) * explodeCt(maxU - u)
+	    copys     == genCopy(C1) * explodeCt(u - maxU)
+			  -- C1 contrains t under match, s.t. store
+			  -- of free/copy on t comes right.
+	    m1	      == match(tags(m),
+			       store(m),sels(m),frees++(copys++stms(m)))
+	IN
+	(maxU,globs+globs1,case(t,store(c),m1::matches(c),default(c)))
+    FI
+
+  FUN joinUsage : ide ** ideBag ** ideBag -> ideBag
+  DEF joinUsage(t,curr,u) ==
+    /* join usage of path, using the following heuristic:
+       1) usage of discriminated ide t is set to 1 by construction.
+	  (this delays copys after the discrimination point, when
+	   constraints are known)
+       2) let n1,n2 be the ct of other ides in curr rsp. u,
+	  then max(min(n1,n2),IF local?(i) THEN 1 ELSE 0 FI)
+	  (this hoists copys necessary in each path above the case)
+       implementation very inefficient currently!
+    */
+    implodeCt((join(t,curr,u)/ <>)(explodeCt(curr+u)))
+
+    FUN join : ide ** ideBag ** ideBag -> 
+			pair[ide:SORT,nat] ** seq[pair[ide:SORT,nat]]
+					   -> seq[pair[ide:SORT,nat]]
+    DEF join(t,curr,u)(&(i,_),ps) == 
+	IF i=t THEN &(i,1)::ps 
+	ELSE LET n == min(i ct curr,i ct u)
+	     IN
+	     IF local?(i) THEN &(i,max(n,1))::ps
+	     OTHERWISE IF n = 0 THEN ps
+				ELSE &(i,n)::ps FI
+	FI
+
+  FUN genFree : inh -> pair[ide:SORT,nat] -> stm
+  DEF genFree(C)(&(i,n)) == 
+    free(i,store(C)(i),n)
+
+  FUN genCopy : inh -> pair[ide:SORT,nat] -> stm
+  DEF genCopy(C)(&(i,n)) == 
+    copy(i,store(C)(i),n)
+
+
+
+  FUN transMatch : inh ** ide ** match'Ac -> inh ** ideBag ** ideSet ** match'Ic
+  DEF transMatch(C,t,match(c,vs,s)) == 
+    LET st	 == constructorStore(unit(C),c)
+	C1       == (t,st) store C
+	C2	 == (genOrigin(t),(genStore,C1)/vs)/vs
+	S        == trans(C2)(s)
+	sharedSel? == checkSharedSel(C,used(S)+after(C),t)
+	(u,sls)  == (genSel(C2,sharedSel?))*(used(S),vs)
+    IN
+    (C2,u,globals(S),match(%(tag(st)),st,sls,stms(S)))
+
+  FUN genSel : inh ** bool -> ideBag ** dec -> ideBag ** sel
+  DEF genSel(C,sharedSel?)(u,variable(_,id)) ==
+    LET n  == id ct u
+	st == store(C)(id)
+    IN
+    IF n > 0 THEN
+	IF ~(sharedSel?) THEN
+	    (id exclAll u,borrow(id,st,n))
+	ELSE
+	    (id exclAll u,plain(id,st,n))
+	FI
+    ELSE
+	(u,dead(id,st))
+    FI
+
+    FUN checkSharedSel : inh ** ideBag ** ide -> bool
+    DEF checkSharedSel(C,usage,ob) ==
+	-- we assume a selection to be probably performed on a
+	-- shared object, if the object or one of the objetcs
+	-- it is selected from is in usage
+	IF (ob ct usage) > 0 THEN true
+	OTHERWISE
+	IF avail?(origin(C)!?ob) THEN 
+	    checkSharedSel(C,usage,cont(origin(C)!?ob))
+	ELSE false FI
+	
+    FUN genOrigin : ide -> dec ** inh -> inh
+    DEF genOrigin(orig)(variable(_,id),C) ==
+	origin(def(id,orig,origin(C)),C)
+
+-- .........................................................................
+
+FUN genStore : dec ** inh -> inh
+DEF genStore(d AS variable(_,id),C) ==
+    (id,st) store C
+	WHERE st == type2Store(unit(C))(typeOfDec(d)) 
+
+
+
+-- =========================================================================
+-- Global Entrys
+-- =========================================================================
+
+-- FUN transDec : popts ** unit -> dec -> obj ** ideSet
+
+DEF transDec(o,U)(d AS binding(a,i,md,deno(_,rep))) ==
+    (denotation(i,st,icMode(md),sy,rep),{})
+      WHERE 
+	sy == symbol(source(a))
+  	st == type2Store(U)(typeOfDec(d))
+
+
+DEF transDec(o,U)(d AS binding(a,i,md,e)) == 
+    (constant(i,st,icMode(md),sy,init),globals(S))
+      WHERE
+   	sy    == symbol(source(a))
+	st    == type2Store(U)(typeOfDec(d))
+	C     == %(i) target newInh(o,U,i)
+	S     == trans(C)(e)
+	copys == genGlobalCopy(C) * explodeCt(used(S))
+	init  == block(<>[obj:SORT],copys++stms(S))
+
+
+DEF transDec(o,U)(d AS binding(a,i,md,lambda(ea,vs,s))) == 
+    (procedure(i,clos(ists,osts),icMode(md),sy,is,os,body),globals(S))
+      WHERE
+        sy   	  == symbol(source(a))
+        is 	  == ide:dec->ide * vs
+	osts	  == resultStores(U,typeOfDec(d),rank(optim(a)))
+	os        == local *  ((m .. (m + pred(#(osts))) ) (\\X.X))
+	m         == succ(maxIdeNo(optim(a)))
+	C         == os target newInh(o,U,i)
+	C1        == (genStore / C)(vs)
+	C2        == (genStoreP / C1)(zip(&)(os,osts))
+	ists      == store(C2) * is
+	S         == (C2,ea) genPos trans(C2)(s)
+	(u,copys) == genCopyOrFree(C2)(used(S),is)
+	globCopys == genGlobalCopy(C2) * explodeCt(u)
+	body      == block(<>[obj:SORT],globCopys++(copys++stms(S)))
+
+  FUN resultStores : unit ** type ** nat -> seq[store:SORT] 
+  DEF resultStores(U,t,r) ==
+    LET t1 == structure(typeDecAss(U))(t)
+    IN
+    IF fun?(t1) THEN
+	IF #(args(t1)) > r THEN
+	    -- HOF binding
+	    %(someClos)
+	OTHERWISE
+	IF #(args(t1)) < r THEN
+	    resultStores(U,res(t1),r - #(args(t1)))
+	ELSE
+     	    LET rt == structure(typeDecAss(U))(res(t1))
+	    IN
+     	    IF tup?(rt) THEN type2Store(U) * comps(rt) 
+			ELSE %(type2Store(U)(rt)) FI
+	FI
+    ELSE
+	-- unknown type
+	%(some:store)
+    FI
+	    
+DEF transDec(o,U)(d AS constructor(a,i,md,ord)) == 
+    LET sy    == symbol(source(a))
+	cst   == store(trans(a))
+    IN
+    IF ord > 0 THEN
+    	(procedure(i,st,icMode(md),sy,is,%(out),body), {} : ideSet)
+	  WHERE
+	    is    == local * ((1 .. ord)(\\X.X))
+	    st    == clos(comps(cst),%(someProd))
+	    out   == local(succ(ord))
+            body  == cons(cst,is,out)
+    ELSE
+	(constant(i,cst,icMode(md),sy,cons(cst,<>[ide:SORT],i)),{} : ideSet)
+    FI
+
+
+  FUN genGlobalCopy : inh -> pair[ide:SORT,nat] -> stm
+  DEF genGlobalCopy(C)(p) == LET i==1st(p) n==2nd(p) IN
+    copy(i,store(C)(i),n)
+
+  FUN genStoreP : pair[ide:SORT,store:SORT] ** inh -> inh
+  DEF genStoreP(p,C) == 
+    (1st(p),2nd(p)) store C
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+-- FUN transImportDec : popts ** unit -> dec -> obj
+DEF transImportDec(o,U)(d) ==
+    LET a == an(d) 
+    IN
+    IF binding?(d) ANDIF deno?(def(d)) THEN
+	denotation(ide(d),st,external,symbol(source(a),ide(d)),
+		   repr(def(d)))
+        WHERE 
+  	  st == type2Store(U)(typeOfDec(d))
+    OTHERWISE
+    IF bindingAn?(optim(a)) or hiddenAn?(optim(a)) THEN
+        hidden(ide(d),st,external,symbol(source(an(d)),ide(d)))
+	  WHERE
+	     st == IF r > 0 THEN clos(ists,osts)
+	    		         WHERE ists == Ksome * ((1 .. r)(\\X.X))
+	    			       osts == resultStores(U,typeOfDec(d),r)
+		   ELSE some FI
+	     r  == rank(optim(a))
+    ELSE
+        hidden(ide(d),some,external,symbol(source(an(d)),ide(d)))
+    FI
+
+    FUN Ksome : nat -> store
+    DEF Ksome(_) == some
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN icMode : mode'Ac -> mode'Ic
+DEF icMode(external) == external
+DEF icMode(internal) == internal
+DEF icMode(local)    == local
+
+
+
+

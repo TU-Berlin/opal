@@ -1,0 +1,366 @@
+-- LAST EDIT: Tue Aug 29 22:57:50 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      af / mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     reduced interface to global signature 
+--		after signature analysis
+-- Changes:	af, Jun 30 1993: added access to laws
+--		af, Aug  3 1993: added access to analyzed equations
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+SIGNATURE AnalyzedGlobSig
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	GlobSig		ONLY globSig
+	GlobPragma[name] ONLY globPragma
+	Name		ONLY name var var? local local? no:name->nat id
+	GlobSigImpl	ONLY impl:SORT
+	Objects		ONLY struct:SORT inst:SORT
+	Impl[name]	ONLY law:SORT
+	Patterns[name]	ONLY pattDescr
+	Pair[law,locSig] ONLY pair
+	Map[rep,<,pair[law,locSig]] ONLY map
+	-- lib
+	Nat		ONLY nat
+
+	Error		ONLY err:SORT
+	Rep		ONLY rep <
+	Fct[name]	ONLY fct
+	Option[rep]	ONLY option
+	Option[fct]	ONLY option
+	Option[typeDec]	ONLY option
+	Option[dec]	ONLY option
+	Pos		ONLY pos
+	Impl[name]	ONLY sortImpl:SORT eq:SORT
+	Seq[eq]		ONLY seq
+	Seq[name]	ONLY seq
+	Seq[dec]	ONLY seq
+	Seq[typeDec]	ONLY seq
+	Seq[unit]	ONLY seq
+	Seq[option[fct]]	ONLY seq
+	Seq[pattDescr]		ONLY seq
+	Seq[seq[pattDescr]]	ONLY seq
+	Seq[globPragma]		ONLY seq
+
+	Com[globSig]	ONLY com
+
+-- ----------------------------------------------------------------------------
+
+FUN global?:   name -> bool
+    rep:       globSig**name -> rep
+    origIde:   globSig**name -> rep
+    origInst:  globSig**name -> seq[name]
+    sort? op?: globSig**name -> bool
+    fct:       globSig**name -> fct[name]
+    origIdeNo: globSig**name -> nat
+    no:        globSig**name -> nat
+-- Test/Selektoren fuer globale Namen/Namensmengen
+
+FUN globalSet?: name -> bool
+    internal? : name -> bool
+    external?:  name -> bool
+-- Test auf Namensmenge/internen Namen/externen Namen
+
+FUN origInst: name -> seq[name]
+-- Instanzenliste einer Namensmenge
+
+FUN replInst: name**seq[name] -> name
+-- weiter eingeschraenkte Namensmenge
+
+FUN single: globSig**name -> globSig**name
+-- einelementige Namensmenge wird zu einzelnem globalen Namen
+-- die Instanz der Namensmenge darf (einelementige!) Namensmengen enthalten!
+
+FUN single: globSig**fct[name] -> globSig**fct[name]
+-- Anwendung von 'single' auf die einzelnen Elemente einer Funktionalitaet
+
+-- ----------------------------------------------------------------------------
+
+FUN eqBase: name**name -> bool
+    eqName: globSig -> name**name -> bool
+-- Vergleich auf Identitaet zweier Namen
+--   ohne und mit Beruecksichtigung ihrer Instanz
+
+FUN ltName: name**name -> bool
+-- Ordnung auf Namen (nicht definiert fuer Namensmengen)
+
+SORT level
+FUN complete minimal standard: level'AnalyzedGlobSig
+-- Ausgabe-Niveaus
+FUN no : level -> nat
+
+
+FUN ` : globSig**level'AnalyzedGlobSig -> name -> denotation
+-- Visualisierung von Namen/Namensmengen
+
+-- ----------------------------------------------------------------------------
+
+FUN actStructIde: globSig -> rep
+-- Bezeichner der aktuellen Struktur
+
+FUN actStructParams: globSig -> seq[name]
+-- Parameter der aktuellen Struktur
+
+FUN ide: globSig**struct -> rep
+    no:  globSig**struct -> nat
+-- importierte Strukturen
+-- no liefert Zahl groesser null
+
+FUN params: globSig ** struct ** inst -> seq[name]
+
+FUN ` : globSig -> () -> denotation
+
+-- ----------------------------------------------------------------------------
+
+FUN bool:       globSig -> name
+    denotation: globSig -> name
+-- Namen der vordefinierten Sorten 'bool' und 'denotation'
+
+FUN true:	globSig -> name
+-- Name der vordefinierten Konstanten 'true'
+
+-- ----------------------------------------------------------------------------
+
+FUN matchingNames: globSig**rep**option[rep]**seq[name]**nat -> seq[name]**nat
+    matchingSorts: globSig**rep**option[rep]**seq[name]**nat -> seq[name]**nat
+    matchingOps:   globSig**rep**option[rep]**seq[name]**option[fct[name]]**nat
+							     -> seq[name]**nat
+    matchingInternalOps:   globSig**rep**option[fct[name]]	     -> seq[name]
+-- passende Namen (Sorten/Operationen/interne Operationen) in der Signatur
+-- zur Generierung von Variablen koennen Ids (einschl.) ab der gegebenen
+--   natuerlichen Zahl verwendet werden. (Verschiedene Namen koennen dieselbe
+--   Variablenidentifikationen benutzen.)
+-- jeder Name darf nur einmal in der gelieferten Sequenz vorkommen!
+
+-- ----------------------------------------------------------------------------
+
+FUN getInternalSort: globSig**rep      -> name
+    getInternalOp:   globSig**rep**fct[name] -> name
+-- liefert (vorhandene) interne Sorte/Operation
+
+-- ----------------------------------------------------------------------------
+
+FUN pos: globSig**name -> pos
+-- liefert die 'Deklarationsposition' eines globalen Namens bzw.
+--   einer globalen Namensmenge
+
+-- ----------------------------------------------------------------------------
+
+FUN isExported : globSig ** name -> bool
+-- steht der Name in der eigenen Signatur ?
+
+-- ----------------------------------------------------------------------------
+
+FUN freeConstr: globSig**name**name**seq[name] -> globSig
+-- Setzen des Attributs 'freeConstructor' fuer einen internen globalen Namen
+--   unter Angabe der entsprechenden Test- und Selektorfunktionen
+-- Initial ist dieses Attribut fuer keinen internen Namen gesetzt,
+--   fuer externe Namen entsprechend ihrer Export-Information
+
+FUN isFreeConstr: globSig**name -> bool
+-- Test auf Gesetztsein des Attributs 'freeConstructor'
+
+FUN test:      globSig**name -> name
+    selectors: globSig**name -> seq[name]
+-- Selektion der Testfunktion bzw. der Selektorfunktionen fuer einen
+--   (internen oder externen) globalen Namen, dessen Attribut 'freeConstructor'
+--   gesetzt ist
+
+-- ----------------------------------------------------------------------------
+
+FUN useOp:        globSig**name -> globSig
+    useConstr:    globSig**name -> globSig
+	-- inklusive Tests und Selektoren fuer interne Namen
+    useGenerated: globSig**name -> globSig
+-- Setzen des usedForOp/usedForConstr/usedForGenerated-Flags fuer den
+--   angegebenen globalen Namen und allen Namen in seinen Bestandteilen
+-- nicht definiert fuer Namensmengen
+-- Initial sind diese Flags fuer keinen Namen gesetzt
+
+FUN isUsedByUser:     globSig**name -> bool
+-- liefert 'true', falls
+-- - das usedForOp-Flag gesetzt ist oder
+-- - das usedForConstr-Flag gesetzt ist.
+-- fuer externe Namen zur Zeit nicht definiert.
+
+FUN isUsedByCompiler: globSig**name -> bool
+-- dummy
+
+FUN isUsedForAc: globSig**name -> bool
+-- liefert 'true', falls
+-- - das usedForOp-Flag gesetzt ist oder
+-- - das usedForGenerated-Flag gesetzt ist.
+-- isUsedByCompiler ist nicht definiert fuer Namensmengen
+
+FUN isUnusedFreeConstructor : globSig ** name -> bool
+-- liefert 'true' falls 
+-- - der Name ein freier interner Konstruktor ist und
+-- - das usedForOp-Flag nicht gesetzt ist.
+
+
+-- ----------------------------------------------------------------------------
+
+FUN freeType:    globSig**name -> impl
+    defFreeType: globSig**name**impl -> globSig
+    impl:        globSig**name -> impl
+    defImpl:     globSig**name**impl -> globSig
+-- Abfragen und Setzen des 'freeType'- bzw. 'impl'-Attributs
+--   fuer interne globale Namen
+-- Initial sind die Werte dieser Attribute 'none' oder 'parameter'
+
+-- ----------------------------------------------------------------------------
+
+IMPORT GlobSig ONLY laws
+
+FUN law:    globSig**rep -> law**locSig
+    defLaw: globSig**rep**law**locSig -> globSig**bool
+-- Definieren von Gesetzen
+
+-- ----------------------------------------------------------------------------
+-- vorlaeufige Varianten zur 'alten' Ausgabe der analysierten Struktur
+-- ----------------------------------------------------------------------------
+
+FUN treatInternalName: (name**globSig->com[globSig]) -> globSig -> com[globSig]
+-- Reduktion ueber alle internen Namen
+
+FUN treatImportedStruct: (struct**globSig->com[globSig])
+						-> globSig -> com[globSig]
+-- Reduktion ueber alle importierten Strukturen
+
+FUN treatExternalNames: struct -> (seq[name]**globSig->com[globSig])
+						-> globSig -> com[globSig]
+-- Reduktion ueber alle (echten) aus einer Struktur importierten Namen
+--   zusammengefasst in Namen, die sich nur in der Instanz unterscheiden
+
+FUN treatInstance: struct -> (inst**globSig->com[globSig])
+						-> globSig -> com[globSig]
+-- Reduktion ueber alle Instanzen einer importierten Struktur
+
+-- ----------------------------------------------------------------------------
+-- Funktionen zur Erzeugung von AC
+-- ----------------------------------------------------------------------------
+
+IMPORT	Ac	ONLY unit:SORT dec:SORT
+	TypeAn	ONLY typeDec:SORT
+
+FUN freeInternal: globSig -> nat
+-- gibt eine Ordnungsnummer, die selbst (und deren Nachfolger)
+--   von keinem Objekt belegt ist
+
+FUN parameter?: globSig**name -> bool
+-- gibt an, ob
+-- - ein Name aktueller Strukturparameter oder
+-- - formaler Parameter einer importierten Struktur ist
+
+FUN paramNo: globSig**name -> nat
+-- gibt fuer einen Parameter (s. parameter?) eine Ordnungsnummer in der
+--  jeweiligen Parameterliste (beginnend bei null)
+
+FUN formParamKinds: globSig**struct -> seq[option[fct[name]]]
+-- liefert fuer eine importierte Struktur die Liste der Art ihrer Parameter
+
+FUN treatInternalNames: globSig ->
+                        (name**nat->option[typeDec]**seq[dec]**err**nat)**
+                          (name->option[dec]**err) ->
+                        nat -> seq[typeDec]**seq[dec]**err
+FUN treatInternalNames: globSig ->
+                        (name**nat->option[typeDec]**seq[dec]**nat)**
+                          (name->option[dec]) ->
+                        nat -> seq[typeDec]**seq[dec]
+-- bearbeitet alle internen Namen einer Signatur
+--  getrennt nach Sorten und Operationen mit einer Zahl beginnend
+
+
+FUN treatImportedStructs: globSig -> (struct->unit) -> seq[unit]
+-- bearbeitet alle importierten Strukturen
+
+FUN treatExternalNames: globSig**struct ->
+                        (name->typeDec)**(name**fct[name]->dec) ->
+                        seq[typeDec]**seq[dec]
+-- bearbeitet alle Namen einer importierten Struktur, fuer die 
+-- 'isUsedForAc' gilt, 
+--  getrennt nach Sorten und Operationen (mit ihrer uninst. Funktionalitaet)
+
+-- ---------------------------------------------------------------------------
+
+IMPORT GlobSigImpl ONLY impl: SORT
+-- Implementierungen
+-- 1. keine Implementierung
+-- 2. Strukturparameter
+-- 3. Sortenimplementierung (auch fuer freie Typen)
+-- 4. kanonische Operation
+-- 5. Operationsimplementierung
+
+IMPORT GlobSigImpl ONLY none:  impl				-- free constr!
+                        none?: impl -> bool
+-- keine Implementierung/Test auf Vorhandensein einer Implementierung
+
+IMPORT GlobSigImpl ONLY parameter:  impl			-- free constr!
+                        parameter?: impl -> bool
+-- keine Implementierung/Test auf Vorhandensein einer Implementierung
+
+IMPORT GlobSigImpl ONLY data -- :  sortImpl -> impl			-- free constr!
+                        data?: impl -> bool
+                        impl -- :  impl -> sortImpl
+-- Konstruktion/Test/Selektion einer Sortenimplementierung
+
+IMPORT GlobSigImpl ONLY canonical:  pos -> impl			-- free constr!
+                        canonical?: impl -> bool
+			pos:        impl -> pos
+-- Konstruktion/Test/Selektion einer kanonischen Implementierung
+
+IMPORT GlobSigImpl ONLY def -- :       seq[eq]**locSig**nat -> impl	-- free constr!
+                        def?:      impl -> bool
+                        eqs-- :       impl -> seq[eq]
+                        locals:    impl -> locSig
+                        freeLocal: impl -> nat
+-- Konstruktion/Test/Selektion einer Operationsimplementierung
+-- Komponenten sind
+-- - die Sequenz der Gleichungen,
+-- - deren gemeinsame lokale Signatur und
+-- - die kleinste noch nicht fuer einen lokalen Namen verwendete
+--     natuerliche Zahl
+
+IMPORT GlobSigImpl ONLY anaDef -- :seq[eq]**locSig**nat**seq[seq[pattDescr]]**eq -> impl	-- free constructor
+			anaDef?:  impl -> bool
+                        eqs-- :       impl -> seq[eq]
+                        locals:    impl -> locSig
+                        freeLocal: impl -> nat
+			patts:	   impl -> seq[seq[pattDescr]]
+			newEq:	   impl -> eq
+
+-- analysierte Pattern-Definitionsgleichung
+-- KOmponenten sind
+-- - die urspruenglichen Gleichungen,
+-- - deren gemeinsame lokale Signatur und
+-- - die kleinste noch nicht fuer einen lokalen Namen verwendete
+--     natuerliche Zahl
+-- - fuer jede urspruengliche Gleichung eine Patternsequenz
+-- - die erzeugte Gleichung
+
+
+IMPORT GlobSigImpl ONLY locSig: SORT
+                        {} : locSig
+                        % -- : nat**rep**fct -> locSig
+			+ : locSig**locSig -> locSig
+-- Signatur lokaler Namen und deren Konstruktionsfunktionen
+
+IMPORT GlobSigImpl ONLY locSigComplete: locSig -> locSig
+			! -- : locSig**nat -> rep**fct
+-- 'Abschluss' einer lokalen Signatur und
+-- Selektion in abgeschlossener lokaler Signatur
+
+-- -------------------------------------------------------------------------
+-- accessing global pragmas 
+
+FUN pragmas : globSig -> seq[globPragma]
+FUN updPragmas : globSig ** seq[globPragma] -> globSig
+
+FUN theory? : globSig -> rep -> bool

@@ -1,0 +1,59 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     additional library functions
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION MySeqFun3[a,b,c]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq			COMPLETELY
+	SeqMapEnv[c, a, b]	ONLY *
+	SeqMap			ONLY *
+	Pair		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+
+-- ============================================================================
+
+
+FUN \* : (c ** a-> c ** b) ** c -> seq[a] -> c ** seq[b]  
+
+DEF \*(F, Env)(S) == *'SeqMapEnv(F, Env, S)
+
+FUN \* : (c ** a-> c ** b) -> c ** seq[a] -> c ** seq[b]
+    -- Map auf der Sequenz und update auf dem Environment(c)
+DEF \*(F)(Env,S) == *'SeqMapEnv(F, Env, S)
+
+-- ============================================================================
+
+FUN \* : (c ** a -> com[pair[c,b]])** c -> seq[a] ->com[pair[c,seq[b]]]
+    -- Map der Sequenz und update des Environments(c) als Kommando
+DEF (F \* env)(<>) 		== yield(okay(env & <>))
+DEF (F \* env)(ft :: rt)   == F(env, ft); \**
+    WHERE
+    \**  == \\ans1. \*(F,1st(data(ans1)))(rt) ; 
+		    (\\ans2.yield(okay(1st(data(ans2)) & 
+		            (2nd(data(ans1)) :: 2nd(data(ans2))))))
+
+-- ============================================================================
+
+FUN / : (c ** a ** b -> c ** b) ** c ** b -> seq[a] -> c ** b
+    -- Reduce auf der Sequenz und update auf dem Environment(c)
+DEF /(F,env,0)(<>) == (env, 0)
+DEF /(F,env,0)(ft::rt) == F(finEnv, ft, b)
+    WHERE
+    (finEnv, b) == /(F,env,0)(rt)
+
+-- ============================================================================
+
+FUN combine : (a ** b -> c) ** seq[a] ** seq[b] -> seq[c]
+    -- Bilden aller Kombinationen von ab-Paaren und anwenden der Funktion
+DEF combine(F, <>, bS) 	   == <>
+DEF combine(F, ft::rt, bS) == combine(F, rt, bS) ++ ((\\y.F(ft, y)) * bS)
+

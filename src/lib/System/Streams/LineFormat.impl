@@ -1,0 +1,106 @@
+IMPLEMENTATION LineFormat
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:18 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Char ONLY char ! =
+       Denotation ONLY init ++ empty # slice +%+ +/+
+       Nat ONLY nat ! 0? < 0 pred - half succ 1 > +
+       Com ONLY com EXEC succeed okay? data exit ans
+       ComCompose ONLY ; 
+       Control ONLY while
+       CharConv ONLY `
+       Env ONLY env
+
+
+-- %$Line Generating and Formatting$
+
+-- FUN # : nat
+DEF # == 
+    EXEC(env("COLUMNS") ; 
+    (\\a. succeed(IF okay?(a) THEN data(a)! ELSE "80"! FI)))
+
+-- FUN repeat: denotation -> denotation
+DEF repeat(d) == repeat(#)(d)
+
+-- FUN repeat: nat -> denotation -> denotation
+DEF repeat(n)(d) ==
+    IF n 0? THEN empty
+    ELSE LET d1 == while(\\x. #(x) < n, \\x. x ++ d)(d)
+         IN slice(d1, 0, pred(n))
+    FI
+
+-- %Specialized with argument @code{"-"}
+-- FUN --- : denotation
+DEF --- == init(#, "-"!)
+-- FUN --- : nat -> denotation
+DEF ---(n) == init(n, "-"!)
+
+-- FUN center: denotation -> denotation
+DEF center(d) == center(" ", d)
+-- FUN center: nat -> denotation -> denotation
+DEF center(n)(d) == center(n)(" ", d)
+
+-- FUN center: char ** denotation -> denotation
+DEF center(c:char, d) == center(#)(c, d)
+-- FUN center: nat -> char ** denotation -> denotation
+DEF center(n)(c, d) ==
+    LET d1 == IF n 0? THEN empty ELSE slice(d, 0, pred(n)) FI
+        space == n - #(d1)
+        left == space half
+        right == space - left
+    IN init(left, c) ++ d1 ++ init(right, c)
+
+-- FUN center: denotation ** denotation -> denotation
+DEF center(b:denotation, d) == center(#)(b, d)
+-- FUN center: nat -> denotation ** denotation -> denotation
+DEF center(n)(b, d) ==
+    LET d1 == IF n 0? THEN empty ELSE slice(d, 0, pred(n)) FI
+        space == n - #(d1)
+        left == space half
+        right == space - left
+    IN repeat(left)(b) ++ d1 ++ repeat(right)(b)
+
+-- FUN surround: denotation ** denotation -> denotation -> denotation
+DEF surround(left, right) == surround(#)(left, right)
+-- FUN surround: nat -> denotation ** denotation -> denotation -> denotation
+DEF surround(n)(left, right)(d) ==
+    LET rawL == #(d) + #(left) + #(right)
+        d1 == IF rawL > n THEN
+                 LET excess == rawL - n
+                     leftE == excess half
+                     rightE == excess - leftE
+                 IN slice(d, leftE, (#(d) - rightE) - 1)
+              ELSE 
+                 center((n - #(left)) - #(right))(d)
+              FI
+    IN left ++ d1 ++ right
+
+
+
+-- FUN box: char ** char ** char ->
+--         char ** char -> 
+--         char ** char ** char ->
+--         denotation -> denotation
+DEF box(ul, u, ur) == box(#)(ul, u, ur)
+
+-- FUN box: nat -> 
+--         char ** char ** char ->
+--         char ** char -> 
+--         char ** char ** char ->
+--         denotation -> denotation
+DEF box(n)(ul, u, ur)(l, r)(dl, d, dr)(arg) ==
+    LET up == surround(n)(ul`, ur`)(repeat(n)(u`))
+        sep == surround(n)(l`, r`)(empty)
+        mid == surround(n)(l`, r`)(center(n)(arg))
+        down == surround(n)(dl`, dr`)(repeat(n)(d`))
+        ; == +%+("\n")
+    IN
+       ;(up, ;(sep, ;(mid, ;(sep, ;(down, empty)))))
+
+-- FUN box: denotation -> denotation
+DEF box(arg) == box(#)(arg)
+-- FUN box: nat -> denotation -> denotation
+DEF box(n)(arg) == box(n)("+"!, "-"!, "+"!)("|"!, "|"!)("+"!, "-"!, "+"!)(arg)

@@ -1,0 +1,615 @@
+IMPLEMENTATION RepoMaintain
+
+IMPORT  Denotation      COMPLETELY
+        Pair            COMPLETELY
+        Option          COMPLETELY
+        String          COMPLETELY
+        StringScan      COMPLETELY
+        BTUnion         COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqSort         COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqReduce       COMPLETELY
+        Set             COMPLETELY
+        SetMap          COMPLETELY
+        SetReduce       COMPLETELY
+        SetConv         COMPLETELY
+        Map             COMPLETELY
+        MapReduce       COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        ComPairCompose  COMPLETELY
+        ComSeqReduce    COMPLETELY
+        ComAction       COMPLETELY
+        ProcessComInterrupt
+                        COMPLETELY
+        File            COMPLETELY
+        BinFile         COMPLETELY
+        FileName        COMPLETELY
+        FileSystem      COMPLETELY
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        Nat             COMPLETELY
+        Void            COMPLETELY
+
+IMPORT  RepoAn          COMPLETELY
+        RepoAbsy        COMPLETELY
+        RepoName        COMPLETELY
+        RepoAdmin       COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoGlobalAccess        COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoSourceAccess        COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoComAbort    COMPLETELY
+
+IMPORT  RepoInternData  COMPLETELY
+        RepoInternSource COMPLETELY
+        RepoInternAbsy COMPLETELY
+
+
+-- FIXME: reloading of objects
+
+-- %$Creating and Saving Repositories$ =====================================
+
+-- %$$Creating New Repository$
+
+DEF newRepo(Path) ==
+    LET SourcePath0 == normPath(dirName(Path))
+        SourcePath  == IF #(SourcePath0) = 0 THEN "./"
+                                             ELSE SourcePath0 FI
+        ObjectPath  == repoObjectDir(SourcePath)
+    IN
+    -- create object directory 
+    mkDir(dirName1(ObjectPath), defaultDirMode)                 ; (\\ _ .
+    -- yield an empty repo
+    succeed(emptyRepo :=_folders 
+                            %(folder(none,repoFolder, SourcePath, ObjectPath)))
+    )
+
+
+-- %$$Saving and Opening Repository$
+
+DATA saveState ==
+    saveState   (repoAn         : an,
+                 units          : seq[saveUnit],
+                 searchPath     : seq[folder])
+
+DATA saveUnit ==
+    saveUnit    (symbol         : denotation,
+                 signAn         : an,
+                 implAn         : an)
+
+
+FUN saveStateKey : denotation
+DEF saveStateKey == "OPAL-Repository saveState v0"
+
+
+DEF openRepo(Path) ==
+    -- read saved state
+    open(Path, "r")                                     & (\\ File .
+    read(File, saveStateKey)                            & (\\ State:saveState .
+    close(File)                                         & (\\ _ .
+    -- construct initial repository
+    newRepo(Path)                                       & (\\ R .
+    LET R1 == updateAn(\\ _ . repoAn(State))(R)
+    IN
+    -- construct search path
+    LET R2 == R1 :=_folders searchPath(State) ++ folders(R1)
+    IN
+    -- register all units
+    (\\ Save, Ri . 
+            registerStructure(symbol(Save), false)(Ri)          & (\\ Rj .
+            LET Sign? == lookup?(symbol(Save), sign)(Rj)
+                Impl? == lookup?(symbol(Save), impl)(Rj)
+                Rk    == updateAn(cont(Sign?), \\ _ . signAn(Save))(Rj)
+                Rl    == updateAn(cont(Impl?), \\ _ . implAn(Save))(Rk)
+            IN
+            succeed(Rl)
+            ),
+    R2) /& units(State)                                 & (\\ R3 .
+    succeed(R3)
+    )))))
+
+    
+DEF saveRepo(Path)(R) ==
+    -- flush unit source
+    (\\ UnitName, Ri . flushUnitSource(UnitName)(Ri),
+     R) /& asSeq(units(R))                             & (\\ R1 .
+    -- write out the current state
+    LET State == saveState(
+                     an'RepoGlobalAccess(R),
+                     (\\ Symbol, _ , Seq .
+                         saveUnit(                        
+                            Symbol, an(cont(lookup?(!(Symbol),sign)(R1)))(R1),
+                                    an(cont(lookup?(!(Symbol),impl)(R1)))(R1)
+                         ) :: Seq, 
+                      <>) / unitCodes(R1),
+                     searchPath(R1)
+                 )
+    IN
+    open(Path, "w")                                     & (\\ File .
+    write(File, saveStateKey, State)                    & (\\ _ .
+    close(File)                                         & (\\ _ .
+    succeed(R1)
+    ))))
+
+
+-- %$$Closing and Forgeting Repository$
+
+DEF closeRepo(Path)(R) ==
+    saveRepo(Path)(R)           & (\\ _ .
+    forgetRepo(R)
+    )
+
+DEF forgetRepo(_) ==
+    -- delete cached unit information
+    done
+    /* release read-only here some day
+    (\\ UnitName, _ . unlockUnit(UnitName)(R), 
+     nil) /& asSeq(units(R))                            & (\\ _ .
+    done
+    ) 
+    */   
+
+
+-- %$Search Path$ ========================================================
+
+
+DEF resetSearchPath(Subsys)(R) ==
+    break("NYI")
+
+
+-- %$Registering Structures$ ===============================================
+
+-- FIXME: registering and reloading (below) should use a cache of
+-- the directory contents of the folders, for speedup. 
+
+
+DEF registerStructure(Symbol, Force?)(R) ==
+    IF avail?(lookup?(Symbol, sign)(R)) THEN
+        -- structure already present
+        succeed(R)
+    ELSE
+        searchStructure(Symbol, Force?, searchPath(R))(R)
+    FI
+
+-- %$$Searching Structure$
+
+FUN searchStructure  : denotation ** bool ** seq[folder] 
+                                     -> repo 
+                                     -> com[repo]
+                                                        
+DEF searchStructure(Symbol, Force?, Folder :: Folders)(R) ==
+    -- allow a break exactly here
+    breakOnInterrupt(succeed(nil:void))                 & (\\ _ .
+    IF libFolder?(kind(Folder)) THEN
+        -- check for signature absy in library system
+        LET SignAbsyName == absyFileName(objectPath(Folder), Symbol, sign)
+        IN
+        fileExists?(SignAbsyName)                       & (\\ Exists? .
+        IF Exists? THEN
+            -- unit located in this system
+            registerLibStructure(Symbol, Folder)(R)
+        ELSE
+            -- try next system
+            searchStructure(Symbol, Force?, Folders)(R)
+        FI
+        )
+    ELSE
+        -- check for signature source in user system
+        LET SignName == sourceFileName(sourcePath(Folder), Symbol, sign)
+        IN
+        fileExists?(SignName)                           & (\\ Exists? .
+        IF Exists? THEN
+            -- unit located in this system
+            registerUserStructure(Symbol, Folder)(R)
+        ELSE
+            -- unit not located in this system, try next one
+            searchStructure(Symbol, Force?, Folders)(R)
+        FI
+        )
+    FI
+    )
+
+DEF searchStructure(Symbol, true, <>)(R) ==
+    -- structure not found, create new one
+    initStructure(Symbol, ft(searchPath(R)))(R)         & (\\ _, R1 .
+    succeed(R1)
+    )
+   
+
+
+DEF searchStructure(Symbol, false, <>)(R) ==
+    -- structure not found, generate diagnostic
+    diag((error, maintain) !! ("Cannot locate structure `%s'", Symbol))(R)
+
+
+-- %$$Registering User Structure$
+
+FUN registerUserStructure : denotation ** folder 
+                                  -> repo -> com[repo]
+
+DEF registerUserStructure(Symbol, Folder)(R) ==
+    -- initialize structure
+    initStructure(Symbol, Folder)(R)                    & (\\ Names, R1 .
+    -- continue
+    registerStructure2(1st(Names), 2nd(Names))(R1)
+    )
+
+
+-- %$$Registering Library Structure$
+
+FUN registerLibStructure : denotation ** folder 
+                                 -> repo -> com[repo]
+
+DEF registerLibStructure(Symbol, Folder)(R) ==
+    -- initialize structure
+    initStructure(Symbol, Folder)(R)                    & (\\ Names, R1 .
+    LET SignName == 1st(Names)
+        ImplName == 2nd(Names)
+    IN
+    -- setup library status
+    LET R2       == updateUnitInfo(SignName, 
+                        \\ Info . Info :=_flags incl(library, flags(Info))
+                    )(R1)
+        R3       == updateUnitInfo(ImplName, 
+                        \\ Info . Info :=_flags incl(library, flags(Info))
+                    )(R2)
+    IN
+    -- continue
+    registerStructure2(SignName, ImplName)(R3)
+    )
+
+            
+-- %$$Registering Second Phase$
+            
+FUN registerStructure2 : unitName ** unitName -> repo -> com[repo]
+DEF registerStructure2(SignName, ImplName)(R) ==
+    -- reload units (will register dependencies and load abstract syntax)
+    reloadUnit(SignName)(R)     & (\\ R1 .
+    reloadUnit(ImplName)(R1)    
+    )
+
+
+-- %$$Initializing Structure$
+
+FUN initStructure : denotation ** folder -> repo 
+                                    -> com[pair[pair[unitName,unitName],repo]]
+DEF initStructure(Symbol, Folder)(R) ==
+    -- create new units
+    LET (SignName, R1) == enterUnit(Symbol, sign)(R)
+        (ImplName, R2) == enterUnit(Symbol, impl)(R1)
+        R3             == makeFiles(SignName, Symbol, sign, Folder)(R2)
+        R4             == makeFiles(ImplName, Symbol, impl, Folder)(R3)
+    IN
+    event(newUnit(SignName))(R4)                        & (\\ R5 .
+    event(newUnit(ImplName))(R5)                        & (\\ R6 .
+    succeed((SignName & ImplName) & R6)
+    ))
+
+
+FUN makeFiles : unitName ** denotation ** part ** folder -> repo -> repo
+DEF makeFiles(Name, Symbol, Part, Folder)(R) ==
+    updateUnitInfo(Name, \\ Info . 
+        Info :=_sourceFile 
+                notExistent(sourceFileName(sourcePath(Folder), Symbol, Part))
+             :=_absyFile
+                notExistent(absyFileName(objectPath(Folder), Symbol, Part))
+             :=_objectFile
+                notExistent(objectFileName(objectPath(Folder), Symbol))
+    )(R)
+
+
+    
+
+-- %$Reloading Units$ ====================================================
+
+DEF reloadUnits(Names)(R) ==
+    LET Units0 == (\\U, S. IF impl?(part(U)) THEN
+                              incl(basicUnitName(no(U), sign),
+                              incl(U, S))
+                           ELSE 
+                              incl(basicUnitName(no(U), impl),
+                              incl(U, S))
+                           FI,
+                  {}) / (Names + related(transitive,implImports)(Names)(R))
+        -- FIXME: implImports not closed over imports??
+        Units == Units0 + related(transitive,imports)(Units0)(R)
+        Order == (\\Us, O. asSeq(Us) ++ O, <>) 
+                        / revert(topSort(imports)(Units)(R))
+    IN
+    (\\U, Ri. reloadUnit(U)(Ri), R) /& Order
+
+
+FUN reloadUnit : unitName -> repo -> com[repo]
+
+DEF reloadUnit(Name)(R) ==
+    -- allow a break exactly here
+    breakOnInterrupt(succeed(nil:void))         & (\\ _ .
+    IF library?(Name)(R) THEN
+        IF sign?(part(Name)) THEN
+            reloadLibrarySign(Name)(R)
+        ELSE reloadLibraryImpl(Name)(R) FI
+    ELSE reloadUserUnit(Name)(R) FI     
+    )
+
+
+FUN reloadLibrarySign reloadLibraryImpl
+    reloadUserUnit      : unitName -> repo -> com[repo]
+
+DEF reloadLibrarySign(Name)(R) ==
+    -- FIXME: perhaps allow reloading of outdated library units
+    outdatedRepoFile?(absyFile(Name)(R))                & (\\ Outdated? .
+    IF Outdated? THEN
+        -- get library unit dependencies
+        getUnitAbsyDeps(Name)(R)                        & (\\ AbsyDeps .
+        -- reload (new?) absy dependencies
+        reloadDeps(Name, AbsyDeps)(R)                   & (\\ R1 .
+        -- check if dependencies are up-to-date
+        LET Deps == lookup(AbsyDeps, sign)(R1)
+                        -- convert imports by name
+        IN
+        IF ~({}?(Deps * notChecked(R1))) THEN
+            -- thats fatal
+            event(
+                diag( !!(error, maintain,
+                           (pretty(beg(2); 
+                               lit("library structure `"); 
+                               lit(symbol(Name)(R1)); 
+                               lit("' depends on outdated structures: ");
+                               list(\\U. lit(symbol(U)(R1)),
+                                      lit(""),spc(2),lit(""), 
+                                      asSeq(Deps * notChecked(R1)));
+                           end)):string)
+                )
+            )(R1)                                       & (\\ _ .
+            abort
+            )
+        ELSE
+            -- everything up-to-date, load absy
+            loadUnitAbsy(Name)(R1)                      & (\\ R2 .
+            succeed(
+                updateUnitInfo(Name,\\Info. Info :=_state checked)(R2)
+            ))
+        FI
+        ))
+   ELSE
+       -- nothing changed
+       succeed(R)
+   FI
+   )
+
+DEF reloadLibraryImpl(Name)(R) ==
+    -- implementations of library units are always asserted as compiled,
+    -- though they don't have a object file
+    LET R1 == updateUnitInfo(Name, \\ Info. Info :=_state compiled)(R)
+    IN
+    succeed(R1)
+        
+
+DEF reloadUserUnit(Name)(R) ==
+    -- reload source if outdated 
+    outdatedRepoFile?(sourceFile(Name)(R))              & (\\ Outdated? .
+    IF Outdated? THEN
+        -- load new source
+        event(progress(unit(Name), "loading"))(R)       & (\\ R1 .
+        loadUnitSource(Name)(R1)                        & (\\ R2 .
+        -- register (new?) syntactic dependencies
+        LET Deps == itemImports(Name)(R2)
+                        + (IF impl?(part(Name)) THEN
+                               -- add own signature
+                               %(symbol(Name)(R2))
+                           ELSE {} FI)
+        IN
+        reloadDeps(Name, Deps)(R2)                      & (\\ R3 .
+        -- check if they are up-to-date
+        IF ~({}?(lookup(Deps, sign)(R3) * notChecked(R3))) THEN
+            -- don't try to load absy or object, since some
+            -- dependencies are not checked 
+            succeed(resetChecked(Name)(R3))
+        ELSE
+            -- okay, continue to check absy
+            reloadUserUnitAbsy(Name)(R3)
+        FI
+        )))
+    ELSE
+        -- source is up-to-date, continue to check absy
+        reloadUserUnitAbsy(Name)(R)
+    FI
+    )
+
+FUN reloadUserUnitAbsy : unitName -> repo -> com[repo]
+
+DEF reloadUserUnitAbsy(Name)(R) ==
+    -- check absy file state
+    checkRepoFile(absyFile(Name)(R))                    & (\\ Absy .
+    IF existent?(Absy) and sourceFile(Name)(R) <= Absy THEN
+        -- syntax is up-to-date wrt source
+        -- FIXME: absy must also up-to-date wrt the absy of imported units
+        outdatedRepoFile?(absyFile(Name)(R))            & (\\ Outdated? .
+        IF Outdated? THEN
+            -- loaded absy is out-of-date wrt filed absy, reload it
+            loadUnitAbsy(Name)(R)                       & (\\ R1aOk? .
+            LET (R1a, ok?) == unpair(R1aOk?)
+            IN
+            IF ok? THEN
+              LET R1 == updateUnitInfo(Name, \\Info.
+                                  Info :=_state checked)
+                        (R1a)
+              IN
+              -- we have to reset all checked units which dependended
+              -- on the old absy
+              LET Deps == related(direct, importers, 
+                                   \\U.checked?(U)(R1))(Name)(R1)
+                  R2   == (\\Ui, Ri. resetChecked(Ui)(Ri),
+                           R1) / Deps
+              IN
+              IF impl?(part(Name)) THEN
+                  reloadUserUnitObject(Name)(R2)
+              ELSE succeed(R2) FI
+            ELSE
+              succeed(resetChecked(Name)(R))
+            FI
+              )
+        ELSE
+            succeed(R)
+        FI
+        )
+    ELSE
+        -- abstract syntax outdated
+        succeed(resetChecked(Name)(R))
+    FI
+    )
+
+FUN reloadUserUnitObject : unitName -> repo -> com[repo]
+
+DEF reloadUserUnitObject(U)(R) ==
+    -- find latest object 
+    LET OldObject == objectFile(U)(R) 
+    IN
+    findLatestObjectFile(OldObject)                     & (\\ Object, Version .
+    IF existent?(Object) and absyFile(U)(R) <= Object THEN
+        -- object is up-to-date wrt absy
+        -- FIXME: object must also be up-to-date wrt the objects of released
+        --        imported units
+        IF existent?(OldObject) ANDIF Object <= OldObject THEN
+            -- old object is up-to-date
+            succeed(R)
+        ELSE
+            LET R1 == updateUnitInfo(U, \\Info.
+                        Info :=_state compiled
+                             :=_objectVersion Version
+                             :=_objectFile Object
+                      )(R)
+            IN
+            -- have to reset all dependend units
+            LET Deps == IF released?(U)(R1) THEN
+                            related(direct, importers, 
+                                \\Ui.compiled?(Ui)(R1))(U)(R1)
+                        ELSE {} FI
+                R2   == (\\Ui, Ri. resetCompiled(Ui)(Ri), R1) / Deps
+            IN
+            succeed(R2)
+        FI
+    ELSE
+        -- object outdated
+        succeed(resetCompiled(U)(R))
+    FI
+    )
+
+FUN findLatestObjectFile : repoFile -> com[pair[repoFile,nat]]
+DEF findLatestObjectFile(File) ==
+    checkRepoFile(File)                 & (\\File1 .
+    succeed(File1 & 0)
+    )
+
+    /* the code below has become absolete since we use BFDLink.
+       that is, we do not longer support shared-object style version
+       numbering.
+
+    LET DirName == dirName(path(File))
+        BaseName == baseName(path(File))
+    IN
+    -- FIXME: need a readDir'FileSystem with a filter!
+    readDir(DirName)                                    & (\\ Files .
+    LET Cands  == msort(>)((\\Fn. BaseName <| Fn) | Files)
+    IN
+    (\\Fn, C? . 
+        IF avail?(C?) THEN
+            succeed(C?)
+        ELSE    
+            LET (Prefix, Suffix) == splitSuffix(Fn, ".")
+                Version?         == scan("%n", !(Suffix))
+            IN
+            IF avail?(Version?) THEN
+                checkRepoFile(notExistent(DirName ++ Fn))       & (\\Fi.
+                IF existent?(Fi) THEN
+                    succeed(avail(
+                                existent(path(File), mode(Fi), mtime(Fi))
+                                        & nat(ft(cont(Version?)))))
+                ELSE succeed(C?) FI
+                )
+            ELSE succeed(C?) FI
+        FI,
+    nil) /& Cands                                       & (\\ Cand? .
+   IF avail?(Cand?) THEN
+       succeed(cont(Cand?))
+   ELSE
+       succeed(notExistent(path(File)) & 0)
+   FI
+   ))
+
+   */
+       
+       
+
+-- %$$Reloading Dependencies$
+
+FUN reloadDeps : unitName ** set[denotation,<] -> repo -> com[repo]
+
+DEF reloadDeps(Name, Deps)(R) ==
+    (\\ Symbol, Ri . 
+        -- FIXME: it shouldn't be necessary to abort if
+        -- dependecies of user structures can't be loaded
+        clearErrors                                     & (\\ _ .
+        registerStructure(Symbol, false)(Ri)            & (\\ R1 .
+        errors?                                         & (\\ Errors? .
+        IF Errors? THEN
+            abort
+        ELSE succeed(R1) FI
+        ))),
+    R) /& asSeq(Deps)
+
+
+-- %$Requiring$ ==========================================================
+
+DEF requireFullAbsy(U)(R) ==
+    IF fullAbsy?(U)(R) THEN succeed(R)
+    ELSE 
+      LET R1 == updateUnitInfo(U,\\Info.
+                               Info :=_flags incl(fullAbsy, flags(Info))
+                              )(R)
+      IN
+      IF checked?(U)(R1) THEN
+        LET currInstances == instances(unitInfo(U)(R1))
+            restoreInstances == 
+               updateUnitInfo(U, \\Info. Info :=_instances currInstances)
+        IN
+            loadUnitAbsy(U)(R1) & (\\ R2.
+        succeed(restoreInstances(R2))
+        )
+      ELSE succeed(R1) FI
+    FI
+
+DEF requireSource(U)(R) ==
+    IF sourced?(U)(R) THEN
+        succeed(R)
+    ELSE
+        LET R1 == updateUnitInfo(U,\\Info.
+                        Info :=_flags incl(sourced, flags(Info))
+                  )(R)
+        IN
+        loadUnitSource(U)(R1)
+    FI
+
+
+-- %$Odds and Ends$ ==========================================================
+
+FUN defaultDirMode : filemode
+DEF defaultDirMode == (((((({} + ownerRead) + ownerWrite) + ownerExec)
+                                     + groupRead)  + groupExec)
+                                     + worldRead)  + worldExec
+
+FUN maintain    : ref
+DEF maintain    == freeRef("maintain")
+
+FUN repoObjectDir : denotation -> denotation
+DEF repoObjectDir(Path) == Path ++ "OCS/"
+
+FUN fileExists? : denotation    -> com[bool]
+
+DEF fileExists?(Path) ==
+    stat(Path)  ; (\\ Ans . succeed(okay?(Ans)))
+

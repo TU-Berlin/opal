@@ -1,0 +1,197 @@
+-- LAST EDIT: Mon Aug 12 17:54:49 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      ralfi
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     
+-- Zweck:       Uebersetzung der analysierten Quelle nach InterOpal
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+IMPLEMENTATION AGSig
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	GlobSig		ONLY    globSig decls structures laws < sortPNE
+	GlobSigImpl	ONLY	none locSig 
+	Name		COMPLETELY
+	Impl		ONLY	law formula
+	Table		ONLY	table:SORT !
+	Objects         COMPLETELY 
+	DeclEntry       COMPLETELY
+	ImpExpEntry	ONLY	impDecls structE instS instAppl:SORT
+				unparamTrans? unparam? paramTrans? param?
+				impDeclE:SORT attr:instAppl->attr preStruct?
+				unparam? formParamS unparamTrans? pragma
+				applied? instOf type
+
+	Pos		ONLY	pos lin col firstPos
+	AnalyzedGlobSig	ONLY	pos:globSig**name->pos internal? external?
+				impl:globSig**name->impl fct origIdeNo paramNo
+				locSigComplete
+				ide parameter? no level
+	Rep		ONLY	rep lexem
+	Attributes	ONLY	isExported isUsed4Op isUsed4Constr attr:SORT
+				isUsed4Generated isParameter 
+	ImpDecl4SigAna	ONLY	notParametrized? uninst?
+	Name4SigAna	ONLY	fct realDecl getInstApplS 
+				expandGenericTransitives
+
+IMPORT	Compose		ONLY 	o
+	SeqMap		ONLY	*
+	SeqMapEnv	ONLY	*
+	SeqReduce	ONLY	\ 
+	MapReduce	ONLY	/
+	Map		ONLY	map codom
+	Seq		COMPLETELY
+	SeqFilter	ONLY 	|
+	SeqIndex	ONLY 	! 
+	SeqOfSeq	ONLY 	flat
+	SeqZip		COMPLETELY
+	Denotation	ONLY	++
+	DEBUG		ONLY	PRINT string
+	Nat		ONLY	nat = 1 0 succ pred
+	NatConv		ONLY	`
+	Pair		ONLY	pair 1st 2nd & 
+	Option		ONLY	option cont avail nil
+        TableFun2       ONLY    /
+
+IMPORT	InterOpalOption	ONLY	ioAGSig?
+
+FUN getInternalNames: globSig -> seq[name]
+
+DEF getInternalNames(Sig) == 
+                          / (\\N, DeclE, S.
+                            IF double?(DeclE) THEN S ELSE intName(decl(N)) ::
+                            S FI, <>)(decls(Sig))
+
+FUN getExternalNames: globSig -> seq[name]
+
+DEF getExternalNames(Sig) == 
+             /(\\N, StructE, S1.
+                    /(\\D, DeclE, S2.
+                         LET FirstNames ==
+                                (\\I. extName(struct(N),impDecl(D), instOf(I)))
+					* (applied? | instS(DeclE))
+                         IN FirstNames ++ S2, S1)(impDecls(StructE)),
+                         <>)(structures(Sig))               
+
+FUN getStructs: globSig -> seq[nat]
+DEF getStructs(Sig) == /(\\N, _, S1. N::S1,<>)(structures(Sig)) 
+
+FUN getLaws: globSig -> seq[pair[law[name],locSig]]
+DEF getLaws(Sig) == codom(laws(Sig))
+
+FUN structPos: globSig -> pos'Pos
+-- Position des Strukturnamens
+DEF structPos(_) == firstPos
+
+FUN importPos: globSig ** nat -> seq[pos'Pos]
+DEF importPos(_,_) == firstPos%
+
+FUN formalParams : globSig ** nat -> seq[name'Name]
+-- liefert die formalen Parameter aus der globSig fuer eine Struktur,
+-- deren Nummer bekannt ist
+DEF formalParams(Sig,No) ==
+	formalParamNameFct(Sig,No) 1st
+
+FUN fctFormal: globSig ** name'Name -> fct'Fct[name]
+DEF fctFormal(Sig,Name) ==
+  LET	OrigNo	== origIdeNo(Sig,Name)
+	ParNo	== pred(no(Name))  -- paramNo liefert Mist !!!????
+	Pair	== formalParamNameFct(Sig,OrigNo)
+	SeqFct	== Pair 2nd
+	OptFct	== PRINT(ioAGSig?, \\ . `(SeqFct #) ++ `(ParNo), SeqFct!ParNo)
+  IN cont(OptFct)
+
+FUN paramNo: globSig**name -> nat
+-- stetzt auf no'Name auf
+DEF paramNo(_, Name) ==
+		pred(no(Name))
+
+FUN formalParamNameFct : globSig ** nat -> 
+				pair[seq[name'Name],seq[option[fct[name]]]]
+DEF formalParamNameFct(Sig,No) ==
+  LET	StructE	== No ! structures(Sig) -- table[structE] !'Table -> structE
+  IN	IF StructE preStruct? THEN &(<>,<>)
+	IF StructE unparamTrans? THEN &(<>,<>)
+	IF StructE unparam? THEN &(<>,<>)
+	ELSE
+	  LET	FormParams 	== formParamS(StructE)
+			-- pair[seq[pair[impDecl,pragma]],seq[option[fct]]]
+		FormParams1     == zip(&)(1st(FormParams), 2nd(FormParams))
+		Struct		== struct(No)
+	  	(_, FormParams2) == 
+		   *(\\N, P. (succ(N), formParam(Struct, 1st(1st(P)), N) &
+			2nd(P)), 1, FormParams1)
+		FormParams3 == 1st * FormParams2 & 2nd * FormParams2
+	  IN FormParams3	
+	FI
+
+FUN parameter?: globSig**name'Name -> bool
+DEF parameter?(Sig,Name) == 
+-- kann sein, dass jetzt unnoetig (Absturtz war in extlib/NatMap.impl
+	IF Name local? THEN PRINT(ioAGSig?,"parameter: Name=local",false)
+-- rauskriegen warum local auf parameter getestet wird (ist neu!!!)
+	IF Name var? THEN PRINT(true,"parameter: Name=var",false)
+	IF Name sortPartName? THEN PRINT(true,"parameter: Name=sortPartName",false)
+	IF Name error? THEN PRINT(true,"parameter: Name=error",false)
+	ELSE parameter?'AnalyzedGlobSig(Sig,Name)
+	FI
+
+FUN impl:globSig**name'Name->impl'GlobSigImpl
+DEF impl(Sig,NName) ==
+        IF NName external? THEN none -- stuerzt sonst ab!!
+        IF NName internal? THEN impl'AnalyzedGlobSig(Sig,NName)
+        FI
+
+FUN fct:globSig ** name'Name -> fct'Fct[name] ** option[fct'Fct[name]]
+DEF fct(Sig,Name) ==
+	IF Name local? THEN (Sig fct'AnalyzedGlobSig Name,nil)
+	OTHERWISE
+	IF Name internal? THEN (Sig fct'AnalyzedGlobSig Name,nil)
+	OTHERWISE
+	IF Sig parameter?'AGSig Name THEN (Sig fctFormal Name,nil)
+	OTHERWISE
+	IF Name external? THEN
+		(Sig fct'AnalyzedGlobSig Name,avail(Sig fct'Name4SigAna Name))
+	FI
+
+FUN freeType : globSig ** name'Name->impl
+DEF freeType(gS, name) == 
+	IF name internal? THEN type(no(realDecl(gS, decl(name))) ! decls(gS))
+	ELSE
+	  LET impDeclE == no(impDecl(name)) ! 
+			  impDecls(no(struct(name)) ! structures(gS)) 
+	      Type ==  type(impDeclE)
+	  IN Type
+	FI
+
+FUN isApplied? : globSig ** name'Name -> bool
+DEF isApplied?(Sig, Name) == 
+	IF Name internal? THEN true
+	ELSE
+        LET Insts == getInstApplS(Name, Sig)
+	    Inst == inst(Name)
+	    AppliedInsts == applied?(_) | Insts
+        IN IF exist?(=(Inst, _), instOf * AppliedInsts) THEN true
+	   ELSE IF notParametrized?(Sig, struct(Name)) THEN false
+		ELSE IF Inst = unparam THEN ::?(AppliedInsts)
+		     ELSE false FI
+	FI FI	FI
+	
+FUN uninst? : globSig ** name'Name -> bool
+DEF uninst?(Sig, Name) == 
+	IF Name intName? THEN false
+	IF Name extName? THEN
+		IF notParametrized?(Sig, struct(Name)) THEN false
+	     	ELSE IF inst(Name) = unparam THEN false
+		     ELSE uninst?(Sig, struct(Name), inst(Name))
+		     FI
+		FI
+	ELSE false
+	FI

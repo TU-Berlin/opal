@@ -1,0 +1,135 @@
+IMPLEMENTATION Seq [data:SORT]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:59 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Nat COMPLETELY
+       Option COMPLETELY
+       ABORT COMPLETELY
+
+-- the type itself
+DATA seq == <>				-- empty
+            ::(ft:data, rt:seq)		-- prepend
+
+DEF empty  == <>
+DEF empty? == <>?
+DEF cons  == ::
+DEF cons? == ::?
+
+-- constructing a seq from datas
+
+DEF %(1) == 1:: <>
+DEF %(2,1) == 2 :: %(1)
+DEF %(3,2,1) == 3  :: %(2,1)
+DEF %(4,3,2,1) == 4 :: %(3,2,1)
+DEF %(5,4,3,2,1) == 5 :: %(4,3,2,1)
+DEF %(6,5,4,3,2,1) == 6 :: %(5,4,3,2,1)
+DEF %(7,6,5,4,3,2,1) == 7 :: %(6,5,4,3,2,1)
+DEF %(8,7,6,5,4,3,2,1) == 8 :: %(7,6,5,4,3,2,1)
+
+
+--  :: is constructor
+
+DEF <> +% d == %(d)
+DEF (f::r) +%d == f::(r+%d)
+
+-- constructing a seq from a function
+DEF (n1 .. n2)(f) == IF n1 > n2 THEN <>
+		     ELSE f(n1) :: (succ(n1) .. n2)(f)
+		     FI
+
+DEF iter(start, it, P) == IF ~(P(start)) THEN <>
+			  ELSE start :: iter(it(start), it, P)
+			  FI 
+
+
+-- combining sequences
+
+DEF <> ++t == t
+DEF (f::r)++t == f::(r++t)
+
+DEF +/+(d)(s1, s2) == s1 ++ d :: s2
+DEF +/+(_ : data)(s, <>) == s
+DEF +/+(_ : data)(<>, s) == s
+DEF +/+(_ : data)(<>, <>) == <>
+
+DEF +/+(s)(s1, s2) == s1 ++ s ++ s2
+DEF +/+(_ : seq)(s, <>) == s
+DEF +/+(_ : seq)(<>, s) == s
+DEF +/+(_ : seq)(<>, <>) == <>
+
+DEF +%+(d)(s1, s2) == s1 ++ d :: s2
+DEF +%+(s)(s1, s2) == s1 ++ s ++ s2
+
+
+-- working on a sequence
+
+DEF take(0,_) == <>
+DEF take(succ(_),<>) == <>
+DEF take(succ(n),f::r) == f::take(n,r)
+
+DEF drop(0,s) == s
+DEF drop(succ(_),<>) == <>
+DEF drop(succ(n), _ :: r) == drop(n,r)
+
+DEF split(0,s) == (<>,s)
+DEF split(succ(_),<>) == (<>,<>)
+DEF split(succ(n),f::r) == (f::s1,s2) WHERE (s1,s2) == split(n,r)
+
+
+DEF front(<>) == <>
+DEF front(_ ::(<>)) == <>
+DEF front(f::r) == f::front(r)
+
+-- rt is selector
+		     
+DEF revert(s) == rev(s,<>)
+    FUN rev : seq ** seq -> seq
+    DEF rev(<>,a) == a
+    DEF rev(f::r,a) == rev(r,f::a)
+
+
+-- accessing datas in a sequence
+-- ft is selector
+	   
+DEF last(<>) == ABORT("last'Seq applied to empty sequence")
+DEF last(f::(<>)) == f
+DEF last(_ ::r) == last(r)
+
+
+-- information about a sequence
+DEF exist?(_ ,<>) == false
+DEF exist?(P,f::r) == IF P(f) THEN true ELSE exist?(P,r) FI
+
+DEF find?(_ ,<>) == nil
+DEF find?(P,f::r) == IF P(f) THEN avail(f) ELSE find?(P,r) FI
+
+DEF forall?(_ ,<>) == true
+DEF forall?(P,f::r) == IF P(f) THEN forall?(P,r) ELSE false FI
+
+DEF #(s) == #(s,0)
+    FUN # : seq ** nat->nat
+    DEF #(<>,z) == z
+    DEF #(f::r,z) ==  #(r,succ(z))
+
+-- this is output of ordinatrice jaune for free type seq
+-- leicht nachbearbeitet
+FUN < : (data ** data -> bool) -> (seq ** seq -> bool)
+DEF <(<_data)(<>,<>) == false
+DEF <(_)(<>,::(_,_)) == true
+DEF <(_)(::(_,_),<>) == false
+DEF <(<_data)(::(a,b),::(A,B)) == 
+    IF <_data(a,A) THEN true
+    IF <_data(A,a) THEN false
+    ELSE
+     <(<_data)(b,B)
+    FI
+
+FUN = : (data ** data -> bool) -> (seq ** seq -> bool)
+DEF =(=_data)(<>,<>) == true
+DEF =(_)(<>,::(_,_)) == false
+DEF =(_)(::(_,_),<>) == false
+DEF =(=_data)(::(a,b),::(A,B)) == 
+    IF =_data(a,A) THEN =(=_data)(b,B) ELSE false FI

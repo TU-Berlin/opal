@@ -1,0 +1,162 @@
+IMPLEMENTATION SourceTab
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/sourcetab/SourceTab.impl,v 1.1.1.1 1998-06-16 16:00:40 wg Exp $
+
+IMPORT
+  String   	COMPLETELY 	Set   	COMPLETELY
+  Seq           COMPLETELY      Option  COMPLETELY
+  SeqFilter     COMPLETELY 
+  SetConv[string,<] ONLY asSet     -- for unambiguous import !
+
+IMPORT
+  Token            COMPLETELY       Content		COMPLETELY
+  SubsystemType    COMPLETELY
+
+-- %$DATA-Implementations$
+-- %----------------------
+
+DATA usrInfos      == usrInfos( 
+                        sources    : seq[usrSourceInfo],
+                        subsystems : seq[subsystem[usrSourceInfo]] 
+                      )
+
+DATA usrSourceInfo == usrSourceInfo( 
+                        name  : string,
+                        sign  : sign,
+                        impl  : impl 
+                      )
+                      usrForeignInfo( name : string,
+                                      file : prop)
+
+
+DATA libInfos == libSubsystems( libSubsystems : seq[subsystem[libSourceInfo]] )
+
+DATA libSourceInfo == libSourceInfo( 
+                        name    : string,
+                        sign    : sign,
+                        extProp : option[prop] 
+                      )
+
+
+DATA sign    == sign( 
+                  content : content,
+                  imports : seq[string],
+                  context : context,
+                  extProp : option[prop] 
+                )
+                empty
+
+DATA impl    == impl( 
+                  content : content,
+                  imports : seq[string],
+                  context : context,
+                  intProp : option[prop] 
+                )
+                empty
+
+DATA prop   == prop( 
+                 content : content,   
+                 imports : seq[string],
+                 context : context 
+               )
+
+
+-- %$Functions on File-Types$
+-- %-------------------------
+
+-- %Defintion and conversion of @c{fileTypes}:
+DATA fileType == sign
+                 impl
+                 extp
+                 intp
+                 signInter
+                 implInter
+                 extpInter
+                 intpInter
+                 libSign
+                 libExtp
+
+FUN ! : fileType -> string
+
+DEF !(sign) 		== "Sign"!
+DEF !(impl) 		== "Impl"!
+DEF !(extp) 		== "Extp"!
+DEF !(intp) 		== "Intp"!
+DEF !(libSign) 		== "Sign"!
+DEF !(libExtp) 		== "Extp"!
+DEF !(signInter) 	== "SignInter"!
+DEF !(implInter) 	== "ImplInter"!
+DEF !(extpInter) 	== "ExtpInter"!
+DEF !(intpInter) 	== "IntpInter"!
+
+FUN !_ : fileType -> string
+DEF !_(ft) == !(" ") ++ !(ft)
+
+
+-- %$Working on Imports in User-Structures$
+-- %---------------------------------------
+
+/* %Unluckily we have to unfold the whole @c{usrSourceInfo}-structure in order to
+extract the import information. The application of pattern-matching would lead
+to a multitude of case-distinctions! */
+DEF eraseImports( usrSourceInfoArg, importsToDel ) ==
+  usrSourceInfo(name(usrSourceInfoArg),
+                sign(content(sign(usrSourceInfoArg)),
+                       (\\x.(~(x in asSet(importsToDel))))
+                       | imports(sign(usrSourceInfoArg)),
+                     context(sign(usrSourceInfoArg)),
+                     IF nil?(extProp(sign(usrSourceInfoArg))) THEN
+                       nil
+                     ELSE
+                       avail(prop(
+                         content(cont(extProp(sign(usrSourceInfoArg)))),
+                         (\\x.(~(x in asSet(importsToDel))))
+                           | imports(cont(extProp(sign(usrSourceInfoArg)))),
+                         context(cont(extProp(sign(usrSourceInfoArg))))
+                       )     )
+                     FI
+                    ),
+                impl(content(impl(usrSourceInfoArg)),
+                       (\\x.(~(x in asSet(importsToDel))))
+                       | imports(impl(usrSourceInfoArg)),
+                     context(impl(usrSourceInfoArg)),
+                     IF nil?(intProp(impl(usrSourceInfoArg))) THEN
+                       nil
+                     ELSE
+                       avail(prop(
+                         content(cont(intProp(impl(usrSourceInfoArg)))),
+                         (\\x.(~(x in asSet(importsToDel))))
+                           | imports(cont(intProp(impl(usrSourceInfoArg)))),
+                         context(cont(intProp(impl(usrSourceInfoArg))))
+                       )     )
+                     FI
+                    )
+                )
+
+
+DEF empty?: usrSourceInfo-> bool( usrSourceInfo ) ==
+  IF usrSourceInfo?(usrSourceInfo) THEN
+    empty?(sign(usrSourceInfo))
+  ELSE
+    false
+  FI
+
+DEF empty?: libSourceInfo-> bool( libSourceInfo ) ==
+  empty?(sign(libSourceInfo))
+          
+DEF emptySource( name ) == usrSourceInfo(name, empty, empty)
+DEF emptySource( name ) == libSourceInfo(name, empty, nil)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,186 @@
+\newif\ifxtex  % ausnahmsweise mal VOR \documentstyle
+\xtextrue
+\documentstyle[fancybox,xtex,parskip,a4wide,supertabular]{article}
+
+\makeatletter
+% Liste der Gliederungen
+\newcount\possectioncount
+\possectioncount=1
+\def\possection#1{%
+\ifcase \possectioncount \chapter{#1} \or \section{#1} \or \subsection{#1} \or
+\subsubsection{#1} \or \paragraph{#1} \or \subparagraph{#1} \fi}
+
+\@ifundefined{chapter}{\def\chapter#1{\relax}}{}
+
+\setcounter{secnumdepth}{5}
+\setcounter{tocdepth}{5}
+
+% globale Variablen
+\def\path{.}
+
+\def\inputDF{\expandafter\input\expandafter{\DokuFileName}}
+\def\doinsubsystem#1{\message{Subsystem #1}}
+\def\doinsub#1{\message{Sub #1}}
+\def\doinboldsub#1{\message{Boldsub #1}}
+\def\doinsign#1{\message{Sign #1}}
+\def\doinextp#1{\message{Extp #1}}
+
+\def\subsystem#1{\begingroup%
+\edef\path{\path/#1}%
+\edef\DokuFileName{\path/Doku.tex}%
+\doinsubsystem{#1}%
+\endgroup} %% end \subsytem
+
+
+\def\sub#1{\begingroup%
+\advance\possectioncount by 1%
+\doinsub{#1}%
+}
+
+\def\boldsub#1{\begingroup%
+\advance\possectioncount by 1%
+\doinboldsub{#1}%
+}
+
+\def\endsub{\endgroup}
+
+\def\sign#1{\edef\signfilename{\path/#1.sign}%
+\doinsign{#1}
+}
+
+\def\extp#1{\edef\signfilename{\path/#1.extp}%
+\doinextp{#1}
+}
+
+%%%% fuer den Hauptteil
+\newcounter{SIGNcount}\setcounter{SIGNcount}{0}
+%
+%
+\def\signleaders{\leaders\hbox to 1em{\hss{$<$}\hss}\hfill\relax}
+\newlength\signheader\newlength\signlw
+%
+\def\HAUPTTEIL{%
+\def\doinsubsystem##1{\boldsub{##1}\inputDF\endsub}
+%
+\def\doinsub##1{%
+\possection{##1}\label{##1:lab}
+%\ \\$\Rightarrow$ Strukturverzeichnis \ref{Strukturverzeichnis}
+}
+%
+\def\doinboldsub##1{\doinsub{##1}}
+%
+\def\doinsign##1{%
+\def\next{\relax}\ifxtex\def\next{%
+Table of structures $\Longrightarrow$ \ref{Strukturverzeichnis}\\}\fi\next
+\refstepcounter{SIGNcount}\label{##1:lab}%
+{\par
+%%\def\next{\ \fboxsep0pt\fbox{\rule[-0.4em]{0pt}{1.5em}%
+%%\ (\arabic{SIGNcount})~\vrule~{\sc ##1}}\ }%
+\def\next{\ \arabic{SIGNcount}$\;\star\;${\sc ##1}\ \ }%
+\settowidth{\signheader}{\next}%
+\signlw\textwidth%
+\advance \signlw by -\signheader%
+\divide\signlw by 2%
+\hbox{%
+\hbox to \signlw{\leaders\hbox to 1em{\hss $\star$\hss}\hfill}%
+\next%
+\hbox to \signlw{\leaders\hbox to 1em{\hss $\star$\hss}\hfill}%
+}
+
+\expandafter\VerbatimInput\expandafter{\signfilename}
+\newpage}
+}
+%
+\def\doinextp{\doinsign}
+%
+} % \def\HAUPTTEIL
+%%%% fuers Verzeichnis %%%
+\newlength{\presublen}
+\setlength{\presublen}{0em}
+
+\def\VERZEICHNIS{%
+\parskip0pt%
+%
+\def\doinsubsystem##1{\boldsub{##1}\inputDF\endsub}
+%
+\def\doinsub##1{%
+\vspace{\presublen}\par%
+\global\setlength{\presublen}{0em}%
+{\em \ref{##1:lab}\quad~##1}\leaders\hbox to 1em {\hss{\em .}\hss}%
+\hfill\pageref{##1:lab}\\
+}
+%
+\def\doinboldsub##1{%
+\vspace{\presublen}\par%
+\global\setlength{\presublen}{0em}%
+{\bf \ref{##1:lab}\quad~##1}\leaders\hbox to 1em {\hss{\bf .}\hss}%
+\hfill\pageref{##1:lab}\\
+}
+%
+\def\doinsign##1{\global\setlength{\presublen}{1em}%
+{\sc ##1} (\ref{##1:lab}) \leaders\hbox to 1em{\hss %
+.\hss}\hfill\pageref{##1:lab}\\%
+}%
+%
+\def\doinextp##1{\global\setlength{\presublen}{1em}%
+{\sc [##1]} (\ref{##1:lab}) \leaders\hbox to 1em{\hss %
+.\hss}\hfill\pageref{##1:lab}\\%
+}%
+} % \def\VERZEICHNIS
+
+%%% fuer eine  Liste
+\newtoks\ta\newtoks\tb
+\long\def\append#1{\tb={#1}\ta=\expandafter{\tokLISTE}%
+\xdef\tokLISTE{\the\ta\the\tb}}
+%
+\def\tokLISTE{}
+
+\def\LISTE{%
+\def\doinsubsystem##1{\doinboldsub{##1}\inputDF}
+\def\doinsub##1{\relax\append{\multicolumn{5}{|l|}{\em %
+##1}\\\hline}}
+\def\doinboldsub##1{\relax\append{\hline\multicolumn{5}{|l|}{\bf %
+##1}\\\hline}}
+\def\doinsign##1{\relax\append{\ref{##1:lab} & ##1 & & & \\ \hline}}
+\def\doinextp##1{\relax\append{\ref{##1:lab} & [##1] & & & \\ \hline}}
+} % def\LISTE
+
+\makeatother
+\begin{document}
+
+\input{./Doku.config}
+
+
+%\tracingmacros=1
+\setcounter{section}{-1}
+{\section{Table of Structures}
+\label{Strukturverzeichnis}
+\VERZEICHNIS
+\input{./Doku.tex}
+}\newpage
+%\tracingmacros=0
+
+\HAUPTTEIL
+\input{./Doku.tex}
+
+%\newpage
+%\def\Titlei{getestet}\def\Titleii{spezifiziert}\def\Titleiii{\hspace*{6cm}}
+%\LISTE
+%\input{./Doku.tex}
+%\tablefirsthead{{\bf \#} & {\bf Name} & {\bf \Titlei} & {\bf \Titleii}
+%& {\bf \Titleiii} \\ \hline\hline}
+%\tablehead{\hline\multicolumn{5}{|l|}{\em continued from previous page}\\%
+%\hline %
+%{\bf \#} & {\bf Name} & {\bf \Titlei} & {\bf \Titleii}
+%& {\bf \Titleiii} \\ \hline\hline}
+%\tabletail{\hline \multicolumn{5}{|r|}{\em continued on next page}\\\hline}
+%\tablelasttail{\hline}
+%\begin{supertabular}{|l|l|l|l|l|}
+%\tokLISTE
+%\end{supertabular}
+
+\end{document}
+% Local Variables: 
+% mode: latex
+% TeX-master: t
+% End: 

@@ -1,0 +1,480 @@
+.TH GENMAKE 1 \n(dy.\n(mo.\n(yr
+.SH NAME
+genmake \- generate make or shape files for Opal programs
+.SH SYNOPSIS
+.B genmake
+[
+.I "options  ..."
+]
+.ti +.8i
+(
+.I top-level-structure
+[
+.I top-level-command
+]
+.ti +0.8i
+|
+.BI \-S " system structure ..."
+)
+./ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+.SH DESCRIPTION
+.LP
+.B genmake 
+generates description files for 
+.BR make(1)
+or
+.BR shape(1)
+to maintain OPAL programs and librarys. This files support the 
+compilation, linkage, and - if 
+.BR shape(1)
+is involved - version management of small to large software systems
+based on the OPAL compilation system 
+.BR ocs(1).
+./ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+.SH CONCEPTS
+.LP
+An Opal program consist of a 
+.I top-level structure 
+and the structures
+that are transiently imported by it. The top-level structure must
+export (at least) one special constant, the 
+.IR top-level command ,
+which defines the interaction of the program with its environment.
+.LP
+The structures of an OPAL program reside in 
+.I systems.
+The system which holds the top-level structure is called the
+.I top-level system.
+Systems may be based on 
+.I subsystems
+which provide librarys of OPAL structures. The based-on relation of
+systems is always acyclic.
+.LP
+A system may be
+.IR frozen ,
+in which case it is not considered for
+recompilation checks, or it may be
+.IR evolving ,
+in which case it is. 
+.LP
+Under UNIX, each system is exclusively located within a directory of
+the filesystem, the name of which coincides with the systems name. The
+system directory contains files for the signature, implementation,
+signature property, and implementation property parts of an Opal
+structure. The intermediate compilation products derived from this
+files are either located in a directory named
+.IR OCS ,
+or populate the system directory itself.  If the shape toolkit is
+used, the system directory and the OCS subdirectory both contain an
+.I ./AtFS 
+subdirectory, propably linked to the central project repository.
+./ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+.SH OPERATION
+.LP
+.B genmake
+is invoked in the directory of the system a maintenance file shall be
+generated for.  If
+.I top-level-structure
+is given, genmake generates a maintenance file for the
+top-level system of an OPAL program. If
+.I top-level-command
+is ommitted, the name of the the top-level structure is used instead.
+If
+.BI \-S " system"
+is given, genmake generates a maintenance file for a
+subsystem. Then 
+.I "structure ..."
+specifies the names of the structures incorporated into the subsystem.
+.LP
+For each of the parts of the top-level structure (or the structures of a
+subystem), the systems where the imported structures reside are looked up.  Is
+this the current system, the process is recursively continued on the retrieved
+structure.
+./ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+.SH CONTROL OPTIONS
+.LP
+The following options directly control the operation of
+.BR genmake .
+.TP 
+.BI \-s\fR[mode \fR] " dir/system"
+Incorporate 
+.I system
+located in
+.I dir/system
+as subsystem into the current system. Note that for top-level systems,
+.I all subsystems belonging to the program
+must be specified with
+.B -s.
+When
+.B genmake 
+retrieves the location of imported structures, it first searches the
+current system, and then all subsystems specified by the option in order they
+appear on the command line. 
+.B -s
+without 
+.I mode
+is equivalent to 
+.BR -sdh .
+.I mode
+controls the type of subsystem and is a combination of:
+.RS
+.TP
+.B f
+The subsystem is frozen. Structures belonging to it are not considered
+for recompilation checks. 
+.B genmake 
+asserts a structure is provided by a frozen subsystem if its derived
+signature export file is present.
+.TP
+.B d
+The subsystem is evolving, i.e. still under development. Structures
+belonging to it are considered for recompilation checks. 
+.B genmake
+asserts a structure is provided by an evolving subsystem if its
+signature file is present.
+.TP
+.B h
+The derived objects of the system reside in hidden subdirectorys.
+.TP
+.B e
+The derived objects populate the system directory.
+.RE
+.TP
+.BI \-shape
+Generate a description file for shape. The default is to generate a
+file for make.
+.TP
+.BI \-gen " filename "
+Name the generated description file 
+.IR filename .
+The default name is 
+.I Shapefile 
+if in shape mode, and
+.I Makefile 
+if in make mode.
+.TP
+.BI \-defs " filename "
+Take default macro definitions included in the generated description
+file from
+.IR filename .
+The hardwired default is 
+.BI $(OCS)/etc/Makedefs
+in make mode, and
+.BI $(OCS)/etc/Shapedefs
+in shape mode.
+.TP
+.BI \-rules " filename "
+Take default target and rules from 
+.IR filename .top
+for top-level systems, and
+.IR filename .sub
+for subsystems, respectively.
+The hardwired default is 
+.BI $(OCS)/etc/makerules
+in make mode, and
+.BI $(OCS)/etc/shaperules
+in shape mode.
+.TP
+.BI \-rms
+Generate descriptions files for the 
+.BR shape_OCS (1)
+extension of the shape revision management system
+.BR shape_RMS (1). 
+./ .TP
+./ .BI \-keep
+./ Generate a description file which keeps all derived compilation
+./ objects for later reuse. If shape is used, this objects will also be
+./ cached. This is is usefull if compilation options such as debugging
+./ and optimization are frequently changed, since it avoids reproduction
+./ of objects not affected by the changes.
+.TP
+.B \-R
+Recursivly generate description files for all incorporated evolving
+subsystems. The specification of the structures belonging to each
+subsystems is derived from the dependency closure induced by the
+structures of the current system. 
+.TP
+.BI \-V
+Run 
+.BR genmake
+in verbose mode. 
+./ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+.SH OC OPTIONS
+.LP
+The following options are passed to the OPAL compiler 
+.BR oc (1) .
+./ ------ -v ------
+.TP
+.BI \-v\fR[ level\fR]\fR[ :struct \fR] 
+Verbose processing. The default is
+.BR \-v0 ,
+.B \-v
+with the
+.I level
+omitted is equivalent to
+.BR \-v1 .
+If
+.I struct
+is specified, the option only applies to it, and all global
+.B oc 
+options for this structure are cancelled.
+.I level
+is one of:
+.RS
+.TP
+.B 0
+Quiet compilation.
+.TP
+.B 1
+Display the compilation phases.
+.TP
+.B 2
+Display the compilation phases and their sub-phases.
+.TP
+.B 3
+Display even small compilation steps.
+.RE
+./ ------ -w ------------
+.TP
+.BI \-w\fR[ level\fR]\fR[ :struct \fR] 
+Display warnings. The default is
+.BR \-w1 ,
+.B \-w
+with the
+.I level
+omitted is equivalent to
+.BR \-w2 .
+If
+.I struct
+is specified, the option only applies to it, and all global
+.B oc 
+options for this structure are cancelled.
+.I level
+is one of:
+.RS
+.TP
+.B 0
+Do not generate warnings. Only errors are displayed.
+.TP
+.B 1
+Display warnings for unusual use of programming constructs,
+e.g., a duplicate pattern.
+.TP
+.B 2
+Like
+.BR \-w1 ,
+but additionally display hints for possible programming errors,
+e.g., missing patterns.
+.RE
+./ ----- -o ---------
+.TP
+.BI \-o\fR[ kind\fR] \fR[ : struct \fR] 
+Optimize code. The default is no optimization,
+.B -o
+with the kind omitted is equivalent to
+.BR -o1 .
+If
+.I struct
+is specified, the option only applies to it, and all global
+.B oc 
+options for this structure are cancelled.
+.I kind
+is a combination of:
+.RS
+.TP
+.B 1
+This is an alias for the combination
+.BR eucmC .
+.TP
+.B 2
+This is an alias for the combination
+.BR 1pgT .
+.TP
+.B e
+Perform common subexpression elimination.
+.TP
+.B u
+Perform unfolding of function definitions and of local equations. This
+option allows the Opal compiler to code functions and equations in a
+.IR none-strict .
+fashion. The resulting program is only robustly correct, i.e.
+satisfies the semantics only for terminating programs.
+.TP
+.B c
+Perform optimization of constant expressions. The resulting program
+evaluates each detectable constant expression not more then once. Note
+that the memory allocated by the object resulting from this
+evaluation can never be retrieved.
+.TP
+.B m
+Perform optimization of memory allocation and garbage collection. The
+resulting program performs "on-the-fly" reusage of memory cells and
+selective update of single threaded data objects.
+.TP
+.B p
+This option allows the Opal compiler to treat runtime errors as a
+"no-case", which allows some subtle optimizations. It results only
+robust correct code, which might core dump.
+.TP
+.B g
+This option enables the use of the optimization export files for
+inter-structure optimizations. Function definitions and properties are
+made available accross structures boundarys. The use of this option
+enforces recompilation dependencies between structure implementations.
+.TP
+.B T
+This option generally allows the Opal compiler to perform some
+optimizations which might be expensive by means of compilation time.
+.TP
+.B S
+This option generally allows the Opal compiler to perform
+optimizations which might be speculative by means of code size (but
+not of code speed).
+.TP
+.B C
+The C compiler should perform optimizations as well.
+.RE
+./ --------- -d -------------------------
+.TP
+.BI \-d\fR[ kind\fR]\fR[ :struct \fR] 
+Controls generation of code for debugging. The default is to generate code
+only for the runtime check of detectable partialities,
+.B \-d
+with the
+.I kind
+omitted is equivalent to
+.\ .BR \-dca .
+.BR \-dc .
+If
+.I struct
+is specified, the option only applies to it, and all global
+.B oc 
+options for this structure are cancelled.
+.I kind
+is a combination of:
+.RS
+.\ .TP
+.\ .B c
+.\ Do not generate code for the runtime check of detectable partialities.
+.\ .TP
+.\ .B a
+.\ Generate code for the special function
+.\ .BR ASSERT'DEBUG .
+.\ .TP
+.\ .B p
+.\ Generate code for the special function
+.\ .BR PRINT'DEBUG .
+.\ .TP
+.\ .B t
+.\ Generate code for tracing entries and exits of exported functions.
+.TP
+.B T
+Generate code for tracing all function entries and exits. Dependent
+on the optimization level, not all function calls are considered.
+.TP
+.B t
+Generate code for tracing all entries and exits of exported functions.
+Dependent on the optimization level, auxiliary functions my become implicitely
+exported.
+.\ .TP
+.\ .B v
+.\ Generate code for displaying the arguments and results of traced function
+.\ entries and exits.
+.TP
+.B d
+Generate information for use of an object code debugger.
+.RE
+./ ------ -oc1 -oc2 -cc --------
+.TP
+.BI -oc1: "struct string"
+Directly pass 
+.I string 
+to the frontend of 
+.B oc
+when compiling
+.IR struct .
+All global options are cancelled for the structure.
+.TP
+.BI -oc2: "struct string"
+Directly pass 
+.I string 
+to the backend of 
+.B oc
+when compiling
+.IR struct .
+All global options are cancelled for the structure.
+.TP
+.BI -cc : "struct string"
+Directly pass 
+.I string 
+to the C compiler
+.B oc
+when compiling
+.IR struct .
+./ ------ -cinter -ctmpl
+.TP
+.BI -cinter : struct 
+Instruct 
+.B oc
+to generate a C interface header for structure 
+.IR struct 
+which declares symbolic names for the exported functions. Note that the C
+header will be found in the systems hidden directory if the system is hidden.
+.TP
+.BI -ctmpl : struct
+Instruct 
+.B oc
+to generate C templates for structure 
+.IR struct ,
+which may be used to derive a handcoded implementation. This also affects the
+kind of derivation rule generated for this structure. The templates will be
+found in the systems hidden directory if the system is hidden.
+
+
+.SH ENVIRONMENT
+.TP
+.SB OCS
+The place where the Opal Compilation System resides.
+.PD
+.SH FILES
+...
+.SH SEE ALSO
+.BR oc (1),
+.BR shape_ORS (1)
+.LP
+P. Pepper (ed.),
+.IR "The Programming Language Opal" ,
+Technical University of Berlin, FB 20, Report 91-10, 1991
+.SH DIAGNOSTICS
+.TP
+.BI "Cannot locate structure" struct
+.B genmake
+could not locate
+.I struct
+in the current system or any of the subsystems supplied with the option
+.BR -s.
+.TP
+.BI "Cycle in import Relation. Members are:" structs
+.B genmake
+has detected a cyclic import relation, which is not allowed in OPAL.
+.SH BUGS
+.LP
+The whole program is DRAFT!
+.LP
+Rulefiles for other operation then with 
+.BR shape_OCS (1)
+currently do not exist.
+.LP
+Diagnostics for fail of structure lookup should be more instructive.
+.LP
+The need to speciy all subsystems a top-level system is based on, even
+indirectly, violates the principle of transparency.
+.LP
+This man page is not complete.
+.LP
+Property parts of structures are currently not supported.
+.SH AUTHOR
+.LP
+wg@cs.tu-berlin.de
+
+

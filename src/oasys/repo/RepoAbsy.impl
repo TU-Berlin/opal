@@ -1,0 +1,593 @@
+IMPLEMENTATION RepoAbsy
+
+IMPORT	Nat		COMPLETELY
+	Fmt		COMPLETELY
+	FmtSeq		COMPLETELY
+	FmtMap		COMPLETELY
+	FmtSet		COMPLETELY
+	FmtOption	COMPLETELY
+	FmtBasicTypes	COMPLETELY
+	RepoAn		COMPLETELY
+	SeqCompare	COMPLETELY
+	IdTab		COMPLETELY
+
+IMPORT	RepoAn		COMPLETELY
+	RepoName	COMPLETELY
+
+
+-- %$Inserted from Signature$ ==============================================
+
+/* %
+@ignore
+*/
+
+-- %$Pragmas$ =============================================================
+
+/* % Pragmas are defined by the types below: */
+
+DATA pragma ==
+	pragma		(an		: an,
+			 comps		: seq[pragmaComp])
+	-- special variant for internal purposes
+	removed	   
+
+     FUN fmtPragma	: pragma			-> fmt
+
+
+DATA pragmaComp ==
+	token		(text		: denotation)
+	objects		(objects	: seq[objectName])
+
+     FUN fmtPragmaComp	: pragmaComp			-> fmt
+
+			 
+-- %$Properties$ ===========================================================
+
+/* % Properties are defined by the types below: */
+
+DATA property ==
+	freeType	(an		: an,
+			 sort		: objectName,
+					  -- sort associated with free type
+			 variants	: seq[variant])
+					  -- variants of free type
+	law		(an		: an,
+			 symbol		: option[denotation],
+					 -- symbolic identifier of law 
+			 formula	: formula)
+	-- special variant for internal purposes
+	removed	   
+
+	FUN :=_an	: property ** an	       -> property
+	FUN fmtProperty : property		       -> fmt
+
+DATA formula ==
+	atomic		(an		: an,
+			 kind		: atomicKind,
+			 exprs		: seq[expr])
+	connect		(an		: an,
+			 kind		: connectKind,
+			 formulas	: seq[formula])
+	quant		(an		: an,
+			 kind		: quantKind,
+			 sign		: localSignName,
+					  -- signature of local variables
+			 vars		: seq[objectName],
+			 range		: formula)
+
+     FUN :=_an		: formula ** an			-> formula
+     FUN fmtFormula	: formula			-> fmt
+
+
+DATA atomicKind	   == dfd approx cong other(id: denotation)
+DATA connectKind   == neg conj disj impl equiv other(id: denotation)
+DATA quantKind	   == forall exist other(id: denotation)
+
+     FUN fmtAtomicKind	: atomicKind			 -> fmt
+     FUN fmtConnectKind : connectKind			 -> fmt
+     FUN fmtQuantKind	: quantKind			 -> fmt
+
+
+			
+-- %$Objects$ =============================================================
+
+/* % Objects are defined by the types below: */
+
+DATA object == 
+	object		(an		: an,
+			 symbol		: denotation,
+					-- symbolic identifier
+			 kind		: kind,
+					-- kind 
+			 impl		: impl,
+					-- implementation
+			 properties	: set[propertyName,<],
+					-- base names of related properties 
+			 items		: set[itemName,<])
+					-- base names of related items
+	-- special variant for internal purposes
+	removed	   
+
+     FUN :=_an		: object ** an			-> object
+     FUN :=_symbol	: object ** denotation		-> object
+     FUN :=_kind	: object ** kind		-> object
+     FUN :=_impl	: object ** impl		-> object
+     FUN :=_properties	: object ** set[propertyName,<] -> object
+     FUN :=_items	: object ** set[itemName,<]	-> object
+     FUN fmtObject	: object			-> fmt
+
+
+DATA kind == 
+	sort
+	oper		(fct		: fct)
+
+     FUN =		: kind ** kind			-> bool
+     FUN fmtKind	: kind				-> fmt
+	
+
+DATA impl == 
+	missing		(an		: an)
+					-- missing implementation 
+	hidden		(an		: an)
+					-- implementation may exists but 
+					-- not visible here
+	variable	(an		: an)
+					-- variable
+	parameter	(an		: an)
+					-- parameter 
+	induced		(an		: an,
+			 sort		: objectName,
+			 kind		: inducedKind)
+					-- induced implementation
+					-- from given sortName
+	data		(an		: an,
+			 variants	: seq[variant])
+				       -- data definition with variants
+	def		(an		: an,
+			 eqns		: seq[eqn])
+					-- function definition
+
+
+     FUN :=_an		: impl ** an			-> impl
+     FUN fmtImpl	: impl				-> fmt
+
+DATA inducedKind ==
+	constructor selector test other(id: denotation)
+
+     FUN fmtInducedKind : inducedKind			-> fmt
+
+
+DATA variant == 
+	variant		(an		: an,
+			 constructor	: objectName,
+					-- constructor function
+			 test		: objectName,
+					-- test function
+			 components	: seq[component])
+					-- components
+
+     FUN :=_an		: variant ** an			-> variant
+     FUN fmtVariant	: variant			-> fmt
+
+
+DATA component == 
+	component	(an		: an,
+			 selector	: objectName)
+					-- base name of selector
+
+     FUN :=_an		: component ** an		-> component
+     FUN fmtComponent	: component			-> fmt
+
+				
+DATA eqn == 
+	eqn		(an		: an,
+			 sign		: localSignName,
+					-- env of local pattern variables
+			 lhs		: expr,
+					-- original pattern (represented 
+					-- as expr)
+			 patterns	: seq[expr], 
+					-- minimal complete set of
+					-- perfect-fit patterns
+			 rhs		: expr) 
+					-- rhs of expression
+
+     FUN :=_an		: eqn ** an			-> eqn
+     FUN fmtEqn		: eqn				-> fmt
+
+
+-- %$Expressions$ =======================================================
+
+DATA expr == 
+	name		(an		: an,
+			 oper		: objectName)
+	apply		(an		: an,
+			 funct		: expr,
+			 arg		: expr)
+	tuple		(an		: an,
+			 elems		: seq[expr])
+
+	-- for right hand side expressions only:
+	den		(an		: an,
+			 text		: denotation)
+	cases		(an		: an,
+			 guards		: seq[guard], 
+			 else		: option[expr])
+	lambda		(an		: an,
+			 sign		: localSignName,
+					-- env of local abstraction variables
+			 vars		: seq[objectName],
+			 body		: expr)
+	let		(an		: an,
+			 eqns		: seq[eqn],
+			 body		: expr)
+
+	-- for patterns only:
+	as		(an		: an,
+			 var		: objectName,
+					-- always a local name and member of
+					-- eqn-env
+			 expr		: expr)
+	any		(an		: an)
+					-- wildcard
+
+
+     FUN :=_an		: expr ** an		-> expr
+     FUN fmtExpr	: expr			-> fmt
+
+
+DATA guard == 
+	guard		(an		: an,
+			 if		: expr, 
+			 then		: expr)
+
+     FUN :=_an		: guard ** an		-> guard
+     FUN fmtGuard	: guard			-> fmt
+
+
+-- %$Functionalities$ ======================================================
+
+DATA fct == 
+	name		(sort		: objectName)
+	cart		(elems		: seq[fct])
+	funct		(dom		: fct, 
+			 codom		: fct)
+
+     FUN =		: fct ** fct		-> bool
+     FUN fmtFct		: fct			-> fmt
+
+
+
+
+
+/* %
+@end ignore
+*/
+
+-- %$Output from Ordinatric$ ================================================
+
+/* % 
+@ignore
+*/
+
+-- this is output of ordinatrice verte for free type impl
+
+
+
+FUN :=_an : impl ** an -> impl
+DEF :=_an(def(_,2),new) == def(new,2)
+DEF :=_an(data(_,2),new) == data(new,2)
+DEF :=_an(induced(_,2,3),new) == induced(new,2,3)
+DEF :=_an(parameter(_),new) == parameter(new)
+DEF :=_an(variable(_),new) == variable(new)
+DEF :=_an(hidden(_),new) == hidden(new)
+DEF :=_an(missing(_),new) == missing(new)
+
+
+
+
+FUN fmtImpl : impl -> fmt
+DEF fmtImpl(missing(v0)) == ;(;(beg(2),lit("missing")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+DEF fmtImpl(hidden(v0)) == ;(;(beg(2),lit("hidden")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+DEF fmtImpl(variable(v0)) == ;(;(beg(2),lit("variable")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+DEF fmtImpl(parameter(v0)) == ;(;(beg(2),lit("parameter")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+DEF fmtImpl(induced(v0,v1,v2)) == ;(;(beg(2),lit("induced")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtInducedKind(v2))),lit(")"))),end))
+DEF fmtImpl(data(v0,v1)) == ;(;(beg(2),lit("data")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtVariant)(v1))),lit(")"))),end))
+DEF fmtImpl(def(v0,v1)) == ;(;(beg(2),lit("def")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtEqn)(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type eqn
+
+
+
+
+
+
+FUN :=_an : eqn ** an -> eqn
+DEF :=_an(eqn(_,2,3,4,5),new) == eqn(new,2,3,4,5)
+
+FUN fmtEqn : eqn -> fmt
+DEF fmtEqn(eqn(v0,v1,v2,v3,v4)) == ;(;(beg(2),lit("eqn")),;(;(lit("("),;(;(;(;(;(fmtAn(v0),;(lit(", "),fmtLocalSignName(v1))),;(lit(", "),fmtExpr(v2))),;(lit(", "),fmtSeq(fmtExpr)(v3))),;(lit(", "),fmtExpr(v4))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type guard
+
+
+
+
+FUN :=_an : guard ** an -> guard
+DEF :=_an(guard(_,2,3),new) == guard(new,2,3)
+
+FUN fmtGuard : guard -> fmt
+DEF fmtGuard(guard(v0,v1,v2)) == ;(;(beg(2),lit("guard")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtExpr(v1))),;(lit(", "),fmtExpr(v2))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type fct
+
+FUN = : fct ** fct -> bool
+DEF =(name(a),name(A)) == IF =(a,A) THEN true
+ELSE
+false
+FI
+DEF =(name(_),cart(_)) == false
+DEF =(name(_),funct(_,_)) == false
+DEF =(cart(_),name(_)) == false
+DEF =(cart(a),cart(A)) == IF eq?(=)(a,A) THEN true
+ELSE
+false
+FI
+DEF =(cart(_),funct(_,_)) == false
+DEF =(funct(_,_),name(_)) == false
+DEF =(funct(_,_),cart(_)) == false
+DEF =(funct(a,b),funct(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+
+
+
+
+FUN fmtFct : fct -> fmt
+DEF fmtFct(name(v0)) == ;(;(beg(2),lit("name")),;(;(lit("("),;(fmtObjectName(v0),lit(")"))),end))
+DEF fmtFct(cart(v0)) == ;(;(beg(2),lit("cart")),;(;(lit("("),;(fmtSeq(fmtFct)(v0),lit(")"))),end))
+DEF fmtFct(funct(v0,v1)) == ;(;(beg(2),lit("funct")),;(;(lit("("),;(;(fmtFct(v0),;(lit(", "),fmtFct(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type expr
+
+
+FUN :=_an : expr ** an -> expr
+DEF :=_an(any(_),new) == any(new)
+DEF :=_an(as(_,2,3),new) == as(new,2,3)
+DEF :=_an(let(_,2,3),new) == let(new,2,3)
+DEF :=_an(lambda(_,2,3,4),new) == lambda(new,2,3,4)
+DEF :=_an(cases(_,2,3),new) == cases(new,2,3)
+DEF :=_an(den(_,2),new) == den(new,2)
+DEF :=_an(tuple(_,2),new) == tuple(new,2)
+DEF :=_an(apply(_,2,3),new) == apply(new,2,3)
+DEF :=_an(name(_,2),new) == name(new,2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FUN fmtExpr : expr -> fmt
+DEF fmtExpr(name(v0,v1)) == ;(;(beg(2),lit("name")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),lit(")"))),end))
+DEF fmtExpr(apply(v0,v1,v2)) == ;(;(beg(2),lit("apply")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtExpr(v1))),;(lit(", "),fmtExpr(v2))),lit(")"))),end))
+DEF fmtExpr(tuple(v0,v1)) == ;(;(beg(2),lit("tuple")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtExpr)(v1))),lit(")"))),end))
+DEF fmtExpr(den(v0,v1)) == ;(;(beg(2),lit("den")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtDenotation(v1))),lit(")"))),end))
+DEF fmtExpr(cases(v0,v1,v2)) == ;(;(beg(2),lit("cases")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtGuard)(v1))),;(lit(", "),fmtOption(fmtExpr)(v2))),lit(")"))),end))
+DEF fmtExpr(lambda(v0,v1,v2,v3)) == ;(;(beg(2),lit("lambda")),;(;(lit("("),;(;(;(;(fmtAn(v0),;(lit(", "),fmtLocalSignName(v1))),;(lit(", "),fmtSeq(fmtObjectName)(v2))),;(lit(", "),fmtExpr(v3))),lit(")"))),end))
+DEF fmtExpr(let(v0,v1,v2)) == ;(;(beg(2),lit("let")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtEqn)(v1))),;(lit(", "),fmtExpr(v2))),lit(")"))),end))
+DEF fmtExpr(as(v0,v1,v2)) == ;(;(beg(2),lit("as")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtExpr(v2))),lit(")"))),end))
+DEF fmtExpr(any(v0)) == ;(;(beg(2),lit("any")),;(;(lit("("),;(fmtAn(v0),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type variant
+
+
+
+
+
+FUN :=_an : variant ** an -> variant
+DEF :=_an(variant(_,2,3,4),new) == variant(new,2,3,4)
+
+FUN fmtVariant : variant -> fmt
+DEF fmtVariant(variant(v0,v1,v2,v3)) == ;(;(beg(2),lit("variant")),;(;(lit("("),;(;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtObjectName(v2))),;(lit(", "),fmtSeq(fmtComponent)(v3))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type component
+
+
+
+FUN :=_an : component ** an -> component
+DEF :=_an(component(_,2),new) == component(new,2)
+
+FUN fmtComponent : component -> fmt
+DEF fmtComponent(component(v0,v1)) == ;(;(beg(2),lit("component")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type inducedKind
+
+
+
+FUN fmtInducedKind : inducedKind -> fmt
+DEF fmtInducedKind(constructor) == ;(;(beg(2),lit("constructor")),end)
+DEF fmtInducedKind(selector) == ;(;(beg(2),lit("selector")),end)
+DEF fmtInducedKind(test) == ;(;(beg(2),lit("test")),end)
+DEF fmtInducedKind(other(v0)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(fmtDenotation(v0),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type connectKind
+
+
+
+FUN fmtConnectKind : connectKind -> fmt
+DEF fmtConnectKind(neg) == ;(;(beg(2),lit("neg")),end)
+DEF fmtConnectKind(conj) == ;(;(beg(2),lit("conj")),end)
+DEF fmtConnectKind(disj) == ;(;(beg(2),lit("disj")),end)
+DEF fmtConnectKind(impl) == ;(;(beg(2),lit("impl")),end)
+DEF fmtConnectKind(equiv) == ;(;(beg(2),lit("equiv")),end)
+DEF fmtConnectKind(other(v0)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(fmtDenotation(v0),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type object
+
+
+DEF :=_items(object(1,2,3,4,5,_),new) == object(1,2,3,4,5,new)
+
+DEF :=_properties(object(1,2,3,4,_,6),new) == object(1,2,3,4,new,6)
+
+FUN :=_impl : object ** impl -> object
+DEF :=_impl(object(1,2,3,_,5,6),new) == object(1,2,3,new,5,6)
+
+FUN :=_kind : object ** kind -> object
+DEF :=_kind(object(1,2,_,4,5,6),new) == object(1,2,new,4,5,6)
+
+FUN :=_symbol : object ** denotation -> object
+DEF :=_symbol(object(1,_,3,4,5,6),new) == object(1,new,3,4,5,6)
+
+FUN :=_an : object ** an -> object
+DEF :=_an(object(_,2,3,4,5,6),new) == object(new,2,3,4,5,6)
+
+FUN fmtObject : object -> fmt
+DEF fmtObject(object(v0,v1,v2,v3,v4,v5)) == ;(;(beg(2),lit("object")),;(;(lit("("),;(;(;(;(;(;(fmtAn(v0),;(lit(", "),fmtDenotation(v1))),;(lit(", "),fmtKind(v2))),;(lit(", "),fmtImpl(v3))),;(lit(", "),fmtSet(fmtPropertyName)(v4))),;(lit(", "),fmtSet(fmtItemName)(v5))),lit(")"))),end))
+DEF fmtObject(removed) == ;(;(beg(2),lit("removed")),end)
+
+
+
+-- this is output of ordinatrice verte for free type kind
+
+FUN = : kind ** kind -> bool
+DEF =(sort,sort) == true
+DEF =(sort,oper(_)) == false
+DEF =(oper(_),sort) == false
+DEF =(oper(a),oper(A)) == IF =(a,A) THEN true
+ELSE
+false
+FI
+
+
+FUN fmtKind : kind -> fmt
+DEF fmtKind(sort) == ;(;(beg(2),lit("sort")),end)
+DEF fmtKind(oper(v0)) == ;(;(beg(2),lit("oper")),;(;(lit("("),;(fmtFct(v0),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type quantKind
+
+
+
+FUN fmtQuantKind : quantKind -> fmt
+DEF fmtQuantKind(forall) == ;(;(beg(2),lit("forall")),end)
+DEF fmtQuantKind(exist) == ;(;(beg(2),lit("exist")),end)
+DEF fmtQuantKind(other(v0)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(fmtDenotation(v0),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type formula
+
+
+
+
+
+
+FUN :=_an : formula ** an -> formula
+DEF :=_an(quant(_,2,3,4,5),new) == quant(new,2,3,4,5)
+DEF :=_an(connect(_,2,3),new) == connect(new,2,3)
+DEF :=_an(atomic(_,2,3),new) == atomic(new,2,3)
+
+
+
+
+
+FUN fmtFormula : formula -> fmt
+DEF fmtFormula(atomic(v0,v1,v2)) == ;(;(beg(2),lit("atomic")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtAtomicKind(v1))),;(lit(", "),fmtSeq(fmtExpr)(v2))),lit(")"))),end))
+DEF fmtFormula(connect(v0,v1,v2)) == ;(;(beg(2),lit("connect")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtConnectKind(v1))),;(lit(", "),fmtSeq(fmtFormula)(v2))),lit(")"))),end))
+DEF fmtFormula(quant(v0,v1,v2,v3,v4)) == ;(;(beg(2),lit("quant")),;(;(lit("("),;(;(;(;(;(fmtAn(v0),;(lit(", "),fmtQuantKind(v1))),;(lit(", "),fmtLocalSignName(v2))),;(lit(", "),fmtSeq(fmtObjectName)(v3))),;(lit(", "),fmtFormula(v4))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type atomicKind
+
+
+
+FUN fmtAtomicKind : atomicKind -> fmt
+DEF fmtAtomicKind(dfd) == ;(;(beg(2),lit("dfd")),end)
+DEF fmtAtomicKind(approx) == ;(;(beg(2),lit("approx")),end)
+DEF fmtAtomicKind(cong) == ;(;(beg(2),lit("cong")),end)
+DEF fmtAtomicKind(other(v0)) == ;(;(beg(2),lit("other")),;(;(lit("("),;(fmtDenotation(v0),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type pragmaComp
+
+
+
+
+FUN fmtPragmaComp : pragmaComp -> fmt
+DEF fmtPragmaComp(token(v0)) == ;(;(beg(2),lit("token")),;(;(lit("("),;(fmtDenotation(v0),lit(")"))),end))
+DEF fmtPragmaComp(objects(v0)) == ;(;(beg(2),lit("objects")),;(;(lit("("),;(fmtSeq(fmtObjectName)(v0),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type property
+
+
+
+
+FUN :=_an : property ** an -> property
+DEF :=_an(law(_,2,3),new) == law(new,2,3)
+DEF :=_an(freeType(_,2,3),new) == freeType(new,2,3)
+
+
+
+FUN fmtProperty : property -> fmt
+DEF fmtProperty(freeType(v0,v1,v2)) == ;(;(beg(2),lit("freeType")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtObjectName(v1))),;(lit(", "),fmtSeq(fmtVariant)(v2))),lit(")"))),end))
+DEF fmtProperty(law(v0,v1,v2)) == ;(;(beg(2),lit("law")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtOption(fmtDenotation)(v1))),;(lit(", "),fmtFormula(v2))),lit(")"))),end))
+DEF fmtProperty(removed) == ;(;(beg(2),lit("removed")),end)
+
+
+
+-- this is output of ordinatrice verte for free type pragma
+
+
+
+
+FUN fmtPragma : pragma -> fmt
+DEF fmtPragma(pragma(v0,v1)) == ;(;(beg(2),lit("pragma")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtPragmaComp)(v1))),lit(")"))),end))
+DEF fmtPragma(removed) == ;(;(beg(2),lit("removed")),end)
+
+
+
+
+
+
+
+/* %
+@end ignore
+*/
+
+

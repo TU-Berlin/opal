@@ -1,0 +1,180 @@
+SIGNATURE ProcessCtrl
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:18 $ ($Revision: 1.1.1.1 $)
+-- low-level access to process control mechanisms
+
+IMPORT
+  Void                ONLY void: SORT
+  Nat                 ONLY nat: SORT
+  Real                ONLY real: SORT
+  Quadruple[real,real,real,real]
+                      ONLY quad: SORT
+  Seq[denotation]     ONLY seq: SORT
+  Com[bool]           ONLY com: SORT
+  Com[void]           ONLY com: SORT
+  Com[denotation]     ONLY com: SORT
+  Com[nat]            ONLY com: SORT
+  Com[real]           ONLY com: SORT
+  Com[quad[real,real,real,real]]
+                      ONLY com: SORT
+  Com[process]        ONLY com: SORT
+  Com[fission]        ONLY com: SORT
+  Com[filemode]       ONLY com: SORT
+  Com[userid]         ONLY com: SORT
+  Com[groupid]        ONLY com: SORT
+  FileSystem          ONLY filemode: SORT
+  UserAndGroup        ONLY userid: SORT groupid: SORT
+
+SORT process
+     -- see POSIX pid_t
+FUN < = : process ** process -> bool
+          -- orderings
+
+TYPE procstat == success   -- see POSIX EXIT_SUCCESS
+                 failure   -- see POSIX EXIT_FAILURE
+
+TYPE fission == parent(child: process)
+                child
+
+
+-- CREATION, TERMINATION, MUTATION --
+
+FUN fork  : com[fission]
+            -- creates a new process
+            -- see POSIX fork()
+
+FUN exit  : procstat -> com[void]
+            -- terminates the process yielding its status
+            -- see POSIX exit()
+
+FUN exec  : denotation ** seq[denotation] -> com[void]
+            -- execute the given programme with given arguments
+            -- see POSIX execv()/execl()
+    execE : denotation ** seq[denotation] ** seq[denotation] -> com[void]
+            -- as above, but also specify a new environment
+            -- see POSIX execve()/execle()
+    execP : denotation ** seq[denotation] -> com[void]
+            -- use PATH environment variable to search for the specified prog
+            -- see POSIX execvp()/execlp()
+    -- NOTE that, by convention, you must supply the executable's name
+    --      WITHOUT PATH PREFIX as the first component of the argument
+    --      sequence to all of these calls.
+
+-- RELATIONS --
+
+FUN getPId
+    -- get ID of this process
+    -- see POSIX getpid()
+    getPPId  : com[process]
+    -- get ID of parent process
+    -- see POSIX getppid()
+    
+-- INFORMATION --
+
+FUN clock   : com[real]
+              -- returns approx processor time used by this process in seconds
+              -- NOTE that you may not assume that processes start with 0.0
+              --      seconds of elapsed processor time, but computing a
+              --      difference works fine.
+              -- NOTE that -1 is returned to indicate that the system has
+              --      no idea about the elapsed processor time
+              -- see POSIX clock()
+
+    times  : com[quad[real,real,real,real]]
+             -- returns user and system time in seconds for this process
+             -- and all children for which a wait... has been done
+             -- see POSIX times()
+             -- NOTE that these are absolute values
+    uptime : com[real]
+             -- returns the real time in seconds since system startup
+             -- see POSIX times()
+
+-- BREAK --
+
+FUN pause : com[void]
+            -- suspends execution until a signal occurs which is not ignored
+            -- NOTE that in most cases you should use sigSuspend'Signal instead
+            -- NOTE that this call never returns successfully
+            -- see POSIX pause()
+    sleep : nat -> com[nat]
+            -- suspends execution for (at least) n seconds.
+            -- Returns the number of unslept seconds if a signal occurs.
+            -- NOTE: The maximum portable argument is 65535 seconds
+            -- NOTE: May or may not be implemented by using sigAlrm
+            -- NOTE that this call always succeeds
+            -- see POSIX sleep()
+
+-- WORKING DIRECTORY --
+
+FUN chDir  : denotation -> com[void]
+             -- change working directory
+             -- see POSIX chdir()
+    getCWD : com[denotation]
+             -- returns the current working directory
+             -- see POSIX getcwd()
+
+-- PERMISSIONS & STUFF --
+
+FUN access   : denotation ** filemode -> com[bool]
+               -- legal values for <filemode> are _________ "up to" rwx______.
+               -- true if the process can perform the specified operation(s)
+               -- (if <filemode> = _________ the file's existence is tested)
+               -- on the given file BASED ON REAL USER AND GROUP IDs!
+               -- Useful for setUIdOnExec/setGIdOnExec processes in order
+               -- to check if an operation is legal even without the
+               -- effective UId/GId. There is, of course, no guarantee
+               -- that the process can perform the operation without
+               -- restoring the real UId/GId as the system uses the effective
+               -- UId and GId to check permissions. For processes where
+               -- UId = EUId and GId = EGId the result is reliable unless
+               -- some other process changes access permissions or removes
+               -- the file afterwards. See POSIX access()
+
+FUN umask    : filemode -> com[filemode]
+               -- set permission mask for file creation
+               -- return the previous mask
+               -- see POSIX umask()               
+
+FUN getUId   : com[userid]
+               -- return real user id
+               -- see POSIX getuid()
+    getEUId  : com[userid]
+               -- return effective user id
+               -- see POSIX geteuid()
+FUN setUId   : userid -> com[void]
+               -- sets user id; RESTRICTED
+               -- see POSIX setuid()
+
+FUN getGId   : com[groupid]
+               -- get real group id
+               -- see POSIX getgid()
+    getEGId  : com[groupid]
+               -- get effective group id
+               -- see POSIX getegid()
+FUN setGId   : groupid -> com[void]
+               -- sets group id; RESTRICTED
+               -- see POSIX setgid()
+
+FUN getPGrp  : com[process]
+               -- get process group id
+               -- see POSIX getpgrp()
+FUN setPGrp  : com[void]
+               -- set process group to process id
+    setPGrp  : process ** process -> com[void]
+               -- set process group id of specified process to specified group
+    -- THESE CALLS MAY FAIL ON SYSTEMS NOT SUPPORTING JOB CONTROL
+    -- see POSIX setpgid()
+
+FUN setSId   : com[process]
+               -- creates a new session and sets the process group accordingly
+               -- returns the new process group
+               -- see POSIX setsid()
+
+FUN getLogin : com[denotation]
+               -- returns the user's login name
+               -- set by login and rlogin, but not su
+               -- traditionally used to determine home directory etc
+               -- see POSIX getlogin()

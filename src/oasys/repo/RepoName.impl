@@ -1,0 +1,398 @@
+IMPLEMENTATION RepoName
+
+IMPORT	Nat		COMPLETELY
+	Id		COMPLETELY
+	Fmt		COMPLETELY
+	FmtBasicTypes	COMPLETELY
+	ABORT		COMPLETELY
+
+
+-- %$Unit Names$ ============================================================
+
+FUN instShift partShift instPartShift : nat
+DEF instShift == !("65536")
+DEF partShift == 2
+DEF instPartShift == instShift * partShift
+
+DATA part == sign impl
+DATA unitName == internUnitName(internId: id)
+
+DEF basicUnitName(No, sign) == 
+    internUnitName(id(No * partShift))
+
+DEF basicUnitName(No, impl) == 
+    internUnitName(id((No * partShift) + 1))
+
+DEF derivedUnitName(No, sign, InstNo) == 
+    internUnitName(id((No * partShift) + (instShift * succ(InstNo))))
+
+DEF derivedUnitName(No, impl, InstNo) == 
+    internUnitName(id((No * partShift) + 1 + (instShift * succ(InstNo))))
+
+DEF part(internUnitName(id(No))) ==
+    IF even?(No) THEN sign ELSE impl FI
+
+DEF no(internUnitName(id(No))) ==
+    (No % instShift) / partShift
+
+DEF instNo(internUnitName(id(No))) ==
+    LET InstNo == No / instShift 
+    IN
+    IF InstNo > 0 THEN pred(InstNo)
+		  ELSE ABORT("instNo'RepoAbsy: selection undefined") FI
+
+DEF basicUnitName?(internUnitName(id(No))) ==
+    No / instShift = 0
+
+DEF derivedUnitName?(internUnitName(id(No))) ==
+    No / instShift |= 0
+
+DEF baseName(internUnitName(id(No))) ==
+    internUnitName(id(No % instShift))
+
+DEF internInstId(internUnitName(id(No))) == id(No / instShift)
+
+DEF internUnitName(id(InstNo), internUnitName(id(No))) ==
+    internUnitName(id((No % instShift) + (InstNo * instShift)))
+
+DEF fmtUnitName(N) ==
+  IF basicUnitName?(N) THEN
+     beg(2); 
+       lit("basicUnitName"); lit("(");	
+       fmtNat(no(N)); lit(",");
+       fmtPart(part(N)); lit(")");
+     end
+  ELSE
+     beg(2); 
+       lit("derivedUnitName"); lit("(");  
+       fmtNat(no(N)); lit(",");
+       fmtPart(part(N)); lit(",");
+       fmtNat(instNo(N)); lit(")");
+     end
+  FI
+
+DEF internUnitName(id(No1)) ~ internUnitName(id(No2)) ==
+    (No1 % instShift) / partShift = (No2 % instShift) / partShift
+
+DEF UName :=_part Part ==
+  IF basicUnitName?(UName)
+    THEN basicUnitName(no(UName),Part)
+    ELSE derivedUnitName(no(UName),Part,instNo(UName))
+  FI
+
+-- %$Deriving Basic Names$ ===============================================
+
+DEF baseName(itemName(No, Unit))     == itemName(No, baseName(Unit))
+DEF baseName(pragmaName(No, Unit))   == pragmaName(No, baseName(Unit))
+DEF baseName(propertyName(No, Unit)) == propertyName(No, baseName(Unit))
+DEF baseName(localSignName(No, Unit))  == localSignName(No, baseName(Unit))
+DEF baseName(globalObjectName(No, Unit))==globalObjectName(No, baseName(Unit))
+DEF baseName(localObjectName(No, Sign))	 == localObjectName(No, baseName(Sign))
+
+
+-- %$Derived names$ ==================================================
+
+DEF derived(U,I) == derivedUnitName(no(U),part(U),I)
+DEF derived(propertyName(No,U),I) == propertyName(No,derived(U,I))
+DEF derived(localSignName(No,U),I) == localSignName(No,derived(U,I))
+DEF derived(localObjectName(No,L),I) == localObjectName(No,derived(L,I))
+DEF derived(globalObjectName(No,U),I) == globalObjectName(No,derived(U,I))
+
+-- %$equivalence relations$ ================================================
+
+DEF propertyName(No1,Unit1) ~ propertyName(No2,Unit2) ==
+	No1 = No2 and Unit1 ~ Unit2
+DEF localSignName(No1,Unit1) ~ localSignName(No2,Unit2) ==
+	No1 = No2 and Unit1 ~ Unit2
+DEF globalObjectName(No1,Unit1) ~ globalObjectName(No2,Unit2) ==
+	No1 = No2 and Unit1 ~ Unit2
+DEF localObjectName(No1,Loc1) ~ localObjectName(No2,Loc2) ==
+	No1 = No2 and Loc1 ~ Loc2
+
+
+-- %$UnitName of object names$ ========================================
+DEF unitName(globalObjectName(_,U)) == U
+DEF unitName(localObjectName(_,L))    == unit(L)
+
+
+-- %$Inserted from Signature$ ==============================================
+
+/* %
+@ignore
+*/
+
+
+
+-- %$Item Names$ ============================================================
+
+DATA itemName  ==
+	itemName	(no	: nat,
+			 unit	: unitName)
+
+     FUN = <		: itemName ** itemName		-> bool 
+     FUN baseName	: itemName			-> itemName
+     FUN fmtItemName	: itemName			-> fmt
+
+	   
+-- %$Pragma Names$ ==========================================================
+
+DATA pragmaName ==
+	pragmaName	(no		: nat,
+			 unit		: unitName)
+
+    FUN = <		: pragmaName ** pragmaName	-> bool 
+    FUN baseName	: pragmaName			-> pragmaName
+    FUN fmtPragmaName	: pragmaName			-> fmt
+
+
+-- %$Property Names$ ========================================================
+
+DATA propertyName ==
+	propertyName	(no		: nat,
+			 unit		: unitName)
+
+    FUN = <		: propertyName ** propertyName	    -> bool 
+    FUN baseName	: propertyName			    -> propertyName
+    FUN fmtPropertyName : propertyName			    -> fmt
+
+
+-- %$Local Signature Names$ =================================================
+
+DATA localSignName ==
+	localSignName	(no		: nat,
+			 unit		: unitName)
+
+     FUN < =	     : localSignName ** localSignName	 -> bool
+     FUN baseName    : localSignName			 -> localSignName
+     FUN fmtLocalSignName : localSignName		    -> fmt
+
+			 
+-- %$Object Names$ ==========================================================
+
+DATA objectName ==
+	globalObjectName (no		 : nat,
+			  unit		 : unitName)
+	localObjectName	 (no		 : nat,
+			  sign		 : localSignName)
+
+     
+     FUN = <		: objectName ** objectName	-> bool
+     FUN baseName	: objectName			-> objectName
+     FUN fmtObjectName	: objectName			-> fmt
+
+
+/* %
+@end ignore
+*/
+
+-- %$Output from Ordinatric$ ================================================
+
+/* % 
+@ignore
+*/
+
+-- this is output of ordinatrice verte for free type pragmaName
+FUN < : pragmaName ** pragmaName -> bool
+DEF <(pragmaName(a,b),pragmaName(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+
+FUN = : pragmaName ** pragmaName -> bool
+DEF =(pragmaName(a,b),pragmaName(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+
+
+FUN fmtPragmaName : pragmaName -> fmt
+DEF fmtPragmaName(pragmaName(v0,v1)) == ;(;(beg(2),lit("pragmaName")),;(;(lit("("),;(;(fmtNat(v0),;(lit(", "),fmtUnitName(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type localSignName
+FUN < : localSignName ** localSignName -> bool
+DEF <(localSignName(a,b),localSignName(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+
+FUN = : localSignName ** localSignName -> bool
+DEF =(localSignName(a,b),localSignName(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+
+
+FUN fmtLocalSignName : localSignName -> fmt
+DEF fmtLocalSignName(localSignName(v0,v1)) == ;(;(beg(2),lit("localSignName")),;(;(lit("("),;(;(fmtNat(v0),;(lit(", "),fmtUnitName(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type objectName
+FUN < : objectName ** objectName -> bool
+DEF <(globalObjectName(a,b),globalObjectName(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+DEF <(globalObjectName(_,_),localObjectName(_,_)) == true
+DEF <(localObjectName(_,_),globalObjectName(_,_)) == false
+DEF <(localObjectName(a,b),localObjectName(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+
+FUN = : objectName ** objectName -> bool
+DEF =(globalObjectName(a,b),globalObjectName(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+DEF =(globalObjectName(_,_),localObjectName(_,_)) == false
+DEF =(localObjectName(_,_),globalObjectName(_,_)) == false
+DEF =(localObjectName(a,b),localObjectName(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+
+
+
+FUN fmtObjectName : objectName -> fmt
+DEF fmtObjectName(globalObjectName(v0,v1)) == ;(;(beg(2),lit("globalObjectName")),;(;(lit("("),;(;(fmtNat(v0),;(lit(", "),fmtUnitName(v1))),lit(")"))),end))
+DEF fmtObjectName(localObjectName(v0,v1)) == ;(;(beg(2),lit("localObjectName")),;(;(lit("("),;(;(fmtNat(v0),;(lit(", "),fmtLocalSignName(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type propertyName
+FUN < : propertyName ** propertyName -> bool
+DEF <(propertyName(a,b),propertyName(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+
+FUN = : propertyName ** propertyName -> bool
+DEF =(propertyName(a,b),propertyName(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+
+
+FUN fmtPropertyName : propertyName -> fmt
+DEF fmtPropertyName(propertyName(v0,v1)) == ;(;(beg(2),lit("propertyName")),;(;(lit("("),;(;(fmtNat(v0),;(lit(", "),fmtUnitName(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type unitName
+FUN < : unitName ** unitName -> bool
+DEF <(internUnitName(a),internUnitName(A)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+false
+FI
+
+FUN = : unitName ** unitName -> bool
+DEF =(internUnitName(a),internUnitName(A)) == IF =(a,A) THEN true
+ELSE
+false
+FI
+
+
+
+
+-- this is output of ordinatrice verte for free type itemName
+FUN < : itemName ** itemName -> bool
+DEF <(itemName(a,b),itemName(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+
+FUN = : itemName ** itemName -> bool
+DEF =(itemName(a,b),itemName(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+
+
+FUN fmtItemName : itemName -> fmt
+DEF fmtItemName(itemName(v0,v1)) == ;(;(beg(2),lit("itemName")),;(;(lit("("),;(;(fmtNat(v0),;(lit(", "),fmtUnitName(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type part
+FUN < : part ** part -> bool
+DEF <(sign,sign) == false
+DEF <(sign,impl) == true
+DEF <(impl,sign) == false
+DEF <(impl,impl) == false
+
+FUN = : part ** part -> bool
+DEF =(sign,sign) == true
+DEF =(sign,impl) == false
+DEF =(impl,sign) == false
+DEF =(impl,impl) == true
+
+
+FUN fmtPart : part -> fmt
+DEF fmtPart(sign) == ;(;(beg(2),lit("sign")),end)
+DEF fmtPart(impl) == ;(;(beg(2),lit("impl")),end)
+
+
+
+
+
+/* %
+@end ignore
+*/
+

@@ -1,0 +1,172 @@
+--  LAST EDIT: Thu Jun  3 19:20:50 1993 by Carola Gerke (kassandra!carola) 
+
+IMPLEMENTATION ModForm
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:40 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 property language
+
+IMPORT -- pars
+       Terminal         COMPLETELY
+       Token            COMPLETELY
+       PTypes           COMPLETELY
+       ZOpts            COMPLETELY
+       PErr             COMPLETELY
+       PCommon          COMPLETELY
+       ModBase          COMPLETELY
+IMPORT -- absy
+       Absy             COMPLETELY
+       PartName         COMPLETELY
+       Impl[partName]   COMPLETELY
+       PreDef           COMPLETELY
+IMPORT -- reps
+       Rep              COMPLETELY
+IMPORT -- admin
+       Pos              COMPLETELY
+IMPORT -- lib
+       Nat              COMPLETELY
+       Denotation       COMPLETELY
+       Seq              COMPLETELY
+       SeqReduce        COMPLETELY
+       SeqMap           COMPLETELY
+       DEBUG            COMPLETELY
+-- ------------------------------------------------------------------------
+
+FUN modExQuant modAllQuant modEqual modEqu modIneq : modifier
+DEF modEqual ==
+    mod(\\A1,A2.
+        IF (A1 Expr?) and (A2 Formula?) THEN
+          IF f(A2) equal? THEN
+            Formula(equal(e(A1),right(f(A2)),pos(f(A2))))
+          IF f(A2) ineq? THEN
+            Formula(ineq(e(A1),right(f(A2)),pos(f(A2))))
+          ELSE noAbsy 
+          FI
+        IF (A1 Expr?) and (A2 noAbsy?) THEN
+          IF den?(e(A1)) THEN
+            Formula(informal(string(e(A1)), pos(e(A1))))
+          ELSE
+            Formula(equal(e(A1),trueVal,pos(e(A1))))
+          FI
+        ELSE noAbsy 
+        FI)
+
+DEF modEqu == mod(\\A1,A2. mEqu(A1,A2))
+    FUN mEqu : absy ** absy -> absy
+    DEF mEqu(noAbsy,Expr(E)) == Formula(equal(none(pos(E)),E,pos(E)))
+    DEF mEqu(Pos(P),Expr(E)) == Formula(equal(none(P),E,P))
+    DEF mEqu(_,_)            == noAbsy
+
+DEF modIneq == mod(\\A1,A2. mIneq(A1,A2))
+    FUN mIneq : absy ** absy -> absy
+    DEF mIneq(noAbsy,Expr(E)) == Formula(ineq(none(pos(E)),E,pos(E)))
+    DEF mIneq(Pos(P),Expr(E)) == Formula(ineq(none(P),E,P))
+    DEF mIneq(_,_)            == noAbsy
+
+DEF modDfd == mod(\\A1,A2. mDfd(A1,A2))
+    FUN mDfd : absy ** absy -> absy
+    DEF mDfd(noAbsy,Expr(E)) == Formula(dfd(E,pos(E)))
+    DEF mDfd(Pos(P),Expr(E)) == Formula(dfd(E,P))
+    DEF mDfd(_,_)            == noAbsy
+
+DEF modAllQuant == 
+    mod(\\A1,A2.
+        IF (A1 noAbsy?) and (A2 Formula?)
+        THEN IF f(A2) all? THEN A2
+             ELSE Formula(all(vars(f(A2)),which(f(A2)),pos(f(A2))))
+             FI
+        ELSE noAbsy FI)
+
+DEF modExQuant == 
+    mod(\\A1,A2.
+        IF (A1 noAbsy?) and (A2 Formula?)
+        THEN IF f(A2) ex? THEN A2
+             ELSE Formula(ex(vars(f(A2)),which(f(A2)),pos(f(A2))))
+             FI
+        ELSE noAbsy FI)
+DEF modQuant ==
+    mod(\\A1,A2.
+        IF (A1 NameSeq?) and (A2 Formula?)
+        THEN Formula(all(nSeq(A1),f(A2),pos(f(A2))))
+        ELSE noAbsy FI)
+
+-- ---------------------------------------------------------------------------
+
+DEF modProp ==
+    mod(\\A1,A2.
+        IF (A1 Formula?) and (A2 Formula?)
+        THEN IF f(A2) and?
+             THEN Formula(and(f(A1),right(f(A2)),pos(f(A2))))
+             IF f(A2) or?
+             THEN Formula(or(f(A1),right(f(A2)),pos(f(A2))))
+             IF f(A2) imply?
+             THEN Formula(imply(f(A1),right(f(A2)),pos(f(A2))))
+             IF f(A2) eqv?
+             THEN Formula(eqv(f(A1),right(f(A2)),pos(f(A2))))
+             ELSE A2 FI 
+        IF (A1 Formula?) and (A2 noAbsy?) THEN A1
+        ELSE noAbsy
+        FI)
+-- ---------------------------------------------------------------------------
+DEF modNeg ==
+    mod(\\A1,A2.
+        IF (A1 Pos?) and (A2 Formula?)
+        THEN Formula(neg(f(A2),p(A1)))
+        ELSE noAbsy FI)
+
+DEF modAnd ==
+    mod(\\A1,A2.
+        IF (A1 Pos?) and (A2 Formula?)
+        THEN Formula(and(none(p(A1)),f(A2),p(A1)))
+        ELSE noAbsy FI)
+DEF modOr ==
+    mod(\\A1,A2.
+        IF (A1 Pos?) and (A2 Formula?)
+        THEN Formula(or(none(p(A1)),f(A2),p(A1)))
+        ELSE noAbsy FI)
+DEF modImply  ==
+    mod(\\A1,A2.
+        IF (A1 Pos?) and (A2 Formula?)
+        THEN Formula(imply(none(p(A1)),f(A2),p(A1)))
+        ELSE noAbsy FI)
+DEF modEqv ==
+    mod(\\A1,A2.
+        IF (A1 Pos?) and (A2 Formula?)
+        THEN Formula(eqv(none(p(A1)),f(A2),p(A1)))
+        ELSE noAbsy FI)
+
+-- %- ----------------------------------------------------------------------
+
+DEF modSpec ==
+  mod(\\A1, A2.
+  IF (A1 NameSeq?) and (A2 Spc?) THEN
+    NameSpec(ft(nSeq(A1)), spc(A2))
+  ELSE noAbsy
+  FI
+  )
+
+-- -----------------------------------------------------------------------------
+
+DEF postCheckForm == mkMod(\\ PRes. PRes)
+    FUN pCF : absy -> err ** absy
+    DEF pCF (F AS Formula(E AS equal(L,R AS val(PN,_),Pos))) == (ok,Expr(L)) 
+    DEF pCF (F AS Formula(dfd(_,_)))  == (ok,F)
+    DEF pCF (F AS Formula(_))  == (ok,F)
+    DEF pCF (E AS Expr(_))== (ok,E)
+    DEF pCF (A)           == 
+        LET NA == noAbsy -- PRINT(true,`(A),noAbsy)
+        IN (pErrExp(" Expression " )(errPos)(<>),NA)
+/*
+    DEF pCF (Formula(E AS equal(L,R AS val(PN,_),Pos))) == 
+        IF PN partNameOrig? ANDIF ide(PN) = true THEN (ok,Expr(L)) 
+        ELSE (pErrExp(" expression " )(Pos)(<>),Expr(L)) 
+        FI
+    DEF pCF (Formula(F))  == (pErrExp(" expression " )(errPos)(<>),
+                              Expr(none(pos(F))))
+    DEF pCF (_)           == (pErrExp(" expression " )(errPos)(<>),noAbsy)
+
+*/

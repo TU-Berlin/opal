@@ -1,0 +1,835 @@
+IMPLEMENTATION OptimEval
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: partial evaluation of expressions
+-- project: acc
+-- author:  wg
+
+
+IMPORT  Nat             COMPLETELY
+        Seq             COMPLETELY
+	SeqMap		ONLY * 
+	SeqReduce	ONLY /
+	SeqFilter	ONLY | partition
+	SeqMapEnv	ONLY *
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Compose		ONLY o
+
+IMPORT	Error		ONLY ok
+
+IMPORT  Ide             ONLY ide global? local? global local = : ide**ide->bool
+        Ac              COMPLETELY
+        An     		ONLY an none:an set:an**optimAn->an optim
+					set:an**sourceAn->an source
+					set:an**typeAn->an type
+	OptimAn		COMPLETELY
+	OptimAnFun	ONLY props
+        TypeAn          COMPLETELY
+	TypeAnFun	ONLY typeOfDec typeOfExp typeDecAss structure
+	SourceAn	COMPLETELY
+        IdeMap          ONLY ideMap {} def ! !? def? extend explode
+	IdeSet		ONLY ideSet {} {}? incl in implode
+	IdeBag		ONLY ideBag {} incl + - * ct in
+        AcFun           ONLY = atomic? global? local? ide dec
+			     neverReached?
+	PreparedOptions	ONLY distribCase? distribCaseAlways?
+			     completeCase? completeCaseAlways?
+	Builtin		ONLY consTuple
+
+IMPORT	OptimEvalFin	ONLY optimEvalFin
+
+
+-- -------------------------------------------------------------------------
+
+FUN optimEval : popts ** unit ** dec -> dec ** err
+DEF optimEval(Opts,U,binding(An,Id,Md,Def)) ==
+    LET (T,NewDef) == eval(inh(Opts,U,{},{},{},{}))(thr(1,{},{}),Def)
+	NewOptAn   == bindingAn(complexity(OptAn),rank(OptAn),pred(ideCnt(T)))
+	OptAn	   == optim(An)
+	NewDec	   == optimEvalFin(Opts,U,
+				   binding(set(An,NewOptAn),Id,Md,NewDef))
+    IN
+    (NewDec,ok)
+
+-- -------------------------------------------------------------------------
+
+FUN eval : inh -> thr ** exp -> thr ** exp
+
+
+DATA inh ==    
+    /* Inherited context object of eval.
+    */
+    inh(popts   : popts,		-- prepared options
+	unit    : unit, 		-- target unit
+	subs	: ideMap[exp], 		-- substitutions
+	equ	: ideMap[exp],		-- semantic equalitys
+	noMatch	: ideMap[ideSet],	-- "can't match" constructors
+	types	: ideMap[type]		-- type assignment for local ides
+       )
+
+FUN setSubs : inh ** ideMap[exp] -> inh
+DEF setSubs(inh(O,U,_,E,N,T),S) == inh(O,U,S,E,N,T)
+
+FUN setEqu : inh ** ideMap[exp] -> inh
+DEF setEqu(inh(O,U,S,_,N,T),E) == inh(O,U,S,E,N,T)
+
+FUN setNoMatch : inh ** ideMap[ideSet] -> inh
+DEF setNoMatch(inh(O,U,S,E,_,T),N) == inh(O,U,S,E,N,T)
+
+FUN setTypes : inh ** ideMap[type] -> inh
+DEF setTypes(inh(O,U,S,E,N,_),T) == inh(O,U,S,E,N,T)
+
+
+
+DATA thr ==
+    /* Threaded context object of eval.
+    */
+    thr(ideCnt	: nat,			-- local ide counter
+	applied : ideSet,		-- set of applied globals
+	discrs  : discrBag		-- multiset of discriminated ides 
+       )
+
+FUN setIdeCnt : thr ** nat -> thr
+DEF setIdeCnt(thr(_,A,D),C) == thr(C,A,D)
+
+FUN setApplied : thr ** ideSet -> thr
+DEF setApplied(thr(C,_,D),A) == thr(C,A,D)
+
+FUN setDiscrs : thr ** discrBag -> thr
+DEF setDiscrs(thr(C,A,_),D) == thr(C,A,D)
+
+FUN newIde : thr -> thr ** ide
+DEF newIde(T) ==
+    (thr(succ(ideCnt(T)),applied(T),discrs(T)),local(ideCnt(T)))
+    
+FUN rename: thr ** dec -> thr ** dec
+DEF rename(T,d) ==
+    LET (T1,i) == newIde(T)
+    IN
+    (T1,variable(an(d),i))
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+DATA discrBag == 
+	all
+	ideBag(bag: ideBag)
+
+FUN {} : discrBag
+DEF {} == ideBag({})
+
+FUN incl : ide ** discrBag -> discrBag
+DEF incl(Ide, all) == all
+DEF incl(Ide, ideBag(Bag)) == ideBag(incl(Ide, Bag))
+
+FUN + - * : discrBag ** discrBag -> discrBag
+
+DEF all + _   == all
+DEF _   + all == all
+DEF ideBag(Bag1) + ideBag(Bag2) == ideBag(Bag1 + Bag2)
+
+DEF all - all == {}
+DEF _   - all == {}
+DEF all - _   == all
+DEF ideBag(Bag1) - ideBag(Bag2) == ideBag(Bag1 - Bag2)
+
+DEF all * all == all
+DEF B   * all == B
+DEF all * B   == B
+DEF ideBag(Bag1) * ideBag(Bag2) == ideBag(Bag1 * Bag2)
+
+FUN ct : ide ** discrBag -> nat
+DEF Ide ct all == 1000  -- this is a pragamtic value which still
+			-- allows arithmetic with the result but
+			-- is large enough to serve for our purposes
+DEF Ide ct ideBag(Bag) == Ide ct Bag
+
+FUN in : ide ** discrBag -> bool
+DEF Ide in all == true
+DEF Ide in ideBag(Bag) == Ide in Bag
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF eval(C)(T,e) ==
+    (T,e)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF eval(C)(T,e AS error(_)) ==
+    (T setDiscrs all,e)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF eval(C)(T,lambda(a,vs,sc)) == 
+    LET (T1,vs1) == (rename)*(T,vs)
+	es       == (ide:ide->exp o ide:dec->ide) * vs1
+	subs1    == extend(subs(C),ide * vs,es)
+	types1   == extend(types(C),ide * vs1,typeOfDec * vs1)
+	C1	 == (C setSubs subs1) setTypes types1
+	(T2,sc1) == eval((C setSubs subs1) setTypes types1)(T1,sc)
+    IN
+    (T2,lambda(a,vs1,sc1))
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF eval(C)(T,e AS ide(a,id)) == 
+    IF id def? subs(C) THEN
+	(T,subs(C)!id)
+    OTHERWISE
+    IF global?(id) THEN
+	(setApplied(T,incl(id,applied(T))),e)
+    ELSE
+	(T,e)
+    FI
+	
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF eval(C)(T,apply(a,f,as)) == 
+    LET (T1,f1)  == eval(C)(T,f)
+	(T2,as1) == (eval(C))*(T1,as)
+    IN
+    IF error?(f1) THEN
+        (T2 setDiscrs all,f1)
+    ELSE
+        LET err? == find?(error?,as1)
+        IN
+        IF avail?(err?) THEN
+            (T2 setDiscrs all,cont(err?))
+        ELSE
+            (T2,apply(a,f1,as1))
+        FI
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF eval(C)(T,block(a,bs,s)) == 
+    LET (T1,liftbs,newbs,news) == evalBlock(C,C,T,bs,s)
+    IN
+    IF liftbs ::? THEN
+	-- reduction caused lifting of inner bindings:
+	-- (stupid as we are) we restart evaluation from an outer point.
+	-- substitutions which are performed have to be cleared!
+	LET rC     == C setSubs {}
+	    newblk == block(a,liftbs,block(a,2nd * newbs,news))
+	IN
+	eval(rC)(T1,newblk)
+    ELSE
+      LET (cand?,rest)    == lookupBestDistribCand(C,discrs(T1),newbs,news)
+			    -- lookup best cand for case distribution
+	  alldiscrs 	  == ((\\p,r. 1st(p) + r) / discrs(T1))(newbs)
+      IN
+      IF cand? nil? THEN
+	-- nothing to distribute.
+	LET (T2,blk) == simplifyBlock(C,T1,a,2nd * newbs,news)
+	IN
+	(T2 setDiscrs alldiscrs,blk)
+      ELSE
+	LET bindcand    == 2nd(cont(cand?))
+	    casecand    == def(bindcand)
+	IN
+	LET (indep,dep) == partition(\\p. ~(ide(discr(casecand)) in 1st(p))
+						and ~(case?(def(2nd(p)))),
+				     rest)
+			     -- partition those bindings which
+			     -- do not discriminate discriminator of cand 
+			     -- (and thus do not profitate from distribution)
+			     -- and which aren't candidates for a later
+			     -- lifting
+	    var		== variable(an(bindcand),ide(bindcand))
+	    newcase	== case(
+			     an(news),discr(casecand),
+			     distribToMatch(an(casecand),2nd * dep,var,news)
+							  * matches(casecand),
+			     distrib(an(casecand),2nd * dep,var,news,
+				     default(casecand))
+			   )
+	    reeval?	== (ide(discr(casecand)) in 
+				(alldiscrs - 1st(cont(cand?))))
+			or (ide(bindcand) in discrs(T1))
+			or exist?(\\p. case?(def(2nd(p))), dep)
+			     -- is there at least anyone who profitates
+			     -- except cand itself, or any more
+			     -- candidates for lifting?
+	IN
+	IF ~(reeval?) THEN
+	    -- re-evaluation prevented 
+	    LET (T2,blk) == simplifyBlock(C,T1,a,2nd * indep,newcase)
+	    IN
+	    (T2 setDiscrs alldiscrs,blk)
+	ELSE
+	    -- re-evaluation introduces the sad flavor of 
+	    -- exponential behavior
+	    LET rC == ((\\p,newC. 
+			   LET bind == 2nd(p)
+			       lhs == ide(bind) rhs == def(bind)
+			       newC1 == newC setTypes 
+						def(lhs,typeOfDec(bind),
+							     types(newC))
+			   IN
+			   IF shallSampleEqu?(C,lhs,rhs) THEN
+			       newC1 setEqu def(lhs,rhs,equ(newC1))
+			   ELSE newC1 FI
+		        ) / setSubs(C,{})) (indep) 
+		       -- reconstruct inherited context for newcase:
+		       -- + substitutions are performed: empty them
+		       -- + equalitys and types are reconstructed from indep
+		(T2,finalcase) == eval(rC)(T1 setDiscrs {},newcase)
+		(T3,blk) == simplifyBlock(C,T2,a,2nd * indep,finalcase)
+		T4 == T3 setDiscrs ((\\p,r. 1st(p) + r) / discrs(T2))(indep)
+	    IN
+	    (T4,blk)
+	FI
+      FI
+    FI
+		       
+-- .........................................................................
+
+  FUN evalBlock : inh ** inh ** thr ** seq[dec] ** exp 
+			-> thr ** seq[dec] ** seq[pair[discrBag,dec]] ** exp
+  DEF evalBlock(C,newC,T,<>,s) ==
+    LET (T1,news) == eval(newC)(T,s)
+    IN
+    (T1,<>,<>,news)
+
+  DEF evalBlock(C,newC,T,(b AS binding(a,lhs,mode,rhs))::bs,s) ==
+    LET currdscs    == discrs(T)
+        (T1,newrhs) == eval(C)(T setDiscrs {} :discrBag,rhs)
+    IN
+    IF avail?(substitution(newC,lhs,newrhs,s)) THEN
+	-- replace binding by substitution; account discriminations of rhs
+	-- for scope
+	LET value == cont(substitution(newC,lhs,newrhs,s))
+	    newsubs == def(lhs,value,subs(newC))
+	    (T2,lifted,newbs,news) ==
+	            evalBlock(C,newC setSubs newsubs,
+		  	      T1 setDiscrs (discrs(T1) + currdscs),bs,s)
+	IN
+	(T2,lifted,newbs,news)
+    ELSE
+        -- rename bounded ide, reflect in substitution, define type,
+        -- and occasionaly sample equality 
+	LET (T2,newlhs) == newIde(T1) 
+	    newsubs     == def(lhs,ide(newlhs),subs(newC))
+	    newtypes    == def(newlhs,typeOfDec(b),types(newC))
+	    newequ      == IF shallSampleEqu?(newC,newlhs,newrhs) THEN
+			       def(newlhs,newrhs,equ(newC))
+			   ELSE equ(newC) FI 
+	    nextNewC    == ((newC setSubs newsubs) 
+				  setTypes newtypes) 
+				  setEqu newequ
+	    (T3,lifted,newbs,news) ==
+			   evalBlock(C,nextNewC,T2 setDiscrs currdscs,bs,s)
+	IN
+	IF block?(newrhs) THEN
+	    -- rhs reduced to block: sample equations to lift from it
+	    -- (this invalidates discrs(T2), but we re-eval anyway)
+	    LET newlifted == binds(newrhs) ++ lifted
+		newnewrhs == scope(newrhs)
+	    IN
+	    (T3,newlifted,({} & binding(a,newlhs,mode,newnewrhs)) :: newbs,
+	     news)
+	ELSE
+	    (T3,lifted,(discrs(T1) & binding(a,newlhs,mode,newrhs)) :: newbs,
+	     news)
+	FI
+    FI
+
+
+  FUN substitution : inh ** ide ** exp ** exp -> option[exp]
+  DEF substitution(C,lhs,rhs,scope) ==
+    IF shallSubstitute?(C,lhs,rhs,scope) THEN
+	avail(rhs)
+    OTHERWISE
+    IF apply?(rhs) ANDIF global?(fun(rhs)) ANDIF local?(ft(args(rhs))) 
+					   ANDIF <>?(rt(args(rhs))) THEN
+	-- check for f_inv(f(x)) applications
+	LET Inverse? == find?(inverse?, props(unit(C), ide(fun(rhs))))
+	IN
+	IF avail?(Inverse?) THEN
+	    LET defOfArg? == equ(C) !? ide(ft(args(rhs)))
+	    IN
+	    IF avail?(defOfArg?) ANDIF apply?(cont(defOfArg?))
+				 ANDIF global?(fun(cont(defOfArg?)))
+				 ANDIF ide(fun(cont(defOfArg?))) =
+					  fun(cont(Inverse?)) THEN
+		-- is inverse application: return argument of defOfArg
+		avail(ft(args(cont(defOfArg?))))
+	    ELSE nil FI
+	ELSE nil FI
+    ELSE nil FI
+
+
+  FUN shallSubstitute? : inh ** ide ** exp ** exp -> bool
+  DEF shallSubstitute?(C,i,d,s) ==
+    /* Decide if d should be substituted for v instead of binding d to v,
+       where s is the scope of the binding.  
+    */
+    IF atomic?(d) THEN 
+	-- always substitute atomic expression
+	true
+    OTHERWISE 
+    IF atomic?(s) THEN
+	-- if scope is atomic, either binding is dead code,
+	-- or scope simply refers to bounded var - hence substitute
+	true
+    ELSE
+	false
+    FI
+
+
+  FUN shallSampleEqu? : inh ** ide ** exp -> bool
+  DEF shallSampleEqu?(C,i,d) ==
+    /* Decide if d should be sampled as equality for v.
+       This is always save, but only exploited currently for 
+       constructions during case simplification.
+    */
+    true
+
+-- ..........................................................................
+
+  FUN lookupBestDistribCand : 
+	inh ** discrBag ** seq[pair[discrBag,dec]] ** exp
+			-> option[pair[discrBag,dec]] ** seq[pair[discrBag,dec]]
+  FUN lookupBestDistribCand : 
+	inh ** discrBag ** seq[pair[discrBag,dec]] ** exp
+			** option[pair[discrBag,dec]] ** nat
+			-> option[pair[discrBag,dec]] ** seq[pair[discrBag,dec]]
+  DEF lookupBestDistribCand(C,discrs,bs,s) ==
+    lookupBestDistribCand(C,discrs,bs,s,nil,0)
+
+  DEF lookupBestDistribCand
+	(C,discrs,(b AS 
+		   (ds & binding(ba,id,mode,case(ca,ide(ia,dsc),ms,df))))::bs,
+							    s,cand,weight) ==
+    LET tupcnt  == (dsc ct discrs)
+		   -- the number of times dsc is discriminated
+		   -- in sequel ("local tupling cand")
+	fusecnt == IF forall?(directCons?(C),df :: (scope * ms)) THEN
+		       (id ct discrs) 
+		   ELSE 0 FI
+		   -- the number of times a directly constructed
+		   -- object is discriminated ("local fusion cand")
+	newweight  == distribWeightFun(C,dsc,tupcnt,id,fusecnt,#(ms),df,s)
+    IN
+    IF newweight > weight THEN
+	LET (finalcand,rest) ==
+	         lookupBestDistribCand(C,discrs,bs,s,avail(b),newweight)
+	IN
+	IF cand nil? THEN
+	    (finalcand,rest)
+	ELSE
+	    (finalcand,cont(cand)::rest)
+	FI
+    ELSE
+	LET (finalcand,rest) ==
+	         lookupBestDistribCand(C,discrs,bs,s,cand,weight)
+	IN
+	(finalcand,b::rest)
+    FI
+  DEF lookupBestDistribCand(C,discrs,b::bs,s,cand,weight) == 
+    LET (finalcand,rest) == 
+	         lookupBestDistribCand(C,discrs,bs,s,cand,weight)
+    IN
+    (finalcand,b::rest)
+  DEF lookupBestDistribCand(C,discrs,<>,s,cand,weight) == 
+    (cand,<>)
+    
+
+  FUN distribWeightFun : inh ** ide ** nat ** ide ** nat ** nat 
+					   ** exp ** exp -> nat
+  DEF distribWeightFun(C,dsc,tupcnt,id,fusecnt,noOfMatches,default,scope) ==
+     IF (noOfMatches = 1) and error?(default) THEN
+	 -- no code duplication; wins always
+	 max
+     OTHERWISE
+     IF distribCaseAlways?(popts(C)) THEN
+	-- distribution forced
+	max
+     OTHERWISE
+     IF ~(distribCase?(popts(C))) THEN
+	0
+     OTHERWISE
+     IF fusecnt > 0 ANDIF case?(scope) ANDIF 
+			  ide?(discr(scope)) ANDIF ide(discr(scope)) = id THEN
+	-- special case of an object immediatly deconstructed
+	-- after construction: high priority
+	max / 2
+     OTHERWISE
+     IF fusecnt > 0 and tupcnt > 0 THEN
+	-- looks like a good candidate: a constructed object is
+	-- discriminated in sequel, and the discriminated object
+	-- itself is discriminated twice again. 
+	((fusecnt*4) + (tupcnt*1)) /  (noOfMatches+1)
+     ELSE
+	-- any other cand rejected currently
+	0
+     FI
+
+  FUN directCons? directSel? : inh -> exp -> bool
+
+  DEF directCons?(C)(error(_)) == 
+    true
+  DEF directCons?(C)(apply(_,ide(_,id AS global(_,_)),as)) ==
+    IF constructor?(d) THEN #(as) = order(d) ELSE false FI
+    	WHERE d == dec(unit(C),id)
+  DEF directCons?(C)(ide(_,id AS global(_,_))) ==
+    IF constructor?(d) THEN order(d) = 0 ELSE false FI
+    	WHERE d == dec(unit(C),id)
+  DEF directCons?(C)(e) == 
+    false
+
+  DEF directSel?(C)(error(_)) == true
+  DEF directSel?(C)(ide(_,local(_))) == true
+  DEF directSel?(C)(e) == false
+
+
+  FUN distribToMatch : an ** seq[dec] ** dec ** exp -> match -> match
+  DEF distribToMatch(a,bs,v,s)(match(cons,vars,scope)) ==
+    match(cons,vars,distrib(a,bs,v,s,scope))
+
+  FUN distrib : an ** seq[dec] ** dec ** exp ** exp -> exp
+  DEF distrib(a,bs,v,s,e AS error(ea)) == e
+  DEF distrib(a,bs,v,s,e AS block(ea,binds,scope)) ==
+	-- prevent blocks in bindings.
+	block(a,binds,distrib(a,bs,v,s,scope))	
+  DEF distrib(a,bs,v,s,e) ==
+	block(a,binding(an(v),ide(v),local,e)::bs,s)
+
+-- ...........................................................................
+		       
+  FUN simplifyBlock : inh ** thr ** an ** seq[dec] ** exp -> thr ** exp
+  DEF simplifyBlock(C,T,a,bs,s) ==
+    IF error?(s) or <>?(bs) THEN (T,s)
+    ELSE 
+   	LET (candsMap,rest) == sampleTupleCands(C,{},<>,bs)
+	    (actCands,restCands) ==
+		 	       (\\ds. #(ds) > 1) partition 
+						    (2nd*explode(candsMap))
+	    actRest	    == rest ++ (ft * restCands)
+	    (T1,deconsInfos,actTupled) == 
+			       tupleCands(C,T,actCands)
+	    actScope	    == deconsTupledLhs(C,deconsInfos,s)
+	IN
+	(T1,block(a,actRest ++ actTupled,actScope))
+    FI
+	    
+
+  FUN sampleTupleCands: inh ** ideMap[seq[dec]] ** seq[dec] ** seq[dec]
+				-> ideMap[seq[dec]] ** seq[dec]
+  DEF sampleTupleCands(C,candsMap,rest,
+		 (b AS binding(a,lhs,m,case(ca,dsc,ms,df)))::bs) ==
+    LET type == structure(typeDecAss(unit(C)))(typeOfDec(b)) 
+    IN
+    IF tup?(type) THEN
+	-- unfortunately, we cannot tuple tuple-expressions currently
+	-- because of problems with nested tuples 
+	sampleTupleCands(C,candsMap,b::rest,bs)
+    ELSE
+	sampleTupleCands(C,def(ide(dsc),newCandsOfDsc,candsMap),rest,bs)
+	WHERE newCandsOfDsc == IF avail?(oldCandsOfDsc?) THEN
+				   b::cont(oldCandsOfDsc?)
+			       ELSE %(b) FI
+	      oldCandsOfDsc? == candsMap!?ide(dsc)
+    FI
+  DEF sampleTupleCands(C,candsMap,rest,b::bs) ==
+    sampleTupleCands(C,candsMap,b::rest,bs)
+  DEF sampleTupleCands(C,candsMap,rest,<>) ==
+    (candsMap,rest)
+
+
+  FUN tupleCands: inh ** thr ** seq[seq[dec]] -> thr ** seq[pair[ide,seq[dec]]]
+						     ** seq[dec]
+  DEF tupleCands(C,T,bs::rest) ==
+    LET (T1,info,tupled) == tuple(C,T,bs)
+	(T2,restInfos,restTupled) == tupleCands(C,T1,rest)
+    IN
+    (T2,info::restInfos,tupled::restTupled)
+  DEF tupleCands(C,T,<>) ==
+    (T,<>,<>)
+
+  FUN tuple: inh ** thr ** seq[dec] -> thr ** pair[ide,seq[dec]] ** dec
+  DEF tuple(C,T,bs) ==
+    LET allMatches == calcAllMatches(bs,{},<>)
+			-- calculated all constructor disjunct matches
+			-- (whole matches instead of only constructors
+			--  are sampled to preserve the annotations of 
+			--  the pattern variables)
+	tbs     == tupleBinds(C,bs)
+	(T1,ms) == (genTupledMatch(C,tbs))*(T,allMatches)
+	ta	== typing(tup(typeOfDec * bs))
+	rhs	== case(an(def(ft(bs))) set ta,discr(def(ft(bs))),ms,tbs)
+    IN
+    LET (T2,evRhs) == eval(C setSubs {})(T1,rhs)
+		   	-- the tricky but inefficient part of this
+			-- realization is that re-evaluation is now
+			-- started ... tbs, propagated into each match
+			-- and the default of rhs, will become reduced
+			-- appropriately
+    IN
+    LET (T3,lhs)== newIde(T2)
+	tupled  == binding(an(ft(bs)) set ta,lhs,local,evRhs)
+	info    == lhs & ((\\b.variable(an(b),ide(b))) * bs)
+    IN
+    (T3,info,tupled)
+
+  FUN calcAllMatches : seq[dec] ** ideSet ** seq[match] -> seq[match]
+  DEF calcAllMatches(binding(a,lhs,mode,case(ca,dsc,ms,df))::bs,sofar,allMs) ==
+    LET R == ( (\\m,P. IF cons(m) in 1st(P) THEN P
+		       ELSE incl(cons(m),1st(P)) & (m::2nd(P)) FI)
+						   / (sofar & allMs)) (ms)
+    IN
+    calcAllMatches(bs,1st(R),2nd(R))
+  DEF calcAllMatches(<>,sofar,allMs) == allMs
+    
+  FUN tupleBinds : inh ** seq[dec] -> exp
+  DEF tupleBinds(C,bs) ==
+    block(none,bs,
+          apply(none,ide(a,consTuple(#(bs))),(\\b.ide(none,ide(b))) * bs))
+	WHERE a == none set spec(typeOfDec * bs) 
+			-- specialization of generic tuple constructor
+
+  FUN genTupledMatch : inh ** exp -> thr ** match -> thr ** match
+  DEF genTupledMatch(C,scope)(T,match(c,vs,_)) ==
+    -- generate tupled match, taken supplied match as "pattern"
+    LET (T1,renVs) == (rename)*(T,vs)   -- new pattern variables
+    IN
+    (T1,match(c,renVs,scope))
+
+
+  FUN deconsTupledLhs : inh ** seq[pair[ide,seq[dec]]] ** exp -> exp
+  DEF deconsTupledLhs(C,(lhs & origVars)::infos,scope) ==
+    LET newScope == deconsTupledLhs(C,infos,scope)
+	default  == error(none set error(noPos,"",never))
+			-- !!!! type annotation? !!!!
+	decons   == match(consTuple(#(origVars)),origVars,newScope)
+    IN
+    case(none,ide(none,lhs),%(decons),default) 
+  DEF deconsTupledLhs(C,<>,scope) ==
+    scope
+    
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+DEF eval(C)(T,case(a,dsc,ms,df)) == 
+    LET (T1,newDsc)  == eval(C)(T,dsc)
+    IN
+    IF error?(newDsc) THEN
+      (T1 setDiscrs all,error(an(newDsc) set type(an(df))))
+    ELSE
+      LET cons? == checkConstruction(C,newDsc)
+      IN
+      IF avail?(cons?) THEN
+        -- case is reducable
+        LET (cid,cargs) == IF apply?(cont(cons?)) THEN
+                                  (ide(fun(cont(cons?))),args(cont(cons?)))
+                           ELSE (ide(cont(cons?)),<>[exp]) FI
+            m?          == find?(matchOf(cid),ms)
+        IN
+        IF avail?(m?) THEN
+            -- found the match corresponding to cid:
+            -- build substitution of vars of match by cargs,
+            -- and sample equality of newDsc to matched cid(cargs).
+            LET m      == cont(m?)
+                subs1  == extend(subs(C),ide * vars(m),cargs)
+                equ1   == IF newDsc ide? THEN
+                              def(ide(newDsc),cont(cons?),equ(C))
+                          ELSE equ(C) FI
+            IN
+            eval((C setSubs subs1) setEqu equ1)(T1,scope(m))
+        ELSE
+            -- found no match corresponding to cid, eval default
+            eval(C)(T1,df)
+        FI
+      ELSE
+        -- case it not reducable
+        LET dscNoMatch == 
+		-- get impossible matches of dsc
+		IF newDsc ide? THEN
+		    IF ide(newDsc) def? noMatch(C) THEN
+			noMatch(C)!ide(newDsc)
+		    ELSE {} FI
+		ELSE {} FI
+
+	    possMs == 
+		-- filter out possible matches
+		IF {}?(dscNoMatch) THEN
+		    ms
+		ELSE (\\m. ~(cons(m) in (dscNoMatch))) | ms FI
+	    currDscs  == discrs(T1)
+	    (T2,newMs) == (evalMatch(C,newDsc))*(T1 setDiscrs all,possMs)
+	    matchDscs == discrs(T2)
+
+	    dfC == 
+		-- account noMatch for default
+		IF newDsc ide? THEN
+	   	    C setNoMatch def(ide(newDsc),newDscNoMatch,noMatch(C))
+		    WHERE newDscNoMatch ==
+			       ( (\\m,S.incl(cons(m),S)) / dscNoMatch )(possMs)
+		ELSE C FI
+            (T3,newDf)== eval(dfC)(T2 setDiscrs {},df)
+
+	    dfDscs    == discrs(T3)
+	    T4	      == T3 setDiscrs 
+			      incl(ide(newDsc),currDscs + (matchDscs * dfDscs))
+        IN
+        combineCases(C,T4,a,newDsc,newMs,newDf)
+      FI
+    FI
+
+
+FUN matchOf : ide -> match -> bool
+DEF matchOf(cid)(m) == cons(m)=cid
+
+FUN evalMatch : inh ** exp -> thr ** match -> thr ** match
+DEF evalMatch(C,dsc)(T,match(cn,vs,e)) == 
+    /* rename vars of match, sample that dsc has matched, and 
+       evaluate scope of match.
+    */
+    LET (T1,vs1) == (rename)*(T,vs)
+	as       == (ide:ide->exp o ide:dec->ide) * vs1
+	subs1    == extend(subs(C),ide:dec->ide * vs,as)
+	types1	 == extend(types(C),ide * vs1,typeOfDec * vs)
+	equ1     == IF dsc ide? THEN
+			IF vs1 <>? THEN def(ide(dsc),ide(cn),equ(C))
+			ELSE def(ide(dsc),apply(none:an,ide(cn),as),equ(C)) 
+			FI
+		    ELSE equ(C) FI
+	C1       == ((C setSubs subs1) setTypes types1) setEqu equ1
+	currdscs == discrs(T1)
+	(T2,e1)  == eval(C1)(T1 setDiscrs {} :discrBag,e)
+	T3	 == T2 setDiscrs (currdscs * discrs(T2))
+    IN
+    (T3,match(cn,vs1,e1))
+
+FUN checkConstruction : inh ** exp -> option[exp] 
+DEF checkConstruction(C,d) ==
+    /* Check if (evaluated) discriminator expression is construction.
+    */
+    LET d1 == IF ide?(d) THEN 
+		  -- equality avail for d?
+		  IF ide(d) def? equ(C) THEN equ(C)!ide(d)
+				        ELSE d FI
+	      ELSE d FI
+	c  == IF apply?(d1) THEN fun(d1) ELSE d1 FI
+    IN
+    IF global?(c) THEN
+	IF constructor?(dec(unit(C),ide(c))) THEN
+	    -- since discrimanted expressions cannot be of higher 
+	    -- order we've succeeded know.
+	    avail(d1)
+	ELSE nil FI
+    ELSE nil FI
+		
+FUN combineCases : inh ** thr ** an ** exp ** seq[match] ** exp 
+							-> thr ** exp
+DEF combineCases(C,T,a,dsc,ms,df) ==
+    IF case?(df) THEN
+        IF dsc = discr(df) THEN
+            LET remains == notMatched?(ms) | matches(df)
+                        -- filter out matches which are not handled
+                        -- by ms ("unsequentializing")
+            IN
+            simplifyCase(C,T,a,dsc,ms++remains,default(df))
+        ELSE simplifyCase(C,T,a,dsc,ms,df) FI
+    ELSE simplifyCase(C,T,a,dsc,ms,df) FI
+
+    FUN notMatched? : seq[match] -> match -> bool
+    DEF notMatched?(ms)(match(c,_,_)) == 
+        forall?(~ o (='Ide(_,c) o cons), ms)
+
+FUN simplifyCase : inh ** thr ** an ** exp ** seq[match] ** exp 
+							-> thr ** exp
+DEF simplifyCase(C,T,a,dsc,ms,df) ==
+    LET (errorMs,plainMs) == partition(error? o scope,ms)
+	(newMs,newDf) ==
+	    IF neverReached?(popts(C),df) and ::?(errorMs) THEN
+	        -- propagate all errors into default 
+	        LET notNever == (\\e. ~(neverError?(e))) | 
+						(df :: (scope*errorMs))
+		    errorDf  == IF ::?(notNever) THEN ft(notNever)
+					         ELSE df FI
+					-- find some meaningful error
+		IN
+		(plainMs,errorDf)
+	    ELSE (ms,df) FI
+    IN
+    IF <>?(newMs) THEN
+	-- no matches left
+	(T,newDf)
+    ELSE
+        LET notHandled? == defaultVariants(C,dsc,newMs,newDf)
+        IN
+        IF avail?(notHandled?) THEN
+	    LET (T1,cplMs,cplDf) == 
+			completeMatches(C,T,cont(notHandled?),dsc,newMs,newDf)
+	    IN
+	    (T1,case(a,dsc,cplMs,cplDf))
+	ELSE
+	    (T,case(a,dsc,newMs,newDf))
+	FI
+    FI
+
+  FUN defaultVariants : inh ** exp ** seq[match] ** exp -> option[seq[type]]
+  DEF defaultVariants(C,dsc,ms,df) ==
+    -- calculate remaining variants of dsc for default, if possible
+    IF neverReached?(popts(C),df) THEN
+	avail(<>)
+    ELSE
+        LET t == structure(typeDecAss(unit(C)))
+			  (typeOfExp(typeValAss(C),typeDecAss(unit(C)))(dsc))
+	IN
+	IF sum?(t) THEN
+	    avail( (\\prod. ~(cons(prod) in notMatched)) | members(t) )
+	    WHERE
+	      notMatched == ( (\\m,S.incl(cons(m),S)) / inhNotMatched )(ms)
+	      inhNotMatched == IF ide(dsc) def? noMatch(C) THEN
+				   noMatch(C)!ide(dsc)
+			       ELSE {} FI
+	ELSE
+	    -- no type information; cannot calculate
+	    nil
+	FI
+    FI
+
+  FUN completeMatches : inh ** thr ** seq[type] ** exp ** seq[match] ** exp ->
+				thr ** seq[match] ** exp
+  DEF completeMatches(C,T,notHandled,dsc,ms,df) ==
+    IF #(notHandled) = 0 THEN
+	-- no completion necessary, but set default to never reached
+	(T,ms,newDf)
+	   WHERE newDf == error(an(df) set error(noPos,"",never))
+    OTHERWISE
+    IF shallCompleteMatches(C,#(notHandled),df) THEN
+	LET (T1,addMs) == (genMatch(C,df))*(T,notHandled)
+	     newDf     == error(an(df) set error(noPos,"",never))
+	IN
+	(T1,ms++addMs,newDf)
+    ELSE (T,ms,df) FI
+
+  FUN shallCompleteMatches : inh ** nat ** exp -> bool
+  DEF shallCompleteMatches(C,noOfNotHandled,df) ==
+    -- elaborate !!!
+    completeCaseAlways?(popts(C)) or 
+	(completeCase?(popts(C)) and (noOfNotHandled < 2))
+			 
+  FUN neverError? : exp -> bool
+  DEF neverError?(error(a)) ==
+    IF error?(source(a)) THEN never?(kind(source(a))) ELSE false FI
+  DEF neverError?(_) == false
+
+  FUN typeValAss : inh -> ide -> type
+  DEF typeValAss(C)(i) == 
+        IF local?(i) THEN types(C)!i
+		     ELSE typeOfDec(dec(unit(C),i)) FI
+	    
+  FUN genMatch : inh ** exp -> thr ** type -> thr ** match
+  DEF genMatch(C,e)(T,prod(c,ts)) ==
+        LET (T1,vs) == (genVar)*(T,ts)  -- generate dummy pattern variables
+        IN
+        (T1,match(c,vs,e))
+
+  FUN genVar : thr ** type -> thr ** dec
+  DEF genVar(T,t) ==
+        LET a      == set(none,typing(t))
+            (T1,i) == newIde(T)
+        IN
+        (T1,variable(a,i))
+

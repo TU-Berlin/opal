@@ -1,0 +1,146 @@
+IMPLEMENTATION ParserLBasic
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:25 $ ($Revision: 1.1.1.1 $)
+
+IMPORT 
+       Char    COMPLETELY
+       Compose ONLY o
+       Nat     ONLY < 
+       Option  COMPLETELY
+       ParserL  COMPLETELY
+       ParserLMap        ONLY *
+       Seq              ONLY seq
+       String           COMPLETELY
+       StringConv       ONLY `
+       StringScan       ONLY scan union
+       StringFilter     ONLY split
+       Void             ONLY nil
+
+
+-- %$Parsers for basic types$
+DEF parse: parser[bool] == asParser(scan)
+DEF parse: parser[nat] == asParser(scan)
+DEF parse: parser[int] == asParser(scan)
+DEF parse: parser[char] == asParser(scan)
+DEF parse: parser[real] == asParser(scan)
+-- % These two recognize the rest of the string
+-- DEF parse: parser[denotation] == asParser(\\s. (avail(s`), <>))
+DEF parse: parser[denotation] == asParser(parseI)
+FUN parseI: string -> option[denotation] ** string
+DEF parseI == \\s. (avail(s`), <>)
+-- DEF parse: parser[string] == asParser(\\s. (avail(s), <>))
+DEF parse: parser[string] == asParser(parseI)
+FUN parseI: string -> option[string] ** string
+DEF parseI == \\s. (avail(s), <>)
+-- % These recognize upto (and excluding) the Character / Predicate
+DEF upto: char -> parser[denotation](c) == upto(_ = c)
+DEF upto: (char -> bool) -> parser[denotation](cF) ==
+  asParser(\\s. LET (d, r) == asFct(upto(cF))(s) IN (avail(cont(d)`), r))
+                                             -- % this never fails
+
+FUN asDenotation : parser[string] -> parser[denotation]
+-- % auxiliary function for conversion (should be in ParserMap)
+-- %- Funktioniert nich' ParserMap ist parametrisiert (kd)
+DEF asDenotation(P) == ` * P
+
+DEF upto: char -> parser[string](c) == upto(_ = c)
+DEF upto: (char -> bool) -> parser[string](cF) == *(~ o cF)
+
+
+DEF cF* == 
+    asParser(\\s. LET(s1, s2) == split(cF, s) IN (avail(s1), s2))
+
+DEF cF* == asDenotation(cF*)
+
+DEF cF+ == 
+    asParser(\\s. LET (d, r) == asFct(cF*)(s)
+                  IN IF cont(d) <>? THEN (nil, s) ELSE (d, r) FI)
+DEF cF+ == asDenotation(cF+)
+
+/*
+DEF line == asParser(\\s. IF s <>? THEN (nil, s)
+                          ELSE LET (s1, s2) == split(_ |= newline, s)
+                               IN (avail(s1), 
+                                  IF <>?(s2) THEN s2 ELSE rt(s2) FI)
+                          FI)
+*/
+DEF line == asParser(lineI)
+FUN lineI: string -> option[string] ** string
+DEF lineI == \\s. IF s <>? THEN (nil, s)
+                  ELSE LET (s1, s2) == split(_ |= newline, s)
+                       IN (avail(s1), 
+                           IF <>?(s2) THEN s2 ELSE rt(s2) FI)
+                  FI
+DEF line == asDenotation(line)
+
+
+DEF chunk(N) == asParser(\\s. LET (s1, s2) == split(N, s)
+                              IN IF #(s1) < N THEN (nil, s)
+                                 ELSE (avail(s1), s2)
+                                 FI)
+
+DEF chunk(N) == asDenotation(chunk(N))
+
+DEF skip == (\\ _ : string. nil) * (whitespace? *) 
+
+DEF letters : parser[string] == letter? +
+DEF letters == asDenotation(letters)
+DEF digits : parser[string] == digit? +
+DEF digits == asDenotation(digits)
+
+
+-- %$Special Character Parsers$
+-- %recognize only the given character
+DEF c ! == 
+    asParser(\\s. 
+    IF s <>? THEN (nil, s) 
+    ELSE IF ft(s) = c THEN (avail(c), rt(s)) ELSE (nil, s) FI
+    FI)
+
+-- %recognize all characters which fulfill the predicate
+DEF cF:char -> bool ! == 
+    asParser(\\s. 
+    IF s <>? THEN (nil, s) 
+    ELSE IF cF(ft(s)) THEN (avail(ft(s)), rt(s)) ELSE (nil, s) FI
+    FI)
+-- %build a range of characters
+DEF c1 - c2 == \\c. c >= c1 and c <= c2
+-- %recognize whitespace characters
+DEF ws == (\\ _ .nil) * (whitespace? !)
+-- %recognize the given denotation
+DEF d ! == d |-> nil
+-- %recognize the empty string
+-- DEF <> == asParser(\\s. (avail(nil), s))
+DEF <> == asParser(<>_I)
+FUN <>_I : string -> option[void] ** string
+DEF <>_I == \\s. (avail(nil), s)
+
+/* %recognizes the empty string, but succeeds only if current 
+context is the empty string. */
+-- DEF $ == asParser(\\ s. IF s <>? THEN (avail(nil), s) ELSE (nil, s) FI)
+DEF $ == asParser($_I)
+FUN $_I : string -> option[void] ** string
+DEF $_I == \\ s. IF s <>? THEN (avail(nil), s) ELSE (nil, s) FI
+
+-- %$Side-effects$
+
+-- %All of the following parsers always succeed.
+
+-- %change context as indicated by function
+DEF upd(f) == asParser(\\s. (avail(nil), f(s)))
+
+-- %insert string before context
+DEF insert(s1) == asParser(\\s. (avail(nil), s1 ++ s))
+-- %insert character before context
+DEF unget(c) == asParser(\\s. (avail(nil), c :: s))
+-- %switch to given context
+
+DEF switch(s) == asParser(\\ _ . (avail(nil), s))
+-- %clear context
+-- DEF clear == asParser(\\ _ . (avail(nil), <>))
+DEF clear == asParser(clearI)
+FUN clearI: string -> option[void] ** string
+DEF clearI == \\ _ . (avail(nil), <>)

@@ -1,0 +1,210 @@
+-- %- LAST EDIT: Mon Aug 12 19:08:16 1996 by Christian Maeder (andromache!maeder) 
+-- %- =========================================================================
+-- %- Author:      mija
+-- %- Project:     OPAL1-Compiler (signature analysis)
+-- %- Purpose:     generates 'flat' candidates by combining 'deep' candidates
+-- %- ========================================================================
+/* %@emph{Zweck:}   Erzeugen der 'flachen' Form der Kandidatenmengen fuer die
+             Instanzen und Funktionalitaeten von partiellen Namen, um die
+             Querbezuege direkt zu repraesentieren.
+             Fuer Instanzen bedeutet dies, dass die Abhaengigkeiten der
+             Operationsparameter von den Sortenparametern beruecksichtigt
+             wird und anstatt einer Instanzenliste von Kandidatenmengen
+             eine Menge von Instanzenlisten (mit je einem Kandidaten)
+             erzeugt wird (exponentieller Aufwand).
+             Fuer Fcts bedeutet dies, dass die Abhaengigkeiten der Basis-
+             sorten untereinander aufgrund von formalen Parametern 
+             beruecksichtigt wird und anstatt einer Fct von Kandidatenmengen
+             eine Liste von Fcts (mit je einem Kandidaten) erzeugt wird 
+             (exponentieller Aufwand). Ausserdem wird ev. eine Instanz 
+             berechnet, die sich aus der Fct ableitet.
+
+             @b{!!!!! ACHTUNG !!!!!}
+             Zur Zeit wird nur die Repr. gewechselt, aber nicht die
+             Abhaengigkeiten ueberprueft. D.h. es koennen inkonsistente
+             Kombinationen erzeugt werden. !!!!
+*/
+IMPLEMENTATION FlattenCandidateSets
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  AbsyFun2        ONLY    /
+        Compose         ONLY    o
+        DEBUG           COMPLETELY
+        Denotation      ONLY    ++
+        Fct             ONLY    fct
+        GlobSig         ONLY    globSig
+        GlobSig4SigAna  COMPLETELY
+        ImpDecl4SigAna  COMPLETELY
+        IsFlatInst      ONLY    isFlatInst
+        MySeqFun1       ONLY    combine
+        Name            COMPLETELY
+        Name4SigAna     COMPLETELY
+        Objects         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        PartName        COMPLETELY
+        PartNameEntry   COMPLETELY
+        Pos             ONLY    firstPos pos
+        Pragma          ONLY    noPragma pragma
+        Rep             ONLY    nilRep rep
+        SeqConv         ONLY    `
+
+        SeqFilter       ONLY    | partition
+
+        SeqMapEnv       ONLY    *
+        SeqMap          ONLY    *
+        SeqOfSeq        ONLY    flat
+        SeqZip          ONLY    zip
+        Seq             COMPLETELY
+
+-- ---------------------------------------------------------------------------
+
+--FUN flattenCandidateSets : bool ** globSig -> globSig
+DEF flattenCandidateSets(_, gS) == 
+        treatParamPNS(h7, finGS)
+        WHERE
+        (finGS, _) == treatInstPNS(flattenInstPN, gS2)
+        (gS2, _) == treatOnlyPNS(flattenOnlyPN, gS1)
+        (gS1, _) == treatSortPNS(h8, gS)
+
+        FUN h7 : globSig ** onlyPNE -> globSig ** onlyPNE
+        DEF h7(gS, PN) == (finGS, oPN)
+                WHERE (finGS, _, finPN) == flattenPN(gS, pN(PN),dummyPN)
+                       oPN == onlyPNE(finPN, errInfo(PN))
+                -- Hier muesste ich mir eigentlich die echte Syntax merken !!
+                dummyPN == partName(nilRep, nil, <>[partName:SORT],firstPos,
+                                    none:kind, noPragma, firstPos)
+
+        FUN flattenOnlyPN : globSig ** struct'Objects ** inst ** onlyPNE 
+                -> globSig ** bool ** onlyPNE
+        DEF flattenOnlyPN(gS, _, _, PN) == (finGS, dummy, oPN)
+                WHERE (finGS, dummy, finPN) == flattenPN(gS,pN(PN),dummyPN)
+                       oPN == onlyPNE(finPN, errInfo(PN))
+                dummyPN == partName(nilRep, nil, <>[partName:SORT],firstPos,
+                                    none:kind, noPragma, firstPos)
+
+        FUN h8 : globSig ** sortPN -> globSig ** bool
+        DEF h8(gS, sortPN) == (updPN(gS1, sortPN, pN), dummy)
+                WHERE 
+                (gS1, dummy, pN) == 
+                  flattenPN(gS, getPN(gS,sortPN),syntax(gS,sortPN))
+
+
+-- ---------------------------------------------------------------------------
+
+FUN flattenInstPN : globSig ** instPN -> globSig ** bool
+DEF flattenInstPN(gS, instPN) == 
+        IF flatInstPN?(gS, instPN) THEN (gS, true)
+        ELSE
+        LET Debug? == FIELD?[bool]("-zflattenInstPN")
+            Cands0 == getCands(gS,instPN)
+            Syntax0 == syntax(gS,instPN)
+            Syntax == PRINT(Debug?, \\ . "Instance: " ++ 
+                        `("[",",","]")(`)(Syntax0), Syntax0)
+            Cands == PRINT(Debug?, \\ . "Deep Cands: " ++
+                        `("[",",","]")(`)(Cands0), Cands0)
+            (gSnotChanged, pNS) == *'SeqMapEnv(flattenPN2, gS & true,
+                (zip(&[pN:SORT,partName:SORT])
+                        (Cands, Syntax)))
+            finCands0 == (isFlatInst(gS, context(gS,instPN)) o 
+                        (\\S. (name:flatPnEle->name)*S))
+                     | combine(pNS)
+            finCands == PRINT(Debug?, \\ . "Flat Cands: {\n" ++
+                 `("","\n","}")(`("[",",","]")(`))(finCands0), finCands0)
+        IN (toFlatCands(1st(gSnotChanged), instPN, finCands), 2nd(gSnotChanged))
+        FI
+
+
+        FUN flattenPN2 : pair[globSig,bool] ** pair[pN:SORT,partName:SORT]
+                        -> pair[globSig,bool] ** seq[flatPnEle:SORT]
+        DEF flattenPN2(gSnotChanged, pNSyntax) == 
+                LET (pN, syntax) == (1st(pNSyntax), 2nd(pNSyntax)) IN
+                (gS & (notChanged and 2nd(gSnotChanged)), getFlatPN(fPN))
+                WHERE (gS, notChanged, fPN) == 
+                        flattenPN(1st(gSnotChanged),pN,syntax)
+
+-- ---------------------------------------------------------------------------
+
+FUN flattenPN : globSig ** pN ** partName -> globSig ** bool ** pN
+DEF flattenPN(gS, pN, syntax) == 
+        IF pN flatPN? THEN (gS, true, pN)
+        IF pN deepPN? THEN (finGS, notChanged, flatPN)
+          WHERE
+          hasNoFct == ~(pN pNOp?)
+          cands == treatGenerics(gS,syntax) * getCands(pN)
+          (finGS, notChanged) == (1st(finGShC), 2nd(finGShC))
+          (finGShC, possS) == *(h1, &(gSFct, hasNoFct), cands)
+          (gSFct, flatFctS) == 
+            IF hasNoFct THEN (gS, nil[fct[sortPN:SORT]])
+            IF cands <>? THEN (gS, nil[fct[sortPN:SORT]])
+            ELSE (((flatSortPN / gS)(getPNFct(pN))), avail(getPNFct(pN)))
+            FI
+          flatPN == toFlatPN(pN, h3(flatFctS,errInfo(pN)) * flat(possS))
+        FI
+
+        FUN h1 : pair[globSig,bool] ** instCand
+                 -> pair[globSig,bool] ** seq[pair[name:SORT,instPN:SORT]]
+        DEF h1(gSnC, Names & InstPN) == 
+                IF InstPN noInstPN? THEN (gSnC, h22 * Names)
+                ELSE *(h2(InstPN), gSnC, Names) FI
+        FUN h2 : instPN -> pair[globSig,bool] ** name 
+                 -> pair[globSig,bool] ** pair[name:SORT,instPN:SORT]
+        DEF h2(instPN)(gS & Changed?, name) == 
+                (finGS & (notChanged and Changed?), name & instPN)
+                WHERE (finGS, notChanged) == flattenInstPN(gS, instPN)
+        FUN h3 : option[fct[sortPN:SORT]] ** errInfo
+                ->pair[name:SORT,instPN:SORT] -> flatPnEle
+        DEF h3(fct,errInfo)(pair) == flatPnEle(1st(pair),2nd(pair),fct,errInfo)
+        FUN h22 : name -> pair[name:SORT,instPN:SORT]
+        DEF h22(name) == name & noInstPN
+
+FUN treatGenerics : globSig ** partName
+        -> instCand -> instCand
+  -- Entfernen von genericTransitives und
+  -- von generischen Eintraegen, wenn einen Annotation vorliegt und ein
+  -- speziellerer Kandidat gefunden werden konnte.
+DEF treatGenerics(gS, pN)(poss1 & InstPN) == (finPoss & InstPN)
+        WHERE
+        finPoss == 
+          IF paramS(pN) <>? THEN poss1  -- keine Annotation
+          OTHERWISE
+          IF poss1 <>? THEN poss1       -- nichts mehr zu filtern
+          OTHERWISE
+          IF rt(poss1) <>? THEN poss1   -- bei nur einem Kandidaten ....
+          ELSE
+            LET (plain,generic) == isNotGenericInst(gS) partition poss1 IN
+            IF plain <>? THEN ft(generic)% ELSE plain FI
+          FI
+
+FUN isNotGenericInst : globSig -> name -> bool
+DEF isNotGenericInst(gS)(name) ==
+        IF name intName? THEN true
+        IF name extName? THEN
+          IF inst(name) = unparam'Objects THEN true
+          ELSE isNotGeneric(gS,struct(name),inst(name)) FI
+        FI      
+
+-- Diese Funktion lies leider noch die generischen Instanzen durch,
+-- die hinter transitive-Instanzen stecken.
+-- 25.11.93 mija
+FUN isNotGeneric : globSig ** struct'Objects ** inst  -> bool
+ -- PRE struct ist parametrisierte Struktur
+DEF isNotGeneric(gS,struct,inst) ==
+  IF uninst?(gS,struct,inst) THEN false
+  -- jetzt noch rekursiv die geschachtelten Instanzen abtesten
+  IF genericTransitive?(gS,struct,inst) THEN
+    isNotGeneric(gS, getOtherInst(gS,struct,inst))
+  IF transitive?(gS,struct,inst) THEN
+    forall?(isNotGenericInst(gS),getInst(gS,struct,inst))
+  IF genericTransitives?(gS,struct,inst) THEN
+    forall?(\\x.isNotGeneric(gS,struct,x),getInsts(gS,struct,inst))
+  ELSE true FI
+
+FUN flatSortPN : sortPN ** globSig -> globSig
+DEF flatSortPN(sortPN,gS) == updPN(finGS, sortPN, finPN)
+        WHERE (finGS, _, finPN) == 
+                flattenPN(gS, getPN(gS, sortPN),syntax(gS,sortPN))

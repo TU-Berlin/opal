@@ -1,0 +1,142 @@
+IMPLEMENTATION MapByBST [dom:SORT,< :dom**dom->bool,codom]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:05 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	SetByBST		ONLY set abs rep {} {}? incl # exist? forall? excl find? %
+	SetByBSTMap		ONLY *
+	SetByBSTReduce	ONLY /
+	Pair[dom,codom] COMPLETELY
+    Pair[pair[dom, codom], nat] COMPLETELY
+	Option		COMPLETELY
+	BSTree[pair[dom, codom], less] ONLY bstree abs rep balance nil node
+    BSTreeMap[pair[dom, codom], less, dom, <] ONLY *
+    BSTreeConv[dom, <] ONLY asSeqIn
+    Tree ONLY tree node nil # %
+    TreeConv ONLY asSeqIn
+	ABORT		ONLY ABORT
+       CAST ONLY cast
+       Seq ONLY seq :: <>
+       SetByBSTConv[dom, <] ONLY asSeq
+       SeqReduce ONLY /
+       SeqMap ONLY *
+
+-- %$The Type Itself$
+DATA map	== abs(rep: set'SetByBST[pair,less])
+
+DEF a less b 	== 1st(a) < 1st(b)
+
+
+-- %$Nonfree Constructors$
+DEF {} 		== abs({})
+DEF def(d,r,M)  == abs(abs(abs(def(d, r, rep(rep(rep(M)))))))
+  FUN def: dom ** codom ** tree[pair[pair[dom, codom], nat]] -> 
+                           tree[pair[pair[dom, codom], nat]] 
+  DEF def(d, r, nil[pair[pair[dom,codom],nat]]) == %((d&r)&1)
+  DEF def(d, new, node((actdom & actcodom) & size , l, r)) ==
+    IF d < actdom THEN 
+        balance(node((actdom & actcodom) & 
+                     succ(#(def(d, new, l)) + (r#)), 
+                     def(d, new, l), r))
+    IF actdom < d THEN
+        balance(node((actdom & actcodom) & 
+                     succ((l#) + #(def(d, new, r))),
+                     l, def(d, new, r)))
+    ELSE -- % actdom = d
+        node((actdom & new) & size, l, r)
+    FI
+
+
+-- %$Constructing a Map From Datas$
+-- DEF def(d,r,M) ==  s. above
+
+/* % The following works, because the codomain is not used for
+ordering of pairs! */
+DEF undef(d,M) == abs(excl(d & cast(0), M rep))
+
+
+DEF upd(D,f,M) == abs(abs(abs(upd(D, f, rep(rep(rep(M)))))))
+  FUN upd: dom ** (codom -> codom) ** tree[pair[pair[dom, codom], nat]] -> 
+                           tree[pair[pair[dom, codom], nat]] 
+  DEF upd(_, _, nil) == nil
+  DEF upd(d, f, node((actdom & actcodom) & size , l, r)) ==
+    IF d < actdom THEN 
+        balance(node((actdom & actcodom) & size,
+                     upd(d, f, l), r))
+    IF actdom < d THEN
+        balance(node((actdom & actcodom) & size,
+                     l, upd(d, f, r)))
+    ELSE -- % actdom = d
+        LET new == f(actcodom)
+        IN
+        node((actdom & new) & size, l, r)
+    FI
+
+DEF extend(_, <>,_ :: _) == ABORT("extend'MapByBST: seq[codom] too long")
+DEF extend(_,_ :: _, <>) == ABORT("extend'MapByBST: seq[dom] too long")
+DEF extend(M,<>,<>) == M
+DEF extend(M,d::ds,c::cs) == extend(def(d,c,M),ds,cs)
+
+-- %$Constructing a Map From a Function$
+DEF (n1 .. n2)(f,g) ==  IF n1 > n2 THEN {}
+			ELSE def(f(n1),g(f(n1)), (succ(n1) .. n2)(f,g))
+			FI
+
+DEF iter(start, it, P)(f) ==
+		IF ~(P(start)) THEN {}
+		ELSE def(start,f(start), iter(it(start), it, P)(f))
+		FI
+
+DEF init(S, f) == ((\\d, M. def(d, f(d), M)), {}) / asSeq(S)
+
+-- $Combining Maps$
+DEF M1 <+ M2 == ((\\p, M. def(unpair(p), M)), M1)/ (M2 rep)
+
+DEF M <- s 	== (undef, M) / (s)
+
+/* geht leider nur mit Gleichheit auf codom :-( kd
+
+-- intersection
+DEF M1 * M2 == abs(abs(rep(rep(M1)) * rep(rep(M2))))
+  FUN * : seq[pair] ** seq[pair] -> seq[pair]
+  DEF <> * _ == <>
+  DEF _ * <> == <>
+  DEF (d1 & r1)::s1 * (d2 & r2)::s2 ==
+	  IF d1 < d2 THEN s1 * (d2 & r2)::s2
+	  IF d2 < d1 THEN (d1 & r1)::s1 * s2
+	  ELSE IF r1 = r2 THEN (d1&r1) :: s1 * s2
+	       ELSE	       s1 * s2
+	       FI
+	  FI
+*/
+
+-- %$Accessing Codom - Elements$
+DEF M!d  	== IF c avail? THEN cont(c) 
+			       ELSE ABORT("!'MapByBST: element not in domain") FI
+		   WHERE c == !?(M,d)
+
+DEF M!?d	== rep(rep(M)) !? d
+    FUN !? : bstree[pair, less] ** dom -> option[codom]
+    DEF nil !? _ == nil
+    DEF node(d & c, l, r) !? dd ==
+                IF dd < d THEN l !? dd
+			    IF d < dd THEN r !? dd
+			    ELSE avail(c)
+			    FI
+
+-- %$Information About a Map$
+
+DEF {}?(M) 	== {}?(rep(M))
+DEF d def? M	== avail?(M !? d)
+
+DEF dom(M)	== (\\p.1st(p)) * (M rep)
+DEF codom(M) == (\\p.2nd(p)) * (\\p.1st(p)) * asSeqIn(rep(rep(rep(M))))
+
+DEF M#		== rep(M)#
+
+DEF exist?(P, M) == exist?((\\x.P(unpair(x))), M rep)
+DEF find?(P,M)	 == find?((\\x.P(unpair(x))), M rep)
+DEF forall?(P, M) == forall?((\\x.P(unpair(x))), M rep)

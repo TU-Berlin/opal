@@ -1,0 +1,86 @@
+IMPLEMENTATION SubsystemFilter[ structure, structure2Name, structureEmpty? ]
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/sourcetab/SubsystemFilter.impl,v 1.1.1.1 1998-06-16 16:00:40 wg Exp $
+
+IMPORT
+  Seq       	COMPLETELY       SeqMap		COMPLETELY
+  SeqIndex  	COMPLETELY       String		COMPLETELY
+  SeqFilter 	COMPLETELY       Option    	COMPLETELY
+
+IMPORT
+  SubsystemType COMPLETELY
+
+
+-- %There can't be anything inserted if there is no subsystem-data-sequence!
+DEF insertIntoSubsystem( _, <> ) == <>
+DEF insertIntoSubsystem( structureToInsert,
+                         actSubsystem :: rtSubsystems ) ==
+  LET
+/* %Try to find the name of @c{structureToInsert} in the structure-sequence of
+the current subsystem level: */    
+    searchIndex == pos(
+                     (\\source. structure2Name(source) = 
+                        structure2Name(structureToInsert)),
+                     sources(actSubsystem)
+                   )
+  IN
+    IF avail?(searchIndex) THEN
+-- %replace the structure template with @c{structureToInsert}:
+      subsystem(
+        name(actSubsystem),
+        overview(actSubsystem),
+        upd(cont(searchIndex), structureToInsert, sources(actSubsystem)),
+        subsystems(actSubsystem)
+      ) :: rtSubsystems
+    ELSE
+-- %continue search in sub-subsystems @emph{and} remaining subsystems of the same level: 
+      subsystem(
+        name(actSubsystem),
+        overview(actSubsystem),
+        sources(actSubsystem),
+        insertIntoSubsystem(structureToInsert, subsystems(actSubsystem))
+      ) ::
+        insertIntoSubsystem(structureToInsert, rtSubsystems)
+      -- one of the two recursive decents is NOT NECESSARY !!!
+    FI
+
+
+
+-- %The reduction of an empty subsystem sequence remains empty:
+DEF reduceSubsystems( <> ) == <>
+
+/* %If there are no sources stored in the @c{actSubsystem} and the reduced sub-subsystems
+are empty, too, the @c{actSubsystem} is deleted. Otherwise only sources are 
+considered that deliver @false on application of @c{structureEmpty?}. */
+DEF reduceSubsystems( actSubsystem :: rtSubsystems ) ==
+  IF forall?(structureEmpty?, sources(actSubsystem)) THEN
+    -- no sources in subsystem 
+    LET
+      reducedSubSubsystems == reduceSubsystems(subsystems(actSubsystem))
+    IN
+      IF <>?(reducedSubSubsystems) THEN
+        -- no sources and no subsubsystems -> forget subsystem
+        reduceSubsystems(rtSubsystems)
+      ELSE
+        -- build subsystem with other subsystems but empty sources
+        subsystem(
+          name(actSubsystem),
+          overview(actSubsystem),
+          <>,
+          reducedSubSubsystems
+        ) ::
+          reduceSubsystems(rtSubsystems)
+      FI
+  ELSE
+    -- build subsystem with sources and reduced subsubsystems
+    subsystem(
+      name(actSubsystem),
+      overview(actSubsystem),
+      (\\x. ~(structureEmpty?(x))) | sources(actSubsystem),
+      reduceSubsystems(subsystems(actSubsystem))
+    ) ::
+      reduceSubsystems(rtSubsystems)
+  FI
+
+
+
+

@@ -1,0 +1,124 @@
+IMPLEMENTATION ContextProps
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/context/ContextProps.impl,v 1.1.1.1 1998-06-16 16:00:34 wg Exp $
+
+IMPORT Map		COMPLETELY
+       Set		COMPLETELY
+       String		COMPLETELY
+       Option		COMPLETELY
+       InterOpal	COMPLETELY
+       ContextIndex COMPLETELY
+
+IMPORT InterOpalFun	COMPLETELY
+       SeqFilter COMPLETELY
+       MapConv COMPLETELY
+       SeqMap COMPLETELY
+       Pair COMPLETELY
+       Nat COMPLETELY
+       Config COMPLETELY
+       ConfigFun COMPLETELY
+       SeqOfSeq COMPLETELY
+       Seq COMPLETELY
+       SpecialString COMPLETELY
+
+DATA propContextEntry == propContextEntry( TeXedProp : string,
+                                           infoProp  : string )
+
+
+FUN constructPropContext : interOpal -> map[string,<,propContextEntry]
+
+/* %The domain-set of the property-map of the main-structure is extracted and
+passed as one of the parameters to the function that individually translates
+the internal law-representation into the data-type implemented above. */
+DEF constructPropContext( completeInterOpal ) ==
+  LET
+    mainPropStruct == structs(completeInterOpal) ! main
+    allPropIdents  == dom(props(mainPropStruct))
+  IN
+    constructPropContextForIdents(
+      allPropIdents,
+      props(mainPropStruct),
+      completeInterOpal
+    )
+
+
+-- %The function
+FUN constructPropContextForIdents :
+      set[ident,<] ** map[ident,<,property] ** interOpal -> 
+        map[string,<,propContextEntry]
+/* %realizes the construction of the property-context-map by compiling the
+internal property-representation to a @TeX{}- and ASCII-based string for each individual
+property indentifier. This is done by applying recursion until all identifiers are
+handled. */
+DEF constructPropContextForIdents
+      (propIdentSet, identPropMap, completeInterOpal ) ==
+  IF {}?(propIdentSet) THEN
+    {}
+  ELSE
+    LET
+	actPropIdent == arb(propIdentSet)
+	actProp      == identPropMap ! actPropIdent
+    IN
+-- %Only in case a law is available the string-translation can take place
+	IF law?(actProp) ANDIF avail?(symbol(actProp)) THEN
+	  def(
+	    cont(symbol(actProp))!,
+	    propContextEntry(
+	      formula2TeX(
+		formula(actProp),
+		completeInterOpal
+	      ),
+	      formula2Info(
+		formula(actProp),
+		completeInterOpal    
+	      )
+	    ),
+	    restMap
+	  )
+	ELSE 
+	  restMap
+	FI
+    WHERE
+-- %continue the processing for the rest of the property-identifiers:
+	restMap == constructPropContextForIdents(
+		     actPropIdent excl propIdentSet,
+		     identPropMap,
+		     completeInterOpal
+		   )
+  FI
+
+
+
+FUN constructPropIndex: interOpal ** config -> map[nat, <, seq[indexEntry]]
+DEF constructPropIndex( interOpal, config ) ==
+  IF functionalityIndexGeneral?(config) THEN
+    LET properties == props(structs(interOpal)!main)
+        goodPos? == \\p. pos?(pos(p)) 
+        posProps == goodPos? | 2nd * asSeq(properties)
+        verboseLevel ==  IF functionalityIndex?(config)           THEN v1
+                         IF functionalityIndexMediumInst?(config) THEN v2 
+                         IF functionalityIndexNoInst?(config)     THEN v3
+                         ELSE v3
+                         FI
+    IN
+    asMap(seqProp2seqIndex(interOpal, verboseLevel) *
+          partition(\\pr1, pr2. row(pos(pr1)) = row(pos(pr2)))(posProps)
+         )
+  ELSE
+    {}
+  FI
+
+
+-- %undefined, iff sequence is empty!
+FUN seqProp2seqIndex: interOpal ** verboseLevel ->
+                       seq[property] -> pair[nat, seq[indexEntry]]
+DEF seqProp2seqIndex( IO, lv )( props ) ==
+  row(pos(ft(props))) & mkIE(IO, lv) * props
+
+FUN mkIE: interOpal ** verboseLevel -> property -> indexEntry
+DEF mkIE(IO, lev)(freeType(_, _, sort, _, _)) ==
+  indexEntry("@prindex",
+             escTexinfo(name2String(sort, lev, IO) ++ !(" (free type)"))
+            )
+DEF mkIE(_, _)(law(_, _, avail(lawname), _, _)) ==
+  indexEntry("@prindex", escTexinfo(lawname!))
+DEF mkIE(_, _)(_) == invalid

@@ -1,0 +1,213 @@
+
+IMPLEMENTATION WinEvent
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Void		COMPLETELY
+	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	Real		COMPLETELY
+	Char		COMPLETELY
+	Denotation	COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqIndex	COMPLETELY
+	SeqReduce	COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	COMPLETELY
+	ComAgent	COMPLETELY
+	ComService	COMPLETELY
+	
+
+IMPORT	WinInternal	COMPLETELY
+	WinTclTk	COMPLETELY
+	WinConfig	COMPLETELY
+	WinAppl		ONLY screenResolution
+
+
+-- %$Type of Events$ ======================================================
+
+DATA event ==
+    configure expose destroy reparent map unmap visibility
+    enter leave motion focusIn focusOut 
+    someButtonPress   buttonPress(no: nat) 
+    someButtonRelease buttonRelease(no: nat) 
+    someKeyPress   keyPress(keysym: denotation) 
+    someKeyRelease keyRelease(keysym: denotation) 
+    - (modifier: modifier'WinEvent, event: event)
+    ++(left: event, right: event)
+
+DEF key == keyPress
+DEF button == buttonPress
+
+DATA modifier ==
+    control shift lock meta alt button(no: nat) double triple
+
+DEF C == control
+DEF S == shift
+DEF M == meta
+
+
+FUN asTk : event -> string
+FUN asTk : modifier'WinEvent -> string
+FUN bracketEvent : string -> string
+
+DEF asTk(configure)		== !("Configure")
+DEF asTk(expose)		== !("Expose")
+DEF asTk(destroy)		== !("Destroy")
+DEF asTk(reparent)		== !("Reparent")
+DEF asTk(map)			== !("Map")
+DEF asTk(unmap)			== !("Unmap")
+DEF asTk(visibility)		== !("Visibility")
+DEF asTk(someButtonPress) 	== !("ButtonPress")
+DEF asTk(buttonPress(B)) 	== format("ButtonPress-%n" <- B)
+DEF asTk(someButtonRelease) 	== !("ButtonRelease")
+DEF asTk(buttonRelease(B)) 	== format("ButtonRelease-%n" <- B)
+DEF asTk(someKeyPress) 	    	== !("KeyPress")
+DEF asTk(keyPress(S)) 	    	== format("KeyPress-%s" <- S)
+DEF asTk(someKeyRelease) 	== !("KeyRelease")
+DEF asTk(keyRelease(S)) 	== format("KeyRelease-%s" <- S)
+DEF asTk(enter)		    	== !("Enter")
+DEF asTk(leave)		    	== !("Leave")
+DEF asTk(motion)		== !("Motion")
+DEF asTk(focusIn)		== !("FocusIn")
+DEF asTk(focusOut)		== !("FocusOut")
+DEF asTk(Mod-Event)		== asTk(Mod) ++ !("-") ++ asTk(Event)
+DEF asTk(Left ++ Right)		== bracketEvent(asTk(Left)) ++ !(" ") 
+						++ bracketEvent(asTk(Right))
+
+DEF asTk(control)		== !("Control")
+DEF asTk(shift)			== !("Shift")
+DEF asTk(lock)			== !("Lock")
+DEF asTk(meta)			== !("Meta")
+DEF asTk(alt)			== !("Alt")
+DEF asTk(button(B))		== format("Button%n" <- B)
+DEF asTk(double)		== !("Double")
+DEF asTk(triple)		== !("Triple")
+
+DEF bracketEvent(Str AS Ch :: _) ==
+    IF Ch = !("<") THEN Str
+		   ELSE !("<") :: (Str +% !(">")) FI
+    
+
+DATA eventInfo ==
+    pointInfo   (event: event, point: point)
+    buttonInfo  (event: event, point: point, button: nat)
+    keyInfo     (event: event, point: point, keysym: denotation, 
+                 keycode: nat, keychar: char)
+    noInfo	(event: event)
+
+
+-- %$Event Bindings$ ======================================================
+
+
+DEF bind(Event, Com) ==
+    config(\\Win, Wid, Mod.  
+	tkBinding(Event, asTk(Wid), Com)		& (\\Callback_TkArgs.
+	(   IF widget?(Mod) THEN
+		act("bind %s %s" <- Wid 
+				 + 2nd(Callback_TkArgs))
+	    IF canvas?(Mod) THEN
+		act("%s bind %s %s" <- Wid + name(tag(Mod))
+					   + 2nd(Callback_TkArgs))
+	    IF text?(Mod) THEN
+		act("%s tag bind %s %s" <- Wid + name(tag(Mod))
+					   + 2nd(Callback_TkArgs))
+	    ELSE
+		-- don't know how to bind
+		done
+	    FI
+	)						& (\\ _ .
+    	registerDispose(Win, Wid, freeCallback(1st(Callback_TkArgs)))
+    	))
+    )
+
+DEF bind(Event, Com) ==
+    wconfig(\\Win. 
+	tkBinding(Event, asTk(root(Win)), Com)		& (\\Callback_TkArgs.
+	act("bind %s %s" <- asTk(root(Win))
+			 + 2nd(Callback_TkArgs))	& (\\ _ .
+    	registerDispose(Win, freeCallback(1st(Callback_TkArgs)))
+	))
+    )
+
+DEF bind(Event, Com) ==
+    tkBinding(Event, <>, Com)				& (\\Callback_TkArgs.
+    act("bind all %s" <- 2nd(Callback_TkArgs))
+    )
+
+
+
+FUN tkBinding : event ** string ** (eventInfo -> com[void]) 
+						-> com[pair[callback,string]]
+DEF tkBinding(Event, Target, Com) ==
+    LET (Subs, MkInfo) == analyzeEvent(Event)
+    IN
+    define(\\Args.
+      IF <>?(Target) or ft(Args) = Target THEN
+	  MkInfo(Event, Args)			& (\\ Info .
+	  agent(Com(Info))			& (\\ _ .
+	  succeed(<>)
+	  ))
+      ELSE
+	  succeed(<>)
+      FI
+    )					& (\\ Callback .
+    succeed(Callback &
+    	    format("%s {+ %s %s}" <- bracketEvent(asTk(Event))
+    				 + Callback + Subs))
+    )
+
+FUN analyzeEvent : event -> denotation ** 
+			    (event ** seq[string] -> com[eventInfo])
+DEF analyzeEvent(Mod-Event) ==
+    analyzeEvent(Event)
+
+DEF analyzeEvent(Left ++ Right) ==
+    analyzeEvent(Right)
+
+DEF analyzeEvent(Event) ==
+    IF keyPress?(Event) or someKeyPress?(Event)
+       or keyRelease?(Event) or someKeyRelease?(Event) THEN
+	("%W %X %Y %K %k %A", mkKeyInfo)
+    IF buttonPress?(Event) or someButtonPress?(Event)
+       or buttonRelease?(Event) or someButtonRelease?(Event) THEN
+	("%W %X %Y %b", mkButtonInfo)
+    IF enter?(Event) or leave?(Event) or motion?(Event) THEN 
+	("%W %X %Y", mkPointInfo)
+    ELSE
+	("%W %X %Y %b", \\ E, _ . succeed(noInfo(E)))
+    FI
+
+FUN mkKeyInfo mkButtonInfo mkPointInfo : event ** seq[string] -> com[eventInfo]
+
+DEF mkPointInfo(Event, WdStr :: XcStr :: YcStr :: _) ==
+    eval("winfo rootx %s" <- WdStr)			& (\\XrStr .
+    eval("winfo rooty %s" <- WdStr)			& (\\YrStr .
+    succeed(pointInfo(
+	Event,
+	@    ( (convReal(XcStr) - convReal(XrStr)) * screenResolution,
+	       (convReal(YcStr) - convReal(YrStr)) * screenResolution )))
+    ))
+
+DEF mkKeyInfo(Event, Args) ==
+    mkPointInfo(Event, Args)				& (\\ PointInfo .
+    LET Sym  == `(Args ! 3)
+	Code == convNat(Args ! 4)
+	Char == ft(Args ! 5)
+    IN
+    succeed(keyInfo( Event, point(PointInfo), Sym, Code, Char))
+    )
+
+DEF mkButtonInfo(Event, Args) ==
+    mkPointInfo(Event, Args)				& (\\ PointInfo .
+    LET Button == convNat(Args ! 3)
+    IN
+    succeed(buttonInfo( Event, point(PointInfo), Button ))
+    )

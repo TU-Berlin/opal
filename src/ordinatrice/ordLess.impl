@@ -1,0 +1,312 @@
+IMPLEMENTATION ordLess
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/ordinatrice/ordLess.impl,v 1.1.1.1 1998-06-16 16:00:45 wg Exp $
+
+ IMPORT InterOpal COMPLETELY
+	AnalyzeIO COMPLETELY
+	SynthesizeIO COMPLETELY
+	ShortCutsIO COMPLETELY
+
+	Triple COMPLETELY
+	Seq ONLY seq .. # <>? % find? split ft rt <> ++ ::
+	SeqOfSeq ONLY flat
+	SeqMap ONLY *
+	SeqMapEnv ONLY *
+	SeqReduce ONLY /
+	SeqFilter ONLY |
+	SeqZip ONLY zip
+	SeqConv ONLY `
+	SeqIndex ONLY !
+	Set[name,<] ONLY set
+	SetReduce ONLY /
+	SetConv ONLY asSet `
+	Option COMPLETELY
+	Pair COMPLETELY
+	Map ONLY map def {} ! !? extend {}? dom  
+	Nat ONLY 0 pred <= >= succ + -
+	NatConv ONLY ` asChar
+	Denotation ONLY ++
+	Char ONLY char !
+	CharConv ONLY asNat `
+	PrintableChar ONLY a A
+	String ONLY string 
+	StringConv ONLY `
+	
+
+	ABORT ONLY ABORT
+	DEBUG ONLY PRINT
+	kdIOname ONLY ` txt
+	kdIOConv ONLY asSrc
+
+/* % constructs @emph{new} interOpal which contains the definition for 
+	standard less */
+-- FUN mkLess : interOpal -> name ** seq[variant] -> interOpal ** object ** object
+
+DEF mkLess(IO)(srt, vrnts) ==
+	/* % @code{BOOL} ist dabei, wegen Diskriminatoren */
+	LET (IO2, boolname, truename, falsename) == initBool(IO)
+
+	    sorts0:set[name,<] == asSet(flat(sortsIn(IO) * vrnts))
+	    sorts == PRINT(debug_1, "mkLess: sorts in " ++ `(IO)(srt) ++
+				`(`(IO))(sorts0), sorts0)
+	    (IO3, lessmap) == addIds(IO2, sorts, 
+					\\io,na. addLess(io, boolname)(na))
+	    (IO4, equalmap) == addIds(IO3, sorts, 
+					\\io,na. addEqual(io, boolname)(na))
+	    parsorts == sort?(IO) | parameter(IO, main)	      -- seq[name]
+	    lessEqns == ConstructorCombinations(vrnts, 
+					($(lessmap,srt,parsorts), _, _) ==== falsename,
+					mkLessSelfEqn(IO4, boolname, truename, falsename)
+						     (lessmap, srt, parsorts),
+					($(lessmap,srt,parsorts), _, _) ==== truename)
+	    equalEqns == ConstructorCombinations(vrnts,
+					($(equalmap,srt,parsorts), _, _) ==== falsename,
+					mkEqualSelfEqn(IO4, boolname, truename, falsename)
+						      (equalmap, srt, parsorts),
+					($(equalmap,srt,parsorts), _, _) ==== falsename)
+	    IO5 == IO4 addDEF (ident(lessmap!srt), lessEqns)
+	    IO6 == IO5 addDEF (ident(equalmap!srt), equalEqns)
+         IN (IO6, objOf(IO6)(lessmap!srt), objOf(IO6)(equalmap!srt))
+				     
+
+
+
+/* $Hilfsfunktionen$ */
+
+/* % erzeugt pattern fuer einfache Gleichungen */
+FUN $ : map[name,<,name] ** name ** seq[name] -> pattern
+DEF $(fmap,srt,<>) == name(?, fmap!srt)
+DEF $(fmap, srt,s) == fmap!srt @ asAnyPattern(s)
+
+
+/* % fuegt @code{<}-Funktion auf uebergebenem Datentyp hinzu */
+FUN addLess: interOpal ** name -> name -> interOpal ** ident
+DEF addLess(IO,b)(srt) ==
+	IF origin(srt) main? THEN LET forms == insts(structs(IO)!main)!?formal
+				  IN IF forms nil? THEN IO addFUN ("<", fct(lessFct(IO,b)(srt)))
+				  ELSE LET ex == find?(\\n.n=srt, cont(forms)) 
+				       IN IF ex nil? THEN IO addFUN ("<", fct(lessFct(IO,b)(srt)))
+					  ELSE (IO, ident(cont(ex)))
+					  FI
+				  FI
+	ELSE (IO, origin(srt), inst(srt)) addIMPORT 
+			("<", fct(lessFct(IO,b)(srt)))
+        FI
+
+/* % fuegt @code{=}-Funktion auf uebergebenem Datentyp hinzu */
+FUN addEqual: interOpal ** name -> name -> interOpal ** ident
+DEF addEqual(IO,b)(srt) ==
+	IF origin(srt) main? THEN LET forms == insts(structs(IO)!main)!?formal
+				  IN IF forms nil? THEN IO addFUN ("=", fct(lessFct(IO,b)(srt)))
+				  ELSE LET ex == find?(\\n.n=srt, cont(forms)) 
+				       IN IF ex nil? THEN IO addFUN ("=", fct(lessFct(IO,b)(srt)))
+					  ELSE (IO, ident(cont(ex)))
+					  FI
+				  FI
+	ELSE (IO, origin(srt), inst(srt)) addIMPORT 
+			("=", fct(lessFct(IO,b)(srt)))
+        FI
+/* % konstruiert zu angegebener Sorte einen Ausdruck <(...) vom Typ 
+ @code{sorte ** sorte -> bool} */
+FUN lessExpr: interOpal ** map[name,<,name] ** name -> expr
+DEF lessExpr(IO, lessmap, srt) == 
+	PRINT(debug_1, "lessExpr: ***", recursiveExpr(IO, lessmap, srt))
+
+/* % ebenso fuer gleich */
+FUN equalExpr: interOpal ** map[name,<,name] ** name -> expr
+DEF equalExpr(IO, equalmap, srt) ==
+	PRINT(debug_1, "equalExpr: ***", recursiveExpr(IO, equalmap, srt))
+
+/* % erzeugt zu uebergebenem Namen einen Ausdruck: mit der Abb. wird der Name 
+der Fkt. zu einer Sorte bestimmt, fuer jeden Sortenparameter gibt es ein 
+HO-Argument, das wieder mit @code{recursiveExpr} aufgebaut wird */
+FUN recursiveExpr: interOpal **  
+			map[name, <, name] ** name -> expr
+DEF recursiveExpr(IO, fmap0, srt) ==
+	LET fmap == PRINT(debug_1, "recursiveExpr: dom(fmap)=" ++ `(`(IO))(dom(fmap0)), fmap0)
+	    ofname == fmap!?srt
+	    fname == IF ofname nil? THEN ABORT("recursiveExpr: " ++ `(IO)(srt) ++ " not in domain") ELSE PRINT(debug_1, "recursiveExpr: processing " ++ `(IO)(srt), cont(ofname)) FI
+	    parsorts == IF origin(fname) local? THEN <>
+			ELSE LET ffct == fctOf(IO)(fname)
+			     IN IF codom(ffct) sort? THEN <>
+			        ELSE sort?(IO) | 
+					parameter(IO, origin(srt), inst(srt))
+			        FI
+                        FI
+	IN IF parsorts <>? THEN name(?, fname)
+	   ELSE fname @ tuple(?, recursiveExpr(IO, fmap, _) * parsorts)
+	   FI
+
+/* % konstruiert Funktionalitaet der @code{<}-Funktion;
+     in @code{lessFct(IO, b)(s)} ist @code{IO} die InterOpal-Struktur,
+     @code{b} der Name von @code{bool} und @code{s} die in Frage stehende 
+	Sorte  */
+
+FUN lessFct: interOpal ** name -> name -> fct
+DEF lessFct(IO,b)(s) ==
+	LET body == funct(cart(%(sort(s),sort(s))),sort(b))
+	    parsorts == sort?(IO) | parameter(IO, origin(s))
+	    prefunct == (\\na. funct(cart(%(sort(na),sort(na))),sort(b))) * parsorts
+	IN IF parsorts <>? THEN body
+	   ELSE funct(cart(prefunct), body)
+	   FI
+
+/* % konstruiert Funktionalitaet der @code{=}-Funktion, 
+analog zu @code{lessFct} */
+FUN equalFct: interOpal ** name -> name -> fct
+DEF equalFct == lessFct
+
+/* % splittet Sequenz von Varianten in @code{(}vor @code{n, n,} nach @code{n)} auf */
+FUN split: seq[variant] -> nat -> triple[seq[variant], variant, seq[variant]]
+DEF split(vs)(n) ==
+	IF n >= #(vs) THEN ABORT("split'ordLess: n too large")
+	ELSE LET (pre,post) == split(n, vs)
+	     IN &(pre, ft(post), rt(post))
+	FI
+
+
+/* % holt die noetigen Sachen aus BOOL: die Namen von @code{(bool, true, false)} @sc{Achtung:} dazu
+  ist evtl. eine Aenderung in den Import-Listen noetig! @*
+Voraussetzung: die Struktur @code{BOOL} ist importiert*/
+FUN initBool: interOpal -> interOpal ** name ** name ** name
+DEF initBool(IO) == 
+	LET BOOLorigin == origin(cont(find?(IO, "BOOL")))
+	    boolId == cont(find?(IO, BOOLorigin, "bool", sort))
+	    boolname == name(boolId, BOOLorigin, none)
+	    (IO1, trueId) == (IO, BOOLorigin, none) addIMPORT 
+					("true", fct(sort(boolname)))
+	    truename == name(trueId, BOOLorigin, none)
+	    (IO2, falseId) == (IO1, BOOLorigin, none) addIMPORT 
+					("false", fct(sort(boolname)))
+	    falsename == name(falseId, BOOLorigin, none)
+	IN
+	    (IO2, boolname, truename, falsename)
+
+/* % @code{addIds(IO, names, addId) == (newIO, M)} @*
+fuegt dem uebergebenen InterOpal @code{IO} fuer jeden Namen in @code{names} mit der Funktion 
+@code{addId} einen neuen Ident hinzu. Die zurueckgegebene Abbildung @code{M} enthaelt zu 
+jedem Namen den mit addId konstruierten Namen: 
+@code{M!n -> name(2nd(addId(X, n)), origin(n), inst(n))} */
+
+FUN addIds: interOpal ** set[name,<] ** 
+		(interOpal ** name -> interOpal ** ident) -> 
+	    				interOpal ** map[name,<,name]
+DEF addIds(IO, names, addId) ==
+	unpair(((\\na,p. LET (oldIO, oldmap) == unpair(p) 
+			     (newIO, newId) == addId(oldIO, na)
+				     newmap == def(na,name(newId,origin(na),
+								inst(na)), 
+						   oldmap)
+			 IN newIO & newmap
+		), 
+	       IO & {}) / 
+              names)
+
+/* % macht aus Map Funktion */
+FUN ^ : map[name, <, name] -> (name -> name)
+DEF M^ == \\na. M!na
+
+/* % fuegt ggf. die Higher-Order-Anypatterns hinzu, Ergebnis ist ein ein 
+Pattern fuer @code{name}, falls Sequenz leer, oder fuer 
+@code{name(_,_,@dots{},_)} sonst, wobei je Element der Sequenz ein @code{_} 
+erzeugt wird. */
+FUN addHOpattern: name ** seq[name] -> pattern
+DEF addHOpattern(na, <>) == name(?, na)
+DEF addHOpattern(na, s) == na @ asAnyPattern(s)
+
+
+/* % @code{ConstructorCombinations(variants, prefct, selffct, postfct)} 
+erzeugt fuer alle Kombinationen von zwei Varianten je eine Gleichung. Fuer 
+Varianten, die textuell vorher kommen, wird @code{prefct} aufgerufen, fuer 
+die Kombination mit sich selbst @code{selffct} und fuer die Kombinationen 
+mit den folgenden Konstruktoren @code{postfct}. Bei @code{prefct, postfct} 
+ist jeweils der erste Parameter der aktuelle Konstruktor, der zweite ist der 
+vorige bzw. nachfolgende Konstruktor */
+
+FUN ConstructorCombinations: seq[variant] ** 
+			     (variant ** variant -> eqn) ** 
+		             (variant -> eqn) ** 
+			     (variant ** variant -> eqn)       -> seq[eqn]
+
+DEF ConstructorCombinations(vrnts, prefct, selffct, postfct) ==
+	LET matrix == (0..pred(#(vrnts)))(split(vrnts))
+	IN flat((\\t. LET (pre, in, post) == untriple(t)
+		      IN ((\\v.prefct(in,v)) * pre) ++ 
+			 (selffct(in) :: 
+			 ((\\v.postfct(in,v)) * post)))
+		 * matrix)
+
+
+/* % erzeugt die Gleichung fuer kleiner mit sich selbst */
+FUN mkLessSelfEqn: interOpal ** name ** name ** name 
+			-> map[name, <, name] ** name ** seq[name] -> 
+								variant -> eqn
+DEF mkLessSelfEqn(IO, boolname, truename, falsename)(lessmap, srt, parsorts)(v) ==
+	LET (lno, leftvars) == asVarSeq(codom * fctOf(IO) * sel * comps(v), 
+					   0, \\n. `(asChar(asNat(a) + n)))
+	    (rno, rightvars) == asVarSeq(codom * fctOf(IO) * sel * comps(v), 
+					 lno, 
+					 \\n. `(asChar(asNat(A) + (n - lno))))
+	    (_, <_vars) == asVarSeq(sort * parsorts, rno,
+				    \\n. "<_" ++ `(IO)(parsorts!(n - rno)))
+	    lhs == IF parsorts <>? THEN (lessmap!srt) @ (cons(v, leftvars), cons(v, rightvars))
+		   ELSE (lessmap!srt @ tuple(?, var(?, _) * <_vars)) @ 
+						      (cons(v, leftvars), cons(v, rightvars))
+		   FI
+	    newlessmap == IF parsorts <>? THEN lessmap
+			  ELSE extend(lessmap, parsorts, 
+					(\\v1.name(ident(v1), local, none)) * <_vars)
+			  FI
+	IN IF comps(v) <>? THEN lhs ==== falsename
+	   ELSE LET << == \\v1:var.lessExpr(IO, newlessmap, sort(fct(v1)))
+		    rhsCombine == 
+			\\p,ex. LET (lf, rg) == unpair(p)
+				IN cases(?, %(<<(lf) @ (lf, rg) then 
+								   truename,
+					      <<(lf) @ (rg, lf) then
+								   falsename),
+					 avail(ex))
+		    rhs == (rhsCombine, name(?, falsename)) / 
+					zip(&)(leftvars, rightvars)
+    
+		IN lhs ==== rhs
+           FI
+/* % erzeugt die Gleichung fuer gleich mit sich selbst */
+FUN mkEqualSelfEqn: interOpal ** name ** name ** name
+		-> map[name, <, name] ** name ** seq[name] -> 
+							variant -> eqn
+DEF mkEqualSelfEqn(IO, boolname, truename, falsename)(equalmap, srt, parsorts)(v) ==
+	LET (lno, leftvars) == asVarSeq(codom * fctOf(IO) * sel * comps(v), 
+					   0, \\n. `(asChar(asNat(a) + n)))
+	    (rno, rightvars) == asVarSeq(codom * fctOf(IO) * sel * comps(v), 
+					 lno, 
+					 \\n. `(asChar(asNat(A) + (n - lno))))
+	    (_, =_vars) == asVarSeq(sort * parsorts, rno,
+				    \\n. "=_" ++ `(IO)(parsorts!(n - rno)))
+	    lhs == IF parsorts <>? THEN (equalmap!srt) @ (cons(v, leftvars), cons(v, rightvars))
+		   ELSE (equalmap!srt @ tuple(?, var(?, _) * =_vars)) @ 
+						      (cons(v, leftvars), cons(v, rightvars))
+		   FI
+	    newequalmap == IF parsorts <>? THEN equalmap
+			   ELSE extend(equalmap, parsorts, 
+					(\\na.name(ident(na), local, none)) * =_vars)
+			   FI
+	IN IF comps(v) <>? THEN lhs ==== truename
+	   ELSE LET eq == \\v1:var.equalExpr(IO, newequalmap, sort(fct(v1)))
+		    rhsCombine == 
+			\\p,ex. LET (lf, rg) == unpair(p)
+				IN cases(?, %(eq(lf) @ (lf, rg) then ex),
+					 avail(name(?, falsename)))
+		    rhs == (rhsCombine, name(?, truename)) / 
+					zip(&)(leftvars, rightvars)
+    
+		IN lhs ==== rhs
+           FI
+
+
+/* % $Debug-Schalter$ */
+
+/* % Fehler: nicht alle Namen werden richtig erkannt - Fehler tritt
+	in recursiveExpr auf, wenn ein Name fehlt
+*/
+
+FUN debug_1: bool	DEF debug_1 == false

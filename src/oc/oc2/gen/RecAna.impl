@@ -1,0 +1,90 @@
+
+IMPLEMENTATION RecAna
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject: analysis of recursion class of IC procedures 
+-- project: ac/gen
+-- author:  wg 6-92
+
+IMPORT	Seq ONLY seq ft rt <>? %
+	SeqCompare ONLY eq?
+
+IMPORT	Ide ONLY ide = :ide**ide->bool
+	Ic  ONLY obj:SORT outs:obj->seq[ide:SORT] ide:obj->ide stm:obj->stm
+		 stm:SORT call? ide:stm->ide outs:stm->seq[ide:SORT]
+			  cons? reuse?:stm->bool
+			  case? matches:stm->seq[match:SORT] default:stm->stm
+			  block? stms:stm->seq[stm:SORT]
+		 match:SORT stms:match->seq[stm:SORT] 
+
+
+-- ===========================================================================
+
+DATA recursion == someRec tailRec tmcRec
+
+-- FUN analyzeRecursion : obj -> bool
+DEF analyzeRecursion(ob) == 
+    anaSeq(ide(ob),outs(ob),stm(ob)%)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN anaSeq : ide ** seq[ide:SORT] ** seq[stm:SORT] -> recursion
+DEF anaSeq(p,os,ss) ==
+    IF <>?(ss) THEN someRec
+    ELSE
+	LET s == ft(ss)
+	IN
+	IF call?(s) THEN
+	    IF ide(s) = p THEN
+		IF <>?(rt(ss)) THEN
+		    IF eq?(= : ide**ide->bool)(outs(s),os) THEN
+			-- plain tail recursion
+			tailRec
+		    ELSE
+			-- swapping of result arguments, tmc
+		        tmcRec
+		    FI
+		OTHERWISE
+		IF <>?(rt(rt(ss))) and
+			(cons?(ft(rt(ss))) or reuse?(ft(rt(ss)))) THEN
+		    -- tmc tail call
+		    tmcRec
+		ELSE anaSeq(p,os,rt(ss)) FI
+	    ELSE anaSeq(p,os,rt(ss)) FI
+	IF case?(s) THEN
+	    IF <>?(rt(ss)) THEN 
+		-- split over tail case
+		anaCase(p,os,matches(s),default(s),someRec)
+	    ELSE anaSeq(p,os,rt(ss)) FI
+	IF block?(s) THEN
+	    IF <>?(rt(ss)) THEN
+		-- follow block
+		anaSeq(p,os,stms(s))
+	    ELSE anaSeq(p,os,rt(ss)) FI
+	ELSE anaSeq(p,os,rt(ss)) FI
+    FI
+		
+FUN anaCase : ide ** seq[ide:SORT] ** seq[match:SORT] ** stm ** recursion
+				-> recursion
+DEF anaCase(p,os,ms,df,rec) ==
+    IF <>?(ms) THEN
+	anaSeq(p,os,df%) max rec
+    ELSE
+	LET rec1 == anaSeq(p,os,stms(ft(ms))) max rec
+	IN
+	IF tmcRec?(rec1) THEN
+	    -- maximal class
+	    rec1
+	ELSE anaCase(p,os,rt(ms),df,rec1) FI
+    FI
+
+FUN max : recursion ** recursion -> recursion
+DEF max(new,old) ==
+    IF tmcRec?(old) THEN old
+    OTHERWISE IF tmcRec?(new) or tailRec?(new) THEN new 
+					       ELSE old FI
+

@@ -1,0 +1,96 @@
+IMPLEMENTATION DbCommFastRpc
+
+IMPORT
+	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	ComPairCompose		COMPLETELY
+	ComState		COMPLETELY
+	DbGlobalEnv		COMPLETELY
+	ProcessConnect		COMPLETELY
+	ProcessComInterrupt	COMPLETELY
+	UnixFailures		COMPLETELY
+	Denotation		COMPLETELY
+	Option			COMPLETELY
+	Void			COMPLETELY
+	Fmt			COMPLETELY
+	Nat			COMPLETELY
+	Pair			COMPLETELY
+	ABORT			COMPLETELY
+IMPORT
+	RepoEvent		COMPLETELY
+	ChannelData		COMPLETELY
+
+DEF rpc?(Task,Command,P) ==
+    writeChannel(Task)					& (\\ _ .
+	-- evaluate the command
+    Command						; (\\AnsData.
+    rpc1(P)						; (\\Ans.
+    succeed(AnsData & Ans)				)))
+
+FUN rpc1 : (answer -> bool)			-> com[option[answer]]
+DEF rpc1(P) ==
+    readOrCtrlC						& (\\OptAnswer.
+    IF avail?(OptAnswer) ANDIF ~(P(cont(OptAnswer)))
+      THEN break(messed(cont(OptAnswer)))
+      ELSE succeed(OptAnswer)
+    FI							)
+
+
+FUN messed : answer -> denotation
+DEF messed(Answer) == 
+    "messed: unexpected answer '"++pretty(fmtAnswer(Answer))++"'"
+
+FUN readOrCtrlC :					com[option[answer]]
+DEF readOrCtrlC ==
+    breakOnInterrupt(readChannel)			; (\\AnsRes.
+    IF fail?(AnsRes)
+      THEN IF interrupted?(AnsRes) or
+		interruptedSystemCall?(AnsRes)
+	     THEN succeed(nil)
+	     ELSE break(error(AnsRes))	-- yield the failure message
+	   FI
+      ELSE succeed(avail(data(AnsRes))) -- yield the answer
+    FI							)
+    
+
+DEF rpc(Task,Command,P) ==
+    rpc?(Task,Command,P)				& (\\Data,AnsOptAnswer.
+    IF okay?(AnsOptAnswer)
+      THEN IF avail?(data(AnsOptAnswer))
+	     THEN succeed(Data & okay(cont(data(AnsOptAnswer))))
+	     ELSE sync						  & (\\ _ .
+		  succeed(Data & fail("interrupted")) )
+	   FI
+      ELSE succeed(Data & fail(error(AnsOptAnswer)))
+    FI							)
+
+DEF sync == 
+    getSyncId						& (\\SyncId.
+    event(progress(repository,". resync channel"))	& (\\ _ .
+    writeChannel(sync(SyncId))				& (\\ _ .
+    waitForSync(SyncId)					)))
+
+
+FUN waitForSync : nat -> com[void]
+DEF waitForSync(SyncId) ==
+    readOrCtrlC						& (\\OptAnswer.
+    IF avail?(OptAnswer)
+      THEN IF sync?(cont(OptAnswer)) ANDIF id(cont(OptAnswer)) = SyncId
+	     THEN succeed(nil)
+	     ELSE waitForSync(SyncId)  -- wait again
+	   FI
+      ELSE -- broken by SIGINT
+	   break("interrupted")
+    FI							)
+
+	FUN getSyncId : com[nat]
+	DEF getSyncId ==
+		get(syncId)		& (\\SId.
+		syncId => succ		& (\\ _ .
+		succeed(SId)		))
+
+	FUN syncId : stateId[nat]
+	DEF syncId == EXEC(stateId(0))
+
+
+

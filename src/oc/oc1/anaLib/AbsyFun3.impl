@@ -1,0 +1,65 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     higher order functions for Fct 
+-- Changes:	af, Jun 23 1993: added patterns for noFct
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION  AbsyFun3
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Fct		COMPLETELY
+
+IMPORT	Seq		COMPLETELY
+	SeqMap		ONLY *
+	MySeqFun3	COMPLETELY
+	SeqMapEnv	ONLY *
+	Com		ONLY ans:SORT data yield okay
+	ComCompose	COMPLETELY
+	Pair		COMPLETELY
+
+
+-- ---------------------------------------------------------------------------
+-- Fct
+
+FUN \* : (env ** from -> env ** to) ** env -> fct[from] -> env ** fct[to]
+    -- Mapping der Fct und Aendern des env
+DEF \*(F,gS)(sort(object))   == (newGS, sort(data))
+    WHERE (newGS, data) == F(gS, object)
+DEF \*(F,gS)(cart(elems))    == (newGS,cart(dataS))
+    WHERE (newGS, dataS) == *((\\env,fct. \*(F,env)(fct)), gS, elems)
+DEF \*(F,gS)(funct(arg,res)) == (gS2, funct(newArg, newRes))
+    WHERE (gS1, newArg) == \*(F, gS)(arg)
+          (gS2, newRes) == \*(F, gS1)(res)
+DEF \*(F,gS)(nonCartVar(id)) == (gS, nonCartVar(id))
+DEF \*(F,gS)(var(id))        == (gS, var(id))
+DEF \*(F,gS)(noFct)        == (gS, noFct)
+
+-- ---------------------------------------------------------------------------
+
+FUN \* : (env ** from -> com[pair[env,to]]) ** env 
+	-> fct[from] -> com[pair[env,fct[to]]]
+  -- Mapping der Fct und Aendern des env
+DEF \*(F,gS)(sort(object))   == F(gS, object) ; sorth
+DEF \*(F,gS)(cart(elems))    == \*((\\env,fct. \*(F,env)(fct)),gS)(elems);carth
+DEF \*(F,gS)(funct(arg,res)) == \*(F, gS)(arg) ; functh(F, res)
+DEF \*(F,gS)(nonCartVar(id)) == yield(okay(gS & nonCartVar(id)))
+DEF \*(F,gS)(var(id)) 	     == yield(okay(gS & var(id)))
+DEF \*(F,gS)(noFct) 	     == yield(okay(gS & noFct))
+
+    FUN sorth : ans[pair[env,to]] -> com[pair[env,fct[to]]]
+    DEF sorth(okay(gS & to)) == yield(okay(gS & sort(to)))
+
+    FUN functh : (env ** from -> com[pair[env,to]]) ** fct[from] 
+		->ans[pair[env,fct[to]]] -> com[pair[env,fct[to]]]
+    DEF functh(F, resFct)(okay(gS & argFct)) == \*(F, gS)(resFct) ; 
+	(\\ans.yield(okay(1st(data(ans)) & funct(argFct, 2nd(data(ans))))))
+
+    FUN carth : ans[pair[env,seq[fct[to]]]] -> com[pair[env,fct[to]]]
+    DEF carth(okay(gS & to)) == yield(okay(gS & cart(to)))
+

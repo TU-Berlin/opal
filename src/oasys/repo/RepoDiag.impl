@@ -1,0 +1,197 @@
+IMPLEMENTATION RepoDiag
+-- version 1.1 Thu Sep	5 20:59:26 1996
+
+IMPORT	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	Int		COMPLETELY
+	IntConv		COMPLETELY
+	Denotation	COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	StringFormat	COMPLETELY
+	BTUnion		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	Fmt		COMPLETELY
+	FmtSeq		COMPLETELY
+	FmtBasicTypes	COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComSeqReduce	COMPLETELY
+	File		COMPLETELY
+	Void		COMPLETELY
+	Id		COMPLETELY
+	Option		COMPLETELY
+
+IMPORT	RepoName	COMPLETELY
+	RepoSource	COMPLETELY	
+	
+
+DATA diag == diag(mode: mode, msgs : seq[msg])
+
+DATA msg  == msg(mode: mode, ref: ref, cont: denotation)
+     FUN fmtMsg : msg -> fmt
+
+DEF error < M == ~(error?(M))
+DEF limit < M == warn?(M) or hint?(M)
+DEF warn  < M == hint?(M)
+DEF hint  < M == false
+
+DEF fmtDiag(diag(_, Msgs)) ==
+    list(fmtMsg, none, brk, none, Msgs)
+
+DEF fmtMsg(msg(M, R, Cont)) ==
+    beg(0); fmtMode(M); lit(" ["); fmtRef(R); lit("]: "); lit(Cont); end
+
+DEF fmtRef(freeRef(Descr)) == lit(Descr)
+DEF fmtRef(unitRef(Loc, U)) == lit("#"); fmtNat(no(internId(U)));
+			       lit(" at ");fmtLocator(Loc)
+DEF fmtRef(itemRef(Loc, I)) == lit("#"); fmtNat(no(internId(unit(I))));
+			       lit("i"); fmtNat(no(I));
+			       lit(" at ");fmtLocator(Loc)
+DEF fmtRef(textRef(Loc))    == lit("at ");fmtLocator(Loc)
+				
+DEF fmtMode(error) == ;(;(beg(2),lit("ERROR")),end)
+DEF fmtMode(limit) == ;(;(beg(2),lit("LIMIT")),end)
+DEF fmtMode(warn) == ;(;(beg(2),lit("WARNING")),end)
+DEF fmtMode(hint) == ;(;(beg(2),lit("HINT")),end)
+
+
+DEF ok			== diag(hint, <>)
+DEF ok?(diag(M, _))	== M = warn or M = hint
+DEF ref(diag(_, M :: _)) == ref(M)
+DEF msg(diag(_, M :: _)) == cont(M)
+DEF noDiag?(diag(_, S)) == <>?(S)
+
+DEF (M, R) !! S		== (M, R) !! `(S)
+DEF (M, R) !! D		== diag(M, %(msg(M, R, D)))
+DEF (M, R) !! (D, A1)	== (M, R) !! format(D, %(denotation(A1)))
+DEF (M, R) !! (D, A1, A2) == (M, R) !! format(D, %(denotation(A1),
+						   denotation(A2)))
+
+DEF diag(M1, Msg1) <+ diag(M2, Msg2) ==
+    diag(IF M1 < M2 THEN M1 ELSE M2 FI, Msg1 ++ Msg2)
+
+DEF explode(diag(_, Msg)) ==
+    (\\ M. diag(mode(M), %(M))) * Msg
+
+DEF failOnError(Diag) ==
+    (\\Msg, _ .
+	writeLine(stdErr, (pretty(fmtMsg(Msg))):string),
+     nil) /& msgs(Diag)			& ( \\ _ .
+    IF ok?(Diag) THEN
+	succeed(nil)
+    ELSE
+	break("aborted")
+    FI
+    )
+
+DEF transDiag(Fun, diag(_, Msgs)) ==
+    (\\Msg, R.
+    	LET Trans? == Fun(diag(mode(Msg), %(Msg)))
+	IN
+	IF avail?(Trans?) THEN
+	    cont(Trans?) <+ R
+	ELSE R FI,
+     ok) / Msgs
+    
+    
+DEF shift(LOfs, COfs)(diag(M, Msgs)) == 
+    diag(M, (\\Msg. msg(mode(Msg), shift(LOfs, COfs)(ref(Msg)), cont(Msg)))
+    			* Msgs)
+    
+
+DEF shift(_,_)(Ref AS freeRef(_)) == Ref
+
+DEF shift(LOfs, COfs)(Ref AS unitRef(R, U)) == 
+    unitRef(shift(R, LOfs, COfs), U)
+
+DEF shift(LOfs, COfs)(Ref AS itemRef(R, I)) == 
+    itemRef(shift(R, LOfs, COfs), I)
+
+DEF shift(LOfs, COfs)(Ref AS textRef(R)) == 
+    textRef(shift(R, LOfs, COfs))
+
+
+DEF shift(LOfs, COfs)(Loc:locator) == shift(Loc, LOfs, COfs)
+	-- brain damaged ...
+
+FUN shift : locator ** int ** int -> locator
+DEF shift(pos(P, Alt), LOfs, COfs) == 
+    pos(shiftPos(P, LOfs, COfs), shift(Alt, LOfs, COfs))
+
+DEF shift(region(R, Alt), LOfs, COfs) == 
+    region(shiftRegion(R, LOfs, COfs), shift(Alt, LOfs, COfs))
+
+DEF shift(unspecified, _, _) == unspecified
+
+
+FUN shiftRegion : region ** int ** int -> region
+DEF shiftRegion(region(P1, P2), LOfs, COfs) == 
+    region(shiftPos(P1, LOfs, COfs), shiftPos(P2, LOfs, COfs))
+
+FUN shiftPos : pos ** int ** int -> pos
+DEF shiftPos(pos(L, C), LOfs, COfs) == 
+    LET NewL == asInt(L) + LOfs
+        NewC == asInt(C) + COfs
+    IN
+    pos(asNat(max(0, NewL)), asNat(max(0, NewC)))
+
+
+	
+/* %
+@ignore
+*/
+
+DATA mode == error limit warn hint 
+
+DATA ref ==
+	freeRef		(descr	 : denotation)
+	unitRef		(locator : locator,
+			 unit	 : unitName)
+	itemRef		(locator : locator,
+			 item	 : itemName)
+	textRef		(locator : locator)
+
+ 
+
+/* %
+@end ignore
+*/
+
+
+/* %
+@ignore
+*/
+
+-- this is output of ordinatrice verte for free type mode
+
+FUN = : mode ** mode -> bool
+DEF =(error,error) == true
+DEF =(error,limit) == false
+DEF =(error,warn) == false
+DEF =(error,hint) == false
+DEF =(limit,error) == false
+DEF =(limit,limit) == true
+DEF =(limit,warn) == false
+DEF =(limit,hint) == false
+DEF =(warn,error) == false
+DEF =(warn,limit) == false
+DEF =(warn,warn) == true
+DEF =(warn,hint) == false
+DEF =(hint,error) == false
+DEF =(hint,limit) == false
+DEF =(hint,warn) == false
+DEF =(hint,hint) == true
+
+
+
+
+
+
+/* %
+@end ignore
+*/
+
+

@@ -1,0 +1,229 @@
+
+IMPLEMENTATION Builtin
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:36 $ ($Revision: 1.1.1.1 $)
+
+
+IMPORT	Nat	COMPLETELY
+	SeqMap  ONLY *
+	Seq	COMPLETELY
+	NatConv ONLY `
+	Denotation ONLY ++
+	Compose ONLY o
+
+IMPORT	Format  ONLY format
+	NatMap  ONLY natMap {} def extend
+
+IMPORT	Ide		COMPLETELY
+	Store		COMPLETELY
+	TypeAn		COMPLETELY
+	SourceAn 	COMPLETELY
+	TransAn		COMPLETELY
+	OptimAn		COMPLETELY
+	An		COMPLETELY
+	Ac		COMPLETELY
+	Store		COMPLETELY
+	AcFun		COMPLETELY
+
+DEF BUILTIN == origin(2)
+
+DEF denotation == global(1,BUILTIN)
+DEF bool == global(2,BUILTIN)
+
+DEF tl == global(1,BUILTIN)
+DEF <| == global(2,BUILTIN)
+
+DEF false == global(3,BUILTIN)
+DEF false? == global(4,BUILTIN)
+DEF true == global(5,BUILTIN)
+DEF true? == global(6,BUILTIN)
+DEF ~ == global(7,BUILTIN)
+DEF or == global(8,BUILTIN)
+DEF and == global(9,BUILTIN)
+DEF = == global(10,BUILTIN)
+DEF |= == global(11,BUILTIN)
+
+DEF ABORT == global(12,BUILTIN)
+
+DEF INLINE == global(13,BUILTIN)
+
+FUN firstTuple : nat
+DEF firstTuple == "20"!'Nat
+
+DEF maxTupleSize == "24"!'Nat
+
+DEF tuple(n) == global(3+n,BUILTIN)
+DEF consTuple(n) == global(firstTuple+n,BUILTIN)
+
+DEF consTuple?(global(#,Orig)) ==
+    IF Orig = BUILTIN THEN
+	(# >= firstTuple) and (# <= (firstTuple+maxTupleSize))
+    ELSE false FI
+DEF consTuple?(_) == false
+	
+
+FUN .. : nat ** nat -> seq[nat]
+DEF i..j == (i..j)(\\x.x)
+
+-- --------------------------------------------------------------------------
+
+DEF builtinUnit() ==
+    unit(a,"BUILTIN",BUILTIN,{},extend({},(# o ide) * decs,decs))
+    WHERE
+	a == set(none:an, 
+	         typeDecs(extend({},(# o ide) * tdecs,tdecs)))
+
+	tdecs == %(decbool,decdeno) 
+			++ (genTupleTypeDec * (0..maxTupleSize))
+
+	decs == %(dectrue,decfalse,dectrue?,decfalse?)
+	     ++ %(decand,decor,decnot,deceq,decne)
+	     ++ %(decABORT,decINLINE)
+	     ++ %(dectl,decpf) ++ (genTupleConsDec * (0..maxTupleSize))
+
+	-- booleans
+	decbool == binding(bool:ide,defbool)
+	defbool == sum(%(prod(false:ide,<>[type:SORT]),
+			 prod(true:ide,<>[type:SORT])))
+
+	dectrue == constructor(set(bcontyping,truesym),true:ide,external,0)
+	decfalse == constructor(set(bcontyping,falsesym),false:ide,external,0)
+	dectrue? == binding(set(set(bmontyping,truesym?),bindingAn(0,1,0)),
+			true?:ide,external,deftrue?)
+	decfalse? == binding(set(set(bmontyping,falsesym?),bindingAn(0,1,0)),
+			false?:ide,external,deffalse?)
+	decand  == binding(set(set(bdytyping,andsym),bindingAn(0,2,0)),
+			and:ide,external,defand)
+	decor == binding(set(set(bdytyping,orsym),bindingAn(0,2,0)),
+			or:ide,external,defor)
+	decnot == binding(set(set(bmontyping,notsym),bindingAn(0,1,0)),
+			~ :ide,external,defnot)
+	deceq == binding(set(set(bdytyping,eqsym),bindingAn(0,2,0)),
+			= :ide,external,defeq)
+	decne == binding(set(set(bdytyping,nesym),bindingAn(0,2,0)),
+			|= :ide,external,defne)
+
+	bcontyping == set(none:an, (typing(typebool)):typeAn)
+	bmontyping == set(none:an, (typing(
+			fun(%(typebool),typebool))):typeAn)
+	bdytyping == set(none:an, (typing(
+			fun(%(typebool,typebool),typebool))):typeAn)
+
+	truesym == symbol("true")
+	falsesym == symbol("false")
+	truesym? == symbol("true?")
+	falsesym? == symbol("false?")
+	andsym == symbol("and")
+	orsym == symbol("or")
+	notsym == symbol("~")
+	eqsym == symbol("=")
+	nesym == symbol("|=")
+
+	typebool == ide(bool:ide)
+
+	defand == lambda(none:an,%(d1,d2),
+		    case(none,e1,
+		      %(match(true:ide,<>[dec:SORT],e2),
+			match(false:ide,<>[dec:SORT],falseExp)),
+		      neverExp))
+	defor == lambda(none:an,%(d1,d2),
+		    case(none:an,e1,
+		      %(match(true:ide,<>[dec:SORT],trueExp),
+			match(false:ide,<>[dec:SORT],e2)),
+		      neverExp))
+	defnot == lambda(none:an,%(d1),
+		    case(none:an,e1,
+		      %(match(true:ide,<>[dec:SORT],falseExp),
+			match(false:ide,<>[dec:SORT],trueExp)),
+		      neverExp))
+	deftrue? == lambda(none:an,%(d1),e1)
+	deffalse? == defnot
+	defeq == lambda(none:an,%(d1,d2),
+		    case(none:an,e1,
+		      %(match(true:ide,<>[dec:SORT],e2),
+			match(false:ide,<>[dec:SORT],
+				apply(none:an,ide(none:an,~ :ide),%(e2)))),
+		      neverExp))
+	defne == lambda(none:an,%(d1,d2),
+		    case(none:an,e1,
+		      %(match(false:ide,<>[dec:SORT],e2),
+			match(true:ide,<>[dec:SORT],
+				apply(none:an,ide(none:an,~ :ide),%(e2)))),
+		      neverExp))
+	falseExp == ide(none:an,false:ide)
+	trueExp == ide(none:an,true:ide)
+	d1 == variable(set(bcontyping,symbol("x")),local(1))
+	d2 == variable(set(bcontyping,symbol("y")),local(2))
+	e1 == ide(none:an,local(1))
+	e2 == ide(none:an,local(2))
+
+	neverExp == error(set(set(none:an,error(pos(0,0),"",never)),
+			      typing(typebool)))
+
+	-- denotation
+
+	decdeno == foreign(denotation:ide,0,someProd)
+
+	dectl == hidden(set(dmontyping,tlsym),tl:ide,external)
+	decpf == hidden(set(pftyping,pfsym),<| :ide,external)
+
+	dmontyping == set(none:an, (typing(
+			fun(%(typedeno),typedeno))):typeAn)
+	pftyping == set(none:an, (typing(
+			fun(%(typedeno),ide(bool:ide)))):typeAn)
+	tlsym == symbol("tl")
+	pfsym == symbol("<|")
+
+	typedeno == ide(denotation:ide)
+
+
+	-- ABORT
+	decABORT == hidden(set(abortan,abortsym),ABORT,external)
+
+	abortan == set(set(none:an,hiddenAn(1)),
+			typing(gen(%(local(1)),
+				   fun(%(typedeno),ide(local(1))))))
+
+	abortsym == symbol("ABORT")
+
+
+	-- INLINE
+	decINLINE == hidden(set(inlinean,inlinesym),INLINE,external)
+
+	inlinean == set(set(none:an,hiddenAn(3)),
+			typing(gen(%(local(1)),
+				   fun(%(typedeno,typedeno,typedeno),
+				   ide(local(1))))))
+
+	inlinesym == symbol("INLINE")
+
+
+
+
+FUN genTupleTypeDec : nat -> typeDec
+DEF genTupleTypeDec(n) ==
+    binding(tuple(n),type)
+    WHERE type == IF 0?(n) THEN tup(<>[type:SORT])
+	     	  ELSE gen(vars,tup(varTypes))
+			WHERE vars == local * (.. :nat**nat->seq[nat])(1,n)
+			      varTypes == ide * vars
+	     	  FI
+
+FUN genTupleConsDec : nat -> dec
+DEF genTupleConsDec(n) ==
+    constructor(set(set(none:an,symbol("tup" ++ `(n))),
+		    (typing(type)):typeAn),
+		consTuple(n),
+		external,
+		n)
+    WHERE type == IF 0?(n) THEN 
+		      tup(<>[type:SORT])
+		  ELSE 
+		      gen(vars,fun(varTypes,tup(varTypes)))
+			WHERE vars == local * (.. :nat**nat->seq[nat])(1,n)
+			      varTypes == ide * vars
+	     	  FI
+

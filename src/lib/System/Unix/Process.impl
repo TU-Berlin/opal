@@ -1,0 +1,73 @@
+IMPLEMENTATION Process
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:19 $ ($Revision: 1.1.1.1 $)
+-- unix like processes
+
+IMPORT  Nat                ONLY  nat 0 1 + =
+	NatConv		   ONLY  asChar
+	Void               ONLY  void nil
+	String             ONLY  string # !
+	Denotation	   ONLY  init
+	StringIndex	   ONLY  !
+	Seq        	   ONLY  seq # ::
+	SeqIndex	   ONLY !
+	Array		   ONLY  array init
+	OptionMap	   ONLY  *
+	Option		   COMPLETELY
+	Char		   ONLY char
+	Com		   COMPLETELY
+	Pair		   ONLY pair &
+
+
+DATA process == primitive	-- simulate primitive storage class
+
+
+-- FUN self           : process
+-- FUN self?          : process -> bool
+
+DEF fork	== call(xfork)
+    FUN xfork: void -> ans[process]
+
+DEF execve(P,S,E) == call(xexecve(P,argv(!(P)::S),(argv * E)))
+    FUN xexecve: denotation ** array[denotation] ** option[array[denotation]]
+    						-> void -> ans[void]
+
+DEF kill(P,n)	== call(xkill(P,n))
+    FUN xkill: process ** nat -> void -> ans[void]
+
+
+DATA pair == pair(1st:process,2nd:nat)
+	-- to become available in GC part
+
+DEF wait	== call(\\ _ . 
+			LET a == xwait(nil)
+			IN
+			IF okay?(a) 
+			THEN okay(1st(data(a)) & 2nd(data(a)))
+		        ELSE fail(error(a)) FI
+		   )
+    FUN xwait: void -> ans[pair'Process]
+
+DEF popen(c,t)	== call(xpopen(c,t))
+DEF pclose(f)	== call(xpclose(f))
+    FUN xpopen : denotation ** denotation -> void -> ans[file]
+    FUN xpclose : file -> void -> ans[void]
+
+
+-- for convenience of handcoding of execve prepare argv format
+FUN argv: seq[string] -> array[denotation]
+DEF argv(Args) ==
+    -- transform sequence of string into array of denotation
+    -- each denotation will be terminated by chr(0)
+    -- one entry at the end of the array is left
+    -- to fill in a NULL pointer (in C)
+    init(#(Args) + 1, \\i. IF i = #(Args) THEN ""
+					  ELSE arg(Args!i) FI)
+
+FUN arg : string -> denotation
+DEF arg(Str) ==
+    init(#(Str) + 1, \\i. IF i = #(Str) THEN asChar(0)
+					ELSE Str!i FI)

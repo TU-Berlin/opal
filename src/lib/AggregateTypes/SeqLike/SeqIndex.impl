@@ -1,0 +1,61 @@
+IMPLEMENTATION SeqIndex
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:00 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Nat ONLY nat 0 succ < - > + 1 >=
+       Seq ONLY seq :: <> take drop ++ # split
+       Option ONLY option avail nil
+       OptionMap ONLY *
+       ABORT COMPLETELY
+
+
+DEF <> ! _ == ABORT("!'SeqIndex: index out of range")
+DEF (f :: _)!0 == f
+DEF (_ :: r)!succ(n) == r!n
+
+DEF pos(P, <>) == nil
+DEF pos(P, f :: r) == IF P(f) THEN avail(0) ELSE succ * pos(P,r) FI
+
+
+DEF slice(s,i,j) == IF i>j THEN <> ELSE take((j-i)+1,drop(i,s)) FI
+
+DEF upd(i, new, s) == IF i < #(s) THEN 
+			 take(i, s) ++ new :: drop(succ(i), s)
+		      ELSE
+		      	 s
+                      FI
+
+DEF upd(i, f, s) == IF i < #(s) THEN 
+			take(i, s) ++ f(s!i) :: drop(succ(i), s)
+		    ELSE
+		        s
+                    FI
+-- swap could haven been implemented more efficiently ... kd
+DEF swap(i, j, s) == IF i >= #(s) or j >= #(s) THEN
+		       ABORT("swap'SeqIndex: index out of range")
+		     ELSE
+  		       LET oldi == s!i
+			   oldj == s!j
+		       IN 
+			 upd(i, oldj, upd(j, oldi, s))
+                     FI
+
+DEF repl(olds, from, news) == LET (part1, rest1) == split(from, olds)
+			          part2 == drop(#(news), rest1)
+			      IN
+			      	take(#(olds), part1 ++ (news ++ part2))
+
+DEF insert(olds, k, news) == 
+    LET (vorne, hinten) == split(k, olds)
+    IN  vorne ++ (news ++ hinten)
+
+DEF delete(s, from, to) ==
+    IF to < from THEN s
+    ELSE
+      LET (vorne, hinten) == split(from, s)
+      IN
+      	  vorne ++ drop(succ(to - from), hinten)
+    FI

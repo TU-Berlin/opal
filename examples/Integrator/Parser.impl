@@ -1,0 +1,139 @@
+IMPLEMENTATION Parser
+
+IMPORT  Scanner         COMPLETELY
+        Token           COMPLETELY
+        Expr            COMPLETELY
+        Denotation      ONLY            ++ empty
+        Nat             COMPLETELY
+
+-- %$The visible part$
+
+-- FUN parse: denotation -> xyExpr
+DEF parse: denotation -> xyExpr(Text) == 
+        LET 
+           (Expr, varNr,  Rest) == parseExpr(Text)
+           (Token, _)       == extractToken(Rest)
+        IN 
+        IF eoiT?(Token) 
+                THEN    -- %legal input
+                        xyExpr(Expr, varNr)
+                ELSE    -- %illegal input
+                error("There are additional characters after the end of the expression")
+        FI
+
+
+-- %$The auxiliary hidden functions$
+
+FUN parseExpr: denotation -> expr ** nat ** denotation
+/* %
+@SPC @code{parseExpr(Trailer) == (Expr, varNr, Rest)}
+@PRE @code{true}
+@POST @code{Expr} is first expression contained in @code{Trailer},@*
+      @code{varNr} is the number of variables (0=none, 1=@{x@}, 2=@{x,y@})@*
+      @code{Rest} is the unused suffix of @code{Trailer}
+@ENDSPC
+*/
+DEF parseExpr(Trailer) ==
+        LET 
+           (Token, Rest) == extractToken(Trailer)
+        IN 
+        IF openT?(Token)      THEN parseFunction(Rest)
+        IF numberT?(Token)    THEN (number(value(Token)), 0, Rest)
+        IF piT?(Token)        THEN (pi, 0, Rest)
+        IF xT?(Token)         THEN (varx, 1, Rest)
+        IF yT?(Token)         THEN (vary, 2, Rest)
+        IF eoiT?(Token)       THEN (error(Message1), 0, empty)
+                                ELSE (error(Message2), 0, empty)
+        FI
+        WHERE
+        Message1 ==     msgIncomplete
+        Message2 ==     msgExpected("'(', a number, 'x' or 'y'", Trailer)
+
+FUN parseFunction: denotation -> expr ** nat ** denotation
+/* %
+@SPC @code{parseFunction(Trailer) == (Expr, varnr, Rest)}
+@PRE previously scanned token was 'open'
+@POST @code{Expr} is the first expression contained in @code{"(" ++ Trailer}, 
+      @code{Rest} is the unused suffix of @code{Trailer}
+@ENDSPC
+*/
+DEF parseFunction(Trailer) ==
+        LET 
+           (Token, Rest) == extractToken(Trailer)
+        IN 
+        IF addT?(Token)       THEN parseBinary(add, Rest)
+        IF subT?(Token)       THEN parseBinary(sub, Rest)
+        IF mulT?(Token)       THEN parseBinary(mul, Rest)
+        IF divT?(Token)       THEN parseBinary(div, Rest)
+        IF powT?(Token)       THEN parseBinary(pow, Rest)
+        IF sinT?(Token)       THEN parseUnary(sin, Rest)
+        IF cosT?(Token)       THEN parseUnary(cos, Rest)
+        IF expT?(Token)       THEN parseUnary(exp, Rest)
+        IF logT?(Token)       THEN parseUnary(log, Rest)
+        IF absT?(Token)       THEN parseUnary(abs, Rest)
+        IF eoiT?(Token)       THEN (error(Message1), 0, empty)
+                              ELSE (error(Message2), 0, empty)
+        FI
+        WHERE
+        Message1 ==     msgIncomplete
+        Message2 ==     msgExpected("a function", Trailer)
+
+FUN parseBinary: operator ** denotation -> expr ** nat ** denotation
+/* %
+@SPC @code{parseBinary(op, Trailer) == (Expr, Rest)}
+@PRE  a `(' and a binary operation symbol have been scanned    
+@POST two expressions are scanned, combined with @code{op} and returned as @code{Expr};
+      close is scanned; @code{Rest} is the unused rest of @code{Trailer}
+@ENDSPC
+*/
+DEF parseBinary(Operator, Trailer) ==
+        LET 
+           (Expr1, Nr1, Rest1) == parseExpr(Trailer)
+           (Expr2, Nr2, Rest2) == parseExpr(Rest1)
+           (Token, Rest3) == extractToken(Rest2)
+        IN 
+        IF error?(Expr1)        THEN (Expr1, 0, empty) -- error propagation
+        OTHERWISE
+        IF error?(Expr2)        THEN (Expr2, 0, empty) -- error propagation
+        OTHERWISE
+        IF closeT?(Token)       THEN (binop(Operator,Expr1,Expr2), Nr, Rest3)
+                                     WHERE
+                                     Nr == max(Nr1,Nr2)
+        IF eoiT?(Token)         THEN (error(Message1), 0, empty)
+                                ELSE (error(Message2), 0, empty)
+        FI
+        WHERE
+        Message1 ==     msgIncomplete
+        Message2 ==     msgExpected("')'", Rest2)
+
+FUN parseUnary: operator ** denotation -> expr ** nat ** denotation
+/* %
+@SPC @code{parseUnary(Op, Trailer) == (Expr, Rest)}
+@PRE  a `(' and a unary operation symbol have been scanned
+@POST one expression is scanned, @code{Op} is applied to it and returned as
+  @code{Expr}; ')' is scanned; @code{Rest} is the unused rest of @code{Trailer} 
+@ENDSPC
+*/
+DEF parseUnary(Operator, Trailer) ==
+        LET
+           (Expr1, Nr1, Rest1) == parseExpr(Trailer)
+           (Token, Rest2)      == extractToken(Rest1)
+        IN 
+        IF error?(Expr1)      THEN (Expr1, 0, empty)   -- error propagation
+        OTHERWISE
+        IF closeT?(Token)     THEN (unop(Operator,Expr1), Nr1,Rest2)
+        IF eoiT?(Token)       THEN (error(Message1), 0, empty)
+                              ELSE (error(Message2), 0, empty)
+        FI
+        WHERE
+        Message1 ==     msgIncomplete
+        Message2 ==     msgExpected("')'", Rest1)
+
+
+
+FUN msgIncomplete: denotation
+DEF msgIncomplete == "Input ended while expression still incomplete."
+
+FUN msgExpected: denotation ** denotation -> denotation
+DEF msgExpected(what, found) == 
+        "Expected " ++ what ++ ",\n found instead '" ++ found ++ "'"

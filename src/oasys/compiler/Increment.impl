@@ -1,0 +1,109 @@
+IMPLEMENTATION Increment
+
+IMPORT ComState COMPLETELY
+       FileSystem ONLY ownerWrite permission in filemode
+       Com ONLY com EXEC succeed
+       Set ONLY set {} in + - {}?
+       ComCompose ONLY &
+       SetFilter ONLY partition
+       RepoName ONLY part sign?
+       RepoUnitAccess ONLY library? sourceFile absyFile related direct importers checked? resetChecked relMode relOp transitive implImports symbol
+       RepoAdmin ONLY notExistent? mode path repoFile
+       InternCompile ONLY extendUnit failure? success? absy diag extendResult
+       RepoDiag ONLY diag error !! unitRef mode ref
+       File ONLY open close write file
+       BinFile ONLY write
+       InterOpal ONLY ioTypeKey interOpal:SORT
+       Denotation ONLY ++ +/+ <
+       RepoSource ONLY unspecified locator:SORT
+       RepoEvent ONLY event progress unit progressTarget diag
+       RepoInternSource ONLY loadUnitSource
+       RepoInternAbsy ONLY loadUnitAbsy
+       RepoInternData ONLY updateUnitInfo :=_state checked unitInfo:SORT unitState
+       SetReduce ONLY / 
+       RepoMaintain ONLY reloadUserUnitObject
+       Pair ONLY pair unpair
+       String ONLY string
+       Char ONLY char
+       Id ONLY id:SORT
+       Seq ONLY seq
+       SetMap ONLY *
+
+-- %$Admistration of editable units$
+
+FUN euId: stateId[set[unitName, <]]
+DEF euId == EXEC(stateId({}))
+
+DEF editableUnits == get(euId)
+
+DEF editable?(u) == editableUnits & (\\U. succeed(u in U))
+
+DEF clearEditableUnits == euId => (\\ _ . {})
+
+DEF addEditableUnits(add)(R) ==
+  LET (good, bad) == partition(ok?(R), add)
+  IN
+  euId => (\\ U. U + good) & succeed(bad)
+
+FUN ok? : repo -> unitName -> bool
+DEF ok?(R)(u) == -- IF part(u) sign? THEN false
+                 IF library?(u)(R) THEN false
+                 ELSE
+                   LET sF == sourceFile(u)(R)
+                   IN
+                   IF sF notExistent? THEN false
+                   ELSE ownerWrite in mode(sF)
+                   FI
+                 FI
+
+DEF subEditableUnits(sub) == euId => (\\ U. U - sub)
+
+-- %$Incremental updating$
+
+DEF increment(u, txt)(R) ==
+  editable?(u) & (\\ ok? .
+  IF ok? THEN
+    LET Deps == related(transitive, implImports)(u)(R)
+        Imports == IF Deps {}? THEN "" 
+                   ELSE "IMPORT " ++ 
+                        (+/+(" "), "") /[denotation,<,denotation]
+                        ((\\u1. symbol(u1)(R) ++ " COMP" ++ "LETELY") * Deps)
+                        ++ "\n"
+                   FI
+    IN
+    extendUnit(u, Imports ++ txt, Deps)(R) & (\\ ER.
+    LET (res, R1) == unpair(ER)
+    IN
+    IF failure?(res) THEN diag(diag(res))(R1)
+    IF success?(res) THEN
+      open(path(absyFile(u)(R1)), "w") & (\\ f.
+      write(f, ioTypeKey, absy(res)) & (\\ _ .
+      close(f) & (\\ _ .
+      open(path(sourceFile(u)(R1)), "a") & (\\ f2.
+      write(f2, "\n" ++ txt) & (\\ _ .
+      close(f2) & (\\ _ .
+      updateAbsy(u)(R1) & (\\ R2.
+      diag(diag(res))(R2)
+      )))))))
+    FI
+    )
+  IF ~(ok?) THEN
+    diag (error !! (unitRef(unspecified, u), "is not editable"))(R)
+  FI)
+
+-- code borrowed from RepoMaintain
+-- FIXME: should be imported from RepoMaintain
+FUN updateAbsy: unitName -> repo -> com[repo]
+DEF updateAbsy(u)(R) ==
+  event(progress(unit(u), "incrementing/loading"))(R) & (\\ R1.
+  loadUnitSource(u)(R1) & (\\ R2.
+  loadUnitAbsy(u)(R2) & (\\ R3 .
+  LET R4 == updateUnitInfo(u, \\Info. Info :=_state checked)(R3)
+  IN
+  -- we have to reset all checked units which dependended
+  -- on the old absy
+  LET Deps == related(direct, importers, \\U.checked?(U)(R4))(u)(R4)
+      R5   == (\\Ui, Ri. resetChecked(Ui)(Ri), R4) / Deps
+  IN
+  reloadUserUnitObject(u)(R5)
+  )))

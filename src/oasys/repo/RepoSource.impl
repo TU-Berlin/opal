@@ -1,0 +1,229 @@
+IMPLEMENTATION RepoSource
+
+IMPORT  Nat             COMPLETELY
+        NatConv         COMPLETELY
+        Denotation      COMPLETELY
+        Char            COMPLETELY
+        Fmt             COMPLETELY
+        FmtBasicTypes   COMPLETELY
+        DynConv         COMPLETELY
+        Com             COMPLETELY
+        OptionMap       COMPLETELY
+        
+IMPORT  RepoAn          COMPLETELY
+
+
+-- %$Positions$
+
+DATA pos == abs(rep: nat)
+
+FUN lineShift : nat
+DEF lineShift == !("65536")
+
+DEF maxCol == pred(lineShift)
+
+DEF pos(L, C)           == abs((L * lineShift) + C)
+DEF line(abs(N))        == N / lineShift
+DEF column(abs(N))      == N % lineShift
+DEF pos?(P:pos)         == true
+
+DEF fmtPos(P) ==
+    lit(`(line(P)) ++ "." ++ `(column(P)))
+
+DEF abs(N1) < abs(N2) == N1 < N2
+DEF abs(N1) = abs(N2) == N1 < N2
+
+-- %$Regions$
+
+DEF region(P11, P12) = region(P21, P22) ==
+    P11 = P21 and P12 = P22
+
+DEF region(P11, P12) < region(P21, P22) ==
+    IF P11 < P21 THEN true
+    IF P11 = P21 THEN P12 < P22
+                 ELSE false FI
+
+DEF fmtRegion(region(P1, P2)) ==
+    IF P1 < P2 THEN
+        fmtPos(P1);lit("-");fmtPos(P2)
+    ELSE fmtPos(P1) FI
+                 
+
+DEF P in region(P1, P2) == ~(P < P1 or P2 < P)
+
+DEF P1 min P2           == abs(rep(P1) min rep(P2))
+DEF P1 max P2           == abs(rep(P1) max rep(P2))
+
+DEF region(S1, E1) + region(S2, E2) == region(S1 min S2, E1 max E2)
+
+
+DEF nextPos(P, Ch) ==
+    IF Ch = newline THEN pos(succ(line(P)), 1)
+                    ELSE pos(line(P), succ(column(P))) FI
+
+
+-- %$Implementation of Locators$ ==============================================
+
+DEF pos(P, Alt) in Region ==
+    IF P in Region THEN true ELSE Alt in Region FI
+
+DEF region(region(P1, P2), Alt) in Region ==
+    IF P1 in Region and P2 in Region THEN true ELSE Alt in Region FI
+
+DEF unspecified in Region == false
+
+DEF fmtLocator(pos(P, Alt)) ==
+    fmtPos(P); 
+    (IF unspecified?(Alt) THEN none ELSE lit(","); fmtLocator(Alt) FI)
+
+DEF fmtLocator(region(R, Alt)) ==
+    fmtRegion(R); 
+    (IF unspecified?(Alt) THEN none ELSE lit(","); fmtLocator(Alt) FI)
+
+DEF fmtLocator(unspecified) ==
+    lit("unknown location")
+
+
+-- %$Implementation of Region Annotation Layer$ ==============================
+
+DEF regionAnLayer       == EXEC(register(1, fmtDynRegion))
+
+FUN regionAnTag         : denotation
+DEF regionAnTag         == "1"
+
+FUN fmtDynRegion        : dyn -> fmt
+DEF fmtDynRegion(Val)   == fmtRegion(unpack[region](Val, regionAnTag))
+
+DEF region?(An)         == (\\Val . unpack[region](Val, regionAnTag)) 
+                                                * (An !? regionAnLayer)
+DEF region(An)          == unpack(An ! regionAnLayer, regionAnTag)
+DEF An :=_region R      == def(regionAnLayer, 
+                               pack[region](R, regionAnTag), An)
+
+
+-- %$Implementation of Locator Annotation Layer$ ==============================
+
+DEF locatorAnLayer      == EXEC(register(2, fmtDynLocator))
+
+FUN locatorAnTag                : denotation
+DEF locatorAnTag                == "2"
+
+FUN fmtDynLocator       : dyn -> fmt
+DEF fmtDynLocator(Val)  == fmtLocator(unpack[locator](Val, locatorAnTag))
+
+DEF locator?(An)        == (\\Val . unpack[locator](Val, locatorAnTag)) 
+                                                * (An !? locatorAnLayer)
+DEF locator(An)         == unpack(An ! locatorAnLayer, locatorAnTag)
+DEF An :=_locator R     == def(locatorAnLayer, 
+                               pack[locator](R, locatorAnTag), An)
+
+
+-- %$Inserted from Signature$
+
+/* % 
+@ignore
+*/
+
+-- %$Items$ ===============================================================
+
+/* % Components of the source are represented by so-called @emph{items},
+which are refered to by @emph{item names}: */
+
+DATA item ==
+        item            (an             : an,           
+                                          -- the annotation
+                         kind           : itemKind,     
+                                          -- the kind
+                         text           : denotation)
+                                          -- the source text
+        -- special variant for internal puposes
+        removed
+
+     FUN fmtItem        : item                          -> fmt
+
+
+DATA itemKind ==
+        unknown comment pragma import sort fun type data def law 
+        signature implementation
+
+
+     FUN fmtItemKind    : itemKind                      -> fmt
+
+
+-- %$Positions and Regions$ =================================================
+
+/* % A region addresses a range in a source as a pair of positions.
+A position is a pair of a line and a column number. Several
+functions are supplied on regions and positions: */
+
+
+DATA region ==
+        region          (start          : pos,
+                         end            : pos)
+
+FUN < =                 : pos ** pos                    -> bool
+FUN < =                 : region ** region              -> bool
+FUN fmtPos              : pos                           -> fmt
+FUN fmtRegion           : region                        -> fmt
+FUN in                  : pos ** region                 -> bool
+FUN min max             : pos ** pos                    -> pos
+FUN nextPos             : pos ** char                   -> pos
+FUN +                   : region ** region              -> region
+                          -- the minimal region which covers both
+
+
+DATA locator ==
+    unspecified
+    pos                 (pos            : pos,
+                         alt            : locator)
+    region              (region         : region,
+                         alt            : locator)              
+
+    FUN fmtLocator      : locator -> fmt
+
+
+-- %$Generated by Ordinatrice$
+
+/* % 
+@ignore
+*/
+
+
+
+-- this is output of ordinatrice verte for free type itemKind
+
+
+
+FUN fmtItemKind : itemKind -> fmt
+DEF fmtItemKind(unknown) == ;(;(beg(2),lit("unknown")),end)
+DEF fmtItemKind(comment) == ;(;(beg(2),lit("comment")),end)
+DEF fmtItemKind(pragma) == ;(;(beg(2),lit("pragma")),end)
+DEF fmtItemKind(import) == ;(;(beg(2),lit("import")),end)
+DEF fmtItemKind(sort) == ;(;(beg(2),lit("sort")),end)
+DEF fmtItemKind(fun) == ;(;(beg(2),lit("fun")),end)
+DEF fmtItemKind(type) == ;(;(beg(2),lit("type")),end)
+DEF fmtItemKind(data) == ;(;(beg(2),lit("data")),end)
+DEF fmtItemKind(def) == ;(;(beg(2),lit("def")),end)
+DEF fmtItemKind(law) == ;(;(beg(2),lit("law")),end)
+DEF fmtItemKind(signature) == ;(;(beg(2),lit("signature")),end)
+DEF fmtItemKind(implementation) == ;(;(beg(2),lit("implementation")),end)
+
+
+
+-- this is output of ordinatrice verte for free type item
+
+
+
+
+
+FUN fmtItem : item -> fmt
+DEF fmtItem(item(v0,v1,v2)) == ;(;(beg(2),lit("item")),;(;(lit("("),;(;(;(fmtAn(v0),;(lit(", "),fmtItemKind(v1))),;(lit(", "),fmtDenotation(v2))),lit(")"))),end))
+DEF fmtItem(removed) == ;(;(beg(2),lit("removed")),end)
+
+
+
+
+/* %
+@end ignore
+*/
+

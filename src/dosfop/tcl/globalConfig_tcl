@@ -1,0 +1,341 @@
+#!/usr/local/bin/wish -f
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/globalConfig_tcl,v 1.1.1.1 1998-06-16 16:00:30 wg Exp $
+
+option readfile $env(DOSFOP)/defaults/options.data
+
+wm title . "Global Option Configurator"
+
+source $env(DOSFOP)/tcl/global.tcl
+source $env(DOSFOP)/tcl/filehelp.tcl
+source $env(DOSFOP)/tcl/error.tcl
+source $env(DOSFOP)/tcl/regexprs.tcl
+source $env(DOSFOP)/tcl/output.tcl
+source $env(DOSFOP)/tcl/configWidgets.tcl
+source $env(DOSFOP)/tcl/help.tcl
+
+####################
+# global constants #
+####################
+
+set top_level_options {location \
+                       survey \
+                       top_structure output_file project_name authors date \
+                       functionality_index application_index concept_index \
+		       structure_index \
+                       subsystems_include library_include properties_include \
+                       only_interfaces \
+                       import_references used_function_tables \
+                       hierarchy_visu sort_structures language new_pages \
+		       levels drop_empty_lines single_node}
+
+# macros are handled separately !
+
+set top_options_file         DOSFOP/Toplevel.config
+set top_options_default_file DOSFOP/Toplevel.config.default
+
+set helpSupportedWidgets {.name .location_entry .output_file_entry .top_structure_entry \
+                          .project_name_entry .authors_entry .date_entry .survey_button \
+                          .macros_button \
+                          .functionality_index_config .functionality_index_setting \
+                          .application_index_config .application_index_setting \
+                          .concept_index_config .concept_index_setting \
+			  .structure_index_config .structure_index_setting \
+                          .subsystems_include_config .subsystems_include_setting \
+                          .library_include_config .library_include_setting \
+                          .properties_include_config .properties_include_setting \
+                          .only_interfaces_config .only_interfaces_setting \
+                          .hierarchy_visu_config .hierarchy_visu_setting \
+			  .sort_structures_config .sort_structures_setting \
+                          .import_references_config .import_references_setting \
+                          .used_function_tables_config .used_function_tables_setting \
+                          .language_config .language_setting \
+                          .new_pages_config .new_pages_setting \
+                          .drop_empty_lines_config .drop_empty_lines_setting \
+			  .single_node_config .single_node_setting \
+                          .levels_config .mbar.help .mbar.file}
+
+
+################
+# macro handling
+################
+######################################################################################
+proc extractMacros str {
+######################################################################################
+# scans "str" w.r.t. the global regular expression "macroreg".
+# "count" containts the actual number of read macros. The macro-contents are read into
+# the array "macro". The function returns the number of macros.
+#######################################################################################
+  global macroreg
+  global macro
+ 
+  set success [regexp $macroreg $str _ left right]
+    if {$success == 1} then {
+      set macro($left) $right      
+      regexp -indices $macroreg $str matchrange
+      extractMacros [string range $str [lindex $matchrange 1] end] 
+    } 
+}
+
+######################################################################################
+proc printMacros {} {
+######################################################################################
+# constructs a string that containt the syntactic correct representation
+# of macro-definitions for the configuration file to be written 
+######################################################################################
+  global macro
+
+  set res ""
+  if {[info exists macro] != 0} then {
+    foreach element [array names macro] {
+       set res $res[format "%s = |%s|" $element $macro($element)]\n
+    }
+  } 
+  return $res
+}
+
+
+
+#################################
+# extracting the default-settings
+#################################
+######################################################################################
+proc readSettingsGlobal optionList {
+######################################################################################
+# based on the given "optionList" this function tries to extract the specified
+# option from the given file. For each element in "optionList" there has to be 
+# a corresponding regular expression in the global "reg" array. For each element
+# a (at least empty "") setting is put in the "setting" array. The internally
+# called function "extractMacros" fills the array  "macrosetting" with the
+# appropriate values
+######################################################################################
+  global reg
+  global setting
+  global top_options_file top_options_default_file
+
+  if {[file exists $top_options_file]} then {
+    set fdin [open $top_options_file r]
+  } else {
+    set fdin [open $top_options_default_file r]
+  }
+  set content [read $fdin]
+  close $fdin
+
+  foreach i $optionList {
+    set setting($i) [getMatchD $reg($i) $content]
+  }
+
+  extractMacros $content
+
+}
+
+
+##############################
+# writing out the new settings
+##############################
+
+proc saveGlobalConfig {} {
+  global setting
+  global out
+  global top_option_ordering 
+  global top_options_file 
+  global dir
+  global structureStringReg
+
+  ### check lexical structure of location
+  set setting(location) [string trim $setting(location)]
+  if {[check $setting(location) $dir] != 1} then {
+    errorWidget "Syntax error in Root-Location!"
+    return
+  }
+
+  ### check lexical structure of output_file
+  set setting(output_file) [string trim $setting(output_file)]
+  if {[check $setting(output_file) $dir] != 1} then {
+    errorWidget "Syntax error in Output File!"
+    return
+  }
+
+  ### check lexical structure of top_structure
+  set setting(top_structure) [string trim $setting(top_structure)]
+  if {[check $setting(top_structure) $structureStringReg] != 1} then {
+    errorWidget "Syntax error in Top Structure!"
+    return
+  }
+
+
+  set setting(macros) [printMacros]
+  set fdout [open $top_options_file w+]
+  foreach i $top_option_ordering {
+      if {($setting($i) != "") || ($i == "survey") } then {
+	  regsub xxx $out($i) $setting($i) result
+          puts $fdout $result
+      }
+  }
+  close $fdout
+
+  catch {send dosfop_tcl renewHeadline}
+  
+  markConfigChange
+}	
+
+######################################################################################
+# leaving the global configuration browser and re-enable the "Global Configuration"-
+# Button
+
+proc cancelGlobalConfig {} {
+  catch {send dosfop_tcl .globalConfig configure -state normal}
+  destroy .
+  exit
+}
+
+
+
+######################################################################################
+# Display the rest of the options not shown on screen initially
+######################################################################################
+
+proc displayFullOptions {} {
+
+  global setting
+
+  pack forget .expandButtonFrame
+
+  pack [surveyWidget setting] \
+       [macroWidget] \
+       [levelsWidget setting 0] \
+       -in .left -side top -padx 2m -pady 2m -fill x
+
+  #########
+  # indices
+  #########
+  
+  frame .indices 
+  
+  pack [functionalityIndexWidget setting] \
+       [applicationIndexWidget setting]   \
+       [conceptIndexWidget setting]       \
+       [structureIndexWidget setting]     \
+       -in .indices -side top -expand 1 -fill x
+  
+  ############
+  # inclusions
+  ############
+  
+  frame .inclusions 
+  
+  pack [subsystemsIncludeWidget setting] \
+       [libraryIncludeWidget setting]    \
+       [propertiesIncludeWidget setting 0] \
+       [onlyInterfacesWidget setting 0]    \
+       -in .inclusions -side top -expand 1 -fill x
+     
+  
+  ###############
+  # other options
+  ###############
+  
+  frame .others 
+  
+  pack [hierarchyVisuWidget setting 0] \
+       [sortStructuresWidget setting 0] \
+       [importReferencesWidget setting 0] \
+       [usedFunctionTablesWidget setting 0] \
+       [languageWidget setting] \
+       [newPagesWidget setting 0] \
+       [dropEmptyLinesWidget setting 0] \
+       [singleNodeWidget setting 0] \
+       -in .others -side top -expand 1 -fill x
+
+  pack .indices .inclusions .others \
+       -in .right -side top -padx 2m -pady 2m  
+
+}    
+
+
+######################################################################################
+# MAIN ###############################################################################
+######################################################################################
+    
+##########################################
+# reading the actual configuration for top
+##########################################
+
+readSettingsGlobal $top_level_options
+
+###########################################
+# here setting-mainpulations can take place
+###########################################
+# windows are placed here
+
+frame .left
+frame .right
+
+#########
+# file-IO
+#########
+
+frame .fileio 
+
+pack [locationWidget setting "Root-Location of the Project : "] \
+     [outputFileWidget setting ] \
+     -in .fileio -side top -padx 2m -pady 2m -fill x
+
+#############
+# global text
+#############
+
+frame .globtext
+
+pack [topStructureWidget setting] \
+     [projectNameWidget setting]  \
+     [authorsWidget setting]      \
+     [dateWidget setting]         \
+     -in .globtext -side top -padx 2m -pady 1m 
+
+
+
+frame .expandButtonFrame
+
+button .expandButton -text "Display All Options ->" \
+                     -command displayFullOptions
+
+pack .expandButton -in .expandButtonFrame -side right
+
+
+set fileMenu [makeStandardMenu $helpSupportedWidgets]
+
+$fileMenu add command -label "Save Settings And Exit" \
+                      -command "saveGlobalConfig;cancelGlobalConfig" \
+                      -accelerator "  Ctrl-x"
+$fileMenu add command -label "Save Settings"\
+                      -command saveGlobalConfig \
+                      -accelerator "  Ctrl-s"
+$fileMenu add separator
+$fileMenu add command -label "Discard Changes and Exit" \
+                      -command cancelGlobalConfig \
+                      -accelerator "  Ctrl-c"
+bind all <Control-x> {saveGlobalConfig;cancelGlobalConfig}
+bind all <Control-s> {saveGlobalConfig}
+bind all <Control-c> {cancelGlobalConfig}
+
+
+pack [nameWidget "Global Option Configurator" ""] \
+      -in .left -side top -fill both -padx 2m -pady 2m 
+pack .fileio \
+     .globtext \
+     .expandButtonFrame \
+     -in .left -side top -padx 2m -pady 2m -fill x
+
+pack .mbar -side top -fill x
+pack .left -side left -expand 1 -fill both
+pack .right -side right -expand 1 -fill both
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,446 @@
+/* %-
+-- LAST EDIT: Wed Sep 13 12:16:01 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     interface for signature analysis
+-- Changes:     af, Jul  5 1993: added handling of laws
+-- ============================================================================
+*/
+
+IMPLEMENTATION GlobSig4SigAna
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Com             COMPLETELY
+        ComCompose      ONLY    ; &
+        DeclEntry       ONLY    declE
+        Fct             ONLY    fct
+        GlobPragma      ONLY    globPragma
+        GlobSig         COMPLETELY
+        GlobSigImpl     ONLY    data? impl locSig
+        ImpDecl4SigAna  ONLY    notParametrized?
+        ImpExpEntry     COMPLETELY
+        Impl[name]      ONLY    sortImpl:SORT
+        Map             ONLY    map {}
+        Name            ONLY    error extName intName name
+        Name4SigAna     ONLY    realInst
+        Nat             ONLY    1 = > nat |= < >
+        Objects         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        PartNameEntry   COMPLETELY
+        Pos             ONLY    firstPos pos
+        Pragma          ONLY    noPragma pragma
+        Rep             COMPLETELY
+        Seq             COMPLETELY
+        SeqFilter       ONLY    split |
+        SeqMap          ONLY    *
+        SeqMapEnv       ONLY    *
+        SeqReduce       ONLY    / 
+        SeqZip          ONLY    zip 
+        Table           COMPLETELY
+        TableFun2       COMPLETELY
+        Triple          COMPLETELY
+        UniqueTable     COMPLETELY
+        UniqueTableReduce       COMPLETELY
+       NatConv ONLY `
+       DEBUG ONLY PRINT FIELD?[bool]
+       Denotation ONLY ++
+       GlobSigToText ONLY `_l
+       OptionConv ONLY `
+       SeqConv ONLY `
+
+-- ---------------------------------------------------------------------------
+-- die globale Signatur selber
+
+DEF {} ==
+        sigGlobSig( nilRep, <>[formParam:SORT], decls, structures, firstPos,
+                    noPragma, sortPNs, instPNs, onlyPNs, lookup, implPragmas,
+                    implLaws, nilRep, nilRep, nilRep, nilRep,
+                  globPragmas)
+        WHERE
+        decls == {}
+        structures == {}
+        -- die Konstanten muessen woanders hin !!!!!!
+        sortPNs == {}
+        instPNs == {}
+        onlyPNs == {}
+        lookup == {}
+        implPragmas == {}
+        implLaws == {}
+        globPragmas == <>
+
+DEF defStructHead(gS, structIde, pos, pragma, formParams) ==
+        sigGlobSig( structIde, formParamS, decls(gS),structures(gS),pos,pragma,
+                    sortPartNames(gS), instPartNames(gS), onlyPartNames(gS),
+                    lookupTable(gS), impPragmas(gS), impLaws(gS),
+                    boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                    pragmas(gS))
+        WHERE formParamS == unIdentified * formParams
+
+DEF extStructHead(gS, FormParams) ==
+        sigGlobSig( structIde(gS), NewFormParams,
+        decls(gS),structures(gS),pos(gS),
+                pragma(gS),
+                    sortPartNames(gS), instPartNames(gS), onlyPartNames(gS),
+                    lookupTable(gS), impPragmas(gS), impLaws(gS),
+                    boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                    pragmas(gS))
+        WHERE NewFormParams == zip(\\part, old. mkFormParam(avail(1st(part)),
+        fullFp(old), pragmaFp(old)))(FormParams, formParams(gS))
+
+DEF structPos == pos'GlobSig
+
+DEF defPreDefs(gS,Vbool,Vdenotation,VBOOL,VDENOTATION ) == 
+        sigGlobSig( structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                    pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                    onlyPartNames(gS), lookupTable(gS), impPragmas(gS),
+                    impLaws(gS),
+                    Vbool,Vdenotation,VBOOL,VDENOTATION, pragmas(gS))
+
+DEF formParamS(gS) == fPof:formParam->pair[onlyPNE:SORT,pragma:SORT] 
+                        * formParams(gS)
+
+DEF defSignFormParams(gS, structIde, formParams) ==
+        sigGlobSig( structIde, Identified * formParams, decls(gS), 
+                    structures(gS), pos(gS), pragma(gS), sortPartNames(gS), 
+                    instPartNames(gS), onlyPartNames(gS), lookupTable(gS),
+                    impPragmas(gS), impLaws(gS),
+                    boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                    pragmas(gS))
+
+DEF getSignFormParams(gS) == fPof:formParam->pair[decl:SORT,pragma:SORT] * formParams(gS)
+
+-- ---------------------------------------------------------------------------
+
+
+DEF initAdmInfo(gS, _) == updLookups(gS, {})
+DEF instsComplete(gS:globSig) == gS
+
+DEF declsComplete(gS) == gS
+
+DEF sortInstPNEOnlyComplete(gS) == gS
+
+DEF finitSigAna(gS) ==
+        implGlobSig( structIde(gS), formParams(gS), decls(gS), structures(gS),
+                     pos(gS), pragma(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                     bool, denotation, {}, pragmas(gS), {-})
+        WHERE
+        (bool, denotation) ==
+            (ft(ft(matchSortByIdeOrig(gS, boolR(gS), avail(BOOL(gS)),ok))),
+             IF structIde(gS) = BOOL(gS) THEN error'Name
+             ELSE ft(ft(matchSortByIdeOrig(gS, denotationR(gS), 
+                                               avail(DENOTATION(gS)),ok)))
+             FI)
+
+        FUN ok : instAppl -> bool
+        DEF ok(_) == true
+
+-- ---------------------------------------------------------------------------
+-- Iterationsfunktionen
+
+DEF treatSortPNS(F, gS) == unpair(
+            / (\\N, _, P. LET (NewGs, Erg) == F(1st(P), sortPN(N, firstPos))
+                          IN &(NewGs, 2nd(P) and Erg), gS & true, 
+                    sortPartNames(gS)))
+    
+-- ---------------------------------------------------------------------------
+
+DEF treatInstPNS(F, gS) == unpair(
+            / (\\N, _, P. LET (NewGs, Erg) == F(1st(P), instPN(N, firstPos))
+                          IN &(NewGs, 2nd(P) and Erg), gS & true,
+                    instPartNames(gS)))
+
+-- ---------------------------------------------------------------------------
+
+DEF treatOnlyPNS(F, gS) == (updOnlyPNs(finGS, finOnlyTabs), LastErg)
+        WHERE
+        onlyTabs == onlyPartNames(gS)
+        (finGS, finOnlyTabs, LastErg) == untriple(
+                / (\\N, OnlyTab, T. 
+                  LET OTab == tabOf(OnlyTab)
+                      (Struct, Inst) == context(OnlyTab)
+                      NewOnlyTab == updOnlyTab(OnlyTab, NewOnlys)
+                      NewTabs == (N, NewOnlyTab) upd 2nd(T)
+                      (NewGs, NewOnlys, NewErg) == untriple(
+                         / (\\I, O, T2. 
+                                   LET (NextGs, NextErg, OnlyPNE) == 
+                                               F(1st(T2), Struct, Inst, O)
+                                   IN &(NextGs, (I, OnlyPNE) upd 2nd(T2),
+                                   NextErg),
+                                   &(1st(T), OTab, 3rd(T)))(OTab))
+                   IN &(NewGs, NewTabs, NewErg), &(gS, onlyTabs,
+                   true))(onlyTabs))
+
+-- ---------------------------------------------------------------------------
+
+DEF treatParamPNS(F, gS) ==
+        sigGlobSig(structIde(fgS), newFormParams, decls(fgS), structures(fgS),
+                   pos(fgS),pragma(fgS),sortPartNames(fgS), instPartNames(fgS),
+                   onlyPartNames(fgS), lookupTable(fgS), impPragmas(gS),
+                   impLaws(gS),
+                   boolR(fgS), denotationR(fgS), BOOL(fgS), DENOTATION(fgS),
+                   pragmas(fgS))
+        WHERE
+        (fgS, newFormParams) == *'SeqMapEnv(treatParam(F), gS, formParams(gS))
+
+FUN treatParam : (globSig ** onlyPNE -> globSig ** onlyPNE) 
+                  -> globSig ** formParam -> globSig ** formParam
+DEF treatParam(F)(gS, Fp AS mkFormParam(nil,_,_)) == (gS, Fp)
+DEF treatParam(F)(gS, Fp AS mkFormParam(avail(Opne),fu,pr)) == 
+  LET         (finGS, finPN) == F(gS, Opne)
+  IN (finGS, mkFormParam(avail(finPN),fu,pr))
+
+-- ---------------------------------------------------------------------------
+
+DEF treatDeclS(F, gS, ok) == /& (\\ N, _, Ans.
+                  F(1st(Ans), decl(N)) & (\\P.
+                  succeed(1st(P) & (2nd(P) and 2nd(Ans)))), gS & ok, 
+                  decls(gS))
+-- ---------------------------------------------------------------------------
+
+DEF treatInstAppls(gS, F) == 
+    LET Structs == structures(gS)
+        LastStructTab == 
+          / (\\S, StructE, STab.
+                 LET ImpDeclS == impDecls(StructE)
+                     Param? == param?(StructE) or paramTrans?(StructE)
+                     InstTab == IF Param? THEN insts(StructE) ELSE {} FI
+                     NewStruct == updImpDecls(NewImpDecls)
+                               (IF Param? THEN updInsts(NewInstTab)(StructE)
+                                  ELSE StructE FI)
+                     (NewImpDecls,NewInstTab) == 
+                              unpair( / (\\I, ImpDeclE, P.
+                              LET (NextInstTab, NewInsts) == 
+                                                F(2nd(P), instS(ImpDeclE))
+                                  NewDeclE == updInstS(NewInsts)(ImpDeclE)
+                                  NextImpDecls == upd(I, NewDeclE, 1st(P))
+                              IN NextImpDecls & NextInstTab, ImpDeclS
+                              & InstTab)(ImpDeclS)) 
+                 IN upd(S, NewStruct, STab), Structs)(Structs)
+    IN updStructs(gS, LastStructTab)
+
+-- ---------------------------------------------------------------------------
+
+DEF treatInstS(gS, F:struct**inst->inst**globSig->globSig) ==
+        / (tIStruct(F), gS)(structures(gS))
+
+FUN tIStruct : (struct**inst->inst**globSig->globSig)
+        -> nat ** structE ** globSig -> globSig
+DEF tIStruct(F)(N, StructE, gS) ==
+        IF param?(StructE) ORIF paramTrans?(StructE)
+        THEN LET Insts == insts(StructE)
+             IN
+                 / (\\I1, _, Gs1.
+                     / (\\ I2, _, Gs2. IF I2 > I1 THEN 
+                               F(struct(N), inst(I1))(inst(I2), Gs2)
+                               ELSE Gs2 FI, Gs1)(Insts), gS)(Insts)
+        ELSE gS
+        FI
+
+-- ---------------------------------------------------------------------------
+
+DEF treatEachInst(gS, F:struct**inst**globSig->globSig) ==
+        / (tEIStruct(F), gS)(structures(gS))
+
+FUN tEIStruct : (struct**inst**globSig->globSig)
+        -> nat ** structE ** globSig -> globSig
+DEF tEIStruct(F)(N, StructE, gS) ==
+        IF param?(StructE) ORIF paramTrans?(StructE)
+        THEN
+           / (tEIInst(F, struct(N)), gS)(insts(StructE))
+        ELSE gS
+        FI
+
+FUN tEIInst : (struct**inst**globSig->globSig) 
+        ** struct -> nat ** instE ** globSig -> globSig
+DEF tEIInst(F, struct)(n, _, gS) ==
+        F(struct, inst(n), gS)
+
+-- ---------------------------------------------------------------------------
+
+DEF treatInstS(F, gS, ok) == 
+        treatInstSByStructs(structS, F, gS, ok)
+        WHERE structS == structures(gS)
+
+FUN treatInstSByStructs : table[structE] **
+                (globSig ** struct ** inst -> com[pair[globSig,bool:SORT]])
+                 ** globSig ** bool -> com[pair[globSig,bool:SORT]]
+DEF treatInstSByStructs(structs, F, gS, ok) ==
+       /& (\\S, StructE, P.
+          IF (StructE param?) ORIF (StructE paramTrans?) THEN
+                /&(\\ I, _, P2.
+                      F(1st(P2), struct(S), inst(I)) & (\\P3. 
+                                 succeed(1st(P3) & (2nd(P3)and 2nd(P2)))), P,
+                      insts(StructE)) 
+                      ELSE succeed(P) FI, gS & ok, structs)
+          
+-- ---------------------------------------------------------------------------
+
+DEF treatOnlyS(F, gS, ok) ==
+           /& (\\ _, OnlyTab, P.
+                    LET (Struct, Inst) == context(OnlyTab)
+                        Onlys == tabOf(OnlyTab)
+                    IN
+                        /& (\\ _, OnlyE, P2.
+                           F(1st(P2), Struct, Inst, OnlyE) & (\\P3. 
+                               succeed(1st(P3) & (2nd(P3) and
+                               2nd(P2)))),
+                                P, Onlys), 
+                           gS & ok, onlyPartNames(gS))
+
+-- ---------------------------------------------------------------------------
+
+DEF treatOpDeclS(F, gS) ==
+        updLookups(treatOpDeclByLookups(lookups, F, gS))
+        WHERE lookups == lookupTable(gS)
+
+FUN treatOpDeclByLookups : table[lookupE:SORT] ** 
+                (globSig ** seq[decl:SORT] -> globSig ** seq[decl:SORT]) ** globSig 
+                -> globSig ** table[lookupE:SORT]
+DEF treatOpDeclByLookups(lookups, F, gS) == unpair(
+    / (\\N, lookE, P.
+          LET (NewGs, NewOpDecls) == F(1st(P), opDeclS(lookE))
+          newLookE == lookupE(struct(lookE), sortDeclS(lookE), NewOpDecls,
+                                sortImpDeclS(lookE), opImpDeclS(lookE))
+          NewLookups == (N, newLookE) upd 2nd(P)
+          IN NewGs & NewLookups, gS & lookups)(lookups))
+
+-- ---------------------------------------------------------------------------
+-- Match-Funktionen
+
+-- %@zoindex MatchGS4
+FUN pMatch? : bool
+DEF pMatch? == FIELD?[bool]("-zMatchGS4")
+
+DEF matchByIdeOrig(gS, ide, orig, Applied?) ==
+        LET lookEOa == ord(ide) !? lookupTable(gS) 
+            lookEO == PRINT(pMatch?, \\ . "matchByIdeOrig:<" ++ `(ide) ++ ", " ++ `(ord(ide)) ++ ">" ++ `(`_l)(lookEOa), lookEOa)
+        IN
+        IF lookEO nil? THEN PRINT(FIELD?[bool]("-zMatchGS4"), \\ . "matchByIdeOrig: no match",<>[seq[name:SORT]])
+        ELSE LET lookE == cont(lookEO) IN
+          IF orig nil? THEN 
+            convIntDecls(sortDeclS(lookE) ++ opDeclS(lookE)) ++
+            convExtDecls(Applied?,gS, union(unEqExtDecls)
+                                  (sortImpDeclS(lookE), opImpDeclS(lookE)))
+          ELSE  -- Herkunft angegeben
+            IF cont(orig) = structIde(gS) THEN
+              convIntDecls(sortDeclS(lookE) ++ opDeclS(lookE))
+            ELSE                -- nicht die eigene Struktur
+              convExtDecls(Applied?,gS, eqStruct(gS,cont(orig)) | 
+                                        union(unEqExtDecls)
+                                    (sortImpDeclS(lookE), opImpDeclS(lookE)))
+            FI
+          FI
+        FI
+
+DEF matchSortByIdeOrig(gS, ide, orig,Applied?) ==
+        LET lookEOa == ord(ide) !? lookupTable(gS) 
+            lookEO == PRINT(pMatch?, \\ . "matchSortByIdeOrig:<" ++ `(ide) ++ ", " ++ `(ord(ide)) ++ "><orig:" ++ `(`)(orig) ++ ">" ++ `(`_l)(lookEOa), lookEOa)
+        IN
+        IF lookEO nil? THEN PRINT(FIELD?[bool]("-zMatchGS4"), \\ . "matchSortByIdeOrig: no match", <>[seq[name:SORT]])
+        ELSE LET lookE == cont(lookEO) IN
+          IF orig nil? THEN 
+            convIntDecls(sortDeclS(lookE)) ++
+                convExtDecls(Applied?, gS,sortImpDeclS(lookE))
+          ELSE  -- Herkunft angegeben
+            IF cont(orig) = structIde(gS) THEN
+              convIntDecls(sortDeclS(lookE))
+            ELSE                -- nicht die eigene Struktur
+              convExtDecls(Applied?,gS, eqStruct(gS,cont(orig)) | 
+                sortImpDeclS(lookE))
+            FI
+          FI
+        FI
+
+
+DEF matchOpByIdeOrig(gS, ide, orig, Applied?) ==
+        LET lookEOa == ord(ide) !? lookupTable(gS) 
+            lookEO == PRINT(pMatch?, \\ . "matchOpByIdeOrig:<" ++ `(ide) ++ ", " ++ `(ord(ide)) ++ ">" ++ `(`_l)(lookEOa), lookEOa)
+        IN
+        IF lookEO nil? THEN PRINT(FIELD?[bool]("-zMatchGS4"), \\ . "matchOpByIdeOrig: no match", <>[seq[name:SORT]])
+        ELSE LET lookE == cont(lookEO) IN
+          IF orig nil? THEN 
+            convIntDecls(opDeclS(lookE)) ++ 
+            convExtDecls(Applied?,gS, opImpDeclS(lookE))
+          ELSE  -- Herkunft angegeben
+            IF cont(orig) = structIde(gS) THEN
+              convIntDecls(opDeclS(lookE)) 
+            ELSE                -- nicht die eigene Struktur
+              convExtDecls(Applied?,gS, eqStruct(gS,cont(orig)) | 
+                opImpDeclS(lookE))
+            FI
+          FI
+        FI
+
+-- ---------------------------------------------------------------------------
+-- Hilfsfunktionen
+
+FUN union : (pair[struct,seq[impDecl]] -> pair[struct,seq[impDecl]] -> bool) 
+            -> seq[pair[struct,seq[impDecl]]] ** seq[pair[struct,seq[impDecl]]]
+            -> seq[pair[struct,seq[impDecl]]]
+ -- die Sequenzen sind schon Mengen bzgl. |=
+DEF union(|=)(S1, S2) ==
+        IF S1 <>? THEN S2
+        ELSE 
+          LET (unEqS, back) == |=(ft(S1)) split S2 IN
+          IF back <>? THEN      -- ft(S1) kommt nicht in S2 vor
+            ft(S1) :: union(|=)(rt(S1), S2)
+          ELSE (1st(ft(S1)) & (2nd(ft(S1))++2nd(ft(back)))) ::
+                union(|=)(rt(S1), unEqS ++ rt(back))
+          FI
+        FI
+
+FUN unEqExtDecls : pair[struct,seq[impDecl:SORT]] 
+                 -> pair[struct,seq[impDecl:SORT]] -> bool
+DEF unEqExtDecls(p1)(p2) == no(1st(p1)) |= no(1st(p2))
+
+FUN eqStruct : globSig ** rep -> pair[struct:SORT,seq[impDecl:SORT]] -> bool
+DEF eqStruct(gS, ide)(p) == 
+        IF lookEO nil? THEN false
+        ELSE LET Struct == struct(cont(lookEO)) IN 
+            IF Struct nil? THEN false ELSE no(cont(Struct)) = no(1st(p)) FI
+        FI
+        WHERE lookEO == ord(ide) !? lookupTable(gS)
+
+
+FUN convIntDecls : seq[decl:SORT] -> seq[seq[name:SORT]]
+DEF convIntDecls(nats) == 
+        IF nats <>? THEN <>[seq[name:SORT]] ELSE %(intName * nats) FI
+
+FUN convExtDecls : (instAppl->bool) ** globSig ** 
+                seq[pair[struct:SORT,seq[impDecl:SORT]]] 
+                   -> seq[seq[name:SORT]]
+DEF convExtDecls(Applied?, gS, pairs) == 
+        (convExtDecl(gS,Applied?) / <>[seq[name:SORT]])(pairs)
+
+FUN convExtDecl : globSig ** (instAppl->bool)
+                  -> pair[struct:SORT, seq[impDecl:SORT]] **seq[seq[name:SORT]]
+                  -> seq[seq[name:SORT]]
+DEF convExtDecl(gS,Applied?)(p,SS) == 
+        IF finCands <>? THEN SS ELSE finCands :: SS FI
+        WHERE finCands ==
+        ((mkNames(Applied?,1st(p), no(1st(p))!structures(gS)) / <>[name:SORT])
+        (2nd(p)))
+
+FUN mkNames : (instAppl->bool) ** struct ** structE 
+                -> impDecl ** seq[name:SORT] 
+                -> seq[name:SORT]
+DEF mkNames(Applied?,struct, structE)(impDecl, nameS) == 
+        (mkName(struct, impDecl) * insts) ++ nameS
+        WHERE rawInsts0 == instS(no(impDecl) ! impDecls(structE))
+              insts0 == instOf * (Applied? | rawInsts)
+              rawInsts == PRINT(pMatch?, \\ . "mkNames:"++ `(no(struct)) ++ ","++ `(no(impDecl)) ++ "#raw# " ++ `(`)(no * instOf * rawInsts0), rawInsts0)
+              insts == PRINT(pMatch?, \\ . "mkNames:"++ `(no(struct)) ++ ","++ `(no(impDecl)) ++ "# " ++ `(`)(no * insts0), insts0)
+
+FUN mkName : struct ** impDecl -> inst -> name
+DEF mkName(struct, impDecl)(inst) == extName(struct, impDecl, inst)
+
+
+-- ---------------------------------------------------------------------------
+

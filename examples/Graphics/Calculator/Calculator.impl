@@ -1,0 +1,113 @@
+
+IMPLEMENTATION Calculator
+
+IMPORT	Void		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqFold		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqZip		COMPLETELY
+	Nat		COMPLETELY
+	Real		COMPLETELY
+	RealConv	COMPLETELY
+	Denotation	COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComCheck	ONLY check
+	ComAgent	COMPLETELY
+	ComAction	COMPLETELY
+	ComSeqReduce	COMPLETELY
+
+IMPORT	WinView		COMPLETELY
+	WinWindow	COMPLETELY
+	WinConfig	COMPLETELY
+	WinEmitter	COMPLETELY
+	WinEvent	COMPLETELY
+	WinRegulator	COMPLETELY
+	WinButton	COMPLETELY
+
+
+DEF calculator ==
+    emitter 						& (\\ KeyPad .
+    regulator						& (\\ Display .
+    LET Label   == label with regulate(Display)
+	Buttons == (\\L . button with text(L) ++ bind(KeyPad, L))
+				* keyLabels
+        View ==
+	   (frame with sunken  @>  anchor(east, Label))
+	       ^+^ 
+	   matrix(4, Buttons)
+        KeyBinds == 
+	    (\\ Descr, R .
+	    	(\\ Sym, R1 .
+        	    bind(keyPress(Sym), KeyPad, ft(Descr)) ++ R1,
+        	    R) / rt(Descr),
+	     {}) / keySyms
+    IN
+    window(size(calcSize, calcMinSize, calcMaxSize) 
+    	   ++ KeyBinds
+    	   ++ titleName("calculator"), 
+    	   View) 					& (\\ Win .
+    focus(Win)						& (\\ _ .
+    calcLogic(Display, KeyPad, 0, \\X.X)
+    ))))
+
+
+
+FUN calcLogic : regulator ** emitter[denotation] 
+			  ** real ** (real -> real) -> com[void]
+
+DEF calcLogic(Display, Keypad, Input, Func) ==
+    await(Keypad)					& (\\ Key .
+    LET (NewInput, NewFunc) ==
+	IF Key = "+" THEN (0, \\ X . Func(Input) + X)
+	IF Key = "-" THEN (0, \\ X . Func(Input) - X)
+	IF Key = "*" THEN (0, \\ X . Func(Input) * X)
+	IF Key = "/" THEN (0, \\ X . Func(Input) / X)
+	IF Key = "C" THEN (0, \\ X . X)
+	IF Key = "=" THEN (Func(Input), \\ _ . Func(Input))
+		     ELSE ((Input * 10) + !(Key), Func) 
+        FI
+    IN
+    Display set text(``(NewInput))			& (\\ _ .
+    calcLogic(Display, Keypad, NewInput, NewFunc)
+    ))
+
+FUN keyLabels : seq[denotation]
+DEF keyLabels ==
+    "1" :: "2" :: "3" :: "+" :: 
+    "4" :: "5" :: "6" :: "-" ::
+    "7" :: "8" :: "9" :: "*" :: 
+    "C" :: "0" :: "=" :: "/" :: <>
+
+FUN keySyms : seq[seq[denotation]]
+DEF keySyms ==
+  %("1", "1", "KP_1") :: %("2", "2", "KP_2") :: 
+  	%("3", "3", "KP_3") :: %("+", "plus", "KP_Add") ::
+  %("4", "4", "KP_4") :: %("5", "5", "KP_5") :: 
+  	%("6", "6", "KP_6") :: %("-", "minus", "KP_Subtract") ::
+  %("7", "7", "KP_7") :: %("8", "8", "KP_8") :: 
+	%("9", "9", "KP_9") :: %("*", "asterisk", "KP_Multiply") ::
+  %("c", "C") :: %("0", "0", "KP_0") :: 
+	%("=", "equal", "KP_Equal", "KP_Enter") 
+		:: %("/", "slash", "KP_Divide") :: <>
+
+
+
+FUN calcSize calcMinSize calcMaxSize : size
+DEF calcSize == "50" x "50"
+DEF calcMinSize == "20" x "20"
+DEF calcMaxSize == "400" x "400"
+
+
+FUN matrix : nat ** seq[view] -> view
+DEF matrix(N, Views) == 
+      ^*+^ / (<*+< / _) * splitSegm(N, Views)
+
+FUN splitSegm : nat ** seq[view] -> seq[seq[view]]
+DEF splitSegm(N, <>) == <>
+DEF splitSegm(N, S) ==
+    LET (F, R) == split(N, S)
+    IN
+    F :: splitSegm(N, R)
+

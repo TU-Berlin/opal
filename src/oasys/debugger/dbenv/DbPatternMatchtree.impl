@@ -1,0 +1,323 @@
+IMPLEMENTATION DbPatternMatchtree
+
+IMPORT 
+	Nat			COMPLETELY
+	Seq			COMPLETELY
+	SeqMap			COMPLETELY
+	SeqMapEnv		COMPLETELY
+	SeqFold			COMPLETELY
+	SeqOfSeq		COMPLETELY
+	SeqCompare		COMPLETELY
+	SeqReduce		COMPLETELY
+	SeqIndex		COMPLETELY
+	Set			COMPLETELY
+	Map			COMPLETELY
+	MapMap			COMPLETELY
+	MapReduce		COMPLETELY
+	MapConv			COMPLETELY
+	Option			COMPLETELY
+	Pair			COMPLETELY
+	Fmt			COMPLETELY
+	FmtBasicTypes		COMPLETELY
+	FmtSeq			COMPLETELY
+	FmtMap			COMPLETELY
+	FmtSet			COMPLETELY
+	DEBUG			COMPLETELY
+IMPORT	-- repo
+	RepoName		COMPLETELY
+	RepoPropertyAccess	COMPLETELY
+IMPORT	-- oasyslib
+	MapUnion		COMPLETELY
+	SeqMapIndex		COMPLETELY
+	SeqMap2			COMPLETELY
+	SeqExtensions		COMPLETELY
+IMPORT	
+	DbAbsyAux		COMPLETELY
+	DbPatternTmpPatt	COMPLETELY
+	Expression		COMPLETELY
+	DbConvEnv		COMPLETELY
+	DbName2Expr		COMPLETELY
+
+-- %$Temporäre Daten$ =================================================
+/* %
+ Zur Erstellung des Matching-Trees wird ein temporärer Tree @code{tmpMatchtree}
+für jedes einzelne Pattern erzeugt. Diese werden anschließend kombiniert
+(@code{+}) und letztendlich in einen gemeinsamen @code{matchtree} konvertiert.
+ */
+DATA tmpTree == 
+	tree(	pos:	  seq[nat],
+			subtrees: map[objectName,<,tmpTree]
+			  -- pair: constr. name + corresp. subtree
+	)
+	leaf(	n:	  set[nat,<]
+	)
+
+/* %
+ Zur Konvertierung in den @code{tmpTree} wird wiederum zunächst mit
+@code{toTmpMatchItemSeq} ein temporäres Hilfsdatum konstruiert: eine Sequenz
+von @code{tmpMatchItem}. Dieses Datum beschreibt dabei zunächst den Baum
+@emph{eines} Pattern.
+ */
+DATA tmpItem == tmpItem(pos:seq[nat],constr:objectName)
+
+-- %$Die Toplevel-Funktion$ =============================================
+/* %
+ @code{tmpPatts2Matchtree(E,SeqSetPatt,ArgDim)} erzeugt einen @code{matchtree}
+aus der Folge von Patternmengen @code{SeqSetPatt}. Dabei wird die Folge der
+Reihe nach durchlaufen und jeder der Mengen eine laufende Nummer (mit Null
+beginnend) zugewiesen, die dann in das Blatt des zugehörigen @code{matchtree}
+kodiert wird. In der gesamten Menge an Pattern darf es dabei keine zwei Pattern
+geben, die auf dasselbe Argument passen, d.h. das Best-fit-pattern-matching muß
+bereits aufgelöst worden sein. @code{ArgDim} bezeichnet die Anzahl der
+Argumente bzgl. des Ranges.
+ */
+DEF tmpPatts2matchtree(E,SeqSetPatt,ArgDim) ==
+    LET -- Die Pattern werden flachgeklopft und jeweils mit einem
+	-- Index (entspr. der Variante) versehen:
+	SeqIndexedPatts == flat((\\N,Patts. (N & _) * Patts) * SeqSetPatt)
+	-- Die Patterm werden in (temporäre) Bäume transformiert ...
+	TmpTrees	== asTmpTree * unpair * SeqIndexedPatts
+	-- ... und vereinigt.
+	TmpTree		== + \ TmpTrees
+--	TmpTree		== PRINT(true,(pretty(fmtTmpTree(TmpTree0))):
+--					denotation,TmpTree0)
+    IN (E,asTree(E,TmpTree,ArgDim))
+
+
+-- %-=====================================================================
+-- %$Erster Schritt - Konvertierung in einen temporären Tree$ =======
+/* %
+ @code{TmpTree == asTmpTree(N,TmpPatt)} konvertiert ein Pattern in
+einen @code{tmpTree} unter Verwendung der Zahl @code{N} als Wert für das
+(einzige) Blatt des Baumes.
+ */
+FUN asTmpTree : nat ** tmpPatt -> tmpTree
+DEF asTmpTree(N,Patt) ==
+    LET -- Das Pattern wird erst in eine Folge von tmpItems
+	-- transformiert ...
+	TmpMatchItem == asTmpMatchItems(Patt,<>)
+	-- ... und dann in einen (trivialen, weil unverzeigten) Baum
+	-- umgeformt.
+    IN asTmpTree(N,TmpMatchItem)
+
+  /* % transformiert eine Sequenz von @code{tmpItems} in einen
+	@code{tmpTree} */
+  FUN asTmpTree: nat ** seq[tmpItem] -> tmpTree
+  DEF asTmpTree(N,<>) == leaf(%(N))
+  DEF asTmpTree(N,tmpItem(Pos,Constr)::Rt) ==
+      tree(Pos,
+		(Constr,asTmpTree(N,Rt)) def {}
+      )
+
+-- %$$$$Konvertierung in eine Folge von tmpItem:$
+/* %
+ @code{MatchItemSeq == asTmpMatchItems(Patt,Pos)} erzeugt den ,,flachen
+Test'' aus einem Pattern @code{Patt}, das sich an der Position @code{Pos} in
+einem übergeordneten Pattern befindet. Die Position wird -- wie für Bäume
+üblich -- durch eine Folge von natürlichen Zahlen beschrieben: Die leere
+Sequenz bezeichnet den Wurzelknoten, eine Sequenz (@code{n::Rt}) bezeichnet den
+@code{n}-ten Teilbaum des Baumes an der Position @code{Rt}, wobei dem am
+weitesten links stehenden Teilbaum die Zahl Null zugeornet ist.
+
+@code{Patt} ist seinerseits eine Folge von Teilpattern, wobei die Teilpattern
+die Positionen @code{i::Pos} (mit @code{i = 0..n-1}) haben.
+
+Jedes Element der Sequenz @code{MatchItemSeq} entspricht einem Test, ob das
+Objekt an der durch @code{pos(_)} beschriebenen Stelle ein mit @code{constr(_)}
+konstruierter Term ist.
+ */
+FUN asTmpMatchItems : tmpPatt ** seq[nat] -> seq[tmpItem]
+DEF asTmpMatchItems(Patt,Pos) == 
+    LET Seq == (\\Index,PItem. 
+				asTmpMatchItems1(PItem,Index::Pos)
+	       ) * patts(Patt)
+    IN flat(Seq)
+
+/* %
+ @code{asTmpMatchItems1(P,Pos)} übersetzt ein einzelnes tmpPattItem @code{P} in
+eine Folge von @code{tmpItem}. @code{P} befindet sich dabei an der
+Position @code{Pos} im Gesamtpattern.
+
+Interessant sind insbesondere zwei Patternformen: (1) Bei @code{(v AS patt)}
+ist die Variable @code{v} für den Matching-Tree uninteressant. (2) Bei
+Konstruktor-Termen @code{C(argpatterns)} muß der Konstruktor als ,,Test-Item''
+zusammen mit der aktuellen Position in die Sequenz eingetragen
+werden. Anschließend wird die Argumentpattern-Sequenz @code{argpatterns}
+untersucht. (3) Alle anderen Formen temporärer Pattern (@code{var()},
+code{any}) sind für den Matching-Tree uninteressant.
+ */
+FUN asTmpMatchItems1 : tmpPattItem ** seq[nat] -> seq[tmpItem]
+DEF asTmpMatchItems1(as(_,P),Pos)	== asTmpMatchItems1(P,Pos)
+DEF asTmpMatchItems1(constr(C,Args),Pos)== 
+    tmpItem(Pos,C)::asTmpMatchItems(Args,Pos)
+DEF asTmpMatchItems1(_,_)		== <>  -- any, var
+
+-- %-=====================================================================
+-- %$Zweiter Schritt - Vereinigung zweier Bäume$ ==========================
+/* %
+ @code{Tree1 + Tree2} fügt zwei Bäume zusammen. Dieses Zusammenfügen
+funktioniert nach dem @emph{best fit}-Prinzip.
+ */
+FUN + : tmpTree ** tmpTree -> tmpTree
+DEF (T1 AS tree(P1,S1)) + (T2 AS tree(P2,S2)) ==
+    IF P1 < P2
+      THEN /* % @BIL Der erste Baum checkt eine Position ab, die vom 
+		zweiten Tree übergangen wird. Deshalb wird nun erst
+		dieser erste Test ausgeführt. Anschließend werden
+		alle Subtrees vom ersten Baum mit dem zweiten Baum
+		vereinigt. @EIL */
+	   tree(P1,(_ + T2) * S1)
+    IF P2 < P1
+      THEN /* % @BIL Analog wird nun erst der Test des zweiten Baumes
+		eingesetzt und innerhalb aller Subtrees der erste Baum
+		eingebunden. @EIL */
+	   tree(P2,(_ + T1) * S2)
+      ELSE -- P1 = P2
+	   /* % @BIL Beide Bäume vergleichen dieselbe Position. Nun 
+		wird der gemeinsame Baum erzeugt, indem die Abbildungen
+		von Konstruktoren auf Subtrees kombiniert werden:
+		Für alle Konstruktoren der Schnittmenge der Domains
+		der Abbildungen werden die Werte wiederum vereinigt.
+		@EIL */
+	   tree(P1,union(+)(S1,S2))
+    FI
+DEF (_ AS tree(P1,S1)) + (T2 AS leaf(_)) == tree(P1,(_ + T2) * S1)
+DEF (T1 AS leaf(_)) + (_ AS tree(P2,S2)) == tree(P2,(_ + T1) * S2)
+DEF (leaf(N1) + leaf(N2))		 == leaf(N1 + N2)
+
+/* %
+ @code{<} ist die totale, irreflexive Ordnung auf (Baum)-Positionen nach dem
+depth-first-Prinzip. @code{=} ist Äquivalenzrelation.
+ */
+FUN < : seq[nat] ** seq[nat] -> bool
+DEF S1 < S2 == cmp(<)(S1,S2) <?
+
+FUN = : seq[nat] ** seq[nat] -> bool
+DEF S1 = S2 == eq?(=)(S1,S2)
+-- %-======================================================================
+-- %$Dritter Schritt - Konvertierung in einen matchtree$ ==================
+/* %
+ @code{Tree == tmpToTree(E,T,N):} @code{T} wird in einen
+@code{Matchtree} konvertiert. @code{N} beschreibt die Anzahl der Argumente, mit
+denen der Matchingtest später ausgeführt werden soll.
+ */
+FUN asTree: env ** tmpTree ** nat -> matchtree
+DEF asTree(E,T,N) == 
+    /* % @BIL Die Pos. des Toplevel-Tupels ist @code{<>}.
+	Die Selektoren sind die N Projektionen
+	@code{(proj(0)..proj(N-1))} @EIL */
+    asTree1(E,T,%(<> & (0 ..> N)(\\i.proj(i))))
+
+/* %
+ @code{Tree == asTree1(E,T,StackOfParents):} Der Baum
+@code{T} wird in einen @code{Matchtree} konvertiert. Der Stack
+@code{StackOfParents} beschreibt dabei für einen bestimmten Konten den Pfad zur
+Wurzel in folgender Weise: Für jedes Element @code{(Pos & Sels)} des Stacks
+gilt: @code{Pos} ist die Position eines Teilterms im Gesamtterm, wobei @code{T}
+Teilbaum eines Baumes @code{T1 == Tree(Pos,_)} ist. Von @code{T1} ist
+@code{T} dabei genau in dem Teilbaum enthalten, der über einen Konstruktor
+@code{C} erreicht wird, wobei @code{Sels} die Selektoren zu diesem Konstruktor
+sind:
+
+@smallexample
+     T1 ==   <Pos>
+	  /    |    \	    C ist der Konstruktor
+      C	 /  C1 |   C2\	    und Sels sind die zugehörigen Selektoren:
+	/      |      \	    C(Sel1,...,Seln) ist also eine der Varianten
+      T11     T12     T12   des freien Typs
+      .
+     .
+      .
+       .
+	T
+@end smallexample
+*/
+
+FUN asTree1: 
+	env ** tmpTree ** seq[pair[seq[nat],seq[selector]]] -> 
+			matchtree
+DEF asTree1(_,leaf(NSet),_) == leaf(arb(NSet))
+DEF asTree1(E,tree(Pos,Subs),StOfParent) ==
+    LET ParentPos == rt(Pos)  -- Position des direkten Oberterms
+	SelIndex  == ft(Pos)  -- 0..n-1 (Teilterm-Nummer des Oberterms)
+
+	/* % @BIL Nun wird die Map der Konstruktoren @code{C} auf Teilbäume
+	@code{Sub} in eine @code{seq[testtree]} umgeformt. Neben dem bisherigen
+	StackOfParents wird der Funktion @code{asTesttree} für ein Paar
+	@code{(C,Sub)} noch die Position des aktuellen Terms @code{Pos} 
+	mitgegeben. Diese wird innerhalb von @code{asTesttree} zusammen mit
+	den aus @code{C} ermittelten Selektoren oben auf den Stack gelegt. @EIL
+	*/
+	SubSeq == asTesttree(E,StOfParent,Pos,_) * asSeq(Subs)
+
+	/* % @BIL Nun wird aus dem @code{StOfParent} der Index des Parent-Terms
+	anhand der @code{ParentPos} ermittelt. @EIL */
+
+	ParentIndex == cont((\\P.1st(P) = ParentPos) pos StOfParent)
+
+	/* % @BIL In dem Datum an der Position @code{ParentIndex} stehen nun 
+	auch die Selektoren @code{Sels} zu diesem Parent. Der Selektor mit dem
+	Index @code{SelIndex} bezeichnet den Selektor zum aktuellen
+	Element. @EIL */
+
+	Sels	 == 2nd(StOfParent ! ParentIndex)
+	Selector == Sels ! SelIndex
+    IN	/* % @BIL Der Matchtree wird nun aus dem Index zum Parent-Term
+	@code{ParentIndex}, dem Selektor @code{Selector}, der aus dem
+	Parent-Term den aktuell interssanten Term selektiert, und den
+	Testbäumen
+	@code{SubSeq}, die zu diesem selektierten term gehören, aufgebaut.
+	@EIL */
+	matchtree(ParentIndex,Selector,SubSeq)
+       
+
+/* %
+ @code{asTesttree(E,StOfParent,Pos,C & Subtree)} ermittelt aus dem
+Konstruktor-Namen @code{C} die Testfunktion (Diskriminator), transformiert den
+Unterbaum @code{Sub} und baut daraus einen Testtree auf.
+
+Bei der Transformation des Baumes @code{Sub} wird dabei der Stack
+@code{StOfParent} um das Paar mit der aktuellen Position @code{Pos} und den zum
+Konstruktor @code{C} gehörigen Selektoren @code{Sels} erweitert.
+ */
+
+FUN asTesttree: env ** seq[pair[seq[nat],seq[selector]]] ** 
+		seq[nat] ** pair[objectName,tmpTree] ->
+			testtree
+DEF asTesttree(E,StOfParent,Pos,C & Sub) ==
+    LET (E1,Exprs)	== selectorExprs(E,C)
+	Sels		== sel * Exprs
+	(E2,Test)	== testExpr(E1,C)
+    IN testtree(Test,
+	     asTree1(E2,Sub,(Pos & Sels)::StOfParent))
+
+-- % transformiert die Selektoren zum Konstruktor in Expressions:
+FUN selectorExprs : env ** objectName -> env ** seq[expr'Expression]
+DEF selectorExprs(E,C) ==
+	-- FIXME: instaciation should be handled by repo!!
+    LET FreeTypeProp == cont(freeType?(baseName(C))(repo(E)))
+	SelNames0 == selectors(FreeTypeProp,baseName(C))(repo(E))
+	SelNames == IF basicUnitName?(unit(C))
+		      THEN SelNames0
+		      ELSE LET InstNo == instNo(unit(C))
+			   IN inst(_,InstNo) * SelNames0
+		    FI
+    IN (name2expr,E) * SelNames
+
+-- % transformiert den Test zum Konstruktor in Expression:
+FUN testExpr :	env ** objectName -> env ** expr'Expression
+DEF testExpr(E,C) ==
+    LET FreeTypeProp == cont(freeType?(baseName(C))(repo(E)))
+	TestName0 == test(FreeTypeProp,baseName(C))(repo(E))
+	TestName == IF basicUnitName?(unit(C))
+		      THEN TestName0
+		      ELSE LET InstNo == instNo(unit(C))
+			   IN inst(TestName0,InstNo)
+		    FI
+    IN name2expr(E,TestName)
+
+
+FUN fmtTmpTree : tmpTree -> fmt
+DEF fmtTmpTree(tree(v0,v1)) == ;(;(beg(2),lit("tree")),;(;(lit("("),;(;(fmtSeq(fmtNat)(v0),;(lit(", "),fmtMap(fmtObjectName,fmtTmpTree)(v1))),lit(")"))),end))
+DEF fmtTmpTree(leaf(v0)) == ;(;(beg(2),lit("leaf")),;(;(lit("("),;(fmtSet(fmtNat)(v0),lit(")"))),end))
+

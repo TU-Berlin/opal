@@ -1,0 +1,215 @@
+IMPLEMENTATION ProcessCtrl
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:19 $ ($Revision: 1.1.1.1 $)
+-- low-level access to process control mechanisms
+   /$ handcoded $/
+
+IMPORT
+  Option              ONLY option nil avail
+  Quadruple           ONLY quad &
+  Array               ONLY array
+  ArrayConv           ONLY asArray
+  Com                 ONLY com ans call yield okay
+  ComCompose          ONLY &
+  ABORT               ONLY ABORT
+  FileSystem          ONLY filemode permission -
+                           ownerRead ownerWrite ownerExec none?
+
+-- EXPORTED TYPES --
+
+-- DATA process == handcoded
+
+DATA procstat == success
+                 failure
+
+DATA fission == parent(child: process)
+                child
+
+DATA access == read
+               write
+               exec
+
+-- INTERNAL TYPES --
+
+DATA i_times == i_times( i_uptm: real,
+                         i_utm : real,
+                         i_stm : real,
+                         i_cutm: real,
+                         i_cstm: real
+                       )
+
+-- EXPORTED FUNCTIONS --
+
+-- FUN < = : process ** process -> bool
+-- DEF ... == handcoded
+
+-- FUN fork : com[fission]
+DEF fork == call( hc_fork )
+
+-- FUN exit : procstat -> com[void]
+DEF exit(Stat) == call( hc_exit(Stat) )
+
+-- FUN exec : denotation ** seq[denotation] -> com[void]
+DEF exec(Prog,Args) == call( hc_execv(Prog,Args asArray) )
+
+-- FUN execE : denotation ** seq[denotation] ** seq[denotation] -> com[void]
+DEF execE(Prog,Args,Env) == call( hc_execve(Prog,Args asArray,Env asArray) )
+
+-- FUN execP : denotation ** seq[denotation] -> com[void]
+DEF execP(Prog,Args) == call( hc_execvp(Prog,Args asArray) )
+
+-- FUN getPId : com[process]
+DEF getPId == call( hc_getpid )
+
+-- FUN getPPId : com[process]
+DEF getPPId == call( hc_getppid )
+
+-- FUN clock : com[real]
+DEF clock == call( hc_clock )
+
+-- FUN times : com[quad[real,real,real,real]]
+DEF times == call( hc_times ) & ( \\ITms.
+             yield(okay( &(ITms i_utm, ITms i_stm, ITms i_cutm, ITms i_cstm) ))
+             )
+
+-- FUN uptime : com[real]
+DEF uptime == call( hc_times ) & ( \\ITms.
+              yield(okay( ITms i_uptm ))
+              )              
+
+-- FUN pause : com[void]
+DEF pause == call( hc_pause )
+
+-- FUN sleep : nat -> com[nat]
+DEF sleep(Secs) == call( hc_sleep(Secs) )
+
+-- FUN chDir : denotation -> com[void]
+DEF chDir(Dir) == call( hc_chdir(Dir) )
+
+-- FUN getCWD : com[denotation]
+DEF getCWD == call( hc_getcwd )
+
+-- FUN access : denotation ** access -> com[bool]
+DEF access(File,Mode) ==
+  IF (Mode - ownerRead - ownerWrite - ownerExec) none? THEN
+     call( hc_access(File,Mode) )
+  ELSE
+     ABORT("access'ProcessCtrl: Only owner... permission may appear")
+  FI
+
+-- FUN umask : filemode -> com[filemode]
+DEF umask(Mask) == call( hc_umask(Mask) )
+
+-- FUN getUId : com[userid]
+DEF getUId == call( hc_getuid )
+
+-- FUN getEUId : com[userid]
+DEF getEUId == call( hc_geteuid )
+
+-- FUN setUId : userid -> com[void]
+DEF setUId(UId) == call( hc_setuid(UId) )
+
+-- FUN getGId : com[groupid]
+DEF getGId == call( hc_getgid )
+
+-- FUN getEGId : com[groupid]
+DEF getEGId == call( hc_getegid )
+
+-- FUN setGId : groupid -> com[void]
+DEF setGId(GId) == call( hc_setgid(GId) )
+
+-- FUN getPGrp : com[process]
+DEF getPGrp == call( hc_getpgrp )
+
+-- FUN setPGrp : com[void]
+DEF setPGrp == call( hc_setpgid(nil,nil) )
+
+-- FUN setPGrp : process ** process -> com[void]
+DEF setPGrp(Proc,PGrp) == call( hc_setpgid(Proc avail,PGrp avail) )
+
+-- FUN setSId : com[process]
+DEF setSId == call( hc_setsid )
+
+-- FUN getLogin : com[denotation]
+DEF getLogin == call( hc_getlogin )
+
+-- INTERNAL FUNCTIONS --
+
+FUN hc_fork : void -> ans[fission]
+-- DEF hc_fork(_) == handcoded
+
+FUN hc_exit : procstat -> void -> ans[void]
+-- DEF hc_exit(Stat)(_) == handcoded
+
+FUN hc_execv : denotation ** array[denotation] -> void -> ans[void]
+-- DEF hc_execv(Prog,Args)(_) == handcoded
+
+FUN hc_execve : denotation ** array[denotation] ** array[denotation] -> void
+                -> ans[void]
+-- DEF hc_execve(Prog,Args,Env)(_) == handcoded
+
+FUN hc_execvp : denotation ** array[denotation] -> void -> ans[void]
+-- DEF hc_execvp(Prog,Args)(_) == handcoded
+
+FUN hc_getpid : void -> ans[process]
+-- DEF hc_getpid(_) == handcoded
+
+FUN hc_getppid : void -> ans[process]
+-- DEF hc_getppid(_) = handcoded
+
+FUN hc_clock : void -> ans[real]
+-- DEF hc_clock(_) == handcoded
+
+FUN hc_times : void -> ans[i_times]
+-- DEF hc_times(_) == handcoded
+
+FUN hc_pause : void -> ans[void]
+-- DEF hc_pause(_) == handcoded
+
+FUN hc_sleep : nat -> void -> ans[nat]
+-- DEF hc_sleep(Secs)(_) == handcoded
+
+FUN hc_chdir : denotation -> void -> ans[void]
+-- DEF hc_chdir(Dir)(_) == handcoded
+
+FUN hc_getcwd : void -> ans[denotation]
+-- DEF hc_getcwd(_) == handcoded
+
+FUN hc_access : denotation ** filemode -> void -> ans[bool]
+-- DEF hc_access(File,Mode)(_) == handcoded
+
+FUN hc_umask : filemode -> void -> ans[filemode]
+-- DEF hc_umask(Mask)(_) == handcoded
+
+FUN hc_getuid : void -> ans[userid]
+-- DEF hc_getuid(_) == handcoded
+
+FUN hc_geteuid : void -> ans[userid]
+-- DEF hc_geteuid(_) == handcoded
+
+FUN hc_setuid : userid -> void -> ans[void]
+-- DEF hc_setuid(UId)(_) == handcoded
+
+FUN hc_getgid : void -> ans[groupid]
+-- DEF hc_getgid(_) == handcoded
+
+FUN hc_getegid : void -> ans[groupid]
+-- DEF hc_getegid(_) == handcoded
+
+FUN hc_setgid : groupid -> void -> ans[void]
+-- DEF hc_setgid(GId)(_) == handcoded
+
+FUN hc_getpgrp : void -> ans[process]
+-- DEF hc_getpgrp(_) == handcoded
+
+FUN hc_setpgid : option[process] ** option[process] -> void -> ans[void]
+-- DEF hc_setpgid(ProcOpt,PGrpOpt)(_) == handcoded
+
+FUN hc_setsid : void -> ans[process]
+-- DEF hc_setsid(_) == handcoded
+
+FUN hc_getlogin : void -> ans[denotation]
+-- DEF hc_getlogin(_) == handcoded

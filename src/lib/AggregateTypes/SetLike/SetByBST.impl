@@ -1,0 +1,164 @@
+IMPLEMENTATION SetByBST
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:02 $ ($Revision: 1.1.1.1 $)
+
+IMPORT BSTree[data, <] ONLY bstree nil node nil? % incl excl 
+                            ++ in # forall? exist? find? < {<} rightmost
+       Nat ONLY nat < succ >
+       ABORT ONLY ABORT
+       BSTree ONLY min
+
+-- %$The Type Itself$
+
+DATA set == abs(rep: bstree)
+
+DEF {} == abs(nil)
+
+-- %$Constructing a Set From Datas$ 
+
+DEF %(d1) == abs(%(d1))
+DEF %(d1, d2) == abs(%(d1, d2))
+DEF %(d1, d2, d3) == abs(%(d1, d2, d3))
+DEF %(d1, d2, d3, d4) == abs(%(d1, d2, d3, d4))
+DEF %(d1, d2, d3, d4, d5) == abs(%(d1, d2, d3, d4, d5))
+DEF %(d1, d2, d3, d4, d5, d6) == abs(%(d1, d2, d3, d4, d5, d6))
+DEF %(d1, d2, d3, d4, d5, d6, d7) == abs(%(d1, d2, d3, d4, d5, d6, d7))
+DEF %(d1, d2, d3, d4, d5, d6, d7, d8) == 
+    abs(%(d1, d2, d3, d4, d5, d6, d7, d8))
+
+DEF d incl abs(t) == abs(d incl t)
+DEF d excl abs(t) == abs(d excl t)
+
+-- %$Constructing a Set From a Function$
+DEF (from..to)(f) == 
+    IF from > to THEN abs(nil)
+    ELSE incl(f(from), (succ(from)..to)(f))
+    FI
+
+DEF iter(start, next, P) ==
+    IF P(start) THEN incl(start, iter(next(start), next, P))
+    ELSE {}
+    FI
+
+-- %$Combining Sets$
+/* % This sections follows Stephen Adams, "Functional Pearls:
+Efficient sets - a balancing act", Journal of Functional Programming
+3(4): 553 - 5661, October 1993 */
+
+DEF abs(A) + abs(B) == abs(A + B)
+
+FUN + : bstree ** bstree -> bstree
+DEF nil + nil == nil
+DEF A + nil == A
+DEF nil + B == B
+DEF (A AS node(_,_,_)) + node(b, l, r) ==
+    LET (less, greater, _) == split(A, b)
+    IN
+    ++(b, less + l, greater + r)
+
+/* % different name for export of + */
+FUN union : bstree ** bstree -> bstree
+DEF union == +
+
+DEF abs(A) - abs(B) == abs(A - B)
+
+FUN - : bstree ** bstree -> bstree
+DEF A - nil == A
+DEF nil - node(_,_,_) == nil
+DEF A - node(b, l, r) ==
+    LET (less, greater, _) == split(A, b)
+    IN
+    (less - l) + (greater - r)
+
+DEF abs(A) * abs(B) == abs(A * B)
+
+FUN * : bstree ** bstree -> bstree
+DEF _ * nil == nil
+DEF nil * node(_,_,_) == nil
+DEF A * node(b, l, r) ==
+    LET (less, greater, in?) == split(A, b)
+    IN
+    IF in? THEN ++(b, less * l, greater * r)
+    ELSE (less * l) + (greater * r)
+    FI
+
+
+/* % Auxiliary functions: splits tree in two subtrees, first result is
+all smaller than data, second result is all bigger than data. Boolean
+value indicates, if data was contained in that tree or not. */
+FUN split : bstree ** data -> bstree ** bstree ** bool
+DEF split(nil, _) == (nil, nil, false)
+DEF split(node(v, l, r), d) ==
+    IF d < v THEN 
+        LET (less, greater, in?) == split(l, d)
+        IN
+        (less, ++(v, greater, r), in?)
+    IF v < d THEN
+        LET (less, greater, in?) == split(r, d)
+        IN
+        (++(v, l, less), greater, in?)
+    ELSE -- % v = d
+        (l, r, true)
+    FI
+
+-- %$Accessing Datas in a Set$
+DEF arb(abs(nil)) == ABORT("arb'SetByBST: cannot select from empty set")
+DEF arb(abs(V AS node(_,_,_))) == rightmost(V)
+
+-- %$Information About a Set$
+DEF {}?(abs(t)) == t nil?
+DEF d in abs(t) == d in t
+DEF #(abs(t)) == t #
+DEF min(abs(nil)) == ABORT("min'SetByBST: applied to empty set")
+DEF min(abs(t)) == min(t)
+DEF max(abs(nil)) == ABORT("max'SetByBST: applied to empty set")
+DEF max(abs(t)) == rightmost(t)
+
+DEF exist?(P, abs(t)) == exist?(P, t)
+DEF find?(P, abs(t)) == find?(P, t)
+DEF forall?(P, abs(t)) == forall?(P, t)
+
+-- %$Comparing Sets$
+/* %Note that =(=) from BSTree does not work, as the representation of
+sets is not unique. */
+DEF abs(A) = abs(B) == A = B
+
+FUN = : bstree ** bstree -> bool
+DEF nil = nil == true
+DEF nil = node(_,_,_) == false
+DEF node(_,_,_) = nil == false
+DEF A = node(b, l, r) ==
+    LET (less, greater, in?) == split(A, b)
+    IN
+    IF in? ANDIF less = l THEN greater = r
+    ELSE false
+    FI
+
+DEF abs(A) < abs(B) == A < B
+
+FUN < : bstree ** bstree -> bool
+DEF nil < nil == false
+DEF nil < node(_,_,_) == true
+DEF node(a, l, r) < B ==
+    LET (less, greater, in?) == split(B, a)
+    IN 
+    IF in? ANDIF l < less THEN r < greater
+    ELSE false
+    FI
+
+DEF abs(A) <= abs(B) == A <= B
+
+FUN <= : bstree ** bstree -> bool
+DEF nil <= _ == true
+DEF node(a, l, r) <= B ==
+    LET (less, greater, in?) == split(B, a)
+    IN 
+    IF in? ANDIF l <= less THEN r <= greater
+    ELSE false
+    FI
+    
+DEF <(<<)(abs(t1), abs(t2)) == <(<<)(t1, t2)
+DEF {<}(abs(t1), abs(t2)) == {<}(t1, t2)

@@ -1,0 +1,510 @@
+
+IMPLEMENTATION OptimReuse
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject: Reusage indroduction and aliasing elimination on IC
+-- project: acc
+-- author:  wg
+
+IMPORT	Nat		ONLY nat 0 1 succ > =
+	Seq		COMPLETELY
+	SeqFilter	ONLY |
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqZip		COMPLETELY
+	Pair		COMPLETELY
+	Option		COMPLETELY
+	Compose		ONLY o
+
+IMPORT	SeqMapEnv	ONLY *
+
+IMPORT	Ide		ONLY ide = :ide**ide->bool global? local? 
+			     origin:SORT
+	IdeSet		ONLY ideSet incl {} in
+	IdeMap		ONLY ideMap {} def undef def? <+ ! !? explode
+				extend
+	Ic		COMPLETELY
+			SourceAn ONLY errorKind pos:SORT
+			String	 ONLY string
+			NatMap	 ONLY natMap
+	Store		COMPLETELY
+	PreparedOptions ONLY popts:SORT reuseOpt? aliasOpt?
+
+
+-- ============================================================================
+-- Environments
+-- ============================================================================
+
+DATA inh ==
+    inh (
+	popts: 		popts,			-- compilation options
+	mod:		mod,			-- target module
+	this:		ide,			-- ide of target object
+	ins:		ideSet,			-- argument ides of target
+	cands:		ideMap[cand:SORT]	-- candidates for reusage
+    )
+
+DATA syn ==
+    syn (
+	reused:		ideMap[cand:SORT],	-- actually reused
+	alias:		ideMap[ide:SORT]	-- aliasing information
+    )
+
+DATA cand ==
+    candidate (
+	ide:		ide,
+	store:		store,
+	sels:		seq[sel:SORT]
+    )
+    
+-- ----------------------------------------------------------------------------
+
+FUN updCands : inh ** ideMap[cand:SORT] -> inh
+DEF updCands(I,newcands) ==
+    inh(popts(I),mod(I),this(I),ins(I),newcands)
+
+
+-- ----------------------------------------------------------------------------
+
+FUN updReused : syn ** ideMap[cand:SORT] -> syn
+DEF updReused(S,newreused) ==
+    syn(newreused,alias(S))
+
+FUN updAlias : syn ** ideMap[ide:SORT] -> syn
+DEF updAlias(S,newalias) ==
+    syn(reused(S),newalias)
+
+FUN renameOut : syn ** ide -> syn ** ide
+DEF renameOut(S,i) ==
+    IF local?(i) THEN 
+	LET a? == alias(S)!?i IN 
+	IF avail?(a?) THEN 
+	    (updAlias(S,undef(i,alias(S))),cont(a?))
+	ELSE (S,i) FI
+    ELSE (S,i) FI
+
+FUN renameIn : syn -> ide -> ide
+DEF renameIn(S)(i) ==
+    IF local?(i) THEN 
+	LET a? == alias(S)!?i IN 
+	IF avail?(a?) THEN 
+	    cont(a?)
+	ELSE i FI
+    ELSE i FI
+
+FUN notRenamed? : syn -> ide -> bool
+DEF notRenamed?(S)(i) ==
+    ~(i def? alias(S))
+
+-- ============================================================================
+-- Entry
+-- ============================================================================
+
+-- FUN optimReuse : popts ** mod -> obj -> obj
+DEF optimReuse(o,M)(procedure(i,st,md,sy,is,os,s)) == 
+    LET initialI  == inh(o,M,i,(incl / {}'IdeSet)(is),{}[cand:SORT])
+	initialS  == syn({}[cand:SORT],{}[ide:SORT])
+	(S,newss) == opt(initialI,initialS,s%)
+	news	  == IF #(newss) = 1 THEN ft(newss) 
+				     ELSE block(<>[obj:SORT],newss) FI
+    IN
+    procedure(i,st,md,sy,is,os,news)
+
+
+-- ============================================================================
+-- Algorithm
+-- ============================================================================
+
+FUN opt : inh ** syn ** seq[stm:SORT] -> syn ** seq[stm:SORT]
+
+DEF opt(I,A,<>) ==
+    (A,<>)
+
+-- ---------------------------------------------------------------------------
+
+DEF opt(I,A,nop::r) == 
+    opt(I,A,r)
+
+DEF opt(I,A,(s AS pos(_))::r) == 
+    (S,s&&newr)
+    WHERE (S,newr) == opt(I,A,r)
+
+DEF opt(I,A,(s AS halt(m,k))::r) ==
+    (A,s%)
+
+-- ---------------------------------------------------------------------------
+
+DEF opt(I,A,(s AS ass(is,os))::r) == 
+    IF aliasOpt?(popts(I)) THEN
+        LET (tmpS,newr) == opt(I,A,r)
+	    renis	== renameIn(tmpS) * is
+       	    (S,renos)   == (renameOut)*(tmpS,os)
+	    (newalias,newis,newos) == partitionAssign(I,alias(S),renis,renos)
+	    newS        == updAlias(S,newalias)
+        IN
+    	IF <>?(newos) THEN
+	    (newS,newr)
+    	ELSE
+	    (newS,ass(newis,newos)&&newr)
+        FI
+    ELSE
+	LET (S,newr) == opt(I,A,r)
+	IN
+	(S,s&&newr)
+    FI
+
+  FUN partitionAssign : inh ** ideMap[ide] ** seq[ide] ** seq[ide] ->
+			ideMap[ide] ** seq[ide] ** seq[ide] 
+  DEF partitionAssign(I,Alias,In::Ins,Out::Outs) ==
+    -- does the analysis which assigns are "soft" and can be expressed
+    -- as name alias and which are not
+    LET (NewAlias,NewIns,NewOuts) == partitionAssign(I,Alias,Ins,Outs)
+    IN
+    IF global?(In) or (In in ins(I)) THEN
+	-- source In not dfd in this function; cannot alias
+	(NewAlias,In::NewIns,Out::NewOuts)
+    OTHERWISE
+    IF In def? NewAlias THEN
+	-- this is something like  In -> Out1 , In -> Out2 
+	-- ("In" cannot be in the alias map before the call to 
+	--  partitionAssign, since older aliases are already resolved).
+	-- We generate Out2 -> Out1
+	(NewAlias,(NewAlias!In)::NewIns,Out::NewOuts)
+    ELSE
+	-- sampled assignment as alias
+	(def(In,Out,NewAlias),NewIns,NewOuts)
+    FI
+  DEF partitionAssign(I,Alias,<>,<>) == (Alias,<>,<>)
+
+--  FUN unpair: pair[ide:SORT,ide:SORT] -> ide ** ide
+--  DEF unpair(p) == (1st(p),2nd(p))
+
+-- ---------------------------------------------------------------------------
+
+DEF opt(I,A,call(p,is,os)::r) == 
+    LET (tmpS,newr)   == opt(I,A,r)
+	renis	      == renameIn(tmpS) * is
+	(S,renos)     == (renameOut)*(tmpS,os)
+    IN
+    (S,call(p,renis,renos)&&newr)
+
+DEF opt(I,A,eval(p,is,os)::r) == 
+    LET (tmpS,newr) == opt(I,A,r)
+	renis	    == renameIn(tmpS) * is
+	(S,renos)   == (renameOut)*(tmpS,os)
+    IN
+    (S,eval(p,renis,renos)&&newr)
+
+DEF opt(I,A,inlineStatic(m,d,o)::r) == 
+    LET (tmpS,newr) == opt(I,A,r)
+	(S,reno)    == (renameOut)(tmpS,o)
+    IN
+    (S,inlineStatic(m,d,reno)&&newr)
+
+DEF opt(I,A,inlineDynamic(m,i,o)::r) == 
+    LET (tmpS,newr) == opt(I,A,r)
+	reni        == renameIn(tmpS)(i)
+	(S,reno)    == (renameOut)(tmpS,o)
+    IN
+    (S,inlineDynamic(m,reni,reno)&&newr)
+
+
+-- ---------------------------------------------------------------------------
+
+DEF opt(I,A,copy(i,st,n)::r) == 
+    LET (S,newr) == opt(I,A,r)
+	reni	 == renameIn(S)(i)
+    IN
+    (S,copy(reni,st,n)&&newr)
+
+DEF opt(I,A,free(i,st,n)::r) == 
+    LET (S,newr) == opt(I,A,r)
+	reni	 == renameIn(S)(i)
+    IN
+    (S,free(reni,st,n)&&newr)
+
+-- ---------------------------------------------------------------------------
+
+DEF opt(I,A,block(vs,ss)::r) == 
+    LET (newA,newr) == opt(I,A,r)
+	(S,newss)   == opt(I,newA,ss)
+	P	    == ( (\\a,x. 
+			    IF exist?(\\v.ide(v)=2nd(a),vs) THEN
+				-- alias have to be resolved,
+				-- since target is declared here
+				((a::1st(x)) & undef(1st(a),2nd(x)))
+			    ELSE x FI
+			 ) / (<> & alias(S)) ) (explode(alias(S)))
+	(assigns,newalias) == (1st(P),2nd(P))
+	finalss == IF assigns ::? THEN aliasAssign(assigns)&&newss
+				  ELSE newss FI
+	finalS  == updAlias(S,newalias)
+	finalvs == (notRenamed?(finalS) o ide:obj->ide) | vs
+    IN
+    IF <>?(finalvs) and (#(finalss) = 1) THEN
+        (finalS,ft(newss)&&newr)
+    ELSE
+        (finalS,block(finalvs,finalss)&&newr)
+    FI
+	
+-- ---------------------------------------------------------------------------
+
+DEF opt(I,A,cons(st,is,o)::r) == 
+    LET cand? == (findBestCand(reused(A),st,is) / nil[cand:SORT])
+			(explode(cands(I)))
+    IN
+    IF avail?(cand?) THEN
+	LET cand     == cont(cand?)
+	    newI     == updCands(I,undef(ide(cand),cands(I)))
+	    (tmpS,newr) == opt(newI,A,r)
+	    renis    == renameIn(tmpS) * is
+	    (S,reno) == renameOut(tmpS,o)
+	    newS     == updReused(S,def(ide(cand),cand,reused(S)))
+	IN
+	(newS,reuse(st,ide(cand),store(cand),renis,reno)&&newr)
+    ELSE
+	LET (tmpS,newr) == opt(I,A,r)
+	    renis       == renameIn(tmpS) * is
+	    (S,reno)    == renameOut(tmpS,o)
+	IN
+	(S,cons(st,renis,reno)&&newr)
+    FI
+
+  FUN findBestCand : ideMap[cand:SORT] ** store ** seq[ide:SORT]
+		       -> pair[ide:SORT,cand:SORT] ** option[cand:SORT] 
+		       -> option[cand:SORT]
+  DEF findBestCand(reused,reqst,is)(_ & cand,best?) ==
+    IF ide(cand) def? reused THEN
+	-- cand already allocated
+	best?
+    OTHERWISE
+    IF ~(reusable(reqst,store(cand))) THEN
+	best?
+    ELSE
+	LET (newsels,reusecnt) == genReuseSels(sels(cand),is)
+	IN
+	IF avail?(best?) THEN
+	    IF reusecnt > #(reuse?:sel->bool|sels(cont(best?))) THEN 
+					-- inefficient ...
+		-- better cand, since more reuse selections
+		avail(candidate(ide(cand),store(cand),newsels))
+	    ELSE best? FI
+	ELSE avail(candidate(ide(cand),store(cand),newsels)) FI
+    FI
+
+  FUN genReuseSels : seq[sel:SORT] ** seq[ide:SORT] -> seq[sel:SORT] ** nat
+  DEF genReuseSels(sels,is) ==
+    IF <>?(sels) THEN (<>[sel:SORT],0)
+    ELSE LET (restsels,restcnt) == genReuseSels(rt(sels),rt(is))
+	     sel == ft(sels)
+	 IN
+         IF borrow?(sel) and (ide(sel) = ft(is)) THEN
+             -- flip to reuse selection
+	     (reuse(ide(sel),store(sel),times(sel))::restsels,succ(restcnt))
+	 ELSE (sel::restsels,restcnt) FI
+    FI	     
+
+  FUN reusable : store ** store -> bool
+  DEF reusable(reqst,candst) ==
+    IF (oneProd?(reqst) and oneProd?(candst)) or
+       			(prod?(reqst) and prod?(candst)) THEN 
+	#(comps(reqst)) = #(comps(candst))
+    ELSE false FI
+	
+-- ---------------------------------------------------------------------------
+
+
+DEF opt(I,A,case(ds,st,ms,df)::r) == 
+    LET (newA,newr) == opt(I,A,r)
+		-- cannot fullfil principle of minimizing
+		-- distance between last selection and reuse here,
+		-- because aliasing information from rest is
+		-- required before pathes can be visited.
+	rends == renameIn(newA)(ds)
+		-- aliased name of discriminator inside of case.
+		-- note that the discriminator rebuild into the case below
+		-- is not renamed, since all aliases are resolved
+		-- on top of the pathes.
+	(S,newms,newdf) == 
+		optPathes(I,newA,syn({}[cand:SORT],{}[ide:SORT]),rends,ms,df)
+    IN
+    (S,case(ds,st,newms,newdf)&&newr)
+
+
+  FUN optPathes : inh ** syn ** syn ** ide ** seq[match:SORT] ** stm
+			-> syn ** seq[match:SORT] ** stm
+  DEF optPathes(I,A,currS,ds,ms,df) ==
+    IF <>?(ms) THEN
+	(finalS,<>[match:SORT],
+	 IF #(newdfs) = 1 THEN ft(newdfs) ELSE block(<>[obj:SORT],newdfs) FI)
+	WHERE (S,tmpdfs) == opt(I,A,df%)
+	      finalS	== currS meet S
+	      newdfs	== balance(I,finalS,S,tmpdfs)
+    ELSE
+	(finalS,newm::newr,newdf) 
+	WHERE (S,tmpm)  == optMatch(I,A,ds,ft(ms))
+	      (finalS,newr,newdf) == 
+			   optPathes(I,A,currS meet S,ds,rt(ms),df)
+	      newm	== balance(I,finalS,S,tmpm)
+    FI
+
+  FUN optMatch  : inh ** syn ** ide ** match -> syn ** match
+  DEF optMatch(I,A,ds,match(tags,st,sls,ss)) == 
+    LET (free?,tmpss) == IF local?(ds) and reuseOpt?(popts(I)) THEN
+    			     findFollowingFree(ds,ss)
+			 ELSE (nil[stm:SORT],ss) FI
+    IN
+    IF avail?(free?) THEN
+        LET newI      == updCands(I,def(ds,candidate(ds,st,sls),cands(I)))
+	    (S,newss) == opt(newI,A,tmpss)
+	IN
+	IF ds def? reused(S) THEN
+	    -- reusage took place
+	    (updReused(S,undef(ds,reused(S))),
+	     match(tags,st,sels(reused(S)!ds),newss))
+	ELSE
+	    (S,match(tags,st,sls,cont(free?)&&newss))
+	FI
+    ELSE
+	LET (S,newss) == opt(I,A,tmpss)
+	IN
+	(S,match(tags,st,sls,newss))
+    FI
+
+  FUN findFollowingFree : ide ** seq[stm:SORT] 
+				-> option[stm:SORT] ** seq[stm:SORT]
+  DEF findFollowingFree(ds,ss) ==
+    IF <>?(ss) THEN
+	(nil[stm:SORT],<>[stm:SORT])
+    ELSE
+	LET found? == IF free?(ft(ss)) THEN
+			  (ide(ft(ss)) = ds) and (times(ft(ss)) = 1)
+				   -- sorry, we cannot handle times>1
+		      ELSE false FI
+	IN
+	IF found? THEN
+	    (avail(ft(ss)),rt(ss))
+	ELSE
+	    LET (free?,newr) == findFollowingFree(ds,rt(ss))
+	    IN
+	    (free?,ft(ss)::newr)
+	FI
+    FI
+	
+  FUN meet : syn ** syn -> syn
+  DEF currS meet S ==
+    LET newreuse == (meetReuse / reused(currS))(explode(reused(S)))
+	newalias == {}[ide:SORT]
+		-- meet of aliasing of pathes would require
+		-- usage sets of identifiers in this pathes ...
+		-- unfortunately, those from the previous translation
+		-- pass have been thrown away.
+    IN
+    syn(newreuse,newalias)
+
+  FUN meetReuse : pair[ide:SORT,cand:SORT] ** ideMap[cand:SORT] 
+						-> ideMap[cand:SORT]
+  DEF meetReuse(_ & cand,reuse) == 
+    LET newcand == IF ide(cand) def? reuse THEN
+		       candidate(ide(cand),store(cand),
+		         zip(meetSel)(sels(cand),sels(reuse!ide(cand))))
+		   ELSE candidate(ide(cand),store(cand),
+			  killReuse * sels(cand))
+			     -- If cand not reused in all pathes,
+			     -- we have to kill all reuse selections in
+			     -- cand. This because the preceeding pass
+			     -- has generated frees for objects in this
+			     -- pathes which actually have (in a reuse
+			     -- situation) never to become touched.
+			     -- This is a kind of conceptual
+			     -- bug, which didnt occur in the OPAL0
+			     -- implementation. An escape might be
+			     -- the delay of selections until they
+			     -- are actually used.
+		   FI
+    IN
+    def(ide(newcand),newcand,reuse)
+
+  FUN meetSel : sel ** sel -> sel
+  DEF meetSel(s1,s2) ==
+    IF reuse?(s1) and reuse?(s2) THEN s1
+    OTHERWISE IF reuse?(s1) THEN s2 -- fall back
+    	      IF reuse?(s2) THEN s1 -- fall back
+			    ELSE s1
+    			    FI
+
+  FUN killReuse : sel -> sel
+  DEF killReuse(s) ==
+    IF reuse?(s) THEN borrow(ide(s),store(s),times(s)) ELSE s FI
+	    
+  FUN balance : inh ** syn ** syn ** match -> match
+  DEF balance(I,finalS,S,match(tags,st,sls,ss)) == 
+    match(tags,st,sls,balance(I,finalS,S,ss))
+
+  FUN balance : inh ** syn ** syn ** seq[stm:SORT] -> seq[stm:SORT]
+  DEF balance(I,finalS,S,ss:seq[stm:SORT]) ==
+    LET frees   == (balanceReuse(reused(S)) / <>[stm:SORT])
+			(explode(reused(finalS)))
+	assigns == explode(alias(S))
+    IN
+    IF <>?(assigns) THEN
+	frees &&& ss
+    ELSE
+	frees &&& (aliasAssign(assigns)&&ss)
+    FI
+
+  FUN aliasAssign : seq[pair[ide,ide]] -> stm
+  DEF aliasAssign(alias) ==
+    LET (srcs,dsts) == unzip(unpair)(alias)
+	inverseMap  == extend({},dsts,srcs)
+	realsrcs    == renameSrc(inverseMap)*srcs
+    IN
+    ass(realsrcs,dsts)
+
+  FUN renameSrc : ideMap[ide] -> ide -> ide
+  DEF renameSrc(map)(src) ==
+    LET a? == map!?src
+    IN
+    IF avail?(a?) THEN
+        -- this source actually destination of another alias;
+	-- use its source
+        renameSrc(map)(cont(a?))
+    ELSE
+	src
+    FI
+    
+  FUN balanceReuse : ideMap[cand:SORT] 
+			-> pair[ide:SORT,cand:SORT] ** seq[stm:SORT]
+		  	-> seq[stm:SORT]
+  DEF balanceReuse(this)(_ & cand,ss) == 
+    IF ~(ide(cand) def? this) THEN
+	-- this cand isnt reused in this path but in some other
+	free(ide(cand),store(cand),1)&&ss
+    ELSE ss FI
+
+-- ==========================================================================
+-- peephole optimizations (not yet elaborated)
+-- ==========================================================================
+
+FUN && : stm ** seq[stm:SORT] -> seq[stm:SORT]
+DEF s && ss ==
+    IF <>?(ss) THEN 
+	IF pos?(s) THEN <>[stm:SORT]
+		   ELSE s% FI
+    ELSE
+	LET s1 == ft(ss)
+	IN
+	IF halt?(s1) and ~(pos?(s)) THEN 
+	    ss 
+        ELSE s::ss FI
+    FI
+
+FUN &&& : seq[stm:SORT] ** seq[stm:SORT] -> seq[stm:SORT]
+DEF ss1 &&& ss2 ==
+    IF <>?(ss1) THEN ss2
+		ELSE ft(ss1)&&(rt(ss1)&&&ss2) FI
+

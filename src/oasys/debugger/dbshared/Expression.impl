@@ -1,0 +1,384 @@
+IMPLEMENTATION Expression
+
+IMPORT  Nat             COMPLETELY
+        Seq             COMPLETELY
+        Fmt             COMPLETELY
+        FmtBasicTypes   COMPLETELY
+        FmtSeq          COMPLETELY
+        FmtPair         COMPLETELY
+        FmtArray        COMPLETELY
+        Option          COMPLETELY
+        ArrayConv       COMPLETELY
+        ABORT           COMPLETELY
+       CharConv ONLY ` asNat
+       NatConv ONLY asChar
+       Char ONLY ! char
+       SeqMap ONLY *
+       Array ONLY array # !
+       Pair ONLY pair 2nd
+        
+-- %Implementierung der Object-Ids:
+
+DATA objectId == objectId(no : nat)
+DEF objectId(n) < objectId(m) == n < m
+DEF objectId(n) = objectId(m) == n = m
+DEF next(objectId(x)) == objectId(x succ)
+        
+DEF unknown == objectId(max'Nat)
+
+-- %Implementierung der Binding-Offsets:
+
+DATA bindOffset == bindOffset(item: nat, pos: nat)      
+
+DEF bindOffset(N1,M1) < bindOffset(N2,M2) ==
+    IF N1 < N2  THEN true
+    IF N1 = N2  THEN M1 < M2
+                ELSE false FI
+DEF bindOffset(N1,M1) = bindOffset(N2,M2) == N1 = N2 and M1 = M2
+DEF next(bindOffset(N,M)) == bindOffset(N,M succ)
+    
+
+DATA evalId == evalId(id: nat)
+
+DEF evalId(X) < evalId(Y) == X < Y
+DEF evalId(X) = evalId(Y) == X = Y
+
+-- %Implementierung der Term-Positionen:
+DATA tpos == intern(ipos: nat)
+DEF tpos(X)             == 
+    IF X < max'Nat-1
+      THEN intern(X)
+      ELSE ABORT("tpos'Expression: position is too large")
+    FI
+DEF pos(intern(X))      ==
+    IF X < max'Nat-1
+      THEN X
+      ELSE ABORT("pos'Expression: undefined selection.")
+    FI
+DEF unknown             == intern(max'Nat)
+DEF breakPoint          == intern(max'Nat-1)
+DEF tpos?(intern(X))    == X < max'Nat-1
+DEF unknown?(intern(X)) == X = max'Nat
+DEF breakPoint?(intern(X)) == X = max'Nat-1
+DEF intern(X) < intern(Y)         == X < Y
+DEF intern(X) = intern(Y)         == X = Y
+DEF next(intern(N)) == intern(succ(N))
+
+-- %Implementierung der Namen:
+
+DATA name == name(
+                objectId:       objectId, 
+                instances:      seq[name])
+
+
+-- %Implementierung der Ausdrücke:
+
+
+DATA expr ==
+        name(   pos:            tpos,   
+                name:           name)
+        local(  pos:            tpos,   
+                offset:         bindOffset)
+        result( pos:            tpos,
+                id:             evalId)
+        lambda( pos:            tpos,
+                mtree:          mtree,
+                exprs:          array[expr])
+        apply(  pos:            tpos,
+                f:              expr,
+                arg:            expr,
+                dim:            nat)
+        tuple(  pos:            tpos,
+                elems:          seq[tupleExpr],
+                dim:            nat)
+        block(  pos:            tpos,
+                eqns:           seq[blockEqn],
+                body:           expr,
+                numberOfVars:   nat)
+        cases(  pos:            tpos,
+                guards:         seq[guard],
+                else:           expr)
+        den(    pos:            tpos,
+                rep:            denotation)
+        undefined(
+                pos:            tpos)
+        nil(    pos:            tpos)
+        cons(   pos:            tpos,
+                tag:            nat,
+                rank:           nat)
+        test(   pos:            tpos,
+                tag:            nat)
+        sel(    pos:            tpos,
+                positions:      array[nat])
+        bp(     pos:            tpos,
+                id:             objectId,
+                obj:            obj,
+                rank:           nat,
+                dim:            nat)
+        guardedBp(
+                pos:            tpos,
+                id:             objectId,
+                obj:            obj,
+                rank:           nat,
+                dim:            nat,
+                guard:          expr)
+        asDenoFormatter(
+                pos:            tpos,
+                obj:            obj)
+        asFmtFormatter(
+                pos:            tpos,
+                obj:            obj)
+        obj(    pos:            tpos,
+                obj:            obj)
+
+DEF typeable? == name?
+
+-- %Hilfstypen:
+
+DATA blockEqn   == eqn(lhs: mtree, rhs: expr)
+DATA guard      == guard(if: expr, then: expr)
+DATA tupleExpr  == tupleExpr(expr: expr, pos: nat)
+
+-- %Funktionalität:
+
+DATA fct ==
+        sort(   name:   name)
+        cart(   elems:  seq[fct])
+        funct(  dom:    fct,
+                codom:  fct)
+
+
+-- %kind:
+DATA kind == interpreted coded
+
+
+DATA sortInfo == 
+        sortInfo(       
+                name:           name,
+                outputSort:     outputSort
+        )
+
+DATA outputSort == denotation fmt
+
+
+-- %Patterns und  matching trees:
+
+DATA mtree ==
+        mtree(  tree:           matchtree,
+                patterns:       array[bpattern],
+                rank:           nat
+        )
+
+DATA matchtree ==
+        matchtree(
+                parent:         nat,
+                sel:            selector,
+                subtrees:       seq[testtree])
+        leaf(   n:              nat)
+
+DATA testtree == testtree(test: expr, tree: matchtree)
+
+DATA selector == sel(expr: expr)
+                 proj(n: nat)   -- 0..m für ein Tupel (x_0,...,x_m)
+
+DATA bpattern ==
+        bpattern(       nVars:  nat,
+                        patt:   patt)
+
+DATA patt == 
+        any
+        var(    offset:         bindOffset)
+        constr( selpatt:        seq[pair[selector,patt]])
+        as(     offset:         bindOffset,     
+                pattern:        patt)
+
+-- % pretty printing:
+
+FUN fmtObj : obj -> fmt
+DEF fmtObj(_) == lit("OBJ")
+
+FUN fmtTpos : tpos -> fmt
+DEF fmtTpos(intern(v0)) == fmtNat(v0)
+
+FUN fmtName : name -> fmt
+DEF fmtName(name(v0,v1)) == 
+    block(2,
+        lit("name");fmtObjectId(v0);
+        list(fmtName,lit("["),lit(","),lit("]"),v1)
+    )
+
+FUN fmtBindOffset : bindOffset -> fmt
+DEF fmtBindOffset(bindOffset(v0,v1)) ==
+    block(2,fmtNat(v0);lit("&");fmtNat(v1))
+
+FUN fmtObjectId : objectId -> fmt
+DEF fmtObjectId(objectId(v0)) == fmtNat(v0)
+
+-- % generated by ordinatrice:
+
+FUN fmtSortInfo : sortInfo -> fmt
+DEF fmtSortInfo(sortInfo(v0,v1)) == ;(;(beg(2),lit("sortInfo")),;(;(lit("("),;(;(fmtName(v0),;(lit(", "),fmtOutputSort(v1))),lit(")"))),end))
+FUN fmtTesttree : testtree -> fmt
+DEF fmtTesttree(testtree(v0,v1)) == ;(;(beg(2),lit("testtree")),;(;(lit("("),;(;(fmtExpr(v0),;(lit(", "),fmtMatchtree(v1))),lit(")"))),end))
+FUN fmtBpattern : bpattern -> fmt
+DEF fmtBpattern(bpattern(v0,v1)) == ;(;(beg(2),lit("bpattern")),;(;(lit("("),;(;(fmtNat(v0),;(lit(", "),fmtPatt(v1))),lit(")"))),end))
+FUN fmtPatt : patt -> fmt
+DEF fmtPatt(any) == ;(;(beg(2),lit("any")),end)
+DEF fmtPatt(var(v0)) == ;(;(beg(2),lit("var")),;(;(lit("("),;(fmtBindOffset(v0),lit(")"))),end))
+DEF fmtPatt(constr(v0)) == ;(;(beg(2),lit("constr")),;(;(lit("("),;(fmtSeq(fmtPair(fmtSelector,fmtPatt))(v0),lit(")"))),end))
+DEF fmtPatt(as(v0,v1)) == ;(;(beg(2),lit("as")),;(;(lit("("),;(;(fmtBindOffset(v0),;(lit(", "),fmtPatt(v1))),lit(")"))),end))
+FUN fmtSelector : selector -> fmt
+DEF fmtSelector(sel(v0)) == ;(;(beg(2),lit("sel")),;(;(lit("("),;(fmtExpr(v0),lit(")"))),end))
+DEF fmtSelector(proj(v0)) == ;(;(beg(2),lit("proj")),;(;(lit("("),;(fmtNat(v0),lit(")"))),end))
+FUN fmtMtree : mtree -> fmt
+DEF fmtMtree(mtree(v0,v1,v2)) == ;(;(beg(2),lit("mtree")),;(;(lit("("),;(;(;(fmtMatchtree(v0),;(lit(", "),fmtArray(fmtBpattern)(v1))),;(lit(", "),fmtNat(v2))),lit(")"))),end))
+FUN fmtMatchtree : matchtree -> fmt
+DEF fmtMatchtree(matchtree(v0,v1,v2)) == ;(;(beg(2),lit("matchtree")),;(;(lit("("),;(;(;(fmtNat(v0),;(lit(", "),fmtSelector(v1))),;(lit(", "),fmtSeq(fmtTesttree)(v2))),lit(")"))),end))
+DEF fmtMatchtree(leaf(v0)) == ;(;(beg(2),lit("leaf")),;(;(lit("("),;(fmtNat(v0),lit(")"))),end))
+FUN fmtOutputSort : outputSort -> fmt
+DEF fmtOutputSort(denotation) == ;(;(beg(2),lit("denotation")),end)
+DEF fmtOutputSort(fmt) == ;(;(beg(2),lit("fmt")),end)
+FUN fmtGuard : guard -> fmt
+DEF fmtGuard(guard(v0,v1)) == ;(;(beg(2),lit("guard")),;(;(lit("("),;(;(fmtExpr(v0),;(lit(", "),fmtExpr(v1))),lit(")"))),end))
+FUN fmtFct : fct -> fmt
+DEF fmtFct(sort(v0)) == ;(;(beg(2),lit("sort")),;(;(lit("("),;(fmtName(v0),lit(")"))),end))
+DEF fmtFct(cart(v0)) == ;(;(beg(2),lit("cart")),;(;(lit("("),;(fmtSeq(fmtFct)(v0),lit(")"))),end))
+DEF fmtFct(funct(v0,v1)) == ;(;(beg(2),lit("funct")),;(;(lit("("),;(;(fmtFct(v0),;(lit(", "),fmtFct(v1))),lit(")"))),end))
+FUN fmtKind : kind -> fmt
+DEF fmtKind(interpreted) == ;(;(beg(2),lit("interpreted")),end)
+DEF fmtKind(coded) == ;(;(beg(2),lit("coded")),end)
+FUN fmtTupleExpr : tupleExpr -> fmt
+DEF fmtTupleExpr(tupleExpr(v0,v1)) == ;(;(beg(2),lit("tupleExpr")),;(;(lit("("),;(;(fmtExpr(v0),;(lit(", "),fmtNat(v1))),lit(")"))),end))
+FUN fmtExpr : expr -> fmt
+DEF fmtExpr(name(v0,v1)) == ;(;(beg(2),lit("name")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtName(v1))),lit(")"))),end))
+DEF fmtExpr(local(v0,v1)) == ;(;(beg(2),lit("local")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtBindOffset(v1))),lit(")"))),end))
+DEF fmtExpr(result(v0,v1)) == ;(;(beg(2),lit("result")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtEvalId(v1))),lit(")"))),end))
+DEF fmtExpr(lambda(v0,v1,v2)) == ;(;(beg(2),lit("lambda")),;(;(lit("("),;(;(;(fmtTpos(v0),;(lit(", "),fmtMtree(v1))),;(lit(", "),fmtArray(fmtExpr)(v2))),lit(")"))),end))
+DEF fmtExpr(apply(v0,v1,v2,v3)) == ;(;(beg(2),lit("apply")),;(;(lit("("),;(;(;(;(fmtTpos(v0),;(lit(", "),fmtExpr(v1))),;(lit(", "),fmtExpr(v2))),;(lit(", "),fmtNat(v3))),lit(")"))),end))
+DEF fmtExpr(tuple(v0,v1,v2)) == ;(;(beg(2),lit("tuple")),;(;(lit("("),;(;(;(fmtTpos(v0),;(lit(", "),fmtSeq(fmtTupleExpr)(v1))),;(lit(", "),fmtNat(v2))),lit(")"))),end))
+DEF fmtExpr(block(v0,v1,v2,v3)) == ;(;(beg(2),lit("block")),;(;(lit("("),;(;(;(;(fmtTpos(v0),;(lit(", "),fmtSeq(fmtBlockEqn)(v1))),;(lit(", "),fmtExpr(v2))),;(lit(", "),fmtNat(v3))),lit(")"))),end))
+DEF fmtExpr(cases(v0,v1,v2)) == ;(;(beg(2),lit("cases")),;(;(lit("("),;(;(;(fmtTpos(v0),;(lit(", "),fmtSeq(fmtGuard)(v1))),;(lit(", "),fmtExpr(v2))),lit(")"))),end))
+DEF fmtExpr(den(v0,v1)) == ;(;(beg(2),lit("den")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtDenotation(v1))),lit(")"))),end))
+DEF fmtExpr(undefined(v0)) == ;(;(beg(2),lit("undefined")),;(;(lit("("),;(fmtTpos(v0),lit(")"))),end))
+DEF fmtExpr(nil(v0)) == ;(;(beg(2),lit("nil")),;(;(lit("("),;(fmtTpos(v0),lit(")"))),end))
+DEF fmtExpr(cons(v0,v1,v2)) == ;(;(beg(2),lit("cons")),;(;(lit("("),;(;(;(fmtTpos(v0),;(lit(", "),fmtNat(v1))),;(lit(", "),fmtNat(v2))),lit(")"))),end))
+DEF fmtExpr(test(v0,v1)) == ;(;(beg(2),lit("test")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtNat(v1))),lit(")"))),end))
+DEF fmtExpr(sel(v0,v1)) == ;(;(beg(2),lit("sel")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtArray(fmtNat)(v1))),lit(")"))),end))
+DEF fmtExpr(bp(v0,v0a,v1,v2,v3)) == ;(;(beg(2),lit("bp")),;(;(lit("("),;(;(;(;(fmtTpos(v0),;(lit(", "),fmtObj(v1))),;(lit(", "),fmtNat(v2))),;(lit(", "),fmtNat(v3))),lit(")"))),end))
+DEF fmtExpr(guardedBp(v0,v0a,v1,v2,v3,v4)) == ;(;(beg(2),lit("guardedBp")),;(;(lit("("),;(;(;(;(;(fmtTpos(v0),;(lit(", "),fmtObj(v1))),;(lit(", "),fmtNat(v2))),;(lit(", "),fmtNat(v3))),;(lit(", "),fmtExpr(v4))),lit(")"))),end))
+DEF fmtExpr(asDenoFormatter(v0,v1)) == ;(;(beg(2),lit("asDenoFormatter")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtObj(v1))),lit(")"))),end))
+DEF fmtExpr(asFmtFormatter(v0,v1)) == ;(;(beg(2),lit("asFmtFormatter")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtObj(v1))),lit(")"))),end))
+DEF fmtExpr(obj(v0,v1)) == ;(;(beg(2),lit("obj")),;(;(lit("("),;(;(fmtTpos(v0),;(lit(", "),fmtObj(v1))),lit(")"))),end))
+FUN fmtBlockEqn : blockEqn -> fmt
+DEF fmtBlockEqn(eqn(v0,v1)) == ;(;(beg(2),lit("eqn")),;(;(lit("("),;(;(fmtMtree(v0),;(lit(", "),fmtExpr(v1))),lit(")"))),end))
+FUN fmtEvalId : evalId -> fmt
+DEF fmtEvalId(evalId(v0)) == ;(;(beg(2),lit("evalId")),;(;(lit("("),;(fmtNat(v0),lit(")"))),end))
+
+-- %$Prettier Printing of Expressions$
+-- %First nat is current binding depth (starts with 0)
+-- %expr
+DEF prettyExpr(e) == prettyExpr(0)(e)
+
+FUN prettyExpr: nat -> expr -> fmt
+DEF prettyExpr(B)(name(_, n)) == prettyName(n)
+DEF prettyExpr(B)(local(_, bo)) == prettyBindOffset(B)(bo)
+DEF prettyExpr(B)(result(_, eId)) == lit("~'~"); fmtEvalId(eId)
+DEF prettyExpr(B)(lambda(_, mt, exs)) == lit("\\\\ "); prettyME(B succ)(0, patterns(mt), exs)
+DEF prettyExpr(B)(apply(_, f, arg, _)) == prettyExpr(B)(f); prettyExpr(B)(arg)
+DEF prettyExpr(B)(tuple(_, els, _)) ==
+  list(prettyExpr(B), lit("("), lit(","); spc(1), lit(")"), expr * els)
+DEF prettyExpr(B)(block(_, beqs, body, _)) ==
+  list?(prettyBlockEqn(B),
+        lit("LET "); inc(4),
+        brk,
+        brk; dec(4); lit("IN"); brk,
+        beqs); 
+  prettyExpr(succ(B))(body)
+DEF prettyExpr(B)(cases(_, gds, else)) ==
+  list(prettyGuard(B), none, brk, none, gds);
+  lit("ELSE "); prettyExpr(B)(else); brk;
+  lit("FI")
+DEF prettyExpr(B)(den(_, txt)) == lit(""""); lit(txt); lit("""")
+DEF prettyExpr(B)(undefined(_)) == lit("ABORT")
+DEF prettyExpr(B)(nil(_)) == lit("_|_")
+
+DEF prettyExpr(B)(else) == fmtExpr(else)
+
+
+-- %name
+/* %In @ref{@Overview{DbEvaluation}} wird der String auf
+    @samp{$`}@var{number}@samp{`} untersucht, diese werden dann in Opal-Namen
+    umgewandelt. */
+FUN prettyName: name -> fmt
+DEF prettyName(name(oId, pars)) ==
+  lit("$'"); fmtObjectId(oId);lit("'");
+  list?(prettyName, lit("["), lit(",");spc(1), lit("]"), pars)
+  
+
+-- %bindOffset
+FUN prettyBindOffset: nat -> bindOffset -> fmt
+DEF prettyBindOffset(B)(bindOffset(it, po)) ==
+  (IF B >= it THEN prettyNat(B - it)
+   ELSE lit("!"); prettyNat(it - B)
+   FI); fmtNat(po)
+
+-- %pairs of patterns and expressions within lambda
+FUN prettyME: nat -> nat ** array[bpattern] ** array[expr] -> fmt
+DEF prettyME(B)(pos, bps, exs) ==
+  IF pos >= #(bps) THEN none
+  ELSE
+    prettyBPattern(B)(bps!pos); lit("."); spc(1); prettyExpr(B)(exs!pos);
+    brk; prettyME(B)(succ(pos), bps, exs)
+  FI
+
+-- %BlockEqn 
+FUN prettyBlockEqn: nat -> blockEqn -> fmt
+DEF prettyBlockEqn(B)(eqn(mtree(_,patterns,_), rhs)) ==
+  prettyBPattern(B)(patterns!0); spc(1); lit("=="); spc(1); prettyExpr(B)(rhs)
+
+-- %Guards
+FUN prettyGuard: nat -> guard -> fmt
+DEF prettyGuard(B)(guard(if, then)) ==
+  lit("IF"); spc(1); prettyExpr(B)(if); spc(1); 
+  lit("THEN"); spc(1); prettyExpr(B)(then)
+
+-- %Bpatterns
+FUN prettyBPattern: nat -> bpattern -> fmt
+DEF prettyBPattern(B)(bpattern(_, patt)) == prettyPatt(B)(patt)
+
+-- %Pattern
+FUN prettyPatt: nat -> patt -> fmt
+DEF prettyPatt(B)(any) == lit("_")
+DEF prettyPatt(B)(var(bO)) == prettyBindOffset(B)(bO)
+DEF prettyPatt(B)(constr(SPs)) ==
+  list(prettyPatt(B), none, lit(","); spc(1), none, 2nd * SPs)
+DEF prettyPatt(B)(as(bO, patt)) ==
+  prettyBindOffset(B)(bO); spc(1); lit("AS"); spc(1); prettyPatt(B)(patt)
+    
+-- %nat
+FUN prettyNat: nat -> fmt
+DEF prettyNat(n) ==
+  IF 1 <= n and n <= 26 THEN lit(`(asChar(n + asNat("a"!) - 1)))
+  ELSE lit("V"); fmtNat(n); lit("_") FI
+
+-- %Fct
+
+DEF prettyFct(f) == prettyFct(false)(f)
+
+-- %bool: Klammern bei funct nötig?
+FUN prettyFct: bool -> fct -> fmt
+DEF prettyFct(_)(sort(n)) == prettyName(n)
+DEF prettyFct(_)(cart(els)) == 
+  IF els <>? THEN lit("()")
+  ELSE list?(prettyFct(true), none, spc(1); lit("**"); spc(1), none, els)
+  FI
+
+DEF prettyFct(paren?)(funct(d,c)) ==
+  (IF paren? THEN lit("(") ELSE none FI);
+  prettyFct(true)(d);
+  spc(1); lit("->"); spc(1);
+  prettyFct(false)(c);
+  (IF paren? THEN lit(")") ELSE none FI)
+  
+
+

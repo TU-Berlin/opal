@@ -1,0 +1,90 @@
+IMPLEMENTATION FctGeneration
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+-- ============================================================================
+-- Autor:       ralfi
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Uebersetzung der analysierten Quelle nach InterOpal
+-- ============================================================================
+
+IMPORT  InterOpal       COMPLETELY
+        Fct[name'Name]  COMPLETELY
+        InterOpalOption ONLY    ioFct? printInterOpal?
+        NameGeneration  ONLY    name2Name
+        AGSig           ONLY    fct parameter? :globSig**name->bool
+        BaseGeneration  ONLY    =
+        EnvIO           ONLY    envIO & io dep
+-- OC
+        Name            ONLY    name <
+        AnalyzedGlobSig ONLY    op? sort? 
+        SeqMapEnv[envIO,fct'Fct,fct'InterOpal]
+                        ONLY    *
+-- lib
+        Seq             ONLY    seq <>
+        Set             COMPLETELY
+        Pair            ONLY    pair
+        DEBUG           ONLY    PRINT string
+        Option          ONLY    option nil? avail? cont
+       Dyn COMPLETELY
+       DynConv COMPLETELY
+
+/*
+aus Fct:
+--------
+TYPE fct ==     sort( object : obj )            -- Sorte
+                cart( elems : seq[fct] )        -- kartesisches Produkt
+                funct( arg : fct, res : fct )   -- Funktionsfunktionalitaet
+-- nach Analyse nicht mehr vorhanden:
+                nonCartVar( id : nat )          -- Sorten/Funktionsvariablen
+                var( id : nat )                 -- beliebige Fct.(Variable)
+
+*/
+
+FUN kind2Kind: globSig -> envIO ** name'Name -> envIO ** kind
+DEF kind2Kind(Sig)(EnvIO,NName) ==
+-- Problem: imp. Objecte sollen uninst. als Object eingetragen werden,
+-- aber die Objecte der Funktionalitaeten sollen jeweils mit realen Parametern
+-- Parametern eingetrgen werden
+        IF Sig sort? NName THEN (EnvIO,sort)
+        IF Sig op? NName THEN
+                LET  (EnvIONormal,FctNormal) == fct2Fct(Sig)(EnvIO,Fct)
+                        (Fct,OptFct)    == Sig fct NName
+                IN IF OptFct nil? THEN
+            IF Fct var? THEN
+              (EnvIONormal, other("any", pack(true, "bool")))
+            ELSE
+              (EnvIONormal,fct(FctNormal))
+            FI
+                   IF OptFct avail? THEN
+             IF (OptFct cont) var? THEN
+               (EnvIONormal, other("any", pack(true, "bool")))
+             ELSE
+               LET (EnvIOUnInst,FctUnInst) == 
+                   fct2Fct(Sig)(EnvIONormal,OptFct cont)
+               IN (EnvIOUnInst,fct(FctUnInst))
+             FI
+                   FI
+        FI
+
+FUN fct2Fct: globSig -> envIO ** fct'Fct -> envIO ** fct'InterOpal
+DEF fct2Fct(_)(EnvIn,var(_)) == 
+        (EnvIn,PRINT(printInterOpal?,"STOP: fct2Fct: var",cart(<>)))
+DEF fct2Fct(_)(EnvIn,nonCartVar(_)) ==
+        (EnvIn,PRINT(printInterOpal?,"STOP: fct2Fct: nonCartVar",cart(<>)))
+
+DEF fct2Fct(Sig)(EnvIn,sort(Obj)) ==
+   LET  (EnvOut,InstName)       == name2Name(Sig)(EnvIn,Obj)
+   IN   (EnvOut,sort(InstName))
+
+DEF fct2Fct(Sig)(EnvIn,cart(Elems)) ==
+   LET  (EnvOut,SFct)   == *(fct2Fct(Sig), EnvIn,Elems)
+   IN   (EnvOut,cart(SFct))
+
+DEF fct2Fct(Sig)(EnvIn,funct(Arg,Res)) ==
+   LET  (EnvStack,Dom)  == fct2Fct(Sig)(EnvIn,Arg)
+        (EnvOut,Codom)  == fct2Fct(Sig)(EnvStack,Res)
+   IN   (EnvOut,funct(Dom,Codom))
+

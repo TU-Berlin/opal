@@ -1,0 +1,579 @@
+-- LAST EDIT: Mon Aug  7 16:32:49 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, Jun 17 1993: added typing for avoiding bug oc1.34
+--		af, Jun 21 1993: removed unnecessary typing
+-- ============================================================================
+
+IMPLEMENTATION Substitution
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:45 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Compose		ONLY o
+	Denotation	COMPLETELY
+
+	Pair		COMPLETELY
+	Quadruple	COMPLETELY
+	Seq		COMPLETELY
+	SeqOfSeq	ONLY flat
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+
+	DEBUG		COMPLETELY
+
+IMPORT	NatMap		COMPLETELY
+
+
+IMPORT	Fct[name]	COMPLETELY
+
+IMPORT	AnalyzedGlobSig	ONLY globSig
+			     name var globalSet? origInst replInst
+			     eqName eqBase var? id
+			     ` :globSig**level->name->denotation level minimal
+
+DATA subst == subst(map:natMap[val])
+
+DATA val == fct(fct:fct)
+            name(name:name)
+
+-- ----------------------------------------------------------------------------
+
+DEF empty == subst({})
+
+-- ----------------------------------------------------------------------------
+
+DEF subst(map1)+subst(map2) == subst(map1<+map2)
+
+-- ----------------------------------------------------------------------------
+
+FUN unify: globSig -> fct**fct**seq[subst]**nat -> seq[subst]**nat
+-- Unifikation zweier Fcts unter verschiedenen Substitutionen
+-- liefert alle moeglichen Substitutionen
+
+DEF unify(sig)(fct1,fct2,substs,firstVar) ==
+  (1st(P),2nd(P))
+  WHERE P == ((\\subst,subsAndfree.
+                 LET (oldSubsts,oldFree) == (1st(subsAndfree),2nd(subsAndfree))
+                     (newSubsts,newFree) ==
+					unify(sig)(fct1,fct2,subst,firstVar)
+                 IN ((newSubsts++oldSubsts)&max(oldFree,newFree)))
+              \ (<> &firstVar)) (substs)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN doUnify: globSig -> fct**fct**seq[subst]**nat -> seq[subst]**nat
+
+DEF doUnify(sig)(fct1,fct2,substs,firstVar) ==
+  (1st(P),2nd(P))
+  WHERE P == ((\\subst,subsAndfree.
+                 LET (oldSubsts,oldFree) == (1st(subsAndfree),2nd(subsAndfree))
+                     (newSubsts,newFree) ==
+					doUnify(sig)(fct1,fct2,subst,firstVar)
+                 IN ((newSubsts++oldSubsts)&max(oldFree,newFree)))
+              \ (<> & firstVar)) (substs)
+
+-- ----------------------------------------------------------------------------
+
+FUN unify: globSig -> fct**fct**subst**nat -> seq[subst]**nat
+-- Unifikation zweier Fcts unter einer Substitution
+-- liefert alle moeglichen Substitutionen
+
+DEF unify(sig)(fct1,fct2,subst,firstVar) ==
+  LET (newSubsts,newFree) == doUnify(sig)(fct1,fct2,subst,firstVar)
+  IN (PRINT(traceUnify?,traceUnify(sig,fct1,fct2,subst,newSubsts),newSubsts),
+      newFree)
+
+FUN traceUnify?:bool
+
+DEF traceUnify? == FIELD?[bool]("-ztraceUnify")
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN traceUnify: globSig**fct**fct**subst**seq[subst] -> () -> denotation
+
+DEF traceUnify(sig,fct1,fct2,subst,newSubsts)() ==
+  LET (substFct1,mono1) == apply(subst,fct1)
+      fct1T == `(`(sig,minimal))(substFct1)
+      (substFct2,mono2) == apply(subst,fct2)
+      fct2T == `(`(sig,minimal))(substFct2)
+      begin == "unification of '"
+      delim == "' and '"
+      result == IF newSubsts <>? THEN "' fails" ELSE "' succeeds" FI
+  IN begin++(fct1T ++(delim++(fct2T++result)))
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN doUnify: globSig -> fct**fct**subst**nat -> seq[subst]**nat
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- doUnify(var...)
+
+DEF doUnify(sig)(var(id1),cart(<>),subst(map),firstVar) == (<>,firstVar)
+
+DEF doUnify(sig)(fct1 AS var(id1),fct2 AS var(id2),subst(map),firstVar) ==
+  IF id1=id2 THEN (subst(map)%,firstVar)
+  OTHERWISE
+  IF def?(id1,map) THEN doUnify(sig)(fct(map!id1),fct2,subst(map),firstVar)
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+                   ELSE (subst((id1,fct(fct2)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)(var(id1),fct2,subst(map),firstVar) ==
+  IF def?(id1,map) THEN doUnify(sig)(fct(map!id1),fct2,subst(map),firstVar)
+  OTHERWISE
+  IF occurs?(id1,fct2,subst(map)) THEN (<>,firstVar)
+  ELSE (subst((id1,fct(fct2)) def map)%,firstVar)
+  FI
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- doUnify(nonCartVar...)
+
+DEF doUnify(sig)
+           (fct1 AS nonCartVar(id1),fct2 AS var(id2),subst(map),firstVar) ==
+  IF def?(id1,map) THEN doUnify(sig)(fct(map!id1),fct2,subst(map),firstVar)
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+                   ELSE (subst((id2,fct(fct1)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)
+           (fct1 AS nonCartVar(id1),
+            fct2 AS nonCartVar(id2),subst(map),firstVar) ==
+  IF id1=id2 THEN (subst(map)%,firstVar)
+  OTHERWISE
+  IF def?(id1,map) THEN doUnify(sig)(fct(map!id1),fct2,subst(map),firstVar)
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+                   ELSE (subst((id1,fct(fct2)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)
+           (fct1 AS nonCartVar(id1),
+            fct2 AS funct(arg,res),subst(map),firstVar) ==
+  IF def?(id1,map) THEN doUnify(sig)(fct(map!id1),fct2,subst(map),firstVar)
+  OTHERWISE
+  IF occurs?(id1,fct2,subst(map)) THEN (<>,firstVar)
+  ELSE (subst((id1,fct(fct2)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)
+           (fct1 AS nonCartVar(id1),cart(elem2 :: <>),subst(map),firstVar) ==
+  doUnify(sig)(fct1,elem2,subst(map),firstVar)
+
+DEF doUnify(sig)(nonCartVar(id1),fct2 AS sort(name),subst(map),firstVar) ==
+  IF def?(id1,map) THEN doUnify(sig)(fct(map!id1),fct2,subst(map),firstVar)
+  OTHERWISE
+  IF occurs?(id1,name,subst(map)) THEN (<>,firstVar)
+  ELSE (subst((id1,fct(fct2)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)(nonCartVar(id1),fct2,subst(map),firstVar) == (<>,firstVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- doUnify(funct...)
+
+DEF doUnify(sig)(fct1 AS funct(arg,res),var(id2),subst(map),firstVar) ==
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+  OTHERWISE
+  IF occurs?(id2,fct1,subst(map)) THEN (<>,firstVar)
+  ELSE (subst((id2,fct(fct1)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)(fct1 AS funct(arg,res),nonCartVar(id2),subst(map),firstVar) ==
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+  OTHERWISE
+  IF occurs?(id2,fct1,subst(map)) THEN (<>,firstVar)
+  ELSE (subst((id2,fct(fct1)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)(funct(arg1,res1),funct(arg2,res2),subst(map),firstVar) ==
+  LET (argSubsts,nextVar) == doUnify(sig)(arg1,arg2,subst(map),firstVar)
+      (resSubsts,freeVar) == doUnify(sig)(res1,res2,argSubsts,nextVar)
+  IN IF resSubsts <>? THEN (<>,firstVar)
+     IF resSubsts ::? THEN (resSubsts,freeVar)
+     FI
+
+DEF doUnify(sig)
+           (fct1 AS funct(arg,res),cart(elem2 :: <>),subst(map),firstVar) ==
+  doUnify(sig)(fct1,elem2,subst(map),firstVar)
+
+DEF doUnify(sig)(funct(arg,res),fct2,subst(map),firstVar) == (<>,firstVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- doUnify(sort...)
+
+DEF doUnify(sig)(fct1 AS sort(name),var(id2),subst(map),firstVar) ==
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+  ELSE (subst((id2,fct(fct1)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)(fct1 AS sort(name),nonCartVar(id2),subst(map),firstVar) ==
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+  ELSE (subst((id2,fct(fct1)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)(fct1 AS sort(name1),cart(elem2 :: <>),subst(map),firstVar) ==
+  doUnify(sig)(fct1,elem2,subst(map),firstVar)
+
+DEF doUnify(sig)(sort(name1),sort(name2),sub AS subst(map),firstVar) ==
+  (unify(sig)(name1,name2,sub),firstVar)
+
+DEF doUnify(sig)(sort(name1),fct2,subst(map),firstVar) == (<>,firstVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- doUnify(cart(<>),...)
+
+DEF doUnify(sig)(cart(<>),cart(<>),sub AS subst(map),firstVar) ==
+ (sub%,firstVar)
+
+DEF doUnify(sig)(cart(<>),fct2,subst(map),firstVar) == (<>,firstVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- doUnify(cart(e1:: <>),...)
+
+DEF doUnify(sig)(cart(elem1 :: <>),fct2,subst(map),firstVar) ==
+  doUnify(sig)(elem1,fct2,subst(map),firstVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- doUnify(cart(e1::(e2::e3)),...)
+
+DEF doUnify(sig)(fct1 AS cart(e11::(e12::e13)),var(id2),subst(map),firstVar) ==
+  IF def?(id2,map) THEN doUnify(sig)(fct1,fct(map!id2),subst(map),firstVar)
+  OTHERWISE
+  IF occurs?(id2,fct1,subst(map)) THEN (<>,firstVar)
+  ELSE (subst((id2,fct(fct1)) def map)%,firstVar)
+  FI
+
+DEF doUnify(sig)
+           (fct1 AS cart(e11::(e12::e13)),
+            cart(e21:: <>),subst(map),firstVar) ==
+  doUnify(sig)(fct1,e21,subst(map),firstVar)
+
+DEF doUnify(sig)(cart(cart(e11)::(e12::e13)),
+                 fct2 AS cart(var(id2)::(e22::e23)),subst(map),firstVar) ==
+  doUnify(sig)(cart(e11++(e12::e13)),fct2,subst(map),firstVar)
+
+DEF doUnify(sig)(fct1 AS cart(var(id1)::(e12::e13)),
+                 cart(cart(e21)::(e22::e23)),subst(map),firstVar) ==
+  doUnify(sig)(fct1,cart(e21++(e22::e23)),subst(map),firstVar)
+
+DEF doUnify(sig)(cart(cart(e11)::(e12::e13)),
+                 fct2 AS cart(e21::(e22::e23)),subst(map),firstVar) ==
+  doUnify(sig)(cart(e11++(e12::e13)),fct2,subst(map),firstVar)
+
+DEF doUnify(sig)(fct1 AS cart(e11::(e12::e13)),
+                 cart(cart(e21)::(e22::e23)),subst(map),firstVar) ==
+  doUnify(sig)(fct1,cart(e21++(e22::e23)),subst(map),firstVar)
+
+DEF doUnify(sig)
+           (cart(var(id1)::(fcts1 AS e12::e13)),
+            fct2 AS cart(fcts2 AS e21::(e22::e23)),sub AS subst(m),firstVar) ==
+  IF def?(id1,m) THEN
+    doUnify(sig)(cart(fct(m!id1)::fcts1),cart(fcts2),sub,firstVar)
+  ELSE
+    LET newFcts1 == flatten(fcts1,sub)
+	partitions == split(flatten(fcts2,sub),sub,firstVar, #(newFcts1))
+        tryAndAdd == \\part,pair.
+                     LET (front,tail,partSubst,free) ==
+				(1st(part),2nd(part),3rd(part),4th(part))
+                         (newSubsts,newFree) == doUnify(sig)
+                                                   (cart(newFcts1),cart(tail),
+                                                   subst((id1,fct(cart(front)))
+                                                         def map(partSubst)),
+                                                   free)
+                         (formerSubsts,formerFree) == (1st(pair),2nd(pair))
+                     IN (formerSubsts++newSubsts) & max(formerFree,newFree)
+    IN ((1st(P),2nd(P))
+        WHERE P == (tryAndAdd \ (<> & firstVar))(partitions))
+  FI
+
+DEF doUnify(sig)(cart(fcts1 AS e11::(e12::e13)),
+             cart(var(id2)::(fcts2 AS e22::e23)),sub AS subst(m),firstVar) ==
+  IF def?(id2,m) THEN
+    doUnify(sig)(cart(fcts1),cart(fct(m!id2)::fcts2),sub,firstVar)
+  ELSE
+    LET newFcts2 == flatten(fcts2,sub)
+	partitions == split(flatten(fcts1,sub),sub,firstVar, #(newFcts2))
+        tryAndAdd == \\part,pair.
+                     LET (front,tail,partSubst,free) ==
+				(1st(part),2nd(part),3rd(part),4th(part))
+                         (newSubsts,newFree) == doUnify(sig)
+                                                   (cart(newFcts2),cart(tail),
+                                                   subst((id2,fct(cart(front)))
+                                                         def map(partSubst)),
+                                                   free)
+                         (formerSubsts,formerFree) == (1st(pair),2nd(pair))
+                     IN (formerSubsts++newSubsts) & max(formerFree,newFree)
+    IN ((1st(P),2nd(P))
+        WHERE P == (tryAndAdd \ (<> & firstVar))(partitions))
+  FI
+
+DEF doUnify(sig)(cart(e11::(fcts1 AS e12::e13)),
+               cart(e21::(fcts2 AS e22::e23)),subst(map),firstVar) ==
+  LET (firstSubsts,nextVar) == doUnify(sig)(e11,e21,subst(map),firstVar)
+      (restSubsts,freeVar) ==
+			doUnify(sig)(cart(fcts1),cart(fcts2),firstSubsts,nextVar)
+  IN IF restSubsts <>? THEN (<>,firstVar)
+     IF restSubsts ::? THEN (restSubsts,freeVar)
+     FI
+
+DEF doUnify(sig)(cart(e11::(e12::e13)),fct2,subst(map),firstVar) ==
+  (<>,firstVar)
+
+-- ----------------------------------------------------------------------------
+
+FUN occurs?: nat**fct**subst -> bool
+-- testet das Vorkommen einer Variablen in der Funktionalitaet
+
+DEF occurs?(id,sort(name),sub) == false
+
+DEF occurs?(id,cart(elems),sub) == occurs?(id,elems,sub)
+
+DEF occurs?(id,funct(arg,res),sub) ==
+  IF occurs?(id,arg,sub) THEN true ELSE occurs?(id,res,sub) FI
+
+DEF occurs?(id,nonCartVar(id2),sub AS subst(map)) ==
+  IF id=id2 THEN true
+  OTHERWISE
+  IF def?(id2,map) THEN occurs?(id,fct(map!id2),sub)
+  ELSE false
+  FI
+
+DEF occurs?(id,(var(id2)):fct,sub AS subst(map)) ==
+  IF id=id2 THEN true
+  OTHERWISE
+  IF def?(id2,map) THEN occurs?(id,fct(map!id2),sub)
+  ELSE false
+  FI
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN occurs?: nat**seq[fct]**subst -> bool
+
+DEF occurs?(id,<>[fct],sub) == false
+
+DEF occurs?(id,f1 ::[fct] fR,sub) ==
+  IF occurs?(id,f1,sub) THEN true ELSE occurs?(id,fR,sub) FI
+
+-- ----------------------------------------------------------------------------
+
+FUN split splitFixLen: 
+	seq[fct]**subst**nat **nat-> seq[quad[seq[fct],seq[fct],subst,nat]]
+-- alle Aufteilungen (mit Variablenteilungen) der Sequenz in nicht-leere Teile
+-- die Funktionalitaetensequenz ist flach!
+-- das letztes Argument ist die maximale Laenge der Restsequenz
+
+DEF splitFixLen(fct,subst,firstVar, maxLen) == 
+IF maxLen > #(fct) THEN <>
+ELSE 
+      LET p1 == &(%(ft(fct)),rt(fct),subst,firstVar)
+          pR == ft(fct) :: splitFixLen(rt(fct),subst,firstVar, maxLen)
+      IN p1::pR
+FI
+
+
+DEF split(Fct,subst(map),firstVar, maxLen) == 
+IF <>?(Fct) THEN <>
+ELSE IF forall?(~ o var?, Fct) THEN splitFixLen(Fct,subst(map),firstVar,maxLen)
+     ELSE IF var?(ft(Fct)) THEN
+     LET 
+      fcts == rt(Fct)
+      v0 == ft(Fct)
+      id0 == id(v0)
+      p1 == (&(v1%,
+               v2::fcts,
+               subst((id0,fct(cart(v1::(v2%))))def map),
+               succ(succ(firstVar)))
+             WHERE v1 == var(firstVar)
+                   v2 == var(succ(firstVar)))
+      p2 == &(v0%,fcts,subst(map),firstVar)
+      pR == v0 :: split(fcts,subst(map),firstVar, maxLen)
+     IN p1 :: p2 ::pR
+     ELSE
+      LET p1 == &(%(ft(Fct)),rt(Fct),subst(map),firstVar)
+          pR == ft(Fct) :: split(rt(Fct),subst(map),firstVar, maxLen)
+      IN p1::pR
+     FI
+     FI
+FI
+
+FUN :: : fct**seq[quad[seq[fct],seq[fct],subst,nat]] ->
+					seq[quad[seq[fct],seq[fct],subst,nat]]
+DEF first :: partitions ==
+  LET prepend == \\quad.
+                   LET (front,tail,subst,freeVar) ==
+				(1st(quad),2nd(quad),3rd(quad),4th(quad))
+                   IN &(first::front,tail,subst,freeVar)
+  IN prepend * partitions
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN flatten: seq[fct]**subst -> seq[fct]
+-- nimmt Funktionalitaetensequenz,
+-- liefert aequivalente Sequenz von Funktionalitaeten, wobei kein Element
+--   kartesisches Produkt oder belegte Variable ist
+
+DEF flatten(fcts,subst) == flat(flatten(subst)*fcts)
+
+FUN flatten: subst -> fct -> seq[fct]
+-- nimmt Funktionalitaet,
+-- liefert aequivalente Sequenz von Funktionalitaeten, wobei kein Element
+--   kartesisches Produkt oder belegte Variable ist
+
+DEF flatten(subst(map))(fct1 AS var(id)) ==
+  IF def?(id,map) THEN flatten(subst(map))(fct(map!id)) ELSE fct1% FI
+
+DEF flatten(subst(map))(fct1 AS nonCartVar(id)) ==
+  IF def?(id,map) THEN flatten(subst(map))(fct(map!id)) ELSE fct1% FI
+
+DEF flatten(subst)(cart(elems)) == flatten(elems,subst)
+
+DEF flatten(subst)(fct) == fct%
+
+-- ----------------------------------------------------------------------------
+
+FUN apply: subst**fct -> fct**bool
+-- Anwenden einer Substitution (ggf. "flatten" der Funktionalitaet)
+-- liefert (xxx,true), falls das Ergebnis variablenfrei ist
+-- liefert (xxx,false), false nicht
+
+DEF apply(subst(map),var(id)) ==
+  IF def?(id,map) THEN apply(subst(map),fct(map!id))
+                  ELSE (var(id),false)
+  FI
+
+DEF apply(subst(map),nonCartVar(id)) ==
+  IF def?(id,map) THEN apply(subst(map),fct(map!id))
+                  ELSE (nonCartVar(id),false)
+  FI
+
+DEF apply(subst,funct(arg,res)) ==
+  LET (newArg,argFree) == apply(subst,arg)
+      (newRes,resFree) == apply(subst,res)
+  IN (flatFunct(newArg,newRes),argFree and resFree)
+
+DEF apply(subst,cart(oldElems)) ==
+  LET (newElems,free) == (1st(P),2nd(P))
+                         WHERE P == ((\\fct,restAndFree.
+                                      LET (rest,restFree) == (1st(restAndFree),
+                                                              2nd(restAndFree))
+                                          (new,newFree) == apply(subst,fct)
+                                          newSeq == IF new cart? THEN
+                                                      elems(new)++rest
+                                                    ELSE new::rest
+                                                    FI
+                                      IN newSeq & (restFree and newFree))
+                                     / (<> & true))(oldElems)
+  IN (cart(newElems),free)
+
+DEF apply(subst,sort(name)) ==
+  LET (newName,free) == apply(subst,name)
+  IN (sort(newName),free)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN flatFunct: fct**fct -> fct
+
+DEF flatFunct(cart(arg :: <>),cart(res :: <>)) == funct(arg,res)
+DEF flatFunct(cart(arg :: <>),res            ) == funct(arg,res)
+DEF flatFunct(arg            ,cart(res :: <>)) == funct(arg,res)
+DEF flatFunct(arg            ,res            ) == funct(arg,res)
+
+-- ----------------------------------------------------------------------------
+
+FUN unify: globSig -> name**name**subst -> seq[subst]
+-- Unifikation zweier globaler Namen/Variablen
+
+DEF unify(sig)(name1 AS var(id1),name2 AS var(id2),subst(map)) ==
+  IF id1=id2 THEN (subst(map)%)
+  OTHERWISE
+  IF def?(id1,map) THEN unify(sig)(name(map!id1),name2,subst(map))
+  IF def?(id2,map) THEN unify(sig)(name1,name(map!id2),subst(map))
+                   ELSE subst((id1,name(name2)) def map)%
+  FI
+
+DEF unify(sig)(var(id1),name2,subst(map)) ==
+  IF def?(id1,map) THEN unify(sig)(name(map!id1),name2,subst(map))
+  OTHERWISE
+  IF occurs?(id1,name2,subst(map)) THEN <>
+  ELSE (subst((id1,name(name2)) def map)%)
+  FI
+
+DEF unify(sig)(name1,var(id2),subst(map)) ==
+  IF def?(id2,map) THEN unify(sig)(name1,name(map!id2),subst(map))
+  OTHERWISE
+  IF occurs?(id2,name1,subst(map)) THEN <>
+  ELSE subst((id2,name(name1)) def map)%
+  FI
+
+DEF unify(sig)(name1,name2,subst(map)) ==
+  IF (name1 globalSet?) or (name2 globalSet?) THEN
+    IF eqBase(name1,name2) THEN unify(sig)(origInst(sig,name1),
+                                           origInst(sig,name2),
+                                           subst(map))
+    ELSE <>
+    FI
+  OTHERWISE
+  IF eqName(sig)(name1,name2) THEN subst(map)%
+  ELSE <>
+  FI
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN unify: globSig -> seq[name]**seq[name]**subst -> seq[subst]
+
+DEF unify(sig)(<>,<>,subst) == subst%
+
+DEF unify(sig)(name1::names1,name2::names2,subst) ==
+  LET firstSubsts == unify(sig)(name1,name2,subst)
+  IN ((\\sub,substs.unify(sig)(names1,names2,sub)++substs) \ <>)(firstSubsts)
+  
+-- ----------------------------------------------------------------------------
+
+FUN occurs?: nat**name**subst -> bool
+-- testet das Vorkommen einer Variablen in einem Namen
+
+DEF occurs?(id,(var(id2)):name,sub AS subst(map)) ==
+  IF id=id2 THEN true
+  OTHERWISE
+  IF def?(id2,map) THEN occurs?(id,name(map!id2),sub)
+  ELSE false
+  FI
+
+DEF occurs?(id,name,sub) ==
+  IF name globalSet? THEN occurs?(id,origInst(name),sub) ELSE false FI
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN occurs?: nat**seq[name]**subst -> bool
+-- testet das Vorkommen einer Variablen in einer Namenssequenz
+
+DEF occurs?(id,<>[name],sub) == false
+
+DEF occurs?(id,n1 ::[name] nR,sub) ==
+  IF occurs?(id,n1,sub) THEN true ELSE occurs?(id,nR,sub) FI
+  
+-- ----------------------------------------------------------------------------
+
+FUN apply: subst**name -> name**bool
+-- nur fuer globale Namen/Variablen
+
+DEF apply(subst(map),nm AS var(id)) ==
+  IF def?(id,map) THEN apply(subst(map),name(map!id)) ELSE (nm,false) FI
+
+DEF apply(subst(map),nm) ==
+  IF nm globalSet? THEN
+    LET inst == origInst(nm)
+        (newInst,free) == (1st(P),2nd(P))
+                         WHERE P == ((\\n,restAndFree.
+                                      LET (rest,restFree) == (1st(restAndFree),
+                                                              2nd(restAndFree))
+                                          (new,newFree) == apply(subst(map),n)
+                                      IN &(new::rest,restFree and newFree))
+                                     / &(<>,true))(inst)
+    IN (replInst(nm,newInst),free)
+  ELSE (nm,true)
+  FI

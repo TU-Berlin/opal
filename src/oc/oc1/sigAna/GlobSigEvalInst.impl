@@ -1,0 +1,430 @@
+/* %-
+-- LAST EDIT: Wed Aug 14 18:09:30 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     evaluation of instances
+-- Changes:	af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+*/
+
+IMPLEMENTATION GlobSigEvalInst
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	AbsyFun2	ONLY	=
+	Com		COMPLETELY
+	ComCompose	ONLY	;
+	Compose		ONLY	o
+	DEBUG		ONLY	FIELD? PRINT
+	Denotation	ONLY	++
+	ErrCom		COMPLETELY
+	GlobSigToText	ONLY	`
+	ImpDecl4SigAna	COMPLETELY
+	ImpExpEntry	COMPLETELY
+	MySeqFun1	ONLY	||
+	MySeqFun2	ONLY	* notDisjoint
+	MySeqFun3	ONLY	\*
+	Name		COMPLETELY
+	Name4SigAna	COMPLETELY
+	Nat		ONLY	0 = nat pred
+	Objects		COMPLETELY
+	Option		COMPLETELY
+	Options		ONLY	options
+	Pair		COMPLETELY
+	PartNameEntry	COMPLETELY
+        RepTab          COMPLETELY
+	Seq		COMPLETELY
+	SeqCompare	ONLY	eq?
+	SeqConv		ONLY	`
+	SeqFilter	ONLY	|
+	SeqIndex	ONLY	!
+	SeqMap		ONLY	*
+	SeqOfSeq	ONLY	flat
+	SeqReduce	ONLY	\
+	SeqZip		ONLY	zip
+	Table		ONLY	! table {}?
+       ABORT ONLY ABORT
+       NatConv ONLY `
+       AnalyzedGlobSig ONLY standard level `
+
+
+-- %- ------------------------------------------------------------------------
+
+FUN checkDoubleInst : struct'Objects ** inst -> inst ** globSig -> globSig
+  -- Finden von doppelten Instanzen
+DEF checkDoubleInst(struct,inst10)(inst20,gS) ==
+IF inst10 = inst20 THEN gS
+ELSE	
+	LET 
+	-- somit sind die doubleInst nicht geschachtelt !!!!
+	  inst1 == realInst3(gS,struct)(inst10)
+	  inst2 == realInst3(gS,struct)(inst20)
+	IN
+	-- ich kann mich auch selbst ueberholen (wg. QuerChecken)
+	IF inst1 = inst2 THEN gS
+	OTHERWISE
+	IF inst1 = unparam ORIF inst2 = unparam THEN gS
+	OTHERWISE	-- unterschiedliche insts und noch kein doubleCheck
+	IF identInst?(gS,struct,inst1) ANDIF identInst?(gS,struct,inst2) THEN
+	  LET 
+	    nameS1 == getInst(gS,struct,inst1)
+	    nameS2 == getInst(gS,struct,inst2)
+	  IN	-- besser waere eine Variante errorInst
+	   IF #(nameS1) = #(nameS2) THEN
+	    LET
+	    namePairS == zip(&[name:SORT,name:SORT])(nameS1,nameS2)
+	    finGS == (checkDoubleName \ gS)(namePairS)
+	    RnameS1 == realInst(finGS) * nameS1
+            RnameS2 == realInst(finGS) * nameS2
+	    IN
+	    IF eq?(='Name)(RnameS1, RnameS2)
+	    THEN	-- der 2.Name wird zur doubleInst
+	      setDoubleInst(finGS,struct,inst2,inst1)
+	    ELSE finGS
+	    FI
+           ELSE gS -- this is an error case 
+	  FI
+	IF genericTransitive?(gS,struct,inst1) ANDIF 
+	   genericTransitive?(gS,struct,inst2) THEN
+	  LET
+	    (oStr1, oInst10) == getOtherInst(gS,struct,inst1)
+	    (oStr2, oInst20) == getOtherInst(gS,struct,inst2)
+	    oInst1 == realInst3(gS,oStr1)(oInst10)
+	    oInst2 == realInst3(gS,oStr2)(oInst20)
+	  IN
+	  IF (oStr1 = oStr2) THEN
+	    LET 
+	      gS0 == checkDoubleInst(oStr1,oInst1)(oInst2,gS)
+	      oInst1R == realInst3(gS0,oStr1)(oInst1)
+	      oInst2R == realInst3(gS0,oStr2)(oInst2)
+	    IN
+	    IF oInst1R = oInst2R THEN
+	      LET 
+		nameS1 == getInst(gS0,struct,inst1)
+		nameS2 == getInst(gS0,struct,inst2)
+		namePairS == zip(&[name:SORT,name:SORT])(nameS1,nameS2)
+		finGS == (checkDoubleName \ gS0)(namePairS)
+	        RnameS1 == realInst(finGS) * nameS1
+                RnameS2 == realInst(finGS) * nameS2
+	      IN
+	      IF eq?(='Name)(RnameS1, RnameS2)
+	      THEN	-- der 2.Name wird zur doubleInst
+		setDoubleInst(finGS,struct,inst2,inst1)
+	      ELSE finGS
+	      FI
+	    ELSE gS0 FI
+	  ELSE gS FI
+	ELSE gS 
+	FI
+FI
+
+FUN checkDoubleName : pair[name:SORT,name:SORT] ** globSig -> globSig
+DEF checkDoubleName(p,gS) ==
+	LET (name1,name2) == (1st(p),2nd(p)) IN
+	IF (name1 extName?) ANDIF (name2 extName?) THEN 
+	  IF struct(name1) = struct(name2) 
+		ANDIF impDecl(name1) = impDecl(name2) THEN
+	    IF notParametrized?(gS,struct(name1)) THEN gS
+	    ELSE checkDoubleInst(struct(name1),inst(name1))(inst(name2), gS) FI
+	  ELSE gS FI
+	ELSE gS FI
+
+-- %- ------------------------------------------------------------------------
+
+-- FUN checkInstAppls : table[instE:SORT] ** seq[instAppl:SORT] 
+-- 		    -> table[instE:SORT] ** seq[instAppl:SORT]
+DEF checkInstAppls(instTab,S) == 
+	(instTab, eqInstAppl || (applied? | (checkDouble(instTab)(S))))
+
+FUN checkDouble : table[instE:SORT] -> seq[instAppl] -> seq[instAppl]
+DEF checkDouble(instTab)(iA) ==
+	IF instTab {}? THEN iA
+	ELSE IF iA <>? THEN <>
+	     ELSE IF instOf(ft(iA)) = unparam THEN
+		ft(iA) :: checkDouble(instTab)(rt(iA))
+	      ELSE LET instE == no(instOf(ft(iA))) ! instTab
+	       IN
+		IF instE doubleInst? THEN
+		    LET Other == find?(\\X.inst(instE) = instOf(X), rt(iA))
+		    IN IF Other nil? THEN
+	  		checkDouble(instTab)
+			  (updDoubleInst(inst(instE),ft(iA)) :: rt(iA))
+		       IF Other avail? THEN	
+			checkDouble(instTab)
+			  (updDoubleInst(inst(instE), 
+				addApplyCounts(ft(iA), cont(Other))) :: rt(iA))
+			FI
+		ELSE ft(iA) :: checkDouble(instTab)(rt(iA))
+		FI
+              FI
+	     FI
+	FI
+
+
+FUN eqInstAppl : instAppl ** instAppl -> bool
+  -- gehoert zur Sorte instAppl
+DEF eqInstAppl(iA1,iA2) == 
+	instOf(iA1) = instOf(iA2)
+
+-- %- ------------------------------------------------------------------------
+
+FUN evalInstFin : options -> globSig ** struct'Objects ** inst 
+			-> com[pair[globSig,bool:SORT]]
+  -- Nachbehandlung der generisch transitiven Importe, da erst alle aus 
+  -- uninstantiierten Importen enstandenen Instanzen vorhanden sein muessen.
+DEF evalInstFin(_)(gS, struct, inst) ==
+	IF (gS, struct, inst) genericTransitive? THEN	-- produzieren
+	  treatGenericTransitive(gS, struct, inst)
+	ELSE yield(okay(gS & true)) FI
+
+--FUN evalInst : options -> globSig ** struct'Objects ** inst -> com[pair[globSig,bool:SORT]]
+  -- Auswerten der Nudelergebnisse fuer explizite Instanzen (Importe)
+  -- Es koennen zusaetzlich neue Instanzen erzeugt werden.
+  -- Es werden keine Doppeldeklarationen eleminiert (nur erkannt).
+  -- Es werden keine Doppelinstanzen eliminiert (nur erkannt).
+DEF evalInst(options)(gS, struct, inst) ==
+	IF (gS, struct, inst) explInst? THEN -- Import mit expliziter Instanz
+	  evalInstPN(options, gS1, instPN); evalInstH2(struct,inst,instPN)
+	  WHERE
+	  (gS1, instPN) == getInstPNAndMark(gS, struct, inst)
+	IF (gS, struct, inst) genericTransitive? THEN
+	  yield(okay(gS & true))	-- Abwarten (evalInstFin)
+	IF (gS, struct, inst) genericTransitives? THEN
+	  yield(okay(gS & true))	-- Abwarten (evalInstFin)
+	ELSE yield(okay(setIdentifiedInst(gS,struct,inst,<>[name:SORT]) & 
+			true)) 
+	FI
+
+FUN evalInstH2 : struct'Objects ** inst ** instPN
+		-> ans[pair[pair[globSig,bool],seq[name]]]
+		-> com[pair[globSig,bool]]
+DEF evalInstH2(struct, inst, _)(okay(((gS & ok) & nameS))) ==
+yield(okay(setIdentifiedInst(gS,struct,inst,nameS) & ok)) 
+
+-- %@zoindex evalInstPN
+FUN evalInstPN : options ** globSig **  instPN
+		 -> com[pair[pair[globSig,bool:SORT],seq[name:SORT]]]
+  -- siehe evalInst
+DEF evalInstPN(options, gS, instPN) ==
+	LET Pos == pos(instPN) 
+	    cands == forall?(\\F.noCycle(gS, name(F), <>), _) | flatCands
+		flatCands == PRINT(FIELD?[bool:SORT]("-zevalInstPN"), \\ . "flatCands:"++ (no(instPN)`) ++ "\n" ++ `'SeqConv(`(` o name))(getFlatCands(gS, instPN)),getFlatCands(gS, instPN))
+	    dummyNameS == <>
+	IN IF cands <>? THEN -- keine Kanditaten uebrig
+	    improperlyInstantiatedImport(options,Pos) ; 
+	    yield(okay((gS & false) & dummyNameS))
+	   ELSE	-- erst gleiche eleminieren und dann auf Mehrdeutigkeit testen
+	    LET matchedCands1 == eq?(eqFlatPN(gS)) || cands
+         matchedCands == PRINT(FIELD?[bool:SORT]("-zevalInstPN"), 
+                               \\ . `'SeqConv(`(` o name))(matchedCands1),
+                               matchedCands1)
+	    IN
+	    IF rt(matchedCands) <>? THEN	-- soweit ok, jetzt die Instanz
+	      -- es muessen neue Instanzen generiert werden, wenn der Name auf
+	      -- eine generische Instanz verweist und diese vorher geprueft
+	      -- werden. Das fuer die ganze Instanzenliste
+	      \*(checkFlatNameInstPN(options), gS & true)(ft(matchedCands)) 
+	    ELSE 
+	      ambiguousInstance(options, Pos, X(gS)(matchedCands)); 
+	      yield(okay((gS & false) & dummyNameS))
+	    FI
+	   FI
+
+FUN X: globSig -> seq[seq[flatPnEle]] -> denotation
+DEF X(gS)(s) == `("", "\n      ", "")
+                 (`("[", ",", "]")(`(gS, standard) o name))(s)
+
+FUN noCycle : globSig ** name ** seq[name]-> bool
+DEF noCycle(Gs, Name, S) ==
+	IF exist?(Name = _, S) THEN false
+	ELSE
+	IF extName?(Name) THEN
+		LET Struct == struct(Name)
+		    Inst == inst(Name)
+		IN
+		IF Inst = unparam THEN true
+		ELSE IF isMarked?(Gs, Struct, Inst) THEN false
+		     ELSE LET InstSet == toInstSet(Gs, Struct)(Inst)
+			  IN forall?(noCycle(Gs, _, Name :: S),
+				flat(InstSet))
+		     FI
+		FI
+	ELSE true
+	FI FI
+
+
+FUN checkFlatNameInstPN : options -> pair[globSig,bool:SORT] ** flatPnEle 
+		-> com[pair[pair[globSig,bool:SORT],name:SORT]]
+  -- Ueberpruefen der applizierten Instanz bei einem Element einer
+  -- Instanzenliste.
+  -- Eventuell Erzeugen neuer Instanzen und Identifizieren der Instanz
+DEF checkFlatNameInstPN(options)(gSoK AS gS & ok, pN) ==
+	LET Name == name(pN) IN
+	IF Name intName? THEN yield(okay(gSoK & Name))
+	IF Name extName? THEN
+	  LET (Struct, Inst) == (struct(Name), inst(Name)) IN
+	  IF Inst = unparam'Objects THEN yield(okay(gSoK & Name))
+	  OTHERWISE
+	  IF isMarked?(gS,Struct,Inst) THEN
+	    cyclicImport(options,posI(gS,Struct,Inst)); 
+	    yield(okay((gS & false) & Name))
+	  OTHERWISE
+	  IF uninst?(gS, Struct, Inst) or 
+	    (IF genericTransitive?(gS, Struct, Inst) THEN
+	       uninst?(gS,getOtherInst(gS,Struct,Inst))
+	     ELSE false FI)
+	  THEN
+	    LET instPN == inst(pN) IN
+	    IF instPN = noInstPN THEN 
+	      genericInstance(options, errInfo(pN));
+	      yield(okay((gS & false) & Name))
+	    ELSE
+	      -- es muss eine neue Instanz erzeugt werden
+	      evalInstPN(options, gS, instPN);
+	      checkFlatNameInstPN2(Name,Struct,ok)
+	    FI
+	  ELSE yield(okay(gSoK & Name))
+	  FI
+	FI
+
+FUN checkFlatNameInstPN2 : name ** struct'Objects ** bool
+		 -> ans[pair[pair[globSig,bool:SORT],seq[name:SORT]]]
+		-> com[pair[pair[globSig,bool:SORT],name:SORT]]
+DEF checkFlatNameInstPN2(name,Struct,ok1)(ans) == 
+	LET (gSoK, nameS) == (1st(data(ans)), 2nd(data(ans))) IN
+	LET (gS, ok) == (1st(gSoK), 2nd(gSoK)) IN
+	yield(okay((finGS & (ok and ok1)) & finName))
+	      WHERE
+	finName == extName(Struct, impDecl(name), newInst)
+	(finGS, newInst) ==
+		IF InstO nil? THEN (FINGS, NEWINST)
+		  WHERE 
+	          (gS1, NEWINST) == addIdentifiedInst(gS, Struct, nameS)
+	          FINGS == duplicateInstAppl(gS1, name, NEWINST)
+		ELSE (gS, cont(InstO)) FI
+	InstO == findInst(gS, Struct, nameS)
+
+
+FUN eqFlatPN : globSig -> flatPnEle ** flatPnEle -> bool
+  -- Test, ob zwei partielle Applikationen identisch sind.
+  -- PRE: die Sorten sind alle echt unterschiedlich
+  --      die pN sind flach.
+DEF eqFlatPN(gS)(pN1, pN2) == eqRealName(gS)(name(pN1), name(pN2))
+
+
+FUN treatGenericTransitive : globSig ** struct'Objects ** inst 
+	-> com[pair[globSig,bool:SORT]]
+  -- PRE: der im Eintrag referenzierte Instanzeneintrag ist schon bearbeitet !
+DEF treatGenericTransitive(gS, struct, inst) ==
+	LET (oStruct, oInst) == getOtherInst(gS, struct, inst)
+	    pattern == getInst(gS, struct, inst)
+	IN
+	IF (gS, oStruct, oInst) uninst? THEN
+	  -- Hier muessen fuer jeden generierten identInst-Eintrag des 
+	  -- uninstantiierten Eintrags genausoviele identInst-Eintraege nach
+	  -- dem Muster des genericTransitive-Eintrags erzeugt werden.
+	  -- Ausserdem bleibt dieser erhalten.
+	  -- Dieser Fall tritt nur im Implementierungsteil auf !
+	  yield(okay(gS & true))
+	ELSE 
+	  -- Es reicht, den generic Eintrag durch sein instantiiertes Pattern
+	  -- zu ersetzen.
+	  yield(okay(setIdentifiedInst(gS,struct,inst,finNameS) & true))
+	  WHERE 
+	  finNameS == substPattern(pattern,gS,oStruct)(oInst)
+	FI
+
+FUN substPattern : seq[name:SORT] ** globSig ** struct'Objects -> inst
+		-> seq[name:SORT]
+DEF substPattern(pattern, gS, struct)(inst) ==
+	LET Inst == getInst(gS,struct,inst) IN
+	IF Inst <>? THEN Inst		-- errorInst
+	ELSE substOAP(Inst,struct) * pattern FI
+
+	FUN substOAP : seq[name:SORT] ** struct'Objects -> name -> name
+	DEF substOAP(instS, Struct)(name) ==
+		IF name formParam? THEN 
+		    IF struct(name) = Struct THEN 
+			instS ! pred(no(name)) ELSE name FI
+		ELSE name FI
+
+-- ---------------------------------------------------------------------------
+
+FUN eqName? : bool
+DEF eqName? == FIELD?[bool:SORT]("-zeqName")
+
+FUN eqRealName : globSig -> name ** name -> bool
+  -- PRE: beide Namen sind entweder sortPartName oder interne/externe
+  -- Es wird auf Doppeldeklarationen Ruecksicht genommen.
+DEF eqRealName(gS)(name100,name20) == 
+	IF var?(name100) ORIF var?(name20) THEN true
+	ELSE
+	LET name10 == realInst(gS, name100)
+	    name2  == realInst(gS, name20) 
+	name1 == PRINT(eqName?, \\ . "comparing: " ++ ````(name10,name2),name10)
+	    erg ==
+	IF name1 = name2 THEN true	-- sind strukturell gleich
+	OTHERWISE
+	IF name1 sortPartName? THEN eqNamehh(gS)(name2, name1)
+        IF name2 sortPartName? THEN eqNamehh(gS)(name1, name2)
+	IF (name1 intName?) ANDIF (name2 intName?) 
+        THEN
+	  -- Es kann noch eine Doppeldeklaration sein ....
+	  IF sort?(gS, name1) THEN false
+	  IF sort?(gS, name2) THEN false
+	  ELSE IF getIde(gS, name1) = getIde(gS, name2) THEN
+                =(eqNamehh(gS))(fct'Name4SigAna(gS, name1), 
+			      fct'Name4SigAna(gS, name2))
+               ELSE false FI                               
+	  FI
+	IF (name1 extName?) ANDIF (name2 extName?) THEN
+	  IF struct(name1) = struct(name2) THEN
+	    IF impDecl(name1) = impDecl(name2) THEN eqInst
+ 	    WHERE eqInst == 
+	      IF inst(name1) = unparam'Objects:inst THEN 
+		inst(name2)=unparam:inst
+	      IF inst(name2) = unparam'Objects:inst THEN 
+		inst(name1)=unparam:inst
+	      OTHERWISE
+	      IF uninst?(gS, struct(name1),inst(name1)) THEN true
+	      IF uninst?(gS, struct(name2),inst(name2)) THEN true
+	      ELSE notDisjoint(eq?(eqRealName(gS)))(set1, set2) 
+		WHERE	-- genericTransitive fehlt !!!!!
+		  set1 == toInstSet(gS,struct(name1))(inst(name1))
+		  set2 == toInstSet(gS,struct(name2))(inst(name2))
+	      FI
+	    ELSE false FI
+	  ELSE false FI
+	ELSE false FI
+	IN erg
+	FI
+
+FUN eqNamehh : globSig -> name ** name -> bool
+-- Hilfsfunktion um die Namensmengen der sortPN beim Aufruf aus evalDeclSortPN
+-- auszugleichen.
+-- Die Namen stammen aus Funktionalitaeten
+DEF eqNamehh(gS)(name1,name2) ==
+	IF name2 sortPartName? THEN
+	  -- Nacheinander Aufrufen von eqName mit den Kandidaten
+	  exist?(eqNamehhh(gS,name1),getFlatPN(getPN(gS,sortPN(name2))))
+	ELSE eqRealName(gS)(name1,name2) FI
+
+FUN eqNamehhh : globSig ** name -> flatPnEle -> bool
+DEF eqNamehhh(gS,name1)(fPnE) == eqRealName(gS)(name1,name(fPnE))
+
+
+FUN ```` : name ** name -> denotation
+DEF ````(n1,n2) == `'Name(n1) ++ "," ++ `'Name(n2) 
+
+	FUN h1 : globSig -> 
+		 pair[seq[name:SORT],instPN:SORT] 
+		 ** pair[seq[name:SORT],instPN:SORT] -> bool
+	DEF h1(gS)(p1, p2) ==
+		IF 2nd(p1) = 2nd(p2) THEN  -- gleiche Instanz
+		  notDisjoint(eqRealName(gS))(1st(p1), 1st(p2))
+		ELSE false FI
+

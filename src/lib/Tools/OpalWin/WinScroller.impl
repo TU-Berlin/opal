@@ -1,0 +1,155 @@
+
+IMPLEMENTATION WinScroller
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat			COMPLETELY
+	Int			COMPLETELY
+	IntConv			COMPLETELY
+	Real			COMPLETELY
+	RealConv		COMPLETELY
+	Pair			COMPLETELY
+	Seq			COMPLETELY
+	SeqIndex		COMPLETELY
+	Void			COMPLETELY
+	Denotation		COMPLETELY
+	String			COMPLETELY
+
+IMPORT	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	ComAction		COMPLETELY
+	ComAgent		COMPLETELY
+	ComService		COMPLETELY
+
+
+IMPORT	WinTclTk		COMPLETELY
+	WinInternal		COMPLETELY
+	WinConfig		COMPLETELY
+
+
+-- %$Scroller Gate$ =======================================================
+
+DATA scroller		== scroller (window: sap[void, scrollWindow],
+				     view  : sap[void, scrollView])
+
+DATA scrollWindow 	== window (first: real, last: real)
+
+
+DATA scrollView		== moveto 	(pos: real)  
+			   shiftUnits  	(int: int)
+			   shiftPages  	(int: int)
+
+DEF scroller ==
+    sap & (\\ Window . sap & (\\ View. succeed(scroller(Window, View))))
+
+
+DEF setWindow(S, W) ==
+    agent(window(S) => (\\ _ . succeed(W))) & done
+
+DEF awaitWindow(S) ==
+    window(S) @ nil
+
+DEF setView(S, W) ==
+    agent(view(S) => (\\ _ . succeed(W))) & done
+
+DEF awaitView(S) ==
+    view(S) @ nil
+
+
+-- %$Scroller Slaves$ ======================================================
+
+DEF scroll(S, horizontal) ==
+    configWidget(\\Win, Wid. 
+	slave(Win, Wid, S, "xscrollcommand", "xview")
+    )
+
+DEF scroll(S, vertical) ==
+    configWidget(\\Win, Wid. 
+	slave(Win, Wid, S, "yscrollcommand", "yview")
+    )
+
+FUN slave : window ** widget ** scroller 
+			 ** denotation ** denotation -> com[void]
+DEF slave(Win, Wid, S, ConfigCmd, ViewCmd) ==
+    define(\\Args.
+    	   setWindow(S, asWindow(Args))
+    	   	& succeed(<>)
+    )							& (\\ Callback .
+    agent(slaveAgent(Wid, S, ViewCmd)) 			& (\\ Agent .
+
+    act("%s configure -%s %s" 
+    		<- Wid + ConfigCmd + Callback)		& (\\ _ .
+    registerDispose(Win, Wid, freeCallback(Callback); kill(Agent))
+    )))
+
+FUN slaveAgent : widget ** scroller ** denotation -> com[void]
+DEF slaveAgent(Wid, S, ViewCmd) ==
+    awaitView(S)					& (\\ View .
+    act("%s %s %s" <- Wid + ViewCmd + asString(View))	& (\\ _ .
+    slaveAgent(Wid, S, ViewCmd)
+    ))
+
+-- %$Scroll Masters$ ========================================================
+
+DEF scrollControl(S) ==
+    configWidget(\\Win, Wid. 
+	master(Win, Wid, S)
+    )
+
+
+FUN master : window ** widget ** scroller -> com[void]
+DEF master(Win, Wid, S) ==
+    define(\\Args.
+    	setView(S, asView(Args))
+    		& succeed(<>)
+    )							& (\\ Callback .
+    agent(masterAgent(Wid, S)) 				& (\\ Agent .
+    act("%s configure -command %s" 
+    		<- Wid + Callback)			& (\\ _ .
+    registerDispose(Win, Wid, freeCallback(Callback); kill(Agent))
+    )))
+
+FUN masterAgent : widget ** scroller -> com[void]
+DEF masterAgent(Wid, S) ==
+    awaitWindow(S)					& (\\ Window.
+    act("%s set %s" <- Wid + asString(Window))		& (\\ _ .
+    masterAgent(Wid, S)
+    ))
+
+
+-- %$Conversions$ ==========================================================
+
+FUN asWindow : seq[string] -> scrollWindow
+FUN asString : scrollWindow -> string
+
+DEF asWindow(First :: Last :: _) ==
+    window(convReal(First), convReal(Last))
+
+DEF asString(window(First, Last)) ==
+    format("%s %s" <- ``(First) + ``(Last))
+
+FUN asView   : seq[string] -> scrollView
+FUN asString : scrollView  -> string
+
+DEF asView(Mode :: Args) ==
+    IF Mode = !("moveto") THEN moveto(convReal(Args ! 0))
+    IF Mode = !("scroll") THEN
+	IF (Args ! 1) = !("pages") THEN 
+	    shiftPages(asInt(convReal(Args ! 0)))
+	ELSE
+	    shiftUnits(asInt(convReal(Args ! 0)))
+	FI
+    FI
+
+DEF asString(moveto(Pos)) ==
+    format("moveto %s" <- ``(Pos))
+
+DEF asString(shiftUnits(I)) ==
+    format("scroll %s units" <- `(I))
+
+DEF asString(shiftPages(I)) ==
+    format("scroll %s pages" <- `(I))
+    

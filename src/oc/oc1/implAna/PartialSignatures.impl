@@ -1,0 +1,165 @@
+-- LAST EDIT: Mon Jun 21 16:03:04 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, Jun 16 1993: implemented isLocal and getLocalFct
+--        	af, Jun 17 1993: added typing for avoiding bug oc1.34
+--		af, Jun 21 1993: removed unnecessary typing
+-- ============================================================================
+
+IMPLEMENTATION PartialSignatures
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		ONLY nat <
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Quadruple	COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMap		COMPLETELY
+	Map		COMPLETELY
+	MapReduce	COMPLETELY
+
+	Rep		ONLY rep <
+	Fct[name]	ONLY fct
+
+	AnalyzedGlobSig	ONLY globSig name
+
+	Substitution	ONLY subst unify:globSig->fct**fct**seq[subst]**nat
+			                 ->seq[subst]**nat
+	Reason		ONLY reason globAndLocInLocSig locMismatchInLocSig
+
+-- ----------------------------------------------------------------------------
+
+SORT partSig
+-- partielle lokale Signatur
+
+DATA partSig == partSig(contents:map[rep,<,option[nat]],
+                        locals:map[nat,<,pair[rep,fct]])
+
+-- ----------------------------------------------------------------------------
+
+FUN {} : partSig
+-- leere Signatur
+
+DEF {} == partSig({},{})
+
+-- ----------------------------------------------------------------------------
+
+FUN addGlobal: partSig**rep -> partSig
+-- es gibt keinen lokalen Namen mit dem angegebenen Bezeichner
+
+DEF addGlobal(partSig(contents,locals),rep) ==
+  partSig((rep,nil) def contents,locals)
+
+-- ----------------------------------------------------------------------------
+
+FUN addLocal: partSig**nat**rep**fct->partSig
+-- der lokale Name no -> rep:fct ist Element der lokalen Signatur
+
+DEF addLocal(partSig(contents,locals),no,rep,fct) ==
+  partSig((rep,avail(no)) def contents,(no,rep&fct) def locals)
+
+-- ----------------------------------------------------------------------------
+
+FUN hideLocal: rep**partSig -> partSig
+-- der lokale Name rep wird in der lokalen Signatur versteckt
+
+DEF hideLocal(rep,partSig(contents,locals)) ==
+  partSig(rep undef contents,locals)
+
+-- ----------------------------------------------------------------------------
+
+FUN getLocal: nat**partSig -> rep**fct
+-- Daten eines lokalen Namens aus der Signatur
+
+DEF getLocal(no,partSig(contents,locals)) ==
+  (1st(P),2nd(P)) WHERE P == locals!no
+
+-- ----------------------------------------------------------------------------
+
+FUN isLocal: rep**partSig -> bool
+-- rep bezeichnet einen lokalen Namen
+
+DEF isLocal(rep,partSig(contents,locals)) ==
+  IF rep def? contents THEN avail?(contents!rep) ELSE false FI
+
+-- ----------------------------------------------------------------------------
+
+FUN getLocalFct: rep**partSig -> fct
+-- Funktionalitaet des lokalen Namens rep
+
+DEF getLocalFct(rep,partSig(contents,locals)) ==
+  2nd(locals ! cont(contents ! rep))
+
+-- ----------------------------------------------------------------------------
+
+FUN combine: globSig -> partSig**partSig**seq[subst]**nat ->
+					partSig**seq[subst]**nat**seq[reason]
+-- Kombination zweier (partieller) lokaler Signaturen unter verschiedenen
+--   Variablensubstitutionen
+
+DEF combine(sig)(partSig(cont1,loc1),partSig(cont2,loc2),substs,firstVar) ==
+  LET (newCont,globalVsLocals) == combine(cont1,cont2)
+      (newLoc,newSubsts,freeVar,LocalMismatches) ==
+					combine(sig)(loc1,loc2,substs,firstVar)
+  IN (partSig(newCont,newLoc),newSubsts,freeVar,
+      globalVsLocals++LocalMismatches)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN combine: map[rep,<,option[nat]]**map[rep,<,option[nat]] ->
+					map[rep,<,option[nat]]**seq[reason]
+
+DEF combine(cont1,cont2) ==
+  (cont1<+cont2,
+   ((\\rep,opt2,reasons.
+       LET optopt1 == cont1!?rep
+       IN IF optopt1 nil? THEN reasons
+          IF optopt1 avail? THEN
+            LET opt1 == cont(optopt1)
+            IN IF opt1 nil? THEN IF opt2 nil? THEN reasons
+                                 IF opt2 avail? THEN
+					globAndLocInLocSig(rep)::reasons
+                                 FI
+               IF opt1 avail? THEN IF opt2 nil? THEN
+					globAndLocInLocSig(rep)::reasons
+                                   IF opt2 avail? THEN reasons
+                                   FI
+               FI
+          FI) / <>)(cont2))
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN combine: globSig
+             -> map[nat,<,pair[rep,fct]]
+              **map[nat,<,pair[rep,fct]]**seq[subst]**nat
+             -> map[nat,<,pair[rep,fct]]**seq[subst]**nat**seq[reason]
+
+DEF combine(sig)(loc1,loc2,substs,firstVar) ==
+  (1st(Q),2nd(Q),3rd(Q),4th(Q))
+    WHERE Q == (add / (&(loc2,substs,firstVar,<>)))(loc1)
+          add == \\no,pair,quad.
+                 LET (rep,fct) == (1st(pair),2nd(pair))
+                     (oldLocs,oldSubsts,nextVar,formerReasons) ==
+				(1st(quad),2nd(quad),3rd(quad),4th(quad))
+                     optOldPair == oldLocs!?no
+                 IN IF optOldPair nil? THEN &((no,rep&fct) def oldLocs,
+                                              oldSubsts,nextVar,formerReasons)
+                    IF optOldPair avail? THEN
+                      LET oldFct == 2nd(cont(optOldPair))
+                          (newSubsts,freeVar) ==
+				unify(sig)(fct,oldFct,oldSubsts,nextVar)
+                      IN IF newSubsts <>? THEN &(oldLocs,oldSubsts,nextVar,
+                                                 locMismatchInLocSig(rep,fct,
+                                                                     oldFct,
+                                                                     oldSubsts)
+                                                 ::formerReasons)
+                         IF newSubsts ::? THEN &(oldLocs,newSubsts,freeVar,
+                                                 formerReasons)
+                         FI
+                    FI

@@ -1,0 +1,67 @@
+
+--  LAST EDIT: Thu Jun  3 19:19:48 1993 by Carola Gerke (kassandra!carola) 
+IMPLEMENTATION ModBase
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:40 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT -- pars
+       PTypes		COMPLETELY
+       PErr		COMPLETELY
+IMPORT -- absy
+       Absy		COMPLETELY
+IMPORT -- lib
+       Seq		COMPLETELY
+       Com[pRes]	COMPLETELY
+       DEBUG		COMPLETELY
+
+-- -------------------------------------------------------------------------
+-- General Modifier
+-- -------------------------------------------------------------------------
+
+DATA modifier == mod(rep: absy ** absy -> absy)
+		 mkMod(rep: pRes -> pRes)
+
+DEF mod2nd == mod(\\ _ ,A2. A2)
+DEF mod1st == mod(\\A1, _ .A1)
+
+FUN modify : pRes ** pRes ** modifier -> pRes
+DEF modify(pRes(Err1,Absy1, _ ),pRes(Err2,Absy2,TS2),mod(OP)) == 
+    pRes(Err1+Err2,OP(Absy1,Absy2),TS2)
+DEF modify(pRes(Err1,Absy1,TS1),pFail(Err2,Absy2, _ ),mod(OP)) == 
+    pRes(Err,OP(Absy1,Absy2),TS1)
+    	WHERE Err == IF Err1 ok? THEN Err2 ELSE Err1 FI
+DEF modify(pFail(Err1,Absy1, _ ),pRes(Err2,Absy2,TS2),mod(OP)) == 
+    pFail(Err1+Err2,OP(Absy1,Absy2),TS2) 
+DEF modify(pFail(Err1,Absy1,TS1),pFail( _ ,Absy2,_),mod(OP)) == 
+    pFail(Err1,OP(Absy1,Absy2),TS1)
+
+FUN modBoth : pRes ** pRes ** modifier -> pRes
+DEF modBoth(pRes(Err1,Absy1, _ ),pRes(Err2,Absy2,TS2),mod(OP)) == 
+    pRes(Err1+Err2,OP(Absy1,Absy2),TS2)
+DEF modBoth(pRes(Err1,Absy1,TS1),pFail(Err2,Absy2, _ ),mod(OP)) == 
+    pRes(Err,OP(Absy1,Absy2),TS1)
+    	WHERE Err == IF Err1 ok? THEN Err2 ELSE Err1 FI
+DEF modBoth(pFail(Err1,Absy1, _ ),pRes(Err2,Absy2,TS2),mod(OP)) == 
+    pFail(Err1+Err2,OP(Absy1,Absy2),TS2) 
+DEF modBoth(pFail(Err1,Absy1,TS1),pFail( Err2 ,Absy2,_),mod(OP)) == 
+    pFail(Err1+Err2,OP(Absy1,Absy2),TS1)
+
+FUN modify : pRes ** pRes ** modifier -> com[pRes] 
+DEF modify(pRes(Err1,Absy1, _ ),pRes(Err2,Absy2,TS2),mod(OP)) == 
+    yield(okay(pRes(Err1+Err2, OP(Absy1,Absy2),TS2)))
+DEF modify(pRes(Err1,Absy1,TS1),pFail(Err2,Absy2,_ ),mod(OP)) == 
+    yield(okay(pRes(Err1+Err2,OP(Absy1,Absy2),TS1)))
+DEF modify(pFail(Err1,Absy1,_ ),pRes(Err2,Absy2,TS2),mod(OP)) == 
+    yield(okay(pFail(Err1+Err2,OP(Absy1,Absy2),TS2)))
+DEF modify(pFail(Err1,Absy1,TS1),pFail(_ ,Absy2,_),mod(OP)) == 
+    yield(okay(pFail(Err1,OP(Absy1,Absy2),TS1)))
+
+FUN modify : pRes ** modifier -> pRes
+DEF modify(R,mkMod(OP)) == OP(R)
+

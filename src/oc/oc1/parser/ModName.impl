@@ -1,0 +1,248 @@
+--  LAST EDIT: Thu Jun  3 19:21:17 1993 by Carola Gerke (kassandra!carola) 
+IMPLEMENTATION ModName
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:40 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT -- pars
+       Terminal         COMPLETELY
+       Token            COMPLETELY
+       PTypes           COMPLETELY
+       PErr             COMPLETELY
+       ModBase          COMPLETELY
+IMPORT -- absy
+       Absy             COMPLETELY
+       PartName         COMPLETELY
+       Struct           COMPLETELY
+       Impl[partName]   COMPLETELY
+       Fct[partName]    COMPLETELY
+IMPORT -- reps
+       Pragma           COMPLETELY
+       Rep              COMPLETELY
+IMPORT -- admin
+       Pos              COMPLETELY
+IMPORT -- lib
+       Denotation       COMPLETELY
+       Seq              COMPLETELY
+       SeqReduce        COMPLETELY
+       SeqMap           COMPLETELY
+       DEBUG            COMPLETELY
+       Option ONLY nil avail option
+       Error ONLY err errKind error
+
+-- %$NAMES$
+-- %- ----------------------------------------------------------------------
+/* %Initial modifier delivering: partName for terminal symbol identifier
+                              den      for    "       "    denotation */
+-- %- ----------------------------------------------------------------------
+
+DEF mkIde ==
+    mkMod(\\PRes. mIde(PRes))
+    FUN mIde : pRes -> pRes
+    DEF mIde(pRes(Err,_,token(_,Lex,Pos) :: TS)) == 
+        pRes(Err,Name(partName(Lex,nil,<>,Pos,none,noPragma,Pos)),TS)
+    DEF mIde(R) == pFail(pErrMiss("Ide",errPos),noAbsy,tokS(R))
+
+-- %- ----------------------------------------------------------------------
+-- %$transforming a Name into an Origin$
+-- %- ----------------------------------------------------------------------
+
+DEF mkOrigin == 
+    mkMod(\\Res. LET TS  == tokS(Res)
+                     Err == err(Res)
+                     Error == pErrMiss(missOri,calcMissPos(<>,TS))
+                     NErr == IF Err ok? THEN Error ELSE Err FI
+                 IN IF absy(Res) Name? 
+                    THEN IF (pName(absy(Res)) partName?) 
+                         THEN pRes(Err,Origin(origin(Ide,Pos,PS,P)),TS)
+                              WHERE Ide == ide(pName(absy(Res)))
+                                    Pos == pos(pName(absy(Res)))
+                                    PS  == paramS(pName(absy(Res)))
+                                    P   == pragma(pName(absy(Res)))
+                         ELSE pRes(NErr,Origin(error),TS)
+                         FI
+                    ELSE pRes(NErr,Origin(error),TS)
+                    FI)
+
+-- %- ----------------------------------------------------------------------
+-- %$modOrigin, modParams, modKind  adds OriginPart, Kind and Params$
+-- %$of a given partName resp. --> always delivers Name$ <---
+-- %- ----------------------------------------------------------------------
+
+DEF modPragma == 
+    mod(\\A1,A2. mPragma(A1,A2))
+
+    FUN mPragma : absy ** absy -> absy
+    DEF mPragma(Name(partName(I,O,Pams,IP,K,_,P)),Pragma(PRAG)) ==
+        Name(partName(I,O,Pams,IP,K,PRAG,P))
+    DEF mPragma(N,_) == N
+
+DEF modOrigin == 
+    mod(\\A1,A2. IF (A1 Name?) and (A2 Name?) 
+                 THEN LET N      == pName(A1) 
+                          Origin == pName(A2) 
+                      IN Name(partName(ide(N), avail(ide(Origin)),paramS(N),
+                                          instPos(N),kind(N),pragma(N),pos(N)))
+                 IF (A1 Name?) and ~(A2 Name?) THEN A1
+                 ELSE Name(noName)
+                 FI)
+DEF modParams == mod(\\A1,A2. mParams(A1,A2))
+    FUN mParams : absy ** absy -> absy
+    DEF mParams(PN AS Name(partName(_,_,_,_,_,_,_)), NameSeq(<>)) == PN
+    DEF mParams(Name(partName(I,SI,_,_,K,Pr,Pos)), NameSeq(NS AS N:: _))== 
+        Name(partName(I,SI,NS,pos(N),K,Pr,Pos))
+    DEF mParams(N AS Name(_),_) == N 
+    DEF mParams(_,_) == Name(noName)
+
+DEF modKind == 
+    mod(\\A1,A2. 
+       LET KIND == IF A2  Fct? THEN op(what(A2))
+                   IF A2  Kind? THEN kind(A2)
+                   ELSE none FI
+       IN IF (A1 Name?) 
+          THEN LET N == pName(A1)
+               IN IF N noName? THEN A1
+                  IF N partName?
+                  THEN Name(partName(ide(N),structIde(N),paramS(N),
+                                     instPos(N),KIND,pragma(N),pos(N)))
+                  FI 
+          ELSE Name(noName) FI)
+
+/*
+DEF modSort == mod(\\A1,A2. mSort(A1,A2))
+    FUN mSort : absy ** absy -> absy
+    DEF mSort(Pos(_),Pos(_))     == Kind(sort)
+    DEF mSort(Pos(_),F AS Fct(_)) == F
+    DEF mSort(_,_)               == noAbsy
+*/
+-- %- ----------------------------------------------------------------------
+-- %$Construction of Functionalities$ 
+/* %Function Functionalities (s -> s -> s$ -> ...)
+    and             Products                (s ** s ** s ** s$ ..) 
+Delivers always ---> Fct or noAbsy$ <----
+*/
+-- %- ----------------------------------------------------------------------
+
+DEF modFunFct == mod(\\A1,A2. mFunFct(A1,A2))
+    FUN mFunFct : absy ** absy -> absy
+    DEF mFunFct(Fct(F1),Fct(F2)) == Fct(funct(F1,F2))
+    DEF mFunFct(A1 AS Fct(_),_) == A1
+    DEF mFunFct(_,Fct(F))        == Fct(funct(cart(<>),F))
+    DEF mFunFct(_,_)             == noAbsy
+/*
+DEF modFunFct ==
+    mod(\\A1,A2. IF (A1 Fct?) and (A2 Fct?) THEN Fct(funct(what(A1),what(A2)))
+                 IF (A1 Fct?) and ~(A2 Fct?) THEN A1
+                 IF ~(A1 Fct?) and (A2 Fct?) THEN Fct(funct(cart(<>),what(A2)))
+                                                  -- () -> ...
+                 ELSE noAbsy
+                 FI)
+*/
+DEF modProdFct == mod(\\A1,A2. mProdFct(A1,A2))
+    FUN mProdFct : absy ** absy -> absy
+    DEF mProdFct(Fct(cart(C1)),Fct(cart(C2))) == Fct(cart(C1 ++ C2))
+    DEF mProdFct(Fct(cart(C1)),Fct(F))        == Fct(cart(C1 +% F))
+    DEF mProdFct(Fct(F),Fct(cart(C2)))        == Fct(cart(F :: C2))
+    DEF mProdFct(Fct(F1),Fct(F2))             == Fct(cart(F1 :: (F2%)))
+    DEF mProdFct(F AS Fct(_),noAbsy)          == F
+    DEF mProdFct(noAbsy,F AS Fct(_))          == F
+    DEF mProdFct(_,_)                         == noAbsy
+
+/*
+DEF modProdFct ==
+    mod(\\A1,A2. IF (A1 Fct?) and (A2 Fct?) 
+                 THEN IF (what(A1) cart?) and (what(A2) cart?) 
+                      THEN Fct(cart(elems(what(A1)) ++ elems(what(A2))))
+                      IF (what(A1) cart?) and ~(what(A2) cart?) 
+                      THEN Fct(cart(elems(what(A1)) +% what(A2)))
+                      IF ~(what(A1) cart?) and (what(A2) cart?) 
+                      THEN Fct(cart(what(A1) :: elems(what(A2))))
+                      ELSE Fct(cart(what(A1) :: (what(A2)%)))
+                      FI
+                 IF (A1 Fct?) and (A2 noAbsy?) THEN A1 
+                 IF (A1 noAbsy?) and (A2 Fct?) THEN A2
+                 ELSE noAbsy
+                 FI)
+*/
+-- %- ---------------------------------------------------------------------
+-- %$Special Conversion for Variant Name$
+-- %- ---------------------------------------------------------------------
+
+/* %Parser must check for 'operation as sort' error. Therefore explicit
+    kinds must be ':SORT', for implicit kinds, ':SORT' is added. */
+
+DEF mkKindSort == mkMod(\\R. 
+    IF absy(R) Name? THEN 
+      LET pN == pName(absy(R))
+          (nPN, nE) == IF pN noName? THEN (noName, ok)
+                       ELSE
+                         LET E == IF (kind(pN) sort?) or (kind(pN) none?) THEN
+                                     ok
+                                   IF kind(pN) op? THEN 
+                                     err(error, "operation as sort", pos(pN))
+                                   IF kind(pN) law? THEN 
+                                     err(error, "law as sort",  pos(pN))
+                                   FI
+                             nK == IF kind(pN) none? THEN sort ELSE kind(pN) FI
+                         IN
+                         (partName(ide(pN), structIde(pN), paramS(pN),
+                                  instPos(pN), nK, pragma(pN), pos(pN)), E)
+                       FI
+      IN  
+      pRes(err(R) + nE,Fct(sort(nPN)),tokS(R))
+    ELSE R
+    FI)
+
+DEF mkKindLaw == mkMod(\\R. 
+    IF absy(R) Name? THEN 
+      LET pN == pName(absy(R))
+          (nPN, nE) == IF pN noName? THEN (noName, ok)
+                       ELSE
+                         LET E == IF (kind(pN) law?) or (kind(pN) none?) THEN
+                                     ok
+                                   IF kind(pN) op? THEN 
+                                     err(error, "operation as law", pos(pN))
+                                   IF kind(pN) sort? THEN 
+                                     err(error, "sort as law",  pos(pN))
+                                   FI
+                             nK == IF kind(pN) none? THEN law ELSE kind(pN) FI
+                         IN
+                         (partName(ide(pN), structIde(pN), paramS(pN),
+                                  instPos(pN), nK, pragma(pN), pos(pN)), E)
+                       FI
+      IN  
+      pRes(err(R) + nE,Name(nPN),tokS(R))
+    ELSE R
+    FI)
+
+-- %- ---------------------------------------------------------------------
+-- %$Constructing a PartName Seq$.
+/* %Delivers always ---> NameSeq <--- */
+-- %- ---------------------------------------------------------------------
+
+DEF modPNSeq ==
+    mod(\\A1,A2. 
+       IF (A1 NameSeq?) and (A2 Name?)    
+       THEN IF pName(A2) noName? 
+            THEN A1 ELSE NameSeq(pName(A2) :: nSeq(A1)) FI
+       IF (A1 NameSeq?) and (A2 NameSeq?) THEN NameSeq(nSeq(A1) ++ nSeq(A2))
+       IF (A1 Name?) 
+       THEN IF pName(A1) noName? 
+            THEN IF A2 NameSeq? THEN A2
+                 IF A2 Name?    THEN IF pName(A2) noName? THEN NameSeq(<>)
+                                     ELSE NameSeq(pName(A2)%) FI
+                 ELSE NameSeq(<>) FI
+            ELSE IF A2 NameSeq? THEN NameSeq(pName(A1):: nSeq(A2))
+                 IF A2 Name?    THEN IF pName(A2) noName? 
+                                     THEN NameSeq(pName(A1)%)
+                                     ELSE NameSeq(pName(A1)::(pName(A2)%)) FI
+                 ELSE NameSeq(pName(A1)%)
+            FI   FI
+       IF (A1 noAbsy?) and (A2 Name?) 
+       THEN IF pName(A2) noName? THEN NameSeq(<>) ELSE NameSeq(pName(A1)%) FI
+       ELSE NameSeq(<>) FI)

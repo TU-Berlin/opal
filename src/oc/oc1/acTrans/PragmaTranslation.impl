@@ -1,0 +1,88 @@
+
+-- LAST EDIT: Thu Jun 24 15:51:29 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, Jun 23 1993: adapted to new absy
+--		af, Jun 24 1993: code runtime-error for missing pattern
+-- ============================================================================
+
+IMPLEMENTATION PragmaTranslation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:47 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqFilter	ONLY |
+	SeqIndex	ONLY pos
+	Option		COMPLETELY
+
+	Ide		ONLY ide = : ide ** ide -> bool
+	PragmaAn	COMPLETELY
+	TypeAn		COMPLETELY
+	SourceAn	ONLY pos:SORT noPos
+
+	Pos		ONLY pos:SORT
+	Rep		ONLY rep `
+	Fct[name]	ONLY fct
+	GlobPragma[name] COMPLETELY
+
+	AnalyzedGlobSig	ONLY globSig struct name internal? external?
+				parameter?:globSig**name->bool
+				sort? op? fct 
+				origInst:globSig**name->seq[name]
+
+	ParameterTranslation	ONLY info:SORT opParamIdes sortParamIdes
+	NameTranslation		ONLY ide 
+	FctTranslation		ONLY type:globSig**info->name->type
+				     type:globSig**info->fct->type 
+	ExprTranslation		ONLY `
+	DefinitionTranslation	ONLY optGen
+	ImportTranslation	ONLY importedParameterInfo
+
+
+/* ------ should be in AnalyzedGlobSig */
+IMPORT 	Objects ONLY struct:nat->struct
+	AnalyzedGlobSig ONLY origIdeNo
+FUN origStruct: globSig ** name -> struct
+DEF origStruct(Sig,Name) == struct(origIdeNo(Sig,Name))
+/* ----------------------------------- */
+
+-- ----------------------------------------------------------------------------
+
+
+FUN pragma : globSig ** info ** globPragma -> pragma
+DEF pragma(Sig,Info,prag(Items)) == pragma(pragmaItem(Sig,Info)*Items)
+
+FUN pragmaItem : globSig ** info -> pragmaItem'GlobPragma 
+				 -> pragmaItem'PragmaAn
+DEF pragmaItem(Sig,Info)(identify(Names)) == 
+    names(noPos,pragmaName(Sig,Info,noPos)*Names)
+DEF pragmaItem(Sig,Info)(lexem(Rep,Pos)) ==
+    lexem(Pos`,Rep`)
+
+FUN pragmaName: globSig**info**pos'SourceAn -> name -> pragmaName
+DEF pragmaName(Sig,Info,Pos)(Name) ==
+  LET ActInfo == IF Name external? THEN 
+		     importedParameterInfo(Sig,origStruct(Sig,Name))
+		 ELSE Info FI
+  IN
+  IF op?(Sig,Name) THEN
+    LET Ident == ide(Sig)(Name)
+	Type  == optGen(sortParamIdes(ActInfo),type(Sig,ActInfo)(fct(Sig,Name)))
+    IN 
+    IF Name internal? ANDIF (Sig,Name) parameter? THEN
+        param(Pos,Type,cont(pos(_ = Ident,opParamIdes(Info))))
+    ELSE
+        LET Insts == pragmaName(Sig,Info,Pos) * 
+				(op?(Sig,_) | origInst(Sig,Name))
+        IN
+        val(Pos,Type,Ident,Insts)
+    FI
+  ELSE
+    type(Pos,optGen(sortParamIdes(ActInfo),type(Sig,ActInfo)(Name)))
+  FI

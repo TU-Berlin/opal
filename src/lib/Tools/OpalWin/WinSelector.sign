@@ -1,0 +1,122 @@
+/* %
+This structure provides the gate of selectors. 
+*/
+
+SIGNATURE WinSelector[data]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:22 $ ($Revision: 1.1.1.1 $)
+
+SORT data
+
+
+IMPORT	Com[selector]		ONLY com
+	Com[void]		ONLY com
+	Com[data]		ONLY com
+	Void			ONLY void
+
+IMPORT	WinConfig		ONLY config:SORT
+	WinRegulator		ONLY regulator:SORT
+
+
+-- %$Gate of Selectors$ =====================================================
+
+/* %
+A selector is a gate which represents a data value. Agents may set or
+get the value or may synchronize with value changes.
+*/
+
+SORT selector
+
+FUN  selector	: data	-> com[selector]
+
+FUN  set	: selector ** data		-> com[void]
+FUN  get	: selector 			-> com[data]
+FUN  await	: selector ** (data -> bool) 	-> com[data]
+
+/* %
+An agent may set or get the selectors values with the commands @code{set}
+and @code{get}. An agent may synchronize with value changes via the 
+command @code{await(Sel, Pred)}: this command is enabled whenever the given 
+predicate on the value of the selector is true. It yields the 
+current value of the selector.
+*/ 
+
+-- %$Synchronization Configurations$ ========================================
+
+/* %
+A selector may be attached to a view or item such that each time
+a given predicate on the selectors value becomes true, one configuration
+is send to the view or item (the first argument of @code{sync}), and each time 
+it becomes false another configuration is send. 
+*/
+
+FUN sync	: selector ** (data -> bool) 
+			   ** config ** config 		-> config
+
+/* %
+A specialzed version of @code{sync}, 
+@code{enable(Sel, Pred)}, enables the given view or item whenever the given
+predicate is true and disables it otherwise. It is simply defined as
+@code{sync(Sel, Pred, state(normal), state(disabled))}.
+*/
+
+FUN  enable	: selector ** (data -> bool)  		-> config
+
+
+
+-- %$Selection Configurations$ ================================================
+
+/* %
+Views and menu-items such as check-buttons and radio-buttons support a 
+special selection mechanism, which is controlled by the configuration below:
+*/
+
+FUN  select		: selector ** (data -> bool) ** 
+				      (data -> data) ** (data -> data)
+						     -> config
+
+/* %
+The configured view or menu-item will select and deselect itself (and 
+display the selection state) according to whether the given predicate is 
+true on the selectors value. Moreover, if the view is selected or 
+deselected by the user, the transformer functions are 
+applied to the selectors value (the first one if it is selected,
+the second one if it is deselected). 
+
+A typical use of @code{select} for check-buttons
+is with selectors which are instantiated with sets, such as in:
+
+@example
+TYPE opt == opt1 opt2 ...
+
+checkButton with 
+   select(Sel : selector[set[opt, <]], opt1 in _, opt1 incl _, opt1 excl _)
+@end example
+
+Here, @code{opt1} is automatically added or removed from the selectors
+set value according to the selection state of the check-button. 
+
+To implement a radio-button like behaviour, one would write:
+
+@example
+TYPE mode == mode1 mode2 ...
+radioButton with
+   select(Sel : selector[mode], mode1?, \\ _ . mode1, \\ X. X)
+@end example
+
+A shortcut is provided which supports this usage:
+*/
+
+FUN select : selector ** (data -> bool) ** data -> config
+
+/* %
+@code{select(Sel, Pred, Val)} is defined as 
+@code{select(Sel, Pred, \\ _ . Val, \\ X. X)}
+*/
+
+/* %
+@page
+*/

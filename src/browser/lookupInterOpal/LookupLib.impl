@@ -1,0 +1,302 @@
+IMPLEMENTATION LookupLib
+-- ============================================================================
+-- Autor:	ralfi
+-- Projekt:	OPAL1-Compiler
+-- Zweck:       Library 
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/lookupInterOpal/LookupLib.impl,v 1.1.1.1 1998-06-16 15:59:54 wg Exp $
+-- ============================================================================
+
+IMPORT	DEBUG[level]	ONLY	PRINT
+	Format		ONLY	format pretty
+	InterOpal	ONLY	extProperties implementation implementation?
+				intProperties interOpal:SORT part pos:SORT
+				pos : (part ** nat ** nat -> pos) signature
+				signature? unknown region
+	InterDumpBase	ONLY	dPos
+	Lib		ONLY	id nl tab
+	Lib1[string]	ONLY	seq2StringBySpace
+	Nat		ONLY	+ - 0 1 15 18 2 30 8 < = > >=  <= nat
+	Int		ONLY	max int
+	IntConv		ONLY	asNat
+	OptBrowser	ONLY	arguments ca? filetyp getFiletyp getPos impl
+				sign extp intp
+	SeqMap[pos,string]
+			ONLY	*
+	Seq[pos]	ONLY	++ :: <> exist? seq
+	Seq[string]	ONLY	seq
+	String		ONLY	! : denotation -> string  # ++ < = string
+
+DATA	posArea	== posArea(rb:nat, cb: nat, re:nat, ce:nat)
+-- Dieser Typ gibt den Bereich des Wortes an, nach dem gesucht werden soll
+-- r steht fuer row (Zeile), c steht fuer column (Spalte)
+-- b steht fuer begin, e fuer end
+
+DATA	level	== complete names inst fct optimize
+-- names:	es werden nur Namen in Funktionalitaeten geliefert
+-- inst:	Instanzen von Bezeichnern werden errechnet
+-- complete:	alle verfuegbaren Daten von Bezeichnern werden geliefert
+--		(Herkunft, Instanzen)
+-- optimize:	der Browser entscheidet, wie weit die Namen aufgeschluesselt
+--		werden 
+-- fct:		es wird eine kurze Funktionalitaet zu jedem Namen angezeigt
+--		(ohne :SORT und Instanzen)
+
+DATA	info	== info(pos:seq[pos],objName:string,origin:string,inst:string,
+			kind:string,gloLo:globalLocal,applDef:applDef)
+		   name(! :string)
+		   nil
+		   error(msg:string)
+
+DATA	globalLocal == local global nil
+
+DATA	applDef	== application definition nil
+
+DATA 	callfrom	== getImport getInst getFct
+-- wer war die aufrufende Funktion von getName
+
+DATA 	kl_callfrom	== getKind getProd getFkt
+
+FUN = : info ** info -> bool
+DEF =(Info1:info,Info2) ==
+	IF Info1 < Info2 THEN false
+	IF Info2 < Info1 THEN false
+	ELSE true
+	FI
+
+FUN < : info ** info -> bool
+DEF <(nil,nil) ==			false
+DEF <(nil,_) ==				true
+DEF <(error(Msg1),error(Msg2)) ==	Msg1 < Msg2
+DEF <(error(_),nil) ==			false
+DEF <(error(_),_) ==			true	-- info + name
+DEF <(name(Str1),name(Str2)) ==		Str1 < Str2
+DEF <(name(_),nil) ==			false
+DEF <(name(_),error(_)) ==		false
+DEF <(name(_),_) ==			true	-- info
+DEF <(info(_,_,_,_,_,_,_),_) ==		false
+DEF <(info(Pos1,N1,O1,I1,F1,_,_),info(Pos2,N2,O2,I2,F2,_,_)) ==
+IF Pos1 < Pos2 THEN true
+IF Pos1 = Pos2 THEN
+    IF (N1 < N2) THEN true
+    IF (N1 = N2) THEN 
+	IF (O1 < O2) THEN true
+	IF (O1 = O2) THEN 
+	    IF (I1 < I2) THEN true
+	    IF (I1 = I2) THEN
+		IF (F1 < F2) THEN true
+		ELSE false
+		FI
+	    ELSE false
+	    FI
+	ELSE false
+	FI
+    ELSE false
+    FI
+ELSE false
+FI
+
+FUN = : seq[pos] ** seq[pos] -> bool
+DEF =(P1:seq[pos],P2) ==
+	IF P1 < P2 THEN false
+	IF P2 < P1 THEN false
+	ELSE true
+	FI
+
+FUN < : seq[pos] ** seq[pos] -> bool
+DEF <(<>,<>) == false
+DEF <(<>,_) == true
+DEF <(_,<>) == false
+DEF <(P1:: _,P2:: _) == P1 < P2
+
+FUN < : pos ** pos -> bool
+DEF <(unknown,unknown) == false
+DEF <(unknown,_) == true
+DEF <(_,unknown) == false
+DEF <(part(P1),part(P2)) == P1 < P2
+DEF <(part(_),pos(_,_,_)) == true
+DEF <(pos(_,_,_),part(_)) == false
+DEF <(pos(P1,R1,C1),pos(P2,R2,C2)) ==
+	IF P1 = P2 THEN
+		IF R1 = R2 THEN	C1 < C2
+		ELSE R1 < R2
+		FI
+	ELSE P1 < P2
+	FI
+
+DEF <(region(_,_,_,_,_),part(_)) == true
+DEF <(part(_),region(_,_,_,_,_)) == false
+DEF <(region(_,_,_,_,_),pos(_,_,_)) == true
+DEF <(pos(_,_,_),region(_,_,_,_,_)) == false
+
+DEF <(region(P1,R1,C1,ER1,EC1),region(P2,R2,C2,ER2,EC2)) ==
+	IF P1 = P2 THEN
+	   IF R1 = R2 THEN	
+              IF C1 = C2 THEN 
+                 IF ER1 = ER2 THEN EC1 < EC2
+                 ELSE ER1 < ER2 FI
+              ELSE  C1 < C2 FI   
+	   ELSE R1 < R2 FI
+	ELSE P1 < P2 FI
+    
+
+FUN = : part ** part -> bool
+DEF =(P1:part,P2) ==
+	IF P1 < P2 THEN false
+	IF P2 < P1 THEN false
+	ELSE true
+	FI
+
+FUN < : part ** part -> bool
+DEF <(signature,signature) == false
+DEF <(signature,_) == true
+DEF <(_,signature) == false
+DEF <(extProperties,extProperties) == false
+DEF <(extProperties,implementation) == true
+DEF <(extProperties,intProperties) == true
+DEF <(implementation,extProperties) == false
+DEF <(intProperties,extProperties) == false
+DEF <(implementation,implementation) == false
+DEF <(implementation,intProperties) == true
+DEF <(intProperties,implementation) == false
+DEF <(intProperties,intProperties) == false
+
+
+FUN addPos setPos : seq[pos] ** info -> info
+DEF addPos(SeqPos,info(OSeqPos,Name,Orig,Inst,Kind,GL,AD)) ==
+	info(OSeqPos++SeqPos,Name,Orig,Inst,Kind,GL,AD)
+DEF setPos(SeqPos,info(_,Name,Orig,Inst,Kind,GL,AD)) ==
+	info(SeqPos,Name,Orig,Inst,Kind,GL,AD)
+
+FUN setOrig : string ** info -> info
+DEF setOrig(Orig,info(Pos,Name,_,Inst,Kind,GL,AD)) ==
+	info(Pos,Name,Orig,Inst,Kind,GL,AD)
+
+FUN error name : denotation -> info
+DEF error(Den) == error(Den!)
+DEF name(Den) == name(Den!)
+
+
+FUN setGlobal setLocal : info -> info
+DEF setGlobal(info(SeqPos,Name,Orig,Inst,Kind,_,AD)) ==
+	 info(SeqPos,Name,Orig,Inst,Kind,global,AD)
+DEF setLocal(info(SeqPos,Name,Orig,Inst,Kind,_,AD)) ==
+	 info(SeqPos,Name,Orig,Inst,Kind,local,AD)
+
+FUN setAppl setDef : info -> info
+DEF setAppl(info(SeqPos,Name,Orig,Inst,Kind,GL,_)) ==
+	 info(SeqPos,Name,Orig,Inst,Kind,GL,application)
+DEF setDef(info(SeqPos,Name,Orig,Inst,Kind,GL,_)) ==
+	 info(SeqPos,Name,Orig,Inst,Kind,GL,definition)
+
+FUN mkLevel : string -> level
+DEF mkLevel(Str) ==	IF Str=("names"!)	THEN names
+			IF Str=("inst"!)	THEN inst
+			IF Str=("fct"!)		THEN fct
+			IF Str=("optimize"!)	THEN optimize
+			IF Str=("complete"!)	THEN complete
+			ELSE PRINT(true,
+		"mkLevel: error - bad level-name. using complete instead",
+				complete)
+			FI
+
+FUN korrektur : nat
+DEF korrektur == 2
+
+FUN inArea? : arguments -> seq[pos] -> bool
+DEF inArea? (Args)(SeqPos) == exist?(inArea?(Args),SeqPos)
+FUN inArea? : arguments -> pos -> bool
+-- Definition der Positionen:
+-- Zeilen(r): 1..n , Spalten(c): 1..m
+-- Word
+-- ^   ^  : jeweilige Normmarkierung
+-- |   |
+DEF inArea? (_)(unknown) == false
+DEF inArea? (_)(part(_)) == false
+DEF inArea? (Args)(pos(Part,R,C)) ==
+  LET	(RB,CBt,RE,CEt)	== getPos(Args)
+	CBtt		== IF CBt>korrektur THEN CBt-korrektur ELSE 1 FI
+	(CB,CE)	== IF Args ca? THEN (CBtt,CEt+korrektur) ELSE (CBt,CEt) FI
+	FTyp		== getFiletyp(Args)
+        Left == IF R < RB THEN false
+                IF R = RB THEN CB <= C
+                ELSE true FI
+        Right == IF R > RE THEN false
+                 IF R = RE THEN CE >= C
+                 ELSE true FI
+  IN	(FTyp = Part)
+           and Left and Right 
+
+DEF inArea? (Args)(region(Part,R,C,ER,EC)) ==
+-- % overlap? 
+  LET	(RB,CBt,RE,CEt)	== getPos(Args)
+	CBtt		== IF CBt>korrektur THEN CBt-korrektur ELSE 1 FI
+	(CB,CE)	== IF Args ca? THEN (CBtt,CEt+korrektur) ELSE (CBt,CEt) FI
+	FTyp		== getFiletyp(Args)
+        Left == IF ER < RB THEN false
+                IF ER = RB THEN EC >= CB
+                ELSE true FI
+        Right == IF R > RE THEN false
+                 IF R = RE THEN C <= CE
+                 ELSE true FI
+        Region == IF R < ER THEN true
+                  IF R = ER THEN C <= EC
+                  ELSE false FI        
+  IN	(FTyp = Part) and Region 
+           and Left and Right 
+
+FUN = : filetyp ** part -> bool
+DEF sign = signature == true
+DEF impl = implementation == true
+DEF extp = extProperties == true
+DEF intp = intProperties == true
+DEF _ : filetyp = _ :part == false
+
+
+FUN pos2String : interOpal -> pos -> string
+DEF pos2String(IO)(Pos) == pretty(dPos(IO)(Pos),max asNat)
+
+FUN info2Str info2Str4 :
+	interOpal -> info -> string
+DEF info2Str(IO)(Info) ==
+	IF Info nil? THEN ""!
+	IF Info error? THEN Info msg
+	IF Info name? THEN Info!
+	IF Info info? THEN
+	  LET	PosStr	== seq2StringBySpace(id)
+				((\\Pos.pos2String(IO)(Pos))*(Info pos))
+		OptStr	== IF (PosStr#)>15 THEN nl++tab++tab
+			   ELSE tab FI
+		Name	== (Info objName)++(Info origin)++
+				(Info inst)++(Info kind)
+		Zusatz	== GLStr++ADStr
+		GLStr	== IF (Info gloLo)global? THEN OptTab++("%%global"!)
+			   IF (Info gloLo)local? THEN OptTab++("%%local "!)
+			   IF ((Info gloLo)nil?)and((Info applDef)nil?)THEN
+				""!
+			   OTHERWISE
+			   IF (Info gloLo)nil? THEN OptTab++("       "!)
+			   FI
+		ADStr	== IF (Info applDef)application? THEN "&&appl."!
+			   IF (Info applDef)definition? THEN "&&def."!
+			   IF (Info applDef)nil? THEN ""!
+			   FI
+		OptTab	== IF (Name#)<48 THEN tabify(Name#)
+			   ELSE nl++tab++tab++(tabify(0)) FI
+	  IN PosStr++OptStr++Name++Zusatz
+	FI
+
+FUN 48 : nat
+DEF 48 == 30+18
+
+FUN tabify : nat -> string
+DEF tabify(N) == IF N < 48 THEN tab++tabify(N+8)
+		 ELSE ""!
+		 FI
+
+DEF info2Str4(_)(Info) ==
+	IF Info nil? THEN ""!
+	IF Info error? THEN Info msg
+	IF Info name? THEN Info!
+	IF Info info? THEN
+		(Info objName)++(Info origin)++(Info inst)++(Info kind)
+	FI

@@ -1,0 +1,159 @@
+/* %-
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     efficient data structure for global signature 
+--              and implementation analysis
+-- Changes:     af, Jul  5 1993: added laws
+-- ============================================================================
+-- ============================================================================
+*/
+
+SIGNATURE GlobSig
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Table[declE]            ONLY table
+        Table[structE]          ONLY table
+        Table[lookupE]          ONLY table
+        Table[onlyPNE]          ONLY table
+        Table[onlyTab]          ONLY table
+        UniqueTable[sortPNE,<]  ONLY table'UniqueTable
+        UniqueTable[instPNE,<<] ONLY table'UniqueTable
+        DeclEntry       ONLY declE:SORT
+        PartNameEntry   ONLY sortPNE:SORT instPNE:SORT pN:SORT < << 
+                                onlyPNE:SORT
+        ImpExpEntry     ONLY structE
+        Objects         ONLY decl:SORT struct:SORT impDecl:SORT inst:SORT
+        Name            ONLY name
+        GlobSigImpl     ONLY locSig:SORT
+        -- token
+        Rep             ONLY rep <
+        Pragma          ONLY pragma
+        -- absy
+        Impl[name]      ONLY law:SORT
+        GlobPragma[name] ONLY globPragma
+        -- err
+        Pos             ONLY pos
+        -- lib
+        Option[onlyPNE]         ONLY option
+        Option[decl]            ONLY option
+        Pair[onlyPNE,pragma]    ONLY pair
+        Pair[decl,pragma]       ONLY pair
+        Pair[struct,seq[impDecl]]       ONLY pair
+        Pair[law,locSig]        ONLY pair
+        Seq[pair[law, locSig]] ONLY seq
+        Seq[pair[struct,seq[impDecl]]]  ONLY seq
+        Seq[decl]       ONLY seq
+        Seq[impDecl]    ONLY seq
+        Seq[formParam]  ONLY seq
+        Seq[globPragma] ONLY seq
+        Nat             ONLY nat
+        Option[struct]  ONLY option
+        Map[rep,<,seq[pair[law,locSig]]]     ONLY map
+        Map[rep,<,pair[law,locSig]]     ONLY map
+    Map[rep,<,seq[globPragma]] ONLY map
+       Map[name,<!,map[name,<!,rule]] ONLY map
+       Map[name,<!,rule] ONLY map
+       Seq[pos] ONLY seq
+
+
+TYPE globSig ==
+  errGlobSig
+  sigGlobSig(             -- Environment der Signaturanalyse
+     structIde       : rep,
+     formParams      : seq[formParam],
+     decls           : table[declE],
+     structures      : table[structE],
+     pos             : pos,
+     pragma          : pragma,
+     sortPartNames   : table[sortPNE,<],
+     instPartNames   : table[instPNE,<<],
+     onlyPartNames   : table[onlyTab],
+     lookupTable     : table[lookupE],
+     impPragmas      : map[rep, <, seq[globPragma]],  -- pragmas of imp. str.
+     impLaws         : map[rep, <, seq[pair[law, locSig]]], -- rep is struct
+     boolR           : rep,
+     denotationR     : rep,
+     BOOL            : rep,
+     DENOTATION      : rep,
+     pragmas         : seq[globPragma])
+  implGlobSig(            -- globales Env. der Implementierungsanalyse
+     structIde       : rep,
+     formParams      : seq[formParam],
+     decls           : table[declE],
+     structures      : table[structE],
+     pos             : pos,
+     pragma          : pragma,
+     lookupTable     : table[lookupE],
+     impPragmas      : map[rep, <, seq[globPragma]],  -- pragmas of imp. str.
+     impLaws         : map[rep, <, seq[pair[law, locSig]]], -- rep is struct
+     bool            : name,
+     denotation      : name,
+     laws            : map[rep,<,pair[law,locSig]],
+     pragmas         : seq[globPragma],
+     prioTab         : prioTab)
+
+FUN updDecls : globSig ** table[declE] -> globSig
+FUN updStructs : globSig ** table[structE] -> globSig
+FUN updSortPNs : globSig ** table[sortPNE,<] -> globSig
+FUN updInstPNs : globSig ** table[instPNE,<<] -> globSig
+FUN updOnlyPNs : globSig ** table[onlyTab] -> globSig
+FUN updLookups : globSig ** table[lookupE] -> globSig
+FUN updLaws    : globSig ** map[rep,<,pair[law,locSig]] -> globSig
+FUN updImpPragmas : globSig ** map[rep,<, seq[globPragma]] -> globSig
+FUN updImpLaws : globSig ** map[rep, <, seq[pair[law, locSig]]] -> globSig 
+FUN updPragmas: globSig ** seq[globPragma] -> globSig
+FUN updPrioTab: globSig ** prioTab -> globSig
+
+TYPE formParam == 
+     mkFormParam(partialFp: option[onlyPNE], 
+                 fullFp   : option[decl], 
+                 pragmaFp : pragma)
+
+-- % old induced signature of formParam included for upward compatibility
+FUN unIdentified : pair[onlyPNE,pragma] -> formParam
+    Identified : pair[decl,pragma] -> formParam
+    fPof : formParam -> pair[onlyPNE,pragma] 
+    fPof : formParam -> pair[decl,pragma]
+    unIdentified? 
+    Identified? : formParam -> bool
+
+
+TYPE lookupE ==                 -- enthaelt alle Namen mit gleichem Ide
+        lookupE(
+                struct : option[struct],-- Struktur
+                sortDeclS : seq[decl],  -- Sortendeklarationen
+                opDeclS : seq[decl],    -- Operationsdeklarationen
+                sortImpDeclS : seq[pair[struct,seq[impDecl]]],  
+                opImpDeclS : seq[pair[struct,seq[impDecl]]])    
+                                        -- importierte Namen
+TYPE onlyTab ==
+      onlyTab( struct : struct, inst : inst, tabOf: table[onlyPNE] )
+
+FUN context : onlyTab -> struct ** inst
+FUN toStatic : onlyTab -> onlyTab
+FUN updOnlyTab : onlyTab ** table[onlyPNE] -> onlyTab
+
+-- %$Prioritäten$
+TYPE prio == left right both
+FUN ` : prio -> denotation
+
+TYPE rule == none -- keine Priorität festgestellt
+             assumed(what: prio)
+             direct(what: prio, where: pos)
+             closure(what: prio, where:seq[pos]) -- #(where) > 1
+
+FUN ` : rule -> denotation
+FUN ++ : rule ** rule -> rule
+
+SORT prioTab
+-- %@code{FUN ` : prioTab -> denotation} in @ref{@Overview{PrioTab}}
+FUN {-} : prioTab
+FUN tab: prioTab -> map[name, <! , map[name, <! , rule]]
+FUN pT: map[name, <! , map[name, <! , rule]] -> prioTab
+
+FUN <! <!> : name ** name -> bool

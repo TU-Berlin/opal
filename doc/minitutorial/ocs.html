@@ -1,0 +1,492 @@
+<HTML>
+<body bgcolor=FFFFFF>
+<BODY>
+<PRE>
+<!-- Manpage converted by man2html 3.0.1 -->
+
+</PRE>
+<H2>NAME</H2><PRE>
+     ocs, ors - command-line oriented driver for the Opal  Compi-
+     lation System
+
+
+</PRE>
+<H2>SYNOPSIS</H2><PRE>
+     <B>ocs</B> [ -<B>top</B> <I>structure</I> <I>command</I>
+              | -<B>sub</B> <I>name</I> <I>structure</I>{,<I>structure</I>} ]
+         { <I>option</I> }
+         [ <I>target</I> ]
+
+
+
+</PRE>
+<H2>DESCRIPTION</H2><PRE>
+     <B>ocs</B> is a command-line oriented driver for the Opal  Compila-
+     tion  System.  It  is  used  to  compile  and  maintain Opal
+     software systems.  <B>ors</B> is similar in it's functionality, but
+     also  offers  version  and  configuration management. In the
+     following, when we talk  about  <B>ocs</B>  we  are  simultaneously
+     describing the common functionality of both <B>ocs</B> and <B>ors</B>.
+
+     <I>target</I> instructs <B>ocs</B> as to what shall be  done;  it  can  be
+     augmented  by  <I>option</I>s  specifying  how it shall be done. If
+     <I>target</I> is omitted, the default action is to build the system
+     in the current directory.  If the system is not specified by
+     the <B>-top</B> or <B>-sub</B> option on  the  command  line,  the  system
+     description  is  retrieved  from a file named <I>SysDefs</I> in the
+     current directory.
+
+     <B>ocs</B> always tries to  build  its  target  using  the  minimum
+     number  of steps. Thus, if <B>ocs</B> is called with the same argu-
+     ments again, nothing  will  be  executed.  Only  if  options
+     change,  or  if  sources constituting a system are modified,
+     will subsequent calls to <B>ocs</B> rebuild (parts of) a system.
+
+     <B>ocs</B> and <B>ors</B> can actually be used to manage software projects
+     consisting of arbitrary documents and sources.  <B>ocs</B> is based
+     on GNU make, while <B>ors</B> is based on the <B>shape(1)</B> toolkit.
+
+
+
+</PRE>
+<H2>PROJECT TREES AND SYSTEMS</H2><PRE>
+     A <I>project</I> <I>tree</I> under <B>ocs</B> is a directory  tree  of  the  file
+     system.   Each  node  in this tree describes a <I>system</I>. There
+     are currently 4 kinds of systems:
+
+     <I>Opal</I> <I>top</I>-<I>level</I> <I>systems</I>
+          consist of  at  least  one  top-level  structure  which
+          exports  a top-level command. All structures located in
+          the system's node which are in the import  relation  of
+          the top-level structure are also incorporated.
+
+     <I>Opal</I> <I>subsystems</I>
+          consist of a  possibly  unrelated  collection  of  Opal
+          structures  which constitutes a software library.  This
+          collection  is  enriched  by  all  imported  structures
+          located in the subsystem's node.
+
+     <I>Opal</I> <I>subsystems</I> <I>with</I> <I>handcoding</I>
+          This is a specialization of the above, and additionally
+          supports  hand-coded  structures,  i.e. Opal structures
+          partially or totally implemented in C.
+
+     <I>miscellaneous</I> <I>systems</I>
+          In the simplest case, a miscellaneous  system  is  just
+          used  for  bracketing  other nodes in the project tree.
+          However, it can actually be an arbitrary collection  of
+          documents,  in which case you might want to define your
+          own basic GNU-make  or  shape  maintenance  rules.  See
+          DEFINING YOUR OWN KIND OF SYSTEM.
+
+
+
+</PRE>
+<H2>SPECIFYING SYSTEMS FROM THE COMMAND LINE</H2><PRE>
+     The straightforward use of <B>ocs</B> is to specify  an  Opal  top-
+     level or subsystem from the command line:
+
+     <B>-top</B> <I>structure</I> <I>command</I>
+          specifies an  Opal  top-level  system  in  the  current
+          directory,  where  <I>structure</I> gives the top-level struc-
+          ture, and <I>command</I> the top-level command.
+
+     <B>-sub</B> <I>system</I> <I>structure</I>{,<I>structure</I>}
+          specifies an Opal subsystem in the  current  directory,
+          where  <I>system</I>  must  be  the  basename of the directory
+          node, and <I>structures</I> are incorporated (at  least)  into
+          the subsystem.
+
+     The following options control how a system specified on  the
+     command-line shall be compiled:
+
+     <B>-v</B>[level]
+          verbose level, see <B>oc(1)</B>.
+
+     <B>-w</B>[level]
+          warning level, see <B>oc(1)</B>.
+
+     <B>-o</B>[kind]
+          optimization option, see <B>oc(1)</B>. We recommend the use of
+          the  switch  <B>opt=</B><I>config</I>  instead  of  this  option (see
+          below).
+
+     <B>-d</B>[kind]
+          debugging option, see <B>oc(1)</B>. We recommend  the  use  of
+          the  switch  <B>debug=</B><I>config</I>  instead  of this option (see
+          below).
+
+     <B>-prop</B>
+          activate the property language. Each structure is  then
+          constituted by the four parts: signature, external pro-
+          perties, implementation and internal properties.  Empty
+          property parts are created automatically if needed.
+
+     <B>-keep</B>
+          keep the analyzed intermediate  applicative  code  gen-
+          erated  by  the  Opal  compiler's  frontend  and  the C
+          sources generated by the Opal compiler's backend.  Nor-
+          mally,  compilation from implementation to object files
+          is performed in one step, and these intermediate  files
+          are deleted.
+
+     <B>-s</B>[mode] <I>nodepath</I>
+          base the specified system on the subsystem  located  at
+          <I>nodepath</I>.  This option can be repeated. Imported struc-
+          tures in the import relation of the  system  are  first
+          looked  up  in  the  current  node, then in the systems
+          specified by <B>-s</B> options in the order they appear on the
+          command line, and finally in the Opal standard library.
+          Note that for top-level systems even subsystems provid-
+          ing  invisibly  imported  structures  must be specified
+          with a <B>-s</B> option  so  the  linker  can  find  them.  <B>-s</B>
+          without  <I>mode</I>  is equivalent to <B>-sdh</B>. <I>mode</I> controls the
+          type of subsystem and is a combination of:
+
+          <B>f</B>    The subsystem is frozen. Structures  belonging  to
+               it  are not considered in recompilation checks. It
+               is assumed that  a  structure  is  provided  by  a
+               frozen  subsystem  if its derived signature export
+               file is present.
+
+          <B>d</B>    The  subsystem  is  in   development.   Structures
+               belonging  to  it  are considered in recompilation
+               checks. It is assumed that a structure is provided
+               by  a  subsystem  in  development if its signature
+               file is present.
+
+          <B>p</B>    The subsystem contains property parts which  shall
+               be  considered  in recompilation checks of proper-
+               ties in the current system. This option only makes
+               sense  if the subsystem under <I>nodepath</I> is compiled
+               with the <B>-prop</B> option.
+
+          <B>h</B>    The derived objects of the subsystem are hidden in
+               a subdirectory <I>nodepath</I>/OCS.
+
+     Note that these options, when  specified  from  the  command
+     line,  only take effect together with a <B>-top</B> or <B>-sub</B> switch.
+     However, the same options can be assigned to  the  variables
+     <B>GENOPTIONS</B>  and  <B>GENSUBSYS</B> in a system description file (see
+     below).
+
+
+</PRE>
+<H2>SPECIFYING SYSTEMS WITH A DESCRIPTION FILE</H2><PRE>
+     The options <B>-top</B> and <B>-sub</B>  trigger  nothing  more  then  the
+     automatic  generation  of  a trivial system description file
+     named <B>SysDefs.</B><I>structure</I>-<I>command</I> or <B>SysDefs.</B><I>system</I><B>.</B>  You  can
+     rename  this file <B>SysDefs</B> and edit it by hand.  You can also
+     create a symbolic link <B>SysDefs</B> -&gt; <B>SysDefs.</B><I>structure</I>-<I>command</I><B>,</B>
+     in  which  case  the  call  <B>ocs</B>  <B>-top</B>  <I>structure</I> <I>command</I> <B>...</B>
+     updates the system description and repeated calls without  a
+     system  specification  on  the  command  line use the latest
+     updates.
+
+     There is a template file for each of the four system  kinds,
+     found  under  <B>/usr/ocs/lib/om/tmpls</B>  and named <B>SysDefs.{top,</B>
+     <B>sub,</B> <B>subhc,</B> <B>misc}.tmpl</B>.  For larger  software  projects,  in
+     particular if they are based on <B>ors</B>, we recommend the use if
+     these templates instead of  editing  an  automatically  gen-
+     erated description file.
+
+     In the following, the basic variables of a  system  descrip-
+     tion  file are given, where each variable is marked with the
+     system kind it is used for and as required or optional.
+
+     <B>SYSKIND</B>   (all) (optional)
+          specifies the system kind (one of <B>top</B>,  <B>sub</B>,  <B>subhc</B>  or
+          <B>misc</B>). Defaults to <B>top</B>.
+
+     <B>NODENAME</B>   (all) (optional)
+          defines the name of the system. For Opal top-level sys-
+          tems,  this  can  be the name of the top-level command.
+          For Opal subsystems, this must be the basename  of  the
+          nodepath. For miscellaneous systems, it can be any rea-
+          sonable name. If not given, this variable  defaults  to
+          <B>opalnode</B>.
+
+     <B>SUBNODES</B>   (all) (optional)
+          defines the direct  subdnodes  of  this  node.  If  you
+          create  a  bracketing  node  from the <B>SysDefs.misc.tmpl</B>
+          template, you usually have to define only this variable
+          and the variable <B>NODENAME</B>.
+
+     <B>TOPSTRUCT</B>   (top) (required)
+          defines the name of the top-level structure.
+
+     <B>TOPCOM</B>   (top) (required)
+          defines the name of the top-level command.
+
+     <B>STRUCTS</B>   (sub) (required)
+          defines the structures incorporated in an Opal  subsys-
+          tem.
+
+     <B>NORMSTRUCTS</B>   (subhc) (required)
+          defines the structures in a subsystem with  hand-coding
+          which are completely implemented in Opal.
+
+     <B>FOREIGNSTRUCTS</B>   (subhc) (required)
+          defines the structures in a subsystem with  hand-coding
+          which are partially implemented in Opal.
+
+     <B>OPAL_LIBS</B>  (all) (optional)
+          defines the standard Opal libraries to be referenced by
+          this  system. The value of this variable is usually set
+          up by referencing  predefined  variables  which  denote
+          standard  library  packages  of  the  installation. For
+          example, setting <B>OPAL_LIBS</B> <B>=</B>  <B>${OPAL_WIN}</B>  <B>${OPAL_BASE}</B>
+          specifies  the  inclusion  of the window as well as the
+          Opal basic  library.  The  set  of  packages  available
+          depends   on   the   installation   (normally  <B>OPAL_WIN</B>
+          <B>OPAL_READLINE</B> <B>OPAL_TCL</B> <B>OPAL_TK</B> <B>OPAL_BASE</B>).
+
+     <B>GENOPTIONS</B>   (top/sub/subhc) (optional)
+          defines the options used for  generating  the  building
+          rules  for this system. All options described in SPECI-
+          FYING SYSTEMS FROM THE COMMAND LINE can be assigned  to
+          this variable, except the <B>-s</B> option.
+
+     <B>GENSUBSYS</B>   (top/sub/subhc) (optional)
+          defines the subsystems this system is  based  on  by  a
+          sequence of <B>-s</B> options. The variable application <B>$(GEN-</B>
+          <B>STDSYS)</B> should be put at the end of this  sequence;  it
+          refers  to  the  Opal  standard  libraries  as given by
+          <B>OPAL_LIBS</B>.
+
+
+
+</PRE>
+<H2>TARGETS AND FURTHER OPTIONS</H2><PRE>
+     Many of the targets of <B>ocs</B> recur over the nodes of a project
+     tree:  the  action specified by the target is applied either
+     depth-first or top-down to each node in the  tree,  choosing
+     the directory where <B>ocs</B> is invoked as a root.
+
+     <B>all</B>   (recursive)
+          build systems in subnodes and then the current  system.
+          This is the default target.
+
+     <B>check</B>   (recursive)
+          check property parts of structures. Property parts  are
+          not  considered  by  the  <B>all</B>  target. This option only
+          makes sense if the property language is activated  (see
+          <B>-prop</B>).
+
+     <B>clean</B>
+          remove all intermediate compilation products.
+
+     <B>cleanall</B>   (recursive)
+          perform <B>clean</B> in current  system  as  well  as  on  all
+          subnodes.
+
+     <B>gen</B>  force generating rules for building the current system.
+          Rules  are  automatically  (re-)generated if the system
+          specification has been changed or if the  import  rela-
+          tion of Opal structures changes.
+
+     <B>genall</B>   (recursive)
+          perform <B>gen</B> in current system as well as  on  all  sub-
+          nodes.
+
+     <B>help</B> short description of options and targets.
+
+     <B>info</B> give information  about  the  Opal  Compilation  System
+          used.
+
+     <B>install</B>
+          install system at places defined by variables from <B>Sys-</B>
+          <B>Defs</B> file.
+
+     <B>pack</B>   (recursive)
+          pack systems components in a compressed <B>tar(1)</B> file.
+
+     <B>sendbug</B>
+          start interactive procedure to send a bug-report.
+
+     <B>xhelp</B>
+          extended description of options and targets.
+
+     <B>-force</B> <I>structure</I><B>.{sign,impl,c}</B>
+          forces the recompilation of the signature,  implementa-
+          tion, or C code of the structure.
+
+
+
+</PRE>
+<H2>SWITCHES AND PROJECT DEFINITIONS</H2><PRE>
+     Switches are used to choose between predefined optimization,
+     debugging  and  other configurations. The default setting of
+     switches and to some extent also the meaning of the switches
+     is  defined by a so-called project definition file. The name
+     of a project definition file is retrieved from the  environ-
+     ment  variable  <B>OCSPROJECT</B>;  if  this  variable  is not set,
+     default project definitions  are  assumed.   A  template  to
+     create   your  own  project  definitions  can  be  found  in
+     <B>/usr/ocs/lib/om/tmpls/ProjectDefs.tmpl</B>.
+
+     <B>debug=</B><I>config</I>
+          choose debugging configuration, where <B>config</B> is one of:
+
+          <B>no</B>   no debugging
+
+          <B>opal</B> generate code for debugging Opal sources with  the
+               GNU  debugger  <B>gdb(1)</B>.  This is a prerequisite for
+               use of the <B>debug(1)</B> or <B>btrace(1)</B> utilities bundled
+               with OCS.
+
+          <B>c</B>    generate code for debugging on the  level  of  the
+               generated C sources with <B>gdb</B>.
+
+     <B>opt=</B><I>config</I>
+          choose optimization configuration, where <B>config</B> is  one
+          of:
+
+          <B>no</B>   no optimization
+
+          <B>modest</B>
+               some rather modest optimizations
+
+          <B>medium</B>
+               medium optimizations which do not introduce recom-
+               pilation  dependencies between structure implemen-
+               tations.
+
+          <B>full</B> full optimizations which do  introduce  recompila-
+               tion  dependencies  between  structure implementa-
+               tions.
+
+     <B>profile=</B><I>config</I>
+          choose profiling configuration, where <I>config</I> is one of:
+
+          <B>no</B>   no profiling
+
+          <B>gprof</B>
+               profiling on C code level, using the  <B>-gp</B>  option.
+               This  feature  is,  however,  rather cumbersome to
+               use. In the files generated by <B>gprof(1)</B>, you  will
+               find  numbered symbols of C functions. In order to
+               relate them with the original  Opal  symbols,  use
+               the  option <B>-keep</B> to save the C sources and search
+               them for the declarations of  the  numbered  func-
+               tions. There you will find a comment which denotes
+               the original symbol.
+
+     <B>ocs=</B><I>config</I>
+          choose Opal compiler configuration. <I>config</I> is one of:
+
+          <B>stdocs</B>
+               use the standard configuration
+
+          <B>expocs</B>
+               use  an  experimental  configuration  with   other
+               libraries,  binaries, etc.  The definition of this
+               configuration is  usually  given  in  the  project
+               definition file.
+
+     <I>var</I><B>=</B><I>value</I>
+          overwrite any make variable. You should know  what  you
+          are doing before you use this switch.
+
+
+
+</PRE>
+<H2>SUBSYSTEMS WITH HAND-CODING</H2><PRE>
+     See the manual "Handcoder's Guide to  the  Opal  Compilation
+     System Version 2", written by Wolfgang Grieskamp.
+
+
+
+</PRE>
+<H2>DEFINING YOUR OWN KIND OF SYSTEM</H2><PRE>
+     [more to come]
+
+
+
+</PRE>
+<H2>VERSION AND CONFIGURATION MANAGEMENT</H2><PRE>
+     [more to come]
+
+
+
+</PRE>
+<H2>TIPS</H2><PRE>
+     Another way to remove your intermediate compilation products
+     is,  instead of calling <B>ocs</B> with the <B>clean</B> target, to delete
+     your <I>OCS</I> subdirectory.
+
+     Deleting your <B>OCS/</B><I>OCSDefs</I>-<I>SysDefs</I> file is also quicker  than
+     calling <B>ocs</B> with the <B>gen</B> target for generating the rules for
+     building the current system anew. Then you can call  <B>ocs</B>  to
+     compile your system.
+
+
+
+
+</PRE>
+<H2>FILES</H2><PRE>
+     <B>./SysDefs</B>
+          system definition file
+
+     <B>./OCS/OcsDefs-SysDefs.{</B><I>structure</I>-<I>command</I><B>,</B><I>system</I>}
+          generated building rules of <B>ocs</B>
+
+     <B>./OCS/OrsDefs-SysDefs.{</B><I>structure</I>-<I>command</I><B>,</B><I>system</I>}
+          generated building rules of <B>ors</B>
+
+     <B>./OCS/</B><I>structure</I><B>.{sign,impl,extp,intp}.deps</B>
+          import dependency files
+
+     <B>./OCS/</B><I>structure</I><B>.o</B>
+          object files generated by the C Compiler
+
+     <B>./OCS/lib</B><I>system</I><B>.*</B>
+          library of subsystem
+
+
+
+</PRE>
+<H2>DIAGNOSTICS</H2><PRE>
+     The diagnostics come from GNU <B>make(1)</B> or <B>shape(1)</B>.
+
+
+</PRE>
+<H2>BUGS</H2><PRE>
+     Although the change of debugging or optimization levels out-
+     dates  intermediate compilation products, this is not recog-
+     nized by <B>ocs</B>.
+
+     This is particularly evident when you change  from  a  lower
+     optimization   level  to  a  higher  one  using  the  switch
+     <B>opt=full</B>, since this optimization level introduces  recompi-
+     lation  dependencies  which  are  not  yet  reflected in the
+     building rules. In such cases, the target <B>gen</B> should be used
+     to enforce the new generation of building rules.
+
+     In any case, one should not trust <B>ocs</B> to strictly  guarantee
+     the  consistency  of  the  compilation products. One of <B>oc</B>'s
+     known bugs is that  it  does  not  detect  inconsistency  in
+     intermediate files, so there is no support from this end. If
+     in doubt, one should use the target <B>clean</B>  or  <B>cleanall</B>  and
+     then  rebuild  the  project  from the beginning; this always
+     eliminates consistency problems.
+
+
+
+</PRE>
+<H2>AUTHORS</H2><PRE>
+     The <B>ocs</B> and <B>ors</B> drivers and the make and  shape  files  were
+     designed  and  implemented by Wolfgang Grieskamp. Many valu-
+     able suggestions came from the members of the Opal group, in
+     particular from Andreas Fett, and from the Opal user commun-
+     ity. Several concepts and  technical  tricks  were  borrowed
+     from  the  shape release management system RMS, bundled with
+     the shape toolkit.
+
+     The Opal Group may be contacted at:  Technische Universitaet
+     Berlin,  Institut  fuer Kommunikations- und Softwaretechnik,
+     Sekretariat  FR  5-13,  Franklinstr.  28/29,  10587  Berlin,
+     email: opal@cs.tu-berlin.de
+</PRE>
+</BODY>
+</HTML>

@@ -1,0 +1,82 @@
+IMPLEMENTATION DbPrintLayer
+
+
+IMPORT 	Nat		COMPLETELY
+	Com		COMPLETELY
+	Dyn		COMPLETELY
+	DynConv		COMPLETELY
+	Fmt		COMPLETELY
+	OptionMap	COMPLETELY
+IMPORT
+	RepoAn		COMPLETELY
+	RepoName   	COMPLETELY
+	RepoObjectAccess	COMPLETELY
+	RepoUnitAccess	COMPLETELY
+
+	  
+
+-- debugging
+IMPORT DEBUG COMPLETELY
+       RepoName COMPLETELY
+       FmtOption COMPLETELY
+       RepoInternData ONLY fmtRepo
+       Denotation ONLY ++
+FUN tracePrintFun? : bool
+DEF tracePrintFun? == FIELD?[bool]("-ztracePrintFun")
+
+DEF setPrintFun(SortX,PrintFun)(R) ==
+  LET Sort0 == inImpl(SortX)(R)
+      Sort == PRINT(tracePrintFun?, \\ . "setPrintFun: " 
+      			++ pretty(fmtObjectName(Sort0)) 
+			++ " ==> "  
+			++ pretty(fmtObjectName(PrintFun))
+			++ pretty(fmtRepo(R)), 
+		     Sort0)
+  IN  
+  updateAn(Sort,\\An.
+           def(printLayer,objectName2dyn(PrintFun),An))(R)
+
+DEF getPrintFun(SortX)(R) == 
+ LET Sort == inImpl(SortX)(R)
+     res0 == dyn2objectName * (an(Sort)(R) !? printLayer)
+ IN
+ PRINT(tracePrintFun?, \\ . "getPrintFun: " 
+                            ++ pretty(fmtObjectName(Sort)) 
+			    ++ " ==> "  
+			    ++ pretty(fmtOption(fmtObjectName)(res0))
+			    ++ "\n"
+			    ++ pretty(fmtRepo(R)), 
+       res0)
+
+-- % formatter:
+FUN fmtPrintFun : dyn -> fmt
+DEF fmtPrintFun(Dyn) == fmtObjectName(dyn2objectName(Dyn))
+
+-- % conversion:
+FUN dyn2objectName : dyn 		-> objectName
+DEF dyn2objectName(Dyn) == unpack(Dyn,tag)
+
+FUN objectName2dyn : objectName 	-> dyn
+DEF objectName2dyn(ObjName) == pack(ObjName,tag)
+
+-- % annotation layer  for print information
+FUN printLayer : anLayer
+DEF printLayer == EXEC(register(!("10744"),fmtPrintFun))
+
+-- % tag for dyn-packing of objectNames
+FUN tag : denotation
+DEF tag == "<ObjectName-09/16>"
+
+-- %ensure, that objectNames are always from implementation
+-- %(only if structure ist not from a library!)
+FUN inImpl: objectName -> repo -> objectName
+DEF inImpl(O AS globalObjectName(ono, U AS basicUnitName(uno, sign)))(R) ==
+  IF ~(library?(baseName(U))(R)) THEN
+    globalObjectName(ono, basicUnitName(uno, impl))
+  ELSE O FI
+DEF inImpl(O AS globalObjectName(ono, 
+                                 U AS derivedUnitName(uno,sign,ino)))(R) ==
+  IF ~(library?(baseName(U))(R)) THEN
+    globalObjectName(ono, derivedUnitName(uno,impl,ino))
+  ELSE O FI
+DEF inImpl(else)(R) == else

@@ -1,0 +1,174 @@
+IMPLEMENTATION ReadForeign
+
+IMPORT 
+       Seq COMPLETELY
+       SeqFilter COMPLETELY
+       SeqMap COMPLETELY
+       CharClass COMPLETELY
+       Com COMPLETELY
+       String COMPLETELY
+       StringFilter COMPLETELY
+       Option COMPLETELY
+       Pair COMPLETELY
+       Nat COMPLETELY
+       ABORT COMPLETELY
+       StringConv COMPLETELY
+       Seq COMPLETELY
+       Context COMPLETELY
+       Stream COMPLETELY
+       ComCompose COMPLETELY
+       Denotation COMPLETELY
+       Triple COMPLETELY
+       MyComAction COMPLETELY
+       MyString COMPLETELY
+       SeqReduce COMPLETELY
+       Map COMPLETELY
+       StringScan COMPLETELY
+       Compose COMPLETELY
+       MyComStream COMPLETELY
+
+/* %-
+IMPORT ComState COMPLETELY
+/* %In this state the information read is stored.
+    We use this device so we need not pass the information as a parameter. */
+
+FUN foreignInfoState: stateId[seq[triple[string, string, commentStrings]]]
+DEF foreignInfoState == EXEC(stateId(<>))
+
+*/
+
+DATA foreignInfo ==
+        foreignInfo(info: seq[triple[string, string, commentStrings]])
+
+/* %Read in the information found in file @file{DOSFOP/dosfop.filetypes}.
+    If this file cannot be read, a default is used instead. */
+
+DEF readForeignCommentStrings() ==
+  load'MyComStream("DOSFOP/dosfop.filetypes") ; (\\ans.
+  IF ans fail? THEN
+    writeLine(stdErr, "using default for filetypes ...") & (\\ _ .
+--    foreignInfoState => (\\ _ . <>)
+    succeed(foreignInfo(<>))
+    )
+  ELSE
+    writeLine(stdErr, "scanning DOSFOP/dosfop.filetypes ...") & (\\ _ .
+    LET (infos, badStarts) == processLines(data(ans))
+    IN
+    (::?(badStarts) -?-> (\\ . 
+       writeLine(stdErr, "ignored these file type specifications: " ++
+                         `((+/+'MyString(", "), <>) / badStarts)))) & (\\ _ .
+--    foreignInfoState => (\\ _ . infos)
+    succeed(foreignInfo(infos))
+    ))
+  FI
+  )
+
+/* Process lines found in the file. Comments are filtered. */
+FUN processLines: seq[string] ->
+                   seq[triple[string, string, commentStrings]] **
+                   seq[string]
+DEF processLines( lines ) ==
+  LET (goodLines, badLines) ==
+      partition(  -- %lines must contain at least six parts
+                (\\parts. #(parts) >= 6),
+                split'MyString(colon?, _) * (noComment? | drop(blank?, _) * lines)
+               )
+  IN
+  (processLine * goodLines, ft * badLines)
+
+/* %Empty lines, and lines starting with an # are comments. */
+FUN noComment? :  string -> bool
+DEF noComment?( <> ) == false
+DEF noComment?( c :: _ ) == ~(hash?(c))
+
+/* %Process a single line. Split line at colons and insert the first
+    six components. 
+*/
+FUN processLine: seq[string] -> triple[string, string, commentStrings]
+DEF processLine( line ) ==
+  LET parts ==  (\\x. IF x = (" "!) THEN <> ELSE x FI) * line
+  IN
+  &(ft(parts), ft(rt(parts)), 
+    commentStrings(ft(rt(rt(parts))),
+                   ft(rt(rt(rt(parts)))),
+                   ft(rt(rt(rt(rt(parts))))),
+                   ft(rt(rt(rt(rt(rt(parts)))))) 
+                  )
+   )
+
+/* %Find information to given filename in the database. */
+
+FUN isForeign? : foreignInfo -> string ->
+                  com[option[pair[string, commentStrings]]]
+DEF isForeign?( fileInfos )( s ) ==
+--  get(foreignInfoState) & (\\ fileInfos.
+  succeed(search(s, info(fileInfos)))
+--  )
+
+FUN search: string ** seq[triple[string, string, commentStrings]] ->
+             option[pair[string, commentStrings]]
+DEF search(_, <>) == nil
+DEF search(s, f :: r) ==
+  LET (testSuffix, implSuffix, commentS) == untriple(f)
+      stem? == s |??> testSuffix
+  IN
+  IF avail?(stem?) THEN 
+    LET implFile == IF implSuffix <>? THEN <> ELSE cont(stem?) ++ implSuffix FI
+    IN
+    avail(&(implFile, commentS))
+  ELSE
+    search(s, r) 
+  FI
+
+DEF getForeignImports( name, config ) == 
+  load'MyComStream("DOSFOP/" ++ (name`) ++ ".deps") ; (\\ ans.
+  IF ans fail? THEN
+    succeed(<>)
+  ELSE
+    succeed(::? | data(ans))
+  FI
+  )
+
+
+DEF getForeignContext( name, config ) == 
+  load'MyComStream("DOSFOP/" ++ (name`) ++ ".index") ; (\\ ans.
+  IF ans fail? THEN
+    succeed(emptyContext)
+  ELSE
+    LET goodLines == cont * avail? | parseIndexLine * data(ans)
+        indexMap == (+>, {}) / goodLines
+    IN
+    succeed(context(indexMap, {}, {}))
+  FI
+  )
+
+FUN parseIndexLine: string -> option[pair[nat, indexEntry]]
+DEF parseIndexLine( line ) ==
+  LET (number, rest1) == split(~ o colon?, line)
+      (entryType, entry0) == split(~ o colon?, drop(colon?, rest1))
+      entry == drop(colon?, entry0)
+  IN
+  IF (number <>?) or (entryType <>?) or (entry <>?) THEN nil
+  ELSE
+    LET (no?, _) == scan(number)
+    IN
+    IF no? nil? THEN nil
+    ELSE
+      avail(&(cont(no?), indexEntry(entryType`, entry)))
+    FI
+  FI
+
+FUN +> : pair[nat, indexEntry] ** map[nat, <, seq[indexEntry]] ->
+          map[nat, <, seq[indexEntry]]
+DEF (no & entry) +> M ==
+  LET oldEntry? == M !? no
+      newEntry == IF oldEntry? nil? THEN
+                    %(entry)
+                  ELSE
+                    entry :: cont(oldEntry?)
+                  FI
+ IN
+ def(no, newEntry, M)
+
+
+   

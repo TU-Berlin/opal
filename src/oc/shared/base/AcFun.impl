@@ -1,0 +1,321 @@
+
+IMPLEMENTATION AcFun
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:36 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	NatConv		ONLY `
+	Denotation	ONLY =
+	Seq 		COMPLETELY
+	SeqMap		ONLY *
+	SeqCompare	ONLY eq?
+	Pair		ONLY pair 2nd
+	Compose		ONLY o
+	Void		ONLY void
+
+IMPORT	NatMap		COMPLETELY
+	NatMapReduce    ONLY /
+	Format		COMPLETELY
+	FormatFun1	COMPLETELY
+
+IMPORT	Ide		ONLY ide origin:SORT = : origin**origin->bool
+				 origin:ide->origin
+				 # : ide -> nat
+				 # : origin -> nat
+				 target
+				 global local global? local?
+				 format:origin->format
+				 format:ide->format
+				 = : ide ** ide -> bool
+	TypeAn		ONLY typeAn typeDecs? decs hidden
+	SourceAn	ONLY sourceAn symbol? symbol:sourceAn->denotation
+			     error? errorKind kind never? optional?
+	An		ONLY an none type source 
+	Ac		COMPLETELY
+	PreparedOptions ONLY weakError?
+				
+-- ---------------------------------------------------------------------------
+
+DEF e1=e2 ==
+    IF ide?(e1) THEN
+	IF ide?(e2) THEN ide(e1)=ide(e2) ELSE false FI
+    IF deno?(e1) THEN
+	IF deno?(e2) THEN repr(e1)=repr(e2) ELSE false FI
+    IF error?(e1) THEN 
+	error?(e2)
+    IF apply?(e1) THEN
+	IF apply?(e2) THEN 
+	    IF fun(e1)=fun(e2) THEN eq?(='AcFun)(args(e1),args(e2))
+			       ELSE false FI
+	ELSE false FI
+    IF lambda?(e1) THEN
+	IF lambda?(e2) THEN
+	    IF eq?(eqDec)(vars(e1),vars(e2)) THEN scope(e1)=scope(e2)
+					     ELSE false FI
+	ELSE false FI
+    IF block?(e1) THEN
+	IF block?(e2) THEN
+	    IF eq?(eqDec)(binds(e1),binds(e2))  THEN scope(e1)=scope(e2)
+					        ELSE false FI
+	ELSE false FI
+    IF case?(e1) THEN
+	IF case?(e2) THEN
+	    IF discr(e1)=discr(e2) THEN
+	        IF eq?(eqMatch)(matches(e1),matches(e2)) THEN 
+		    default(e1)=default(e2)
+		ELSE false FI
+	    ELSE false FI
+	ELSE false FI
+    FI
+
+    FUN eqDec : dec ** dec -> bool
+    DEF eqDec(d1,d2) == 
+    	IF ide(d1)=ide(d2) THEN
+	    IF binding?(d1) THEN
+	    	IF binding?(d2) THEN def(d1)=def(d2) ELSE false FI
+	    IF variable?(d1) THEN
+		variable?(d2)
+	    IF hidden?(d1) THEN
+		hidden?(d2)
+	    IF constructor?(d1) THEN
+		constructor?(d2)
+	    ELSE false FI
+	ELSE false FI
+	    	
+    FUN eqMatch : match ** match -> bool
+    DEF eqMatch(m1,m2) ==
+	IF cons(m1)=cons(m2) THEN
+	    IF eq?(eqDec)(vars(m1),vars(m2)) THEN scope(m1)=scope(m2)
+					     ELSE false FI
+	ELSE false FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF atomic?(e) ==
+    IF error?(e) THEN true
+    IF deno?(e)  THEN true
+    IF ide?(e)   THEN true ELSE false FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF flat?(e) ==
+    IF atomic?(e) THEN true
+    IF apply?(e)  THEN 
+	IF atomic?(fun(e)) THEN ~(exist?(~ o atomic?,args(e))) ELSE false FI
+    ELSE false FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF sequential?(e) ==
+    IF flat?(e) THEN true
+    IF case?(e) THEN
+	IF atomic?(discr(e)) THEN
+	    IF ~(exist?(~ o (sequential? o scope),matches(e))) THEN
+	        sequential?(default(e)) 
+	    ELSE false FI
+	ELSE false FI
+    IF block?(e) THEN
+	IF ~(exist?(~ o (sequential? o def),binds(e))) THEN
+	    sequential?(scope(e))
+	ELSE false FI
+    IF lambda?(e) THEN
+	sequential?(scope(e))
+    ELSE
+	false
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF local?(e) == IF ide?(e) THEN local?(ide(e)) ELSE false FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF global?(e) == IF ide?(e) THEN global?(ide(e)) ELSE false FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF ide(id) == ide(none:an,id)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF set(e,a) ==
+    IF error?(e) THEN error(a)
+    IF deno?(e)  THEN deno(a,repr(e))
+    IF ide?(e)   THEN ide(a,ide(e))
+    IF apply?(e) THEN apply(a,fun(e),args(e))
+    IF lambda?(e) THEN lambda(a,vars(e),scope(e))
+    IF block?(e) THEN block(a,binds(e),scope(e))
+    IF case?(e)  THEN case(a,discr(e),matches(e),default(e)) FI
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF neverReached?(Opts,error(An)) == 
+    IF error?(source(An)) THEN
+	IF optional?(kind(source(An))) THEN weakError?(Opts)
+				       ELSE never?(kind(source(An))) FI
+    ELSE false FI
+DEF neverReached?(_,_) == false
+	
+
+-- ---------------------------------------------------------------------------
+DEF dec(U,i) ==
+    IF origin(i) = target THEN
+	decs(U) ! #(i)
+    ELSE
+	decs(uses(U) ! #(origin(i))) ! #(i)
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF setDec(U,i,d) ==
+    IF origin(i) = target THEN
+	unit(an(U),symbol(U),origin(U),uses(U),
+	     def(#(i),d,decs(U)))
+    ELSE
+	LET U1 == uses(U) ! #(origin(i))
+	    U2 == unit(an(U1),symbol(U1),origin(U1),uses(U1),
+	     	       def(#(i),d,decs(U1)))
+	IN
+	unit(an(U),symbol(U),origin(U),
+	     def(#(origin(i)),U2,uses(U)),
+	     decs(U))
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF updateDec(U,i,f) ==
+    IF origin(i) = target THEN
+	LET new == f(decs(U) ! #(i))
+	IN
+	unit(an(U),symbol(U),origin(U),uses(U),
+	     def(#(i),new,decs(U)))
+    ELSE
+	LET U1  == uses(U) ! #(origin(i))
+	    new == f(decs(U1) ! #(i))
+	    U2  == unit(an(U1),symbol(U1),origin(U1),uses(U1),
+	     	        def(#(i),new,decs(U1)))
+	IN
+	unit(an(U),symbol(U),origin(U),
+	     def(#(origin(i)),U2,uses(U)),
+	     decs(U))
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF newIde(U) ==
+    global(new(decs(U)),target)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF decs(p?,U) ==
+     /(\\d,ds. IF d p? THEN d::ds ELSE ds FI, <>, decs(U))
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF importedDecs(p?,U) ==
+    /(\\u,ds. 
+         /(\\d,ds1. IF d p? THEN d::ds1 ELSE ds1 FI, ds, decs(u)), 
+              <>, uses(U)) 
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF symbol(U,o) ==
+    IF o = target THEN symbol(U)
+		  ELSE symbol(uses(U) ! #(o)) FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF an(U,o) ==
+    IF o = target THEN an(U)
+		  ELSE an(uses(U) ! #(o)) FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF updateAn(U,o,f) ==
+    IF o = target THEN unit(f(an(U)),symbol(U),origin(U),uses(U),decs(U))
+    ELSE
+	LET U1 == uses(U) ! #(o)
+	    U2 == unit(f(an(U1)),symbol(U1),origin(U1),uses(U1),decs(U1))
+	IN
+	unit(an(U),symbol(U),origin(U),def(#(o),U2,uses(U)),decs(U))
+    FI
+
+
+-- ---------------------------------------------------------------------------
+
+DEF format(_,fa)(error(a)) == 
+    blk(2,%(str("ERROR"),brk(0),fa(a)))
+
+DEF format(_,fa)(deno(a,r)) == 
+    blk(2,%(str(""""),str(r),str(""""),brk(0),fa(a)))
+
+DEF format(fi,fa)(ide(a,i)) == 
+    blk(2,%(fi(i),brk(0),fa(a)))
+
+DEF format(fi,fa)(apply(_,f,as)) == 
+    blk(2,%(format(fi,fa)(f),
+	list(str("("),str(","),str(")"),(format(fi,fa)):exp->format)(as)))
+		  
+DEF format(fi,fa)(lambda(a,vs,s)) == 
+    blk(2,%(list(str("\\"),str(","),str("."),
+		   (format(fi,fa)):dec->format)(vs),
+		     fa(a),nl,format(fi,fa)(s)))
+
+    
+DEF format(fi,fa)(block(a,bs,s)) == 
+    blk(0,%(str("LET "),list(str(" "),nl,str(""),
+				(format(fi,fa)):dec->format)(bs),
+		nl,str("IN"),fa(a),nl,format(fi,fa)(s),brk(0)))
+
+DEF format(fi,fa)(case(a,d,ms,o)) == 
+    blk(0,%(str("CASE "),format(fi,fa)(d),str(" OF"),fa(a),nl,
+	    list(str(" "),nl,str(""),	
+				    (format(fi,fa)):match->format)(ms))
+       ++ %(nl,str("ELSE"),nl,str(" "),format(fi,fa)(o),brk(0)))
+
+
+DEF format(fi,fa)(match(c,vs,s)) == 
+    blk(2,
+      %(fi(c),
+	list(str("("),str(","),str(")"),(format(fi,fa)):dec->format)(vs),
+	str("=>"),nl,format(fi,fa)(s)))
+    
+DEF format(fi,fa)(variable(a,i)) == 
+    blk(2,%(fi(i),brk(0),fa(a)))
+
+DEF format(fi,fa)(hidden(a,i,m)) == 
+    blk(2,%(fi(i),format(m),brk(0),fa(a),brk(1),str("= hidden")))
+
+DEF format(fi,fa)(binding(a,i,m,e)) == 
+    blk(2,%(fi(i),format(m),brk(0),fa(a),brk(1),str("="))
+	  ++ %(nl,format(fi,fa)(e)))
+
+  FUN format : mode -> format 
+  DEF format(external) == str("E")
+  DEF format(internal) == str("I")
+  DEF format(local)    == str("L")
+
+DEF format(fi,fa)(constructor(a,i,m,o)) == 
+    blk(2,%(fi(i),format(m),brk(0),fa(a),str("="),brk(0),
+		str("cons order "),str(`(o))))
+			
+DEF format(fi,fa)(unit(a,sy,or,uses,decs)) ==
+    blk(0,%(str("unit "),str(sy),str(" origin "),format(or))
+       ++ %(nl,blk(2,%(str("uses"),nl,list(str("{"),nl,str("}"),
+		             (format(fi,fa)):unit->format)(us))),	
+	    nl,
+	    blk(0,%(str("declares "),nl,
+			list(str("{"),nl,str("}"),
+			     (format(fi,fa)):dec->format)(ds))),
+	    nl,
+	    fa(a)))
+	WHERE us == codom(uses)
+	      ds == codom(decs)
+
+
+DEF format(U)(i AS global(no,orig)) == 
+    LET a == IF orig = target THEN
+		 IF no def? decs(U) THEN an(decs(U) ! no)
+				    ELSE none:an FI
+    	     OTHERWISE
+	     IF #(orig) def? uses(U) THEN
+		 IF no def? decs(uses(U) ! #(orig)) THEN
+		     an(decs(uses(U) ! #(orig)) ! no)
+		 ELSE none:an FI
+	     ELSE none:an FI
+    IN
+    IF symbol?(source(a)) THEN
+        blk(0,%(str(symbol(source(a))),format(i)))
+    ELSE format(i) FI
+
+DEF format(_)(i AS local(_)) ==
+    format(i)

@@ -1,0 +1,110 @@
+IMPLEMENTATION Argspec
+
+IMPORT	Denotation	COMPLETELY
+	DenotationSplit	 COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComPairCompose	    COMPLETELY
+	Pair		COMPLETELY
+	Triple		COMPLETELY
+	Nat		COMPLETELY
+	Set		COMPLETELY
+	SetConv		COMPLETELY
+	ArgspecIntern	COMPLETELY
+	Option		COMPLETELY
+	ABORT		COMPLETELY
+
+DATA argspec ==
+     argspec(
+	   parser:	seq[denotation] -> 
+			com[triple[data,seq[denotation],denotation]],
+	   completions: denotation	-> com[set[denotation,<]],
+	   cxtFinder:	seq[denotation] -> com[pair[cxt,seq[denotation]]],
+	   epsilon?:	bool,
+	   usage:	denotation,
+	   prefix:	option[denotation],
+	   brace?:	bool
+	)
+
+
+-- --------------
+DEF argspec(PrimParser,Completer,Usage) ==
+	argspec(primParser(Usage)(PrimParser),
+		Completer,
+		cxtFinder(Completer,PrimParser),
+		false,
+		Usage,
+		nil,
+		true
+	)
+-- --------------
+DEF argspec(PrimParser,Completer,Usage,Prefix) ==
+	argspec(primParser(Usage)(PrimParser),
+		Completer,
+		cxtFinder(Completer,PrimParser),
+		false,
+		Usage,
+		avail(Prefix),
+		true
+	)
+-- --------------
+FUN parse :	argspec ** seq[denotation] -> com[data]
+DEF parse(ArgSpec,Args) ==
+    parser(ArgSpec)(Args)				; (\\Ans.
+    IF okay?(Ans) ANDIF <>?(2nd(data(Ans)))
+      THEN -- ok and no more arguments
+	   succeed(1st(data(Ans)))
+    IF okay?(Ans) ANDIF ::?(2nd(data(Ans)))
+      THEN -- ok but remaining arguments
+	   ABORT("Argspec: remaining arguments found."++
+		 " Use @'ArgspecCompose to avoid this problem.")
+      ELSE break(error(Ans))
+    FI							)
+
+-- --------------
+FUN complete :	argspec ** seq[denotation] -> com[set[denotation,<]]
+DEF complete(As,Args) ==
+    cxtFinder(As)(front(Args))		& (\\Cxt,_ .
+    IF Cxt stop?
+      THEN completer(Cxt)(last(Args))
+      ELSE succeed({})
+    FI					)
+
+-- --------------
+FUN usage :	argspec			   -> denotation
+-- def by data
+
+-- --------------
+FUN prefix : argspec -> denotation
+DEF prefix(A) ==
+    IF prefix(A) avail?
+      THEN cont(prefix(A))
+      ELSE ABORT("prefix'Argspec: FATAL - unknown prefix")
+    FI
+
+-- %--------------------------------------------------------------
+-- % primitive parser:
+FUN primParser : denotation -> (denotation -> com[data]) ->
+	(seq[denotation] -> com[triple[data,seq[denotation],denotation]])
+DEF primParser(Usage)(P)(<>) == 
+    break("- Too less arguments, expected was `"++Usage++"'")
+DEF primParser(_)(P)(Ft::Rt) == 
+    P(Ft) & (\\Data. succeed(&(Data,Rt,"")))
+
+-- %--------------------------------------------------------------
+-- % primitive context finder:
+FUN cxtFinder: (denotation -> com[set[denotation,<]]) **
+	       (denotation -> com[data]) ->
+	       (seq[denotation] -> com[pair[cxt,seq[denotation]]])
+DEF cxtFinder(Cmpl,PrimParser)(<>) == succeed(stop(Cmpl) & <>)
+DEF cxtFinder(Cmpl,PrimParser)(Args AS Ft::Rt) == 
+    PrimParser(Ft) ; (\\Ans.
+    IF Ans okay?
+      THEN succeed(done&Rt)
+      ELSE succeed(fail&Args)
+    FI		   )
+
+DEF err(fail(Err))		== Err
+DEF err(okay(&(Data,Rt,Err)))	== Err

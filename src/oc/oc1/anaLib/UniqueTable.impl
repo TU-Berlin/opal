@@ -1,0 +1,90 @@
+-- LAST EDIT: Fri Aug 18 19:56:41 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     table data structure for global signature with nat keys
+--		same as Table structure but an injective mapping
+--		the domain starts with 0.
+-- ============================================================================
+
+IMPLEMENTATION UniqueTable[entry,<]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		ONLY 0 1 succ pred 
+	Table[refCEntry] COMPLETELY
+	TableFun2        ONLY /
+	SeqFilter	ONLY | 
+	Seq		ONLY <>? seq ft
+	SeqMap		ONLY *
+	Option		COMPLETELY
+	Pair		ONLY pair 2nd 1st
+	DEBUG		ONLY PRINT FIELD? string
+
+DATA refCEntry == refCEntry(refC : nat, entry : entry)
+
+DATA table == uniqueTable(refCtable: table[refCEntry])
+
+FUN = : entry -> refCEntry -> bool
+DEF  = (E)(R) == ~(E < entry(R)) and ~(entry(R) < E)
+
+-- ---------------------------------------------------------------------------
+-- Aufbauphase
+
+DEF {} == uniqueTable({})
+
+DEF incl(Entry, uniqueTable(Table)) ==
+	LET OptNat == /(\\ N, C, E.
+                            IF avail?(E) THEN E ELSE 
+                               IF =(Entry)(C) THEN avail(N) ELSE nil
+                               FI
+                            FI, nil)(Table)
+	IN
+	IF nil?(OptNat) THEN
+			LET (N, NewTab) == incl(refCEntry(1, Entry), Table)
+			IN (N, uniqueTable(NewTab))
+	ELSE LET N == cont(OptNat)
+             IN (N, uniqueTable(upd(N, \\R.refCEntry(succ(refC(R)),
+                                       Entry), Table)))
+	FI
+	
+DEF  toStatic(T) == T
+-- ---------------------------------------------------------------------------
+-- Funktionen der Bearbeitungsphase (partiell fuer statische Tabellen)
+-- functions are as partial as those of Table
+
+DEF  n ! uniqueTable(Table) == entry(n ! Table)
+
+DEF  upd(n,entry:entry, T AS uniqueTable(Table)) == 
+	IF nil?(!?(n, Table)) THEN
+		PRINT(FIELD?[bool]("-zcheckTable"), "update on unused entry",
+		uniqueTable(upd(n, refCEntry(0, entry), Table)))
+	ELSE 
+		upd(n, \\ _ .entry, T)
+	FI
+
+DEF  upd(n,mapF:entry->entry, uniqueTable(Table)) == 
+	uniqueTable(upd(n, \\R.refCEntry(refC(R),mapF(entry(R))),Table))
+
+	/* = on entry not total since < on partNameEntry not total ...
+	uniqueTable(upd(n, \\R.refCEntry(refC(R),
+	PRINT(FIELD?[bool]("-zcheckTable") and ~(=(mapF(entry(R)))(R)), 
+		"possible non-unique update", mapF(entry(R)))), 
+		Table))
+	*/
+-- update may invalidate uniqueness!
+
+DEF  incr(n, uniqueTable(Table)) ==
+	uniqueTable(upd(n, \\R.refCEntry(succ(refC(R)), entry(R)), Table))
+
+DEF  decr(n, uniqueTable(Table)) ==
+	uniqueTable(upd(n, \\R.refCEntry(pred(refC(R)), entry(R)), Table))
+
+-- ---------------------------------------------------------------------------
+-- Umwandlung in Textrepraesentation
+
+DEF  `(offset, F, uniqueTable(Table))== `(offset, \\R.F(entry(R)), Table)
+

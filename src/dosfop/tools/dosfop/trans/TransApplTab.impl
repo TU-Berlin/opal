@@ -1,0 +1,442 @@
+IMPLEMENTATION TransApplTab
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransApplTab.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String        COMPLETELY       SeqMap         COMPLETELY
+  Nat           COMPLETELY       SeqReduce      COMPLETELY
+  Map           COMPLETELY       Set            COMPLETELY
+  Seq           COMPLETELY       SetFilter      COMPLETELY
+  SeqFilter     COMPLETELY       SetConv        COMPLETELY
+  SeqSort       COMPLETELY       Char           COMPLETELY
+  SeqConv       COMPLETELY       Denotation     COMPLETELY
+
+IMPORT
+  MyString      COMPLETELY       Token          COMPLETELY
+  SpecialString COMPLETELY       Context        COMPLETELY
+  Pos           COMPLETELY       Language       COMPLETELY
+  Config        COMPLETELY       TransType      COMPLETELY
+
+-- %$Building the Application Tables of the Current Section$
+-- %--------------------------------------------------------
+
+/* %The @LET-expressions decide which map-elements are relevant for table
+construction w.r.t. the given @c{tokenSeq}. In order to specify the 
+application tables in the same order as the function defintions occur in the
+@c{tokenSeq} they have to be sorted in increasing order. */
+DEF buildAllApplTables( tokenSeq, applContextMap, config ) ==
+  LET
+    fromLine              == line(pos(ft(tokenSeq)))
+    toLine                == line(pos(last(tokenSeq)))
+    domainSetInArea       == (\\x.(fromLine<=x) and (toLine>=x)) |
+                               dom(applContextMap)
+    sortedDomainSeqInArea == msort(<)(explode(domainSetInArea))
+  IN
+    (++ / <>) 
+      (                                            -- concat single tables 
+        (\\pos. buildApplTable(applContextMap ! pos, config)) 
+            * sortedDomainSeqInArea                -- consider all positions
+      )
+
+-- %No token induce no application tables:
+DEF buildAllApplTables( <>, _, _ ) == <>
+
+-- %$Building Succesive Tables$
+-- %---------------------------
+/* %Depending on the maximal length of entries in the application table the following
+function constructs used-function-table specifications in the Texinfo language. 
+A secure decision on the question if one-column- or two-column-tables are appropriate
+can only be made for the ASCII-Info-tables as each single character has a fixed width.
+We apply a heuristic for the @TeX{} entries that are typeset in proportional 
+character font, which is realized by comparison with length-boundaries defined below.
+
+The @TeX{}- resp. the Info-specification is done separately in the following function. */
+
+FUN buildApplTable : seq[applContextEntry] ** config -> seq[outputElem]
+
+DEF buildApplTable( applContextEntries, config ) ==
+  (++ / <>) 
+    (
+      (\\actEntry. 
+-- %Table for @TeX{}:
+         (IF smallEntriesTeX?(actEntry) THEN
+            applTableHeaderTeX(identifier(actEntry), config) ++
+            applTableLinesTeX(applications(actEntry)) ++
+            applTableTrailerTeX 
+          ELSE
+            applTableHeaderTeXBig(identifier(actEntry), config) ++
+            applTableLinesTeXBig(applications(actEntry)) ++
+            applTableTrailerTeX 
+          FI) ++
+-- %Table for Info:
+         (IF smallEntriesInfo?(actEntry) THEN
+            applTableHeaderInfo(identifier(actEntry), config) ++
+            applTableLinesInfo(applications(actEntry)) ++
+            applTableTrailerInfo 
+          ELSE
+            applTableHeaderInfo(identifier(actEntry), config) ++
+            applTableLinesInfoBig(applications(actEntry)) ++
+            applTableTrailerInfo 
+          FI) ++
+-- %Table for HTML
+          ( applTableHeaderHTML(identifier(actEntry), config) ++
+            applTableLinesHTML(applications(actEntry)) ++
+            applTableTrailerHTML
+          )
+      ) * applContextEntries
+    )
+
+
+/* %The following functions are self-containing and decide on the different
+table types (one-column or two-column). For @TeX{} the boundaries are
+chosen due to application experience: 
+
+For @TeX{}: */
+FUN smallEntriesTeX? smallEntriesInfo? : applContextEntry -> bool
+DEF smallEntriesTeX?( applContextEntry(_, appls) ) ==
+  LET
+    maxAppliedFunNameLength == (max/0)(# * ( appliedFunctionName * appls))
+    maxDefModuleNameLength  == (max/0)(# * ( defModuleName * appls))
+  IN
+    (maxAppliedFunNameLength < maxAppliedFunNameLengthTeXBound) and
+    (maxDefModuleNameLength  < maxDefModuleNameLengthTexBound)
+
+FUN maxAppliedFunNameLengthTeXBound  maxDefModuleNameLengthTexBound : nat
+DEF maxAppliedFunNameLengthTeXBound  == "32"!
+DEF maxDefModuleNameLengthTexBound   == "25"!
+
+-- %For Info:
+DEF smallEntriesInfo?( applContextEntry(_, appls) ) ==
+  LET
+    maxAppliedFunNameLength == (max/0)(# * ( appliedFunctionName * appls))
+    maxDefModuleNameLength  == (max/0)(# * ( defModuleName * appls))
+  IN
+    (maxAppliedFunNameLength < maxAppliedFunNameLengthInfoBound) and
+    (maxDefModuleNameLength  < maxDefModuleNameLengthInfoBound)
+
+FUN maxAppliedFunNameLengthInfoBound maxDefModuleNameLengthInfoBound : nat
+DEF maxAppliedFunNameLengthInfoBound == "14"!
+DEF maxDefModuleNameLengthInfoBound  == "22"!
+
+-- %$The TeX Table-Headings$
+-- %------------------------
+-- %$$Header for Two-Column-Table$
+-- %------------------------------
+FUN applTableHeaderTeX : string ** config -> seq[outputElem]
+DEF applTableHeaderTeX( funName, config ) ==
+  %(texinfo(line("@tex"))) ++
+  %(documentation(
+     conc(
+       -- separate the tables from the preceeding paragraph
+       line("\\vskip 0.4cm"),  
+  
+       -- define template for used-function-table
+       line("{\\small"),
+       line("\\vbox{\\tabskip=0pt \\offinterlineskip"),
+       line("\\halign {"),
+       conc(
+         line("\\strut \\vrule#\\tabskip=0.4em& %left vertical line"),
+         conc(
+           line("\\hbox to4.2cm{$\\smallmath #$\\dotfill}&"), -- fun name
+           line("\\hbox to0.4cm{\\hfil ' \\hfil#}&"),         -- apostrophe
+           line("\\hbox to3.4cm{$\\smallmath #$\\hfil}&"),    -- origin
+           line("\\vrule#&")
+             ),
+         conc(
+           line("\\hbox to4.2cm{$\\smallmath #$\\dotfill}&"), -- fun name
+           line("\\hbox to0.4cm{\\hfil ' \\hfil#}&"),         -- apostrophe
+           line("\\hbox to3.4cm{$\\smallmath #$\\hfil}&"),    -- origin
+           line("#\\vrule\\tabskip=0pt\\cr")
+             )
+       ),
+       line("\\tablerule"),
+
+       -- headline of the table
+       conc( 
+         "&\\multispan{7} {"!,
+         "\\hbox{\\fiverm "!,
+         "\\myUsage"!,
+         " }$\\smallmath "!,
+         escTeX(funName),
+         " \\hfil$}&\\cr\\tablerule"!,
+         nl
+       )
+     )
+   )             )
+
+
+-- %$$Header for One-Column-Table$
+-- %------------------------------
+FUN applTableHeaderTeXBig : string ** config -> seq[outputElem]
+DEF applTableHeaderTeXBig( funName, config ) ==
+  %(texinfo(line("@tex"))) ++
+  %(documentation(
+     conc(
+       -- separate the tables from the preceeding paragraph
+       line("\\vskip 0.4cm"),
+    
+       -- define template for used-function-table
+       line("{\\small"),
+       line("\\vbox{\\tabskip=0pt \\offinterlineskip"),
+       line("\\halign {"),
+       conc(
+         line("\\strut \\vrule#\\tabskip=0.4em& %left vertical line"),
+         conc(
+           line("\\hbox to5.5cm{$\\smallmath #$\\dotfill}&"), -- fun name
+           line("\\hbox to0.4cm{\\hfil ' \\hfil#}&"),         -- apostrophe
+           line("\\hbox to10.5cm{$\\smallmath #$\\hfil}&"),   -- origin
+           line("#\\vrule\\tabskip=0pt\\cr")
+         )
+       ),
+       line("\\tablerule"),
+
+       -- headline of the table
+       conc( 
+         "&\\multispan{3} {"!,
+         "\\hbox{\\fiverm "!,
+         "\\myUsage"!,
+         " }$\\smallmath "!,
+         escTeX(funName),
+         " \\hfil$}&\\cr\\tablerule"!,
+         nl
+       )
+     )
+   )             )
+
+-- %$Common TeX-Table Trailer$
+-- %---------------------------
+/* %This closing part can be used for both one-column- and two-column-table 
+specifications: */
+FUN applTableTrailerTeX : seq[outputElem]
+DEF applTableTrailerTeX ==
+  %(
+    documentation(conc(line("\\tablerule"), line("}}}"))),
+    texinfo(line("@end tex"))
+  )
+
+
+-- %$The TeX-Table Contents$
+-- %------------------------
+-- %$$TeX-Entry Construction for Two-Column Table$
+-- %----------------------------------------------
+
+/* %A @c{documentation} tag is put around the string-specification of all entries
+of the table. */
+FUN applTableLinesTeX : seq[application] -> seq[outputElem]
+DEF applTableLinesTeX( appls ) == documentation(texTabLines(appls))%
+
+-- %The implementation of
+FUN texTabLines : seq[application] -> string
+/* %applies pattern-matching to extract two table-entries that have to be displayed
+in one common row.
+
+Empty applications induce an empty @TeX{}-specification */
+DEF texTabLines( <> ) == <>
+
+-- %For applications of uneven length this pattern matches finally:
+DEF texTabLines( singleAppl :: <> ) ==
+  conc( 
+    texTabEntry(singleAppl),
+    "&\\multispan{3}{\\hbox to8.2cm{\\hfil}}&\\cr"!,
+    nl
+  )
+
+-- %Contruction of a full two-element table row:
+DEF texTabLines( firstAppl :: secondAppl :: <> ) ==
+  conc(texTabEntry(firstAppl), texTabEntry(secondAppl), "\\cr"!, nl)
+
+/* %The recursive construction takes place here. Two table entries are split and
+the @TeX{}-string is constructed by the variant above. The rest applications
+are handled recursively: */
+DEF texTabLines( appls ) ==
+  texTabLines( take(2, appls)) ++ texTabLines( drop(2, appls)) 
+
+/* %The specification of a single entry in one column is implemented here. It can be 
+applied for one-column tables, too! */
+FUN texTabEntry : application -> string
+DEF texTabEntry(application(appliedFunName, defModuleName)) ==
+  conc("&"!, escTeX(appliedFunName), "&&"!, escTeX(defModuleName), "&"!)
+
+
+-- %$$TeX-Entry Construction for One-Column Table$
+-- %------------------------------------------
+
+FUN applTableLinesTeXBig : seq[application] -> seq[outputElem]
+DEF applTableLinesTeXBig( appls ) ==
+  %(documentation((++ / <>) (texTabLineBig(_) * appls)))
+
+FUN texTabLineBig : application -> string
+DEF texTabLineBig( appl ) == conc(texTabEntry(appl), "\\cr"!, nl) 
+
+-- %$Common Table Header for Info-File$
+-- %------------------------------------
+/* %The header for one- and two-column Info-tables is identical. */
+FUN applTableHeaderInfo : string ** config -> seq[outputElem]
+DEF applTableHeaderInfo( funName, config ) ==
+  %(
+    texinfo(
+      conc(
+        line("@ifinfo"),
+        nl,
+        line("@flushleft"),
+        line("/" ++ init("79"!, "*"!) ++ "/")
+      )
+    ), 
+    documentation(
+      conc(
+        "/* "!,
+        Usage_Relations_for_Function_:,
+        postfill(escTexinfo(funName), "44"!),
+        " */"!,
+        nl
+      )
+    )
+  )
+
+
+-- %$The Info-Table Contents$
+-- %------------------------
+/* %The Info-table construction is ASCII-based and we need string-formatting
+commands that fill or reduce an entry to a fixed width. Entries that are longer
+than the allowed maximal entry width are cut off. Moreover the function
+@c{escTexinfo} has to be applied on each individual entry to escape the meaning of
+special Info-characters (e.g. @c{@@}). */
+-- %$$Info-Entry Construction for Two-Column Table$
+-- %-----------------------------------------------
+/* %The schema of entry-construction for @TeX{} and Info is identical, except that
+Info does not need markup-commands because of its ASCII-representation. */
+FUN applTableLinesInfo : seq[application] -> seq[outputElem]
+
+DEF applTableLinesInfo( appls ) == documentation(infoTabLines(appls))%
+
+FUN infoTabLines : seq[application] -> string
+
+DEF infoTabLines( <> ) == <>
+
+DEF infoTabLines( singleAppl :: <> ) ==
+  conc(
+    "/* "!,
+    prefill(escTexinfo(appliedFunctionName(singleAppl)), 13),
+    "' "!,
+    postfill(escTexinfo(defModuleName(singleAppl)), 21),
+    prefill(<>, "39"!),
+    "*/"!,
+    nl,
+    "@*"!
+  )
+
+DEF infoTabLines( firstAppl :: secondAppl :: <> ) ==
+  conc(
+    "/* "!,
+    conc(
+      prefill(escTexinfo(appliedFunctionName(firstAppl)), 13),
+      "' "!,
+      postfill(escTexinfo(defModuleName(firstAppl)), 21)
+    ),
+    " "!,
+    conc(
+      prefill(escTexinfo(appliedFunctionName(secondAppl)), 13),
+      "' "!,
+      postfill(escTexinfo(defModuleName(secondAppl)), 21)
+    ),
+    " */"!,
+    nl,
+    "@*"!
+  )
+
+DEF infoTabLines( appls ) ==
+  infoTabLines(take(2, appls)) ++ infoTabLines(drop(2, appls))
+
+
+-- %$$Info-Entry Construction for One-Column Table$
+-- %-----------------------------------------------
+FUN applTableLinesInfoBig : seq[application] -> seq[outputElem]
+DEF applTableLinesInfoBig( appls ) == 
+  documentation((++ / <>) (infoTabLineBig(_) * appls))%
+
+FUN infoTabLineBig : application -> string
+DEF infoTabLineBig( appl ) ==
+  conc(
+    "/* "!,
+    prefill(escTexinfo(appliedFunctionName(appl)), "33"!),
+    "' "!,
+    postfill(escTexinfo(defModuleName(appl)), "40"!),
+    "*/"!,
+    nl,
+    "@*"!
+  ) 
+
+
+-- %$Common Table Trailer for Info-File$
+-- %------------------------------------
+FUN applTableTrailerInfo : seq[outputElem]
+
+DEF applTableTrailerInfo ==
+  texinfo(
+    conc(
+      line("/" ++ init("79"!, "*"!) ++ "/"),
+      line("@end flushleft"),
+      nl,
+      line("@end ifinfo")
+    ) 
+  )%
+
+ 
+-- %$The HTML Table Headings$
+
+FUN applTableHeaderHTML: string ** config -> seq[outputElem]
+DEF applTableHeaderHTML( funName, config ) ==
+  %(texinfo(
+      conc(
+        (line("\n@ifset html\n"),
+         conc(!("@subsubheading "),
+              Usage_Relations_for_Function_: ,
+              escTexinfo(funName))
+         ),
+         nl,
+         line("@multitable @columnfractions 0.3 0.2 0.3 0.2\n")
+--       ,  line("@item @b{Funktion} @tab @b{Struktur} @tab " ++
+--              "@b{Funktion} @tab @b{Struktur}\n")
+        )))
+     
+
+-- %$The HTML Table Trailer$
+FUN applTableTrailerHTML : seq[outputElem]
+DEF applTableTrailerHTML ==
+  texinfo(
+    conc(
+      line("@end multitable"),
+      nl,
+      line("@end ifset"),
+      nl))%
+
+-- %$The HTML Entry Contents$
+
+FUN applTableLinesHTML : seq[application] -> seq[outputElem]
+DEF applTableLinesHTML( appls ) == documentation(HTMLTabLines(appls))%
+
+FUN HTMLTabLines: seq[application] -> string
+
+DEF HTMLTabLines( <> ) == <>
+DEF HTMLTabLines( singleAppl :: <> ) ==
+  conc("@item "!,
+       escTexinfo(appliedFunctionName(singleAppl)),
+       " @tab "!,
+       escTexinfo(defModuleName(singleAppl)),
+       " @tab "!,
+       " -- "!,
+       " @tab "!,
+       " -- "!,
+      nl)
+
+DEF HTMLTabLines( firstAppl :: secondAppl :: S ) ==
+  conc("@item "!,
+       escTexinfo(appliedFunctionName(firstAppl)),
+       " @tab "!,
+       escTexinfo(defModuleName(firstAppl)),
+       " @tab "!,
+       escTexinfo(appliedFunctionName(secondAppl)),
+       " @tab "!,
+       escTexinfo(defModuleName(secondAppl)),
+      nl) ++ 
+  HTMLTabLines(S)
+  

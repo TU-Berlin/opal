@@ -1,0 +1,143 @@
+/* % Sorten fuer die Implementationsteile der abstrakten Syntax.
+            Die Textrepraesentation der Gleichungen enthaelt nicht die
+              Positionen. Es wird ein Pretty-Printing der Ausdruecke
+              versucht, ohne allerdings besonders ausgekluegelt zu sein.
+*/
+-- %- LAST EDIT: Fri Dec  4 19:18:32 1992 by Carola Gerke (kassandra!carola) 
+
+SIGNATURE Impl[obj]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:39 $ ($Revision: 1.1.1.1 $)
+
+-- %- AutorInnen:  mija + carola
+-- %- Projekt:     OPAL1-Compiler (Frontend) + property language
+-- %- Zweck:       
+
+SORT obj
+IMPORT  
+        Fct[obj]        ONLY fct
+        Seq[variant]    ONLY seq
+        Seq[comp]       ONLY seq
+        Seq[expr]       ONLY seq
+        Seq[eq]         ONLY seq
+        Seq[guard]      ONLY seq
+        Seq[obj]        ONLY seq
+        Seq[pair[expr,set]] ONLY seq
+        Pair[expr,set]      ONLY pair   
+        Rep             ONLY rep : SORT
+        Pos             ONLY pos
+        Nat             ONLY nat 16
+        Bitset          ONLY set +
+        Option[formula] ONLY option
+
+SORT expr 
+
+-- %Sortenimplementationen (Position des Gleichheitszeichens)
+TYPE sortImpl== sortImpl( sort:obj, variants:seq[variant], pos:pos )
+
+-- %Sortenvarianten (Position des Konstruktors)
+TYPE variant == variant( cons:obj, test:obj, comps:seq[comp], pos:pos )
+
+-- %Komponenten der Sortenprodukte (Position des Doppelpunktes)
+TYPE comp ==    comp( sel:obj, fct:fct, pos:pos )
+
+-- %Gleichungen (pos ist die Position des Gleichheitszeichens)
+TYPE eq ==      eq( left:expr, right:expr, pos:pos )
+
+-- %Vertauscht beide Seiten
+FUN revert: eq -> eq
+
+-- %Algebraische Gesetze
+TYPE law ==     law(ide:rep, form:formula, pos:pos)
+
+-- %Formeln
+TYPE formula == dfd(which:expr, pos:pos)
+                equal(left:expr, right:expr, pos:pos)
+                ineq(left:expr, right:expr, pos:pos)
+                neg(which:formula, pos:pos)
+                and(left:formula, right:formula, pos:pos)
+                or(left:formula, right:formula, pos:pos)
+                imply(left:formula, right:formula, pos:pos)
+                eqv(left:formula, right:formula, pos:pos)
+                all(vars:seq[obj], which:formula, pos:pos)
+                ex(vars:seq[obj], which:formula, pos:pos)
+                informal(text: rep, pos:pos)
+                none(pos:pos)
+
+/* %simuliert LET-Gleichungen für Formeln.
+    Gleichungen werden in Expressions verteilt */
+FUN block: seq[eq] ** formula ** pos -> formula
+
+-- %Spezifikationen
+TYPE spc == spc(head: eq, pre: option[formula], post: formula, pos:pos)
+
+FUN mkSpecLaw: spc -> law 
+
+-- %Beweise (Kopf und Rumpf)
+TYPE proofHead == proofHead(ide: rep, prems: seq[obj], concl: obj, pos: pos)
+TYPE proofBody == proofBody(proof: obj, body: expr, pos: pos)
+
+/* %$Ausdruecke$ */
+/* %
+@itemize @bullet */
+TYPE expr ==    
+/* %@item
+Fehler oder fehlendes ELSE oder fehlendes Argument */
+                none(pos:pos)   
+/* %@item
+Laufzeitfehler fuer missing patterns */
+                rtError(msg:denotation,pos:pos) 
+/* %@item
+Denotation (Position des Anfuehrungszeichens) */
+                den( string:rep, pos:pos )
+/* %@item Klammerung (Tuple)
+*/
+                tuple( elems:seq[expr], pos:pos )
+/* %@item
+Funktionsapplikation */
+                apply( funct:expr, arg:expr, pos:pos )
+/* %@item
+Fallunterscheidung (else=none bei fehlendem ELSE) */
+                cases( guards:seq[guard], else:expr, pos:pos )
+/* %@item
+Funktionsabstraktion (lokal) */
+                lambda( vars:seq[obj], body:expr, pos:pos )
+/* %@item
+Wert (Namensapplikation) */
+                val( object:obj, pos:pos)
+/* %@item
+ Patternbenennung (nur linke Seite einer Funktionsdef.) */
+                as( patName:obj, expr:expr, pos:pos )
+/* %@item 
+Zwischenergebnisvereinbarungen */
+                block( defs:seq[eq], body:expr, pos:pos )
+/* %@item
+Benutzerannotation des Typs eines Ausdrucks */
+                typed( expr:expr, fct:fct, pos:pos )
+/* %@item
+?? */
+                mix( fix:seq[pair[expr,set]],pos:pos)
+-- %@end itemize
+
+-- %Fallunterscheidung
+TYPE guard ==   guard( if:expr, then:expr, pos:pos )
+
+FUN fun arg op inOprnd postOprnd : set     -- einelementige Bitsets
+FUN fun? arg? op? inOprnd? postOprnd? : set->bool -- Elementtest
+-- %- -------------------------------------------------------------------------
+-- %$Textkonversionen$
+
+FUN  `  : (obj -> denotation) -> sortImpl -> denotation
+FUN  `  : (obj -> denotation) -> variant -> denotation
+FUN  `  : (obj -> denotation) -> comp -> denotation
+FUN  `  : (obj -> denotation) -> eq -> denotation
+FUN  `  : (obj -> denotation) -> law -> denotation
+FUN  `  : (obj -> denotation) -> formula -> denotation
+FUN  `  : (obj -> denotation) -> spc -> denotation
+FUN  `  : (obj -> denotation) -> proofHead -> denotation
+FUN  `  : (obj -> denotation) -> proofBody -> denotation
+FUN  `  : (obj -> denotation) -> expr -> denotation
+FUN  `  : (obj -> denotation) -> guard -> denotation

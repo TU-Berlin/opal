@@ -1,0 +1,230 @@
+IMPLEMENTATION DbAbsyAux
+
+IMPORT
+	Seq		COMPLETELY
+	SeqFold		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqMap2		COMPLETELY
+	Array		COMPLETELY
+	ArrayConv	COMPLETELY
+	Nat		COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	ABORT		COMPLETELY
+	Fmt		COMPLETELY
+	FmtSeq		COMPLETELY
+	Denotation	COMPLETELY
+	PrintableChar	COMPLETELY
+	CharConv	COMPLETELY
+IMPORT	-- repo
+	RepoName	COMPLETELY
+	RepoAbsy	COMPLETELY
+	RepoObjectAccess COMPLETELY
+IMPORT
+	SeqExtensions	COMPLETELY
+IMPORT
+	DbContextLayer	COMPLETELY
+
+-- % Dimension:
+DEF dim(cart(E AS (_ :: _))) == + \ (dim * E)	-- if E is nonempty
+DEF dim(_)		     == 1		-- otherwise
+
+-- % Funktionalität einer Applikation:
+DEF applyWith(Fct,0)		== Fct
+DEF applyWith(name(_),succ(_))	== 
+	ABORT("applyWith'AbsyAux: wrong number of arguments (1)")
+DEF applyWith(cart(_),succ(_))	== 
+	ABORT("applyWith'AbsyAux: wrong number of arguments (2)")
+DEF applyWith(funct(D,C),N AS succ(_)) ==
+    IF N < dim(D)
+      THEN ABORT("applyWith'AbsyAux: wrong number of arguments (3)")
+      ELSE applyWith(C,N-dim(D))
+    FI
+
+-- % Rang-Dimensions-Tabelle:
+DEF rankDimTable(Fct,FParaNo) == 
+	asArray(paraDimTable(FParaNo)++rankDimTableInt(Fct,0))
+FUN paraDimTable : nat -> seq[nat]
+DEF paraDimTable(0) == <>
+DEF paraDimTable(succ(N)) == 1 :: (0..>N)(\\ _ . max'Nat)
+
+  FUN rankDimTableInt : fct'RepoAbsy ** nat	-> seq[nat]
+  DEF rankDimTableInt(Fct,N) ==
+    LET OptDim == applyWithAsDim(Fct,N)
+    IN IF OptDim avail?
+	 THEN cont(OptDim)::rankDimTableInt(Fct,N+1)
+	 ELSE <>
+       FI
+
+  FUN applyWithAsDim : fct ** nat		-> option[nat]
+  DEF applyWithAsDim(Fct,0)		== avail(dim(Fct))
+  DEF applyWithAsDim(name(_),succ(_))	== nil
+  DEF applyWithAsDim(cart(_),succ(_))	== nil
+  DEF applyWithAsDim(funct(D,C),N AS succ(_)) ==
+      IF N < dim(D)
+	THEN avail(max'Nat)
+	ELSE applyWithAsDim(C,N-dim(D))
+      FI
+
+/* %
+ Berechung der Funktionalität eines Ausdrucks: Die Funktion
+ @code{fct: objectName -> repo -> fct} löst bei instanziierten Namen 
+ die Parametrisierung
+auf.
+ */
+DEF fct(R,name(_,N))		== fct(N)(R)
+
+-- es gilt fct(A) === fct(dom(F)):
+DEF fct(R,apply(_,F,_))		== codom(fct(R,F))
+
+/* %Das leere Tupel wird hier nicht gesondert behandelt, seine Funktionalität
+    ist @code{()} . */
+DEF fct(R,tuple(_,Elems))	== cart(fct(R,_) * Elems)
+
+DEF fct(R,den(_,_))		== name(denotation(R))
+
+/* %
+ Die Equations müssen nicht untersucht werden, da die lokalen Variablen im Repo
+global verfügbar sind. Informationen zur Funktionalität sind dort verfügbar.
+ */
+DEF fct(R,let(_,_,Body))	== fct(R,Body)
+
+-- % Eine cases-Expr enthält immer mind. einen Guard.
+DEF fct(R,cases(_,Guards,_)) == fct(R,then(ft(Guards)))
+
+-- % Ein Lambda-Ausdruck mit genau einer Variablen wird gesondert behandelt
+-- % (keine Tupel-Abstraktion).
+DEF fct(R,lambda(_,_,Var :: <>,Expr)) ==
+	funct(fct(Var)(R),fct(R,Expr))
+
+DEF fct(R,lambda(_,_,Vars,Expr)) ==
+	funct(cart((\\V.fct(V)(R))*Vars),fct(R,Expr))
+
+
+
+DEF etaEnrichedRank(Fct) == #(rankDimTableInt(Fct,0)) - 1
+
+
+
+DEF inst(localObjectName(N,L),I) ==
+    localObjectName(N,inst(L,I))
+DEF inst(globalObjectName(N,U),I) ==
+    globalObjectName(N,inst(U,I))
+
+DEF inst(localSignName(N,U),I) ==
+    localSignName(N,inst(U,I))
+
+DEF inst(basicUnitName(N,P),I) ==
+	derivedUnitName(N,P,I)
+DEF inst(derivedUnitName(N,P,_),I) ==
+	derivedUnitName(N,P,I)
+
+
+
+
+-- % fmtImpl 
+DEF fmtImpl(_,data(_,_))(_) == 
+	ABORT("fmtImpl'DbAbsyAux: data not allowed here.")
+DEF fmtImpl(_,variable(_))(_) == 
+	ABORT("fmtImpl'DbAbsyAux: var not allowed here.")
+DEF fmtImpl(_,parameter(_))(_) == 
+	ABORT("fmtImpl'DbAbsyAux: para not allowed here.")
+DEF fmtImpl(N,Impl)(R) ==
+    IF getContext?(an(Impl))
+      THEN block(2,found(fmtName(N)(R)))
+      ELSE fmtImpl1(N,Impl)(R)
+    FI
+
+FUN found : fmt -> fmt
+DEF found(F) == block(2,lit("###");F;lit("###"))
+
+FUN foundIf : an ** bool -> fmt -> fmt ** bool
+DEF foundIf(An,Bool)(Fmt) ==
+    IF getContext?(An)
+      THEN (found(Fmt),true)
+      ELSE (Fmt,Bool)
+    FI
+
+FUN fmtImpl1 : objectName ** impl -> repo -> fmt
+DEF fmtImpl1(N,_)(R) == 
+    block(2,lit("<unknown implementation of ");fmtName(N)(R);lit(">"))
+DEF fmtImpl1(_,induced(_,Sort,constructor))(R) == 
+    block(2,lit("<induced constructor from ");fmtName(Sort)(R);lit(">"))
+DEF fmtImpl1(_,induced(_,Sort,test))(R) == 
+    block(2,lit("<induced test from ");fmtName(Sort)(R);lit(">"))
+DEF fmtImpl1(_,induced(_,Sort,selector))(R) == 
+    block(2,lit("<induced selector from ");fmtName(Sort)(R);lit(">"))
+DEF fmtImpl1(_,def(An,Eqns))(R) ==
+    1st(&(foundIf(An,false)(fmtEqns(Eqns)(R))))
+
+FUN fmtEqns : seq[eqn] -> repo -> fmt
+DEF fmtEqns(<>)(R) == none
+DEF fmtEqns(Ft::Rt)(R) ==
+    LET (FtFmt,Found?) == fmtEqn(Ft)(R)
+    IN IF Found?
+	 THEN FtFmt
+	 ELSE fmtEqns(Rt)(R)
+       FI
+
+FUN fmtEqn : eqn -> repo -> fmt ** bool
+DEF fmtEqn(eqn(An,_,Lhs,_,Rhs))(R) ==
+    LET (LFmt,LFound?) == fmtExpr(Lhs)(R)
+	(RFmt,RFound?) == fmtExpr(Rhs)(R)
+	EqFmt	       == block(2,block(2,LFmt);spc(1);
+				lit("==");spc(1);
+				block(4,RFmt);brk)
+    IN foundIf(An,LFound? or RFound?)(EqFmt)
+
+FUN fmtExpr : expr -> repo -> fmt ** bool
+DEF fmtExpr(name(An,Oper))(R) == foundIf(An,false)(fmtName(Oper)(R))
+DEF fmtExpr(apply(An,F,A))(R) == 
+    LET (FFmt,FFound?) == fmtExpr(F)(R)
+	(AFmt,AFound?) == fmtExpr(A)(R)
+    IN foundIf(An,FFound? or AFound?)(block(2,FFmt;lit("(");AFmt;lit(")")))
+DEF fmtExpr(tuple(An,Elems))(R) ==
+    LET (Fmts,Founds?) == (\\E. fmtExpr(E)(R)) * Elems
+    IN foundIf(An,true? exist? Founds?)(
+		block(2,list(\\x.x,none,lit(","),none,Fmts)))
+DEF fmtExpr(den(An,Den))(R) ==
+    foundIf(An,false)(block(2,lit(`(dblquote)++Den++ `(dblquote))))
+DEF fmtExpr(cases(An,Guards,nil))(R) ==
+    LET (GFmts,GFounds?) == (\\G.fmtGuard(G)(R)) * Guards
+    IN foundIf(An,true? exist? GFounds?)(
+		block(2,list(\\x.x,none,brk,brk,GFmts);lit("FI")))
+DEF fmtExpr(cases(An,Guards,avail(Else)))(R) ==
+    LET (GFmts,GFounds?) == (\\G.fmtGuard(G)(R)) * Guards
+	(EFmt,EFound?)	 == fmtExpr(Else)(R)
+    IN foundIf(An,true? exist? GFounds? or EFound?)(
+		block(2,list(\\x.x,none,brk,brk,GFmts);
+			block(4,lit("ELSE");spc(1);EFmt);brk;lit("FI")))
+DEF fmtExpr(lambda(An,_,Vars,Body))(R) ==
+    LET NFmts		== (\\N.fmtName(N)(R)) * Vars
+	(Fmt,Found?)	== fmtExpr(Body)(R)
+    IN foundIf(An,Found?)(
+	block(2,list(\\x.x,lit("\\"),lit(","),lit("."),NFmts);block(2,Fmt)))
+DEF fmtExpr(let(An,Eqns,Body))(R) ==
+    LET (EFmts,EFounds?) == (\\E.fmtEqn(E)(R)) * Eqns
+	(BFmt,BFound?)	 == fmtExpr(Body)(R)
+    IN foundIf(An,true? exist? EFounds? or BFound?)(
+	block(2,lit("LET");spc(1);
+		block(2,list(\\x.x,none,brk,brk,EFmts));
+		lit("IN");spc(1);block(2,BFmt)))
+DEF fmtExpr(as(An,Var,Expr))(R) ==
+    LET VFmt		== fmtName(Var)(R)
+	(EFmt,EFound?)	== fmtExpr(Expr)(R)
+    IN foundIf(An,EFound?)(
+	block(2,VFmt;spc(1);lit("AS");spc(1);EFmt))
+	
+DEF fmtExpr(any(An))(R) == foundIf(An,false)(lit("_"))
+
+
+FUN fmtGuard : guard -> repo -> fmt ** bool
+DEF fmtGuard(guard(An,If,Then))(R) ==
+    LET (IFmt,IFound?)	== fmtExpr(If)(R)
+	(TFmt,TFound?)	== fmtExpr(Then)(R)
+    IN foundIf(An,IFound? or TFound?)(
+	block(2,lit("IF");spc(1);block(2,IFmt);spc(1);
+			block(4,lit("THEN");spc(1);block(2,TFmt))))
+
+FUN fmtName : objectName -> repo -> fmt
+DEF fmtName(N)(R) == lit(symbol(N)(R))

@@ -1,0 +1,513 @@
+IMPLEMENTATION InterOpalFun
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/context/InterOpalFun.impl,v 1.1.1.1 1998-06-16 16:00:34 wg Exp $
+
+IMPORT Seq          COMPLETELY
+       String       COMPLETELY
+       Nat          COMPLETELY
+       Map          COMPLETELY
+       SeqSort      COMPLETELY
+       SeqFilter    COMPLETELY
+       SeqReduce    COMPLETELY
+       SeqMap       COMPLETELY
+       Set          COMPLETELY
+       SetConv      COMPLETELY
+       SetFilter    COMPLETELY
+       Option COMPLETELY
+       Predicate COMPLETELY
+
+IMPORT InterOpal        COMPLETELY
+       MyString         COMPLETELY
+       SpecialString    COMPLETELY
+       Denotation ONLY ++
+
+-- %$Information Extraction$ 
+-- %-----------------------
+/* %Extract all references to imported structures from the given InterOpal
+structure by converting the domain of the import-map to a sequence of 
+strings. The string of the imported structure can be extracted from the mapping
+of the @c{origin} to its structure specification. */
+DEF getImports( interOpal(_, structsMap) ) ==
+  msort(<)(
+    (\\x. symbol(structsMap ! x)!) * asSeq(origin? | dom(structsMap))
+    )
+
+-- %Unpack option.
+DEF getImports( nil ) == <>
+DEF getImports( avail(IO) ) == getImports(IO)
+
+-- %$InterOpal to String Conversion Functions$ 
+-- %------------------------------------------
+
+-- %The @TYPE definition is mapped directly on the @DATA-implementation: 
+DATA verboseLevel == v1
+                     v2
+                     v3
+
+/* %All conversion functions use spaces when sparating constructors like @c{**} or 
+@c{(} from adjacent type-identifiers in order to allow line breaking during
+the translation process of the compiled intermediate Texinfo-representation. 
+@cindex InterOpal to String Conversion
+@cindex String Conversion */
+
+-- %The function
+FUN kind2String : kind ** verboseLevel ** interOpal -> string
+/* %is implemented by a homomorphism applied on the term constituted by @c{kind}. */
+DEF kind2String( sort, _, _ ) == !("SORT")
+DEF kind2String( fct(fctOfKind), verbLevel, completeInterOpal ) ==
+  fct2String(fctOfKind, verbLevel, completeInterOpal)
+DEF kind2String(other(id, _), _, _) == ("other[" ++ id ++ "]")!
+
+FUN fct2String : fct ** verboseLevel ** interOpal -> string
+
+DEF fct2String( sort(sortName), verbLevel, completeInterOpal ) ==
+  name2String(sortName, verbLevel, completeInterOpal)
+DEF fct2String( funct(cart(<>), codom), verbLevel, completeInterOpal ) ==
+  conc( "() -> "!,
+        optInBrackets(false, fct2String(codom, verbLevel, completeInterOpal))
+      )
+DEF fct2String( funct(dom, codom), verbLevel, completeInterOpal ) ==
+  conc(
+    optInBrackets(funct?(dom), fct2String(dom, verbLevel, completeInterOpal)),
+    " -> "!,
+    optInBrackets(false , fct2String(codom, verbLevel, completeInterOpal))
+   )
+
+DEF fct2String( cart(elems), verbLevel, completeInterOpal ) ==
+  cart2String(elems, verbLevel, completeInterOpal)
+
+
+FUN cart2String : seq[fct] ** verboseLevel ** interOpal -> string
+
+DEF cart2String( <>, _, _) == <>
+DEF cart2String( ftFct :: <>, verbLevel, completeInterOpal) ==
+  optInBrackets(sort?(ftFct)~, fct2String(ftFct, verbLevel, completeInterOpal))
+
+DEF cart2String(ftFctSeq :: rtFctSeq, verbLevel, completeInterOpal) ==
+  conc(
+    optInBrackets(
+      sort?(ftFctSeq)~,
+      fct2String(ftFctSeq, verbLevel, completeInterOpal)
+    ),
+    !(" ** "),
+    cart2String(rtFctSeq, verbLevel, completeInterOpal)
+   )
+
+
+FUN name2String : name ** verboseLevel **interOpal -> string
+/* %The implementation of @c{name2String} consideres the @c{verbLevel} and
+applies recursive calls to conversion functions depending on the chosen verbose-level. 
+@cindex Annotation verbosity 
+@cindex Verbosity of Annotation */
+DEF name2String( name, verbLevel, completeInterOpal ) ==
+  LET
+    structOfName == structs(completeInterOpal) ! origin(name)
+    objectOfName == objs(structOfName) ! ident(name)
+  IN
+    IF v1?(verbLevel) THEN
+        conc(
+          !(symbol(objectOfName)),
+          !("'"), !(symbol(structOfName)),
+          instantiation,
+          !(": "),
+          kind2String(kind(objectOfName), verbLevel, completeInterOpal)
+        )
+    IF v2?(verbLevel) THEN
+      conc(
+        !(symbol(objectOfName)),
+        !("'"),
+        !(symbol(structOfName)),
+        instantiation
+      )
+    ELSE
+      conc(!(symbol(objectOfName)), instantiation)
+    FI      
+      WHERE
+        instantiation ==
+          IF inst?(inst(name)) THEN
+            LET 
+              instsOfName == insts(structOfName) ! inst(name)
+            IN
+              inst2String(instsOfName, verbLevel, completeInterOpal)
+          ELSE
+             <>
+          FI
+
+
+FUN inst2String : seq[name] ** verboseLevel ** interOpal -> string
+
+DEF inst2String( <>, _, _ ) == <>
+DEF inst2String( nameSeq, verbLevel, completeInterOpal ) ==
+  conc(!("["), names2String(nameSeq, verbLevel, completeInterOpal), !("]"))
+
+
+FUN names2String : seq[name] ** verboseLevel ** interOpal -> string
+
+DEF names2String( <>, _, _ ) == <>
+DEF names2String( ftName :: <>, verbLevel, completeInterOpal ) ==
+  name2String(ftName, verbLevel, completeInterOpal)
+DEF names2String( ftName :: rtNames, verbLevel, completeInterOpal ) ==
+  conc(
+    name2String(ftName, verbLevel, completeInterOpal),
+    !(", "),
+    names2String(rtNames, verbLevel, completeInterOpal)
+   )
+
+
+FUN vars2String : seq[var] -> string
+
+DEF vars2String( <> ) == <>
+DEF vars2String( singleVar :: <> ) == symbol(singleVar)!
+DEF vars2String( ftVar :: rtVars ) ==
+  conc(
+    !(symbol(ftVar)),
+    !(", "),
+    vars2String(rtVars)
+  )
+
+      
+FUN expr2String : expr ** interOpal -> string
+
+DEF expr2String( name(_, n) , interOpal ) ==
+--  !("name")
+  name2String(n, v3, interOpal)
+
+DEF expr2String( tuple(_, <>), _ ) ==
+  !("")
+DEF expr2String( tuple(_, singleElem :: <>), interOpal ) ==
+  expr2String(singleElem, interOpal)
+DEF expr2String( tuple(_, ftElem :: rtElems), interOpal ) ==
+  conc(
+    expr2String(ftElem, interOpal),
+    !(", "),
+    expr2String(tuple(unknown, rtElems), interOpal)
+  )
+
+DEF expr2String( apply(_, funct, arg), interOpal ) ==
+  conc(
+    expr2String(funct, interOpal),
+    !("("),
+    expr2String(arg, interOpal),
+    !(")")
+  )
+
+/* %The implementation of this function whoud result in the realization of an @OPAL
+prettyprinter. This is @emph{not} done in DOSFOP and remains for further extension! 
+@cindex Prettyprinter, Lack of */
+DEF expr2String( _, _ ) == !("<n.y.i.>")
+
+
+-- %$Translating Property-Formula to TeX-string$ 
+-- %--------------------------------------------
+/* %Due to the different expressiveness of the @TeX{}-typesetting language and the
+ASCII-based Info presentation, we have to implement different homomorphisms on the
+term-construction of formulas. The following @TeX{} conversion uses the reserved
+command provided by @TeX{} and will lead to a very good typographic result when compiled
+by @TeX{}. 
+
+The lack of easily accessible information on 
+infix-notation might result into a chain of ---often
+not very readable-- prefix-applications with lots of opening and closing brackets.
+A consideration of identifier-positons can heal this problem but is not
+realized here (for further study...). */
+FUN formula2TeX : formula ** interOpal -> string
+
+DEF formula2TeX( informal(_, txt), _) ==
+  ("\\mbox{" ++ txt ++ "}")!
+DEF formula2TeX( other(_, id, _), _) ==
+  ("\\fbox{" ++ id ++ "}")!
+
+DEF formula2TeX( dfd(_, expr), interOpal ) ==
+  !("\\delta ") ++ expr2String(expr, interOpal)
+DEF formula2TeX( approx(_, left, right), interOpal ) ==
+  conc(
+    expr2String(left, interOpal),
+    !("\\sqsubseteq "),
+    expr2String(right, interOpal)
+  )
+DEF formula2TeX( cong(_, left, right), interOpal ) ==
+  conc(
+    expr2String(left, interOpal),
+    !("\\equiv "),
+    expr2String(right, interOpal)
+  )
+  
+DEF formula2TeX( neg(_, formula), interOpal ) ==
+  !("\\neg ") ++ formula2TeX(formula, interOpal)
+DEF formula2TeX( conj(_, left, right), interOpal ) ==
+  conc(
+    formula2TeX(left, interOpal),
+    !("\\land "),
+    formula2TeX(right, interOpal)
+  )
+DEF formula2TeX( disj(_, left, right), interOpal ) ==
+  conc(
+    formula2TeX(left, interOpal),
+    !("\\lor "),
+    formula2TeX(right, interOpal)
+  )
+DEF formula2TeX( impl(_, premise, conclusion), interOpal ) ==
+  conc(
+    formula2TeX(premise, interOpal),
+    !("\\Rightarrow "),
+    formula2TeX(conclusion, interOpal)
+  )
+DEF formula2TeX( equiv(_, left, right), interOpal ) ==
+  conc(
+    formula2TeX(left, interOpal),
+    !("\\Leftrightarrow "),
+    formula2TeX(right, interOpal)
+  )
+DEF formula2TeX( forall(_, vars, range), interOpal ) ==
+  LET
+    extendedInterOpal == enterLocalNames(vars, interOpal)
+  IN
+    conc(
+      !("\\forall "),
+      vars2String(vars),
+      !(" . "),
+      formula2TeX(range, extendedInterOpal)
+    )
+
+DEF formula2TeX( exist(_, vars, range), interOpal ) ==
+  LET
+    extendedInterOpal == enterLocalNames(vars, interOpal)
+  IN
+    conc(
+      !("\\exists "),
+      vars2String(vars),
+      !(" . "),
+      formula2TeX(range, extendedInterOpal)
+    )
+
+
+-- %$Translating Property-Formula to Info-string$ 
+-- %---------------------------------------------
+/* %We are restricted to ASCII-notation while translating @OPAL-Laws to Info-printable
+strings, so we try to rebuild the original Law. */
+FUN formula2Info : formula ** interOpal -> string
+
+DEF formula2TeX( informal(_, txt), _) ==
+  ("``" ++ txt ++ "''")!
+DEF formula2TeX( other(_, id, _), _) ==
+  ("[" ++ id ++ "]")!
+
+DEF formula2Info( dfd(_, expr), interOpal ) ==
+  !("DFD ") ++ expr2String(expr, interOpal)
+DEF formula2Info( approx(_, left, right), interOpal ) ==
+  conc(
+    expr2String(left, interOpal),
+    !(" <<= "),
+    expr2String(right, interOpal)
+  )
+DEF formula2Info( cong(_, left, right), interOpal ) ==
+  conc(
+    expr2String(left, interOpal),
+    !(" === "),
+    expr2String(right, interOpal)
+  )
+  
+DEF formula2Info( neg(_, formula), interOpal ) ==
+  !("\\neg ") ++ formula2Info(formula, interOpal)
+DEF formula2Info( conj(_, left, right), interOpal ) ==
+  conc(
+    formula2Info(left, interOpal),
+    !(" AND "),
+    formula2Info(right, interOpal)
+  )
+DEF formula2Info( disj(_, left, right), interOpal ) ==
+  conc(
+    formula2Info(left, interOpal),
+    !(" OR "),
+    formula2Info(right, interOpal)
+  )
+DEF formula2Info( impl(_, premise, conclusion), interOpal ) ==
+  conc(
+    formula2Info(premise, interOpal),
+    !(" ==> "),
+    formula2Info(conclusion, interOpal)
+  )
+DEF formula2Info( equiv(_, left, right), interOpal ) ==
+  conc(
+    formula2Info(left, interOpal),
+    !(" <=> "),
+    formula2Info(right, interOpal)
+  )
+DEF formula2Info( forall(_, vars, range), interOpal ) ==
+  LET
+    extendedInterOpal == enterLocalNames(vars, interOpal)
+  IN
+    conc(
+      !("ALL "),
+      vars2String(vars),
+      !(" . "),
+      formula2Info(range, extendedInterOpal)
+    )
+
+DEF formula2Info( exist(_, vars, range), interOpal ) ==
+  LET
+    extendedInterOpal == enterLocalNames(vars, interOpal)
+  IN
+    conc(
+      !("EX "),
+      vars2String(vars),
+      !(" . "),
+      formula2Info(range, extendedInterOpal)
+    )
+
+
+/* %Originally string-representations of local names can not be extracted directly 
+from the InterOpal database in the same way as e.g. function identifiers. They are
+simply represented by numeric constants. In order to access the representation of a local
+name during its application in a LAW (e.g. a quantified variable) we have to enter
+the string-representation of the local variable by ourselves. This is done in the 
+following function: */
+FUN enterLocalNames : seq[var] ** interOpal -> interOpal
+
+/* %If the local name is applied during a Law-definition, its textual representation
+can be extracted transparently by the function @c{name2String} implemented above. */
+
+DEF enterLocalNames( <>, interOpal ) == interOpal
+DEF enterLocalNames( var(varPos, varIdent, varSymbol, varFct) :: rtVars,
+                     interOpal(part, structs) ) ==
+
+  LET 
+-- %assure that a local structure for inserting the local name is present:
+    actLocalStruct == IF def?(local, structs) THEN
+                        structs ! local
+                      ELSE
+                        struct(<>, local, "", {}, {}, {}, {}, <>)
+                      FI
+-- %define a pseudo-map for the local-name containing its string-representation:
+    newObjMap == def( varIdent,
+                      object( %(varPos),
+                              varIdent,
+                              varSymbol,
+                              fct(varFct),
+                              missing,
+                              <>,
+                              <>),
+                      objs(actLocalStruct)
+                    )
+  IN
+    enterLocalNames(
+      rtVars,
+      interOpal(part,
+                def(local,
+                    struct(%(unknown),
+                           local,
+                           "",
+                           {}, {},
+                           newObjMap,  -- enter the new map !
+                           {},
+                           <>),
+                    structs)
+                )
+    )           
+    
+
+-- %$Calculations on InterOpal Positions$ 
+-- %-------------------------------------
+
+FUN extractValidPosSeq : seq[pos] ** (part->bool) -> seq[pos]
+/* %Only fully specified positions are valid positions. This is tested initially.
+Subsequently the membership of the each position to a particular structure part is 
+checked via the function @c{partToSearch?}. If both conditions
+are valid the considered position belongs to the sequence of valid positions. */
+DEF extractValidPosSeq( posSeq, partToSearch? ) ==
+  (\\x. IF pos?(x) THEN
+          partToSearch?(part(x))
+        ELSE
+          false
+        FI ) | posSeq
+    
+
+/* %Considering a particular structure module (@c{part -> bool}) the first occurence
+of an implementing equation is returned. This is needed for referencing purposes! */ 
+FUN leastPosOfEquations : seq[eqn] ** (part->bool) -> pos
+/* %
+The implementation works by the following alogorithm:
+@enumerate
+@item 
+get the positons of all equations
+@item 
+reduce the positon to valid positions w.r.t. out context generation
+@item 
+sort the valid positions in order to return the first position as the least one
+@end enumerate
+*/ 
+DEF leastPosOfEquations( equations, partToSearch? ) ==
+  LET
+    posSeq            == pos * equations
+    validPosSeq       == extractValidPosSeq(posSeq, partToSearch?)
+    sortedValidPosSeq == msort(<)(validPosSeq)
+  IN
+    IF <>?(sortedValidPosSeq) THEN
+      unknown
+    ELSE
+      ft(sortedValidPosSeq)
+    FI
+
+
+FUN getPosAndEquations : object ** interOpal -> pos ** seq[eqn]
+/* %If a @c{def}inition ---i.e. some equations--- for the @c{actObj} is present in the
+@c{completeInterOpal}-database the equations as well as the position of 
+the first implementing equation are returned. */
+DEF getPosAndEquations( actObj, completeInterOpal ) ==
+  IF def?(def(actObj)) THEN
+    LET
+      partToSearch? == IF signature?(part(completeInterOpal)) THEN
+                         signature?
+                       IF implementation?(part(completeInterOpal)) THEN
+                         implementation?
+                       FI
+      equations == eqns(def(actObj)) 
+    IN
+      (leastPosOfEquations(equations, partToSearch?), equations)
+  ELSE
+    (unknown, <>)
+  FI
+
+
+-- %$Basic Position Calculations$
+-- %-----------------------------
+
+-- %The function
+FUN < : pos ** pos -> bool
+/* %reduces the position comparison to the natural-number @c{<} operator on
+    the respective @c{row}s. */
+DEF unknown < x == (part? or pos? or region?)(x)
+DEF part(_) < x == (pos? or region?)(x)
+DEF p1 < unknown == false
+DEF p1 < part(_) == false
+DEF p1 < p2 == row(p1) < row(p2)
+
+
+FUN minPos : pos ** pos -> pos
+
+DEF minPos( pos1, pos2 ) ==
+  IF (region? or pos?)(pos1) and unknown?(pos2) THEN
+    pos1
+  IF unknown?(pos1) and (region? or pos?)(pos2) THEN
+    pos2
+  IF (region? or pos?)(pos1) and (region? or pos?)(pos2) THEN
+    IF row(pos1) < row(pos2) THEN
+      pos1
+    IF row(pos1) > row(pos2) THEN
+      pos2
+    ELSE
+      IF col(pos1) < col(pos2) THEN
+        pos1
+      IF col(pos1) > col(pos2) THEN
+        pos2
+      ELSE
+        pos1
+      FI
+    FI
+  ELSE
+    unknown
+  FI
+
+
+
+
+

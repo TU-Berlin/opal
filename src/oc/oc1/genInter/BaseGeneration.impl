@@ -1,0 +1,116 @@
+IMPLEMENTATION BaseGeneration
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+-- %- =========================================================================
+-- %- Autor:       ralfi
+-- %- Projekt:     OPAL1-Compiler
+-- %- Zweck:       Uebersetzung der analysierten Quelle nach InterOpal
+-- %- =========================================================================
+
+IMPORT  AGSig           ONLY    structPos formalParams
+        AnalyzedGlobSig ONLY    pos : globSig**name -> pos
+        BOOL            ONLY    bool false true
+        GlobSig         ONLY    globSig 
+--      InterOpal       ONLY    < extProperties ident impl implementation inst intProperties interOpal kind name object origin part pos property signature struct unknown
+        InterOpal       COMPLETELY
+        Map             ONLY    def map def? {}
+        Name            ONLY    name
+        Nat             ONLY    1 = nat + 10000
+        Options         ONLY    extp? impl? intp? options sign?
+        Pos             ONLY    col lin pos
+        Rep             ONLY    ord rep
+        Seq             ONLY    % ++ seq :: <>
+--      String          ONLY    string
+
+DEF globSig2Part (Opts) ==
+        IF Opts sign? THEN signature
+        IF Opts impl? THEN implementation
+        IF Opts extp? THEN extProperties
+        IF Opts intp? THEN intProperties
+        FI
+
+
+DEF rep2Ident(Rep) == ident(ord(Rep))
+/* %eigentlich wäre der Offset von 10000 wohl nicht nötig, aber nun steht er
+    schon an so vielen Stellen ... (kd) */
+DEF rep2LawIdent(Rep) == ident(ord(Rep) + 10000)
+
+
+DEF =(Name1:name)(Name2) == Name1 = Name2
+
+DEF Name1:name = Name2 ==
+        IF Name1 < Name2 THEN false
+        IF Name2 < Name1 THEN false
+        ELSE true
+        FI
+
+DEF Origin1:origin = Origin2 ==
+        IF Origin1 < Origin2 THEN false
+        IF Origin2 < Origin1 THEN false
+        ELSE true
+        FI
+
+DEF updateStruct(Orig,Struct,interOpal(Part,Structs)) ==
+        interOpal(Part,def(Orig,Struct,Structs))
+
+DEF updateInst(Inst,SName,
+               struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas)) ==
+        struct(Pos,Origin,Symbol,def(Inst,SName,Insts),
+               Onlys,Objs,Props,Pragmas)
+
+DEF updateOnlys(Inst,SName,
+                struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas))==
+        struct(Pos,Origin,Symbol,Insts,def(Inst,SName,Onlys),
+               Objs,Props,Pragmas)
+
+DEF updateObject(Obj,
+                 struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas)) ==
+        struct(Pos,Origin,Symbol,Insts,Onlys,def(ident(Obj),Obj,Objs),
+               Props,Pragmas)
+
+DEF updateProp(Prop,
+               struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas)) ==
+        struct(Pos,Origin,Symbol,Insts,Onlys,Objs,
+               def(ident(Prop),Prop,Props),Pragmas)
+
+DEF updateObjPos(SPos,object(Pos,Ident,Symbol,Kind,Def,Props,Pragmas)) ==
+        object(SPos++Pos,Ident,Symbol,Kind,Def,Props,Pragmas)
+
+DEF updatePragmas(Pragmas,
+               struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,_)) ==
+               struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas)
+
+DEF addPragma(Pragma,
+              struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas)) ==
+  struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragma::Pragmas)
+
+FUN structPos: globSig ** part -> pos'InterOpal
+-- Position des Strukturnamens
+DEF structPos(Sig,Part) == pos(structPos(Sig),Part)
+
+FUN importPos: globSig ** nat -> seq[pos'InterOpal]
+DEF importPos(Sig,No) ==  unknown % -- hat man part ?? importPos(Sig,No)
+
+FUN pos: pos'Pos ** part -> pos'InterOpal
+DEF pos(Pos,Part) ==
+   LET  Row     == lin(Pos)
+        Col     == col(Pos)
+   IN   IF Row = 1 THEN 
+                IF Col = 1 THEN unknown
+                ELSE pos(Part,Row,Col)
+                FI
+        ELSE pos(Part,Row,Col)
+        FI
+
+FUN pos: globSig ** name'Name ** part -> seq[pos'InterOpal]
+DEF pos(Sig,Name,Part) == 
+   LET  Pos     == pos(Sig,Name)
+   IN   pos(Pos,Part)%
+
+FUN pos: interOpal -> pos'InterOpal
+DEF pos(interOpal(Part,_)) == part(Part)
+
+

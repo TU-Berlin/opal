@@ -1,0 +1,364 @@
+% LAST EDIT: Tue May  3 13:53:01 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Tue Feb 15 19:03:01 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Thu Nov  4 15:34:23 1993 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Mon Oct 18 15:11:21 1993 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Wed Oct 13 12:58:22 1993 by Juergen Exner (hektor!jue) 
+
+\chapter{More Examples of \opal-Programs}
+This appendix will summarize some examples of \opal\ programs.
+
+\section{Rabbits}
+\label{prog:rabbits}
+The program Rabbits has already been presented in Chapter \ref{chap:intro}.
+We include it here only for the sake of completeness.
+
+It computes the Fibbonacci-numbers and it is an example of simple
+interactive I/O. Also the conversions between denotations, strings and
+natural numbers (``\pro{`}'' and ``\pro{!}'') are worth a  look.
+
+\subsubsection{Rabbits.sign}
+\begin{prog}
+  SIGNATURE Rabbits
+  IMPORT  Com[void]       ONLY com
+          Void            ONLY void
+  FUN main : com[void]  -- top level command
+\end{prog}
+
+\subsubsection{Rabbits.impl}
+\begin{prog}
+IMPLEMENTATION Rabbits
+
+IMPORT  Denotation      ONLY  ++
+        Nat             ONLY nat ! 0 1 2 - + > = 
+        NatConv         ONLY `
+        String          ONLY string 
+        StringConv      ONLY `
+        Com             ONLY ans:SORT
+        ComCompose      COMPLETELY
+        Stream          ONLY input stdIn readLine 
+                             output stdOut writeLine
+                             write:output**denotation->com[void]
+
+-- FUN main : com[void] -- already declared in signature part
+DEF main == 
+    write(stdOut, 
+ "For which generation do you want to know the number of rabbits? ") &
+    (readLine(stdIn)    & (\LAMBDA in.
+     processInput(in`)
+    ))
+
+FUN processInput: denotation -> com[void]
+DEF processInput(ans) == 
+          LET generation == !(ans)
+              bunnys     == rabbits(generation)
+              result     == "In the " 
+                            ++ (generation`)
+                            ++ ". generation there are " 
+                            ++ (bunnys`) 
+                            ++ " couples of rabbits." 
+          IN writeLine(stdOut, result)
+-- --------------------------------------------------------------
+
+FUN rabbits : nat -> nat
+DEF rabbits(generation) ==
+        IF generation = 0 THEN 1
+        IF generation = 1 THEN 1
+        IF generation > 1 THEN rabbits(generation - 1) 
+                               + rabbits(generation - 2)
+        FI
+\end{prog}
+
+\section{An Interpreter for Expressions}
+\label{app:expressions}
+
+This interpreter for simple mathematical expressions was developed as
+an exercise for students in the first semester.
+ After two months of programming experience they had to
+implement the evaluation and formatting functions, while the parser
+and the I/O environment were implemented by the teaching staff.
+
+The goal was to format a simple arithmetic expression in pre- and
+infix-order and to compute the value of the expression. 
+
+The whole program is divided into three structures:
+\begin{itemize}
+\item \pro{Expr}: This structure does the formatting and evaluation of
+  expressions, i.e.~this was the student's part.
+\item \pro{Parser}: The parser transforms the textual input into an object
+  of type expression, which can be processed by the functions of
+  the structure \pro{Expr}. 
+  Because the implementation part is rather lengthy and not so
+  interesting, we omit it in this paper.
+\item \pro{ExprIO}: This structure controls the input and output and
+  calls the routines of the parser, the formatters and  the evaluator
+ in an the required sequence.
+\end{itemize}
+
+
+\subsection{ExprIO.sign}
+\begin{prog}
+SIGNATURE ExprIO
+IMPORT  Com[void]       ONLY com
+        Void            ONLY void
+FUN interpreter : com[void]     -- top level command
+\end{prog}
+
+\subsection{ExprIO.impl}
+\begin{prog}
+IMPLEMENTATION ExprIO
+
+IMPORT  String          ONLY string  ! ++ slice   = |=  % # empty
+        Char            ONLY char = |= space? newline
+
+        Com             ONLY ans:SORT okay? data fail?
+        ComCompose      COMPLETELY
+        Stream          ONLY input stdIn readLine 
+                             output stdOut write writeLine 
+        Nat             ONLY nat + - 0 1 2 3 4 5 6 7 8 9 10 * = |=  >
+        Expr            COMPLETELY
+        Parser          COMPLETELY
+
+DEF interpreter == 
+        writeLine(stdOut, 
+   "Bitte einen mathematischen Ausdruck eingeben, z.B: 4+(3^2)!-2") & 
+       (readLine(stdIn) & (\LAMBDA in. 
+        processInput(in) )
+
+
+FUN processInput: string -> com[void]
+DEF processInput(ans) == 
+   IF ans = empty THEN writeLine(stdOut, "Ende des Programms"!)
+   IF ans |= empty THEN
+      LET res == parse(ans)
+      IN
+      IF res error? THEN
+        writeLine(stdOut, msg(res)) & 
+        (writeLine(stdOut, 
+               "Bitte noch einmal versuchen (leere Eingabe -> Ende):")&
+        (readLine(stdIn) &
+         processInput))
+      IF res ok? THEN
+        doWork(exprOf(res)) &
+        (writeLine(stdOut, 
+                 "Naechster Ausdruck (leere Eingabe -> Ende):")&
+        (readLine(stdIn)&   (\LAMBDA in.
+         processInput))
+      FI
+   FI
+
+
+
+FUN doWork : expr -> com[void]
+DEF doWork(e) ==
+  writeLine(stdOut, "Der Ausdruck in Prefix-Notation ist:")&
+  (write(stdOut, ">>>")&
+  (write(stdOut, prefix(e))&
+  (writeLine(stdOut, "<<<")&
+  (writeLine(stdOut, "Der Ausdruck in Infix-Notation ist:")&
+  (write(stdOut, ">>>")&
+  (write(stdOut, infix(e))&
+  (writeLine(stdOut, "<<<"!)&
+  (write(stdOut, "Der Wert des Ausdrucks ist: "!)&
+  (writeLine(stdOut, eval(e)))))))))))
+\end{prog}
+
+\subsection{Parser.sign}
+\begin{prog}
+SIGNATURE Parser
+
+IMPORT  Expr    ONLY expr
+        String  ONLY string
+
+TYPE parseRes == ok(exprOf : expr)
+                 error(msg : denotation)
+ 
+FUN parse : string -> parseRes
+\end{prog}
+
+\subsection{Expr.sign}
+\begin{prog}
+-- -----------------------------------------------------------------
+--      Textual Representation and Evaluation of Expressions 
+--                              
+-- -----------------------------------------------------------------
+SIGNATURE Expr
+
+IMPORT Nat ONLY nat
+
+TYPE  expr ==   number (val: nat)
+                dyadic (left: expr, dyop: dyadicOp, right:expr)
+                monadic(monop : monadicOp, exprof :expr)
+
+TYPE dyadicOp == addOp multOp minusOp divOp powerOp
+
+TYPE monadicOp == facOp
+
+-- -----------------------------------------------------------------
+
+FUN prefix : expr -> denotation
+FUN infix : expr -> denotation
+FUN eval : expr -> denotation
+\end{prog}
+
+\subsection{Expr.impl}
+\begin{prog}
+-- ------------------------------------------------------------------
+ 
+IMPLEMENTATION Expr
+
+IMPORT Nat ONLY = > 0 1 + - * / 
+IMPORT Denotation  ONLY ++ 
+IMPORT NatConv ONLY `
+
+DATA  expr ==   number (val: nat)
+                dyadic (left: expr, dyop: dyadicOp, right:expr)
+                monadic(monop : monadicOp, exprof :expr)
+
+DATA dyadicOp == addOp multOp minusOp divOp powerOp
+
+DATA monadicOp == facOp
+
+-- --------------------------------------------------------------------
+
+DEF prefix(number(e)) == e`
+DEF prefix(monadic(op,e)) ==  monop2textPrefix(op) ++
+                                "(" ++ prefix(e) ++ ")"
+DEF prefix(dyadic(l,op,r)) == dyop2textPrefix(op) ++
+                              "(" ++ prefix(l) ++ ", " ++ 
+                              prefix(r) ++ ")"
+
+DEF infix(number(v)) == v`
+DEF infix(monadic(op,e)) == "(" ++ infix(e) ++ ")" 
+                               ++ monop2textInfix(op)
+DEF infix(dyadic(le,ope,re)) == 
+                LET l ==  "(" ++ infix(le) ++ ")"
+                    r ==  "(" ++ infix(re) ++ ")"
+                    op == dyop2textInfix(ope)
+                IN l ++ op ++ r
+
+-- Auxiliary functions for textual representation
+
+FUN monop2textPrefix : monadicOp -> denotation
+DEF monop2textPrefix(op) ==
+        IF op facOp? THEN "fac"
+        FI
+
+FUN dyop2textPrefix : dyadicOp -> denotation
+DEF dyop2textPrefix(op) ==
+        IF op addOp? THEN "add"
+        IF op minusOp? THEN "minus"
+        IF op multOp? THEN "mult"
+        IF op divOp? THEN "div"
+        IF op powerOp? THEN "pow"
+        FI
+
+
+FUN monop2textInfix : monadicOp -> denotation
+DEF monop2textInfix(op) ==
+        IF op facOp? THEN "!"
+        FI
+
+
+FUN dyop2textInfix : dyadicOp -> denotation
+DEF dyop2textInfix(op) ==
+        IF op addOp? THEN "+"
+        IF op minusOp? THEN "-"
+        IF op multOp? THEN "*"
+        IF op divOp? THEN "/"
+        IF op powerOp? THEN "^"
+        FI
+
+-- ----------------------------------------------------------------
+-- evaluation of expressions
+
+DATA result == ok(val:nat)
+                error(msg:denotation)
+
+FUN ok : nat -> result
+    error : denotation -> result
+
+FUN val : result -> nat
+    msg : result -> denotation
+
+FUN ok? error? : result -> bool
+
+
+
+DEF eval(e) ==
+        LET res == eval1(e)
+        IN 
+        IF res ok? THEN val(res)`
+        IF res error? THEN  msg(res)
+        FI
+
+-- ------------------------------------------------------------------
+-- Bei der Fehlermeldung werden alle gefundenen Fehler gemeldet
+
+FUN eval1 : expr -> result
+DEF eval1(e) ==
+        IF e number? THEN ok(val(e))
+        IF e monadic? THEN evalMonadic(monop(e), eval1(exprof(e)))
+        IF e dyadic? THEN evalDyadic(dyop(e), 
+                                     eval1(left(e)), 
+                                     eval1(right(e)))
+        FI
+
+FUN evalMonadic : monadicOp ** result -> result
+DEF evalMonadic (op, arg AS error(msg)) == arg
+DEF evalMonadic (op, arg AS ok(val))    == ok( doMonop(op)(val))
+
+FUN doMonop : monadicOp -> nat -> nat
+DEF doMonop(op) == 
+        IF op facOp? THEN fac
+        FI
+
+
+FUN evalDyadic : dyadicOp ** result ** result -> result
+DEF evalDyadic (op, arg1, arg2) ==
+        IF (arg1 error?) and (arg2 error?) 
+                   THEN error(msg(arg1) ++ msg(arg2))
+        IF (arg1 error?) and (arg2 ok?) THEN arg1
+        IF (arg1 ok?) and (arg2 error?) THEN arg2
+        IF (arg1 ok?) and (arg2 ok?) THEN 
+          IF (op divOp? ) and (val(arg2)=0) 
+                   THEN error("Division durch Null ")
+          IF (op minusOp? ) and (val(arg2)> val(arg1))
+                          THEN error("Minuend kleiner Subtrahend ")
+          IF (op powerOp?) and ((val(arg1)=0) and (val(arg2)=0)) 
+                          THEN error("Basis und Exponent gleich Null")
+           ELSE ok(doDyop(op)(val(arg1), val(arg2)))
+          FI
+        FI
+
+FUN doDyop : dyadicOp -> nat ** nat -> nat
+DEF doDyop(op) == 
+        IF op addOp? THEN +
+        IF op minusOp? THEN -
+        IF op multOp? THEN *
+        IF op divOp? THEN /
+        IF op powerOp? THEN pow
+        FI 
+
+-- ------------------------------------------------------------------
+FUN pow : nat ** nat -> nat
+DEF pow(x, y) == IF y = 0 THEN 1
+                 IF y = 1 THEN x
+                 IF y > 1 THEN x * pow(x, y-1)
+                 FI
+-- --------------------------------------------------------------------
+FUN fac : nat -> nat
+DEF fac(x)==    IF (x =0) or (x=1) THEN 1
+                IF x > 1 THEN x * fac(x-1) 
+                FI
+\end{prog}
+
+
+\section{An Arbitrary Directed Graph}
+\label{app:graph}
+
+Sorry, the directed Graph is not available yet.
+
+% Local Variables: 
+% mode: latex
+% TeX-master: "tutorial"
+% End: 

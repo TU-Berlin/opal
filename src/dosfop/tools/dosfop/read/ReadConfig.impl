@@ -1,0 +1,84 @@
+IMPLEMENTATION ReadConfig
+
+IMPORT Stream ONLY input open close writeLine stdErr read output
+       BinStream ONLY load store
+       Denotation ONLY ++
+       ComCompose ONLY ; &
+       Com ONLY okay? fail? break error com succeed ans data
+       FileSystem ONLY stat mtime filestat
+       Time ONLY time < : time ** time -> bool
+       ScanConfig ONLY scanConfig
+       Error ONLY ok? reason error
+       MyComAction ONLY -!->
+       ParseConfig ONLY parseConfig
+       String ONLY string
+       Char ONLY char
+       Nat ONLY nat
+       TokenConfig ONLY token
+       Seq ONLY seq
+
+FUN configName configbinName : denotation
+DEF configName == "DOSFOP/config"
+DEF configbinName == configName ++ ".bin"
+
+DEF readConfig() ==
+  open(configName) ; (\\ cf? .
+  open(configbinName) ; (\\ cfb? .
+  IF (cf? okay?) and (cfb? okay?) THEN
+    stat(configName) & (\\ cfstat.
+    stat(configbinName) & (\\ cfbstat.
+    IF mtime(cfstat) < mtime(cfbstat) THEN -- bin is newer
+       (close(data(cf?)) & close(data(cfb?))) & readBin(configbinName)
+     ELSE
+       close(data(cfb?)) & (\\ _ .
+       readAscii(data(cf?)) & (\\ c.
+       writeConfig(c) & (\\ _ .
+       succeed(c)
+       )))
+     FI
+    ))
+  IF (cf? okay?) and (cfb? fail?) THEN
+    readAscii(data(cf?))
+  IF (cf? fail?) and (cfb? okay?) THEN
+    close(data(cfb?)) & readBin(configbinName)
+  IF (cf? fail?) and (cfb? fail?) THEN
+    break(
+          "couldn't open config file, neither ASCII nor bin:\n" ++
+          "ASCII:" ++ error(cf?) ++ "\n"++
+          "bin:" ++ error(cfb?)
+         )
+  FI
+  ))
+
+DEF readConfigASCII() == open(configName) & readAscii
+
+-- %read config from ascii file
+FUN readAscii: input -> com[config]
+DEF readAscii(file) ==
+  writeLine(stdErr, "reading configuration file ...") & (\\ _ .
+  read(file, \\ _ . true) & (\\ content.
+  LET (tokenSeq, res) == scanConfig(content)
+  IN
+  (~(ok?(res)) -!-> (\\ . reason(res))) & (\\ _ .
+  writeLine(stdErr, "scanning of configuration ok ...") & (\\ _ .
+  LET (config, res2) == parseConfig(tokenSeq)
+  IN
+  (~(ok?(res2)) -!-> (\\ . reason(res2))) & (\\ _ .
+  writeLine(stdErr, "parsing of configuration ok ...") & (\\ _ .
+  close(file) & (\\ _ .
+  succeed(config)
+  )))))))
+
+-- %read config from binary
+FUN configbintag: denotation
+DEF configbintag == "DOSFOP config binary"
+
+FUN readBin: denotation -> com[config]
+DEF readBin(binName) ==
+  writeLine(stdErr, "reading binary configuration ...") & ( \\ _ .
+  load(binName, configbintag)
+  )
+
+DEF writeConfig(c) == 
+  writeLine(stdErr, "writing binary configuration ...") &
+  store(configbinName, configbintag, c)

@@ -1,0 +1,83 @@
+IMPLEMENTATION DbConvEnv
+
+IMPORT	
+	Nat		COMPLETELY
+	Option		COMPLETELY
+	Seq		COMPLETELY
+	ABORT		COMPLETELY
+IMPORT	-- repo
+	RepoAbsy	COMPLETELY
+IMPORT	Expression	COMPLETELY
+	DbNameStack	COMPLETELY
+	DbContextLayer	COMPLETELY
+	
+
+DATA env == 
+	env(	repo:		repo,
+		identTable:	identTable,
+		nameStack:	nameStack,
+		tpos:		tpos,
+		queryPos:	tpos,  -- (tpos(TId,max'Nat) if undef.)
+		context?:	option[nameStack],
+		annotations:	seq[an]
+	)
+
+DEF init(Repo,ITab) ==
+    env(Repo,ITab,<>,tpos(0),unknown,nil,<>)
+
+DEF initForQuery(Repo,ITab,QueryPos) ==
+    env(Repo,ITab,<>,tpos(0),QueryPos,nil,<>)
+
+DEF actBindOffset(E) == actBindOffset(nameStack(E))
+
+DEF pushAn(env(v1,v2,v3,v4,v5,v6,v7),An) == 
+	env(v1,v2,v3,v4,v5,v6,An::v7)
+
+DEF popAn(env(_,_,_,_,_,_,<>)) == 
+    (ABORT("popAn'ConvEnv: undefined for empty stack"),ABORT(""))
+DEF popAn(env(v1,v2,v3,v4,v5,v6,An::v7)) ==
+    (env(v1,v2,v3,v4,v5,v6,v7),An)
+
+DEF E @ MkExpr ==
+    LET E1 == IF tpos(E) = queryPos(E)
+		THEN markerAt(E) -- do mark this position 
+		ELSE E -- do not change
+	      FI
+    IN (nextPos(E1),MkExpr(tpos(E1)))
+
+
+DEF E @ (MkExpr,An) ==
+    LET E1		== E pushAn An
+	(E2,Expr)	== E1 @ MkExpr
+	(E3,An1)	== E2 popAn
+    IN (E3,Expr,An1)
+
+DEF env(v1,v2,_,v4,v5,v6,v7) :=_nameStack NS == env(v1,v2,NS,v4,v5,v6,v7)
+
+DEF env(v1,v2,v3,v4,v5,v6,v7) pushItem == env(v1,v2,v3 pushItem,v4,v5,v6,v7)
+DEF env(v1,v2,v3,v4,v5,v6,v7) popItem  == env(v1,v2,v3 popItem ,v4,v5,v6,v7)
+DEF env(v1,v2,v3,v4,v5,v6,v7) push N   == env(v1,v2,v3 push N  ,v4,v5,v6,v7)
+
+-- %----------------------------------------------------------------------
+-- % internal functions:
+
+  FUN :=_topAn : env ** (an -> an)	-> env
+  DEF env(_,_,_,_,_,_,<>) :=_topAn _ == 
+      ABORT(":=_absy'ConvEnv: undefined for empty stack")
+  DEF env(v1,v2,v3,v4,v5,v6,An::v7) :=_topAn Upd ==
+      env(v1,v2,v3,v4,v5,v6,Upd(An)::v7)
+
+  FUN markerAt: env -> env
+  DEF markerAt(E) == 
+      LET E1 == E :=_context nameStack(E)
+      IN E1 :=_topAn setContext
+
+  FUN :=_context : env ** nameStack -> env
+  DEF env(v1,v2,v3,v4,v5,_,v7) :=_context C == env(v1,v2,v3,v4,v5,avail(C),v7)
+
+  FUN nextPos : env -> env
+  DEF nextPos(env(v1,v2,v3,v4,v5,v6,v7)) == 
+      env(v1,v2,v3,next(v4),v5,v6,v7)
+
+
+

@@ -1,0 +1,350 @@
+/* %-
+-- LAST EDIT: Fri Sep  8 19:12:10 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+*/
+IMPLEMENTATION Name4SigAna
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	AbsyFun2	ONLY	/ fct com
+	Attributes	COMPLETELY
+	Compose         ONLY    o
+	DeclEntry	COMPLETELY
+	Denotation	ONLY	++
+	GlobSig		COMPLETELY
+	GlobSigImpl	ONLY impl:SORT data
+	ImpExpEntry	COMPLETELY
+	Impl[name]	ONLY	pos sort sortImpl variant
+	Name		COMPLETELY
+	Nat		ONLY	= nat
+	Objects		COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	PartName	ONLY	ide partName:SORT pos 
+	PartNameEntry	COMPLETELY
+	Pos		ONLY	pos
+	Rep		ONLY	lexem rep
+	Seq		COMPLETELY
+	SeqFilter	ONLY	|
+	SeqMap		ONLY	*
+	SeqOfSeq        ONLY    flat
+	SeqReduce	ONLY	/
+	Table		ONLY	! table upd
+	UniqueTable	ONLY	! decr incl table'UniqueTable upd
+       DEBUG ONLY PRINT FIELD?
+
+-- ---------------------------------------------------------------------------
+-- Applikationen
+
+DEF sort?(gS,name) == 
+	IF name intName? THEN (no(realDecl(gS, decl(name))) ! decls(gS)) sort?
+	ELSE
+	  (no(impDecl(name)) ! impDecls(no(struct(name)) ! structures(gS))) 
+	  sort?
+	FI
+
+-- bei der erneuten Deklaration von Operationsparametern wird auf
+--  die Deklaration des Signaturteils zugegriffen, die u.U. inzwischen
+--  zu 'double' geworden ist. (Soll das so sein, oder sollte besser
+--  die Implementierungsteil-Deklaration zu 'double' werden!?)
+-- Hoffentlich gibt es keine 'double'-Ketten!		Andreas
+DEF fct(gS,name) ==
+	IF name intName? THEN
+	  (no(realDecl(gS, decl(name))) ! decls(gS)) fct
+	IF name extName? THEN
+	  (no(impDecl(name)) ! impDecls(no(struct(name)) ! structures(gS))) fct
+	IF name nameSet? THEN
+	  (no(impDecl(name)) ! impDecls(no(struct(name)) ! structures(gS))) fct
+	FI
+
+DEF expandGenericTransitives(gS)(name) ==
+	IF name extName? THEN
+	  IF inst(name) = unparam'Objects THEN name %
+	  OTHERWISE
+	  IF genericTransitives?(gS,name) THEN
+           flat((expandGenericTransitives(gS) o 
+               toName(struct(name),impDecl(name))) * getInsts(gS,name))
+
+	  ELSE name % FI
+	ELSE name % FI
+
+	FUN toName : struct ** impDecl -> inst -> name
+	DEF toName(struct,impDecl)(inst) == extName(struct,impDecl,inst)
+
+DEF onlyApplied(name, gS) == onlyHandle(applied, name, gS)
+DEF onlyUnApplied(name, gS) == onlyHandle(notApplied, name, gS)
+
+FUN onlyHandle : (instAppl -> instAppl) ** name ** globSig -> globSig
+DEF onlyHandle(handle, name, gS) ==
+	updStructs(gS, 
+		(no(struct(name)), updImpDecls(newImpDecls2(handle,name))) 
+		 upd structures(gS))
+
+	FUN newImpDecls2 : (instAppl -> instAppl) ** name ->structE -> table[impDeclE]
+	DEF newImpDecls2(handle,name)(structE) == 
+		(no(impDecl(name)), 
+		 updInstS(newInsts(handle,name))) upd impDecls(structE)
+
+	FUN newInsts : (instAppl -> instAppl) ** name ->impDeclE -> seq[instAppl:SORT]
+	DEF newInsts(handle,name)(impDeclE) == 
+		handleH(no(inst(name)),handle) * instS(impDeclE)
+
+	FUN handleH : nat ** (instAppl -> instAppl) -> instAppl -> instAppl
+	DEF handleH(n, handle)(iA) ==
+		IF no(instOf(iA)) = n THEN handle(iA) ELSE iA FI
+
+DEF explInst?(gS,name) ==
+	(no(inst(name)) ! insts(no(struct(name)) ! structures(gS))) explInst?
+
+DEF explUninst?(gS,name) ==
+	(no(inst(name)) ! insts(no(struct(name)) ! structures(gS))) explUninst?
+
+DEF transitive?(gS,name) ==
+	(no(inst(name)) ! insts(no(struct(name)) ! structures(gS))) transitive?
+
+DEF identInst?(gS,name) ==
+	(no(inst(name)) ! insts(no(struct(name)) ! structures(gS))) identInst?
+
+DEF identUninst?(gS,name) ==
+	(no(inst(name)) ! insts(no(struct(name)) ! structures(gS)))identUninst?
+
+DEF genericTransitives?(gS,name) ==
+	(no(inst(name)) ! insts(no(struct(name)) ! structures(gS))) 
+	genericTransitives?
+
+DEF genericTransitive?(gS,name) ==
+	(no(inst(name)) ! insts(no(struct(name)) ! structures(gS))) 
+	genericTransitive?
+
+DEF realInst2(instTab)(Inst) ==
+IF unparam = Inst THEN Inst
+ELSE LET instE0 == no(Inst) ! instTab 
+	 instE == IF instE0 unusedInst? THEN same(instE0) ELSE instE0 FI 
+     IN
+	 IF instE doubleInst? THEN realInst2(instTab)(inst(instE))
+	 ELSE Inst FI
+FI
+
+DEF realInst3(gS,struct)(Inst) == 
+IF unparam = Inst THEN Inst
+ELSE realInst2(insts(no(struct) ! structures(gS)))(Inst)
+FI
+
+DEF realInst(gS)(name) == realInst(gS,name)
+DEF realInst(gS,name) ==
+	IF name extName? THEN extName(struct(name), impDecl(name), 
+			realInst3(gS, struct(name))(inst(name)))
+        IF name intName? THEN intName(realDecl(gS, decl(name)))
+	ELSE name FI
+
+DEF getInstPN(gS, name) == 
+	inst(no(inst(name)) ! insts(no(struct(name)) ! structures(gS)))
+
+DEF getInsts(gS, name) == 
+	otherInsts(no(inst(name)) ! insts(no(struct(name)) ! structures(gS)))
+DEF getInst(gS, name0) == 
+	IF instE transitive? THEN inst(instE)
+	IF instE genericTransitive? THEN pattern(instE)
+	IF instE genericTransitives? THEN pattern(instE)
+	IF instE identInst? THEN inst(instE)
+	FI
+	WHERE instE==no(inst(name)) ! insts(no(struct(name)) ! structures(gS))
+	name == realInst(gS, name0)
+
+DEF getOtherInst(gS, name) == getCands(gS, otherInstPN)
+	WHERE 
+	otherInstPN == 	inst:instE->instPN(no(inst:instE->inst(instE)) ! 
+			insts(no(struct(instE)) ! structures(gS)))
+	instE == no(inst(name)) ! insts(no(struct(name)) ! structures(gS))
+
+DEF getIde(gS,name) ==
+	IF name intName? THEN ide(no(realDecl(gS, decl(name))) ! decls(gS))
+	ELSE 
+	 ide(no(impDecl(name)) ! impDecls(no(struct(name)) ! structures(gS)))
+	FI
+
+DEF getIde(gS,name) == lexem(getIde(gS, name))
+
+DEF getOrig(gS, name) ==
+      IF name intName? THEN structIde(gS)
+      ELSE 
+       ide(structIde(no(struct(name)) ! structures(gS)))
+      FI
+
+DEF getOrig(gS,name) == lexem(getOrig(gS, name))
+
+DEF getAttr(gS,name) ==
+	IF name intName? THEN attr(no(realDecl(gS, decl(name))) ! decls(gS))
+	IF name extName? THEN 
+      LET l == eq(inst(name)) | instS(iDE)
+          iDE ==no(impDecl(name)) ! impDecls(no(struct(name)) ! structures(gS))
+      IN
+      IF l ::? THEN attr(ft(l))
+      IF l <>? THEN PRINT(FIELD?[bool]("-zgetAttr"), \\ . "getAttr: ?? for" ++ `(name), initAttr)
+      FI
+	FI
+
+	FUN eq : inst -> instAppl -> bool
+	DEF eq(i)(iA) == i = instOf(iA)
+
+DEF isClosed?(gS, name) == 
+	IF name formParam? THEN true
+	ELSE getAttr(gS,name) isClosed
+	FI
+
+DEF isUnclosed?(gS, name) == getAttr(gS,name) isUnclosed
+
+DEF closed(gS, extName(str, iD, Inst)) ==
+	updStructs(gS,(no(str) , 
+		updImpDecls(newImpDecls(no(iD), Inst))) upd structures(gS))
+	
+	FUN newImpDecls : nat ** inst -> structE -> table[impDeclE]
+	DEF newImpDecls(noId, inst)(structE) == 
+		(noId,  updAttr(setClosed, inst)) upd impDecls(structE)
+
+
+DEF unclosed(gS, extName(str, iD, Inst)) ==
+	updStructs(gS,(no(str) , 
+		updImpDecls(newImpDecls3(no(iD), Inst))) upd structures(gS))
+
+	FUN newImpDecls3 : nat ** inst -> structE -> table[impDeclE]
+	DEF newImpDecls3(noId, inst)(structE) == 
+		(noId, updAttr(setUnclosed, inst)) upd impDecls(structE)
+
+DEF setApplied(name,gS:globSig) == 
+	IF name extName? THEN
+	  LET (Struct,ImpDecl,Inst) == (struct(name),impDecl(name),inst(name))
+	  IN
+	  updStructs(gS,upd(no(Struct), 
+		updImpDecls(setApplied(ImpDecl,Inst)),structures(gS)))
+	ELSE gS FI
+
+FUN setApplied : impDecl ** inst -> structE -> table[impDeclE]
+DEF setApplied(impDecl,inst)(structE) ==
+	upd(no(impDecl),updInstS(setApplied(inst)),impDecls(structE))
+
+FUN setApplied : inst -> impDeclE -> seq[instAppl:SORT]
+DEF setApplied(inst:inst)(iDE) == applied(toInstAppl(inst)) :: instS(iDE)
+
+DEF getInstApplS(name,gS) == 
+	IF name extName? THEN
+	  instS(no(impDecl(name))!impDecls(no(struct(name)) ! structures(gS)))
+	ELSE <>[instAppl:SORT] FI
+
+DEF updVariants(gS:globSig, sortImpl, variantS) ==
+	LET 
+	Sort == sort(sortImpl)
+	(Struct,ImpDecl) == (struct(Sort),impDecl(Sort))
+	IN
+	updStructs(gS,upd(no(Struct), updImpDecls(updVariants(ImpDecl,
+			sortImpl,variantS)),structures(gS)))
+	
+FUN updVariants : impDecl ** sortImpl[name] ** seq[variant]
+		-> structE -> table[impDeclE]
+DEF updVariants(impDecl,sI,variantS)(structE) == 
+	upd(no(impDecl),finIDE,impDecls(structE))
+	WHERE 
+	finIDE == sort(ide(IDE),instS(IDE), data(finSortImpl))
+	IDE == no(impDecl) ! impDecls(structE)
+	finSortImpl == sortImpl(sort(sI),variantS, pos(sI))
+
+-- ---------------------------------------------------------------------------
+-- partielle Sortenapplikation
+
+DEF addSortPN(gS, partName, pN) == 
+	(updSortPNs(gS, newSortPNs), sortPN(n, pos(partName)))
+	WHERE 
+	(n, newSortPNs) == sortPNE(partName,pN) incl sortPartNames(gS)
+
+DEF delSortPN(sortPN, gS) == 
+	updSortPNs(finGS, no(sortPN) decr sortPartNames(finGS))
+	WHERE finGS == delPN(pN(no(sortPN) ! sortPartNames(gS)), gS)
+
+DEF getPN(gS, sortPN) == pN(no(sortPN) ! sortPartNames(gS))
+DEF syntax(gS, sortPN:sortPN) == syntax(no(sortPN) ! sortPartNames(gS))
+DEF updPN(gS, sortPN, pN) ==
+	updSortPNs(gS, (no(sortPN), (upd(pN)):sortPNE -> sortPNE) upd sortPartNames(gS)) 
+
+DEF getCands(gS, sortPN:sortPN) == 
+	getCands(pN(no(sortPN) ! sortPartNames(gS)))
+DEF updCands(gS, sortPN:sortPN, cands) ==
+	updSortPNs(gS, (no(sortPN), (upd(newPN)):sortPNE -> sortPNE) upd sortPartNames(gS))
+	WHERE newPN == updCands(pN(no(sortPN) ! sortPartNames(gS)), cands)
+
+
+-- ---------------------------------------------------------------------------
+-- partielle Instantiierungsappliaktionen
+
+DEF noInstPN?(instPN) == instPN = noInstPN
+DEF addInstPN(gS, pos, syntax, context, deepCands) == 
+	(updInstPNs(gS, newInstPNs), instPN(n,pos))
+	WHERE (n, newInstPNs) == deepInstPN incl instPartNames(gS)
+	      deepInstPN == deepInstPNE(pos, syntax, context, deepCands)
+
+DEF delInstPN(instPN, gS) == 
+	IF instPN noInstPN? THEN gS
+	ELSE
+	  (delPN / finGS)(deepInsts(no(instPN) ! instPartNames(gS)))
+	  WHERE finGS == updInstPNs(gS, no(instPN) decr instPartNames(gS))
+	FI
+
+DEF getCands(gS, instPN:instPN) == deepInsts(no(instPN) ! instPartNames(gS))
+DEF updCands(gS, instPN:instPN, pNS) == 
+	updInstPNs(gS, (no(instPN), upd(pNS)) upd instPartNames(gS))
+DEF context(gS, instPN) == context(no(instPN) ! instPartNames(gS))
+DEF syntax(gS, instPN:instPN) == syntax(no(instPN) ! instPartNames(gS))
+
+
+DEF flatInstPN?(gS,instPN) == (no(instPN) ! instPartNames(gS)) flatInstPNE?
+
+DEF toFlatCands(gS, instPN, flatPNSS) ==
+	updInstPNs(gS, (no(instPN), upd(flatPNSS)) upd instPartNames(gS))
+DEF getFlatCands(gS, instPN) == 
+	IF instPN = noInstPN THEN <>[seq[flatPnEle:SORT]]
+	ELSE flatInsts(no(instPN) ! instPartNames(gS)) FI
+
+
+-- ---------------------------------------------------------------------------
+-- allgemeine Applikation
+
+DEF defPN(partName,cands) == 
+	deepPN(errInfo(partName),cands, nil)
+DEF defPNOp(partName,cands, fct) == deepPN(errInfo(partName),cands, avail(fct))
+
+DEF pN pNOp? == fct(pN) avail?
+
+FUN delPN : pN ** globSig -> globSig
+DEF delPN(pN,gS) == 
+	(delInstPN / finGS)(instAn * cands(pN))
+	WHERE finGS == IF fct(pN) nil? THEN gS
+		       ELSE (delSortPN / gS)(cont(fct(pN))) FI
+
+DEF getPNFct(x) == cont(fct(x))
+
+DEF getCands(x) == cands(x)
+DEF updCands(pN, cands) == deepPN(errInfo(pN),cands, fct(pN))
+
+DEF toFlatPN(pN,cands) == flatPN(errInfo(pN), cands)
+
+DEF getFlatPN(x) == flatPN(x)
+
+-- ---------------------------------------------------------------------------
+-- ErrInfo
+
+DEF errInfo(partName) == errInfo(ide(partName), pos(partName))
+
+-- ---------------------------------------------------------------------------
+FUN realDecl : globSig ** decl -> decl
+DEF realDecl(gS,Decl) ==
+	IF declE double? THEN realDecl(gS, decl(no(declE))) ELSE Decl FI
+	WHERE declE == no(Decl) ! decls(gS)

@@ -1,0 +1,580 @@
+IMPLEMENTATION RepoUnitAccess
+
+IMPORT	Nat			COMPLETELY
+	NatConv			COMPLETELY
+	Set			COMPLETELY
+	SetReduce		COMPLETELY
+	SetFilter		COMPLETELY
+	SetMap			COMPLETELY
+	Map			COMPLETELY
+	Seq			COMPLETELY
+	SeqMap			COMPLETELY
+	SeqMapEnv		COMPLETELY
+	SeqCompare		COMPLETELY
+	SeqReduce		COMPLETELY
+	Option			COMPLETELY
+	OptionMap		COMPLETELY
+	Id			COMPLETELY
+	IdMap			COMPLETELY
+	IdTab			COMPLETELY
+	IdSet			COMPLETELY
+	IdMapReduce		COMPLETELY
+	IdTabReduce		COMPLETELY
+	IdSetReduce		COMPLETELY
+	Option			COMPLETELY
+	Pair			COMPLETELY
+	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	SetTopSort		COMPLETELY
+	Denotation		COMPLETELY
+
+IMPORT	RepoInternData		COMPLETELY
+	RepoAbsy		COMPLETELY
+	RepoName		COMPLETELY
+	RepoAn			COMPLETELY
+	RepoAdmin		COMPLETELY
+
+
+-- %$Units of a Repository$ ================================================
+
+DEF units(R) ==
+    (\\Id, Info, S. 
+	IF removed?(Info) THEN S
+			  ELSE incl(internUnitName(Id), S) FI,
+     {}) / unitInfos(R)
+
+DEF lookup?(Sym, Part)(R) ==
+    LET Code? == unitCodes(R) !? Sym
+    IN
+    IF avail?(Code?) THEN 
+	LET Name == basicUnitName(cont(Code?), Part)
+	    Info? == unitInfos(R) !? internId(Name)
+	IN
+	IF avail?(Info?) ANDIF unitInfo?(cont(Info?)) THEN
+	    avail(Name)
+	ELSE nil FI
+    ELSE nil FI
+
+DEF lookup(Syms, Part)(R) ==
+    (\\ Sym, S .
+	IF avail?(lookup?(Sym, Part)(R)) THEN
+	    incl(cont(lookup?(Sym, Part)(R)), S)
+	ELSE S FI,
+     {}) / Syms
+
+
+-- %$Unit Creation and Annotation$ ========================================
+
+DEF enterUnit(Sym, Part)(R) ==
+    -- FIXME: remove -- if possible -- assumptions about encoding
+    -- of unit names
+    LET Code? == unitCodes(R) !? Sym
+    IN
+    IF avail?(Code?) THEN
+	-- a table entry is already allocated for this sign/impl pair
+	LET Name == basicUnitName(cont(Code?), Part)
+	IN
+	IF unitInfo?(unitInfos(R) ! internId(Name)) THEN
+	    -- the unit is already present
+	    (Name, R)
+	ELSE
+	    -- the unit is removed
+	    (Name,
+	     updateUnitInfo(Name, \\ _ . 
+		initialInfo(ft(folders(R)), Sym, Part))
+	     (R)
+	    )
+	FI
+    ELSE
+	-- no table entries allocated. We allocate both sign and
+	-- impl entries, and set one of them to removed.
+	-- This treatment is necessary because of the organization
+	-- of unit names (even code = signature, odd code = implementation)
+	LET (Ids, NewInfos) == multiNew(2, \\ _ . %(removed, removed),
+					unitInfos(R))
+	    Id == IF sign?(Part) THEN ft(Ids) ELSE ft(rt(Ids)) FI
+	    NewInfos1 == def(Id, initialInfo(ft(folders(R)), Sym, Part),
+			     NewInfos)
+	    NewCodes == def(Sym, no(Id) / 2, unitCodes(R))
+	IN
+	(internUnitName(Id),
+	 R :=_unitInfos NewInfos1 :=_unitCodes NewCodes)
+    FI
+
+    FUN initialInfo : folder ** denotation ** part -> unitInfo
+    DEF initialInfo(Sys, Sym, Part) ==
+	emptyUnit(Sym, none,
+		  notExistent(sourceFileName(sourcePath(Sys), Sym, Part)),
+		  notExistent(absyFileName(objectPath(Sys), Sym, Part)),
+		  notExistent(objectFileName(objectPath(Sys), Sym)))
+ 
+
+
+DEF removeUnit(Name)(R) ==
+    updateUnitInfo(Name, \\ _ . removed)(R)
+
+DEF resetUnit(Name)(R) ==
+    updateUnitInfo(Name, \\ Info . 
+	emptyUnit(symbol(Info), an(Info),
+		  sourceFile(Info), absyFile(Info), objectFile(Info)))(R)
+
+	      
+DEF symbol(Name)(R) == 
+    symbol(unitInfo(Name)(R))
+
+DEF an(Name)(R) == 
+    an(unitInfo(Name)(R))
+
+DEF updateAn(Name, Fun)(R) ==
+    updateUnitInfo(Name, \\ Info . Info :=_an Fun(an(Info)))(R)
+
+
+
+-- %$Unit State$ ===========================================================
+
+DEF checked(R) == 
+    (\\Id, Info, S. 
+	 IF unitInfo?(Info)
+		ANDIF state(Info) = checked or state(Info) = compiled THEN
+	     incl(internUnitName(Id), S)
+	 ELSE S FI,
+     {}) / unitInfos(R)
+
+DEF notChecked(R) == 
+    (\\Id, Info, S. 
+	 IF unitInfo?(Info)
+		ANDIF state(Info) = outdated THEN
+	     incl(internUnitName(Id), S)
+	 ELSE S FI,
+     {}) / unitInfos(R)
+
+DEF compiled(R) == 
+    (\\Id, Info, S. 
+	 IF unitInfo?(Info)
+		ANDIF state(Info) = compiled THEN
+	     incl(internUnitName(Id), S)
+	 ELSE S FI,
+     {}) / unitInfos(R)
+
+DEF notCompiled(R) == 
+    (\\Id, Info, S. 
+	 IF unitInfo?(Info)
+		ANDIF ~(state(Info) = compiled) THEN
+	     incl(internUnitName(Id), S)
+	 ELSE S FI,
+     {}) / unitInfos(R)
+
+DEF checked?(Name)(R) ==
+    state(unitInfo(Name)(R)) = checked or
+    state(unitInfo(Name)(R)) = compiled
+
+DEF compiled?(Name)(R) ==
+    state(unitInfo(Name)(R)) = compiled
+
+DEF library?(Name)(R) ==
+    library in flags(unitInfo(Name)(R)) 
+
+DEF sourced?(Name)(R) ==
+    sourced in flags(unitInfo(Name)(R)) 
+
+DEF flushed?(Name)(R) ==
+    flushed in flags(unitInfo(Name)(R)) 
+
+DEF released?(Name)(R) ==
+    released in flags(unitInfo(Name)(R)) 
+
+DEF interpreted?(Name)(R) ==
+    interpreted in flags(unitInfo(Name)(R)) 
+
+DEF fullAbsy?(Name)(R) ==
+    fullAbsy in flags(unitInfo(Name)(R)) 
+
+DEF setReleased(Name, On)(R) ==
+    setFlag(Name, released, On)(R)
+
+DEF setInterpreted(Name, On)(R) ==
+    setFlag(Name, interpreted, On)(R)
+
+FUN setFlag : unitName ** unitFlag ** bool -> repo -> repo
+DEF setFlag(Name, Flag, On)(R) ==
+    updateUnitInfo(Name, \\ Info . 
+	Info :=_flags (IF On THEN incl(Flag, flags(Info))
+			     ELSE excl(Flag, flags(Info)) FI)
+    )(R)
+
+DEF resetChecked(Name)(R) ==
+    IF checked?(Name)(R) THEN
+	IF library?(Name)(R) THEN
+	    R
+	ELSE
+	    LET Clos == incl(Name, related(transitive, importers)(Name)(R))
+	    IN
+	    (\\Ui, Ri.
+		updateUnitInfo(Ui, \\ Info . Info :=_state outdated)(Ri),
+	     R) / Clos
+	FI
+    ELSE R FI
+
+DEF resetCompiled(Name)(R) ==
+    IF compiled?(Name)(R) THEN
+	IF library?(Name)(R) THEN
+		R
+	ELSE
+	    LET Clos == incl(Name, related(transitive, implImporters,
+				\\U. impl?(part(U)) and
+				     released?(U)(R))
+				(Name)(R))
+	    IN
+	    (\\Ui, Ri.
+		updateUnitInfo(Ui, \\ Info . 
+		IF state(Info) = compiled THEN 
+		    Info :=_state checked
+		ELSE Info FI
+		)(Ri),
+	     R) / Clos
+	FI
+    ELSE R FI
+
+DEF checkVersion(Name)(R) ==
+    absyVersion(unitInfo(Name)(R))
+
+DEF compileVersion(Name)(R) ==
+    objectVersion(unitInfo(Name)(R))
+
+
+-- %$Unit Files$ ===========================================================
+
+DEF sourceFile(Name)(R) == sourceFile(unitInfo(Name)(R))
+DEF absyFile(Name)(R) == absyFile(unitInfo(Name)(R))
+DEF objectFile(Name)(R) == objectFile(unitInfo(Name)(R))
+
+/*  LET Sign == makeSign(Name)
+	Impl == makeImpl(Name)
+    IN
+    path(objectFile(unitInfo(Name)(R)))
+		++ "." ++ `(absyVersion(unitInfo(Sign)(R)))
+		++ "." ++ `(objectVersion(unitInfo(Impl)(R)))
+*/
+
+
+DEF checkSourceFile(Name)(R) ==
+    checkRepoFile(sourceFile(Name)(R))	& (\\ File.
+    succeed(
+	updateUnitInfo(Name, \\ Info .
+	    Info :=_sourceFile File
+	)(R)
+    ))
+
+DEF checkAbsyFile(Name)(R) ==
+    checkRepoFile(absyFile(Name)(R))	& (\\ File.
+    succeed(
+	updateUnitInfo(Name, \\ Info .
+	    Info :=_absyFile File
+	)(R)
+    ))
+
+DEF checkObjectFile(Name)(R) ==
+    checkRepoFile(objectFile(Name)(R))	& (\\ File.
+    succeed(
+	updateUnitInfo(Name, \\ Info .
+	    Info :=_objectFile File
+	)(R)
+    ))
+
+
+
+
+-- %$Unit Instances$ ========================================================
+
+DEF lookupInstance(U, Objs)(R) ==
+    LET Inst? == find?(\\ _, Inst . 
+			IF removed?(Inst) THEN false
+			ELSE eq?(=)(Objs, objects(Inst)) FI,
+		      instances(unitInfo(U)(R)))
+    IN
+    IF avail?(Inst?) THEN
+	avail(internUnitName(1st(cont(Inst?)), U))
+    ELSE nil FI
+
+DEF enterInstance(U, Objs)(R) ==
+    LET I? == lookupInstance(U, Objs)(R)
+    IN
+    IF avail?(I?) THEN
+	(cont(I?), R)
+    ELSE
+	-- create new instance
+	LET (Id1, R1) == 
+	  updateUnitInfo(U,
+	    \\Info . 
+		LET (Id, Insts) == new(\\ _ . unitInstance(none, Objs), 
+					instances(Info))
+		IN
+		(Id, Info :=_instances Insts)
+	  )(R)
+	IN
+	LET I == internUnitName(Id1, U)
+	IN
+	-- enter instances implied by transitive instantiation
+	-- such that they are always found with lookupInstance.
+	-- we lookup the imports of U; if for an import the actuals
+	-- contain a reference to a formal parameter of U 
+	-- we perform a substitution and recursively call enterInstance.
+	LET Subs == extend[objectName,<,objectName]({}, formals(U)(R), Objs)
+	IN
+	LET R2 == 
+		(\\ImportId, _, Ri .
+		    LET ImportU == internUnitName(ImportId)
+			Actuals == actuals(ImportU)(R)
+			(Changed?, NewActuals) == 
+			    (\\C?, O . 
+				IF avail?(Subs !? O) THEN
+				    (true, cont(Subs !? O))
+				ELSE (C?, O) FI
+			    ) * (false, Actuals)
+		    IN
+		    IF Changed? THEN
+			LET (_, Rj) == enterInstance(baseName(ImportU), 
+						     NewActuals)(Ri)
+			IN
+			Rj
+		    ELSE Ri FI,
+		R1) / imports(unitInfo(U)(R1))
+	IN
+	(I, R2)
+    FI
+
+
+DEF removeInstance(U)(R) ==
+    IF derivedUnitName?(U) THEN
+	updateUnitInfo(U, \\ Info .
+	    Info :=_instances def(internInstId(U), removed, instances(Info))
+	)(R)
+    ELSE R FI
+    
+DEF instances(U0)(R) ==
+    LET U == baseName(U0)
+    IN
+    (\\Id, Inst, S. 
+	IF removed?(Inst) THEN S 
+			  ELSE incl(internUnitName(Id, U), S) FI, 
+    {}) / instances(unitInfo(U)(R))
+
+
+DEF actuals(U)(R) ==
+    objects(instances(unitInfo(baseName(U))(R)) ! internInstId(U))
+    
+DEF formals(U)(R) ==
+    actuals(baseName(U))(R)
+
+DEF updateFormals(U, Fun)(R) ==
+    updateUnitInfo(U,
+	\\Info . Info :=_instances upd(id(0), 
+				\\ Inst . Inst :=_objects Fun(objects(Inst)),
+				 instances(Info))
+    )(R)
+
+
+
+-- %$Unit Imports$ ==========================================================
+
+DEF enterImport(U, O)(R) ==
+    enterImport(U, unit(O), incl(id(no(O)), {}))(R)
+
+DEF enterImportCompletely(U, I)(R) ==
+    enterImport(U, I, dom(objects(unitInfo(baseName(I))(R))))(R)
+		    
+    FUN enterImport : unitName ** unitName ** idset -> repo -> repo
+    DEF enterImport(U, I, Ids)(R) ==
+	updateUnitInfo(U, \\ Info .
+	    IF internId(I) def? imports(Info) THEN
+		Info :=_imports 
+		   upd(internId(I),
+		       \\Import . Import :=_objectIds
+				      objectIds(Import) + Ids,
+		       imports(Info))
+	    ELSE
+		Info :=_imports
+		   def(internId(I),
+		       unitImport(none, Ids),
+		       imports(Info))
+	    FI
+	)(R)
+
+
+DEF removeImport(U, O)(R) ==
+    removeImport(U, unit(O), incl(id(no(O)), {}))(R)
+
+DEF removeImportCompletely(U, I)(R) ==
+    removeImport(U, I, dom(objects(unitInfo(baseName(I))(R))))(R)
+
+    FUN removeImport : unitName ** unitName ** idset -> repo -> repo
+    DEF removeImport(U, I, Ids)(R) ==
+	updateUnitInfo(U, \\ Info .
+	    IF internId(I) def? imports(Info) THEN
+		LET NewIds == objectIds(imports(Info) ! internId(I)) - Ids
+		IN
+		IF {}?(Ids) THEN
+		    Info :=_imports undef(imports(Info), internId(I))
+		ELSE
+		    Info :=_imports upd(internId(I), 
+					\\Import . Import :=_objectIds NewIds,
+					imports(Info))
+		FI
+	    ELSE Info FI
+	)(R)
+
+DEF importAn(U, I)(R) ==
+    an(imports(unitInfo(U)(R)) ! internId(I))
+
+DEF updateImportAn(U, I, Fun)(R) ==
+    updateUnitInfo(U, \\ Info .
+	Info :=_imports upd(internId(I), 
+			    \\ Import . Import :=_an Fun(an(Import)),
+			    imports(Info))
+    )(R)
+
+ 
+DEF importedUnits(U)(R) ==
+    (\\UnitId, _, S. 
+	incl(internUnitName(UnitId), S), 
+     {}) / imports(unitInfos(R) ! internId(baseName(U))) 
+
+DEF importedUnits(U, U1)(R) ==
+    (\\UnitId, Import, S. 
+	IF U1 ~ internUnitName(UnitId) THEN
+	    incl(internUnitName(UnitId), S)
+	ELSE S FI,
+     {}) / imports(unitInfos(R) ! internId(baseName(U)))
+
+
+DEF importedObjects(U)(R) ==
+    (\\UnitId, Import, S. 
+	(\\ObjectId, S1. 
+	    incl(globalObjectName(no(ObjectId), internUnitName(UnitId)), S1),
+	 S) / objectIds(Import),
+     {}) / imports(unitInfos(R) ! internId(baseName(U)))
+
+
+DEF importedObjects(U, U1)(R) ==
+    (\\UnitId, Import, S. 
+	IF U1 = internUnitName(UnitId) THEN
+	    (\\ObjectId, S1. 
+		incl(globalObjectName(no(ObjectId), internUnitName(UnitId)), 
+		     S1), 
+	     S) / objectIds(Import)
+	ELSE S FI,
+     {}) / imports(unitInfos(R) ! internId(baseName(U)))
+
+
+-- %$Unit Relations$ ======================================================
+
+DATA relOp   == imports importers implImports implImporters
+DATA relMode == direct transitive
+
+DEF (related(Mode, Op)):unitName->repo->set[unitName,<] ==
+    related(Mode, Op, \\ _ . true)
+DEF (related(Mode, Op)):set[unitName,<]->repo->set[unitName,<] ==
+    related(Mode, Op, \\ _ . true)
+
+DEF related(direct, Op, P) == 
+    relOp(Op, P)
+DEF related(direct, Op, P) == 
+    \\ Us . \\ R . (\\Ui, Set. relOp(Op, P)(Ui)(R) + Set, {}) / Us
+
+DEF related(transitive, Op, P) == 
+    \\ U . \\ R . closure(relOp(Op, P), R)(U, {})
+DEF related(transitive, Op, P) == 
+    \\ Us . \\ R . (closure(relOp(Op, P), R), {}) / Us
+
+DEF topSort(Op) == topSort(Op, \\ _ . true)
+DEF topSort(Op, P) ==
+    \\ Us. \\ R. topSort(\\U. relOp(Op, P)(U)(R))(Us)
+
+FUN relOp : relOp ** (unitName -> bool) -> unitName -> repo -> set[unitName,<]
+
+DEF relOp(imports, P) ==
+    \\ U . \\ R . 
+	LET Units == 
+		IF checked?(U)(R) THEN
+		    (\\Id, _, S. 
+			LET Ui == baseName(internUnitName(Id))
+			IN
+			IF P(Ui) THEN incl(Ui, S) ELSE S FI,
+		     {}) / imports(unitInfos(R) ! internId(baseName(U)))
+		ELSE P | lookup(itemImports(unitInfo(U)(R)), sign)(R) FI
+	IN
+	IF impl?(part(U)) ANDIF P(makeSign(U)) THEN
+	    incl(makeSign(U), Units)
+	ELSE Units FI
+
+
+DEF relOp(importers, P) ==
+    \\ U . \\ R .
+	LET Units == 
+		(\\ Id, Info, Si . 
+		    LET Ui == internUnitName(Id)
+		    IN
+		    IF checked?(Ui)(R) THEN
+			IF avail?(find?(\\ImId, _ . 
+					   baseName(internUnitName(ImId)) = U, 
+					imports(Info))) 
+				  ANDIF P(Ui) THEN
+			    incl(Ui, Si)
+			ELSE Si FI
+		    ELSE
+			IF symbol(U)(R) in itemImports(unitInfo(Ui)(R)) 
+				  ANDIF P(Ui) THEN
+			    incl(Ui, Si)
+			ELSE Si FI
+		    FI,
+		{}) / unitInfos(R)
+	IN
+	IF sign?(part(U)) ANDIF P(makeImpl(U)) THEN
+	    incl(makeImpl(U), Units)
+	ELSE Units FI
+
+DEF relOp(implImports, P) ==
+    \\ U . \\ R .
+	LET Units  == IF sign?(part(U)) THEN 
+			  -- FIXME: we should exploit that the imports of 
+			  -- the signature are always included in the 
+			  -- implementation in case of a checked unit which 
+			  -- doesn't originates from a library
+			  relOp(imports, \\ _ . true)(U)(R) +
+			  relOp(imports, \\ _ . true)(makeImpl(U))(R)
+		      ELSE 
+			  relOp(imports, \\ _ . true)(U)(R) 
+		      FI
+	    Units1 == P | (makeImpl * excl(makeSign(U), Units)) 
+	IN
+	Units1
+
+DEF relOp(implImporters, P) ==
+    \\ U . \\ R .
+	LET Units == 
+		(\\ Id, Info, Si .
+		    IF ~({}?(relOp(implImports, \\ Ui . Ui = makeImpl(U))
+				  (internUnitName(Id))(R)))
+			 ANDIF P(internUnitName(Id)) 
+		    THEN incl(internUnitName(Id), Si)
+		    ELSE Si FI,
+		{}) / unitInfos(R)
+	IN
+	Units
+
+
+FUN closure : (unitName -> repo -> set[unitName,<]) ** repo 
+				-> unitName  ** set[unitName,<]
+				-> set[unitName,<]
+
+DEF closure(NextFun, R)(U, S) ==
+    LET Next == NextFun(U)(R)
+	New  == Next - S
+    IN
+    (closure(NextFun, R), S + New) / New
+
+
+FUN makeSign makeImpl : unitName -> unitName
+
+DEF makeSign(basicUnitName(No, _)) == basicUnitName(No, sign)
+DEF makeImpl(basicUnitName(No, _)) == basicUnitName(No, impl)

@@ -1,0 +1,1015 @@
+IMPLEMENTATION RepoInternAbsy
+
+IMPORT  Nat             COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqMapEnv       COMPLETELY
+        SeqReduce       COMPLETELY
+        Set             COMPLETELY
+        SetReduce       COMPLETELY
+        SetConv         COMPLETELY
+        Map             COMPLETELY
+        MapConv         COMPLETELY
+        MapReduce       COMPLETELY
+        Id              COMPLETELY
+        IdSet           COMPLETELY
+        IdMap           COMPLETELY
+        IdTab           COMPLETELY
+        Pair            COMPLETELY
+        Option          COMPLETELY
+        BSTree          COMPLETELY
+        File            COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+
+IMPORT  InterOpal       COMPLETELY
+        InterOpalIO     COMPLETELY
+        Pos             COMPLETELY
+
+IMPORT  RepoAn          COMPLETELY
+        RepoName        COMPLETELY
+        RepoAbsy        COMPLETELY
+        RepoSource      COMPLETELY
+        RepoAdmin       COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoInternData  COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoSourceAccess COMPLETELY
+        RepoObjectAccess COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoComAbort    COMPLETELY
+        RepoCom ONLY upd
+        
+
+-- %$Reading Abstract Syntax$ ===============================================
+
+/* % Reading of interOpal is performed in two phases. First
+we analyze the origins and instances of an InterOpal object, 
+and construct information which maps origins and instances to 
+the according unit names in the repository. Since instance name
+lists may refer to other origins and instances in an arbitrary order, 
+this algorithm is driven recursively `on demand' . In
+a second phase we translate the objects and properties of an
+InterOpal object. During the translation, local signatures
+need to be constructed on the fly; these are stored in
+a threaded state. */
+
+
+-- %$$Reading State$
+
+/* % The state during reading of InterOpal is represented by
+the types below: */
+
+DATA readState == 
+        readState       (repo           : repo,
+                         io             : interOpal,
+                         withImpls?     : bool,
+                         diag           : diag,
+                         main           : unitName,
+                         formals        : seq[objectName],
+                         originInfos    : map[origin,<,originInfo],
+                         instances      : set[unitName,<],
+                         imports        : idmap[unitImport],
+                         freeLocalSign  : nat,
+                         localSigns     : idmap[unitLocalSign],
+                         localRemap     : idmap[objectName])
+
+        FUN :=_repo     : readState ** repo             -> readState
+        FUN :=_io       : readState ** interOpal        -> readState
+        FUN :=_diag     : readState ** diag             -> readState
+        FUN :=_main     : readState ** unitName         -> readState
+        FUN :=_formals  : readState ** seq[objectName]  -> readState
+        FUN :=_originInfos : readState ** map[origin,<,originInfo]
+                                                        -> readState
+        FUN :=_instances: readState ** set[unitName,<] -> readState
+        FUN :=_imports  : readState ** idmap[unitImport] -> readState
+        FUN :=_freeLocalSign : readState ** nat         -> readState
+        FUN :=_localSigns : readState ** idmap[unitLocalSign]
+                                                        -> readState
+        FUN :=_localRemap : readState ** idmap[objectName]
+                                                        -> readState
+
+
+DATA originInfo ==
+        unregistered    -- in case an error occured
+        originInfo      (base           : unitName,
+                                        -- basic unit name of this origin
+                         instances      : map[inst,<,unitName]
+                                        -- derived names of instances
+                                        -- of this unit
+                                        )
+
+DATA localSignInfo ==
+        localSignInfo   (id             : id,
+                         objects        : idtab[object'RepoAbsy])
+                         
+
+-- %$$Diagnostics$
+
+/* % During the construction of origin mappings the error may
+occure that a refered structure isn't present in the repository.
+The functions below are used to report this error: */
+
+FUN readIORef : ref
+DEF readIORef == freeRef("reading internal abstract syntax")
+
+FUN cannotLocate : denotation ** part'RepoName -> diag
+
+DEF cannotLocate(Sym, sign) == 
+    (error, readIORef) !! ("signature part of `%s' not registered", Sym)
+
+DEF cannotLocate(Sym, impl) == 
+    (error, readIORef) !! ("implementation part of `%s' not registered", Sym)
+
+
+-- %$$Reading Driver$
+
+
+
+DATA readResult == 
+        readResult      (diag           : diag,
+                         unit           : unitName,
+                         instances      : set[unitName, <],
+                         formals        : seq[objectName],
+                         imports        : idmap[unitImport],
+                         objects        : idmap[object'RepoAbsy],
+                         properties     : idmap[property'RepoAbsy],
+                         localSigns     : idmap[unitLocalSign])
+
+
+
+DEF readAbsy(IO0, full?)(R) ==
+    -- lookup main structure
+    LET IO      == fix(IO0)
+        Main?   == lookup?(symbol(structs(IO) ! main), readPart(part(IO)))(R)
+    IN 
+    IF nil?(Main?) THEN
+        (readResult(cannotLocate(symbol(structs(IO) ! main), 
+                                 readPart(part(IO))),
+                    basicUnitName(0, sign), {}, <>, {}, {}, {}, {}),
+         R)
+    ELSE
+        -- construct initial reading state
+        LET S   == readState(R, IO, full?, ok, cont(Main?),
+                             <>, {}, {}, {},
+                             no(free(localSigns(unitInfo(cont(Main?))(R)))),
+                             {}, {})
+        IN
+        -- read origins
+        LET S1  == (readOrigin, S) / dom(structs(IO))
+        IN
+        -- translate objects and properties if no errors have been
+        -- occured
+        IF ~(ok?(diag(S1))) THEN
+            (readResult(diag(S1), main(S1), instances(S1), <>, {}, {}, {}, {}),
+             repo(S1))
+        ELSE
+            LET (S2, Objs) == readObject * 
+                                  (S1, asSeq(objs(structs(IO) ! main)))
+                (S3, Props) == readProperty *
+                                  (S2, asSeq(props(structs(IO) ! main)))
+                ObjsMap     == (calcInduced, asMap(Objs)) / Objs
+            IN
+            (readResult(diag(S3), main(S3), instances(S3), formals(S3),
+                        imports(S3), 
+                        ObjsMap, asMap(Props), localSigns(S3)),
+             repo(S3))
+        FI
+    FI
+
+
+-- %$$Reading Origins$
+
+/* % @code{readOrigin(Orig, S)} construct origin and import
+information for @code{Orig}. If @code{Orig} is the main structure, the
+formal parameters are stored in the state. If @code{Orig} is an
+imported structure, instances required by it are entered in the
+repository, and imports are added to the reading state.
+@code{readOrigin} may indirectly call itself recursively in the course
+of translating instance name lists. */
+
+FUN readOrigin : origin ** readState -> readState
+
+DEF readOrigin(Orig, S) ==
+    IF Orig def? originInfos(S) THEN
+        -- already visited
+        S
+    ELSE
+        -- lookup unit 
+        LET Struct == structs(io(S)) ! Orig
+            U? == IF main?(Orig) THEN avail(main(S)) 
+                  ELSE lookup?(symbol(Struct), sign)(repo(S)) FI
+        IN
+        IF nil?(U?) THEN
+            -- cannot locate this unit: inconsistency of InterOpal wrt Repo
+            S :=_diag cannotLocate(symbol(Struct), sign)
+              :=_originInfos 
+                      def(Orig,
+                          unregistered,
+                          originInfos(S))
+        ELSE
+            -- build initial origin info
+            LET S1 == S :=_originInfos
+                                def(Orig, 
+                                    originInfo(cont(U?),
+                                               -- map both none and formal to
+                                               -- units base name
+                                               def(none, cont(U?),
+                                               def(formal, cont(U?), {}))),
+                                    originInfos(S))
+            IN
+            -- read instances
+            (readInstance(Orig), S1) / dom(insts(Struct))
+        FI
+    FI
+
+
+FUN readInstance : origin -> inst ** readState -> readState
+
+DEF readInstance(Orig)(Inst, S) ==
+    -- recursively read instance name list
+LET Struct        == structs(io(S)) ! Orig
+        (S1, Actuals) == readInstObjectName * (S, insts(Struct) ! Inst)
+    IN
+    IF ~(ok?(diag(S1))) THEN
+        -- abort
+        S1
+    OTHERWISE
+    IF main?(Orig) THEN
+        -- ==> Inst = formal: record formal parameters
+        S1 :=_formals Actuals
+    ELSE
+        -- enter instance of import
+        LET U     == base(originInfos(S) ! Orig)
+            (I, R2)       == enterInstance(U, Actuals)(repo(S1))
+            New?          == ~(internInstId(I) def? 
+                                 instances(unitInfo(U)(repo(S1))))
+                            -- FIXME: how to avoid this sharing on
+                            --    repo(S1)??
+            S2    == S1 :=_repo R2
+                            :=_originInfos
+                               upd(Orig,
+                                       \\ Info .
+                                          originInfo(base(Info),
+                                                     def(Inst, I,
+                                                         instances(Info))),
+                                   originInfos(S1))
+                            :=_instances
+                               (IF New? THEN incl(I, instances(S1))
+                                        ELSE instances(S1) FI)
+        IN
+        -- record imports
+        LET Onlys ==
+            IF Inst def? onlys(Struct) THEN
+                (\\Name, Set . incl(id(no(ident(Name))), Set),
+                 {}) / (onlys(Struct) ! Inst)
+            ELSE
+                -- this shouldn't happen, but be on the save side
+                {}
+            FI
+            ImportAn == readPos(S2)(pos(Struct))
+            -- unfortunately InterOpal does _not_ distinguish
+            -- positions by instance, but only by origin. 
+            -- As an approximation, we associate the position related 
+            -- to the origin with every instance from this origin
+        IN
+        S2 :=_imports def(internId(I),
+                              unitImport(ImportAn, Onlys),
+                              imports(S2))
+    FI
+    
+
+FUN readInstObjectName : readState ** name'InterOpal
+                                   -> readState ** objectName
+
+DEF readInstObjectName(S, name(Ident, Orig, Inst)) ==
+    -- recursively read origin 
+    LET S1 == readOrigin(Orig, S)
+    IN
+    IF ok?(diag(S1)) THEN
+        -- recursively read instance
+        LET S2 == 
+                IF Inst def? instances(originInfos(S1) ! Orig) THEN
+                    S1
+                ELSE 
+                    readInstance(Orig)(Inst, S1)
+                FI
+        IN
+        IF ok?(diag(S2)) THEN
+            (S2, globalObjectName(no(Ident), 
+                                  instances(originInfos(S2) ! Orig) ! Inst))
+        ELSE
+            -- build a dummy name; callers dont use it if diags or not ok
+            (S2, globalObjectName(no(Ident), basicUnitName(0, sign)))
+        FI
+    ELSE
+        (S1, globalObjectName(no(Ident), basicUnitName(0, sign)))
+    FI
+
+
+-- %$$Reading Objects and Properties$
+
+/* % @code{readObject(S, Ident & Obj)} converts the given
+InterOpal object to a repository object.
+@code{readProperty(S, Ident & Prop)} behaves
+similar for properties. The rest of the read functions
+are long and boring ... */
+
+FUN readObject  : readState ** pair[ident,object'InterOpal]
+                            -> readState ** pair[id,object'RepoAbsy]
+                                            
+FUN readProperty : readState ** pair[ident,property'InterOpal]
+                            -> readState ** pair[id,property'RepoAbsy]
+-- %cindex neues InterOpal
+DEF readObject(S, Ident & object(Pos, _, Sym, Kind, Def, Props, _)) ==
+    LET S1 == S :=_localRemap {} 
+                        -- reset local remapping (for efficiency only)
+        (S2, Impl) == readImpl(S1, Def)
+    IN
+    (S2, readObjectId(S)(Ident) &
+         object(readPos(S)(Pos),
+                Sym,
+                readKind(S)(Kind),
+                Impl,
+                asSet((\\ PropIdent. 
+                          propertyName(no(readPropertyId(S)(PropIdent)), 
+                                       main(S)))
+                       * Props),
+                {}))
+
+-- %cindex neues InterOpal
+DEF readProperty(S, Ident & freeType(Pos, _, Sort, Variants, _)) ==
+    (S, readPropertyId(S)(Ident) &
+        freeType(readPos(S)(Pos),
+                 readObjectName(S)(Sort),
+                 readVariant(S) * Variants))
+
+-- %cindex neues InterOpal
+DEF readProperty(S, Ident & law(Pos, _, Sym, Form, _)) ==
+    LET S1 == S :=_localRemap {} 
+                        -- reset local remapping (for efficiency only)
+        (S2, Form1) == readFormula(S1, Form)
+    IN
+    (S2, readPropertyId(S)(Ident) &
+         law(readPos(S)(Pos), Sym, Form1))
+
+
+-- %$$Reading Kinds and Functionalities$
+
+FUN readKind : readState -> kind'InterOpal -> kind'RepoAbsy
+FUN readFct  : readState -> fct'InterOpal  -> fct'RepoAbsy
+
+DEF readKind(_)(sort) == sort
+DEF readKind(S)(fct(Fct)) == oper(readFct(S)(Fct))
+
+DEF readFct(S)(sort(Name)) == name(readObjectName(S)(Name))
+DEF readFct(S)(cart(Elems)) == cart(readFct(S) * Elems)
+DEF readFct(S)(funct(D, C)) == funct(readFct(S)(D), readFct(S)(C))
+
+-- %$$Reading Variants of Free Types$
+
+FUN readVariant : readState -> variant'InterOpal 
+                                         -> variant'RepoAbsy
+
+FUN readComponent : readState -> comp'InterOpal 
+                                         -> component'RepoAbsy
+
+DEF readVariant(S)(variant(Pos, Cons, Test, Comps)) ==
+    variant(readPos(S)(Pos), 
+            readObjectName(S)(Cons),
+            readObjectName(S)(Test),
+            readComponent(S) * Comps)
+
+DEF readComponent(S)(comp(Pos, Sel)) ==
+    component(readPos(S)(Pos), readObjectName(S)(Sel))
+
+
+-- %$$Reading Formulas$
+
+FUN readFormula : readState ** formula'InterOpal
+                            -> readState ** formula'RepoAbsy
+
+DEF readFormula(S, dfd(Pos, Expr)) ==
+    LET (S1, Expr1) == readExpr(S, Expr)
+    IN
+    (S1, atomic(readPos(S1)(Pos), dfd, %(Expr1)))
+
+DEF readFormula(S, approx(Pos, Left, Right)) ==
+    LET (S1, Left1) == readExpr(S, Left)
+        (S2, Right1) == readExpr(S1, Right)
+    IN
+    (S2, atomic(readPos(S2)(Pos), approx, %(Left1, Right1)))
+
+DEF readFormula(S, cong(Pos, Left, Right)) ==
+    LET (S1, Left1) == readExpr(S, Left)
+        (S2, Right1) == readExpr(S1, Right)
+    IN
+    (S2, atomic(readPos(S1)(Pos), cong, %(Left1, Right1)))
+
+DEF readFormula(S, neg(Pos, Form)) ==
+    LET (S1, Form1) == readFormula(S, Form)
+    IN
+    (S1, connect(readPos(S1)(Pos), neg, %(Form1)))
+
+DEF readFormula(S, conj(Pos, Left, Right)) ==
+    LET (S1, Left1) == readFormula(S, Left)
+        (S2, Right1) == readFormula(S1, Right)
+    IN
+    (S2, connect(readPos(S2)(Pos), conj, %(Left1, Right1)))
+
+DEF readFormula(S, disj(Pos, Left, Right)) ==
+    LET (S1, Left1) == readFormula(S, Left)
+        (S2, Right1) == readFormula(S1, Right)
+    IN
+    (S2, connect(readPos(S2)(Pos), disj, %(Left1, Right1)))
+
+DEF readFormula(S, impl(Pos, Left, Right)) ==
+    LET (S1, Left1) == readFormula(S, Left)
+        (S2, Right1) == readFormula(S1, Right)
+    IN
+    (S2, connect(readPos(S2)(Pos), impl, %(Left1, Right1)))
+
+DEF readFormula(S, equiv(Pos, Left, Right)) ==
+    LET (S1, Left1) == readFormula(S, Left)
+        (S2, Right1) == readFormula(S1, Right)
+    IN
+    (S2, connect(readPos(S2)(Pos), equiv, %(Left1, Right1)))
+
+DEF readFormula(S, forall(Pos, Vars, Range)) ==
+    LET (S1, Sign) == newLocalSign(S, Vars)
+        (S2, Range1) == readFormula(S1, Range)
+    IN
+    (S2, quant(readPos(S2)(Pos), forall, Sign, readVar(S2) * Vars, Range1))
+
+DEF readFormula(S, exist(Pos, Vars, Range)) ==
+    LET (S1, Sign) == newLocalSign(S, Vars)
+        (S2, Range1) == readFormula(S1, Range)
+    IN
+    (S2, quant(readPos(S2)(Pos), exist, Sign, readVar(S2) * Vars, Range1))
+                -- FIXME: exist must be exists! 
+                -- (old naming bug infiltrated from InterOpal)
+
+
+-- %$$Reading Implementations$
+
+FUN readImpl : readState ** impl'InterOpal
+                         -> readState ** impl'RepoAbsy
+
+DEF readImpl(S, missing) ==
+    IF sign?(part(main(S))) THEN
+        (S, hidden(none))
+    ELSE 
+        (S, missing(none))
+    FI
+
+DEF readImpl(S, imported) ==
+    (S, hidden(none))
+
+DEF readImpl(S, parameter(Pos, _)) ==
+    (S, parameter(readPos(S)(Pos)))
+
+DEF readImpl(S, induced(Pos, Sort)) ==
+    IF withImpls?(S) THEN
+        (S, induced(readPos(S)(Pos),
+                    readObjectName(S)(Sort),
+                    constructor -- this information will be post-patched
+                   ))
+    ELSE (S, hidden(none)) FI
+
+DEF readImpl(S, data(Variants)) ==
+    IF withImpls?(S) THEN
+        -- FIXME: position from Variants?
+        (S, data(none, readVariant(S) * Variants))
+    ELSE (S, hidden(none)) FI
+
+DEF readImpl(S, def(Eqns)) ==
+    IF withImpls?(S) THEN
+        -- FIXME: position from Equations?
+        LET (S1, Eqns1) == readEqn * (S, Eqns)
+        IN
+        (S1, def(none, Eqns1))
+    ELSE (S, hidden(none)) FI
+
+-- %$$Reading Equations$
+
+FUN readEqn : readState ** eqn'InterOpal
+                        -> readState ** eqn'RepoAbsy
+
+DEF readEqn(S, eqn(Pos, Lhs, Pats, Rhs)) == 
+    LET (S1, Sign)    == newLocalSign(S, extractVars(Lhs))
+        (S2, Rhs1)    == readExpr(S1, Rhs)
+    IN
+    (S2, eqn(readPos(S2)(Pos),
+             Sign,
+             readPattern(S2)(Lhs),
+             readPattern(S2) * Pats,
+             Rhs1))
+
+FUN extractVars : pattern'InterOpal -> seq[var]
+DEF extractVars(var(_, Var)) == %(Var)
+DEF extractVars(as(_, Var, Pat)) == Var :: extractVars(Pat)
+DEF extractVars(apply(_, F, A)) == extractVars(F) ++ extractVars(A)
+DEF extractVars(tuple(_, Elems)) == (\\ Pat, R. extractVars(Pat) ++ R, <>)
+                                                / Elems
+DEF extractVars(_) == <>
+
+-- %$$Reading Patterns and Expressions$
+
+FUN readPattern : readState -> pattern'InterOpal
+                                         -> expr'RepoAbsy
+
+FUN readExpr : readState ** expr'InterOpal
+                         -> readState ** expr'RepoAbsy
+
+FUN readGuard : readState ** guard'InterOpal
+                         -> readState ** guard'RepoAbsy
+
+DEF readPattern(S)(any(Pos)) == 
+    any(readPos(S)(Pos))
+DEF readPattern(S)(name(Pos, Name)) == 
+    name(readPos(S)(Pos), readObjectName(S)(Name))
+DEF readPattern(S)(var(Pos, Var)) == 
+    name(readPos(S)(Pos), readVar(S)(Var))
+DEF readPattern(S)(as(Pos, Var, Pat)) == 
+    as(readPos(S)(Pos), readVar(S)(Var), readPattern(S)(Pat))
+DEF readPattern(S)(apply(Pos, F, A)) == 
+    apply(readPos(S)(Pos), readPattern(S)(F), readPattern(S)(A))
+DEF readPattern(S)(tuple(Pos, Elems)) ==
+    tuple(readPos(S)(Pos), readPattern(S) * Elems)
+
+
+DEF readExpr(S, name(Pos, Name)) ==
+    (S, name(readPos(S)(Pos), readObjectName(S)(Name)))
+DEF readExpr(S, den(Pos, Rep)) == 
+    (S, den(readPos(S)(Pos), Rep))
+DEF readExpr(S, tuple(Pos, Elems)) == 
+    LET (S1, Elems1) == readExpr * (S, Elems)
+    IN
+    (S1, tuple(readPos(S)(Pos), Elems1))
+DEF readExpr(S, apply(Pos, F, A)) == 
+    LET (S1, F1) == readExpr(S, F)
+        (S2, A1) == readExpr(S1, A)
+    IN
+    (S2, apply(readPos(S)(Pos), F1, A1))
+DEF readExpr(S, cases(Pos, Guards, Else)) == 
+    LET (S1, Guards1) == readGuard * (S, Guards)
+        (S2, Else1) == IF avail?(Else) THEN
+                           LET (S2T, ElseT) == readExpr(S1, cont(Else))
+                           IN
+                           (S2T, avail(ElseT))
+                       ELSE (S1, nil) FI
+    IN
+    (S2, cases(readPos(S)(Pos), Guards1, Else1))
+DEF readExpr(S, lambda(Pos, Vars, Body)) ==
+    LET (S1, Sign) == newLocalSign(S, Vars)
+        (S2, Body1) == readExpr(S1, Body)
+    IN
+    (S2, lambda(readPos(S2)(Pos), Sign, readVar(S2) * Vars, Body1))
+DEF readExpr(S, block(Pos, Eqns, Body)) ==
+    LET (S1, Eqns1) == readEqn * (S, Eqns)
+        (S2, Body1) == readExpr(S1, Body)
+    IN
+    (S2, let(readPos(S2)(Pos), Eqns1, Body1))
+
+    
+DEF readGuard(S, guard(Pos, If, Then)) == 
+    LET (S1, If1) == readExpr(S, If)
+        (S2, Then1) == readExpr(S1, Then)
+    IN
+    (S2, guard(readPos(S)(Pos), If1, Then1))
+
+
+-- %$$Constructing Local Signatures$
+
+FUN newLocalSign : readState ** seq[var] -> readState ** localSignName
+
+DEF newLocalSign(S, Vars) ==
+    LET SignId == id(freeLocalSign(S))
+        SignName == localSignName(no(SignId), main(S))
+        (VarIds, Tab) == 
+                multiNew(#(Vars), 
+                         \\ _ . (\\ Var. object(readPos(S)(pos(Var)),
+                                                symbol(Var),
+                                                oper(readFct(S)(fct(Var))),
+                                                variable(none),
+                                                {}, {})) * Vars,
+                        {})
+        Remap == extend(localRemap(S),
+                        (\\Var . id(no(ident(Var)))) * Vars,
+                        (\\Id. localObjectName(no(Id), SignName)) * VarIds)
+    IN
+    (S :=_localSigns    def(SignId, unitLocalSign(none, Tab), localSigns(S))
+       :=_freeLocalSign succ(freeLocalSign(S))
+       :=_localRemap    Remap,
+     SignName)
+
+
+
+-- %$$Reading Names$
+
+FUN readObjectName : readState -> name'InterOpal -> objectName
+FUN readPropertyName : readState -> name'InterOpal -> propertyName
+
+FUN readVar : readState -> var'InterOpal -> objectName
+
+FUN readObjectId : readState -> ident'InterOpal -> id
+FUN readPropertyId : readState -> ident'InterOpal -> id
+
+
+DEF readObjectName(S)(name(Ident, local, _)) ==
+    -- ASSERT Ident def? localRemap .... FIXME: be more robust
+    localRemap(S) ! id(no(Ident))
+DEF readObjectName(S)(name(Ident, Orig, Inst)) ==
+    globalObjectName(no(Ident), instances(originInfos(S) ! Orig) ! Inst)
+
+
+DEF readVar(S)(Var) ==
+    -- ASSERT Ident def? localRemap .... FIXME: be more robust
+    localRemap(S) ! id(no(ident(Var)))
+
+
+DEF readPropertyName(S)(name(Ident, Orig, Inst)) ==
+    propertyName(no(Ident), -- - no(firstLaw), 
+                 instances(originInfos(S) ! Orig) ! Inst)
+
+
+DEF readObjectId(_)(Ident) == id(no(Ident))
+DEF readPropertyId(_)(Ident) == id(no(Ident)) -- - no(firstLaw))
+
+
+-- %$$Reading Positions$
+
+FUN readPos : readState -> pos'InterOpal -> an
+
+FUN readPos : readState -> seq[pos'InterOpal] -> an
+
+DEF readPos(S)(Pos:pos) == 
+    none :=_locator makePos(S)(Pos, unspecified)
+
+DEF readPos(S)(Pos:seq[pos]) == 
+    none :=_locator (makePos(S), unspecified) / Pos
+
+FUN makePos : readState -> pos'InterOpal ** locator -> locator
+DEF makePos(_)(unknown, Loc) == Loc
+DEF makePos(_)(_, Loc) == Loc
+DEF makePos(S)(pos(Part, Row, Col), Loc) == 
+    IF readPart(Part) = part(main(S)) THEN
+        pos(pos(Row, Col), Loc)
+    ELSE 
+        -- if the positions belongs to the other part,
+        -- we cannot convert it
+        Loc
+    FI 
+
+-- %$$Reading Structure Parts$
+
+FUN readPart : part'InterOpal -> part'RepoName
+
+DEF readPart(signature) == sign
+DEF readPart(extProperties) == sign
+DEF readPart(implementation) == impl
+DEF readPart(intProperties) == impl
+
+
+-- %$$Calculating Induced Kinds$
+
+FUN calcInduced : pair[id,object'RepoAbsy] ** idmap[object'RepoAbsy] 
+                                           -> idmap[object'RepoAbsy]
+
+DEF calcInduced(_ & Obj, Map) ==
+    IF data?(impl(Obj)) THEN
+        (calcInducedVariant, Map) / variants(impl(Obj))
+    ELSE Map FI
+
+FUN calcInducedVariant : variant'RepoAbsy ** idmap[object'RepoAbsy] 
+                                          -> idmap[object'RepoAbsy]
+
+DEF calcInducedVariant(Vari, Map) ==
+    upd(id(no(constructor(Vari))), updKind(constructor),
+    upd(id(no(test(Vari))),        updKind(test),
+        (\\Comp, Map1.
+                upd(id(no(selector(Comp))), updKind(selector), Map1),
+         Map) / components(Vari)
+    ))
+
+FUN updKind : inducedKind -> object'RepoAbsy -> object'RepoAbsy
+DEF updKind(Kind)(Obj) ==
+    Obj :=_impl induced(an(impl(Obj)), sort(impl(Obj)), Kind)
+
+
+-- %$Loading Abstract Syntax$ ==============================================
+
+DEF loadUnitAbsy(U)(R) == checkIO(iloadUnitAbsy(U)(R))
+
+DEF loadUnitAbsy(U)(R) ==
+  iloadUnitAbsy(U)(R) ; (\\ a.
+  IF fail?(a) THEN
+    IF tagMismatch?(error(a)) THEN
+      LET Diag == !!(hint, readIORef,
+                     "abstract syntax in old format ignored")
+      IN
+      diag(Diag)(R) &  (\\ R1.
+      succeed(updateUnitInfo(U, \\ Info. Info :=_absyFile
+                             notExistent(path(absyFile(U)(R1))))(R1)
+             & false)
+      )
+    ELSE
+      checkIO(break(error(a)))
+    FI
+  ELSE
+    succeed(data(a) & true)
+  FI
+  )
+
+FUN iloadUnitAbsy : unitName -> repo -> com[repo]
+DEF iloadUnitAbsy(U)(R) ==
+    checkAbsyFile(U)(R)                                 & (\\ R1 .
+    readInterOpal(path(absyFile(U)(R1)))         & (\\ IO? .
+      IF nil?(IO?) THEN
+        break("couldn't read abstract syntax")
+      ELSE
+        LET R2 == updateUnitInfo(U, \\ Info . Info :=_localSigns {})(R1)
+                                                -- for readAbsy ...
+            (Res, R3) == readAbsy(cont(IO?), fullAbsy?(U)(R2))(R2)
+            Diag == IF ok?(diag(Res)) ANDIF ~(unit(Res) = U) THEN
+                        !!(error, readIORef, "InterOpal unit name mismatch")
+                    ELSE diag(Res) FI
+        IN
+        diag(Diag)(R3)                                  & (\\ R4 .
+        IF ~(ok?(Diag)) THEN
+            -- abort
+            abort
+        ELSE
+            LET R5 ==
+             updateUnitInfo(U, \\ Info .
+                LET Instances == asTab(%(id(0) & 
+                                         unitInstance(none, formals(Res))),
+                                   removed)
+                    Objs      == asTab(asSeq(objects(Res)), removed)
+                    Props     == asTab(asSeq(properties(Res)), removed)
+                IN
+                Info :=_imports    imports(Res)
+                     :=_instances  Instances
+                     :=_objects    Objs
+                     :=_properties Props
+                     :=_localSigns asTab(asSeq(localSigns(Res)), removed)
+                     :=_absyVersion succ(absyVersion(Info))
+              )(R4)
+            IN
+            LET R6 == assocUnitItems(U)(R5) 
+            IN
+            event(newAbsy(U))(R6)
+        FI
+        )
+      FI
+    ))
+
+-- %@cindex FIXME
+/* %Copied and slightly changed from @file{oc/shared/interOpal/InterOpalIO}.
+Should be inserted there, but the shared-library was closed already. (kd)
+*/
+
+IMPORT BinStream COMPLETELY
+       Stream COMPLETELY
+
+FUN readInterOpal: denotation -> com[option[interOpal]]
+DEF readInterOpal(fname) ==
+  open(fname); (\\ fn? .
+  IF fn? fail? THEN succeed(nil)
+  ELSE
+    LET fn == data(fn?)
+    IN
+    read(fn, ioTypeKey) ; (\\ a.
+    close(fn) & (\\ _ .
+    IF a fail? THEN break(error(a))
+    IF a okay? THEN succeed(avail(data(a)))
+    FI
+    ))
+  FI
+  )
+
+FUN tagMismatch? : denotation -> bool
+DEF tagMismatch?(d) == IF #(d) < #(tagMismatch) THEN false
+                       OTHERWISE
+                       IF tagMismatch <| d THEN true
+                       ELSE false
+                       FI
+
+FUN tagMismatch: denotation
+DEF tagMismatch == "binary IO tag mismatches"
+
+-- %$Getting Absy Dependencies$ =============================================
+
+DEF getUnitAbsyDeps(U)(R) ==
+    readInterOpal(false, path(absyFile(U)(R)))          ; (\\ IO? .
+    IF okay?(IO?) ANDIF avail?(data(IO?)) THEN
+        succeed(
+            (\\ Struct, Set.
+                IF main?(origin(Struct)) THEN Set
+                                         ELSE incl(symbol(Struct), Set) FI,
+            {}) / structs(cont(data(IO?)))
+        )
+    ELSE succeed({}) FI
+    )
+
+
+-- %$Associating Items with Abstract Syntax$ ================================
+
+FUN assocUnitItems : unitName -> repo -> repo
+
+DEF assocUnitItems(U)(R) ==
+    -- build a binary search tree of pairs of item names and their regions 
+    -- FIXME: imports -- they don't have a position in InterOpal?
+    LET Tree == (\\I, T . 
+                        IF avail?(region?(an(item(I)(R)))) THEN
+                             -- not all items have a region annotation
+                             incl( cont(region?(an(item(I)(R)))) & I, T )
+                         ELSE T FI,
+                 nil) / items(U)(R)
+    IN
+    IF nil?(Tree) THEN
+        -- no items with region annotations
+        R
+    ELSE
+        -- associate objects
+        LET R1 == (\\O, Ri . 
+                     LET Rj == assocAn(Tree, O, an(O)(Ri))(Ri)
+                     IN
+                     assocImpl(Tree, O, impl(O)(Rj))(Rj),
+                   R) / objects(U)(R)
+        IN
+        R1
+    FI
+
+FUN assocImpl : bstree[pair[region,itemName], <<] 
+                        ** objectName ** impl'RepoAbsy -> repo -> repo
+
+DEF assocImpl(Tree, O, parameter(An))(R) ==
+    assocAn(Tree, O, An)(R)
+
+DEF assocImpl(Tree, O, induced(An, _, _))(R) ==
+    assocAn(Tree, O, An)(R)
+
+DEF assocImpl(Tree, O, data(An, Varis))(R) ==
+    LET R1 == assocAn(Tree, O, An)(R)
+    IN
+    (\\ Vari, Ri . assocAn(Tree, O, an(Vari))(Ri), R1) \ Varis
+
+
+DEF assocImpl(Tree, O, def(An, Eqns))(R) ==
+    LET R1 == assocAn(Tree, O, An)(R)
+    IN
+    (\\ Eqn, Ri . assocAn(Tree, O, an(Eqn))(Ri), R1) \ Eqns
+
+DEF assocImpl(_, _, _)(R) == R
+
+
+FUN assocAn   : bstree[pair[region,itemName], <<] 
+                        ** objectName ** an -> repo -> repo
+
+DEF assocAn(Tree, O, An)(R) ==
+    IF avail?(locator?(An)) THEN
+        (\\I, Ri . assocItem(I, %(O))(Ri), R) 
+                / lookupLocator(Tree, cont(locator?(An)))
+    ELSE R FI
+
+
+FUN lookupLocator : bstree[pair[region,itemName], <<]  ** locator 
+                                                        -> set[itemName,<]
+DEF lookupLocator(Tree, pos(P, Alt)) ==
+    lookupPos(Tree, P) + lookupLocator(Tree, Alt)
+
+DEF lookupLocator(Tree, region(R, Alt)) ==
+    lookupPos(Tree, start(R)) + lookupLocator(Tree, Alt)
+
+DEF lookupLocator(_, _) == {}
+
+
+FUN lookupPos     : bstree[pair[region,itemName], <<]  ** pos'RepoSource 
+                                                        -> set[itemName,<]
+
+DEF lookupPos(node(R & I, Left, Right), P) ==
+    IF P < start(R) THEN lookupPos(Left, P)
+    IF end(R) < P   THEN lookupPos(Right, P) 
+                    ELSE %(I) FI
+
+DEF lookupPos(nil, _) == {}
+
+
+
+FUN << : pair[region,itemName] ** pair[region,itemName] -> bool
+DEF P1 << P2 == 1st(P1) < 1st(P2)
+    
+-- %$fix some bugs in interOpal$ ============================================
+IMPORT  MapMap          COMPLETELY
+        MapFilter       COMPLETELY
+       Fmt ONLY pretty
+       String ONLY string:SORT
+       Denotation ONLY ++ #
+
+FUN fix : interOpal'InterOpal -> interOpal'InterOpal
+DEF fix(interOpal(Part,Structs)) ==
+    interOpal(Part,(main,fix(Part)) upd Structs)
+
+-- fix main stucture
+FUN fix : part'InterOpal -> struct'InterOpal -> struct'InterOpal
+-- %cindex neues InterOpal
+DEF fix(Part)(struct(Pos,Origin,Symb,Insts,Onlys,Objs,Props,Prags)) ==
+    struct(Pos,Origin,Symb,Insts,Onlys,fix(Part,Props) * Objs,Props,Prags)
+
+-- fix objects of the main structure
+FUN fix : part'InterOpal ** map[ident'InterOpal,<,property'InterOpal] 
+                -> object'InterOpal -> object'InterOpal
+-- %cindex neues InterOpal
+DEF fix(Part,Props)(object(Pos,Ident,Symbol,Kind,Def,_,Prags)) ==
+    object(Pos,Ident,Symbol,Kind,fiximpl(Part,Def),
+                asSeq(dom(related(Ident) | Props)),Prags)
+
+-- remove 'induced'-Implementations in signature
+FUN fiximpl : part'InterOpal ** impl'InterOpal -> impl'InterOpal
+DEF fiximpl(signature,induced(_,_)) == missing
+DEF fiximpl(_,Impl) == Impl
+
+FUN related :  ident'InterOpal -> ident'InterOpal ** property'InterOpal -> bool
+-- %cindex neues InterOpal
+DEF related(Ident)(_,freeType(_,_,_,Variants,_)) ==
+    related(Ident) exist? Variants
+DEF related(_)(_,law(_,_,_,_,_)) == false -- never related to an object
+
+FUN related : ident'InterOpal -> variant'InterOpal -> bool
+DEF related(Ident)(variant(_,Cons,Test,Comps)) ==
+    (Ident = ident(Cons)) or 
+    ((Ident = ident(Test)) or
+    (related(Ident) exist? Comps))
+
+FUN related : ident -> comp -> bool
+DEF related(Ident)(comp(_,Sel)) == Ident = ident(Sel)
+
+FUN = : ident'InterOpal ** ident'InterOpal -> bool
+DEF X:ident = Y == ~(X<Y) and ~(Y<X)
+-- %$Generated by Ordinatrice$ ==============================================
+
+/* %
+@ignore
+*/
+
+-- this is output of ordinatrice verte for free type localSignInfo
+
+
+
+
+
+
+
+-- this is output of ordinatrice verte for free type readResult
+
+
+
+
+
+
+
+
+
+
+
+
+-- this is output of ordinatrice verte for free type originInfo
+
+
+
+
+
+
+
+-- this is output of ordinatrice verte for free type readState
+
+
+DEF :=_localRemap(readState(1,2,2a,3,4,5,6,7,8,9,10,_),new) == readState(1,2,2a,3,4,5,6,7,8,9,10,new)
+
+DEF :=_localSigns(readState(1,2,2a,3,4,5,6,7,8,9,_,11),new) == readState(1,2,2a,3,4,5,6,7,8,9,new,11)
+
+DEF :=_freeLocalSign(readState(1,2,2a,3,4,5,6,7,8,_,10,11),new) == readState(1,2,2a,3,4,5,6,7,8,new,10,11)
+
+DEF :=_imports(readState(1,2,2a,3,4,5,6,7,_,9,10,11),new) == readState(1,2,2a,3,4,5,6,7,new,9,10,11)
+
+DEF :=_instances(readState(1,2,2a,3,4,5,6,_,8,9,10,11),new) == readState(1,2,2a,3,4,5,6,new,8,9,10,11)
+
+DEF :=_originInfos(readState(1,2,2a,3,4,5,_,7,8,9,10,11),new) == readState(1,2,2a,3,4,5,new,7,8,9,10,11)
+
+DEF :=_formals(readState(1,2,2a,3,4,_,6,7,8,9,10,11),new) == readState(1,2,2a,3,4,new,6,7,8,9,10,11)
+
+DEF :=_main(readState(1,2,2a,3,_,5,6,7,8,9,10,11),new) == readState(1,2,2a,3,new,5,6,7,8,9,10,11)
+
+DEF :=_diag(readState(1,2,2a,_,4,5,6,7,8,9,10,11),new) == readState(1,2,2a,new,4,5,6,7,8,9,10,11)
+
+DEF :=_io(readState(1,_,2a,3,4,5,6,7,8,9,10,11),new) == readState(1,new,2a,3,4,5,6,7,8,9,10,11)
+
+DEF :=_repo(readState(_,2,2a,3,4,5,6,7,8,9,10,11),new) == readState(new,2,2a,3,4,5,6,7,8,9,10,11)
+
+
+/* %
+@end ignore
+*/
+
+

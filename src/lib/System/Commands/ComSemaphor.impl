@@ -1,0 +1,47 @@
+IMPLEMENTATION ComSemaphor
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:17 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	COMPLETELY
+	ComAgent	COMPLETELY
+	ComService	COMPLETELY
+	ABORT		COMPLETELY
+
+
+DATA semaphor	== semaphor( sap: sap[bool, bool] )
+
+DEF semaphor 	== sap & (\\ SAP . 
+		   agent(semaphorAgent(SAP, 0)) & succeed(semaphor(SAP))
+		   )
+
+DEF reserve(S) 	== sap(S) @ true & done
+DEF release(S)  == sap(S) @ false & done
+
+FUN semaphorAgent : sap[bool,bool] ** nat -> com[void]
+
+DEF semaphorAgent(SAP, 0) ==
+    SAP => succeed  		& (\\ Reserve? .
+    IF Reserve? THEN
+	semaphorAgent(SAP, 1)
+    ELSE
+	ABORT("release'ComSemaphor: semaphor is not reserved")
+    FI
+    )
+
+DEF semaphorAgent(SAP, succ(X)) ==
+    (SAP, \\ Reserve? . ~(Reserve?)) => succeed	 & (\\ _ .
+    semaphorAgent(SAP, X)
+    )
+
+DEF atomic(S, Act) ==
+    reserve(S) & (\\ _ . 
+    Act	       ; (\\ Ans .
+    release(S) & (\\ _ .
+    yield(Ans)
+    )))

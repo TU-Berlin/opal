@@ -1,0 +1,115 @@
+IMPLEMENTATION SetTopSort
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:10 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Int		COMPLETELY
+	Nat		COMPLETELY
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	Set		COMPLETELY
+	SetReduce	COMPLETELY
+	SetConv		COMPLETELY
+	MapByBST	COMPLETELY
+	MapByBSTReduce	COMPLETELY
+	Array         	COMPLETELY
+	ArrayReduce    	COMPLETELY
+
+DATA entry == entry(refCnt: int, next: seq[nat], data: data)
+              dummy(refCnt: int) 
+
+FUN minus1 : int
+DEF minus1 == !("-1")
+
+DEF topSort(Succs)(Set) ==
+    -- calculated encoding of elements from Set as natural numbers
+    LET (C, N) == encode(asSeq(Set), {}, 0)
+    IN
+    -- build initial array for top sort
+    LET A  == init(N, \\ I . dummy(0))
+	A1 == 
+	   (\\X, I, Ai .
+		LET Next == (\\Y, R. (C ! Y) :: R, <>) / Succs(X)
+		    Aj == upd(I, \\E. entry(refCnt(E), Next, X), Ai)
+		IN
+		(\\K, Ak. 
+		    upd(K,
+		        \\E. IF dummy?(E) THEN dummy(succ(refCnt(E)))
+					  ELSE entry(succ(refCnt(E)),
+					  	     next(E), data(E)) FI,
+		        Ak),
+		 Aj) \ Next,
+	    A) / C
+    IN
+    -- run topsort
+    start(A1)
+
+FUN encode : seq[data] ** map[data,<,nat] ** nat -> map[data,<,nat] ** nat
+DEF encode(X :: Xs, M, I) ==
+    encode(Xs, def(X, I, M), succ(I))
+DEF encode(<>, M, I) == (M, I)
+
+FUN decode : array[entry] -> nat ** set'Set[data,<] -> set'Set[data,<]
+DEF decode(A)(I, S) == incl(data(A ! I), S)
+
+FUN start : array[entry] -> seq[set'Set[data,<]]
+DEF start(A) ==
+    LET Min_Is == 
+    	(\\ I, E, M_Is .
+	    IF refCnt(E) >= 0 THEN
+    	        IF refCnt(E) < 1st(M_Is) THEN refCnt(E) & %(I)
+	        IF refCnt(E) = 1st(M_Is) THEN 1st(M_Is) & (I :: 2nd(M_Is))
+	    			         ELSE M_Is FI
+	    ELSE M_Is FI,
+         max:int & <>) / A
+    IN
+    IF 1st(Min_Is) = max:int THEN
+    	-- array is empty
+	<>
+    ELSE
+    	-- start sorting with the `smallest' elements
+	LET A1 == (\\I, Ai . upd(I, \\E. entry(minus1, next(E), data(E)), Ai),
+	           A) \ 2nd(Min_Is)
+        IN
+	tsort(A1, 2nd(Min_Is))
+    FI
+
+
+FUN tsort : array[entry] ** seq[nat] -> seq[set'Set[data,<]]
+DEF tsort(A, Mins) == 
+    IF <>?(Mins) THEN -- try to restart, removing any cycles
+    		      start(A)
+		 ELSE LET Curr == (decode(A), {}) \ Mins
+		      IN
+		      Curr :: tsort(decrNext(Mins, A, <>)) 
+	         FI
+
+FUN decrNext : seq[nat] ** array[entry] ** seq[nat] -> array[entry] ** seq[nat]
+DEF decrNext(<>, A, NewMins) == (A, NewMins)
+DEF decrNext(I :: Is, A, NewMins) ==
+    decrNext(Is, decr(next(A ! I), A, NewMins))
+
+FUN decr : seq[nat] ** array[entry] ** seq[nat] -> array[entry] ** seq[nat]
+DEF decr(<>, A, NewMins) == (A, NewMins)
+DEF decr(I :: Is, A, NewMins) ==
+    LET Rc == refCnt(A ! I)
+    IN
+    IF Rc < 0 THEN
+    	-- reference in a cycle: this element is already removed
+	decr(Is, A, NewMins)
+    ELSE
+    	LET Rc1 == pred(Rc)
+	IN
+	IF Rc1 = 0 THEN
+	    decr(Is, upd(I, \\ E. entry(minus1, next(E), data(E)), A),
+		 I :: NewMins)
+        ELSE
+	    decr(Is, upd(I, \\ E. entry(Rc1, next(E), data(E)), A),
+		 NewMins)
+        FI
+    FI
+
+

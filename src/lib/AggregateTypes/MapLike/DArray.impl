@@ -1,0 +1,108 @@
+IMPLEMENTATION DArray
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:05 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Array COMPLETELY
+       Nat ONLY nat 1 16 0 pred succ + - < <= > >= = double min 0?
+       CAST ONLY cast
+       ABORT ONLY ABORT
+       Bitset COMPLETELY
+       Identity ONLY id
+       Option COMPLETELY
+
+
+-- %$the type itself$
+/* %First component holds data, second is a bit, which controls
+   whether data is valid, new is some unoccupied index */
+DATA dArray == abs(rep: array[data], occ: set, new: nat)
+
+
+-- %$constructing new dArrays$
+
+DEF init(n, d: data) == init(double(n))(n, d)
+DEF init(n, f:nat -> data) == init(double(n))(n, f)
+
+DEF init(mx)(n, d) == init(mx)(n, \\ _ . d)
+
+/* %all functions from this section are implemented by this
+   @code{init} function */
+DEF init(_)(0, _ : nat -> data) == abs(empty, {}, 0)
+DEF init(mx)(n, f: nat -> data) ==
+    abs(init(mx, \\x. IF x < n THEN f(x) ELSE cast(0) FI), 
+        (0 .. pred(n))(id), 
+        n)
+
+DEF empty == empty(16)
+DEF empty(mx) == init(mx)(0, cast(0))
+
+/* %-
+-- %$combining dArrays$
+
+DEF abs(a1, _, _) ++ abs(a2, _, _) ==
+    LET sz1 == #(a1)
+        sz2 == #(a2)
+    IN init(sz1 + sz2, \\x. IF x < sz1 THEN a1!x ELSE a2!(x - sz1) FI)
+*/
+
+-- %$working on an dArray$
+
+DEF upd(i, d, a) == (a, i) := d
+
+DEF (abs(a, o, n), i) := d ==
+    LET newN == IF i >= n THEN succ(i) ELSE n FI
+        newO == incl(i, o)
+    IN
+    IF newN <= #(a) THEN 
+       abs((a, i) := d, newO, newN)
+    ELSE -- increase array size
+      LET newA == init(succ(double(newN)), \\x. IF x < #(a) THEN a!x 
+                                                ELSE cast(0) FI)
+      IN
+        abs((newA, i) := d, newO, newN)
+    FI
+
+DEF upd(i, f:data->data, abs(a, o, n)) ==
+    IF i in o THEN  abs(upd(i, f, a), o, n)
+    ELSE ABORT("upd'DArray: index out of range or undefined")
+    FI
+
+DEF swap(abs(a, o, n), i, j) ==
+    IF i in o ANDIF j in o THEN abs(swap(a, i, j), o, n)
+    ELSE ABORT("swap'DArray: index out of range or undefined")
+    FI
+
+-- %simple approach; extend is not often used
+DEF extend(dA, 0, _ : data) == dA
+DEF extend(dA, n, d: data) == extend((dA, new(dA)) := d, pred(n), d)
+
+DEF extend(dA, n, f: nat -> data) == extend(dA, n, 0, f: nat -> data)
+
+FUN extend: dArray ** nat ** nat ** (nat -> data) -> dArray
+DEF extend(dA, 0, _, _ : nat -> data) == dA
+DEF extend(dA, n, m, f: nat -> data) == 
+    extend((dA, new(dA)) := f(m), pred(n),  succ(m), f)
+
+
+-- %$accessing elements of an dArray$
+
+DEF abs(a, o, _)!i ==
+    IF i in o THEN a!i
+    ELSE ABORT("!'DArray: index out of range or undefined")
+    FI
+
+DEF abs(a, o, _)!?i ==
+    IF i in o THEN avail(a!i)
+    ELSE nil
+    FI
+
+-- %$information about an dArray$
+
+DEF #(abs(_, o, _)) == #(o)
+DEF empty?(abs(_, o, _)) == {}?(o)
+DEF def?(i, abs(_, o, _)) == i in o
+
+
+-- %$Auxiliary Functions$

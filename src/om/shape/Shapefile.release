@@ -1,0 +1,382 @@
+# Generic shape description file for release targets
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/shape/Shapefile.release,v 1.1.1.1 1998-06-16 15:59:51 wg Exp $
+
+IMPORT = OCSOM OCSPROJECT OCSSHAPE
+
+OMLIBPATH	= $(OCSOM)/shape
+SHAPEFILE	= $(OCSSHAPE)/Shapefile.release
+
+# for upwards compatibility:
+
+ORSLIBPATH	= $(OMLIBPATH)
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Miscellaneous definitions
+
+OCSDIR          = OCS
+
+
+
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Project definitions
+
+IMPORT = OCSPROJECT OCS
+
+# default selections
+os              := auto
+ocs             := stdocs
+opt             := no
+debug           := opal
+profile         := no
+lib		:= opt
+
+# default specification of experimental ocs
+OLIB            = $(OCS)/lib/opal-$(lib)
+
+EXP_OC1                 := $(OCS)/bin/oc1
+EXP_OC2                 := $(OCS)/bin/oc2
+EXP_GENMAKE             := $(OCS)/bin/genmake
+EXP_OPALIMPORTS         := $(OCS)/bin/opalimports
+EXP_OCSYSPARAM          = -e$(OLIB) -r BOOL DENOTATION ABORT BUILTIN CAST
+EXP_OC1FLAGS            := -zetaEnrichment -zunderline -zwildcard -zsection \
+                                -zseqGuard -zinfix -zrassoc
+EXP_OC2FLAGS            := \
+        -zgForeign:Nat -zgForeign:Int -zgForeign:Real \
+        -zgForeign:NatConv -zgForeign:RealConv -zgForeign:IntConv \
+        -zgForeign:Char -zgForeign:CharConv -zgForeign:SmallReal \
+        -zgForeign:Denotation -zgForeign:Array -zgForeign:Bitset
+
+EXP_CCFLAGS             = -I. -I$(OCSDIR) -I$(OLIB) $(CINCPATH)
+EXP_OSTART              = $(OLIB)/_ostart.c
+EXP_GENSTDSYS           = -sfe $(OLIB)
+
+EXP_MODEST_OC           := -oe -os -om
+EXP_MEDIUM_OC           := -o1
+EXP_FULL_OC             := -o1 -og -oT
+
+EXP_DEBUG_OC            := -dd
+
+EXP_PROFILE_OC          :=
+
+
+
+# default version binding
+
+USER := `$(OCSOM)/etc/user_at`
+bind := most_recent_author($(USER))
+
+
+include $(OCSPROJECT)
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# include selected specifications
+
+IMPORT = OCSOM
+
+include $(OCSOM)/specs/Specs.os.$(os)
+include $(OCSOM)/specs/Specs.ocs.$(ocs)
+include $(OCSOM)/specs/Specs.opt.$(opt)
+include $(OCSOM)/specs/Specs.debug.$(debug)
+include $(OCSOM)/specs/Specs.profile.$(profile)
+
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Versions
+
+include $(OMLIBPATH)/BindRules
+
+# Binding option parameter for shape-tools
+BINDOPTS := -rulefile $(OMLIBPATH)/BindRules -rule '$(bind)' -uniq
+
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# System definitions
+
+SYSDEFS = SysDefs
+BOUNDSYSDEFS := `$(VBIND) -nomsg $(BINDOPTS) $(SYSDEFS)`
+include $(BOUNDSYSDEFS)
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Top-level entrys
+
+
+# Default release type and name
+
+RELEASETYPE = newrevision
+RELEASENAME := `$(OCSOM)/etc/genrelid \
+		  $(RELEASETYPE) $(NODENAME) $(VERSIONFILE) 2>/dev/null`
+
+
+release: $(SETTINGS) _check_release _build_release
+
+prepare: $(SETTINGS) _check_release
+
+build: $(SETTINGS) _build_release
+
+
+
+# GENOPTIONS is extended by the option "-keep" to
+# get the C sources for a bootable release. 
+
+#REL_GENOPTIONS = `if expr match "$(REL_GENOPTIONS) $(GENOPTIONS)" \
+#			   '.*-keep.*' 1>/dev/null; \
+#	          then :; else $(ECHO) -keep; fi`
+
+# RERUNVARS is extended to inherit the release
+# variables.
+
+RERUNVARS += "RELEASETYPE=$(RELEASETYPE)" \
+	     "RELEASENAME=$(RELEASENAME)" \
+	     "_RELEASEBASE=$(_RELEASEBASE)"  \
+	     "_RELEASEOFFSET=$(_RELEASEOFFSET)" 
+
+
+# The release base directory
+_RELEASEBASE = $(RELEASEAREA)/$(RELEASENAME)
+
+# The offset of a subrelease from the release base.
+# Note that this definition is evaluated only at the top level call 
+_RELEASEOFFSET = $(RELEASENODEPATH)
+
+# This definitions lift the node/boot path according to the 
+# inherited subrelease offset
+_RELEASENODEPATH := \
+  `if [ -n "$(_RELEASEOFFSET)" ]; then \
+      $(ECHO) $(RELEASENODEPATH) | $(SED) -e 's:$(_RELEASEOFFSET)::'; \
+   else $(ECHO) $(RELEASENODEPATH); fi`
+_RELEASEBOOTPATH := \
+  `if [ -n "$(_RELEASEOFFSET)" ]; then \
+      $(ECHO) $(RELEASEBOOTPATH) | $(SED) -e 's:$(_RELEASEOFFSET)::'; \
+   else $(ECHO) $(RELEASEBOOTPATH); fi`
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Checking release conditions
+
+# Recursively visit all nodes and check if all released sources are
+# bindable. Generate release objects. On the fly notify components with 
+# evolving historys, that is, which are last & locked or only saved.
+
+# Before we can visit a node, we have to make $(LOCALDEFS)
+# up-to-date wrt the selected binding options, since only afterwards
+# COMPONENTS are valid. Binding may already fail for this.
+
+_check_release: _start_check _check_nodes _end_check
+
+_start_check:
+	@if [ -z "$(VERSIONFILE)" ] ; then \
+	  $(ECHO) \
+"You must have a VERSIONFILE defined for the base node of a release"; \
+	  exit 1; \
+	fi; \
+	if [ -z "$(_RELEASEOFFSET)" ] ; then \
+	   $(ECHO); \
+	   $(ECHO) "**** Checking main release $(RELEASENAME)"; \
+	   $(DATE);\
+	else \
+	   $(ECHO); \
+	   $(ECHO) "**** Checking subrelease $(RELEASENAME)"; \
+	   $(DATE); \
+	fi
+	       
+
+_end_check:
+	@$(ECHO); $(ECHO) "**** $(RELEASENAME) may be released!"; $(ECHO)
+
+_check_nodes: $(SETTINGS) _begin_check_nodes $(LOCALDEFS)
+	@if [ -n "$(_RELEASENODEPATH)" ] && [ -n "$(VERSIONFILE)" ]; then \
+	   _lastrelease=`$(VADM) -attr lastrelease $(VERSIONFILE)`; \
+	   if [ -n "$$_lastrelease" ] ; then \
+	     if [ -d "$(RELEASEAREA)/$$_lastrelease" ] ; then \
+		$(ECHO); \
+	        $(ECHO) "$$_lastrelease will be included in $(RELEASENAME)"; \
+		$(ECHO); \
+	     else \
+		$(ECHO); \
+		$(ECHO) ">>>> ERROR: $(RELEASEAREA)/$$_lastrelease doesn't exist";\
+		exit 1; \
+	     fi; \
+	   else \
+	     $(ECHO); \
+	     $(ECHO) ">>>> ERROR: subrelease of $(NODENAME) doesn't exist";\
+	     exit 1; \
+	   fi; \
+	else \
+	  $(XSHAPE) $(RERUNVARS) _check_normal_nodes; \
+	fi
+
+
+_begin_check_nodes:
+	@$(ECHO); $(ECHO) "---- Checking node $(NODENAME)" ; \
+	 $(ECHO) "Checking if generated rules are up-to-date"
+
+
+_check_normal_nodes: $(SETTINGS) _check_node _gen_node
+	@_subsystems="$(SUBNODES)" ; \
+	for s in $$_subsystems ; do \
+	  ($(CD) $$s; \
+	  if [ ! -d $(OCSDIR) ]; \
+	  then $(MKDIR) $(OCSDIR); fi; \
+  	  $(XSHAPE) $(RERUNVARS) _check_nodes) || _errors=yes; \
+	done; \
+	if [ -n "$$_errors" ]; then exit 1; fi
+
+_check_node: _begin_check_node _check_components
+
+_begin_check_node:
+	@$(ECHO) "Checking components"
+
+GETVERSION = 's+.*\[\(..*\)\]$$+\1+'
+
+_check_rule:-
+	existsnot($+[$(bind)]:),
+	  cut(>>>> ERROR: cannot bind $+ with rule '$(bind)');
+	eq(state,busy),
+	  cut(>>>> ERROR: busy version $+ hanging around);
+	eq(__SymbolicName__,$(RELEASENAME)),
+	  ne(version,`$(VBIND) -nomsg $(BINDOPTS) $+ | $(SED) -e $(GETVERSION)`),
+	  cut(>>>> ERROR: different $_af_bound$ in same history already aliased to $(RELEASENAME));
+	max(version),eq(state,saved),
+	  msg(>>>> NOTE: last version $_af_bound$ SAVED by $_af_author$),
+	  hasattr(XXXXXXXXXXXXXXX);
+	max(version),hasattr(locker),
+	  msg(>>>> NOTE: last version $_af_bound$ LOCKED by $_af_locker$),
+	  hasattr(XXXXXXXXXXXXXXX);
+	*, max(version).
+	
+_check_components: _check_rule $(SOURCES) $(MANUALS) $(BOOTSOURCES)
+	
+_gen_node: _begin_gen _releaseobjects _bootobjects
+
+_begin_gen:
+	@$(ECHO) "Generating release objects"
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Building release
+
+_build_release: _start_build _build_nodes _end_build
+
+_start_build:
+	@$(ECHO); $(ECHO) "**** Building $(RELEASENAME) at $(RELEASEAREA)" ; \
+	$(DATE); \
+	if [ ! -d "$(RELEASEAREA)" ] || [ ! -w "$(RELEASEAREA)" ]; then \
+	   $(ECHO); $(ECHO) ">>>> ERROR: cannot write to $(RELEASEAREA)"; \
+	   exit 1; \
+	fi; \
+	if [ -f $(_RELEASEBASE) ] ||  [ -d $(_RELEASEBASE) ] ; then \
+	   $(ECHO) \
+	  ">>>> NOTE: $(RELEASENAME) exists already at $(RELEASEAREA)"; \
+	fi
+
+
+_end_build:
+	@$(ECHO) " ending build $(VERSIONFILE) $(AUXVERSIONFILES)" ;\
+	_versionfiles="$(VERSIONFILE) $(AUXVERSIONFILES)"; \
+	for vf in $$_versionfiles; do \
+	  $(VADM) -attr "lastrelease=$(RELEASENAME)" $$vf; \
+	  $(RM) -f $(_RELEASEBASE)/$(_RELEASENODEPATH)/$$vf; \
+	  $(RETRV) -q $(BINDOPTS) \
+	     -dest $(_RELEASEBASE)/$(_RELEASENODEPATH)/`dirname $$vf` $$vf; \
+	done; \
+	$(ECHO); $(ECHO); $(DATE); $(ECHO) "**** $(RELEASENAME) successfully builded!"
+
+
+_build_nodes: $(SETTINGS)
+	@if [ -n "$(_RELEASENODEPATH)" ] && [ -n "$(VERSIONFILE)" ] ; then \
+	   _lastrelease=`$(VADM) -attr lastrelease $(VERSIONFILE)`; \
+	   if [ -n "$$_lastrelease" ] ; then \
+	     if [ -d "$(RELEASEAREA)/$$_lastrelease" ] ; then \
+		$(ECHO) ; \
+		$(ECHO) "---- Including $$_lastrelease into $(RELEASENAME)"; \
+		$(OCSOM)/etc/xinstall $(_RELEASEBASE)/$(_RELEASENODEPATH); \
+		($(CD) $(RELEASEAREA)/$$_lastrelease; \
+		 $(TAR) cf - . | \
+		    ($(CD) $(_RELEASEBASE)/$(_RELEASENODEPATH); \
+		     $(TAR) xf -)); \
+		$(XSHAPE) $(RERUNVARS) "bind=from_release($$_lastrelease)" \
+					_build_incl_nodes; \
+		_versionfiles="$(VERSIONFILE) $(AUXVERSIONFILES)"; \
+	        for vf in $$_versionfiles; do \
+	          $(VADM) -attr "inrelease=$(RELEASENAME)" $$vf; \
+	          $(RM) -f $(_RELEASEBASE)/$(_RELEASENODEPATH)/$$vf; \
+	          $(RETRV) -q $(BINDOPTS) \
+	             -dest $(_RELEASEBASE)/$(_RELEASENODEPATH)/`dirname $$vf` \
+					$$vf; \
+		done; \
+	     else \
+		$(ECHO); \
+		$(ECHO) ">>>> ERROR: $(RELEASEAREA)/$$_lastrelease doesn't exist";\
+		exit 1; \
+	     fi; \
+	   else \
+	     $(ECHO) ">>>> ERROR: subrelease of $(NODENAME) not available";\
+	     exit 1; \
+	   fi; \
+	else \
+	  $(XSHAPE) $(RERUNVARS) _build_normal_nodes; \
+	fi
+
+_build_incl_nodes: $(SETTINGS) _build_incl_node
+	@_subsystems="$(SUBNODES)" ; \
+	for s in $$_subsystems ; do \
+	  ($(CD) $$s; $(XSHAPE) $(RERUNVARS) _build_incl_nodes) || exit 1; \
+	done
+
+_build_incl_node:
+	@$(ECHO); $(ECHO) "---- Including node $(NODENAME)"; \
+	$(ECHO) "Attaching alias $(RELEASENAME) to components "; \
+	$(VADM) -q $(BINDOPTS) -unalias $(RELEASENAME) \
+			-alias $(RELEASENAME) $(COMPONENTS)
+
+
+_build_normal_nodes: $(SETTINGS) _build_normal_node
+	@_subsystems="$(SUBNODES)" ; \
+	for s in $$_subsystems ; do \
+	  ($(CD) $$s; $(XSHAPE) $(RERUNVARS) _build_nodes) || exit 1; \
+	done
+
+
+_build_normal_node: 
+	@$(ECHO); $(ECHO) "---- Releasing node $(NODENAME)" ; \
+	$(ECHO) "Copying sources to $(_RELEASEBASE)/$(_RELEASENODEPATH)"; \
+	$(OCSOM)/etc/xinstall $(_RELEASEBASE)/$(_RELEASENODEPATH); \
+        _sources="$(SOURCES)"; \
+        for s in $$_sources ; do \
+	   $(RETRV) -q $(BINDOPTS) -dest $(_RELEASEBASE)/$(_RELEASENODEPATH) \
+					$$s || exit 1; \
+	done; \
+	if [ -n "$(MANUALS)" ] ; then \
+	   $(ECHO) "Copying manuals to $(_RELEASEBASE)/$(_RELEASENODEPATH)"; \
+	   $(OCSOM)/etc/xinstall $(_RELEASEBASE)/$(_RELEASENODEPATH); \
+	   $(RETRV) -q $(BINDOPTS) -dest $(_RELEASEBASE)/$(_RELEASENODEPATH) \
+					$(MANUALS) || exit 1; \
+	fi; \
+	if [ -n "$(RELEASEOBJECTS)" ] ; then \
+	   $(ECHO) "Copying objects to $(_RELEASEBASE)/$(_RELEASENODEPATH)"; \
+	   $(OCSOM)/etc/xinstall $(_RELEASEBASE)/$(_RELEASENODEPATH) ; \
+	   $(CP) $(RELEASEOBJECTS) $(_RELEASEBASE)/$(_RELEASENODEPATH) \
+						|| exit 1; \
+	fi; \
+	if [ -n "$(RELEASEBOOTPATH)" ] ; then \
+	   $(ECHO) "Copying boot sources to $(_RELEASEBASE)/$(_RELEASEBOOTPATH)"; \
+	   $(OCSOM)/etc/xinstall $(_RELEASEBASE)/$(_RELEASEBOOTPATH); \
+	   _bootsources="$(BOOTSOURCES)"; \
+	   for b in $$_bootsources ; do \
+	     $(RETRV) -q $(BINDOPTS) \
+		-dest $(_RELEASEBASE)/$(_RELEASEBOOTPATH) $$b || exit 1; \
+	   done; \
+	fi; \
+	if [ -n "$(RELEASEBOOTPATH)" ] ; then \
+	   $(ECHO) "Copying boot objects to $(_RELEASEBASE)/$(_RELEASEBOOTPATH)"; \
+	   $(OCSOM)/etc/xinstall $(_RELEASEBASE)/$(_RELEASEBOOTPATH); \
+	   _bootobjects="$(BOOTOBJECTS)"; \
+	   for b in $$_bootobjects ; do \
+	     $(CP) $$b $(_RELEASEBASE)/$(_RELEASEBOOTPATH) || exit 1; \
+           done; \
+	fi; \
+	$(ECHO) "Setting state of components to accessed" ; \
+        $(ECHO) "Attaching alias $(RELEASENAME) to components ..."; \
+	_components="$(COMPONENTS)"; \
+        for c in $$_components ; do \
+	  $(ACCS) -q $(BINDOPTS) $$c || \
+	  $(ECHO) ">>>> NOTE: couldnt change state(s)"; \
+	  $(VADM) -q $(BINDOPTS) -alias $(RELEASENAME) $$c; \
+        done

@@ -1,0 +1,722 @@
+IMPLEMENTATION TransPointers
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransPointers.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String 	COMPLETELY       Option		COMPLETELY
+  Seq 		COMPLETELY       SeqOfSeq      	COMPLETELY
+  Compose       COMPLETELY
+
+IMPORT
+  SourceTab 	COMPLETELY       Language	COMPLETELY
+  SourceTabFun  COMPLETELY       Content	COMPLETELY
+  Config 	COMPLETELY       TopSort	COMPLETELY
+  ConfigFun 	COMPLETELY
+
+-- %$Getting Adjacent Node Names$
+-- %-----------------------------
+-- %$$Searching for the Next-Node-Name$
+-- %-----------------------------------
+
+/* %The implementation of @code{nextModuleNode} assumes that a splitted,
+non-empty file list is given in the first two parameters. The concatenation
+of the two sequences always results in the complete file list (this is
+the invariant of our state transition automaton!). */
+
+FUN nextModuleNode : 
+  seq[string] ** seq[string] ** string ** fileType ** config **
+  seq[usrSourceInfo] -> string
+
+
+/* %The "normal" case: The next node is the successor of the @code{actNode}
+of the same @code{actFileType}. If the referenced followup node is valid
+in the actual context of @code{config} the node name for the @code{candidate}
+is constructed. Otherwise the next node has to be search w.r.t. the
+none-valid @code{candidate}. This function serves both user-implemented
+structures and library structures. */
+
+DEF nextModuleNode( 
+      alreadyBuilt,
+      actNode::candidate::restCandidates,
+      envNextNode,
+      actFileType,
+      config,
+      usrInfos
+    ) ==
+  IF isValidNode?(candidate, config, actFileType) THEN
+    IF opal?(usrInfos, candidate) THEN mkNodeName(candidate, actFileType)
+    ELSE mkForeignNodeName(candidate)
+    FI
+  ELSE
+    nextModuleNode(
+      alreadyBuilt+%actNode, 
+      candidate::restCandidates, 
+      envNextNode,    
+      actFileType, 
+      config,
+      usrInfos
+    )
+  FI   
+
+/* %The followup node of the last signature node of the current file list
+is reached. By definition the next node has to be the first implementation
+node of the file list, if it is valid. Otherwise the first implementation node
+serves as a reference for the subsequent next-node-search. The search starts
+at the beginning of the complete file list. */
+
+DEF nextModuleNode( 
+      alreadyBuilt AS candidate:: _,
+      actNode:: <>,
+      envNextNode,
+      sign,  -- <- !!
+      config,
+      usrInfos
+    ) ==
+  IF isValidNode?(candidate, config, impl) THEN
+    mkNodeName(candidate, impl)
+  ELSE
+    nextModuleNode(<>, alreadyBuilt +% actNode, envNextNode, impl,
+                   config, usrInfos)
+  FI   
+
+/* %The followup node of the last implementation node of the current file list
+is reached. By definition the next node has to be the first external
+property part
+node of the file list, if it is valid. Otherwise the first external 
+property part node
+serves as a reference for the subsequent next-node-search. The search starts
+at the beginning of the complete file list. */
+
+DEF nextModuleNode( 
+      alreadyBuilt AS candidate:: _,
+      actNode:: <>,
+      envNextNode,
+      impl,  -- <- !!
+      config,
+      usrInfos
+    ) ==
+  IF isValidNode?(candidate, config, extp) THEN
+    mkNodeName(candidate, extp)
+  ELSE
+    nextModuleNode(<>, alreadyBuilt +% actNode, envNextNode, extp,
+                   config, usrInfos)
+  FI   
+
+/* %The followup node of the last external property part
+ node of the current file list
+is reached. By definition the next node has to be the first internal
+property part node
+of the file list, if it is valid. Otherwise the first internal property
+part node
+serves as a reference for the subsequent next-node-search. The search starts
+at the beginning of the complete file list. */
+
+DEF nextModuleNode( 
+      alreadyBuilt AS candidate:: _,
+      actNode:: <>,
+      envNextNode,
+      extp,  -- <- !!
+      config,
+      usrInfos 
+    ) ==
+  IF isValidNode?(candidate, config, intp) THEN
+    mkNodeName(candidate, intp)
+  ELSE
+    nextModuleNode(<>, alreadyBuilt +% actNode, envNextNode, intp,
+                   config, usrInfos)
+  FI   
+
+/* %The followup node of the last external property part
+ node of the current file list
+is reached. By definition the next node has to be the first internal
+property part node
+of the file list, if it is valid. Otherwise the first internal property
+part node
+serves as a reference for the subsequent next-node-search. The search starts
+at the beginning of the complete file list. */
+
+DEF nextModuleNode( 
+      alreadyBuilt AS candidate:: _,
+      actNode:: <>,
+      envNextNode,
+      libSign,  -- <- !!
+      config,
+      usrInfos
+    ) ==
+  IF isValidNode?(candidate, config, libExtp) THEN
+    mkNodeName(candidate, libExtp)
+  ELSE
+    envNextNode
+  FI   
+
+/* %For file lists containing @b{just one single file} a separate handling
+has to be defined because the name of the next candidate for being a next-node
+is the @code{actNode} itself. The validity has to be checked at the 
+appropriate @code{fileType} level. */
+DEF nextModuleNode( <>, actNode:: <>, envNextNode, sign, config, usrInfos ) ==
+  IF isValidNode?(actNode, config, impl) THEN
+    mkNodeName(actNode, impl)
+  ELSE
+    nextModuleNode(<>, actNode%, envNextNode, impl, config, usrInfos)
+  FI
+
+DEF nextModuleNode( <>, actNode:: <>, envNextNode, impl, config, usrInfos ) ==
+  IF isValidNode?(actNode, config, extp) THEN
+    mkNodeName(actNode, extp)
+  ELSE
+    nextModuleNode(<>, actNode%, envNextNode, intp, config, usrInfos)
+  FI
+
+DEF nextModuleNode( <>, actNode:: <>, envNextNode, extp, config, usrInfos ) ==
+  IF isValidNode?(actNode, config, intp) THEN
+    mkNodeName(actNode, intp)
+  ELSE
+    envNextNode
+  FI
+
+-- %Special treatment for library-signatures:
+DEF nextModuleNode( <>, actNode:: <>, envNextNode, libSign,
+                    config, usrInfos ) ==
+  IF isValidNode?(actNode, config, libExtp) THEN
+    mkNodeName(actNode, libExtp)
+  ELSE
+    envNextNode
+  FI
+
+/* %The termination of the next-node searching process has to defined. 
+The final state is reached if the last node of the file list is reached
+and the @code{fileType} is @code{intp}. In this case the parameter
+@code{envNextNode} contains the proper next-node-name. This state
+transition serves for one-element file lists, too. For library
+external properties the same argumentation hols: The last
+file of type @code{libExtp} terminates the search an leads
+to the next node given by the environment */
+
+DEF nextModuleNode( _, _ :: <>, envNextNode, intp   , _, _ ) == envNextNode
+DEF nextModuleNode( _, _ :: <>, envNextNode, libExtp, _, _ ) == envNextNode
+
+/* %For the special case of the empty file list the function 
+@code{nextModuleNode} is not defined. So it is explicitly not implemented
+in order to get helpful runtime messages if the forbidden case
+is encountered.
+
+Of course file types denoting inter-opal structures are not handled in
+the state automaton. */
+
+/* DEF nextModuleNode( <>, <>, _, _, _ ) == not defined !!!!!! */
+
+/* DEF nextModuleNode( _, _, _, signInter_ ) == not defined !!!!!! */
+/* DEF nextModuleNode( _, _, _, implInter_ ) == not defined !!!!!! */
+/* DEF nextModuleNode( _, _, _, extpInter_ ) == not defined !!!!!! */
+/* DEF nextModuleNode( _, _, _, intpInter_ ) == not defined !!!!!! */
+
+
+-- %Special variant without seq[usrSourceInfo]
+DEF nextModuleNode( 
+      alreadyBuilt,
+      actNode::candidate::restCandidates,
+      envNextNode,
+      actFileType,
+      config
+    ) ==
+  IF isValidNode?(candidate, config, actFileType) THEN
+    mkNodeName(candidate, actFileType)
+  ELSE
+    nextModuleNode(
+      alreadyBuilt+%actNode, 
+      candidate::restCandidates, 
+      envNextNode,    
+      actFileType, 
+      config
+    )
+  FI   
+
+DEF nextModuleNode( 
+      alreadyBuilt AS candidate:: _,
+      actNode:: <>,
+      envNextNode,
+      libSign,  -- <- !!
+      config
+    ) ==
+  IF isValidNode?(candidate, config, libExtp) THEN
+    mkNodeName(candidate, libExtp)
+  ELSE
+    envNextNode
+  FI   
+
+DEF nextModuleNode( <>, actNode:: <>, envNextNode, libSign, config ) ==
+  IF isValidNode?(actNode, config, libExtp) THEN
+    mkNodeName(actNode, libExtp)
+  ELSE
+    envNextNode
+  FI
+
+DEF nextModuleNode( _, _ :: <>, envNextNode, libExtp, _ ) == envNextNode
+
+-- %$$Searching for the Previous-Node-Name$
+-- %---------------------------------------
+-- %$$$Handling User-Implemented Structures$
+-- %----------------------------------------
+
+FUN prevModuleNode : 
+      seq[string] ** seq[string] ** fileType ** config ** seq[usrSourceInfo] ->
+         string
+
+/* %The "normal" case: The actual reference node is the first node
+of the sequence @code{toBuild}. As @code{alreadyBuilt} is non-empty,
+the last name of @code{alreadyBuilt} serves as the basis for the
+prevous module node name, if it is valid w.r.t. the given configuration
+@code{config}. If it is valid, the name of the last node of the
+@code{candidate} has to be found by @code{nodeLastName}. If @code{candidate}
+is not valid it serves as e reference point for the subsequent 
+previous node search. */
+
+DEF prevModuleNode(
+      alreadyBuilt, 
+      toBuild, 
+      actFileType, 
+      config, 
+      usrSourceInfos
+    ) ==
+  LET
+    candidate == last(alreadyBuilt)
+  IN
+    IF isValidNode?(candidate, config, actFileType) THEN
+      nodeLastName(usrSourceInfos, candidate, actFileType, config)
+    ELSE
+      prevModuleNode(
+        front(alreadyBuilt), 
+        last(alreadyBuilt)::toBuild,
+        actFileType,
+        config,
+        usrSourceInfos
+      )
+    FI
+   
+
+/* %The special case of an empty sequence of files already built has
+to be handled separately for the individual @code{fileType}s. The first
+definition serves as the recursion termination. */
+DEF prevModuleNode( <>, toBuild, sign, config, _ ) ==
+  Overview(last(toBuild))
+
+DEF prevModuleNode( <>, toBuild, impl, config, usrSourceInfos ) ==
+  LET
+    candidate == last(toBuild)
+  IN
+    IF isValidNode?(candidate, config, sign) THEN
+      nodeLastName(usrSourceInfos, candidate, sign, config)
+    ELSE
+      prevModuleNode(front(toBuild), candidate%, sign, config, usrSourceInfos)
+    FI
+
+DEF prevModuleNode( <>, toBuild, extp, config, usrSourceInfos ) ==
+  LET
+    candidate == last(toBuild)
+  IN
+    IF isValidNode?(candidate, config, impl) THEN
+      nodeLastName(usrSourceInfos, candidate, impl, config)
+    ELSE
+      prevModuleNode(front(toBuild), candidate%, impl, config, usrSourceInfos)
+    FI
+
+DEF prevModuleNode( <>, toBuild, intp, config, usrSourceInfos ) ==
+  LET
+    candidate == last(toBuild)
+  IN
+    IF isValidNode?(candidate, config, extp) THEN
+      nodeLastName(usrSourceInfos, candidate, extp, config)
+    ELSE
+      prevModuleNode(front(toBuild), candidate%, extp, config, usrSourceInfos)
+    FI
+
+
+/* %For the special case of the empty file list the function 
+@code{prevModuleNode} is not defined. So it is explicitly not implemented
+in order to get helpful runtime messages if the forbidden case
+is encountered. */
+
+/* DEF prevModuleNode( <>, <>, _, _ , _ ) == not defined !!! */
+
+/* %Of course the @code{prevModuleNode} function is not defined for the
+special @code{fileType}s denoting inter-opal */
+
+/* DEF prevModuleNode( _, _, signInter, _ , _ ) == not defined !!! */
+/* DEF prevModuleNode( _, _, implInter, _ , _ ) == not defined !!! */
+/* DEF prevModuleNode( _, _, extpInter, _ , _ ) == not defined !!! */
+/* DEF prevModuleNode( _, _, intpInter, _ , _ ) == not defined !!! */
+
+
+-- %$$$Handling Library Structures$
+-- %-------------------------------
+
+/* %The following implementation realizes the same functionalities
+as @code{prevModuleNode} above for library files. Explicit documentation
+is analogous for @code{prevModuleNodeLib}. */
+
+FUN prevModuleNodeLib : seq[string] ** seq[string] ** string **
+                          fileType **
+                            config **
+                              seq[libSourceInfo] ->
+                                string
+
+
+DEF prevModuleNodeLib( 
+      alreadyBuilt, 
+      toBuild,
+      envPrevNode,
+      actFileType,
+      config,
+      libSourceInfos
+    ) ==
+  LET
+    candidate == last(alreadyBuilt)
+  IN
+    IF isValidNode?(candidate, config, actFileType) THEN
+      nodeLastName(libSourceInfos, candidate, actFileType, config)
+    ELSE
+      prevModuleNodeLib(
+        front(alreadyBuilt), 
+        last(alreadyBuilt)::toBuild,
+        envPrevNode,
+        actFileType,
+        config,
+        libSourceInfos
+      )
+    FI
+   
+/* %In contrast to user implemented modules only two different special cases
+have to be distinguished: */
+DEF prevModuleNodeLib( <>, _, envPrevNode, libSign, _, _ ) == envPrevNode
+DEF prevModuleNodeLib(
+      <>, 
+      toBuild, 
+      envPrevNode, 
+      libExtp, 
+      config, 
+      libSourceInfos 
+    ) ==
+  LET
+    candidate == last(toBuild)
+  IN
+    IF isValidNode?(candidate, config, libSign) THEN
+      nodeLastName(libSourceInfos, candidate, libSign, config)
+    ELSE
+      prevModuleNodeLib(
+        front(toBuild), 
+        candidate%, 
+        envPrevNode,
+        libSign, 
+        config, 
+        libSourceInfos
+      )
+    FI
+
+
+/* %For the special case of the empty file list the function 
+@code{prevModuleNode} is not defined. So it is explicitly not implemented
+in order to get helpful runtime messages if the forbidden case
+is encountered. */
+
+/* DEF prevModuleNodeLib( <>, <>, _, _, _ , _ ) == not defined !!! */
+
+/* %Of course the @code{prevModuleNodeLib} function is not defined for the
+special @code{fileType}s denoting inter-opal */
+
+/* DEF prevModuleNodeLib( _, _, _, signInter, _ , _ ) == not defined !!! */
+/* DEF prevModuleNodeLib( _, _, _, implInter, _ , _ ) == not defined !!! */
+/* DEF prevModuleNodeLib( _, _, _, extpInter, _ , _ ) == not defined !!! */
+/* DEF prevModuleNodeLib( _, _, _, intpInter, _ , _ ) == not defined !!! */
+
+
+-- %$Last Nodes of User-Sources$
+-- %-----------------------------
+/* %The following function @code{nodeLastName} calculates the last node name
+for the module whose name is given by the string 
+@code{filename}. The the part to be searched is denoted by @code{fileType}.
+*/
+
+DEF nodeLastName
+      ( usrSourceInfos:seq[usrSourceInfo], fileName, fileType, config ) ==
+  LET
+    subPartNamesFun ==
+      IF usrSourceInfo?(cont(get(usrSourceInfos, \\x.x, fileName))) THEN
+        IF sign?(fileType) THEN
+          (content2PartNames o content) o sign
+        IF impl?(fileType) THEN
+          (content2PartNames o content) o impl
+        IF extp?(fileType) THEN
+          (((content2PartNames o content) o cont) o extProp) o sign
+        IF intp?(fileType) THEN
+          (((content2PartNames o content) o cont) o intProp) o impl
+        FI
+      ELSE
+        (content2PartNames o content) o file
+      FI
+  IN
+    LET
+      nodeSubPartNames ==
+        cont(get(usrSourceInfos, subPartNamesFun, fileName))
+    IN
+      IF <>?(nodeSubPartNames) THEN
+        IF (fileType sign?) and ~(opal?(usrSourceInfos, fileName)) THEN
+          mkForeignNodeName(fileName)
+        ELSE
+          mkNodeName(fileName, fileType)
+        FI
+      ELSE
+        fullPartName(fileName, last(nodeSubPartNames), fileType, config)
+      FI
+
+DEF nodeLastName( usrSourceInfos:seq[usrSourceInfo], fileName, config ) ==
+  IF opal?(usrSourceInfos, fileName) THEN
+    LET
+      lastFileType == IF propertiesInclude?(config, fileName) THEN
+                        IF onlyInterfaces?(config, fileName) THEN
+                          extp
+                        ELSE
+                          intp
+                        FI
+                      ELSE
+                        IF onlyInterfaces?(config, fileName) THEN
+                          sign
+                        ELSE
+                          impl
+                        FI
+                      FI
+                  IN
+                  nodeLastName(usrSourceInfos, fileName, lastFileType, config)
+  ELSE
+    nodeLastName(usrSourceInfos, fileName, sign, config)
+  FI
+
+-- %$Last Nodes of Library-Sources$
+-- %--------------------------------
+
+DEF nodeLastName( libSourceInfos:seq[libSourceInfo], fileName, config ) ==
+  LET
+    lastFileType == IF propertiesInclude?(config, fileName) THEN
+                      libExtp
+                    ELSE
+                      libSign
+                    FI
+  IN
+    nodeLastName(libSourceInfos, fileName, lastFileType, config)
+
+DEF nodeLastName( libSourceInfos:seq[libSourceInfo], fileName, fileType, config) ==
+  LET
+    subPartNamesFun ==
+      IF libSign?(fileType) THEN
+        (content2PartNames o content) o sign
+      IF libExtp?(fileType) THEN
+        ((content2PartNames o content) o cont) o extProp
+      FI
+  IN
+    LET
+      nodeSubPartNames ==
+        cont(get(libSourceInfos, subPartNamesFun, fileName))
+    IN
+      IF <>?(nodeSubPartNames) THEN
+        mkNodeName(fileName, fileType)
+      ELSE
+        fullPartName(fileName, last(nodeSubPartNames), fileType, config)
+      FI
+
+-- %$Find Last Nodes of Parts$
+-- %---------------------------
+-- %$$Last Node of User-Implemented Subsystem$
+-- %-------------------------------------------
+
+/* %No structures and no further sub-subsystems are found. As a consequence, no
+last node can be found: */
+
+DEF lastNode:subsystem[usrSourceInfo] ** config -> option[string]
+            ( subsystem(_, _, <>, <>), _) == nil
+
+/* %No further sub-subsystems are specified. The last node of the subsystem specification
+is the last node of the structures specified in the current subsystem: */
+
+DEF lastNode:subsystem[usrSourceInfo] ** config -> option[string]
+            ( subsystem(_, _, usrSourceInfos, <>), config) ==
+  LET
+    sortedUsrFileLevels == topologicalSort(usrSourceInfos, config)
+  IN
+    avail(
+      prevModuleNode(
+        flat(sortedUsrFileLevels), 
+        <>, 
+        intp, 
+        config, 
+        usrSourceInfos
+      )
+    )
+
+/* %As sub-subsystems are defined, the last node of these sub-subsystems decides on the
+last node of the current subsystem: */ 
+
+DEF lastNode:subsystem[usrSourceInfo] ** config -> option[string]
+            ( subsystem(_, _, _, subSubsystems), config) ==
+  lastNode(last(subSubsystems), config)
+
+-- %$$Last Node of Library Subsystem$
+-- %----------------------------------
+
+/* %The implementation for library subsystems is analogous to user-implemented
+subsystems. See above! */
+
+DEF lastNode : subsystem[libSourceInfo] ** config -> option[string]
+            ( subsystem(_, _, <>, <>), _) == nil
+
+DEF lastNode : subsystem[libSourceInfo] ** config -> option[string]
+            ( subsystem(_, _, libSourceInfos, <>), config) ==
+  avail(
+    nodeLastName(
+      libSourceInfos,
+      name(last(libSourceInfos)),
+      config
+    )
+  )
+
+DEF lastNode : subsystem[libSourceInfo] ** config -> option[string]
+            ( subsystem(_, _, _, subSubsystems), config) ==
+  lastNode(last(subSubsystems), config)
+
+
+-- %$$Calculating Successor-Nodes of large Project-Parts$
+-- %-----------------------------------------------------
+
+DEF lastSourcesNode(sortedUsrFileLevels, usrInfos, libInfos, config) ==
+  IF libraryInclude?(config) THEN
+    cont(
+      lastNode(last(libSubsystems(libInfos)), config)
+    )
+  ELSE
+    IF <>?(subsystems(usrInfos)) THEN
+      nodeLastName(
+        sources(usrInfos),
+        last(flat(sortedUsrFileLevels)),
+        config
+      )
+    ELSE
+      cont(
+        lastNode(last(subsystems(usrInfos)), config)
+      )
+    FI
+  FI
+
+
+DEF lastProjectNode( sortedUsrFileLevels, usrInfos, libInfos, config ) ==
+  IF conceptIndex?(config) THEN
+     Concept_Index
+  ELSE
+    IF functionalityIndexGeneral?(config) THEN 
+      Functionality_Index
+    ELSE
+      IF libraryInclude?(config) THEN
+        cont(
+          lastNode(
+            last(libSubsystems(libInfos)),
+            config
+          )
+        )
+      ELSE
+	IF subsystemsInclude?(config) THEN
+	  IF <>?(subsystems(usrInfos)) THEN
+	      nodeLastName(
+		sources(usrInfos),
+		last(flat(sortedUsrFileLevels)),
+		config
+	      )  
+	  ELSE
+	    cont(
+	      lastNode(
+		last(subsystems(usrInfos)),
+		config
+	      )
+	    )
+	  FI
+	ELSE
+	  nodeLastName(
+	    sources(usrInfos),
+	    last(flat(sortedUsrFileLevels)),
+	    config
+	  )  
+	FI
+      FI
+    FI  
+  FI
+
+DEF nodeAfterLastUsrFile(config) ==
+  IF libraryInclude?(config) THEN libIntro ELSE nodeAfterLibs(config) FI
+
+DEF nodeAfterLibs( config ) ==
+  IF functionalityIndexGeneral?(config) THEN
+    Functionality_Index
+  ELSE
+    nodeAfterFunIndex(config)
+  FI
+
+DEF nodeAfterFunIndex( config ) ==
+  IF conceptIndex?(config) THEN Concept_Index ELSE "Top"! FI
+   
+-- %$Construction of Node Names$
+-- %-----------------------------
+
+FUN fullPartName : string ** string ** fileType ** config -> string
+DEF fullPartName( parentNodeName, subNodeName, fileType, config ) ==
+  subNodeName ++ partName(parentNodeName, fileType, config)
+
+FUN fullPartName : string ** string ** config -> string
+DEF fullPartName( parentNodeName, subNodeName, config ) ==
+  subNodeName ++ partName(parentNodeName, config)
+
+/* %@code{partName} builds the string used as the sub-part-specification
+of a OPAL structure's sub node. The resulting string is started with
+a leading @code{space} !! */
+
+FUN partName : string ** fileType ** config -> string
+DEF partName( parentNodeName, fileType, config ) ==
+  !(" (") ++ Part_of_(parentNodeName, !(fileType)) ++ !(")")
+
+FUN partName : string ** config -> string
+DEF partName( parentNodeNameAndfileType, config ) ==
+  !(" (") ++ Part_of_(parentNodeNameAndfileType) ++ !(")")
+
+/* %The node-name of the library-introduction is defined here: */
+
+FUN libIntro : string
+DEF libIntro == "LibIntro"!
+
+-- %$Testing the Validity of a Given Node$
+-- %--------------------------------------
+/* %Not all components of the source-table database are accessible due to the
+configurability of the structure inclusion extent. This function checks if a
+given @c{searchName} of a structure is accessible w.r.t. a given 
+configuration database: */
+
+FUN isValidNode? : string ** config ** fileType -> bool
+
+DEF isValidNode?( _         , _     , sign ) == true
+DEF isValidNode?( searchName, config, impl ) == 
+  ~(onlyInterfaces?(config, searchName))
+DEF isValidNode?( searchName, config, extp ) ==
+  propertiesInclude?(config, searchName)
+DEF isValidNode?( searchName, config, intp ) == 
+  ~(onlyInterfaces?(config, searchName)) and
+      propertiesInclude?(config, searchName)
+
+DEF isValidNode?( _         , _     , libSign ) == true
+DEF isValidNode?( searchName, config, libExtp ) == 
+  propertiesInclude?(config, searchName)
+
+
+
+-- %$Constructing Node Names$
+
+DEF mkNodeName( name, fType) ==
+  !("@") ++ !(fType) ++ !("{") ++ name ++ !("}")
+
+DEF mkForeignNodeName( name ) ==
+  !("@ForeignStructure{") ++ name ++ !("}")
+
+FUN opal?: seq[usrSourceInfo] ** string -> bool
+DEF opal?( usrInfos, name ) == usrSourceInfo?(cont(get(usrInfos, \\x.x, name)))

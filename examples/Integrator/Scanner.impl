@@ -1,0 +1,55 @@
+IMPLEMENTATION Scanner
+
+IMPORT Denotation ONLY ++ ! delete = empty
+       Char ONLY char whitespace? ! = digit?
+       Nat ONLY nat 0
+       CharConv ONLY `
+       RealConv ONLY `
+       Real ONLY !
+       Token COMPLETELY
+
+
+DEF extractToken(d) == 
+  LET d1 == drop(whitespace?, d)
+  IN IF d1 = empty THEN (eoiT, empty)
+     ELSE LET c == d1!0
+          IN IF c = ("("!) THEN (openT, delete(d1, 0, 0))
+             IF c = (")"!) THEN (closeT, delete(d1, 0, 0))
+             ELSE LET (first, rest) == 
+                    split(\\ch. whitespace?(ch) or (ch = ("("!)) or 
+                            (ch = (")"!)), 
+                          d1)
+                  IN (lookupToken(first), rest)
+             FI
+     FI
+
+FUN drop: (char -> bool) ** denotation -> denotation
+/* %
+@SPC @code{drop(P?, d) = d1}
+@PRE @code{P?} defined for all characters
+@POST @code{d1} is longest suffix of @code{d} with @code{~(P?(d1!0))}
+@ENDSPC
+*/
+DEF drop(P?, d) ==
+    IF d = empty THEN d
+    ELSE IF P?(d!0) THEN drop(P?, delete(d, 0, 0))
+         ELSE d
+         FI
+    FI
+
+FUN split: (char -> bool) ** denotation -> (denotation ** denotation)
+/* %
+@SPC @code{split(P?, d) = (d1, d2)}
+@PRE @code{P?} defined for all characters
+@POST @code{d1 ++ d2 = d} and @code{d2 |= empty => P?(d2!0)} and @code{d1 |=
+empty => ~(P?(d1!i))} for all @code{i}
+@ENDSPC 
+*/
+DEF split(P?, d) ==
+    IF d = empty THEN (empty, empty)
+    ELSE IF P?(d!0) THEN (empty, d)
+         ELSE LET (d1, d2) == split(P?, delete(d, 0, 0))
+              IN (((d!0)`) ++ d1, d2)
+         FI
+    FI
+

@@ -1,0 +1,205 @@
+--  LAST EDIT: Thu Jun  3 19:24:09 1993 by Carola Gerke (kassandra!carola) 
+
+IMPLEMENTATION PName
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+-- %$author: cg$
+-- %$purpose: parsing Opal1 and property language$
+
+IMPORT    -- pars
+          PErr                  COMPLETELY
+          Terminal              COMPLETELY
+          Token                 COMPLETELY
+          ZOpts                 COMPLETELY
+          PTypes                COMPLETELY
+          ModName               COMPLETELY
+          ModBase               COMPLETELY
+          ModBody               COMPLETELY
+          BaseParser            COMPLETELY
+IMPORT    -- absy
+          Absy                  COMPLETELY
+          PartName              COMPLETELY
+       Fct ONLY anyFct
+IMPORT    -- reps               
+          Rep                   ONLY nilRep rep:SORT generated?
+IMPORT    -- admin
+          Pos                   COMPLETELY
+          Options               ONLY wildcard? section?  pchecker?
+       Error ONLY warning errKind error err
+IMPORT    -- lib
+          Denotation            COMPLETELY
+          Seq[token]            COMPLETELY
+          Seq[terminal]         COMPLETELY
+          Set[terminal,<]       COMPLETELY
+       String ONLY string
+
+-- %- ----------------------------------------------------------------------
+-- %$Opal specific base parsers for Names$
+-- %- ----------------------------------------------------------------------
+
+DEF pName      == (nameParser <.&> empty(termSet-specialInName))
+DEF pLocalName == (localNameParser <.&> empty(termSet-specialInName))
+
+FUN nameParser :  parser
+DEF nameParser == 
+  parser( \\ Arg . \\  . 
+  ((((((((pIde <&> (isA?(apo) <&.> pOri))(modOrigin))   <&>
+        (isA?(openSqBr) <&.> pParams)))(modParams))  <&>
+     (isA?(colon) <&.> pKind))(modKind))
+   @ Arg)
+  )
+
+DEF localNameParser == 
+    pWildcard <|> ((pIde <&?> pKindFct)(modKind))
+
+DEF pOrigin == parser(\\Arg. \\ .  
+    modify(((pIde <&?> pParams)(modParams)) @ Arg,mkOrigin))
+
+DEF pWildcard == IF wildcard? THEN isA?(ignPat) <&.> pIgnPat ELSE fail(ok) FI
+DEF pSecPat   == parser(\\Arg. \\ . 
+        IF section?  THEN (isA?(ignPat) <&.> pIgnPat) @ Arg
+        ELSE IF ignPat = ft(Arg)
+             THEN pName @ (token(ide,lexem(ft(Arg)),pos(ft(Arg))) :: rt(Arg))
+             ELSE pFail(pErrUnExp(Arg),noAbsy,rt(Arg)) 
+         FI 
+    FI)
+
+FUN pIgnPat : parser
+DEF pIgnPat   == (isA(ignPat) <&?> pKindFct)(modKind)
+DEF pIde      == isA(ide) 
+
+-- %- ----------------------------------------------------------------------
+
+FUN pOri localNameParser: parser
+DEF pOri == (isA(apo) <&> pIde)(mod2nd)
+
+FUN pParams : parser
+DEF pParams  == 
+   isA(openSqBr) <&.> (((nameParser || comma)(modPNSeq)) <.&> isA(closeSqBr))
+
+FUN pKind : parser
+DEF pKind == isA(colon) <&.>
+             parser(\\Arg. \\ .
+                    IF Arg <>? THEN nil @ Arg
+                    OTHERWISE
+                    IF ft(Arg) = sort THEN pRes(ok, Kind(sort), rt(Arg))
+                    IF pchecker? and ft(Arg) = law THEN
+                      pRes(ok, Kind(law), rt(Arg))
+                    IF pchecker? and ft(Arg) = proof THEN
+                      pRes(ok, Kind(proof), rt(Arg))
+                    ELSE
+                      modify(pFct @ Arg,modCompObjPostCheck(pos(ft(Arg))))
+                    FI
+             )
+
+FUN pKindFct: parser
+DEF pKindFct == 
+  isA(colon) <&.> fct_pars
+  WHERE fct_pars == parser(\\ Arg. \\ . 
+                    modify(pFct @ Arg,modCompObjPostCheck(pos(ft(Arg))))
+                    )
+/*
+DEF pKind == pKind("")
+
+
+FUN pKind : denotation -> parser
+DEF pKind (Msg) == 
+    IF Msg = empty THEN (isA(colon) <&> (isA(sort) <|> fct_pars))(modSort)
+    ELSE isA(colon) <&.> fct_pars
+    FI WHERE fct_pars == parser(\\ Arg. \\ . 
+                          modify(pFct @ Arg,modCompObjPostCheck(pos(ft(Arg)))))
+*/
+-- %- ----------------------------------------------------------------------
+-- %$Functionality Parser$
+-- %- ----------------------------------------------------------------------
+-- %- ------------------------------------------------------------------------
+-- %$$Fct$
+-- %Parses : @code{Fct ::= ProdFct [ '->' Fct] | '(' ')' '->' Fct}
+-- %- ------------------------------------------------------------------------
+FUN pFct pFunFct pProdFct pSimpleFct: parser
+/*
+DEF pFct == parser(\\ Arg. \\ .  
+    ((pProdFct <&> (isA?(arrow) <&.> pFct))(modProdFct)) @ Arg)
+
+*/
+DEF pFct == parser(\\Arg. (\\ .  
+   (IF openBr = ft(Arg) and (rt(Arg) <>?) THEN
+       pRes(pErrMiss(`(closeBr),pos(ft(Arg))),noAbsy,rt(Arg))
+    IF openBr = ft(Arg) and ~(rt(Arg) <>?) THEN
+      IF closeBr = ft(rt(Arg)) THEN
+         LET Res == ((isA(arrow) <&> pFct)(modFunFct)) @ rt(rt(Arg))
+         IN IF Res pFail? THEN pRes(err(Res),absy(Res),tokS(Res))
+            ELSE Res 
+            FI
+       ELSE (Pars @ Arg)
+       FI
+     IF product = ft(Arg) THEN
+       pRes(err(warning, "`**' interpreted as `any' functionality",
+                pos(ft(Arg))),
+            Fct(anyFct),
+            rt(Arg))
+     ELSE (Pars @ Arg)
+     FI WHERE Pars == (pProdFct <&?> (isA(arrow) <&.> pFct))(modFunFct))))
+
+-- %- ------------------------------------------------------------------------
+-- %$$FunFct$
+-- %Parses : @code{FunFct ::= ProdFct -> Fct | '(' ')' '->' FunFct}
+-- %- ------------------------------------------------------------------------
+/*
+DEF pFunFct == parser(\\Arg. \\ .  
+    (((pProdFct <&> (isA(arrow) <&.> pFct))(modFunFct))
+    <|> fail(expFct)) @ Arg)
+*/
+DEF pFunFct == parser(\\Arg. \\ .  
+    (IF openBr = ft(Arg) and (rt(Arg) <>?)
+    THEN pRes(pErrMiss(`(closeBr),pos(ft(Arg))),noAbsy,rt(Arg))
+    IF openBr = ft(Arg) and ~(rt(Arg) <>?)
+    THEN IF closeBr = ft(rt(Arg))
+         THEN LET Res == ((isA(arrow) <&> pFunFct)(modFunFct)) @ rt(rt(Arg))
+              IN IF Res pFail? THEN pRes(err(Res),absy(Res),tokS(Res))
+                 ELSE Res FI
+         ELSE (Pars @ Arg)
+         FI
+    ELSE (Pars @ Arg)
+    FI WHERE Pars == (pProdFct <&> ((isA(arrow) <&.> pFct)))(modFunFct)))
+
+-- %- ------------------------------------------------------------------------
+-- %$$ProdFct$
+-- %Parses : @code{ProdFct ::= SimpleFct || ** }
+-- %- ------------------------------------------------------------------------
+
+DEF pProdFct == parser(\\Arg. \\ .  ((pSimpleFct || product)(modProdFct)) @ Arg)
+
+-- %- ------------------------------------------------------------------------
+-- %$$SimpleFct$
+-- %Parses : @code{SimpleFct ::= '(' pFct ')' | Name  | '(' ')' -> FunFct}
+-- %- ------------------------------------------------------------------------
+/*
+DEF pSimpleFct == parser(\\Arg. \\ .
+    LET P == (isA(openBr) <&> (    (isA(closeBr) <&.> (isA(arrow) <&.> pFct))
+                               <|> (pFct <.&> isA(closeBr))))(modFunFct)
+    IN IF (P @ Arg) pFail? THEN modify(nameParser @ Arg,mkKindSort)
+       ELSE P @ Arg FI)
+*/
+DEF pSimpleFct == parser(\\Arg. \\ .  
+    IF openBr = ft(Arg) and (rt(Arg) <>?)
+    THEN pRes(pErrMiss(`(closeBr),pos(ft(Arg))),noAbsy,rt(Arg))
+    IF openBr = ft(Arg) and ~(rt(Arg) <>?)
+    THEN IF closeBr = ft(rt(Arg))
+         THEN LET Res == ((isA(arrow) <&> pFunFct)(modFunFct)) @ rt(rt(Arg))
+              IN IF Res pFail? THEN pRes(err(Res),absy(Res),tokS(Res))
+                 ELSE Res FI
+         ELSE (pFct <.&> isA(closeBr)) @ rt(Arg)
+         FI
+    ELSE  modify(nameParser @ Arg,mkKindSort)
+--          nameParser @ Arg
+    FI)
+
+-- %- ----------------------------------------------------------------------
+
+FUN specialInName : set[terminal,<]
+DEF specialInName == incl(colon,incl(apo,incl(closeSqBr,openSqBr%)))

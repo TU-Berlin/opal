@@ -1,0 +1,77 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     table data structure for global signature with nat keys
+--		same as Table structure but an injective mapping
+-- Zweck:	Basisdatenstruktur fuer die Environmentdatenhaltung.
+--		Es wird eine bijektive Funktion nat->entry modeliert. (Keine
+--		Mehrfacheintraege). Der Wertebereich wird implizit durch die 
+--		entsprechenden Funktionen erweitert. Das mehrfache Eintragen
+--		desselben (bzgl. <) Objekts erhoeht einen ReferenceCount
+--		(siehe FUN decr).
+--		Ein codomain-Wert undefined bedeutet, dass ein beliebiger Wert
+--		zurueckgegeben wird.
+-- ============================================================================
+
+SIGNATURE UniqueTable[entry:SORT, <]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+SORT entry
+FUN < :entry**entry->bool
+
+
+IMPORT	Nat		ONLY nat
+	String		ONLY string
+
+
+SORT table
+
+-- ---------------------------------------------------------------------------
+-- Aufbauphase 
+
+FUN  {} : table'UniqueTable
+	-- leere Tabelle (mit 1. zu vergebenden Domainwert)
+	-- domain({}(n)) == {0,..,n-1}
+
+FUN  incl : entry ** table'UniqueTable -> nat ** table'UniqueTable
+	-- Hinzufuegen eines Eintrages (partiell fuer dynamische Tabellen)
+	-- incl(e,t)==(n,t`) ==> domain(t')=domain(t)+n
+
+FUN  toStatic : table'UniqueTable -> table'UniqueTable
+	-- Repraesentationsumwandlung (dynamisch -> statisch)
+
+
+-- ---------------------------------------------------------------------------
+-- Funktionen der Bearbeitungsphase (partiell fuer statische Tabellen)
+
+
+FUN  ! : nat ** table'UniqueTable  -> entry
+	-- Selektieren eines Eintrages
+	-- not(n in domain(t)) ==> !(t,n)==BOTTOM
+
+FUN  upd : nat ** entry ** table'UniqueTable -> table'UniqueTable
+	-- Ersetzen des Tabelleneintrags
+     upd : nat ** (entry -> entry) ** table'UniqueTable -> table'UniqueTable
+	-- Map eines Tabelleneintrags (Selekt+update)
+	-- upd(n,e,t)==t ==> not(n in domain(t)) ==> t=BOTTOM
+
+FUN  incr : nat ** table'UniqueTable -> table'UniqueTable
+FUN  decr : nat ** table'UniqueTable -> table'UniqueTable
+	-- Veraendern des Refcounts (Ist er null, bleibt er null)
+	-- Entries mit Refcount 0 werden durch * nicht mehr bearbeitet
+
+-- ---------------------------------------------------------------------------
+-- Umwandlung in Textrepraesentation
+
+FUN ` : denotation ** (entry -> denotation) ** table'UniqueTable -> denotation
+
+-- ---------------------------------------------------------------------------
+-- not for user-purpose
+
+TYPE refCEntry == refCEntry(refC : nat, entry : entry)
+     IMPORT Table[refCEntry] ONLY table
+TYPE table == uniqueTable(refCtable: table[refCEntry])

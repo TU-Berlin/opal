@@ -1,0 +1,72 @@
+IMPLEMENTATION OpalClient
+
+IMPORT  Nat                             COMPLETELY
+        Seq                             COMPLETELY
+        Denotation                      COMPLETELY
+        Com                             COMPLETELY
+        ComCompose                      COMPLETELY
+        ComCheck                        COMPLETELY
+        ProcessArgs                     COMPLETELY
+        ProcessConnect[task,answer]     COMPLETELY
+        ProcessInterrupt                COMPLETELY
+
+IMPORT
+        ChannelData                     ONLY task:SORT answer:SORT
+IMPORT
+        Environment                     COMPLETELY
+        Interpreter                     COMPLETELY
+        Monitor                         COMPLETELY
+    Void ONLY nil
+
+-- %$Implementierung der TopLevel-Funktion$
+-- %---------------------------------------
+
+/* %
+ Der Opal-Client terminiert unter keinen Umst‰nden regul‰r. Er kann nur
+fehlerhaft terminieren (@code{exception}). Auﬂerdem ist es mˆglich, daﬂ er
+divergiert, falls nichtterminierende, divergente Funktionen ausgewertet
+werden. In diesem Fall muﬂ der Prozeﬂ von auﬂen explizit terminiert werden
+(@code{SIGKILL}-Signal).
+
+Das Environment wird mit den Funktionen @code{wait} und @code{monitor}
+initialisiert. Dies geschieht, da der Opal-Client eigentlich sehr komplexe
+Verstickungen hinsichtlich der Abh‰ngigkeiten der verschiedenen Bestandteile
+hat. Die Folge w‰re dann eigentlich, daﬂ ein groﬂer Teil der Implementierung
+wegen der rekursiven Abh‰ngigkeiten in @emph{einer} Struktur realisiert werden
+m¸ﬂte. Um dies zu vermeiden, werden die Funktionen im Environment quasi
+,,globalisiert''.
+ */
+FUN evaluator: com[void]
+DEF evaluator == 
+    check(\\S.S,
+          args                                            & (\\Args .
+          IF #(Args) < 2 THEN
+            break("usage: evaluator OCS_DL_PATH ...")
+          ELSE
+            setEnv("OCS_DL_PATH", ft(rt(Args)))           & (\\ _ .
+            setArgs(ft(Args) :: rt(rt(Args)))             & (\\ _ .
+            debugEnv & (\\ _ .
+            open("OCS/oasys.channel", client)             & (\\Channel.
+            succeed(init'Environment(eval,print,iprint,Channel)) & (\\Env.
+            loop(Env)                                     )))))
+          FI
+          )
+         )
+
+/* %
+ Die @code{forever}-,,Schleife'' wird niemals verlassen und ruft 
+permanent @code{monitor} auf. Dadurch terminiert der Client nie regul‰r.
+ */
+FUN loop : environment -> com[void]
+DEF loop(E) == wait(E) & loop
+
+FUN debugEnv: com[void]
+DEF debugEnv == succeed(nil)
+/* %-
+  env("OCS_DL_PATH") ; (\\a.
+  IF noSuchEnvVar?(a) THEN writeLine(stdErr, "OCS_DL_PATH nicht gesetzt!")
+  ELSE writeLine(stdErr, "OCS_DL_PATH = " ++ data(a))
+  FI
+  )
+IMPORT Stream ONLY output stdErr writeLine string
+*/

@@ -1,0 +1,306 @@
+IMPLEMENTATION String
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:59 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Nat              COMPLETELY
+       Seq[char]        ONLY seq <> :: #
+       ABORT            ONLY ABORT
+       Char             ONLY <= < > >= = |= min
+       Option[char]     COMPLETELY
+
+IMPORT  Denotation      COMPLETELY
+
+-- implementing the type
+
+DATA string == <>
+               chunk(start: nat, data: denotation, rest: string)
+-- assertion: start < #data; i.e. there are no empty chunks
+
+DEF empty  == <>
+DEF empty? == <>?
+DEF cons == ::
+DEF cons? == ::?
+
+FUN goodSmallSize: nat
+-- chunks should not be smaller for economic use of storage 
+DEF goodSmallSize == 8
+
+DEF ft(<>) == ABORT("ft'String: applied to empty string")
+DEF rt(<>) == ABORT("rt'String: applied to empty string")
+
+DEF ft(chunk(P,D,_)) == -- D!P
+ IF #(D) = P THEN ABORT("ft'String: found empty chunk - this may not happen") 
+ ELSE             D ! P 
+ FI
+
+DEF rt(chunk(P,D,R)) ==
+    IF succ(P) = #(D) THEN R
+    ELSE chunk(succ(P),D,R) FI
+
+DEF ::(Ch,<>) == %(Ch)
+DEF ::(Ch,S AS chunk(P,D,R)) ==
+    IF 0?(P) THEN
+        LET NewD == init(goodSmallSize,Ch)
+            NewP == pred(goodSmallSize)
+        IN
+        chunk(NewP,NewD,S)
+    ELSE
+        LET NewP == pred(P)
+        IN
+        chunk(NewP,(D,NewP) := Ch,R)
+    FI
+
+DEF ::?(chunk(_,_,_)) == true
+DEF ::?(<>) == false
+
+    
+-- constructing a string from chars
+        
+DEF %(c1) ==
+    LET D  == init(goodSmallSize,c1)
+        P  == pred(goodSmallSize)
+    IN
+    chunk(P,D,<>)
+
+DEF %(c1, c2) ==
+    LET D2 == init(goodSmallSize,c2)
+        P1 == pred(pred((goodSmallSize)))
+        D1 == (D2,P1) := c1
+    IN
+    chunk(P1, D1 ,<>)
+
+DEF %(c1, c2, c3) ==
+    LET D3 == init(goodSmallSize,c3)
+        P2 == pred(pred(goodSmallSize))
+        D2 == (D3,P2) := c2
+        P1 == pred(P2)
+        D1 == (D2, P1) := c1
+    IN
+    chunk(P1, D1 ,<>)
+
+DEF %(c1, c2, c3, c4) ==
+    LET D4 == init(goodSmallSize,c4)
+        P3 == pred(pred(goodSmallSize))
+        D3 == (D4,P3) := c3
+        P2 == pred(P3)
+        D2 == (D3,P2) := c2
+        P1 == pred(P2)
+        D1 == (D2, P1) := c1
+    IN
+    chunk(P1, D1 ,<>)
+
+DEF %(c1, c2, c3, c4, c5) ==
+    LET D5 == init(goodSmallSize,c5)
+        P4 == pred(pred(goodSmallSize))
+        D4 == (D5,P4) := c4
+        P3 == pred(P4)
+        D3 == (D4,P3) := c3
+        P2 == pred(P3)
+        D2 == (D3,P2) := c2
+        P1 == pred(P2)
+        D1 == (D2, P1) := c1
+    IN
+    chunk(P1, D1 ,<>)
+
+DEF %(c1, c2, c3, c4, c5, c6) ==
+    c1 :: %(c2,c3,c4,c5,c6)
+
+DEF %(c1, c2, c3, c4, c5, c6, c7) ==
+    c1 :: %(c2,c3,c4,c5,c6,c7)
+
+DEF %(c1, c2, c3, c4, c5, c6, c7, c8) ==
+    c1 :: %(c2,c3,c4,c5,c6,c7,c8)
+
+-- DEF ::  :: is constructor
+
+DEF <> +% c == %(c)
+DEF chunk(P, D, R) +% c == chunk(P, D, R +% c)
+
+
+-- constructing a string from a function
+DEF (n1 .. n2)(f) == IF n1 > n2 THEN <>
+                     ELSE LET l == succ(n2 - n1)
+                              ff == \\n.f(n + n1)
+                          IN asString(init(l, ff))
+                     FI
+
+DEF iter(start, it, P) == IF ~(P(start)) THEN <>
+                          ELSE start :: iter(it(start), it, P)
+                          FI 
+
+
+-- combining strings
+
+DEF <> ++ S == S                          
+DEF chunk(P,D,R) ++ S == chunk(P,D,R ++ S)
+                         -- place to fuse small chunks ??
+
+DEF +/+(d)(s1, s2) == s1 ++ d :: s2
+DEF +/+(_ : char)(s, <>) == s
+DEF +/+(_ : char)(<>, s) == s
+DEF +/+(_ : char)(<>, <>) == <>
+
+DEF +/+(d)(s1, s2) == s1 ++ (d!) ++ s2
+DEF +/+(_ : denotation)(s, <>) == s
+DEF +/+(_ : denotation)(<>, s) == s
+DEF +/+(_ : denotation)(<>, <>) == <>
+
+DEF +/+(s)(s1, s2) == s1 ++ s ++ s2
+DEF +/+(_ : string)(s, <>) == s
+DEF +/+(_ : string)(<>, s) == s
+DEF +/+(_ : string)(<>, <>) == <>
+
+DEF +%+(d)(s1, s2) == s1 ++ d :: s2
+DEF +%+(d)(s1, s2) == s1 ++ (d!) ++ s2
+DEF +%+(s)(s1, s2) == s1 ++ s ++ s2
+-- working on a string
+
+DEF take(0, _) == <>
+DEF take(_, <>) == <>
+DEF take(n, s AS chunk(P, D, R)) == 
+    IF ##(s) < n THEN chunk(P, D, take(n - ##(s), R))
+    ELSE asString(slice(D, P, P + pred(n)))
+    FI
+
+DEF drop(0, s) == s
+DEF drop(_, <>) == <>
+DEF drop(n, s AS chunk(P, D, R)) ==
+    IF ##(s) <= n THEN drop(n - ##(s), R)
+    ELSE chunk(P + n, D, R)
+    FI
+
+
+DEF split(0, s) == (<>, s)
+DEF split(_, <>) == (<>, <>)
+DEF split(succ(n), s) == LET (left, right) == split(n, rt(s))
+                         IN  (ft(s) :: left, right)
+
+-- relies on non-occurrence of nonempty-chunks
+DEF front(<>) == ABORT("front'String applied to empty string")
+DEF front(s AS chunk(P, D, R)) == 
+    IF R <>? THEN -- take(pred(##(s)), s) aufgefaltet
+                IF succ(P) = #(D) THEN <>       -- s ist ein Zeichen lang
+                ELSE asString(slice(D, P, P + pred(pred(##(s))))) 
+                FI
+    ELSE          chunk(P, D, front(R))
+    FI
+
+-- DEF rt  is selector
+
+DEF revert(S) == revert(S,<>)
+
+  FUN revert: string ** string -> string
+  DEF revert(<>,A) == A
+  DEF revert(chunk(P,D,R),A) ==
+      revert(R,chunk(P,revert(P,pred(#(D)),D),A))
+
+  FUN revert: nat ** nat ** denotation -> denotation
+  DEF revert(l, r, s) ==
+      IF l >= r THEN s
+      ELSE LET ol == s ! l
+               or == s ! r
+               ns == :=(:=(s, r, ol), l, or)
+           IN revert(succ(l), pred(r), ns)
+      FI
+
+-- accessing chars in a string
+
+-- DEF ft is selector
+
+DEF last(<>) == ABORT("last'String applied to empty string")
+DEF last(chunk(_, D, <>)) == D ! pred(#(D))
+DEF last(chunk(_, _, R))  == last(R)
+
+-- information about a string
+DEF #(<>) == 0
+DEF #(chunk(P,D,R)) == #(#(D) - P, R)
+
+FUN # : nat ** string -> nat
+DEF #(l, <>) == l
+DEF #(l, chunk(P, D, R)) == #(l + (#(D) - P), R)
+
+DEF exist?(_, <>) == false
+DEF exist?(p, chunk(P, D, R)) == IF exist?(p, P, D) THEN true
+                                 ELSE exist?(p, R)  
+                                 FI
+
+  FUN exist? : (char -> bool) ** nat ** denotation -> bool
+  DEF exist?(p, N, S) == IF N >= #(S) THEN false
+                         ELSE IF p(S ! N) THEN true
+                              ELSE exist?(p, succ(N), S)
+                              FI
+                         FI
+DEF find?(_, <>) == nil
+DEF find?(p, chunk(P, D, R)) == IF nil?(find?(p, P, D)) THEN find?(p,R)
+                                ELSE find?(p, P, D)  
+                                FI
+
+  FUN find? : (char -> bool) ** nat ** denotation -> option[char]
+  DEF find?(p, N, S) == IF N >= #(S) THEN nil
+                         ELSE IF p(S ! N) THEN avail(S!N)
+                              ELSE find?(p, succ(N), S)
+                              FI
+                         FI
+DEF forall?(_, <>) == true
+DEF forall?(p, chunk(P, D, R)) == IF forall?(p, P, D) THEN forall?(p, R)
+                                  ELSE false
+                                  FI
+
+  FUN forall? : (char -> bool) ** nat ** denotation -> bool
+  DEF forall?(p, N, S) == IF N >= #(S) THEN true
+                           ELSE IF p(S ! N) THEN 
+                                   forall?(p, succ(N), S)
+                                ELSE false
+                                FI
+                           FI
+
+-- comparing strings
+
+-- DEF s1 < s2 == ...
+-- DEF s1 <= s2 == ...
+-- DEF s1 > s2 == ...
+-- DEF s1 >= s2 == ...
+-- DEF s1 = s2 == ...
+-- DEF s1 |= s2 == ...
+
+DEF D! == IF #(D) 0? THEN <> ELSE chunk(0,D,<>) FI
+
+-- old fashioned
+
+
+DEF init(n,c:char) == 
+    asString(init(n,c))
+
+DEF init(n,f:nat->char) == 
+    asString(init(n,f))
+
+-- DEF <> ! _ == ABORT("!'String: index out of range") 
+-- DEF chunk(P,D,R) ! I ==
+--     LET Ofs == P addNum rep(I)
+--    IN
+--    IF Ofs lsNum lenStr(D) THEN
+--      abs(selStr(D,Ofs))
+--    ELSE R ! abs(rep(I) subNum (lenStr(D) subNum P)) FI
+
+DEF (<>,_) := _  == ABORT(":='String: index out of range") 
+DEF (chunk(P,D,R),I) := Ch ==
+    -- place to fuse small chunks ??
+    LET Ofs == P + I
+    IN
+    IF Ofs < #(D) THEN
+        chunk(P,(D,Ofs) := Ch,R)
+    ELSE 
+        chunk(P,D,(R,I - (#(D) - P)) := Ch)
+    FI
+
+
+DEF asString(d) == !(d)
+
+
+-- auxiliary functions
+FUN ## : string -> nat   -- len of first chunk
+DEF ##(<>) == ABORT("##: not on empty string / This may not happen!")
+DEF ##(chunk(P, D, _)) == #(D) - P

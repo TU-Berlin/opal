@@ -1,0 +1,124 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     additional library functions
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION MySeqFun2[a,b]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq		COMPLETELY
+	SeqMap		ONLY *
+	Com		COMPLETELY
+	Pair		COMPLETELY
+	ComCompose	COMPLETELY
+	Nat		COMPLETELY
+
+-- ---------------------------------------------------------------------------
+
+FUN existMap : (a -> bool ** b) -> seq[a] -> bool ** seq[b]
+  -- Mapping der Sequenz, solange die Funktion true liefert.
+DEF existMap(F)(<>) == (true, <>)
+DEF existMap(F)(ft::rt) ==
+    LET (ok?, ele) == F(ft) IN
+    IF ok? THEN LET (okR?, SR) == existMap(F)(rt) IN (okR?, ele :: SR)
+    ELSE (ok?, <>) FI
+
+-- ---------------------------------------------------------------------------
+
+FUN ||| : (b ** a ** a -> b ** bool) ** seq[a] ** b -> seq[a] ** b
+DEF |||(F, <>, env) == (<>, env)
+DEF |||(F, ft::rt, env) == (ft :: finSeq, finEnv)
+    WHERE
+    (1stEnv,unEqS) == ((\\env2,x.F(env2,ft,x)) /\ env)(rt)
+    (finSeq, finEnv) == |||(F,unEqS, 1stEnv)
+
+    FUN /\ : (b**a->b**bool) ** b -> seq[a] -> b**seq[a]
+    DEF /\(F,env)(<>) == (env,<>)
+    DEF /\(F,env)(ft::rt) ==
+	LET 
+	(newEnv, eq) == F(env,ft)
+	(finEnv, rest) == /\(F,newEnv)(rt)
+	IN IF eq THEN (finEnv, rest) ELSE (finEnv, ft::rest) FI
+
+-- ---------------------------------------------------------------------------
+
+FUN * : (a -> b) -> seq[a] -> seq[b]
+  -- gecurrite Version
+DEF *(F)(S) == F * S
+
+FUN * : (nat ** a -> b) -> seq[a] -> seq[b]
+DEF *(F)(S) == ***(F,1,S)
+
+    FUN *** : (nat ** a ->b) ** nat ** seq[a] -> seq[b]
+    DEF ***(F,n,<>) == <>
+    DEF ***(F,n,ft::rt) == F(n,ft) :: ***(F,succ(n),rt)
+
+-- ---------------------------------------------------------------------------
+
+FUN * : (a -> com[b]) -> seq[a] -> com[seq[b]]
+DEF *(F)(<>)     == yield(okay(<>))
+DEF *(F)(ft::rt) == F(ft) ; (\\ansB. *(F)(rt) ; 
+		    (\\ans.(IF ans fail? THEN yield(ans)
+			    IF ansB fail? THEN yield(fail(error(ansB)))
+			    ELSE yield(okay(data(ansB) :: data(ans))) FI)))
+
+-- ---------------------------------------------------------------------------
+
+FUN // : (b ** a -> com[pair[b,bool]]) ** pair[b,bool]
+	-> seq[a] -> com[pair[b,bool]]
+    -- Reduce der Sequenz und update des Environments als Kommando
+    -- Revertiert die Liste !!!!!!!!
+DEF //(F,gSoK)(<>) 	  == yield(okay(gSoK))
+DEF //(F,gS & ok)(ft::rt) == F(gS,ft) ; //(ok,F,rt)
+
+    FUN // : bool ** (b ** a -> com[pair[b,bool]]) ** seq[a] 
+             -> ans[pair[b,bool]] -> com[pair[b,bool]]
+    DEF //(ok1,F,S)(okay(gS & ok)) == //(F,gS & (ok and ok1))(S)
+
+
+FUN / : (b ** a -> com[b]) ** b -> seq[a] -> com[b]
+    -- Reduce der Sequenz und update des Environments als Kommando
+    -- Revertiert die Liste !!!!!!!!
+DEF /(F,env)(<>) == yield(okay(env))
+DEF /(F,env)(ft::rt) == F(env,ft) ; (\\ans. /(F,data(ans))(rt))
+
+-- ---------------------------------------------------------------------------
+
+FUN / : (a -> com[b]) -> seq[a] -> com[b]
+    -- Reduce der Sequenz als Kommando
+    -- PRE: S ::?
+DEF /(F)(ft:: <>) == F(ft)
+DEF /(F)(ft:: rt) == F(ft) ; /(F)(rt)
+
+-- ---------------------------------------------------------------------------
+
+FUN cmp : (a ** b -> bool) -> seq[a] ** seq[b] -> bool
+    -- Vergleich zweier Sequenzen
+DEF cmp(=)(<>, <>) == true
+DEF cmp(=)(aS, <>) == false
+DEF cmp(=)(<>, bS) == false
+DEF cmp(=)(ftA::rtA, ftB::rtB) ==
+    IF ftA = ftB THEN cmp(=)(rtA, rtB) ELSE false FI
+
+-- ---------------------------------------------------------------------------
+
+FUN notDisjoint : (a ** b -> bool) -> seq[a] ** seq[b] -> bool
+DEF notDisjoint(=)(aS, <>) == false
+DEF notDisjoint(=)(aS, ft::rt) ==
+    IF in(=,ft)(aS) THEN true ELSE notDisjoint(=)(aS,rt) FI
+
+-- ---------------------------------------------------------------------------
+
+FUN in : (a ** b -> bool) ** seq[a] -> b -> bool
+    -- ist das Element b in der Sequenz ?
+DEF in(=,S)(b) == in(=,b:b)(S)
+
+FUN in : (a ** b -> bool) ** b -> seq[a] -> bool
+    -- ist das Element b in der Sequenz ?
+DEF in(=,b)(S) == exist?(\\x.x=b, S)

@@ -1,0 +1,103 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     table data structure for global signature with nat keys
+--		depending on phase, tables are either arrays or sequences
+--		with corresponding efficiency properties.
+-- Warning:	many partial function disable inefficient usage!
+-- Zweck:	Basisdatenstruktur fuer die Datenhaltung der globalen Signatur.
+--		Es wird ein Mapping nat->entry modeliert, das insbesondere
+--		nicht injektiv sein muss (Mehrfacheintraege). Der Wertebereich
+--		wird implizit durch die entsprechenden Funktionen erweitert.
+--		Ein codomain-Wert undefined bedeutet, dass ein beliebiger Wert
+--		zurueckgegeben wird.
+--		Aus Effizienzgruenden gibt es zwei Varianten, die sogenannten
+--		dynamischen und statischen Tabellen. Erstere zeigen ein gutes
+--		Aufbauverhalten O(cons) aber auch schlechten Zugriff O(n) und
+--		sind fuer die Aufbauphase vorgesehen.
+--		Die statischen haben beim Hinzufuegen (i.A.) O(n*n) Aufwand,
+--		aber dafuer O(cons) Zugriffszeiten. (Vergroessert werden die
+--		statischen bei Bedarf immer um 50%). Sie sollen waehrend der
+--		Bearbeitungsphase der Tabellen benutzt werden.
+-- ============================================================================
+-- ============================================================================
+
+
+SIGNATURE Table[entry]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+SORT entry
+
+IMPORT	Nat		ONLY nat
+        DArray[entry]   ONLY dArray
+        NatMap[entry]   ONLY natMap
+        Option[entry]   ONLY option
+	Pair[nat,entry]	ONLY pair
+	Seq[pair]	ONLY seq
+	Seq[entry]	ONLY seq
+	Seq[nat]	ONLY seq
+	String		ONLY string
+
+SORT table
+
+-- ---------------------------------------------------------------------------
+-- Aufbauphase fuer unbekannte Tabellengroesse und Domain
+
+FUN  {} : nat -> table
+	-- leere Tabelle (mit 1. zu vergebenden Domainwert)
+	-- domain({}(n)) == {0,..,n-1}
+
+FUN  {}? : table -> bool
+  -- table {}? <==> domain(table) = {}
+
+FUN  incl : entry ** table -> nat ** table
+	-- Hinzufuegen eines Eintrages (partiell fuer dynamische Tabellen)
+	-- incl(e,t)==(n,t`) ==> domain(t')=domain(t)+n
+
+FUN  toStatic : table -> table
+	-- Repraesentationsumwandlung (dynamisch -> statisch)
+
+-- FUN static? : table -> bool
+
+
+-- ---------------------------------------------------------------------------
+-- Aufbauphase fuer unbekannte Tabellengroesse und bekanntes Domain
+
+FUN  {} : table
+	-- leere Tabelle 
+	-- domain(mt) == {}
+
+FUN  def : nat ** entry ** table -> table
+	-- Hinzufuegen eines Eintrages (partiell fuer dynamische Tabellen)
+	-- def(n,e,t)=t' ==> toStatic(t')!n=e
+
+FUN + : table ** table -> table
+  -- add tables
+
+FUN !? : nat ** table -> option[entry]
+  -- Selektieren eines Eintrages
+  -- not(n in domain(t)) ==> !(t,n)==nil
+
+FUN  ! : nat ** table  -> entry
+	-- Selektieren eines Eintrages
+	-- not(n in domain(t)) ==> !(t,n)==BOTTOM
+
+FUN  upd : nat ** entry ** table -> table
+	-- Ersetzen des Tabelleneintrags
+     upd : nat ** (entry -> entry) ** table -> table
+	-- Map eines Tabelleneintrags (Selekt+update)
+	-- upd(n,e,t)==t ==> not(n in domain(t)) ==> t=BOTTOM
+
+-- ---------------------------------------------------------------------------
+-- Umwandlung in Textrepraesentation
+
+FUN ` : denotation ** (entry -> denotation) ** table -> denotation
+
+-- ---------------------------------------------------------------------------
+-- not for user-purpose
+
+TYPE table ==	asTable(asDArray : dArray[entry])

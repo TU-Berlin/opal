@@ -1,0 +1,314 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     data structure for signature and implementation analysis
+-- Changes:     af, Jul  5 1993: added laws
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION GlobSig
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Table      ONLY table toStatic
+       Option     ONLY	avail nil option
+       Pair       ONLY & pair
+       Seq        ONLY seq % # :: <> ++
+       Nat        ONLY > 1 < =
+       ABORT      ONLY ABORT
+       Name       ONLY < = intName? var? local? struct impDecl 
+                      extName? formParam? nameSet?
+       Objects    ONLY = instPN sortPN no
+       Map        ONLY map {}
+       Denotation ONLY ++
+       SeqConv    ONLY ` string
+       Pos        ONLY `
+
+DATA globSig ==  
+  errGlobSig
+  sigGlobSig(             -- Environment der Signaturanalyse
+     structIde       : rep,
+     formParams      : seq[formParam],
+     decls           : table[declE],
+     structures      : table[structE],
+     pos             : pos,
+     pragma          : pragma,
+     sortPartNames   : table[sortPNE,<],
+     instPartNames   : table[instPNE,<<],
+     onlyPartNames   : table[onlyTab],
+     lookupTable     : table[lookupE],
+     impPragmas : map[rep, <, seq[globPragma]],  -- pragmas of imported str.
+     impLaws         : map[rep, <, seq[pair[law, locSig]]], -- rep is struct
+     boolR           : rep,
+     denotationR     : rep,
+     BOOL            : rep,
+     DENOTATION      : rep,
+     pragmas         : seq[globPragma])
+  implGlobSig(            -- globales Env. der Implementierungsanalyse
+     structIde       : rep,
+     formParams      : seq[formParam],
+     decls           : table[declE],
+     structures      : table[structE],
+     pos             : pos,
+     pragma          : pragma,
+     lookupTable     : table[lookupE],
+     impPragmas : map[rep, <, seq[globPragma]],  -- pragmas of imported str.
+     impLaws         : map[rep, <, seq[pair[law, locSig]]], -- rep is struct
+     bool            : name,
+     denotation      : name,
+     laws            : map[rep,<,pair[law,locSig]],
+     pragmas         : seq[globPragma],
+     prioTab: prioTab)
+  
+-- %$ partial only names 
+
+DATA onlyTab ==
+      onlyTab( struct : struct, inst : inst, tabOf: table[onlyPNE] )
+
+FUN context : onlyTab -> struct ** inst
+DEF context(oTab) == (struct(oTab), inst(oTab))
+
+FUN toStatic : onlyTab -> onlyTab
+DEF toStatic(tab) == onlyTab(context(tab), tabOf(tab) toStatic)
+
+FUN updOnlyTab : onlyTab ** table[onlyPNE] -> onlyTab
+DEF updOnlyTab(oTab, tab) == onlyTab(context(oTab), tab)
+
+-- %$ lookup entries 
+
+DATA lookupE ==                 -- enthaelt alle Namen mit gleichem Ide
+        lookupE(
+                struct : option[struct],-- Struktur
+                sortDeclS : seq[decl],  -- Sortendeklarationen
+                opDeclS : seq[decl],    -- Operationsdeklarationen
+                sortImpDeclS : seq[pair[struct,seq[impDecl]]],  
+                opImpDeclS : seq[pair[struct,seq[impDecl]]])    
+                                        -- importierte Namen
+
+-- %$ formal parameter
+/* % The type formParam had to be changed to allow to keep both: the
+   partial of an implementation and the full name inherited from the
+   signature. formParam with both partial and full components nil
+   should not exist. */
+
+DATA formParam == 
+     mkFormParam(partialFp: option[onlyPNE], 
+                 fullFp   : option[decl], 
+                 pragmaFp : pragma)
+
+-- % old induced signature of formParam included for upward compatibility
+FUN unIdentified : pair[onlyPNE,pragma] -> formParam
+    Identified : pair[decl,pragma] -> formParam
+    fPof : formParam -> pair[onlyPNE,pragma] 
+    fPof : formParam -> pair[decl,pragma]
+    unIdentified? 
+    Identified? : formParam -> bool
+
+DEF unIdentified(pN & Pr) == mkFormParam(avail(pN), nil, Pr)
+DEF Identified(fN & Pr) == mkFormParam(nil, avail(fN), Pr)
+DEF fPof(mkFormParam(avail(pN),_,Pr)) == pN & Pr
+DEF fPof(mkFormParam(_,avail(fN),Pr)) == fN & Pr
+DEF unIdentified?(mkFormParam(avail(_),nil,_)) == true
+DEF unIdentified?(_) == false
+-- % unIdentified? may be no longer equal to (~ o Identified?) !
+DEF Identified?(mkFormParam(_,avail(_),_)) == true
+DEF Identified?(_) == false
+
+-- ------------------------------------------------------------------------
+
+DEF updDecls(gS, tab) ==
+        IF gS sigGlobSig? THEN
+          sigGlobSig(structIde(gS), formParams(gS), tab, structures(gS),
+                     pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                     onlyPartNames(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                     boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+        IF gS implGlobSig? THEN
+          implGlobSig(structIde(gS), formParams(gS), tab, structures(gS),
+                     pos(gS), pragma(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                     bool(gS), denotation(gS), laws(gS),
+                     pragmas(gS), prioTab(gS))
+        FI
+
+DEF updStructs(gS, tab) ==
+        IF gS sigGlobSig? THEN
+          sigGlobSig(structIde(gS), formParams(gS), decls(gS), tab,
+                     pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                     onlyPartNames(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                     boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+        IF gS implGlobSig? THEN
+          implGlobSig(structIde(gS), formParams(gS), decls(gS), tab,
+                     pos(gS), pragma(gS),lookupTable(gS),  impPragmas(gS),
+                     impLaws(gS),
+                     bool(gS), denotation(gS), laws(gS),
+                     pragmas(gS), prioTab(gS))
+        FI
+
+DEF updSortPNs(gS, tab) ==
+        sigGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS),
+                   pos(gS), pragma(gS), tab, instPartNames(gS),
+                   onlyPartNames(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                   boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+
+DEF updInstPNs(gS, tab) ==
+        sigGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS),
+                   pos(gS), pragma(gS), sortPartNames(gS), tab,
+                   onlyPartNames(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                   boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+
+DEF updOnlyPNs(gS, tab) ==
+        sigGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS),
+                   pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                   tab, lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                   boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+
+DEF updLookups(gS, tab) ==
+        sigGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS),
+                   pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                   onlyPartNames(gS), tab,impPragmas(gS),
+                     impLaws(gS),
+                   boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+
+DEF updLaws(gS, map) ==
+        implGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS),
+                    pos(gS), pragma(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                    bool(gS), denotation(gS), map, pragmas(gS), prioTab(gS))
+
+DEF updImpPragmas(gS, iPs) ==
+        IF gS sigGlobSig? THEN
+          sigGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                     pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                     onlyPartNames(gS), lookupTable(gS), iPs, 
+                     impLaws(gS),
+                     boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+        IF gS implGlobSig? THEN
+          implGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                     pos(gS), pragma(gS),lookupTable(gS), iPs, 
+                     impLaws(gS),
+                     bool(gS), denotation(gS), laws(gS),
+                     pragmas(gS), prioTab(gS))
+        FI
+
+DEF updImpLaws(gS, iLs) ==
+        IF gS sigGlobSig? THEN
+          sigGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                     pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                     onlyPartNames(gS), lookupTable(gS), impPragmas(gS),
+                     iLs,
+                     boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     pragmas(gS))
+        IF gS implGlobSig? THEN
+          implGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                     pos(gS), pragma(gS),lookupTable(gS), impPragmas(gS),
+                     iLs,
+                     bool(gS), denotation(gS), laws(gS),
+                     pragmas(gS), prioTab(gS))
+        FI
+
+DEF updPragmas(gS, gPs) ==
+        IF gS sigGlobSig? THEN
+          sigGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                     pos(gS), pragma(gS), sortPartNames(gS), instPartNames(gS),
+                     onlyPartNames(gS), lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                     boolR(gS), denotationR(gS), BOOL(gS), DENOTATION(gS),
+                     gPs)
+        IF gS implGlobSig? THEN
+          implGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                     pos(gS), pragma(gS),lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                     bool(gS), denotation(gS), laws(gS), gPs, prioTab(gS))
+        FI
+
+DEF updPrioTab(gS, pT) ==
+        IF gS implGlobSig? THEN
+          implGlobSig(structIde(gS), formParams(gS), decls(gS), structures(gS), 
+                     pos(gS), pragma(gS),lookupTable(gS), impPragmas(gS),
+                     impLaws(gS),
+                     bool(gS), denotation(gS), laws(gS), pragmas(gS), pT)
+        FI
+
+-- %$Prioritäten$
+
+DATA prio == left right both
+DEF left` == "left"
+DEF right` == "right"
+DEF both ` == "both"
+
+DATA rule == none -- keine Priorität festgestellt
+             assumed(what: prio)
+             table(what: prio, posS: seq[pos])
+
+DEF table(w, p1) ++ table(_, p2) == table(w, p1 ++ p2)
+DEF _ ++ _ == ABORT("++'PrioTab: ++ for table rules only")
+
+DEF none `          == "-" 
+DEF assumed(what) `       == "[" ++ (what`) ++ "]"
+DEF table(what, where) ` == (what`) ++ " " ++ `("at ", ", ", " ")(`)(where)
+
+
+FUN direct: prio ** pos -> rule
+DEF direct(what, where) == table(what, where%)
+
+FUN closure: prio ** seq[pos] -> rule
+DEF closure(what, where) ==
+  IF #(where) > 1 THEN table(what, where) 
+  ELSE ABORT("closure'PrioTab: called with too short sequence of pos")
+  FI
+
+FUN where: rule -> pos
+DEF where(table(_, p :: <>)) == p
+DEF where(_) == (ABORT("where'GlobSig:rule->pos only defined for direct")):pos
+
+FUN where: rule -> seq[pos]
+DEF where(table(_, P AS _ :: _ :: _)) == P
+DEF where(_) == (ABORT("where'GlobSig:rule->seq[pos] only defined for closure")):seq[pos]
+
+FUN direct? : rule -> bool
+DEF direct?(table(_, _ :: <>)) == true
+DEF direct?(_) == false
+
+FUN closure? : rule -> bool
+DEF closure?(table(_, _ :: _ :: _)) == true
+DEF closure?(_) == false
+
+DATA prioTab == pT(tab: map[name, <! , map[name, <! , rule]])
+
+DEF {-} == pT({})
+
+DEF <!(n1, n2) == 
+  LET check == \\n. extName?(n) or formParam?(n) or nameSet?(n)
+  IN
+  IF check(n1) and check(n2) THEN
+    IF no(struct(n1)) < no(struct(n2)) THEN true
+    IF no(struct(n1)) > no(struct(n2)) THEN false
+    ELSE no(impDecl(n1)) < no(impDecl(n2)) FI
+  ELSE
+    n1 < n2
+  FI
+
+
+DEF <!> (n1, n2) == 
+  LET check == \\n. extName?(n) or formParam?(n) or nameSet?(n)
+  IN
+  IF check(n1) and check(n2) THEN
+     no(struct(n1)) = no(struct(n2)) and no(impDecl(n1)) = no(impDecl(n2)) 
+  ELSE
+    n1 = n2
+  FI

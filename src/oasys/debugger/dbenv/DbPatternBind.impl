@@ -1,0 +1,121 @@
+IMPLEMENTATION DbPatternBind
+
+IMPORT	
+	Seq			COMPLETELY
+	SeqMap			COMPLETELY 
+	SeqMapEnv		COMPLETELY
+	SeqZip			COMPLETELY
+	SeqFilter		COMPLETELY
+	Nat			COMPLETELY
+	Pair			COMPLETELY
+	Option			COMPLETELY
+	OptionMap		COMPLETELY
+IMPORT	-- oasyslib
+	SeqExtensions		COMPLETELY
+IMPORT	-- repo
+	RepoObjectAccess	COMPLETELY
+	RepoPropertyAccess	COMPLETELY
+	RepoName		COMPLETELY
+IMPORT	-- this
+	DbAbsyAux		COMPLETELY
+	DbPatternTmpPatt	COMPLETELY
+	Expression		COMPLETELY
+	DbConvEnv		COMPLETELY
+	DbNameStack		COMPLETELY
+	DbName2Expr		COMPLETELY
+
+
+/* %
+ @code{(E1,BPattern) == tmpPatt2bpattern(E,TPatt):} @code{TPatt} wird in ein
+Pattern @code{BPattern} transformiert, das die Bindungen der Pattern-Variablen
+beschreibt. Zu beachten ist, daß in dieser Pattern-Form auch das Toplevel-Tupel
+als @emph{ein} Konstruktor-Term @code{constr} dargestellt wird und die
+Selektoren hierbei die Projektionen des Tupels sind. @code{E} enthält den
+NameStack nach erfolgter Bindung der Variablen des Patterns.
+ */
+DEF tmpPatt2bpattern(E,TPatt) == 
+    LET -- Es werden Projektionen als Selektoren auf dem Toplevel-Tupel
+	-- erzeugt.
+	Sels	       == (0 ..> #(patts(TPatt)))(proj)
+	OldNameStack   == nameStack(E)
+	(E1,SeqPair)   == bpatt1(E,TPatt,Sels)
+	Patt	       == constr(SeqPair)
+	NewNameStack   == nameStack(E1)
+    IN (E1, bpattern(NewNameStack-OldNameStack,Patt))
+
+/* %
+ @code{bpatt1} erhält neben einem Pattern die Liste der Selektoren zu diesem
+Pattern. Es wird für jeden Selektor mit dem zugehörigen Teilpattern die
+Funktion @code{bpatt2} aufgerufen. @code{bpatt2} liefert optionale Ergebnisse,
+je nachdem ob das Teilpattern trivial ist oder nicht. Triviale Pattern sind
+Pattern, die keine Variablen binden. (Sie können im Zusammenhang mit den
+Pattern zur Variablenbindung ignoriert werden.)
+ */
+FUN bpatt1: env ** tmpPatt ** seq[selector] ->
+			env ** seq[pair[selector,patt]] 
+DEF bpatt1(E,Patt,Sels) ==
+    LET (E1,SeqOpt) == (bpatt2,E) * patts(Patt)
+	-- Nun werden die Selektoren mit den Pattern kombiniert.
+	-- Heraus kommt eine Liste von optionalen Paaren (Die Optionalität 
+	-- wird quasi nach außen gezogen.)
+	Seq1 == zip(\\ Sel,OptPatt. (Sel & _) * OptPatt)(Sels,SeqOpt)
+	-- Nun werden alle nils weggeworfen und aus den anderen
+	-- der Inhalt extrahiert. Fertig.
+    IN (E1,cont * (avail? | Seq1))
+
+/* %
+ @code{bpatt2} übersetzt ein @code{tmpPattItem} in ein (optionales)
+@code{patt}. Ein Pattern ist wird nur dann zurückgeliefert, wenn mind. eine
+Variable innerhalb des Patterns gebunden wurde. Beim Resultat @code{nil} ist
+das zurückgelieferte Environment unverändert.
+ */
+FUN bpatt2: env ** tmpPattItem -> env ** option[patt]
+
+/* %
+ Wildcards enthalten keine Bindungen und können ignoriert werden.
+ */
+DEF bpatt2(E,any) == (E,nil)
+
+/* % 
+ Für die Variable wird ein BindOffset reserviert. Dazu wird der aktuelle
+BindOffset aus dem NameStack genommen und der Name im Stack eingetragen (push).
+ */
+DEF bpatt2(E,var(N)) == (E push N,avail(var(actBindOffset(E))))
+
+/* %
+ @code{Arg} ist ein @code{tmpPatt}. Aus dem Konstruktur-Namen @code{C} wird nun
+die zugehörige Sequenz der Selektoren für das Argumentpattern rausgesucht.
+ */
+DEF bpatt2(E,constr(C,Arg)) ==
+    LET FreeTypeProp == cont(freeType?(baseName(C))(repo(E)))
+	SelNames0    == selectors(FreeTypeProp,baseName(C))(repo(E))
+	SelNames == IF basicUnitName?(unit(C))
+		      THEN SelNames0
+		      ELSE LET InstNo == instNo(unit(C))
+			   IN inst(_,InstNo) * SelNames0
+		    FI
+	(E1,SelExprs)== (name2expr,E) * SelNames
+	Sels	     == sel * SelExprs
+	  -- Mit dem Argument-Pattern und den zugehörigen
+	  -- Sel. wird nun wieder bpatt1 aufgerufen
+	(E2,SeqPair) == bpatt1(E1,Arg,Sels)
+    IN IF SeqPair ::?
+	 THEN (E2,avail(constr(SeqPair)))
+	 ELSE -- Es gibt kein nichttriviales Subpattern. Es wird demnach
+	      -- auch kein übergeordnetes Pattern zurückgeliefert.
+	      (E2,nil)
+       FI
+
+/* %
+ Bei @code{as} wird für den lokalen Namen @code{N} der aktuelle Offset
+reserviert. Es wird das Pattern @code{Patt} untersucht: Ist es trivial, wird
+das @code{as}-Pattern im Zusammenhang mit den Variablen-Bindungen zum einfachen
+@code{var}-Pattern.
+ */
+DEF bpatt2(E,as(N,Patt)) ==
+    LET ThisOffset == actBindOffset(E)
+	(E1,OptP)  == bpatt2(E push N,Patt)
+    IN IF OptP avail?
+	 THEN (E1,avail(as(ThisOffset,cont(OptP))))
+	 ELSE (E1,avail(var(ThisOffset)))
+       FI

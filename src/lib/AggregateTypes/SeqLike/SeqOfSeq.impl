@@ -1,0 +1,62 @@
+IMPLEMENTATION SeqOfSeq
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:00 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Seq ONLY seq <>? <> ft rt ++ :: % +%
+       SeqFilter ONLY split
+       SeqMap ONLY *
+       SeqReduce ONLY /
+
+DEF flat(s) ==
+        IF s<>? THEN <> 
+                ELSE ft(s) ++ flat(rt(s)) FI
+
+DEF partition(_)(<>) == <>
+DEF partition(P)(f :: r) ==
+        LET part == partition(P)(r)     
+            (v,n) == split(\\s . ~ (ft(s) P f), part)
+        IN
+        IF n <>? THEN %(f) :: v
+        ELSE v ++ (f :: ft(n)) :: rt(n)
+        FI
+
+DEF inits(<>) == %(<>)
+DEF inits(s) == <> :: (ft(s) :: _) * inits(rt(s))
+
+DEF tails(<>) == %(<>)
+DEF tails(s) == s :: tails(rt(s))
+
+DEF permutations(<>) == <>
+
+DEF permutations(s) == (f, %(<>)) / s 
+   -- % add @code{d} to all permutations built up so far
+    WHERE f == \\d, ps. ((g, <>) / ps
+   -- % add @code{d} to permutation and add result to current list
+          WHERE g == \\p, ps1. insertAll(d, p) ++ ps1)
+
+/* %insert @code{data} in all possible ways */
+FUN insertAll: data ** seq[data] -> seq[seq[data]]
+DEF insertAll(d, s) == insertAll(d, <>, s, <>)
+
+FUN insertAll: data ** seq[data] ** seq[data] ** 
+                            seq[seq[data]] -> seq[seq[data]]
+DEF insertAll(d, before, after, accu) ==
+    IF after <>? THEN before +% d :: accu
+    ELSE insertAll(d, before +% ft(after), 
+                    rt(after), before ++ d :: after :: accu)
+    FI
+
+DEF transpose(<>) == <>
+DEF transpose(s) == 
+  IF ft(s) <>? THEN <> ELSE (ft * s) :: transpose(rt * s) FI
+
+DEF combinations(<>) == <>
+DEF combinations(Z :: <>) == % * Z
+DEF combinations(A :: Rest) == 
+  LET addA == \\ a. (\\ comb. a :: comb) * combinations(Rest)
+  IN
+  (++, <>) / (addA * A)
+  -- flat nicht möglich, da in gleicher Struktur und anders instantiiert.

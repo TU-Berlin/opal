@@ -1,0 +1,403 @@
+IMPLEMENTATION RepoInterface
+
+IMPORT  
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqFold         COMPLETELY
+        SeqIndex        COMPLETELY
+        SeqReduce       COMPLETELY
+        Set             COMPLETELY
+        SetConv         COMPLETELY
+        SetMap          COMPLETELY
+        String          COMPLETELY
+        StringConv      COMPLETELY
+        StringFormat    COMPLETELY
+        BTUnion         COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        Nat             COMPLETELY
+        NatConv         COMPLETELY
+        Fmt             COMPLETELY
+        Void            COMPLETELY
+        Denotation      COMPLETELY
+        File            COMPLETELY
+        FileName        COMPLETELY
+        Char            COMPLETELY
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        FmtSet          COMPLETELY
+        IdTab           COMPLETELY
+        IdMap           COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        FmtBasicTypes   COMPLETELY
+        ComSeqMap       COMPLETELY
+        ComSeqReduce    COMPLETELY
+        ComPairCompose  COMPLETELY
+
+IMPORT  -- repo
+        RepoAn          ONLY none:an fmtAn
+        RepoAbsy        COMPLETELY
+        RepoSource      COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoName        COMPLETELY
+        RepoAdmin       COMPLETELY
+        RepoMaintain    COMPLETELY
+        RepoInternData  ONLY    repo:SORT fmtRepo
+        RepoGlobalAccess
+                        COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoObjectAccess
+                        COMPLETELY
+        RepoSourceAccess
+                        COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoCom         COMPLETELY
+        RepoCom1        COMPLETELY
+        RepoNameConv    COMPLETELY
+        RepoInternData  COMPLETELY
+
+IMPORT  -- oasyslib
+        DenoExtensions  COMPLETELY
+        OasysCmdtable   COMPLETELY
+IMPORT  
+        Argspec         COMPLETELY
+        ArgspecBasic    COMPLETELY
+        ArgspecCompose  COMPLETELY
+        ArgspecOp       COMPLETELY
+IMPORT  
+        Cmdtable[denotation]
+                        COMPLETELY
+        ComTty          COMPLETELY
+--        Compose         COMPLETELY
+        RepoFocus      COMPLETELY
+       FmtOption ONLY fmtOption
+       SeqFilter ONLY |
+       Id ONLY fmtId
+
+
+DEF initRepo == 
+    register(repoCmdtable)
+
+DEF finitRepo == 
+    succeed(nil)
+
+-- %-============================================================
+FUN repoCmdtable : cmdtable[denotation]
+DEF repoCmdtable ==
+
+    cmd(lit("oasys-save") o 
+        ?(var("PATHNAME",failCompletion)) @ 
+        (\\Pair. save(2nd(Pair))),
+        "Save the repository and all related files to the filesystem.\n"++
+        " If you specify an additional PATHNAME, the repository will be\n"++
+        " saved under this location."
+    ) ++
+        
+    cmd(lit("oasys-intern-path") o 
+          ?((lit("add") o 
+              ((lit("library") & (\\ _ . libFolder))
+              |(lit("ocs")     & (\\ _ . ocsFolder)))
+            & 2nd) o  -- forget the "add" token
+            var("PATH",failCompletion) 
+          )
+          @ -- action
+          (\\P.
+              IF avail?(2nd(P)) -- (library | ocs) ...
+                THEN enrichSearchPath(unpair(cont(2nd(P))))
+                ELSE searchPath
+              FI
+          ),
+        "Query search path or add new folder to search path"
+    ) ++
+
+    cmd(lit("oasys-register") o 
+         *(var("STRUCTNAME",failCompletion)) 
+         & 2nd   -- forget the "register" token        
+        @ -- action
+        register,
+        "Register one or more structure(s)\n"++
+        " The structure is loaded into the repository or left\n"++
+        " unchanged if the structure is already loaded.\n"++
+        " A file name may be given in which a leading path and a\n"++
+        " .sign or .impl suffix is stripped."
+    ) ++
+
+    cmd(lit("oasys-new") o 
+         var("STRUCTNAME",failCompletion)
+         & 2nd -- forget "new"
+        @ -- action
+        new,
+        "Create a new structure\n"
+    ) ++
+
+    cmd(lit("oasys-reload") o
+        *(unitNameSpec) & 2nd & asSet
+        @ -- action
+        reload,
+        "Reload one or more unit(s) from filesystem"
+    ) ++
+
+    cmd(lit("oasys-focus") o
+        ?(unitNameSpec) & 2nd
+        @ 
+        focus,
+        "Query focus or change focus to another unit"
+    ) ++
+
+    cmd(lit("oasys-units") o 
+        ?(lit("full") & (\\ _ . full) | 
+          lit("name") & (\\ _ . name) |
+          lit("file") & (\\ _ . file))
+        & 2nd
+        & (\\Mode? . IF nil?(Mode?) THEN name ELSE cont(Mode?) FI)
+        @ unitsInfo, 
+        "Give information about units"
+    ) ++
+
+    cmd(lit("oasys-related") o 
+        ?(lit("direct")        & (\\ _ . direct) |
+          lit("transitive")    & (\\ _ . transitive)) & 2nd o
+        ?(lit("imports")       & (\\ _ . imports) |
+          lit("importers")     & (\\ _ . importers) | 
+          lit("implImports")   & (\\ _ . implImports) |
+          lit("implImporters") & (\\ _ . implImporters)) o
+        *(unitNameSpec) & asSet
+          @ relatedInfo,
+      "Give information about unit relations."
+    ) ++
+
+    cmd(lit("oasys-intern-dump") o
+          ( lit("repo") & (\\ _ . nil) @ dumpRepo 
+          |(lit("unit") o 
+            ( (lit("info")      o unitNameSpec & 2nd @ dumpUnitInfo)
+            | (lit("instances") o unitNameSpec & 2nd @ dumpUnitInstances)
+            | (lit("imports")   o unitNameSpec & 2nd @ dumpUnitImports)
+            | (lit("items")     o unitNameSpec & 2nd @ dumpUnitItems)
+            | (lit("itemOrder") o unitNameSpec & 2nd @ dumpUnitItemOrder)
+            | (lit("itemImports") o unitNameSpec & 2nd @ dumpUnitItemImports)
+            | (lit("objects")   o unitNameSpec & 2nd @ dumpUnitObjects)
+            | (lit("properties")        o unitNameSpec & 2nd @ dumpUnitProperties)
+            ) & 2nd)
+          ) & 2nd,
+        "Dump internal information."
+    )
+
+
+-- %-============================================================
+-- %-============================================================
+
+-- % to be moved to another place!
+FUN repoPath : repo -> denotation
+DEF repoPath(_) == "default.repo"
+ 
+
+-- % save repo:
+FUN save  : option[denotation] -> com[denotation]
+DEF save(nil) ==    query(repoPath) & save
+DEF save(avail(RepoPath)) == save(RepoPath)
+
+FUN save  : denotation -> com[denotation]
+DEF save(RepoPath) ==
+    upd(saveRepo(RepoPath))                     & (\\ _ .
+    succeed("")                                 )
+                
+-- % path add and query:
+FUN searchPath : com[denotation]
+DEF searchPath ==
+    query(searchPath)                           & (\\Folders.
+    succeed(
+      join((\\F.sourcePath(F)++" "++objectPath(F)) * Folders,",")
+    )                                            )
+
+FUN enrichSearchPath : folderKind ** denotation -> com[denotation]
+DEF enrichSearchPath(libFolder,Path) ==
+    LET NPath0 == normPath(Path)
+        NPath  == IF #(NPath0) = 0 THEN "./" ELSE NPath0 FI
+    IN
+    upd(enrichSearchPath(
+             folder(none, libFolder, NPath, NPath)))    & (\\ _ .
+    searchPath                                  )
+DEF enrichSearchPath(ocsFolder,Path) ==
+    LET NPath0 == normPath(Path)
+        NPath  == IF #(NPath0) = 0 THEN "./" ELSE NPath0 FI
+    IN
+    upd(enrichSearchPath(
+             folder(none, ocsFolder, NPath, NPath++"OCS/")))    & (\\ _ .
+    searchPath                                  )
+
+
+-- % register structures:
+FUN register  : seq[denotation] -> com[denotation]
+DEF register(StructNames) ==
+    (register *& StructNames)   & (\\ _ .
+    succeed("")
+    )
+
+FUN register : denotation -> com[denotation]
+DEF register(StructName) ==
+    LET (Name, _) == splitSuffix(baseName(StructName), ".")
+    IN
+    upd(registerStructure(Name,false))          & (\\ _ .
+    succeed("")
+    )
+    
+-- % creating new structures:
+FUN new : denotation -> com[denotation]
+DEF new(StructName) == succeed("nyi.")
+
+
+-- % reload units
+FUN reload  : set[unitName,<] -> com[denotation]
+DEF reload(Units) ==
+    upd(reloadUnits(Units))             & (\\ _ .
+    succeed("")
+    )
+
+-- % focus related stuff
+FUN focus : option[unitName] -> com[denotation]
+DEF focus(nil) ==
+    query(\\R.
+      focus?                                          & (\\OptFocus.
+      IF OptFocus avail?
+        THEN asDeno(symbolic)(cont(OptFocus))
+        ELSE break("no focus selected.")
+      FI))
+DEF focus(avail(UName)) ==
+    query(\\R. library?(UName)(R)) & (\\ lib?.
+    LET (msg, UNameX) == IF lib? THEN
+                           IF part(UName) sign? THEN ("", UName)
+                           IF part(UName) impl? THEN
+                             ("cannot set focus to library implementation," ++
+                              "using signature part instead" ,
+                              UName :=_part sign)
+                           FI
+                         ELSE
+                           ("", UName)
+                         FI
+    IN
+    :=_focus(UNameX)             & (\\ _ .
+    succeed(msg)
+    ))
+
+
+-- % unit infos
+
+DATA unitsInfoMode == full name file
+
+FUN unitsInfo: unitsInfoMode -> com[denotation]
+DEF unitsInfo(name) ==
+    query(units)                        & (\\ Units.
+    asDeno(symbolic) *& asSeq(Units)    & (\\ UnitsDenos .
+    succeed(join(UnitsDenos, " "))
+    ))
+
+DEF unitsInfo(file) ==
+    query(\\R.
+        (\\U. path(sourceFile(U)(R))) * asSeq(units(R))
+    )                                   & (\\ UnitsDenos .
+    succeed(join(UnitsDenos, " "))
+    )
+
+DEF unitsInfo(full) ==
+    query(units)                        & (\\ Units.
+    unitsInfo(asSeq(Units)) )
+
+
+ FUN unitsInfo : seq[unitName] -> com[denotation]
+ DEF unitsInfo(<>) == succeed("")
+ DEF unitsInfo(UName::Rt) ==
+     asDeno(numeric)(UName)                             & (\\ UCode .
+     asDeno(symbolic)(UName)                            & (\\ USymbol .
+     query(\\R.
+        %(`(format("%-15s",u(USymbol))))                ++
+        %(`(format("(%s)",u(UCode))))                   ++
+        (IF checked?(UName)(R)  THEN %(!("checked"))
+                                ELSE <> FI)             ++
+        (IF compiled?(UName)(R) THEN %(!("compiled"))
+                                ELSE <> FI)             ++
+        (IF library?(UName)(R)  THEN %(!("library"))
+                                ELSE <> FI)             ++
+        (IF sourced?(UName)(R)  THEN %(!("sourced"))
+                                ELSE <> FI)
+     )                                                  & (\\SeqItem.
+     unitsInfo(Rt)                                      & (\\RtOutp.
+     succeed(join(SeqItem,", ") ++ !("\n") ++ RtOutp)   ))))
+
+
+
+-- % unit relations
+
+FUN relatedInfo : pair[pair[option[relMode], option[relOp]] , set[unitName,<]]
+                -> com[denotation]
+DEF relatedInfo((Mode? & Op?) & Units) ==
+    LET Mode == IF nil?(Mode?) THEN direct ELSE cont(Mode?) FI
+        Op   == IF nil?(Op?)   THEN imports ELSE cont(Op?) FI
+    IN
+    query(related(Mode, Op)(Units))             & (\\RelUnits.
+    asDeno(symbolic) *& asSeq(RelUnits)         & (\\RelUnitsDeno.
+    succeed(join(RelUnitsDeno," "))
+    ))
+
+
+-- % dumps
+
+
+FUN dumpRepo : void -> com[denotation]
+DEF dumpRepo(_) ==
+    query(\\R. fmtRepo(R))                              & (\\ Fmt .
+    open("repo.fmt", "w")                               & (\\ File .
+    LET Lines == pretty(0, !("75"), Fmt)
+    IN (((\\ Line, _ .
+                writeLine(File, Line)
+        ),nil) /& Lines)                                & (\\ _ .
+    close(File)                                         & (\\ _ .
+    succeed("")
+    ))))
+
+FUN dumpUnitInfo dumpUnitInstances dumpUnitImports dumpUnitItems
+    dumpUnitItemOrder dumpUnitItemImports dumpUnitObjects dumpUnitProperties:
+        unitName -> com[denotation]
+
+DEF dumpUnitInfo(U) ==
+        query(unitInfo(U))                          & (\\ X .
+        dumpFmt(fmtUnitInfo(X))
+        )
+DEF dumpUnitInstances(U) ==
+        query(\\R. instances(unitInfo(U)(R)))       & (\\ X .
+        dumpFmt(fmtIdtab(fmtUnitInstance)(X))
+        )
+DEF dumpUnitImports(U) ==
+        query(\\R. imports(unitInfo(U)(R)))         & (\\ X .
+        dumpFmt(fmtIdmap(fmtUnitImport)(X))
+        )
+DEF dumpUnitItems(U) ==
+        query(\\R. items(unitInfo(U)(R)))           & (\\ X .
+        dumpFmt(fmtIdtab(fmtItem)(X))
+        )
+DEF dumpUnitItemOrder(U) ==
+        query(\\R. itemOrder(unitInfo(U)(R)))       & (\\ X .
+        dumpFmt(fmtSeq(fmtNat)(X))
+        )
+DEF dumpUnitItemImports(U) ==
+        query(\\R. itemImports(unitInfo(U)(R)))     & (\\ X .
+        dumpFmt(fmtSet(fmtDenotation)(X))
+        )
+DEF dumpUnitObjects(U) ==
+        query(\\R. objects(unitInfo(U)(R)))         & (\\ X .
+        dumpFmt(fmtIdtab(fmtObject)(X))
+        )
+DEF dumpUnitProperties(U) ==
+        query(\\R. properties(unitInfo(U)(R)))      & (\\ X .
+        dumpFmt(fmtIdtabS(fmtProperty)(X))
+        )
+FUN dumpFmt : fmt -> com[denotation]
+DEF dumpFmt(Fmt) ==
+    writeLine(stdErr, (pretty(Fmt)):denotation) & succeed("")
+
+FUN fmtIdtabS: (property -> fmt) -> idtab[property] -> fmt
+DEF fmtIdtabS(fP)(idt) ==
+    LET realProps == (\\p. ~(removed?(2nd(p)))) | asSeq(idt)
+        pairFmt == \\p. fmtId(1st(p));(lit(" = ");fmtProperty(2nd(p)))
+    IN fmtSeq(pairFmt)(realProps)
+    

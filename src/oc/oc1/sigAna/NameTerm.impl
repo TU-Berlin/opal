@@ -1,0 +1,572 @@
+-- LAST EDIT: Thu Aug 31 15:28:38 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     This structure tries to abstract from the details of 
+--              the current globSig structure which is quite crude.
+-- ============================================================================
+/* *************************************************************************
+ * zoptions: toNameTermName = output of every name to be processed
+ *           toNameTermTerm = output of the resulting nameTerm
+ ************************************************************************** */
+
+IMPLEMENTATION NameTerm
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+
+IMPORT 	Rep 		COMPLETELY
+	Nat		COMPLETELY
+	NatConv		ONLY `
+	Pair		COMPLETELY
+	Option		COMPLETELY
+	Seq		COMPLETELY
+	SeqIndex	COMPLETELY
+	SeqFilter	COMPLETELY
+	SeqOfSeq	ONLY flat
+	SeqConv		ONLY `
+	SeqCompare	COMPLETELY
+	SeqMap		ONLY *
+	SeqReduce	COMPLETELY
+	SeqMapEnv	ONLY *
+	Set		COMPLETELY
+	SetConv		ONLY explode
+	Denotation	ONLY ++
+	DEBUG		COMPLETELY
+
+	Fct		COMPLETELY
+	Name		COMPLETELY
+	GlobSig		COMPLETELY
+	DeclEntry	COMPLETELY
+	Decl4SigAna	COMPLETELY
+	Name4SigAna	COMPLETELY
+	ImpDecl4SigAna	COMPLETELY
+	Maps4SigAna	COMPLETELY
+	PartNameEntry	COMPLETELY
+	AbsyFun3	COMPLETELY
+	MySeqFun3	COMPLETELY
+	MySeqFun2	COMPLETELY
+	ImpExpEntry	COMPLETELY
+	Table		COMPLETELY
+	GlobSigToText	COMPLETELY
+	Objects		COMPLETELY
+
+DATA nameTerm == 
+	error( hiddenS : set[nameEnv,<],-- nicht importierte Teilnamen
+	       ambiguousS: set[nameEnv,<],-- mehrdeutige Teilnamen
+	       uninst : set[nameEnv,<],	-- uninstantiierte Teilnamen
+	       cycleS : set[nameEnv,<],	-- zyklische Teilnamen
+	       errorTerm : nameTerm)	-- der vollstaendige Term mit Fehlern
+	errorTerm( ide:rep,		-- kommt nur im Baum vor
+		   orig : rep)		-- innerhalb von error...
+        variable			-- siehe errorTerm (fuer uninst error)
+	sortTerm( ide:rep, 
+		  orig : rep,
+		  inst:seq[nameTerm]) 
+	funTerm(  ide:rep, 
+		  orig : rep,
+		  inst:seq[nameTerm], 
+		  fct:fct[nameTerm])
+
+DATA nameEnv == 			  -- zur Speicherung des Kontext von 
+	nameEnv(name: name, instE: instE) -- fehlerhaften Namen
+
+FUN < : nameEnv ** nameEnv -> bool
+DEF nE1 < nE2 == name(nE1) < name(nE2)
+
+
+DATA env == env(gS:globSig, term:nameTerm)
+
+DATA cycTest == cycTest(struct:struct, inst:inst)
+
+FUN = : cycTest ** struct ** inst -> bool
+DEF cycTest(s1,i1) = (s2,i2) == (s1 = s2) and (i1 = i2)
+
+FUN - : cycTest
+DEF - == cycTest(mainStruct, unparam)
+
+-- ------------------------------------------------------------------------
+
+
+FUN hidden? ambiguous? uninst? cyclic?: nameTerm -> bool
+  -- Abfragen auf Fehler im Aufbau des Terms (nach toNameTerm)
+DEF hidden?(error(hS,_,_,_,_)) == ~(hS {}?)
+DEF hidden?(_) == false
+DEF ambiguous?(error(_,aS,_,_,_)) == ~(aS {}?)
+DEF ambiguous?(_) == false
+DEF uninst?(error(_,_,uS,_,_)) == ~(uS {}?)
+DEF uninst?(_) == false
+DEF cyclic?(error(_,_,_,cS,_)) == ~(cS {}?)
+DEF cyclic?(_) == false
+
+
+FUN = : nameTerm ** nameTerm -> bool
+  -- true nur auf Fehlerfreien Termen
+  -- PRE: nur Top-Level Varianten
+DEF t1 = t2 ==
+    IF variable?(t1) THEN true
+    IF variable?(t2) THEN true
+    IF error?(t1) THEN false
+    IF error?(t2) THEN false
+    OTHERWISE
+    IF ide(t1) |= ide(t2) THEN false
+    IF orig(t1)|= orig(t2) THEN false
+    OTHERWISE
+    IF t1 errorTerm? THEN t2 errorTerm?
+    IF t2 errorTerm? THEN t1 errorTerm?
+    OTHERWISE
+    IF eq?(=)(inst(t1),inst(t2)) THEN
+      IF t1 sortTerm? THEN t2 sortTerm?
+      IF t2 sortTerm? THEN t1 sortTerm?
+      ELSE =(=)(fct(t1),fct(t2)) FI
+    ELSE false FI
+
+FUN < : nameTerm ** nameTerm -> bool
+  -- ist der 2. Term generischer oder gleich wie der erste ??? 
+  -- PRE: nur Top-Level Varianten
+DEF t1 < t2 ==
+    IF variable?(t1) THEN variable?(t2)
+    IF variable?(t2) THEN true
+    IF error?(t1) THEN false
+    IF error?(t2) THEN false
+    OTHERWISE
+    IF ide(t1) |= ide(t2) THEN false
+    IF orig(t1)|= orig(t2) THEN false
+    OTHERWISE
+    IF t1 errorTerm? THEN t2 errorTerm?
+    IF t2 errorTerm? THEN t1 errorTerm?
+    OTHERWISE
+    IF eq?(<)(inst(t1),inst(t2)) THEN
+      IF t1 sortTerm? THEN t2 sortTerm?
+      IF t2 sortTerm? THEN t1 sortTerm?
+      ELSE =(<)(fct(t1),fct(t2)) FI
+    ELSE false FI
+
+
+-- -----------------------------------------------------------------------
+
+FUN noError : nameTerm
+DEF noError == error( {}, {}, {}, {}, variable )
+
+FUN cycle : env ** name ** instE -> env ** nameTerm
+DEF cycle(env(gS, errTerm), name, instE) == 
+  (env(gS, error( {}, {}, {}, nameEnv(name,instE) %, noError) + errTerm), 
+   variable)
+
+FUN uninst : env ** name ** instE -> env ** nameTerm
+DEF uninst(env(gS, errTerm), name, instE) == 
+  (env(gS, error( {}, {}, nameEnv(name,instE) %, {}, noError) + errTerm), 
+   variable)
+
+FUN ambiguous : env ** name ** instE -> env ** nameTerm
+DEF ambiguous(env(gS, errTerm), name, instE) == 
+  (env(gS, error( {}, nameEnv(name,instE) %, {}, {}, noError) + errTerm), 
+   errorTerm(getIde(gS,name),getOrig(gS,name)))
+
+FUN hidden : env ** name ** instE -> env ** nameTerm
+DEF hidden(env(gS, errTerm), name, instE) == 
+  LET (finEnv, finTerm) == 
+  (env(gS, error( nameEnv(name,instE)%, {}, {}, {}, noError) + errTerm), 
+   errorTerm(getIde(gS,name),getOrig(gS,name)))
+      (GS, _) == print(finEnv, finTerm)
+  IN (env(GS, term(finEnv)), finTerm)
+
+FUN noError? : nameTerm -> bool
+  -- PRE: kein Aufruf mit errorTerm !!!
+DEF error( hidS, ambS, uinS, cS,  _) noError? == 
+  ((hidS {}?) and (ambS {}?)) and ((uinS {}?) and (cS {}?))
+DEF _ noError? == true
+
+FUN + : nameTerm ** nameTerm -> nameTerm
+ -- Kombinieren von Fehlern, kein Fehlerterm undefiniert
+ -- Innerhalb von NameTerm.impl wird der Fehlerterm als extra Parameter 
+ -- mitgefuehrt.
+DEF error(h1,a1,u1,c1,nt1) + error(h2,a2,u2,c2,_) == 
+  error(h1+h2, a1+a2, u1+u2, c1+c2,  nt1)
+DEF error(h,a,u,c,e) + _ == error(h,a,u,c,e)
+DEF _ + error(h,a,u,c,e) == error(h,a,u,c,e)
+
+
+-- -----------------------------------------------------------------------
+-- Funktionen fuer alle Namensarten
+-- -----------------------------------------------------------------------
+
+FUN toNameTerm : globSig -> name -> globSig ** nameTerm
+
+DEF toNameTerm(gS)(name AS extName(struct,_,inst)) == 
+  print(tNTName(- , instE)(env(gS,noError), name))
+  WHERE instE == 
+    IF inst = unparam THEN mtInstE
+    ELSE no(inst) ! tabOf(getInstMap(gS,struct))
+    FI
+
+DEF toNameTerm(gS)(name AS intName(_)) ==
+  print(tNTName(- , mtInstE)(env(gS,noError), name))
+
+
+FUN toNameTerm : globSig ** struct ** inst -> name -> globSig ** nameTerm
+DEF toNameTerm(gS, struct, inst)(name) ==
+  print(tNTName(- , instE)(env(gS,noError), name))
+  WHERE instE == 
+    IF inst = unparam THEN mtInstE
+    ELSE no(inst) ! tabOf(getInstMap(gS,struct))
+    FI
+
+FUN print : env ** nameTerm -> globSig ** nameTerm
+DEF print(env(gS,errTerm), nameTerm) ==
+  (gS, PRINT(FIELD?[bool]("-ztoNameTermTerm"), `(max,finTerm), finTerm))
+  WHERE
+  finTerm == IF errTerm noError? THEN nameTerm
+	     ELSE error(hiddenS(errTerm), ambiguousS(errTerm), 
+		        uninst(errTerm),  cycleS(errTerm), nameTerm) 
+	     FI
+
+-- ------------------------------------------------------------------------
+
+FUN toNameTermName: bool
+DEF toNameTermName == FIELD?[bool]("-ztoNameTermName")
+
+-- ------------------------------------------------------------------------
+
+FUN tNTName : cycTest ** instE -> env ** name -> env ** nameTerm
+  -- siehe einfaches toNameTerm. Der Instanzeneintrag gehoert zu dem
+  -- 'obersten' Namen
+  -- der Parameter cycT dient der Zykluserkennung beim Termaufbau
+  -- An dieser Funktion setzen rekursive Aufrufe fuer die Namensumwandlung an.
+
+DEF tNTName(cycT,instE)(Env, nameP) ==
+  LET name == PRINT(toNameTermName, \\ .(`'Name(nameP)++context),nameP)
+      context == "  Kontext: " ++ `'ImpExpEntry(instE)
+  IN tNTNameH(cycT,instE)(Env, realInst(gS(Env),name))
+
+
+FUN tNTNameH : cycTest ** instE -> env ** name -> env ** nameTerm
+  -- Hilfsfunktion, um realInst und Debugausgabe fuer alle Patterns zu
+  -- ermoeglichen
+  -- cycT ist die Zyklustestinstanz
+
+DEF tNTNameH(cycT,instE)(Env ,name AS extName(struct,impDecl,inst)) == 
+  LET impDeclE == no(impDecl) ! tabOf(getImpDeclMap(gS(Env), struct)) 
+      (orig, _) == errInfo(gS(Env), struct)
+      GS == gS(Env)
+  IN
+  IF parametrized?(GS, name) THEN
+    IF inst = unparam THEN 
+      -- Name aus Fct, Instanz = instE (Struktur ist parametrisiert!)
+      tNTImpDeclE(cycT,instE, name)(Env, struct, orig, instE, impDeclE)
+    ELSE  -- stinknormaler Name aus parametrisierter Struktur
+      LET nameInstE == no(inst) ! tabOf(getInstMap(GS,struct)) IN
+      IF hidden?(GS,name) THEN
+        -- jetzt noch andere Instanzen auf nicht gefundene Aquivalenz testen
+        IF cycT = (struct,inst) THEN -- Zyklus  !!!!
+          cycle(Env, name, instE)
+	ELSE
+          LET (Env1, instTerm0) == 
+	    tNTInstE(cycT,instE,name)(Env, struct, nameInstE)
+    	    instTerm == PRINT(toNameTermInst,`(instTerm0),instTerm0)
+          IN
+	    -- Testen, ob gleiche oder generische Instanz nicht versteckt ist
+	    -- an dieser Stelle wird die globSig ev. geaendert.
+	    LET InstS == instOf * (applied? | instS(impDeclE))
+	      (finGs, equivInstFound) == 
+		  /(equivInst(name,cycTest(struct,inst),instE,struct,
+		    term(Env1),instTerm), gS(Env1),false)(InstS) 
+	    IN
+    	    IF equivInstFound THEN 
+	      -- eine equivalente Instanz ist gefunden und die noetigen 
+	      -- Aenderungen in finGs gemacht.
+	      tNTImpDeclE(cycT,instE, name)
+		(env(finGs,term(Env1)), struct,orig, nameInstE, impDeclE) 
+	    ELSE 
+	      hidden(Env1, name,instE)
+	    FI 
+	FI
+      ELSE
+	tNTImpDeclE(cycT,instE, name)(Env, struct, orig, nameInstE, impDeclE)
+      FI
+    FI
+  ELSE  -- unparametrisierte Struktur
+    IF hidden?(GS,name) THEN hidden(Env, name,instE)
+    ELSE tNTImpDeclE(cycT,instE, name)(Env, struct, orig, mtInstE, impDeclE)
+    FI
+  FI
+
+
+  
+DEF tNTNameH(cycT,instE)(Env, name AS formParam(_,_,no)) ==
+  selectFormParam(Env, cycT,instE,name, no)
+
+DEF tNTNameH(cycT,instE)(Env AS env(gS,_), intName(decl)) ==
+  tNTDeclE(cycT,instE)(Env,structIde(gS),no(realDecl(gS,decl)) !decls(gS)) 
+
+DEF tNTNameH(cycT,instE)(Env, name AS sortPartName(sortPN)) ==
+  LET candS == flat(cands * getCands(gS(Env),sortPN)) IN
+  IF candS <>? THEN hidden(Env, name,instE)
+  OTHERWISE
+  IF rt(candS) <>? THEN tNTName(cycT,instE)(Env, ft(candS))
+  ELSE ambiguous(Env, name,instE)
+  FI
+  
+-- ------------------------------------------------------------------------
+
+
+FUN tNTDeclE : cycTest ** instE -> env ** rep ** declE -> env ** nameTerm
+
+DEF tNTDeclE(_,_)(env(gS,_), orig, sort(ide,_,_,_,_)) ==
+  (env(gS,noError), sortTerm(ide,orig,<>))
+
+DEF tNTDeclE(cycT,instE)(Env, orig, op) ==
+  LET (newEnv, termFct) == \*(tNTName(cycT,instE),Env)(fct(op)) 
+  IN (newEnv, funTerm(ide(op),orig,<>,termFct))
+
+
+-- ------------------------------------------------------------------------
+
+FUN tNTImpDeclE : cycTest ** instE ** name 
+		-> env ** struct ** rep ** instE ** impDeclE 
+		-> env ** nameTerm
+  -- expName ist nur die Referenz fuer Instanzenfehlermeldungen
+
+DEF tNTImpDeclE(cycT,OinstE,expName)(Env, str, orig, instE, sort(ide,_,_)) ==
+  LET (newEnv, instTerm)== tNTInstE(cycT,OinstE,expName)(Env, str, instE) 
+  IN (newEnv, sortTerm(ide, orig, instTerm))
+
+DEF tNTImpDeclE(cycT,OinstE,expName)(Env, str, orig, instE, impDeclE) ==
+  LET (newEnv1, instTerm)== tNTInstE(cycT,OinstE,expName)(Env, str, instE) 
+      (newEnv2, fctTerm) == (tNTName(cycT,OinstE)\* newEnv1)(fct(impDeclE))
+  IN (newEnv2, funTerm(ide(impDeclE), orig, instTerm, fctTerm))
+    
+
+-- -------------------------------------------------------------------------
+-- Instanzenkram
+
+FUN selectFormParam : env ** cycTest ** instE ** name ** nat -> env ** nameTerm
+  -- Selektiert den Namen der Instanz an der angegebenen Position oder
+  -- liefert einen Fehler, falls mehrdeutig.
+
+DEF selectFormParam(Env, _,instE AS mtInstE, formParam, _) ==
+  -- ungenuegender Kontext, kann von eqInst erzeugt werden.
+  uninst(Env, formParam,instE)
+
+DEF selectFormParam(Env,cycT, doubleInst(same,_), formParam, pos) ==
+  selectFormParam(Env, cycT, same, formParam, pos)
+
+DEF selectFormParam(Env, cycT, instE AS identInst(nameS), _, pos) ==
+  tNTName(cycT,instE)(Env, nameS ! pred(pos))
+
+DEF selectFormParam(Env, _,instE AS identUninst(_), formParam, _) ==
+  uninst(Env, formParam,instE)
+
+DEF selectFormParam(Env, cycT,instE AS transitive(nameS), _, pos) ==
+  tNTName(cycT,instE)(Env, nameS ! pred(pos))
+
+DEF selectFormParam(Env, _, instE AS explUninst(_,_),formParam, _) ==
+  uninst(Env, formParam,instE)
+
+DEF selectFormParam(Env ,cycT, instE AS explInst(_, instPN, _), 
+	formParam, pos) ==
+  LET cands == getFlatCands(gS(Env),instPN) ! pos   IN
+  IF cands <>? THEN hidden(Env, formParam,instE)
+  OTHERWISE
+  IF rt(cands) <>? THEN tNTName(cycT,instE)(Env, name(ft(cands)))
+  ELSE ambiguous(Env, formParam,instE)
+  FI 
+
+-- ------------------------------------------------------------------------
+
+
+FUN tNTInstE : cycTest ** instE ** name
+		 -> env ** struct ** instE -> env ** seq[nameTerm]
+  -- Umwandeln von Instanzen
+  -- inst ist eine Zyklusinstanz, d.h. sie wurde innerhalb dieses Zweiges 
+  -- der Termgenerierung schon mal betrachtet --> Fehler
+
+DEF tNTInstE(cycT,instE,expName)(Env, str, doubleInst(same,_)) ==
+  tNTInstE(cycT,instE,expName)(Env,str,same)
+
+DEF tNTInstE(_,_,_)(Env, _, mtInstE) == (Env,<>)
+
+DEF tNTInstE(cycT,instE,_)(Env, _, identInst(nameS)) ==
+  *'SeqMapEnv(tNTName(cycT, instE), Env, nameS)
+
+DEF tNTInstE(cycT,instE,_)(Env, _, transitive(nameS)) ==
+  *'SeqMapEnv(tNTName(cycT, instE), Env, nameS)
+
+DEF tNTInstE(cycT,instE,expName)(Env, str, explInst(_, instPN, _)) ==
+  LET cands == getFlatCands(gS(Env),instPN) IN
+  IF cands <>? THEN
+    LET (newEnv1, _) == hidden(Env, expName,instE) IN
+    (newEnv1, (\\ _ .(variable)) * getFormParamImpDecls(gS(Env),str))
+  OTHERWISE
+  IF rt(cands) <>? THEN 
+    *'SeqMapEnv(tNTName(cycT, instE), Env, name * ft(cands))
+  ELSE 
+    LET (newEnv1, _) == ambiguous(Env,expName,instE) IN
+    (newEnv1, (\\ _ .(variable)) * getFormParamImpDecls(gS(Env),str))
+  FI
+
+DEF tNTInstE(_,instE,expName)(Env, str, identUninst(_)) == 
+  *'SeqMapEnv(\\newEnv, _ . uninst(newEnv, expName,instE),
+		Env, getFormParamImpDecls(gS(Env),str))
+
+DEF tNTInstE(_,instE,expName)(Env, str, explUninst(_,_)) ==
+   *'SeqMapEnv(\\newEnv, _ . uninst(newEnv, expName,instE),
+		Env, getFormParamImpDecls(gS(Env),str))
+
+DEF tNTInstE(cycT,instE,_)(Env, _, genericTransitives(_,_,patt)) ==
+  -- diese Instanzart ist ein transitiver Import, der mindestens einen 
+  -- formalen Parameter der direkt importierten Struktur enthaelt.
+  -- (patt) ist Instanzliste dieses transitiven Imports.
+  -- (others) ist die Liste der aus diesem Import durch die indirekte 
+  -- Instanziierung des direkten Imports erzeugten Instanzen, d.h fuer jedes
+  -- IMPORT-Statement der direkt importierten Struktur wird ein Element der
+  -- Liste erzeugt.
+  -- Um die Mehrdeutigkeit von genericTransitives aufzuloesen, muesste der 
+  -- uebergebene instE mit denen in der Liste stehenden verglichen werden.
+  -- PRE: Mindestens einer muss mit dem Kontext instE identisch sein 
+  --      (per Konstruktion).
+  -- Somit ist es zum Aufbau des Terms ueberfluessig, der others-Liste zu
+  -- folgen und es kann direkt aus (instE, patt) der Instanzterm erzeugt 
+  -- werden.
+  *'SeqMapEnv(tNTName(cycT, instE), Env, patt)
+
+
+DEF tNTInstE(cycT,_,_)(Env, _, genericTransitive(struct, inst, patt))==
+  -- die Instanz ist fuer sich abgeschlossen, deshalb wird instE nicht 
+  -- gebraucht und neu aufgesetzt.
+  -- (gS,struct,inst) bezeichnet den instE, auf den sich die formalen Parameter
+  -- (formParam()) in dem Instanzpattern (patt) beziehen.
+  LET instE == no(inst) ! tabOf(getInstMap(gS(Env),struct)) IN
+  *'SeqMapEnv(tNTName(cycT,instE), Env, patt)
+
+-- ------------------------------------------------------------------------
+
+FUN toNameTermInst: bool
+DEF toNameTermInst == FIELD?[bool]("-ztoNameTermInst")
+
+FUN equivInst : name ** cycTest ** instE ** struct ** nameTerm **seq[nameTerm] 
+	-> globSig ** inst ** bool -> globSig ** bool
+  -- PRE inst(Term) |= otherInst, otherInst |= unparam
+  -- Vergleich der beiden Instanzen inst und otherInst per Termgenerierung
+  -- Ist bereits eine gleiche gefunden (foundInst |= unparam) brauch nichts
+  -- gemacht zu werden.
+  -- cycT = Zyklustestinstanz
+DEF equivInst(name, cycT,instE,struct,errTerm,instTermS)(GS, 2ndInst, found) ==
+  IF found THEN (GS, found)
+  ELSE
+    IF ~(errTerm hidden?) and eq?(=)(instTermS,2ndInstTermS2) THEN 
+      (duplicateInstAppl(gS(newEnv), 2ndName, inst(name)), true)
+    OTHERWISE
+    IF eq?(<)(instTermS,2ndInstTermS2) THEN
+      (duplicateInstAppl(finGs, 2ndName, inst(name)), true)
+      WHERE finGs == setDoubleInst(gS(newEnv),struct,inst(name),2ndInst)
+    ELSE (gS(newEnv), false) 
+    FI
+    WHERE
+    2ndName == extName(struct, impDecl(name), 2ndInst)
+    2ndInstE == no(2ndInst) ! tabOf(getInstMap(GS,struct))
+    struct2 == PRINT(toNameTermInst,"eqInst - START",struct)
+    (newEnv, 2ndInstTermS) == 
+	tNTInstE(cycT,instE, error)(env(GS,noError), struct2, 2ndInstE)
+    2ndInstTermS20 == PRINT(toNameTermInst,`(2ndInstTermS),2ndInstTermS)
+    2ndInstTermS2 == PRINT(toNameTermInst,"eqInst - ENDE",2ndInstTermS20)
+  FI
+
+FUN ` : seq[nameTerm] -> ()-> denotation
+  -- Dummyfunktion zur Ausgabe der Sequenz
+DEF ` (termS)() == `(`(max))(termS)
+   
+
+-- ----------------------------------------------------------------------
+-- Texts
+-- ----------------------------------------------------------------------
+
+FUN ` : nat ** nameTerm -> () -> denotation
+DEF `(Level, nameTerm)() == `(Level)(nameTerm)
+
+
+FUN ` : nameTerm -> denotation
+DEF `(nameTerm) == `(1)(nameTerm)
+
+
+FUN ` : nat -> nameTerm -> denotation
+DEF `(n:nat)(error(hidS, ambS, uinS, cycS, errTerm)) ==
+  "Term ERROR\n" ++ hidST ++ "\n" ++ ambST
+    ++ "\n" ++ uinST ++ "\n" ++ cycST ++ "\n" ++ errST
+  WHERE
+  hidST == `("{",",","}")(`'Name)(name * explode(hidS))
+  ambST == `("{",",","}")(`'Name)(name * explode(ambS))
+  uinST == `("{",",","}")(`'Name)(name * explode(uinS))
+  cycST == `("{",",","}")(`'Name)(name * explode(cycS))
+  errST == `(n)(errTerm)
+
+DEF `(_ :nat)(variable) == "?"
+DEF `(0:nat)(errorTerm(ide,_)) == lexem(ide)
+DEF `(succ(_))(errorTerm(ide,orig)) == lexem(ide) ++ "'" ++ lexem(orig)
+DEF `(0:nat)(sortTerm(ide,_,inst)) == lexem(ide) ++ `(0)(inst)
+DEF `(0:nat)(funTerm(ide,_,inst,_)) == lexem(ide) ++ `(0)(inst)
+DEF `(succ(n))(sortTerm(ide, orig, inst)) == `(succ(n),ide,orig,inst) ++ "SORT"
+DEF `(succ(n))(funTerm(ide, orig, inst, fct)) == 
+  `(succ(n),ide,orig,inst) ++ `(`(n))(fct)
+
+  
+FUN ` : nat ** rep ** rep ** seq[nameTerm] -> denotation
+DEF `(n,ide,orig,inst) == 
+  lexem(ide) ++ "'" ++ lexem(orig) ++ `(pred(n))(inst) ++ ":"
+
+
+FUN ` : nat -> seq[nameTerm] -> denotation
+DEF `(_)(<>) == ""
+DEF `(n)(inst) == `("[",",","]")(`(n))(inst)
+
+
+DEF `(gS, nameTerm) == `(gS, 1, nameTerm)
+
+FUN ` : globSig ** nat ** nameTerm -> 
+	denotation ** denotation ** denotation ** denotation ** denotation
+DEF `(gS,n:nat,error(hidS, ambS, uinS, cycS, errTerm)) ==
+(`(""," and ","")(`(n))(errorTerm * (toNameTerm(gS) * explode(hidS))), 
+ `(""," and ","")(`(n))(errorTerm * (toNameTerm(gS) * explode(ambS))),
+ `(""," and ","")(`(n))(errorTerm * (toNameTerm(gS) * explode(uinS))),
+ `(""," and ","")(`(n))(errorTerm * (toNameTerm(gS) * explode(cycS))),
+   `(n)(errTerm))
+
+FUN toNameTerm : globSig -> nameEnv -> nameTerm
+DEF toNameTerm(gS)(nameEnv(name,instE)) == 
+   LET (Env, nameTerm) == tNTName(- ,instE)(env(gS,noError),name)
+   IN error(hiddenS(term(Env)), ambiguousS(term(Env)), 
+	    uninst(term(Env)), cycleS(term(Env)), nameTerm)
+
+DEF hidden?(gS,name) == 
+	IF name extName? THEN
+	  LET iDO == (no(impDecl(name)) !? 
+		     impDecls(no(struct(name)) ! structures(gS)))
+	  IN 
+	  IF iDO nil? THEN true
+	  ELSE LET iD == cont(iDO) IN
+	    (IF ~(notParametrized?(gS,struct(name))) THEN -- parametrisiert
+	      IF (inst(name)=unparam'Objects) THEN instS(iD) <>?
+	      ELSE
+		LET name0 == realInst(gS,name) IN
+		IF genericTransitives?(gS,name0) THEN
+		  notDisjoint(= :inst**inst->bool)(Insts,
+			      realInst2(instTab) * otherInsts(instE))~
+		  WHERE instE == no(inst(name0)) ! instTab
+		ELSE checkIAS(gS,name0,iD,realInst2(instTab)*Insts) FI
+		WHERE instTab == insts(no(struct(name)) ! structures(gS))
+	      FI
+	    ELSE checkIAS(gS,name,iD,Insts) FI
+	    WHERE Insts == instOf * (applied? | instS(iD)))
+	  FI
+	IF name intName? THEN false
+	IF name formParam? THEN false
+	FI
+
+	FUN checkIAS : globSig ** name ** impDeclE ** seq[inst:SORT]-> bool
+	DEF checkIAS(gS,name,_,insts) == 
+	    ((F1(inst(realInst(gS)(name)))) | insts) <>?
+
+	FUN F1:inst -> inst -> bool
+	DEF F1(i1)(i2) == i1 = i2

@@ -1,0 +1,122 @@
+#!/bin/sh
+
+# Script for generating releases of OCS.
+
+# See also ProjectDefs.release.
+
+# This script generates releases of the OCS system
+# using the `orsrelease' command.
+
+# By default, all subreleases and the main relase defined
+# by the path list
+# 	src/om:src/lib:src/oc:.
+# are builded. This can be overwritten with
+# the option -only. For example,
+#       ./release -only "src/om:."
+# just generates a new om release and a new main release,
+# including the old oc and lib releases into the main
+# release. 
+
+# With the -restart option, the script skips the `prepare' phase
+# of releasing, in order to restart a release process which
+# was sucessfully prepared but interrupted during the
+# building process for some reason.
+
+nice=
+restart=no
+fastclean=no
+type="-prerelease newrevision"
+only="src/lib:src/oc:src/om:src/xmwindows:."
+
+while [ $# -ge 1 ]
+do
+  case $1 in
+    -nice)
+      nice=nice
+      echo "Warning: -nice not yet implemented"
+      shift
+      ;;
+    -restart)
+      restart=yes
+      shift
+      ;;
+    -fastclean)
+      clean=yes
+      shift
+      ;;
+    newrevision)
+      type="-prerelease newrevision"
+      shift
+      break
+      ;;
+    newversion)
+      type="-prerelease newversion"
+      shift
+      break
+      ;;
+    nextrelease)
+      type="-prerelease lastrelease"
+      shift
+      break
+      ;;
+    finalrelease)
+      type="lastrelease"
+      shift
+      break
+      ;;
+    -only)
+      only="$2"
+      shift 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [ $# -ge 1 ]
+then
+  echo "usage: `basename $0` "
+  echo "       { -nice | -restart | -fastclean | -only <pathlist> }"
+  echo "       [ newrevision | newversion | nextrelease | finalrelease ] "»
+  exit 255
+fi
+
+
+if [ -z "$ROCS" ]
+then
+  echo "You must define environment variable ROCS"
+  exit 255
+fi
+
+if [ -z "$OCSPROJECT" ]
+then
+  OCSPROJECT=$ROCS/ProjectDefs.release
+  export OCSPROJECT
+fi
+
+if [ "$clean" = "yes" ] 
+then
+    echo
+    echo "Fast clean of derived objects of library and compiler ..."
+    (cd $ROCS/src/lib; find . -name "OCS" -exec rm -rf {} \; 2>/dev/null)
+    (cd $ROCS/src/oc; find . -name "OCS" -exec rm -rf {} \; 2>/dev/null)
+    (cd $ROCS/src/om; find . -name "OCS" -exec rm -rf {} \; 2>/dev/null)
+    echo
+fi
+
+echo
+ors info
+echo
+
+for p in `echo $only | /bin/sed 's/:/ /g'`
+do
+  (cd $p
+   if [ "$restart" = "no" ]
+   then
+      orsrelease "RELEASETYPE=$type" release || exit 1
+   else
+      orsrelease "RELEASETYPE=$type" build || exit 1
+   fi
+  ) || exit 1
+done

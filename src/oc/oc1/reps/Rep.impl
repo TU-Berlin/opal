@@ -1,0 +1,355 @@
+-- %-  LAST EDIT: Wed Jul 31 15:52:13 1996 by Christian Maeder (andromache!maeder) 
+
+IMPLEMENTATION Rep
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+
+-- %-  AutorInnen:  mija + cg
+-- %-  Projekt:     OPAL1-Compiler (Scanner, Parser)
+-- %-  Zweck:       representation of terminals
+
+
+IMPORT  
+        Array           COMPLETELY
+        ArrayReduce     COMPLETELY
+        CharConv        ONLY ` 
+        DEBUG           COMPLETELY
+        Denotation      COMPLETELY
+        Char            ONLY char newline tab digit? =
+        CharConv        ONLY ` asNat
+        Nat             COMPLETELY
+        NatConv         ONLY `
+        Option          COMPLETELY
+        PrintableChar   ONLY % 
+        SeqMap          ONLY *
+        SeqReduce       ONLY / \
+        Seq             COMPLETELY
+        Set             COMPLETELY
+        SetConv         COMPLETELY
+        String          COMPLETELY
+
+IMPORT  Lexem           COMPLETELY
+        Pragma          COMPLETELY
+        Options         ONLY prop? :bool seqGuard? :bool pchecker?: bool
+       ABORT ONLY ABORT
+
+-- %- ------------------------------------------------------------------------
+-- %$Map of representations$
+-- %- ------------------------------------------------------------------------
+
+DATA repTab == repTab(hashTab:array[set[rep,internalLess]], undef:nat,wild:nat)
+
+-- %- ------------------------------------------------------------------------
+-- %$Konstruktionsfunktionen$
+-- %- ------------------------------------------------------------------------
+
+FUN emptyRepTab : repTab
+DEF emptyRepTab == insert(repTab(init(prim,{}),0,1), %(""))
+
+FUN nilRep : rep
+DEF nilRep == getRep(emptyRepTab, "")
+FUN nilRep? : rep -> bool 
+DEF nilRep?(R) == R = nilRep
+
+DEF generate (repTab(HT,UD,WN),Str) == 
+    (repTab(HT,UD,succ(WN)),Str ++ "%" ++ `(succ(WN)))
+
+DEF genAndIns(repTab(HT,UD,WN),Str) == 
+    insert(repTab(HT,UD,succ(WN)),Str ++ "%" ++ `(succ(WN)),true)
+
+FUN  insert : repTab ** denotation -> repTab ** rep
+DEF  insert (RT,Str) == insert(RT,Str,false)
+
+DEF  insertGen (RT,Str) == insert(RT,Str,true)
+
+FUN  getRep   : repTab ** denotation -> rep
+-- %$PRE denotation must have been inserted before$
+DEF getRep (RT,Str) == 
+        LET (I, In?) == find?(RT,Str)
+        IN IF In? THEN getRep(RT, I, Str)
+           ELSE ABORT("getRep'Rep: no rep for `" ++ Str ++ "'")
+           FI 
+
+FUN getRep    : repTab ** nat ** denotation -> rep
+-- %$PRE denotation must have been inserted before$
+DEF getRep(RT, I, Str) == cont(find?(\\E. lexem(E) = Str, hashTab(RT) ! I))
+
+FUN find? : repTab ** denotation -> nat  ** bool
+-- %$return arrayIndex and result$
+DEF find? (repTab(HT,_,_), Str) ==
+     LET hashVal == hash(!(Str))
+     IN (hashVal, mkRep(0, Str, false) in (HT ! hashVal))
+
+FUN  insert : repTab ** denotation ** bool -> repTab ** rep
+DEF  insert(RT,Str,GEN) == 
+     LET (hashVal, In?) == find?(RT,Str)
+     IN IF In? THEN
+                LET Rep == getRep(RT, hashVal, Str)
+                IN (RT, PRINT(traceInsRepTab?, \\ . `(Rep), Rep))
+        ELSE
+             LET nRep == mkRep(undef(RT),Str,GEN)
+                 valS == hashTab(RT) ! hashVal
+             IN (repTab(upd(hashVal,nRep incl valS,hashTab(RT)),succ(undef(RT)),
+                        wild(RT)),PRINT(traceInsRepTab?, \\ . `(nRep),nRep))
+        FI
+
+FUN insert : repTab ** seq[denotation] -> repTab
+DEF insert(Rt, <>) == Rt
+DEF insert(RT, Ft :: Rt) ==
+        LET (NewRT, _) == insert(RT, Ft, false)
+        IN insert(NewRT, Rt)
+
+FUN  traceInsRepTab? : bool
+DEF  traceInsRepTab? == FIELD?[bool]("-ztraceInsRepTab")
+
+FUN  prim : nat
+DEF  prim == "541" !
+
+FUN  hash : string -> nat
+DEF  hash(t) == h(t,t#,0) % prim
+
+        FUN ohd: string -> nat
+        DEF ohd(x) == asNat(ft(x))
+
+        FUN h : string ** nat ** nat -> nat
+        DEF h(t,l,n) == 
+                IF l>=3 THEN
+                   h((rt(rt(rt(t))), l-3,
+                      n+((((ohd(t)*256)+ohd(rt(t)))*256)
+                                                +ohd(rt(rt(t))))))
+                IF l=2 THEN n+((ohd(t)*256)+ohd(rt(t)))
+                IF l=1 THEN n+(ohd(t)*256)
+                IF l=0 THEN n
+                FI
+
+-- %- ------------------------------------------------------------------------
+-- %$conversion$
+-- %- ------------------------------------------------------------------------
+
+FUN  # : repTab -> nat
+DEF  #(rT) == undef(rT)
+
+
+FUN  dump : repTab -> denotation
+DEF  dump(rT:repTab) == (setToString / `(newline)) (hashTab(rT))
+
+        FUN setToString : set[rep,internalLess] ** denotation -> denotation
+        DEF setToString(S,t) == ( repToString \ empty)(asSeq(S)) ++ t
+
+        FUN repToString : rep ** denotation -> denotation
+        DEF repToString(r,t) == 
+            lexem(r) ++ `(tab) ++ `(ord(r)) ++ `(newline) ++ t
+
+-- %- ------------------------------------------------------------------------
+-- %$representation $
+-- %- ------------------------------------------------------------------------
+
+DATA rep == mkRep(ord:nat,lexem:denotation,generated?:bool)
+-- %$generated?(R) <=> lexem(R) = <str>%<nat>$
+
+FUN internalLess : rep ** rep -> bool
+DEF internalLess(mkRep(_,L1,_), mkRep(_,L2,_)) == L1 < L2 
+
+FUN = |= > < <= >= : rep ** rep -> bool
+
+DEF r1 = r2 == ord(r1) = ord(r2)
+DEF r1|= r2 == ord(r1)|= ord(r2)
+DEF r1 > r2 == ord(r1) > ord(r2)
+DEF r1 < r2 == ord(r1) < ord(r2)
+DEF r1>= r2 == ord(r1)>= ord(r2)
+DEF r1<= r2 == ord(r1)<= ord(r2)
+
+FUN = |= > < <= >= : nat ** rep -> bool
+
+DEF r1 = r2 == r1 = ord(r2)
+DEF r1|= r2 == r1 |= ord(r2)
+DEF r1 > r2 == r1 > ord(r2)
+DEF r1 < r2 == r1 < ord(r2)
+DEF r1>= r2 == r1 >= ord(r2)
+DEF r1<= r2 == r1 <= ord(r2)
+
+-- %- ------------------------------------------------------------------------
+-- %$representation of the keywords$
+-- %- ------------------------------------------------------------------------
+
+FUN  initialTab : repTab
+DEF  initialTab == insert(emptyRepTab, ` * (
+                   -- %Lexeme, Schlüsselwörter, ...
+                   %(error,openBr,closeBr,comma,openSqBr,closeSqBr,apo) ++
+                   %(as,completely,data,def,else,fi,fun,if) ++
+                   %(implementation,import,in,let,only,otherwise) ++
+                   %(signature,sort,then,type,where,equation,arrow,product) ++
+                   %(colon,lambda,dot,pragmaStart,pragmaEnd) ++
+                   -- %bis hierher Standard-Opal
+                   %(andelse,orelse) ++
+                   -- %bis hierher mit -zseqGuard
+                   %(all,and,dfd,ex,external,internal,law,not) ++
+                   %(or,properties,equal,implies,eqv,ineq) ++
+                   -- %bis hierher mit -zprop
+                   %(proof, turnstile) ++
+                   %(spc,pre,post,theory,assert,assume) ++
+                   -- %bis hierher mit -zpchecker
+                   -- %ab hier vordefinierte Identifier
+                   %(true,false,BOOL,bool,DENOTATION,denotation) ++
+                   %(<|,tl,ABORT,true?,false?) ++
+                   %(band,bor,bnot,beq,bneq) ++
+                   %(PROOFSCRIPT, proofscript)
+                        ))
+                   
+FUN lastKeyword : rep
+DEF lastKeyword == IF pchecker? THEN assume
+                   ELSE
+                     IF prop? THEN ineq 
+                     ELSE IF seqGuard? THEN orelse 
+                          ELSE prEnd 
+                          FI
+                      FI
+                  FI
+
+FUN ! : lexem -> rep
+DEF !(L) == getRep(initialTab, `(L)) 
+
+DEF error       == error!
+DEF openBr      == openBr!
+DEF closeBr     == closeBr!
+DEF comma       == comma!
+DEF openSqBr    == openSqBr!
+DEF closeSqBr   == closeSqBr!
+DEF apo         == apo!
+DEF as          == as!
+DEF completely  == completely!
+DEF data        == data!
+DEF def         == def!
+DEF else        == else!
+DEF fi          == fi!
+DEF fun         == fun!
+DEF if          == if!
+DEF implementation      == implementation!
+DEF import              == import!
+DEF in          == in!
+DEF let         == let!
+DEF only        == only!
+DEF otherwise   == otherwise!
+DEF signature   == signature!
+DEF sort        == sort!
+DEF then        == then!
+DEF type        == type!
+DEF where       == where!
+DEF equation    == equation!
+DEF arrow       == arrow!
+DEF product     == product!
+DEF colon       == colon!
+DEF lambda      == lambda!
+DEF dot         == dot!
+DEF prBeg       == pragmaStart!
+DEF prEnd       == pragmaEnd!
+
+DEF andelse     == andelse!
+DEF orelse      == orelse!
+
+DEF all         == all!
+DEF and         == and!
+DEF dfd         == dfd!
+DEF ex          == ex!
+DEF external    == external!
+DEF internal    == internal!
+DEF law         == law!
+DEF not         == not!
+DEF or          == or!
+DEF properties  == properties!
+DEF equal       == equal!
+DEF implies     == implies!
+DEF eqv         == eqv!
+DEF ineq        == ineq!
+DEF spc         == spc!
+DEF pre         == pre!
+DEF post        == post!
+DEF proof       == proof!
+DEF turnstile   == turnstile!
+DEF theory      == theory!
+DEF assert      == assert!
+DEF assume      == assume!
+
+DEF BOOL        == BOOL!
+DEF bool        == bool!
+DEF true        == true!
+DEF false       == false!
+DEF true?       == true? !
+DEF false?      == false? !
+DEF bneq        == bneq!
+DEF beq         == beq!
+DEF bnot        == bnot!
+DEF band        == band!
+DEF bor         == bor!
+DEF DENOTATION  == DENOTATION!
+DEF denotation  == denotation!
+DEF <|          == <| !
+DEF tl          == tl !
+DEF ABORT       == ABORT!
+
+DEF PROOFSCRIPT == PROOFSCRIPT!
+DEF proofscript == proofscript!
+
+
+DEF predefinedStr?(r) ==
+  (r = ABORT) or (r = BOOL) or (r = DENOTATION) or 
+  (pchecker? and r = PROOFSCRIPT) 
+
+-- %- ------------------------------------------------------------------------
+-- %$conversion$
+-- %- ------------------------------------------------------------------------
+
+FUN  ` : rep -> denotation
+DEF  ` (mkRep(O,L,_)) == 
+     IF printRep? THEN `(O) ++ L ELSE L FI
+
+FUN printRep? : bool
+DEF printRep? == FIELD?[bool]("-zprintRep")
+
+-- %- ------------------------------------------------------------------------
+
+FUN `` : nat -> denotation
+DEF `` (N) == keyToStr(N)
+
+FUN initMap : set[rep,internalLess]
+DEF initMap == (+, {}) / hashTab(initialTab)
+
+FUN keyToStr : nat -> denotation
+DEF keyToStr (n) == 
+        LET OptRep == find?(n = _, initMap)
+        IN IF nil?(OptRep) THEN "Undefined String"
+        ELSE lexem(cont(OptRep))
+        FI
+
+-- %$Coding laws$
+FUN lawprefix: denotation
+DEF lawprefix == "LAW%"
+
+DEF code(RT, mkRep(_, lx, _)) == insert(RT, lawprefix ++ lx , true)
+
+DEF coded?(mkRep(_, lx, gen?)) == gen? and lawprefix <| lx
+DEF coded??(mkRep(_, lx, _)) ==  lawprefix <| lx
+
+DEF decode(RT, r) ==
+  IF coded?(r) THEN avail(getRep(RT, delete(lexem(r), 0, pred(#(lawprefix)))))
+  ELSE nil
+  FI
+  
+-- %$Coding proofs$
+FUN proofprefix: denotation
+DEF proofprefix == "PROOF%"
+
+DEF codeP(RT, mkRep(_, lx, _)) == insert(RT, proofprefix ++ lx , true)
+
+DEF codedP?(mkRep(_, lx, gen?)) == gen? and proofprefix <| lx
+DEF codedP??(mkRep(_, lx, _)) == proofprefix <| lx
+
+DEF decodeP(RT, r) ==
+  IF codedP?(r) THEN avail(getRep(RT, delete(lexem(r), 
+                                             0, pred(#(proofprefix)))))
+  ELSE nil
+  FI
+  

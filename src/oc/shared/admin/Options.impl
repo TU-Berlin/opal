@@ -1,0 +1,805 @@
+-- %- -- LAST EDIT: Thu Nov  4 15:55:41 1993 by maeder@cs.tu-berlin.de korso
+
+IMPLEMENTATION Options
+
+-- %$Change History$
+/* %@example
+============================================================================
+author:      af
+project:     opal-1/common
+purpose:     analyze commandline options (see oc(1))
+             compute filenames
+Version:     Options.impl[4.8] accessed Fri Feb 11 01:00:34 1994
+Bytes:       21053
+
+
+changes: cg+af 7.6.93 included language variant options
+                      changed handling of part (w.r.t. property language)
+                      improvements in using option character constants
+changes: cg+af 24.6.93 included language variant options {r,l}assoc/infix
+changes: cg+af 25.6.93 incl. language variant options simpleLambda/seqGuard
+                       renamed language variant opt. suspension to section
+changes: af 29.6.93 included options and filenames for interOpal/prop.lang.
+changes: af 29.6.93 diag files in hidden directory
+changes: cg 1.7.93  included option -zunderline
+changes: wg 7.7.93  reworked optim and debug flags
+changes: wg 12.7.93 usage of OCS instead of .exp .ana .opt ...
+changes: cm 1.2.94  replaced string with denotation
+============================================================================
+-- Log for /tmp_amd/bolero/export/uebb/opal/workbench/build-release/src/oc/shared/admin/Options.impl[4.8]:
+  ocs-1.0b
+[1.2] Wed Jul 14 02:51:55 1993 opal@cs.tu-berlin.de saved
+  added identification string
+[1.3] Wed Jul 14 02:52:05 1993 opal@cs.tu-berlin.de saved
+  support of property files and AC dump file
+  ,
+[1.4] Wed Jul 14 02:52:17 1993 wg@cs.tu-berlin.de saved
+  added several language extension options (cg+af)
+  hidden directorys replaced by single repository OCS
+  reworked debug and optimization flags (wg)
+  ,
+[1.5] Wed Jul 14 02:52:27 1993 wg@cs.tu-berlin.de saved
+  *** empty log message ***
+[1.6] Wed Jul 14 02:52:37 1993 opal@cs.tu-berlin.de saved
+  *** empty log message ***
+[1.7] Wed Jul 14 02:52:48 1993 opal@cs.tu-berlin.de saved
+  *** empty log message ***
+[1.8] Fri Jul 16 23:36:25 1993 opal@cs.tu-berlin.de published
+  [Fri Jul 16 11:29:41 1993] Intention for change:
+  --- no intent expressed ---
+[2.0] Fri Jul 16 23:36:25 1993 opal@cs.tu-berlin.de accessed
+  [Fri Jul 16 11:29:41 1993] Intention for change:
+  --- no intent expressed ---
+[2.1] Sun Sep 26 15:10:17 1993 fetti@cs.tu-berlin.de saved
+  
+[3.0] Sat Oct  9 17:28:31 1993 wg@cs.tu-berlin.de accessed
+  [Sat Oct  9 15:29:28 1993] Intention for change:
+  [Sat Oct  9 15:28:55 1993] Intention for change:
+  port to language extensions
+[3.1] Sun Nov  7 23:01:22 1993 maeder@cs.tu-berlin.de accessed
+  [Thu Nov  4 11:31:20 1993] Intention for change:
+  added Function extpExpFile to handle extp.exp files
+[3.2] Mon Dec 20 15:47:54 1993 wg@cs.tu-berlin.de saved
+  Added myHcCFileTmpl myHcHFileTmpl
+[3.3] Mon Jan 17 14:36:05 1994 maeder@cs.tu-berlin.de saved
+  changed extension .dep to .deps for compatibility with ocs
+[4.0] Mon Jan 17 20:05:13 1994 wg@cs.tu-berlin.de saved
+  [Mon Jan 17 19:28:57 1994] Intention for change:
+  --- no intent expressed ---
+[4.1] Wed Jan 19 16:38:21 1994 wg@cs.tu-berlin.de saved
+  Error.sign
+[4.2] Thu Jan 20 00:41:30 1994 wg@cs.tu-berlin.de saved
+  [Thu Jan 20 00:22:15 1994] Intention for change:
+  --- no intent expressed ---
+[4.3] Thu Jan 20 18:54:55 1994 opal@cs.tu-berlin.de saved
+  [Thu Jan 20 18:54:17 1994] Intention for change:
+  --- no intent expressed ---
+[4.4] Thu Jan 20 19:08:13 1994 opal@cs.tu-berlin.de proposed
+  [Thu Jan 20 18:57:59 1994] Intention for change:
+  --- no intent expressed ---
+[4.5] Tue Feb  1 17:47:59 1994 maeder@cs.tu-berlin.de saved
+  
+[4.6] Tue Feb  1 18:51:08 1994 maeder@cs.tu-berlin.de saved
+  [Tue Feb  1 17:33:00 1994] Intention for change:
+  removed restriction for structure names and cleaned up strings
+[4.7] Wed Feb  2 18:08:37 1994 maeder@cs.tu-berlin.de saved
+  corrected printOptions to reuse this output as input
+[4.8] Fri Feb 11 01:00:34 1994 maeder@cs.tu-berlin.de accessed
+  changed dump of -t -o and -d
+============================================================================
+@end example
+*/
+
+IMPORT  
+        Nat             COMPLETELY
+        NatConv         ONLY `
+        Char            COMPLETELY
+        CharConv        ONLY ` asDigitNat
+        PrintableChar   COMPLETELY
+        Denotation      COMPLETELY
+        Bitset          COMPLETELY
+        Compose         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Void            ONLY void
+        Set             ONLY set {} incl in + % {}? find?
+        SetReduce       ONLY /
+        MapReduce[denotation,<,path,denotation] ONLY /
+        Map[denotation,<,path] ONLY {} map def ! !? def?
+
+        Com             COMPLETELY
+        Stream          ONLY output stdErr stdOut write writeLine
+        ComCompose      COMPLETELY
+        Env             COMPLETELY -- ONLY args:com[seq[denotation]]
+        Seq             ONLY seq ft rt <>? <> ::
+        SeqMap          ONLY *
+        DEBUG           COMPLETELY
+
+        OcExit          ONLY ioError
+
+-- %$Data types and constants$
+
+DATA options ==
+        options(stru    : pair[denotation,path],
+                part    : part,
+                bitOpt  : set'Bitset,
+                verbLevel: nat,
+                warnLevel: nat,
+                optimKinds : set[char,<],
+                debugKinds : set[char,<],
+                tmpId   : denotation,
+                files   : map[denotation,<,path],       
+                copOpt  : set[denotation,<],
+                file    : output
+                )
+
+DATA part == sign impl extp intp
+
+DATA path == path(dirname: denotation, access: set'Bitset)
+
+FUN hidden busy : nat
+
+DEF hidden == 0
+DEF busy   == 1
+
+
+FUN stdPath:path
+
+DEF stdPath == path("",hidden incl (busy incl {}))
+
+FUN stdOptions: options
+
+DEF stdOptions== options(""&stdPath,impl,{},0,1,{},{},"",{},{},stdErr)
+
+-- %- ------------------------------------------------------------------------
+-- %$Conversions$
+    FUN ` : part -> denotation
+    DEF sign ` == " -" ++ `(signChar)
+    DEF impl ` == " -" ++ `(implChar)
+    DEF extp ` == " -" ++ `(extpChar)
+    DEF intp ` == " -" ++ `(intpChar)
+
+    FUN `` : char -> denotation   -- c -> " -c"
+    DEF ``(ch) == `(blank) ++ `(optionChar) ++ `(ch)
+
+    FUN ` : path -> denotation
+    DEF `(p) == " -"++where++dirname(p)++" -"++state WHERE 
+                state == IF busy   in access(p) THEN "b" ELSE "r" FI
+                where == IF hidden in access(p) THEN "h" ELSE "e" FI
+
+        
+    FUN ` : options->denotation
+    DEF `(o:options) == 
+        ("${oc}" ++ `(part(o)) ++ " " ++ 1st(stru(o)) ++
+        " -v" ++ `'NatConv(verbLevel(o)) ++
+        " -w" ++ `'NatConv(warnLevel(o))) ++    
+        (IF {}?(optimKinds(o)) THEN "" 
+                ELSE " -o" ++ letters(optimKinds(o)) FI) ++
+        (IF {}?(debugKinds(o)) THEN "" 
+                ELSE " -d" ++ letters(debugKinds(o)) FI) ++
+        (IF tmpId(o) = "" THEN "" ELSE " -t" ++ tmpId(o) FI) ++
+        `(files(o)) ++
+        `(copOpt(o)) ++ "\n"    
+
+    FUN letters : set[char,<] -> denotation
+    DEF letters(Ls) == ((\\Ch,R. `'CharConv(Ch) ++ R) / "" )(Ls)
+
+    FUN ` :map[denotation,<,path]->denotation
+    DEF `(M)== ((\\fn,p,r. `(p)++" "++fn++r) / "")(M)
+
+    FUN ` :set[denotation,<]->denotation
+    DEF `(s)== ((\\t,r." -z"++t++r) / "")(s)
+
+FUN printOptions: denotation
+
+DEF printOptions == "printOptions"
+
+-- %- ------------------------------------------------------------------------
+-- %$Definition of single options$
+FUN optionChar: char
+
+DEF optionChar == -
+
+FUN signChar implChar verbChar warnChar optiChar debugChar tempChar
+    copChar hiddenChar explodeChar busyChar releasedChar: char
+
+FUN extpChar intpChar : char  -- only for property language variant
+
+DEF signChar     == s
+DEF implChar     == i
+DEF verbChar     == v
+DEF warnChar     == w
+DEF optiChar     == o
+DEF debugChar    == d
+DEF tempChar     == t
+DEF copChar      == z
+DEF hiddenChar   == h
+DEF explodeChar  == e
+DEF busyChar     == b
+DEF releasedChar == r
+DEF extpChar     == E
+DEF intpChar     == I
+
+FUN maxVerb maxWarn : nat
+
+DEF maxVerb == 3
+DEF maxWarn == 2
+
+FUN allOptiKinds allDebugKinds : set[char,<]
+
+FUN defaultOptiKinds defaultDebugKinds : denotation
+
+FUN expandOptiKind : char -> set[char,<]
+
+DEF allOptiKinds ==
+    incl(1,
+    incl(2,
+    incl(e,
+    incl(u,
+    incl(s,
+    incl(c,
+    incl(m,
+    incl(p,
+    incl(g,
+    incl(T,
+    incl(S,     
+        {})))))))))))
+
+DEF defaultOptiKinds == %(1)
+
+DEF expandOptiKind(Kind) ==
+    IF Kind = 1 THEN incl(s,incl(e,incl(u,incl(c,incl(m,{})))))
+    IF Kind = 2 THEN incl(p,incl(g,incl(T,expandOptiKind(1))))
+                ELSE %(Kind) FI
+
+DEF defaultDebugKinds == %(d)
+                        
+
+DEF allDebugKinds ==
+    incl(t,
+    incl(T,
+    incl(d,
+         {})))
+
+
+-- %- ------------------------------------------------------------------------
+-- %$Analyze Options$
+DEF analyzeOptions ==
+  args ;
+  (\\a.IF a fail? THEN writeErr(error(a))
+       IF a okay? THEN analyzeOptionsInline(rt(data(a))) FI)
+
+DEF analyzeOptionsInline(Args) ==
+    checkArgs(Args,false,stdPath,stdOptions) &
+    (\\opts.IF cop?(printOptions,opts) THEN
+                write(stdOut,opts`) & yield(okay(opts))
+            ELSE yield(okay(opts))
+            FI)
+
+FUN checkArgs: seq[denotation]**bool**path**options -> com[options]
+
+DEF checkArgs(<>,true,_,opts) == yield(okay(opts))
+
+DEF checkArgs(<>,false,_,_) == writeErr("no source structure specified")
+
+DEF checkArgs(arg1::argR,srcExists?,path,opts) ==
+  IF `(optionChar) <| arg1 THEN 
+        checkOption(tl(arg1),argR,srcExists?,path,opts)
+  ELSE checkFile(arg1,argR,srcExists?,path,opts)
+  FI
+
+FUN checkOption
+    checkSignOption checkImplOption
+    checkVerbOption checkWarnOption checkOptiOption checkOptiKinds
+    checkDebugOption checkDebugKinds checkTempOption checkCopOption
+    checkHiddenOption checkExplodeOption
+    checkBusyOption checkReleasedOption
+    : denotation**seq[denotation]**bool**path**options -> com[options]
+
+FUN checkExtpOption checkIntpOption
+    : denotation**seq[denotation]**bool**path**options -> com[options]
+    -- only for property language variant
+
+DEF checkOption(arg1,argR,srcExists?,path,opts) ==
+  IF arg1 <| "" THEN 
+        writeErr("missing option after "++(optionChar`))
+  IF `(signChar) <| arg1 THEN 
+        checkSignOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(implChar) <| arg1 THEN 
+        checkImplOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(verbChar) <| arg1 THEN 
+        checkVerbOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(warnChar) <| arg1 THEN 
+        checkWarnOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(optiChar) <| arg1 THEN 
+        checkOptiOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(debugChar) <| arg1 THEN 
+        checkDebugOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(tempChar) <| arg1 THEN 
+        checkTempOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(copChar) <| arg1 THEN 
+        checkCopOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(hiddenChar) <| arg1 THEN 
+        checkHiddenOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(explodeChar) <| arg1 THEN 
+        checkExplodeOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(busyChar) <| arg1 THEN 
+        checkBusyOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(releasedChar) <| arg1 THEN 
+        checkReleasedOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(extpChar) <| arg1 THEN 
+        checkExtpOption(tl(arg1),argR,srcExists?,path,opts)
+  IF `(intpChar) <| arg1 THEN 
+        checkIntpOption(tl(arg1),argR,srcExists?,path,opts) 
+  ELSE writeErr("unknown option "++ `(optionChar) ++ arg1)
+  FI
+
+
+DEF checkSignOption(arg1,argR,srcExists?,path,options(s,_,b,v,w,o,x,t,f,z,d)) ==
+  IF arg1 <| "" THEN
+        checkArgs(argR,srcExists?,path,options(s,sign,b,v,w,o,x,t,f,z,d))
+  ELSE unknownOption(signChar, arg1) FI
+
+DEF checkImplOption(arg1,argR,srcExists?,path,options(s,_,b,v,w,o,x,t,f,z,d)) ==
+  IF arg1 <| "" THEN
+        checkArgs(argR,srcExists?,path,options(s,impl,b,v,w,o,x,t,f,z,d))
+  ELSE unknownOption(implChar, arg1) FI
+
+
+DEF checkExtpOption(arg1,argR,srcExists?,path,options(s,_,b,v,w,o,x,t,f,z,d)) ==
+  IF arg1 <| "" THEN
+        checkArgs(argR,srcExists?,path,options(s,extp,b,v,w,o,x,t,f,z,d))
+  ELSE unknownOption(extpChar, arg1) FI
+
+DEF checkIntpOption(arg1,argR,srcExists?,path,options(s,_,b,v,w,o,x,t,f,z,d)) ==
+  IF arg1 <| "" THEN
+        checkArgs(argR,srcExists?,path,options(s,intp,b,v,w,o,x,t,f,z,d))
+  ELSE unknownOption(extpChar, arg1) FI
+
+
+DEF checkVerbOption(arg1,argR,srcExists?,path,options(s,p,b,_,w,o,x,t,f,z,d)) ==
+  IF arg1 <| "" THEN
+        checkArgs(argR,srcExists?,path,options(s,p,b,1,w,o,x,t,f,z,d))
+  ELSE  IF tl(arg1) <| "" THEN LET c1 == arg1!0 IN
+            IF c1 digit? THEN
+                IF asDigitNat(c1) <= maxVerb THEN
+                    checkArgs(argR,srcExists?,path,
+                        options(s,p,b,asDigitNat(c1),w,o,x,t,f,z,d))
+                ELSE unknownVerbOption(arg1)
+                FI
+            ELSE unknownVerbOption(arg1)
+            FI
+        ELSE unknownVerbOption(arg1)
+        FI
+  FI
+
+DEF checkWarnOption(arg1,argR,srcExists?,path,options(s,p,b,v,_,o,x,t,f,z,d)) ==
+  IF arg1 <| "" THEN
+        checkArgs(argR,srcExists?,path,options(s,p,b,v,2,o,x,t,f,z,d))
+  ELSE  IF tl(arg1) <| "" THEN LET c1 == arg1!0 IN
+            IF c1 digit? THEN
+                IF asDigitNat(c1) <= maxWarn THEN
+                    checkArgs(argR,srcExists?,path,
+                        options(s,p,b,v,asDigitNat(c1),o,x,t,f,z,d))
+                ELSE unknownWarnOption(arg1)
+                FI
+            ELSE unknownWarnOption(arg1)
+            FI
+        ELSE unknownWarnOption(arg1)
+        FI
+  FI
+
+
+DEF checkOptiOption(arg1,argR,srcExists?,path,opts) ==
+IF arg1 <| "" THEN 
+  checkOptiKinds(defaultOptiKinds,argR,srcExists?,path,opts)
+ELSE
+  checkOptiKinds(arg1,argR,srcExists?,path,opts)
+FI
+
+DEF checkOptiKinds(arg1,argR,srcExists?,path,options(s,p,b,v,w,o,x,t,f,z,d)) ==
+IF arg1 <| "" THEN 
+  checkArgs(argR,srcExists?,path,options(s,p,b,v,w,o,x,t,f,z,d))
+ELSE LET Kind == arg1!0 IN                          
+    IF Kind in allOptiKinds THEN
+      checkOptiKinds(tl(arg1),argR,srcExists?,path,
+                     options(s,p,b,v,w,expandOptiKind(Kind)+o,x,t,f,z,d))
+    ELSE writeErr("unknown optimization kind " ++
+         `(optionChar) ++ `(optiChar) ++ `(Kind))
+    FI
+FI
+
+DEF checkDebugOption(arg1,argR,srcExists?,path,opts) ==
+IF arg1 <| "" THEN 
+  checkDebugKinds(defaultDebugKinds,argR,srcExists?,path,opts)
+ELSE 
+  checkDebugKinds(arg1,argR,srcExists?,path,opts)
+FI
+
+DEF checkDebugKinds(arg1,argR,srcExists?,path,options(s,p,b,v,w,o,x,t,f,z,d)) ==
+IF arg1 <| "" THEN 
+  checkArgs(argR,srcExists?,path,options(s,p,b,v,w,o,x,t,f,z,d))
+ELSE LET Kind == arg1!0 IN                          
+  IF Kind in allDebugKinds THEN
+      checkDebugKinds(tl(arg1),argR,srcExists?,path,
+                        options(s,p,b,v,w,o,incl(Kind,x),t,f,z,d))
+  ELSE writeErr("unknown debug kind " ++
+                `(optionChar) ++ `(debugChar) ++ `(Kind))
+  FI
+FI
+
+
+DEF checkTempOption(arg1,argR,srcExists?,path,options(s,p,b,v,w,o,x,_,f,z,d)) ==
+  IF arg1 legalSuffix? THEN
+    checkArgs(argR,srcExists?,path,options(s,p,b,v,w,o,x,arg1,f,z,d))
+  ELSE writeErr("illegal suffix for temporary files " ++
+                 `(optionChar) ++ `(tempChar) ++ arg1)
+  FI
+
+FUN legalSuffix? : denotation -> bool
+DEF s legalSuffix? ==  ~(s <| "") 
+
+DEF checkCopOption(arg1,argR,srcExists?,path,options(s,p,b,v,w,o,x,t,f,z,d)) ==
+IF arg1 <| "" THEN writeErr("missing special compiler option " ++
+           `(optionChar) ++ `(copChar))
+ELSE checkArgs(argR,srcExists?,path,options(s,p,b,v,w,o,x,t,f,arg1 incl z,d))
+FI
+
+DEF checkHiddenOption(arg1,argR,srcExists?,path(_,acc),opts) ==
+IF arg1 <| "" THEN
+    IF argR <>? THEN
+        writeErr("missing directory for hidden option " ++
+           `(optionChar) ++ `(hiddenChar))
+    ELSE checkArgs(rt(argR),srcExists?,path(ft(argR),hidden incl acc),opts)
+    FI
+ELSE checkArgs(argR,srcExists?,path(arg1,hidden incl acc),opts)
+FI
+
+DEF checkExplodeOption(arg1,argR,srcExists?,path(_,acc),opts) ==
+IF arg1 <| "" THEN
+    IF argR <>? THEN
+        writeErr("missing directory for explode option " ++
+           `(optionChar) ++ `(explodeChar))
+    ELSE checkArgs(rt(argR),srcExists?,path(ft(argR),hidden excl acc),opts)
+    FI
+ELSE checkArgs(argR,srcExists?,path(arg1,hidden excl acc),opts)
+FI
+
+DEF checkBusyOption(arg1,argR,srcExists?,path(dir,acc),opts) ==
+IF arg1 <| "" THEN
+  checkArgs(argR,srcExists?,path(dir,busy incl acc),opts)
+ELSE writeErr("unknown option " ++ `(optionChar) ++ `(busyChar) ++ arg1)
+FI
+
+DEF checkReleasedOption(arg1,argR,srcExists?,path(dir,acc),opts) ==
+IF arg1 <| "" THEN
+  checkArgs(argR,srcExists?,path(dir,busy excl acc),opts)
+ELSE writeErr("unknown option " ++ `(optionChar) ++ `(releasedChar) ++ arg1)
+FI
+
+FUN checkFile: denotation**seq[denotation]**bool**path**options -> com[options]
+
+DEF checkFile(arg1,argR,true,path,options(s,p,b,v,w,o,x,t,f,z,d)) ==
+  IF arg1 legalStructname? THEN
+    checkArgs(argR,true,path,
+                        options(s,p,b,v,w,o,x,t,(arg1,path) def f,z,d))
+  ELSE writeErr("illegal structure name " ++ arg1)
+  FI
+
+DEF checkFile(arg1,argR,false,path,options(_,p,b,v,w,o,x,t,f,z,d)) ==
+  IF arg1 legalStructname? THEN
+    checkArgs(argR,true,path,
+                        options(arg1&path,p,b,v,w,o,x,t,
+                                (arg1,path) def f,z,d))
+  ELSE writeErr("illegal structure name " ++ arg1)
+  FI
+
+
+FUN legalStructname?: denotation -> bool
+DEF s legalStructname? ==  ~(s <| "") 
+
+FUN unknownOption : char ** denotation -> com[options]
+DEF unknownOption(Char, arg1) == 
+        writeErr("unknown option " ++ `(optionChar) ++ `(Char) ++ arg1)
+
+FUN unknownVerbOption unknownWarnOption : denotation -> com[options]
+
+DEF unknownVerbOption(arg1) ==
+  writeErr("unknown verbose level " ++ `(optionChar) ++ `(verbChar) ++ arg1)
+
+DEF unknownWarnOption(arg1) ==
+  writeErr("unknown warning level " ++ `(optionChar) ++ `(warnChar) ++ arg1)
+
+FUN writeErr: denotation -> com[options]
+DEF writeErr(s) ==
+  writeLine(stdErr,s) ; yield(fail(ioError))
+
+-- %- ---------------------------------------------------------------------
+-- %$oasys options$
+-- %- ---------------------------------------------------------------------
+
+FUN internDiag foreignExpPrefix : denotation
+
+DEF internDiag          == "internDiag" -- used literally in Error.impl!!
+DEF foreignExpPrefix    == "foreignExp:" -- only used inside of Options.impl
+
+
+-- %- ---------------------------------------------------------------------
+-- %$language variant options$
+-- %- ---------------------------------------------------------------------
+
+-- %@zoindex prop
+-- %@zoindex wildcard
+-- %@zoindex section
+-- %@zoindex simpleLambda
+-- %@zoindex underline
+-- %@zoindex seqGuard
+-- %@zoindex rassoc
+-- %@zoindex lassoc
+-- %@zoindex infix
+-- %@zoindex pchecker
+-- %@zoindix defSign
+FUN zprop zwildcard zsection zsimpleLambda zseqGuard
+    zrassoc zlassoc zinfix zunderline zpchecker zdefSign: denotation
+DEF zprop                   == "prop"
+DEF zwildcard               == "wildcard"
+DEF zsection                == "section"
+DEF zsimpleLambda           == "simpleLambda"
+DEF zunderline              == "underline"
+DEF zseqGuard               == "seqGuard"
+DEF zdefSign                == "defSign"
+
+DEF zrassoc                 == "rassoc"
+DEF zlassoc                 == "lassoc"
+DEF zinfix                  == "infix"
+DEF zpchecker               == "pchecker"
+
+FUN mkCopOpt mkNoCopOpt mkNoOpt: denotation -> denotation
+DEF mkCopOpt(s) == tl(``(copChar) ++ s)
+DEF mkNoCopOpt(s) == mkCopOpt("no" ++ s)
+DEF mkNoOpt(s) == "no" ++ s
+
+
+DEF prop?(o)                == cop?(zprop,o)
+DEF wildcard?(o)            == cop?(mkNoOpt(zwildcard),o) ~
+DEF section?(o)             == cop?(mkNoOpt(zsection),o) ~
+DEF simpleLambda?(o)        == cop?(zsimpleLambda,o)
+DEF underline?(o)           == cop?(mkNoOpt(zunderline),o) ~
+DEF seqGuard?(o)            == cop?(mkNoOpt(zseqGuard),o) ~
+
+DEF rassoc?(o)              == cop?(mkNoOpt(zrassoc),o) ~
+DEF lassoc?(o)              == cop?(zlassoc,o) and ~(rassoc?(o))
+DEF infix?(o)               == cop?(mkNoOpt(zinfix),o) ~
+DEF pchecker?(o)            == cop?(zpchecker, o)
+DEF defSign?(o)             == cop?(zdefSign, o) 
+
+DEF prop?                   == FIELD?[bool](mkCopOpt(zprop))
+DEF wildcard?               == FIELD?[bool](mkNoCopOpt(zwildcard)) ~
+DEF section?                == FIELD?[bool](mkNoCopOpt(zsection)) ~
+DEF simpleLambda?           == FIELD?[bool](mkCopOpt(zsimpleLambda))
+DEF underline?              == FIELD?[bool](mkNoCopOpt(zunderline)) ~
+DEF seqGuard?               == FIELD?[bool](mkNoCopOpt(zseqGuard)) ~
+
+DEF rassoc?                 == FIELD?[bool](mkNoCopOpt(zrassoc)) ~
+DEF lassoc?                 == FIELD?[bool](mkCopOpt(zlassoc)) and ~(rassoc?)
+DEF infix?                  == FIELD?[bool](mkNoCopOpt(zinfix)) ~
+DEF pchecker?               == FIELD?[bool](mkCopOpt(zpchecker))
+
+-- %- ---------------------------------------------------------------------
+
+FUN zinterOpal: denotation
+DEF zinterOpal == "interOpal"
+
+FUN interOpal?: options -> bool
+DEF interOpal?(o) == cop?(zinterOpal,o)
+-- %- ---------------------------------------------------------------------
+
+FUN zonlyParse: denotation
+DEF zonlyParse == "onlyParse"
+
+FUN onlyParse?: options -> bool
+DEF onlyParse?(o) == cop?(zonlyParse,o)
+-- %- ---------------------------------------------------------------------
+
+FUN zdoNotParse: denotation
+DEF zdoNotParse == "doNotParse"
+
+FUN doNotParse?: options -> bool
+DEF doNotParse?(o) == cop?(zdoNotParse,o)
+-- %- ---------------------------------------------------------------------
+-- %$File options$
+DEF debugKind?(Kind,o)          == Kind in debugKinds(o)
+DEF optimKind?(Kind,o)          == Kind in optimKinds(o)
+DEF sign?(o)                    == part(o) sign? 
+DEF impl?(o)                    == part(o) impl?
+DEF extp?(o)                    == part(o) extp?
+DEF intp?(o)                    == part(o) intp?
+
+DEF cop?(s,o)   == s in copOpt(o)
+DEF myStruct(o) == 1st(stru(o))
+
+DEF busy?(s,o)  == 
+    LET x == files(o)!?s IN
+    IF x nil? THEN true ELSE busy in access(cont(x))  FI
+
+    FUN sign impl exp expOwn absy inter ana opt tmp dep diag c h ctmpl htmpl ac
+        extp intp OCS : denotation
+    DEF sign            == ".sign"
+    DEF impl            == ".impl"
+    DEF extp            == ".extp"
+    DEF intp            == ".intp"
+    DEF exp             == ".exp"    -- know InterOpal
+    DEF expOwn          == ".expOwn"   -- not used
+    DEF absy            == ".absy"
+    DEF inter           == ".inter"
+    DEF ana             == ".ana"
+    DEF opt             == ".opt"
+    DEF tmp             == "/tmp"
+    DEF dep             == ".deps"
+    DEF diag            == ".diag"
+    DEF c               == ".c"
+    DEF h               == ".h"
+    DEF htmpl           == ".hc.h.tmpl"
+    DEF ctmpl           == ".hc.c.tmpl"
+    -- um ac ergaenzt am 28.05.93 antje
+    DEF ac              == ".ac"
+    DEF OCS             == "OCS"
+
+-- my filenames:
+    FUN my : options -> denotation**denotation**bool
+    DEF my(o) ==
+        (1st(stru(o)),dirname(2nd(stru(o))),hidden in access(2nd(stru(o)))) 
+
+DEF myFile(o)==
+        LET (bn,dn,_) == my(o) IN
+        IF o sign? THEN filename(dn,"",bn,sign,false)
+        IF o impl? THEN filename(dn,"",bn,impl,false) 
+        IF o extp? THEN filename(dn,"",bn,extp,false) 
+        IF o intp? THEN filename(dn,"",bn,intp,false) FI
+
+DEF myDiagFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        IF o sign? THEN filename(dn,diag,bn,sign++diag,h?)
+        IF o impl? THEN filename(dn,diag,bn,impl++diag,h?) 
+        IF o extp? THEN filename(dn,diag,bn,extp++diag,h?) 
+        IF o intp? THEN filename(dn,diag,bn,intp++diag,h?) FI
+
+DEF myDepFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        IF o sign? THEN filename(dn,dep,bn,sign++dep,h?)
+        IF o impl? THEN filename(dn,dep,bn,impl++dep,h?) 
+        IF o extp? THEN filename(dn,dep,bn,extp++dep,h?)
+        IF o intp? THEN filename(dn,dep,bn,intp++dep,h?) FI
+
+DEF myAnaFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        IF #(tmpId(o)) = 0 THEN filename(dn,ana,bn,ana,h?)
+                           ELSE filename(tmp,ana,
+                                      bn,ana++(`(dot)++tmpId(o)),false)
+        FI
+
+DEF myExpFile(o)==
+        LET ForeignExp? == find?(\\Opt. foreignExpPrefix <| Opt,
+                                 copOpt(o))
+        IN
+        IF avail?(ForeignExp?) THEN
+            -- for oasys
+            slice(cont(ForeignExp?),
+                  #(foreignExpPrefix),#(cont(ForeignExp?)) - 1)
+        ELSE
+            LET (bn,dn,h?) == my(o) IN
+            IF o sign? THEN filename(dn,inter,bn,sign++inter,h?)
+            IF o impl? THEN filename(dn,inter,bn,impl++inter,h?) 
+            IF o extp? THEN filename(dn,inter,bn,extp++inter,h?) 
+            IF o intp? THEN filename(dn,inter,bn,intp++inter,h?) FI
+        FI
+
+DEF mySignExpFile(o)==
+        LET ForeignExp? == find?(\\Opt. foreignExpPrefix <| Opt,
+                                 copOpt(o))
+        IN
+        IF avail?(ForeignExp?) THEN
+            -- for oasys
+            slice(cont(ForeignExp?),
+                  #(foreignExpPrefix),#(cont(ForeignExp?)) - 1)
+        ELSE
+            LET (bn,dn,h?) == my(o) IN
+            filename(dn,inter,bn,sign++inter,h?)
+        FI
+
+DEF myImplExpFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        filename(dn,inter,bn,impl++inter,h?)
+
+DEF myExtpExpFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        filename(dn,inter,bn,extp++inter,h?)
+
+DEF myAbsyFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        IF o sign? THEN filename(dn,absy,bn,sign++absy,h?)
+        IF o impl? THEN filename(dn,absy,bn,impl++absy,h?) 
+        IF o extp? THEN filename(dn,absy,bn,extp++absy,h?) 
+        IF o intp? THEN filename(dn,absy,bn,intp++absy,h?) FI
+
+DEF myInterOpalFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        IF o sign? THEN filename(dn,inter,bn,sign++inter,h?)
+        IF o impl? THEN filename(dn,inter,bn,impl++inter,h?) 
+        IF o extp? THEN filename(dn,inter,bn,extp++inter,h?) 
+        IF o intp? THEN filename(dn,inter,bn,intp++inter,h?) FI
+
+DEF myOptFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        filename(dn,opt,bn,opt,h?)
+
+
+
+DEF myAcFile(o)==  -- eingefuegt am 28.05.93  antje
+        LET (bn,dn,h?) == my(o) IN
+        filename(dn,ac,bn,ac,h?)
+
+DEF myCFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        IF #(tmpId(o)) = 0 THEN filename(dn,c,bn,c,h?)
+                           ELSE filename(tmp,c,bn,c++(`(dot)++tmpId(o)),false)
+        FI
+
+DEF myHFile(o)==
+        LET (bn,dn,h?) == my(o) IN
+        IF #(tmpId(o)) = 0 THEN filename(dn,c,bn,h,h?)
+                           ELSE filename(tmp,c,bn,h++(`(dot)++tmpId(o)),false)
+        FI
+
+DEF myHcCFileTmpl(o)==
+        LET (bn,dn,_) == my(o) IN
+        filename(dn,OCS,bn,ctmpl,false)
+
+DEF myHcHFileTmpl(o)==
+        LET (bn,dn,_) == my(o) IN
+        filename(dn,OCS,bn,htmpl,false)
+
+
+-- %$general filenames$
+
+DEF expFile(t,o)==
+        LET x == files(o)!?t IN
+        IF x nil? THEN ""
+        ELSE
+          LET (bn,dn,h?) == (t,dirname(cont(x)),hidden in access(cont(x))) IN
+                filename(dn,inter,bn,sign++inter,h?)
+        FI
+
+DEF extpExpFile(t,o)==
+        LET x == files(o)!?t IN
+        IF x nil? THEN ""
+        ELSE
+          LET (bn,dn,h?) == (t,dirname(cont(x)),hidden in access(cont(x))) IN
+                  filename(dn,inter,bn,extp++inter,h?)
+        FI
+
+DEF optFile(t,o)==
+        LET x == files(o)!?t IN
+        IF x nil? THEN ""
+        ELSE
+          LET (bn,dn,h?) == (t,dirname(cont(x)),hidden in access(cont(x))) IN
+          filename(dn,opt,bn,opt,h?)
+        FI
+
+    FUN filename:denotation**denotation**denotation**denotation**bool
+                                                ->denotation
+    DEF filename(dn,_,bn,bs,h?)==
+        -- ds once denoted the individual hidden directory. 
+        -- we generally patch it to OCS
+        IF h? THEN 
+          IF #(dn) = 0 THEN OCS++(`(/)++(bn++bs))
+          ELSE dn++((`(/)++OCS)++(`(/)++(bn++bs)))
+          FI
+        ELSE
+         IF #(dn) = 0 THEN bn++bs
+         ELSE dn++(`(/)++(bn++bs))
+         FI
+        FI
+
+DEF file(options(s,p,b,v,w,o,x,t,f,z,_),fn)== options(s,p,b,v,w,o,x,t,f,z,fn)
+

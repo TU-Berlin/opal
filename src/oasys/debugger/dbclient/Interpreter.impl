@@ -1,0 +1,813 @@
+IMPLEMENTATION Interpreter
+
+-- %$Imports$
+IMPORT  Seq             COMPLETELY
+        Nat             COMPLETELY
+        SeqOfSeq        COMPLETELY
+        SeqMap          COMPLETELY
+        SeqMapEnv       COMPLETELY
+        SeqZip          COMPLETELY
+        SeqIndex        COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqReduce       COMPLETELY
+        Map             COMPLETELY
+        MapConv         COMPLETELY      
+        Compose         COMPLETELY
+        Pair            COMPLETELY
+        Nat             COMPLETELY
+        NatConv         COMPLETELY
+        Option          COMPLETELY
+        ABORT           COMPLETELY
+        Array           COMPLETELY
+        ArrayConv       COMPLETELY
+        Denotation      COMPLETELY
+        DEBUG           COMPLETELY
+        RUNTIME         COMPLETELY
+        RUNTIMEENV[environment,expr]
+                        COMPLETELY
+IMPORT
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        ArrayUpd        COMPLETELY
+        SeqExtensions   COMPLETELY
+IMPORT
+        Monitor         COMPLETELY
+        Expression      COMPLETELY
+        Environment     COMPLETELY
+        FmtConv         COMPLETELY
+       AnonPair COMPLETELY
+
+-- %$Die Evaluations-Funktion$ ========================================
+/* %
+ Die im folgenden definierte Funktion ist der Term-Reduzierer des
+Interpreters, der Terme auf ihre Normalform reduziert. Die Normalformen werden
+durch eine Sequenz von Objekten repräsentiert.
+
+Die Evaluation erfolgt ,,schrittweise'', d.h. nach jedem Reduktionsschritt
+(Anwendung einer Ableitungsregel) wird die Reduktion mit Hilfe der
+Monitor-Funktion unterbrochen, um den Evaluationsstatus bekanntgeben zu
+können. Jeder Evaluationsschritt wird auf diese Art und Weise protokolliert.
+
+Die Evaluations-Funktion erhält als Argumente den zu reduzierenden Ausdruck und
+ein Environment, das Kontextinformationen (z.B. Definitionen globaler
+Funktionen) enthält. Das Resultat einer Evaluation ist eine Sequenz von
+Normalform-Objekten als Repräsenation eines Tupels von Normalformen zusammen mit
+dem resultierenden (möglicherweise modifizierten) Kontext.
+ */
+DEF eval(Env,Expr) == eval1(monitor(Env,Expr),Expr)
+
+/* %
+ Die Funktion im folgenden definierte Funktion @code{eval1} ist der Kern der
+Evaluationsfunktion. Sie wird von @code{eval} appliziert, nachdem @code{monitor}
+ausgewertet wurde. 
+ */
+FUN eval1: environment ** expr -> environment ** seq[obj]
+
+-- %$$Evaluation eines Namens (benannte Funktion)$ --------------------
+/* %
+ Die Normalform eines Namens ist ein Normalform-Objekt, das den Namen des
+Objektes beinhaltet, instanziiert mit konkreten Parametern. Die Instanziierung
+der formalen Parameterfunktionen ist durch Transformation parametrisierter
+Funktionen in polymorphe higher-order-Funktionen aufgelöst.
+
+Die Normalform eines Namens ist i.allg. nicht seine Definition. Erst die
+Normalform des mit @code{rank} applizierten Namens ist die mit den @code{rank}
+Argumenten applizierte Definition. Die Reduktion wird hier also
+verzögert. Grund: Funktionen sind i.allg. durch Lambda-Abstraktionen
+definiert. Diese erwarten eine Menge an Argumenten ehe sie die eigentliche
+Beta-Reduktion durchführen. Da dieser Vorgang also erst nach Applikation von
+@code{rank} Argumenten stattfindet, wird der Name als Repräsentant der Funktion
+bis zu diesem Zeitpunkt erhalten. Durch diese Verzögerung der Reduktion des
+Namens erreicht man nun, daß sich Funktionsredefintionen im Environment noch bis
+zur tatsächlichen Beta-Reduktion auswirken. Dieser Ansatz ist in der Anwendung
+sehr natürlich.
+ */
+DEF eval1(E,Expr AS name(_,Name)) == 
+    LET Id      == objectId(Name)
+        Rank    == rank(E,Id)
+    IN  IF Rank = 0
+          THEN /* % @BIL Ist der Rang Null, wird das Objekt unmittelbar
+                eingesetzt. @EIL */
+               LET (E1,Obj) == getDef(E,Expr,Id)
+               IN  (E1,%(Obj))
+          ELSE /* % @BIL Der Name wird nun in ein Closure-Object
+                 kodiert. @EIL */
+               (E,%(closure(Rank,Expr,reduce)))
+        FI
+
+-- %$$Evaluation einer freien Variablen$ ------------------------------
+/* %
+ Eine freie Variable muß im Kontext gebunden sein. Die Modellierung einer
+solchen Bindung geschieht über einen fest definierten Index (@code{bindOffset})
+in den BindingStack des Environments, in dem die Bindung der Variablen abgelegt
+wird. Das Environment ändert sich bei der Auswertung einer freien Variablen
+nicht.
+ */
+DEF eval1(E,local(_,BindOffset)) == (E,%(E ! BindOffset))
+
+DEF eval1(E,result(_,EvalId)) == (E,%(E ! EvalId))
+
+-- %$$Evaluation einer Lambda-Abstraktion$ ------------------------------
+/* %
+ Die Normalform einer (unbenannten) Lambda-Abstraktion ist ein
+Normalform-Objekt (closure-object). Der Rang eines Lambda-Ausdrucks ist
+identisch mit der Anzahl der abstrahierten Variablen. Im vorliegenden Ausdruck
+wurden bereits alle freien Variablen durch Lambda-Lifting entfernt.
+ */
+DEF eval1(E,Expr AS lambda(_,Mtree,_)) == 
+    (E,%(closure(rank(Mtree),Expr,reduce)))
+
+-- %$$Evaluation einer Applikation$ ------------------------------
+/* %
+ Wird ein Ausdruck @code{F} mit dem Argument @code{A} appliziert, so müssen
+zuerst @code{F} und @code{A} auf die Normalform reduziert und anschließend die
+eigentliche Applikation ausgeführt werden. Zu beachten ist, daß @code{F} immer
+die Dimension 1 hat und somit die Normalform der Funktion immer einelementig
+ist.
+ */
+DEF eval1(E,apply(Pos,F,A,Dim)) ==
+    LET (E1,F1) == evalUniq(E,F)
+        (E2,A1) ==  eval(E1,A)
+
+        /* % @BIL Applikation der Normalformen wird durchgeführt. Dazu wird ein
+        spezielles BindItem @code{applyPos(Pos)} im BindingStack abgelegt, 
+        da innerhalb der Auswertung von apply die Beta-Reduktion erfolgen 
+        kann. Um nachvollziehen zu können, von welcher Stelle aus man diese 
+        Auswertung betreten hat, ist dieses Datum im Stack wichtig. Nach der
+        Applikation wird es wieder aus dem Stack entfernt. @EIL */
+
+        (E3,FA) == apply(E2 push applyPos(Pos),F1,Dim,A1)
+    IN (pop(E3),FA)
+       
+-- %$$Evaluation eines Tupels$ ----------------------------------------
+/* %
+ Die Normalform eines Tupels ist das flache Tupel der Normalformen der
+Tupel-Elemente. (In @OPAL gilt @code{((a,b),c) === (a,(b,c)) === (a,b,c)}.)
+
+Die Reduktion eines Tupels wird mit Hilfe eines Arrays realisiert. Es wird
+initial ein Array mit entsprechender Länge @code{Dim} erzeugt, das initial nur
+Bottom-Objekte @code{_|_} enthält und dann nach und nach ,,gefüllt'' wird. Jedes
+einzelne Element des Tupels kennt dabei die (vorberechnete) Position im Array,
+ab der seine Normalform-Objekte in diesem Array enthalten sein müssen. Deshalb
+erfolgt die Repräsentation eines Tupel-Elementes durch ein Paar aus einem
+Ausdruck und einem Index in diesem Array (siehe Def. von @code{expr} und
+@code{tupleExpr}).
+ */
+DEF eval1(E,tuple(_,Elems,Dim)) == evalTuple(E,Elems,init(Dim,_|_))
+
+/* %
+ @code{evalTuple(Exprs,A,E):} Wertet ein Tupel aus, wobei Teile bereits
+ausgewertet sein können und @code{Exprs} noch reduziert werden müssen.
+ */
+FUN evalTuple: environment ** seq[tupleExpr] ** array[obj] -> 
+                                     environment ** seq[obj]
+
+/* %
+ Alle Elemente wurden reduziert. Das Array ist nun vollständig besetzt.  Das
+Ergebnis wird in eine Sequenz zurückgewandelt.
+ */
+DEF evalTuple(E,<>,A) == (E,asSeq(A))
+
+/* %
+ Reduktion des ersten Elementes des Tupels. Die ausgewerteten
+Normalform-Objekte werden ab der Position @code{Pos} in das Array geschrieben
+und anschließend die restlichen Elemente ausgewertet.
+ */
+DEF evalTuple(E,tupleExpr(Expr,Pos)::Rt,A) ==
+    LET (E1,Objs) == eval(E,Expr)
+        A1 == (A,Pos) := Objs
+    IN evalTuple(E1,Rt, A1)
+
+
+-- %$$Evaluation eines LET/WHERE-Ausdrucks$ ------------------------------
+/* %
+ Zuerst müssen alle Gleichungen aus @code{Eqns} auf die Normalform reduziert
+und die Normalformen im BindingStack aufgenommen werden. Mit diesem neuen
+Environment wird @code{Body} reduziert. @code{N} ist die Gesamtanzahl der durch
+@code{Eqns} definierten Variablen, die aus Effizienzgründen vorberechnet ist.
+
+Es wird ein neues @code{bindItem} der Länge @code{N} erzeugt, das vorerst nur
+Bottom-Objekte @code{_|_} enthält. Diese werden dann nach und nach durch die
+Bindungen der Variablen ersetzt. Abschließend wird das BindItem wieder aus dem
+Stack entfernt.
+ */
+DEF eval1(E,block(_,Eqns,Body,N)) == 
+    LET E1 == E push objs(init(N,_|_))
+        (E2,Objs) == evalBlock(E1,Eqns,Body)
+    IN (pop(E2),Objs)
+
+/* %
+ @code{evalBlock:} Die Gleichungen der Sequenz werden sequentiell ausgewertet
+und die Variablenbindungen in das neue bindItem auf dem Stack eingefügt. Sind
+alle Gleichungen ausgewertet erfolgt die Reduktion des @code{Body}.
+ */
+FUN evalBlock: environment ** seq[blockEqn] ** expr -> environment ** seq[obj]
+DEF evalBlock(E,<>,Body) == eval(E,Body) 
+DEF evalBlock(E,eqn(Mtree,Expr)::Rt,Body) ==
+    LET (E1,Rhs1) == eval(E,Expr)
+        E2 == selectAndBind(E1,Rhs1,Mtree)
+    IN -- Reduktion der folgenden Gleichungen.
+       evalBlock(E2,Rt,Body)
+
+
+-- %$$Evaluation eines CASE-Ausdrucks$ --------------------
+/* %
+ Wird ein @code{CASE}-Ausdruck @code{cases(_,Guards,Else)} ausgewertet, müssen
+die @code{Guards} nacheinander reduziert werden, bis einer der Fälle
+zutrifft. Dann wird der @code{then}-Ausdruck dieses Guards ausgewertet. Trifft
+keiner der Guards zu, wird @code{Else} ausgewertet.  @code{Else} kann dabei
+auch @code{undefined} sein.
+ */
+DEF eval1(E,cases(_,Guards,Else)) ==  evalCases(E,Guards,Else)
+
+/* %
+ @code{evalCases:} reduziert eine Sequenz von @code{Guards} und eine
+@code{Else}-Expression auf ihre Normalform. Dabei werden alle Guards der Reihe
+nach untersucht, ob es einen If-Ausdruck gibt, der wahr ist.
+ */
+FUN evalCases: environment ** seq[guard] ** expr 
+                -> environment ** seq[obj]
+
+-- ELSE wird reduziert, da alle Guards falsch waren.
+DEF evalCases(E,<>,Else) ==  eval(E,Else)
+
+-- Erster Guard wird untersucht.
+DEF evalCases(E,guard(If,Then) :: Rt,Else) ==
+    LET -- Auswertung des if-Ausdrucks
+        (E1,If1) == evalUniq(E,If)
+    IN IF asBool(If1)
+         THEN -- IF-Ausdruck liefert true
+              eval(E1,Then)
+         ELSE -- IF-Ausdruck liefert false
+              evalCases(E1,Rt,Else)
+       FI
+
+
+-- %$$Evaluation von induzierten Funktionen$ --------------------
+
+DEF eval1(E,Expr AS cons(_,Tag,Rank)) == 
+    IF Rank = 0
+      THEN -- % @BIL Konstante: wird sofort ausgewertet. @EIL
+           (E,%(cons(Tag,<>)))
+      ELSE -- % @BIL Closure-Object wird aufgebaut. @EIL
+           (E,%(closure(Rank,Expr,reduce)))
+    FI
+
+DEF eval1(E,Expr AS test(_,_)) == (E,%(closure(1,Expr,reduce)))
+
+DEF eval1(E,Expr AS sel(_,_)) == (E,%(closure(1,Expr,reduce)))
+
+
+-- %$$Evaluation von Denotations und Normalformen$ --------------------
+/* %
+ Denotations sind Konstanten und sind bereits Normalformen. Dies gilt auch für
+eingebettete Normalformen.
+ */
+DEF eval1(E,den(_,Den)) == (E,%(asObj'RUNTIME(Den)))
+DEF eval1(E,obj(_,Obj)) == (E,Obj %)
+
+-- %$$Evaluation undefinierter Ausdrücke und leerer Tupel$ --------------------
+
+/* %
+ Ein undefinierter Ausduck kann nicht reduziert werden. Es gibt keine
+Normalform. Damit muß die Reduktions-Funktion an dieser Stelle undefiniert
+sein, um das Fehlen der Normalform auszudrücken. Wir realisieren dies durch
+einen Laufzeitfehler.
+ */
+DEF eval1(E,Expr AS undefined(_)) == (abort(E, Expr, "undefined expression"),
+                                      %(_|_))
+
+/* %
+ Das leere Tupel @code{()} wird intern analog zum Compiler-Verfahren durch 
+ein beliebiges Objekt vom Typ @code{obj} repräsentiert. 
+ */
+DEF eval1(E,nil(_)) == (E,%(_|_))
+
+-- %$$Evaluation von Breakpoints$ ----------------------------------------
+
+DEF eval1(E,Expr AS bp(_,_,_,Rank,_)) ==
+    (E,%(closure(Rank,Expr,reduce)))
+
+DEF eval1(E,Expr AS guardedBp(_,_,_,Rank,_,_)) ==
+    (E,%(closure(Rank,Expr,reduce)))
+
+
+-- %$$Evaluation von Print-Kovertierungen$ ------------------------------
+
+DEF eval1(E,Expr AS asDenoFormatter(_,_)) ==
+    (E,%(closure(1,Expr,reduce)))
+
+DEF eval1(E,Expr AS asFmtFormatter(_,_)) ==
+    (E,%(closure(1,Expr,reduce)))
+
+
+-- %$Die Beta-Reduktion$ ==================================================
+/* %
+ Die Beta-Reduktion @code{reduce(Fct,Args)} führt die Applikation von
+@code{Args} auf @code{Fct} durch. @code{reduce} wird ausschließlich über die
+Indirektion des Laufzeitsystems @code{RUNTIME} appliziert. @code{Fct} wurde
+dazu vorher zusammen mit einem Rang in ein Closure-Objekt kodiert. Dieser Rang
+entspricht der Anzahl der Argumente @code{Args}, mit denen die
+@code{reduce}-Funktion nun appliziert wird.
+ */
+FUN reduce: environment ** expr ** seq[obj] -> 
+                                environment ** seq[obj]
+
+/* %
+ @code{reduce} ermittelt für benannte Funktionen zuerst die Implementierung
+aus der Objekt-Tabelle. Anschließend wird diese Implementierung mit allen
+Argumenten (einschl. den Instanzen der Parameterfunktionen) appliziert. Die
+konkreten Instanzen, die im Namen der Funktion enthalten sind, werden dabei auf
+den BindingStack in Form von @code{reduction(..)} abgelegt, um innerhalb der
+Auswertung Zugriff auf die Instanzen formaler Funktionalitäten zu haben
+(@code{PRINT}-Problematik).
+ */
+DEF reduce(E,Expr AS name(_,Name AS name(Id,_)),Args) == 
+    LET -- Der Name wird komplett auf den Bindingstack gelegt, um anzuzeigen,
+        -- daß die Reduktion von 'Name' gerade beginnt
+        (E0,Obj)  == getDef(E,Expr,Id)
+        (E1,Kind) == getKind(E0,Expr,Id)
+        E2        == E1 push enter(Name,Kind)
+        (E3,Objs) == apply(E2,Obj,dim(E2,Id), Args)
+    IN -- enter(Name,Kind) wird wieder vom Stack genommen
+       (pop(E3),Objs)
+
+/* %
+ @code{reduce} zu einer Lambda-Abstraktion:
+ */
+DEF reduce(E0,lambda(_,Mtree,Exprs),Args) == 
+    LET (E,PopName?) == 
+              IF ~(empty?(E0)) ANDIF enter?(E0 ! 0) THEN
+                  -- called from interpretation; enter already present
+                  (E0, false)
+              ELSE (E0 push enter(name(unknown, <>), interpreted), true) FI
+    IN
+    LET (E1,Index) == selectAndPushBindings(E,Args,Mtree)
+        (E2,Objs) == eval(E1,Exprs ! Index)
+    IN -- Die BindItems werden wieder vom Stack genommen
+    IF PopName? THEN
+       (pop(pop(E2)),Objs)
+    ELSE
+       (pop(E2),Objs)
+    FI
+
+
+/* %
+ Wird ein Konstruktor appliziert, werden die Argumente zusammen mit dem Tag des
+Konstruktors in ein @code{obj} kodiert.
+ */
+DEF reduce(E,cons(_,Tag,_),Args) == (E,%(cons(Tag,Args)))
+
+DEF reduce(E,test(_,Tag),Args) == 
+    (E,%(asObj(test?(theuniq(Args),Tag))))
+
+DEF reduce(E,Expr AS sel(_,Positions),Args) ==
+    LET Arg == theuniq(Args)
+        Tag == tag(Arg)
+        Pos == Positions ! Tag
+    IN IF Pos = max'Nat
+         THEN (abort(E, Expr, "undefined selection"),%(_|_))
+         ELSE (E,%(sel(Arg,Pos)))
+       FI
+
+DEF reduce(E,Expr AS bp(_,Id,Obj,_,Dim),Args) ==
+    -- FIXME: rethink breakpoints
+    LET (E1, PopName?) == 
+             IF ~(empty?(E)) ANDIF
+                   enter?(E ! 0) ANDIF objectId(name(E ! 0)) = Id THEN
+                  -- called from interpretation; enter already present
+                  (E, false)
+              ELSE (E push enter(name(Id, <>), interpreted), true) FI
+    E2  == break(E1,Expr)       -- break wird ausgelöst
+    E3  == IF PopName? THEN pop(E2) ELSE E2 FI   
+    IN apply(E3,Obj,Dim, Args)                  -- nach 'contine' werden
+                                                -- die Argumente appliziert
+
+DEF reduce(E,Expr AS guardedBp(_,Id,Obj,_,Dim,Guard),Args) ==
+    LET (E1,GrdObj)     == evalUniq(E,Guard)
+        (E2,GrdAns)     == applyUniq(E1,GrdObj,Args)
+        E3              == 
+                IF asBool(GrdAns) THEN -- guard ist erfüllt
+                    LET (E2a, PopName?) == 
+                              IF ~(empty?(E)) 
+                                        ANDIF enter?(E2 ! 0) ANDIF 
+                                        objectId(name(E2 ! 0)) = Id THEN
+                                  (E2, false)
+                              ELSE (E2 push enter(name(Id, <>), interpreted),
+                                    true)
+                              FI
+                         E2b == break(E2a,Expr) -- break wird ausgelöst
+                    IN
+                    IF PopName? THEN pop(E2b) ELSE E2b FI
+                ELSE E2 FI
+    IN apply(E3,Obj,Dim,Args)
+
+DEF reduce(E,asDenoFormatter(_,Obj),Args) ==
+    LET (E1,FmtObj)     == applyUniq(E,Obj,Args)
+    IN (E1,%(asObj(pretty(asFmt(FmtObj)))))
+
+DEF reduce(E,asFmtFormatter(_,Obj),Args) ==
+    LET (E1,DenObj)     == applyUniq(E,Obj,Args)
+    IN (E1,%(asObj(lit(asDenotation(DenObj)))))
+
+-- %$Print-Konvertierung$ ========================================
+/* %
+ Die @code{print}-Funktion konvertiert eine Menge von Normalform-Objekten
+mit einer gegebenen Funktionalität in eine Description unter Zuhilfenahme eines
+Environments. Die angegebene Funktionalität muß vollständig instanziiert sein,
+d.h. es dürfen keine formalen Sorten oder Funktionen auftauchen.
+ */
+FUN print : environment ** seq[obj] ** fct -> environment ** fmt
+DEF print(E,Objs,Fct) ==
+    LET (E1,Objs1,Fmt) == print(E,Objs,Fct)
+
+    IN IF Objs1 <>?
+         THEN -- Bei Typkorrektheit gilt: Objs1 <>?
+              (E1,Fmt)
+         ELSE (ABORT("print'Interpreter: remaining objects. wrong fct?"),
+               ABORT(""))
+       FI
+
+/* %
+ Die verallg. @code{print}-Funktion liefert die Menge aller Objekte zurück,
+die bzgl. der Funktionalität keine Verwendung haben, d.h. es werden nur soviele
+Objekte aus der Sequenz ,,konsumiert'', wie bzgl. der Funktionlität notwendig
+sind.
+ */
+FUN fmtExpr? : bool
+DEF fmtExpr? == FIELD?[bool]("-zfmtExpr")
+
+FUN print : environment ** seq[obj] ** fct -> 
+        environment ** seq[obj] ** fmt
+-- %zum Totalisieren
+DEF print(E, <>, sort(_)) == (E, <>, lit("<nanu?>"))
+DEF print(E, <>, funct(_,_)) == (E, <>, lit("<nanu?>"))
+/* %
+ Die @code{print}-Funktion für Sorten-Funktionalitäten ermittelt zunächst
+das Funktionsobjekt der Konvertierungsfunktion und appliziert auf dieses
+anschließend das angegebene Objekt.
+ */
+DEF print(E,Obj :: Rt,sort(SortName)) ==
+    LET (E1,PrintFun) == printFun(E,sortInfo(SortName,fmt))
+        (E2,DescObj)  == applyUniq(E1,PrintFun,%(Obj))
+    IN (E2,Rt,asFmt(DescObj))
+        
+DEF print(E,Objs,cart(Elems)) == 
+    LET (E1,RtObjs,Fmt) == printCart(E,Objs,Elems)
+    IN (E1,RtObjs,lit("(") ; Fmt ; lit(")"))
+
+
+DEF print(E,Obj::Rt,funct(Dom,Codom)) ==
+    LET (Repr, Closured) == contents(Obj)
+        tClosure? == typeable?(rep(Repr)) and (Closured ::?)
+        FunFmt == IF coded?(Repr) THEN
+                   lit(symbol(Repr))
+                  ELSE
+                    (IF fmtExpr? THEN
+                     lit("Internal: "); fmtExpr(rep(Repr)); brk;
+                     lit("Pretty: ")
+                     ELSE none 
+                     FI); (IF tClosure? THEN
+                             lit("$(");prettyExpr(rep(Repr))
+                           ELSE
+                             prettyExpr(rep(Repr))
+                           FI)
+                  FI
+        (E1, RtObjs, ArgFmt) ==
+          (E, Rt, IF tClosure? THEN 
+                    list?(\\ _ . lit("#"), none, none, lit("$"), Closured)
+                  ELSE
+                    list?(\\ _ . lit("<some>"), lit("("), lit(" "), lit(")"),
+                          Closured)
+                  FI
+          )
+    IN
+    (E1, RtObjs, FunFmt; ArgFmt )
+
+-- NYI
+
+-- %$$Print für Closure-Objekte$
+/* %Erst muß anhand der tpos das gewünschte Closure-Objekt herausgeholt
+    werden. Dieses wird dann mit print formatiert. */
+DEF iprint(E, o, <>, fct) == print(E, %(o), fct)
+DEF iprint(E, o, idx :: rest, fct) ==
+  iprint(E, 2nd(contents(o))!idx, rest, fct)
+
+-- %$$Print für Sorten$
+-- %-------------------
+    
+/* %
+ @code{printFun} ermittelt zu einer Sorte die zugehörige Print-Funktion in Form
+eines Closure-Objektes. Die angegebene Funktionalität muß vollständig
+instanziiert sein, d.h. es dürfen keine formalen Sorten oder Funktionen
+auftauchen. Die @code{outputSort} legt fest, ob das zurückgelieferte
+Closure-Objekt vom Typ @code{denotation} oder @code{fmt} sein soll.
+ */
+
+FUN printFun : environment ** sortInfo -> environment ** obj
+DEF printFun(E,sortInfo(name(SId,Insts),RequOutSort)) ==
+     IF sort?(E,SId) ANDIF avail?(printInfo(E,SId))
+       THEN 
+         LET PInfo               == cont(printInfo(E,SId))
+             PId                 == printFun(PInfo)
+             GivenOutSort        == outputSort(PInfo)
+             OptParaSorts        == paraSorts(PInfo)
+                /* % Funktionsobjekt zur Print-Funktion wird erzeugt.
+                 Instanziierung ist gleich der Instanziierung der Sorte.
+                 (Per Konvention muß die Instanziierung von Print-Funktion
+                 und Sorte identisch sein.) @EIL */
+             (E1,PObj)           == mkObj(E,name(PId,Insts))
+             (E2,PObj1)          ==
+                IF avail?(OptParaSorts)
+                  THEN /* ,,parametrisiert'' über andere Print-Funktionen */
+                    IF cont(paraSorts(PInfo)) <>?
+                      THEN -- Funktionalität ist '() -> xxx -> fmt'
+                           applyUniq(E1,PObj,%(_|_))
+                      ELSE 
+                        LET SortInfos == cont(paraSorts(PInfo))
+                          /* % @BIL Die @code{Sorts}, die i.allg. formal
+                           bzw. formal  parametrisiert sein können, werden
+                           durch Substitution vollständig instaziiert. @EIL */
+                            InstMap   == asMap(zip(&)(para(E1,PId),Insts))
+                            SortInfos1== subst(_,InstMap) * SortInfos
+
+                          /* % @BIL Für diese Sorten werden die Print-Funktionen
+                           (rekursiv) ermittelt und auf das instanziierte
+                           PrintObjekt (@code{PrintFunObj1}) appliziert. @EIL */
+                            (E11,PInnerObjs) == printFun * (E1,SortInfos1)
+                        IN applyUniq(E11,PObj,PInnerObjs)
+                    FI
+                  ELSE (E1,PObj)
+                FI
+         IN convOutput(E2,PObj1,GivenOutSort,RequOutSort)
+       ELSE 
+         LET DummyObj == closure(1,undefined(unknown),dummyPrintReduction)
+         IN convOutput(E,DummyObj,denotation,RequOutSort)
+    FI
+
+FUN dummyPrintReduction : 
+        expr ** seq[obj] ** environment -> seq[obj] ** environment
+DEF dummyPrintReduction(_,_,E) == (%(asObj("<some>")),E)
+
+FUN subst: sortInfo ** map[objectId,<,name] -> sortInfo
+DEF subst(sortInfo(N,OS),Map) == sortInfo(subst(N,Map),OS)
+
+FUN subst: name ** map[objectId,<,name] -> name
+DEF subst(name(ObjId,Insts),Map) ==
+    LET OptInsts == Map !? ObjId
+    IN IF OptInsts avail? 
+         THEN /* % @BIL Für die ObjectId ist eine Umbenennung in der Map 
+                angegeben. Sie wird nun angewendet. Dabei muß gelten:
+                @code{Insts <>?}. (Dies ist aber für formale Parameter, 
+                für die @code{subst} verwendet wird, immer der Fall. @EIL */
+              IF Insts <>?
+                THEN cont(OptInsts)
+                ELSE ABORT("Formal instance is not empty.")
+              FI
+         ELSE name(ObjId,subst(_,Map) * Insts)
+       FI
+
+
+-- %$$Print-Funktion für kartesische Produkte$
+-- %-----------------------------------------
+
+FUN printCart : environment ** seq[obj] ** seq[fct] -> 
+        environment ** seq[obj] ** fmt
+DEF printCart(E,Objs,<>)       == (E,Objs,none)
+DEF printCart(E,Objs,Ft :: <>) == print(E,Objs,Ft)
+DEF printCart(E,Objs,Ft :: Rt) == 
+    LET (E1,RtObjs1,Fmt1)  == print(E,Objs,Ft)
+        (E2,RtObjs2,Fmt2)  == printCart(E1,RtObjs1,Rt)
+    IN (E2, RtObjs2, Fmt1 ; lit(",") ; Fmt2)
+
+FUN convOutput : 
+        environment ** obj ** outputSort ** outputSort -> environment ** obj
+DEF convOutput(E,Obj,denotation,fmt) == 
+    evalUniq(E,asFmtFormatter(unknown,Obj))
+DEF convOutput(E,Obj,fmt,denotation) == 
+    evalUniq(E,asDenoFormatter(unknown,Obj))
+DEF convOutput(E,Obj,_,_) == (E,Obj)
+
+-- %$Pattern matching$ ==================================================
+
+-- %$$Kernfunktionen$
+/* %
+ Es gibt zwei Pattern-Matching-Funktionen, die für den Interpreter von
+Interesse sind:
+
+@code{selectAndPushBindings} ermittelt aus den Matchingtree das passende
+Pattern, legt ein neues bindItem auf dem Bindingstack ab, das die Bindungen der
+im Pattern verwendeten Variablen enthält und liefert die zugehörige Expression
+und das neue Environment zurück. 
+
+@code{selectAndBind} ermittelt das passende Pattern und schreibt die Bindungen
+in den BindingStack, ohne ein neues BindItem dort anzulegen. Das neue
+Environment wird zurückgeliefert.
+ */
+FUN selectAndPushBindings : environment ** seq[obj] ** mtree -> 
+                environment ** nat 
+
+FUN selectAndBind: environment ** seq[obj] ** mtree -> environment
+
+-- %$$Implementierung des Pattern-Matching$
+-- %---------------------------------------
+
+/* % Das relevante Pattern wird (zusammen mit der zugehörigen Expression) aus
+dem Matchingtree berechnet. Dann wird ein @code{bindItem} der Form
+@code{objs(..)} mit der Länge der Anzahl der Variablen im Pattern auf dem
+BindingStack angelegt und mit Hilfe von @code{bind} durch die Normalformen der
+Variablen ,,gefüllt''. Die zum Pattern gehörige Expression und das neue
+Enviornment mit dem BindItem der Bindungen werden zurückgeliefert. */
+
+DEF selectAndPushBindings(E,Objs,Mtree) ==
+    LET (E1,Index) == select(E,Objs,tree(Mtree))
+        Pattern    == patterns(Mtree) ! Index
+        E2         == E1 push objs(init(Pattern nVars,_|_))
+        E3         == bind(E2,Objs,patt(Pattern))
+    IN (E3,Index)
+
+/* % Diese Funktion ist analog zur obigen implementiert. Einziger Unterschied:
+Es wird kein separates BindItem erzeugt. Die Funktion setzt voraus, daß dieses
+Item bereits vorher auf den Stack gelegt wurde.  */
+
+DEF selectAndBind(E,Objs,Mtree) ==
+    LET (E1,Index) == select(E,Objs,tree(Mtree))
+        Pattern    == patterns(Mtree) ! Index
+    IN bind(E1,Objs,patt(Pattern))
+
+-- %$$$Selektion eines Patterns$
+-- %------------------------------------------------
+
+/* % @code{select} selektiert aus einem Matchingtree ein einzelnes Pattern auf
+der Grundlage einer Argumentsequenz.
+
+@code{select} selektiert für eine bestimmte Argumentsequenz aus einem
+@code{matchtree} unter Zuhilfenahme des Environments den Index eines Patterns
+(incl. eines modifizierten Environments). Die Implementierung der Funktion
+basiert auf der verallgemeinerten Variante für @code{aobjs} (siehe unten), indem
+die Sequenz von Argumenten als anonymes Tupel aufgefaßt wird. Die
+verallgemeinerte @code{select}-Funktion erhält also eine einelementige Sequenz
+mit dem anonymen Tupel der Argumente. 
+
+@code{select} terminiert fehlerhaft (@code{abort'Monitor}), wenn keines der 
+Pattern des Matching-trees auf das Argument-Tupel paßt. */
+
+FUN select: environment ** seq[obj] ** matchtree -> 
+                environment ** nat
+DEF select(E,Objs,Mtree) == select(E,%(anonymous(Objs)),Mtree)
+
+/* % Die folgende Variante von @code{select} ist die Verallgemeinerung, die auch
+anonyme Tupel behandeln kann.
+
+@code{select(ObjStack,Tree,E)} interpretiert @code{ObjStack} als einen Stack von
+bereits selektierten (Sub-)Objekten des ursprünglichen Argumentes (das anonyme
+Tupel). Beim ,,Abstieg'' in den Pattern-Tree wird jeweils das neu selektierte
+Objekt auf den Stack gelegt, damit der Zugriff auf Sub-Objekte dieser
+selektierten effizient erfolgen kann. */
+
+FUN select: environment ** seq[aobj] ** matchtree -> 
+                environment ** nat
+
+/* % Besteht der Pattern-Tree nur noch aus einem Blatt, so ist das Pattern, das
+an diesem Blatt steht, das gesuchte Pattern. */
+DEF select(E, _ : seq[aobj],leaf(N)) == (E,N)
+
+/* % An jedem Knoten im Baum steht ein Index in den Stack, der das relevante
+Objekt beschreibt, aus dem nun ein Teil-Objekt selektiert werden soll. Das
+Objekt wird aus dem Stack gelesen und die Selektion angewendet. Anschließend
+wird in @code{selectSub} überprüft, welche der angegebenen Testvarianten für
+dieses Objekt gilt (Diskriminator). */
+DEF select(E,ObjStack,matchtree(Parent,Sel,Subs)) ==
+    LET ParObj   == ObjStack ! Parent
+        (E1,Obj) == sel(E,ParObj,Sel)
+    IN selectSub(E1,ObjStack,Obj,Subs)
+
+/* % Nun werden alle Test-Funktionen für dieses Objekt nacheinander ausgewertet,
+bis eine erfüllt ist. Trifft dies für keine der Funktionen zu, wird @code{nil}
+zurückgegeben (no match). */
+FUN selectSub: environment ** seq[aobj] ** obj ** seq[testtree] -> 
+        environment ** nat
+DEF selectSub(_,_,_,<>) == (ABORT("Pattern does not match!"),ABORT(""))
+DEF selectSub(E,ObjStack,NewObj,testtree(Test?,Tree)::Rt) ==
+    LET (E1,TestObj) == evalUniq(E,Test?)
+        (E2,TestRes) == applyUniq(E1,TestObj,%(NewObj))
+    IN IF asBool(TestRes)
+         THEN select(E2,obj(NewObj)::ObjStack,Tree)
+         ELSE selectSub(E2,ObjStack,NewObj,Rt)
+       FI
+
+-- %$$$Extraktion der Bindingen eines Patterns$
+-- %-------------------------------------------
+
+/* % @code{bind} setzt voraus, daß @code{patt} ein gültiges Pattern für die
+Sequenz von Normalformen ist. Außerdem muß der BindingStack des Environments
+bereits ein entsprechendes BindItem reservieren, in das die Bindungen der
+Variablen eingetragen werden können. 
+
+Die Funktion wird auf der Grundlage der allgemeineren Form @code{bind} (siehe
+unten) implementiert. */
+
+FUN bind: environment ** seq[obj] ** patt -> environment
+DEF bind(E,Objs,Patt) == bind(E,anonymous(Objs),Patt)
+
+
+FUN bind: environment ** aobj ** patt -> environment
+DEF bind(E,obj(_),any) == E
+
+DEF bind(E,obj(Obj),var(BindOffset)) == 
+        (E,BindOffset) := Obj
+
+DEF bind(E,ThisObj AS obj(Obj),as(BindOffset,Patt)) == 
+    LET E1 == (E,BindOffset) := Obj
+    IN bind(E1,ThisObj,Patt)
+
+DEF bind(E,Obj,constr(SelPatts)) == bindTup(E,Obj,SelPatts)
+
+FUN bindTup : environment ** aobj ** seq[pair[selector,patt]] ->
+                        environment
+DEF bindTup(E,_,<>) == E
+DEF bindTup(E,Obj,(Sel & Patt)::Rt) ==
+    LET (E1,SelectedObj) == sel(E,Obj,Sel)
+        E2               == bind(E1,obj(SelectedObj),Patt)
+    IN bindTup(E2,Obj,Rt)
+
+
+
+-- %$$$Implementierung der verallg. Objekte$
+-- %----------------------------------------
+
+/* % @code{aobj} wird verwendet, um anonyme Tupel und sonstige
+Normalform-Objekte zu vereinen. Dadurch vereinfacht sich das
+Pattern-Matching-Verfahren. */
+
+DATA aobj == anonymous(objs: seq[obj])
+             obj(obj: obj)
+
+/* % @code{sel} selektiert aus einem Objekt (einschl anonymer Tupel) ein
+bestimmtes Teilobjekt. Für anonyme Tupel sind nur Projektionen als Selektionen
+erlaubt. Für gewöhnliche Objekte muß eine Selektor-Funktion angegeben
+werden. Andernfalls ist @code{sel} undefiniert. */
+
+FUN sel: environment ** aobj ** selector  -> environment ** obj
+DEF sel(E,anonymous(Objs),proj(N)) == (E,Objs ! N)
+DEF sel(E,obj(Obj),sel(SelExpr)) == -- apply 'sel' to 'obj'
+    LET (E1,SelObj) == evalUniq(E,SelExpr)
+    IN applyUniq(E1,SelObj,%(Obj))
+
+
+-- %$Allgemeine Hilfsfunktionen$ ========================================
+
+/* %
+ @code{mkObj} erzeugt das Objekt zu einem (instanziierten) Namen. Der Name muß
+dabei vollständig instanziiert sein. FIXME: allow uninstanciated, if
+instanciation is supported in environment.
+ */
+FUN mkObj: environment ** name                  -> environment ** obj
+DEF mkObj(E,Name AS name(_,Insts)) ==
+    LET (E1,Obj) == evalUniq(E,name(unknown,Name))
+        FInsts   == (\\I. funct?(E1,objectId(I))) | Insts
+        (E2,Objs)== (mkObj,E1) * FInsts
+    IN applyUniq(E2,Obj,Objs)
+
+/* %
+ Ist aus dem Kontext bekannt, daß die Dimension einer Expression @code{1} ist,
+kann @code{evalUniq} verwendet werden. Die Funktion ist undefiniert, wenn
+@code{dim(Expr) |= 1}.
+ */
+FUN evalUniq : environment ** expr -> environment ** obj
+DEF evalUniq(E,Expr) == 
+    LET (E1,Objs) == eval(E,Expr)
+    IN (E1,theuniq(Objs))
+
+/* %
+ analog für @code{applyUniq}.
+ */
+FUN applyUniq :
+        environment ** obj ** seq[obj]          -> environment ** obj
+DEF applyUniq(E,Obj,Args) ==
+    LET (E1,Res) == apply(E,Obj,1,Args) 
+    IN (E1,theuniq(Res))
+
+
+FUN getDef : environment ** expr ** objectId    -> environment ** obj
+DEF getDef(E,Expr,Id) ==
+    LET OptDef == def(E,Id)
+    IN IF OptDef avail?
+         THEN (E,cont(OptDef))
+         ELSE (abort(E,Expr,"getDef'Interpreter:function not implemented"), _|_)
+       FI
+
+FUN getKind : environment ** expr ** objectId   -> environment ** kind
+DEF getKind(E,Expr,Id) ==
+    LET OptKind == kind(E,Id)
+    IN IF OptKind avail?
+         THEN (E,cont(OptKind))
+         ELSE (abort(E,Expr,"getKind'Interpreter:function not implemented"),coded)
+       FI
+
+
+-- FIXME: change this in RUNTIMEENV
+FUN reduce: expr ** seq[obj] ** environment -> seq[obj] ** environment
+DEF reduce(Expr,Objs,E) == 
+    LET (E1,Objs1) == reduce(E,Expr,Objs) IN (Objs1,E1)
+

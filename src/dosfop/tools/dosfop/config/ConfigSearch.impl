@@ -1,0 +1,120 @@
+IMPLEMENTATION ConfigSearch[data]
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/config/ConfigSearch.impl,v 1.1.1.1 1998-06-16 16:00:33 wg Exp $
+
+SORT data
+
+IMPORT String 		COMPLETELY
+       StringConv ONLY `
+       Denotation ONLY ++
+       Seq 		COMPLETELY
+       SeqMap 		COMPLETELY
+       SeqReduce 	COMPLETELY
+       Option 		COMPLETELY
+       OptionMap    COMPLETELY
+       Set 		COMPLETELY
+       SetConv 		COMPLETELY
+       Map		COMPLETELY
+       ABORT ONLY ABORT
+
+
+IMPORT Config 		COMPLETELY
+       ConfigTest	COMPLETELY
+       ChooseOption 	COMPLETELY
+
+-- %$Searching for Option Settings w.r.t. a Module Name$
+-- %----------------------------------------------------
+
+-- %The implementation of 
+FUN searchOptionSetting : 
+      opt ** (optSetting -> data) ** config ** string -> data
+/* %looks up the precomputed option settings in the configuration and applies
+the function to it. We have to look up the name in both the user and the
+library structures. If the structure is nowhere found, we use a default
+mapping (and hope that this error is caught elsewhere). */
+
+DEF searchOptionSetting(
+      searchOpt,
+      settingTestFun,
+      config,
+      searchName 
+    ) ==
+  IF usrLookup avail? THEN cont(searchMapOptionSetting(searchOpt, 
+                                                       settingTestFun, 
+                                                       cont(usrLookup)))
+  IF libLookup avail? THEN cont(searchMapOptionSetting(searchOpt, 
+                                                       settingTestFun, 
+                                                       cont(libLookup)))
+  ELSE 
+    cont(searchMapOptionSetting(searchOpt, settingTestFun, globalOptsDefault))
+  FI
+  WHERE usrLookup == flatStructs(config) !? searchName
+        libLookup == flatLibStructs(config) !? searchName
+
+   
+/* %If we are to search for a specific option-setting in a given @c{optMap}
+ the function */
+FUN searchMapOptionSetting :  
+  opt ** (optSetting -> data) ** map[opt,<,optSetting] -> option[data]
+/* %does the job. If the requested option is specified in the @c{optMap} the
+function @c{settingTestFun} is applied to the option-setting and the result of
+this testing is the result of @c{searchMapOptionSetting} embedded in 
+the @option-environment. The search fails if the requested @searchOpt is not
+present in the given @c{optMap} (@nil). */
+DEF searchMapOptionSetting( searchOpt, settingTestFun, optMap ) ==
+  settingTestFun * optMap !? searchOpt
+
+
+
+-- %$Searching for Subsystem Specific Settings$
+-- %-------------------------------------------
+
+-- %The implementation of
+FUN searchOptionSettingSub : 
+      opt ** (optSetting -> data) ** config ** string -> data
+/* %similarly looks up the precomputed options of the given subsystem which is
+looked up either in the user subsystems or in the library subsystems.
+ name.  */ 
+DEF searchOptionSettingSub(
+      searchOpt,
+      settingTestFun,
+      config,
+      subsystemSearchName 
+    ) ==
+  IF usrLookup avail? THEN cont(searchMapOptionSetting(searchOpt, 
+                                                       settingTestFun, 
+                                                       cont(usrLookup)))
+  IF libLookup avail? THEN cont(searchMapOptionSetting(searchOpt, 
+                                                       settingTestFun, 
+                                                       cont(libLookup)))
+  ELSE
+--    PRINT(true, "searchOptionSettingSub: " ++ (subsystemSearchName`),
+    cont(searchMapOptionSetting(searchOpt, settingTestFun, globalOptsDefault))
+--         )
+  FI
+  WHERE usrLookup == flatSubsystems(config) !? subsystemSearchName
+        libLookup == flatLibSubsystems(config) !? subsystemSearchName
+IMPORT DEBUG ONLY PRINT
+
+-- %$Searching for Global Option Settings$
+-- %--------------------------------------
+
+/* %If the @precondition of presence of @c{searchOpt} holds the function */
+FUN searchOptionSetting : 
+      opt ** (optSetting -> data) ** config -> data
+/* %is applicable. Otherwise the call leads to runtime error, indicating the
+access on an invalid domain element. */
+
+DEF searchOptionSetting(
+      searchOpt, 
+      settingTestFun, 
+      config(_, _, _, globalOpts, _, _, _)
+    ) ==
+  settingTestFun(globalOpts ! searchOpt)
+
+
+
+
+
+
+
+

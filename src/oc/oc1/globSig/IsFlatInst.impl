@@ -1,0 +1,210 @@
+/* %-
+-- LAST EDIT: Wed Aug 14 14:58:30 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+--                                 by deleting unnecessary imports from RepTab
+-- ============================================================================
+*/
+
+IMPLEMENTATION IsFlatInst
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  AbsyFun2        ONLY    * = combine
+        BoolConv        ONLY    `
+        Compose         ONLY    o
+        DEBUG           ONLY    PRINT FIELD?
+        Denotation      ONLY    ++
+        Fct             ONLY    fct ` var?
+        GlobSig         ONLY    globSig
+        ImpDecl4SigAna  COMPLETELY
+        Name            COMPLETELY
+        Name4SigAna     COMPLETELY
+        Nat             ONLY    nat pred 1 > = 
+        Objects         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        PartNameEntry   COMPLETELY
+        Seq             COMPLETELY
+        SeqConv         ONLY    `
+        SeqIndex        ONLY    !
+        SeqMap          ONLY    *
+        SeqOfSeq        ONLY    flat
+        SeqZip          ONLY    zip
+-- %- ------------------------------------------------------------------------
+
+FUN isFlatInst : globSig ** seq[option[fct[name:SORT]]] 
+                -> seq[name:SORT] -> bool
+  -- %Test, ob eine Instanz dem Kontext genuegt
+  -- %PRE: context und cand sind gleich lang
+DEF isFlatInst(gS, context)(cand) == 
+        ~(exist?(noMatch(gS,cand),
+                zip(&[option[fct[name:SORT]],name:SORT])(context,cand)))
+
+FUN noMatch : globSig ** seq[name:SORT] 
+                -> pair[option[fct[name:SORT]],name:SORT] -> bool
+  -- %liefert true, wenn Parameter und Instanz nicht matchen
+DEF noMatch(gS, cand0)(p) == LET (instEleCtxt, instEle) == (1st(p),2nd(p)) IN
+        ~(IF instEleCtxt nil? THEN sort?(gS,instEle)
+        OTHERWISE
+        IF sort?(gS,instEle) THEN false
+        ELSE
+          LET 
+          eqFun == eqName(gS,cand,instEle)
+            cand == PRINT(FIELD?[bool]("-zisFlatInst"),
+                          \\ . "InstCand: " ++ `(`)(cand0) ++
+                               "\nActFct: " ++ `(instEle),
+                          cand0)
+          fctS == instFct(gS, cand, instEle)
+          Erg == exist?(~(eqFun,cont(instEleCtxt)), combine(\\N.N,fctS))
+          IN PRINT(FIELD?[bool]("-zisFlatInst"), 
+                                  \\ . "noMatch: " ++ `(Erg), Erg)
+        FI)
+
+/* %Diese Funktion hieß vorher @code{=}. Ich habe sie umbenannt, da sie nun
+    auch den Fall berücksichtigt, daß der Parameter variable Funktionalitát
+    hat. Damit ist die Funktion auch nicht mehr symmetrisch! */
+        FUN ~ : (name**name->bool)**fct[name:SORT] -> fct[name:SORT] -> bool
+        DEF ~(eqFun,fct1)(fct2) == 
+          IF fct1 var? THEN true
+          ELSE
+            =(eqFun)(fct1,fct2)
+          FI
+
+FUN eqName : globSig ** seq[name:SORT] ** name
+        -> name ** name -> bool
+  /* %wie @code{='Name}, aber mit Substitution der Sorten fuer die Parameter
+   (nur in Fcts)
+  @code{nameCtxt} kann nur @code{ownActParam} oder @code{extName} sein.
+  @code{name} kann nur @code{@{intName,extName,ownActParam@}} oder
+  @code{sortPartName} sein.
+  @code{upperName} ist der Name, aus dem die Fct stammt,
+  aus der @code{name} ein Blatt ist  */
+DEF eqName(gS,cand,uName0)(nameCtxt, Name) ==
+        LET 1stName == 
+                IF nameCtxt formParam?
+                        THEN cand ! pred(no(nameCtxt)) 
+                ELSE nameCtxt FI
+            uName == PRINT(FIELD?[bool]("-zisFlatInst"),
+                    \\ . "InstCand: " ++ `(`)(cand) ++
+                         "\nActFct: " ++ `(uName0) ++
+                         "\nFormFctComp: " ++ `(1stName) ++
+                         "\nActFctComp: " ++ `(Name), uName0)
+        Erg ==
+        IF Name formParam? THEN 
+          eqOwnActParam(1stName, gS, uStruct, uInst, pred(no(Name)))
+          WHERE (uStruct, uInst) == (struct(uName), inst(uName))
+          -- uName muss extName sein !!!!
+        IF Name extName? THEN
+          IF 1stName eqBaseA Name THEN
+            IF notParametrized?(gS,struct(1stName)) THEN true
+            IF hasInst?(gS,Name) ANDIF hasInst?(gS,1stName) THEN 
+               LET CtxtInst == getInst(gS, 1stName)
+                  ActInst == getInst(gS, Name)
+              IN =(eqName(gS, cand, uName))(CtxtInst, ActInst)
+            IF uninst?(gS, struct(Name), inst(Name)) THEN true  
+            ELSE        -- Vergleich der Instanzen
+               eqInst(gS, struct(1stName), inst(1stName), inst(Name))
+            FI
+          ELSE false FI
+        IF Name intName? THEN 1stName = Name
+        IF Name sortPartName? THEN 
+          LET pN == getPN(gS,sortPN(Name)) IN
+          IF pN flatPN? THEN
+            exist?(\\N.eqName(gS,cand,uName)(1stName,N), name * getFlatPN(pN))
+          IF pN deepPN? THEN
+            exist?(\\N.eqName(gS,cand,uName)(1stName,N),
+                        flat(cands * getCands(pN)))
+          FI
+        FI
+        IN PRINT(FIELD?[bool]("-zisFlatInst"), 
+                                  \\ . "eqName: " ++ `(Erg), Erg)
+
+FUN hasInst? : globSig ** name -> bool
+DEF hasInst?(gS,name) == IF transitive?(gS,name) ORIF
+    identInst?(gS,name) ORIF genericTransitives?(gS,name) THEN true
+    ELSE false FI
+
+FUN eqOwnActParam : name ** globSig ** struct'Objects ** inst ** nat -> bool
+  -- %Test auf Gleichheit des Namens mit der Instanz des Parameters @code{n}
+DEF eqOwnActParam(name, gS, struct, inst, n) ==
+          IF explInst?(gS,struct,inst) THEN
+            LET instPN == getInstPN(gS, struct, inst) 
+            IN -- eigentlich erst auf flache normalisieren, aber dafuer muss
+               -- die globSig wieder hochgereicht werden !!
+            IF (gS, instPN) flatInstPN? THEN
+              exist?(hh(gS,name,n) ,getFlatCands(gS, instPN))
+            ELSE
+              =(gS)(name,(getCands(gS, instPN) ! n))
+            FI
+          IF uninst?(gS,struct,inst) THEN true
+          IF identInst?(gS,struct,inst) THEN 
+            eqName(gS)(name, getInst(gS,struct,inst) ! n)
+          IF transitive?(gS,struct,inst) THEN 
+            eqName(gS)(name, getInst(gS,struct,inst) ! n)
+          IF genericTransitive?(gS, struct, inst) THEN 
+            eqOwnActParam(name, gS, getOtherInst(gS,struct,inst), n)
+          IF genericTransitives?(gS, struct, inst) THEN
+            exist?(eqFun(name,gS,struct,n), getInsts(gS,struct,inst))
+          FI
+
+        FUN eqFun : name ** globSig ** struct'Objects ** nat -> inst -> bool
+        DEF eqFun(name,gS,struct,n)(inst) ==
+                eqOwnActParam(name,gS,getOtherInst(gS,struct,inst), n)
+
+FUN hh : globSig ** name ** nat -> seq[flatPnEle:SORT] -> bool
+DEF hh(gS,1stName,n)(flatS) == eqName(gS)(1stName, name(flatS ! n))
+
+FUN = : globSig -> name ** pN -> bool
+DEF =(gS)(name:name,pN) == 
+        exist?((\\S.exist?(eqName(gS)(_, name), S)) 
+                o cands, getCands(pN))
+
+FUN instFct : globSig ** name -> fct[name]
+DEF instFct(gS, name) ==
+        LET Fct == fct(gS, name) IN
+        IF name extName? THEN 
+           * (\\Name. IF extName?(Name) ANDIF struct(name) = struct(Name) THEN 
+                        extName(struct(Name), impDecl(Name), inst(name))
+                ELSE Name FI) (Fct)
+        ELSE Fct FI   
+
+FUN instFct : globSig ** seq[name] ** name -> fct[seq[name]]
+DEF instFct(gS, Inst, name) ==
+        LET Fct == fct(gS, name) IN
+           * (\\Name. IF extName?(Name) ANDIF name extName? 
+                      ANDIF struct(name) = struct(Name) THEN 
+                            extName(struct(Name), impDecl(Name), inst(name))%
+                      IF formParam?(Name) 
+                      ANDIF name extName? 
+                      ANDIF struct(Name) = struct(name) THEN 
+                            IF transitive?(gS, name) ORIF
+                               identInst?(gS, name) THEN
+                               %(getInst(gS, name) ! pred(no(Name)))
+                            IF explInst?(gS, name) THEN
+                               LET InstPN == getInstPN(gS, name)
+                               Cand == getCands(gS, InstPN) ! pred(no(Name))
+                               IN getNames(Cand)
+                            ELSE Name% FI
+                      OTHERWISE      
+                      IF formParam?(Name) THEN 
+                               %(Inst ! pred(no(Name)))
+                      IF extName?(Name) THEN 
+                         IF name extName? 
+                         ANDIF struct(name) = struct(Name) THEN
+                          extName(struct(Name), impDecl(Name), inst(name))%
+                         ELSE expandGenericTransitives(gS)(Name)
+                         FI 
+                      ELSE Name% FI) (Fct)
+
+
+FUN getNames : pN -> seq[name]
+DEF getNames(pN) == IF flatPN?(pN) THEN name * getFlatPN(pN)
+                    IF deepPN?(pN) THEN flat(cands * getCands(pN))
+                    FI

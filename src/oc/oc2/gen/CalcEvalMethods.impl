@@ -1,0 +1,151 @@
+
+IMPLEMENTATION CalcEvalMethods
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject: Calculate required closure evaluation methods of unit
+-- project: acc
+-- author:  wg
+
+IMPORT	DEBUG		ONLY ASSERT
+	Nat		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	Triple		COMPLETELY
+	Set[triple[nat,nat,nat],orderMethod]
+			ONLY set {} incl in 
+	SetConv[triple[nat,nat,nat],orderMethod]
+			ONLY asSeq -- explode
+	Denotation	ONLY ++
+
+IMPORT	SeqMapEnv	ONLY *
+
+IMPORT	TypeAn		COMPLETELY
+	OptimAn		ONLY optimAn bindingAn? hiddenAn? rank
+	An		ONLY an optim:an->optimAn
+	Ac		COMPLETELY
+	AcFun		ONLY decs importedDecs
+	TypeAnFun	ONLY typeOfDec typeDecAss structure
+	PreparedOptions	ONLY popts
+	Builtin		ONLY BUILTIN
+
+IMPORT	Format		COMPLETELY
+	Ide		COMPLETELY
+
+/*
+IMPORT	DEBUG COMPLETELY
+	Denotation COMPLETELY
+	Conversion COMPLETELY
+
+FUN show : seq[triple[nat,nat,nat]] -> () -> denotation
+DEF show(S)() == format("{%s}"!,%(string( (smth / empty)(S) )))
+	WHERE smth == \\M,R.format("%n-%n-%n,%s"!,%(nat(1st(M)),
+						    nat(2nd(M)),
+						    nat(3rd(M)),
+						    string(R)))
+*/
+
+
+FUN calcEvalMethods : popts ** unit -> seq[triple[nat,nat,nat]]
+DEF calcEvalMethods(Opts,Main) ==
+    LET Given    == (calcGivenMethods(Main) / {})
+			(importedDecs(noBuiltin?(Main),Main))
+	Required == (calcRequiredMethods(Main,Given) / {})
+				(decs(any,Main))
+    IN
+    asSeq(Required)
+    /*
+    PRINT(true,show(explode(Given)),
+    PRINT(true,show(explode(Required)),
+    	  explode(Required)))
+    */
+
+  FUN noBuiltin? : unit -> dec -> bool
+  DEF noBuiltin?(Main)(Dec) == ~(origin(ide(Dec)) = BUILTIN)
+
+  FUN any : dec -> bool
+  DEF any(_) == true
+
+FUN calcGivenMethods : unit -> dec ** set -> set 
+DEF calcGivenMethods(Main)(Dec,Methods) ==
+    LET Rank == retrieveRank(Dec)
+    IN
+    IF (Rank |= max) and (Rank > 0) THEN
+	-- rank is available; can assert some methods
+	LET Type == structure(typeDecAss(Main))(typeOfDec(Dec))
+	IN
+	calcMethods(ide(Dec),Rank,Type,{},Methods)
+    ELSE Methods FI
+
+FUN calcRequiredMethods : unit ** set -> dec ** set -> set 
+DEF calcRequiredMethods(Main,Given)(Dec,Methods) ==
+    LET Rank == retrieveRank(Dec)
+    IN
+    IF (Rank |= max) and (Rank > 0) THEN
+	-- declaration needs evaluation methods
+	LET Type == structure(typeDecAss(Main))(typeOfDec(Dec))
+	IN
+	calcMethods(ide(Dec),Rank,Type,Given,Methods)
+    ELSE Methods FI
+
+FUN retrieveRank : dec -> nat
+DEF retrieveRank(constructor(An,Ide,Mode,Order)) == Order
+DEF retrieveRank(Dec) ==
+    IF hiddenAn?(optim(an(Dec))) or bindingAn?(optim(an(Dec))) THEN
+	rank(optim(an(Dec)))
+    ELSE max:nat FI
+
+FUN orderMethod : triple[nat,nat,nat] ** triple[nat,nat,nat] -> bool
+DEF &(R1,M1,N1) orderMethod &(R2,M2,N2) ==
+    IF R1 < R2 THEN true
+    IF R1 > R2 THEN false
+    OTHERWISE
+    IF M1 < M2 THEN true
+    IF M1 > M2 THEN false
+    ELSE
+      N1 < N2 
+    FI
+	
+-- --------------------------------------------------------------------------
+
+FUN calcMethods : ide ** nat ** type ** set ** set -> set
+DEF calcMethods(Id,Rank,some,Given,Methods) ==
+    -- this should NOT happen ...
+    ASSERT(false,
+	\\ . ("calcMethods'CalcEvalMethods: expected type information for ")
+		++ pretty(format(Id),max),Methods)
+
+DEF calcMethods(Id,Rank,Type,Given,Methods) ==
+    LET Thrunks == calcThrunks(Type)
+			-- calc the possible argument thrunks, e.g
+			-- <2,1,1> for a**b->c->d->e
+    IN
+    calc(0,Rank,Thrunks,Given,Methods)
+
+  FUN calc: nat ** nat ** seq[nat] ** set ** set -> set
+  DEF calc(Lev,Rank,Thrunks AS Ft::Rt,Given,Methods) ==
+    IF Lev < Rank THEN
+      LET -- (_,Sumup)  == *(\\S,T.(T+S,T+S))(0,Thrunks)
+          (_,Sumup)  == (\\S,T.(T+S,T+S))*(0,Thrunks)
+		    -- sum up argument thrunks, e.g.
+		    -- <2,3,4> for <2,1,1>
+	  New    == ( (\\S,Es. LET E == &(Rank,Lev,S) IN
+			       IF E in Given THEN Es ELSE incl(E,Es) FI )
+			/ Methods )(Sumup)
+      IN
+      calc(Lev+Ft,Rank,Rt,Given,New)
+    ELSE
+      -- closure cannot hold more arguments than its rank; stop here
+      Methods
+    FI
+  DEF calc(Lev,Rank,<>,Given,Methods) == 
+    Methods
+
+  FUN calcThrunks : type -> seq[nat]
+  DEF calcThrunks(fun(As,R)) == #(As) :: calcThrunks(R)
+  DEF calcThrunks(_) == <>
+

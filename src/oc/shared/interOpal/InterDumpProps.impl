@@ -1,0 +1,87 @@
+IMPLEMENTATION InterDumpProps
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:37 $ ($Revision: 1.1.1.1 $)
+-- ============================================================================
+-- Autor:       ralfi
+-- Projekt:     OPAL1-Compiler - Zwischensprache InterOpal
+-- Zweck:       Dumproutinen fuer InterOpal, speziell Properties
+-- ============================================================================
+
+IMPORT  Format          ONLY    blk brk format nl str  : denotation -> format
+        FormatFun1      ONLY    list
+        /*
+        InterOpal       ONLY    < : ident ** ident -> bool
+                                < : origin ** origin -> bool approx cong conj
+                                dfd disj equiv exist expr forall formula
+                                freeType ident:SORT impl interOpal law
+                                name:SORT neg origin part pos:SORT property
+                                props: struct -> map struct var:SORT variant
+                                seq map
+        */
+        InterOpal       COMPLETELY
+        InterDumpBase
+                        ONLY    dN dPos dPragma
+        InterDumpExpr
+                        ONLY    dE dV dVar
+        Map             ONLY    ! def? map
+        Nat             ONLY    0 2 nat
+        Option          ONLY    cont nil? option
+        Seq             ONLY    % seq
+
+FUN dPr : interOpal -> property -> format
+DEF dPr (IO)(freeType(Pos,_,Sort,Variants,Pragmas)) ==
+        blk(0,%("Prop:"str,dPos(IO)(Pos),dN(IO)(Sort),nl,
+                list(brk(0),nl,nl,IO dV)(Variants),
+                list(brk(0), nl, nl, dPragma(IO))(Pragmas)
+               )
+           )
+DEF dPr (IO)(law(Pos,_,Symbol,Formula, Pragmas)) ==
+  LET   FSym    == IF Symbol nil? THEN ""str
+                   ELSE (Symbol cont)str FI
+  IN    blk(0,%("law:"str,dPos(IO)(Pos),FSym,nl,dFo(IO)(Formula), 
+                list(brk(0), nl, nl, dPragma(IO))(Pragmas)))
+
+DEF dPr (IO)(other(Pos, Id, _, Pragmas)) ==
+  blk(0, %(str("other"), dPos(IO)(Pos), str(Id),
+           list(brk(0), nl, nl, dPragma(IO))(Pragmas)))
+
+
+FUN ident2Prop2Format: interOpal -> origin -> ident -> format
+DEF ident2Prop2Format(IO AS interOpal(_,S))(Origin)(Ident) ==
+  LET   Props==props(S!Origin)
+  IN    IF Ident def? Props THEN dPr(IO)(Props!Ident)
+        ELSE "zugriffsfehler auf Props-Map"str
+        FI
+
+
+FUN dFo : interOpal -> formula -> format
+DEF dFo (IO)(dfd(Pos,Expr)) == blk(0,%("dfd:"str,dPos(IO)(Pos),dE(IO)(Expr)))
+DEF dFo (IO)(approx(Pos,Expr1,Expr2)) ==
+        blk(0,%("approx:"str,dPos(IO)(Pos),dE(IO)(Expr1),","str,dE(IO)(Expr2)))
+DEF dFo (IO)(cong(Pos,Expr1,Expr2)) ==
+        blk(0,%("cong:"str,dPos(IO)(Pos),dE(IO)(Expr1),","str,dE(IO)(Expr2)))
+DEF dFo (IO)(neg(Pos,Form)) == blk(0,%("neg:"str,dPos(IO)(Pos),dFo(IO)(Form)))
+DEF dFo (IO)(conj(Pos,Form1,Form2)) ==
+        blk(0,%("conj:"str,dPos(IO)(Pos),dFo(IO)(Form1),","str,dFo(IO)(Form2)))
+DEF dFo (IO)(disj(Pos,Form1,Form2)) ==
+        blk(0,%("disj:"str,dPos(IO)(Pos),dFo(IO)(Form1),","str,dFo(IO)(Form2)))
+DEF dFo (IO)(impl(Pos,Form1,Form2)) ==
+        blk(0,%("impl:"str,dPos(IO)(Pos),dFo(IO)(Form1),","str,dFo(IO)(Form2)))
+DEF dFo (IO)(equiv(Pos,Form1,Form2)) ==
+        blk(0,%("equiv:"str,dPos(IO)(Pos),dFo(IO)(Form1),","str,
+                dFo(IO)(Form2)))
+DEF dFo (IO)(forall(Pos,SVar,Form)) ==
+        blk(2,%("forall:"str,dPos(IO)(Pos),
+                list("{"str,"'"str,"{"str,IO dVar)(SVar),
+                nl,dFo(IO)(Form)))
+DEF dFo (IO)(exist(Pos,SVar,Form)) == 
+        blk(2,%("exist:"str,dPos(IO)(Pos),
+                list("{"str,"'"str,"{"str,IO dVar)(SVar),
+                nl,dFo(IO)(Form)))
+DEF dFo (IO)(informal(Pos, Text)) ==
+        blk(0, %(dPos(IO)(Pos), str(Text)))
+DEF dFo (IO)(other(Pos, Id, _)) ==
+  blk(0, %(str("other:"), dPos(IO)(Pos), str(Id)))

@@ -1,0 +1,488 @@
+-- LAST EDIT: Tue Nov  9 09:29:46 1993 by Andreas Fett (woody!fett) 
+-- ============================================================================
+-- Autor:       af
+-- Projekt:     OPAL1-Compiler
+-- Changes:     af, May 14 1993: adapted to lazy candidate sets
+--                               uses analyzeTyping
+--              af, Jun 27 1993: added handling of mix expressions
+--              af, Sep 16 1993: added missing patterns for function
+--                               analyzePatternConstrSeq to handle more-than-
+--                               one-element sequences
+--              af, Sep 17 1993: corrected handling of successive numbering
+--                               really to be successive
+-- ============================================================================
+
+IMPLEMENTATION LhsAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             COMPLETELY
+        Pair            COMPLETELY
+        Triple          COMPLETELY
+        Option          COMPLETELY
+        Seq             COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqFilter       ONLY |
+        SeqZip          COMPLETELY
+
+        Pos             ONLY pos `
+        Error           ONLY err ok + ok? errKind error string
+
+        Rep             ONLY rep `
+
+        PartName        ONLY partName:SORT ide paramS pos structIde
+                                partName?
+        Fct[partName]   COMPLETELY
+        Fct[name]       COMPLETELY
+        Impl[partName]  COMPLETELY
+        Impl[name]      COMPLETELY
+
+        AnalyzedGlobSig ONLY globSig name fct:globSig**name->fct[name]
+                             locSig:SORT {} + impl:SORT def? freeLocal
+                                impl:globSig**name->impl
+                             actStructParams isFreeConstr matchingOps
+
+        RepSet          ONLY repSet {} % + - *
+        Knowledge       ONLY knowl
+        Substitution    ONLY subst empty
+                                unify:globSig
+                                      ->fct[name]**fct[name]**subst**nat
+                                      ->seq[subst]**nat
+        Reason          ONLY reason wronglyTypedApplOrInfix
+                                wrongTypingOfTupleOrCases
+                                wronglyTypedPatternSynonym
+        Candidates      COMPLETELY
+        NameAnalysis    ONLY matchingInternalOp matchingPatternOp
+                                selectPatternOp matchingFcts
+                                selectDefinitionTarget
+        TypeDepExprAnalysis ONLY analyzeTyping analyzeMixS substituteMix
+
+-- ----------------------------------------------------------------------------
+
+FUN target: expr[partName] -> partName
+-- liefert das 'definition target' einer kompletten linken Seite
+
+DEF target(val(pname,pos)) == pname
+
+DEF target(tuple(elems,pos)) == target(ft(elems))
+
+DEF target(apply(funct,arg,pos)) == target(funct)
+
+DEF target(typed(expr,fct,pos)) == target(expr)
+
+-- ----------------------------------------------------------------------------
+
+FUN addLocals: repSet**repSet**repSet**repSet -> repSet**repSet**repSet**err
+-- eine Menge (sicherer) 'globaler' Repraesentationen,
+-- eine Menge von (sicheren) Variablen,
+-- eine Menge von Repraesentationen, die fuer Variablen oder Konstruktoren
+--      stehen,
+-- werden um eine weitere Menge (sicherer) Variablen erweitert,
+-- dabei auftretende Widersprueche werden in der Fehlermenge gemeldet
+
+DEF addLocals(globs,locs,mixs,addLocs) ==
+  LET newGlobs == globs-addLocs
+      newMixs  == mixs-addLocs
+      newLocs  == addLocs+locs
+      newErr   == (addErr \ (addErr \ (addErr \ ok)(addLocs*globs))
+                                                   (addLocs*mixs))
+                                                   (locs*addLocs)
+  IN (newGlobs,newLocs,newMixs,newErr)
+
+FUN addGlobals: repSet**repSet**repSet**repSet -> repSet**repSet**repSet**err
+
+DEF addGlobals(globs,locs,mixs,addGlobs) ==
+  LET newGlobs == globs+(addGlobs-locs)
+      newMixs  == mixs-addGlobs
+      newLocs  == locs
+      newErr   == (addErr \ ok)(locs*addGlobs)
+  IN (newGlobs,newLocs,newMixs,newErr)
+
+FUN addMixeds: repSet**repSet**repSet**repSet -> repSet**repSet**repSet**err
+
+DEF addMixeds(globs,locs,mixs,addMixs) ==
+  LET onlyMixs == mixs-addMixs
+      bothMixs == mixs-onlyMixs
+      newGlobs == globs+bothMixs
+      newMixs  == onlyMixs+((addMixs-newGlobs)-locs)
+      newLocs  == locs
+      newErr   == (addErr \ ok)(locs*addMixs)
+  IN (newGlobs,newLocs,newMixs,newErr)
+
+FUN addErr: triple[rep,pos,pos]**err->err
+DEF addErr(rpp,errs) ==
+  LET (rep,localPos,otherPos) == (1st(rpp),2nd(rpp),3rd(rpp))
+  IN err(error,locConflictMsg,rep`,otherPos`,localPos)+errs
+
+FUN locConflictMsg: denotation
+DEF locConflictMsg ==
+  "use of identifier %s as pattern variable contradicts its use at %s"
+
+FUN add: (repSet**repSet**repSet**repSet->repSet**repSet**repSet**err)**repSet
+         -> repSet**repSet**repSet**err
+         -> repSet**repSet**repSet**err
+
+DEF add(addX,addSet)(globs,locs,mixs,errs) ==
+  LET (newGlobs,newLocs,newMixs,addErr) == addX(globs,locs,mixs,addSet)
+  IN (newGlobs,newLocs,newMixs,errs+addErr)
+
+FUN addUses: repSet**repSet**repSet**err
+             **repSet**repSet**repSet**err
+             -> repSet**repSet**repSet**err
+
+DEF addUses(glob1,loc1,mix1,err1,glob2,loc2,mix2,err2) ==
+  add(addGlobals,glob2)
+    (add(addLocals,loc2)
+      (add(addMixeds,mix2)(glob1,loc1,mix1,err1+err2)))
+
+-- ----------------------------------------------------------------------------
+
+FUN idUses: expr[partName]**globSig -> repSet**repSet**repSet**err
+-- liefert fuer eine komplette linke Seite
+--   die Menge (sicherer) 'globaler' Repraesentationen,
+--   die (Gesamt-)Menge von (sicheren) Variablen und
+--   die Menge der Repraesentationen, die fuer Variablen oder Konstruktoren
+--      stehen
+--   sowie typunabhaengige Fehler in der Verwendung von Namen
+
+DEF idUses(val(pname,p),sig) == ((ide(pname),pos(pname))%,{},{},ok)
+
+DEF idUses(tuple(elems,p),sig) == idUses(ft(elems),sig)
+
+DEF idUses(apply(funct,arg,p),sig) ==
+  addUses(idUses(funct,sig),idUsesInPattern(arg,sig))
+
+DEF idUses(typed(expr,fct,p),sig) == idUses(expr,sig)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN idUsesInPattern: expr[partName]**globSig -> repSet**repSet**repSet**err
+
+DEF idUsesInPattern(val(pname,p),sig) ==
+  IF (pname partName?) and (structIde(pname) nil?) THEN
+    IF paramS(pname) <>? THEN
+      LET constConstr? == \\n.IF isFreeConstr(sig,n) THEN fct(sig,n) sort?
+                              ELSE false
+                              FI
+          (cands,ignored) == matchingOps(sig,ide(pname),nil,<>,nil,0)
+      IN IF exist?(constConstr?,cands) THEN
+           ({},{},(ide(pname),pos(pname))%,ok)
+         ELSE ({},(ide(pname),pos(pname))%,{},ok)
+         FI
+    IF paramS(pname) ::? THEN ((ide(pname),pos(pname))%,{},{},ok)
+    FI
+  ELSE
+    ((ide(pname),pos(pname))%,{},{},ok)
+  FI
+
+DEF idUsesInPattern(tuple(<>,p),sig) == ({},{},{},ok)
+DEF idUsesInPattern(tuple(e::es,p),sig) ==
+  addUses(idUsesInPattern(e,sig),idUsesInPattern(tuple(es,p),sig))
+
+DEF idUsesInPattern(apply(funct,arg,p),sig) ==
+  addUses(idUsesInConstr(funct),idUsesInPattern(arg,sig))
+
+DEF idUsesInPattern(mix((E&B):: <>,p),sig) ==
+  idUsesInPattern(E,sig)
+
+DEF idUsesInPattern(mix((E1&B1)::((E2&B2):: R),p),sig) ==
+  idUsesInPattern(E1,sig) addUses (
+  idUsesInConstr(E2) addUses
+  idUsesInPattern(mix(R,p),sig))
+
+DEF idUsesInPattern(as(pname,expr,p),sig) ==
+  addUses({},(ide(pname),pos(pname))%,{},ok,idUsesInPattern(expr,sig))
+
+DEF idUsesInPattern(typed(expr,fct,p),sig) == idUsesInPattern(expr,sig)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN idUsesInConstr: expr[partName] -> repSet**repSet**repSet**err
+
+DEF idUsesInConstr(val(pname,p)) == ((ide(pname),pos(pname))%,{},{},ok)
+
+DEF idUsesInConstr(tuple(elems,p)) == idUsesInConstr(ft(elems))
+
+DEF idUsesInConstr(typed(expr,fct,p)) == idUsesInConstr(expr)
+
+-- ----------------------------------------------------------------------------
+
+FUN analyzeLhs: expr[partName]**globSig**knowl**nat -> cands**nat
+-- Fuer eine linke Seite, eine globale Signatur, Wissen ueber die Verwendung
+--   Verwendung von lokalen Bezeichnern sowie die kleinste noch nicht fuer
+--   lokale Variablen verwendete Nummer,
+-- wird die Menge der moeglichen Zuordnungsfunktionen berechnet.
+-- Weiteres Ergebnis ist die neue kleinste noch nicht fuer lokale
+--   Variable verwendete Nummer
+
+FUN substituteLhs: expr[partName]**cands**globSig**repSet ->
+                                name**expr[name]**globSig**locSig**nat**err
+-- Ersetzung der partiellen Namen durch Namen bzgl. der (nicht leeren!)
+--   Menge von Identifizierungsfunktionen
+-- liefert 'Definition Target', Offset fuer lokale Namen und
+-- Fehlermenge bei mehrdeutiger Menge von Identifizierungsfunktionen
+--   sowie Hinweis auf unbenutzte Variablen
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+DEF analyzeLhs(val(pname,pos),sig,knowl,nextVar) ==
+  LET (idNames,errors,unusedVar) == matchingInternalOp(pname,sig,nextVar)
+  IN IF errors ok? THEN (single(idNames,pos),unusedVar)
+                   ELSE (none(errors),unusedVar)
+     FI
+
+DEF substituteLhs(val(pname,pos),cands,sig,usedReps) ==
+  LET (name,ambiguousErr) ==
+                        selectDefinitionTarget(extract(sig)(cands),sig,pos)
+      formerImpl == impl(sig,name)
+      offset == IF formerImpl def? THEN freeLocal(formerImpl)
+                ELSE succ(actStructParams(sig)#)
+-- fuer formale Parameter und "leeres Argument" sind lokale Namen reserviert
+                FI
+  IN (name,val(name,pos),sig,{},offset,ambiguousErr)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzeLhs(tuple(elems,pos),sig,knowl,nextVar) ==
+  analyzeLhs(ft(elems),sig,knowl,nextVar)
+
+DEF substituteLhs(tuple(elems,pos),cands,sig,usedReps) ==
+  substituteLhs(ft(elems),cands,sig,usedReps)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzeLhs(apply(f,arg,pos),sig,knowl,firstVar) ==
+  LET (funCands,nextVar) == analyzeLhs(f,sig,knowl,firstVar)
+      (pattCands,interVar) == analyzePattern(arg,sig,knowl,nextVar)
+      combFct == \\funFct,argFct,subst,v.
+                   LET resFct == var(v)
+                       (newSubsts,free) == unify(sig)
+                                                (funFct,funct(argFct,resFct),
+                                                 subst,succ(v))
+                   IN IF newSubsts <>? THEN (resFct,subst%,succ(v),
+                                             wronglyTypedApplOrInfix(funFct,
+                                                                     argFct,
+                                                                     subst)%)
+                      IF newSubsts ::? THEN (resFct,newSubsts,free,<>)
+                      FI
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
+                                   (funCands,pattCands)
+  IN (newCands,freeVar)
+
+DEF substituteLhs(apply(fun,arg,pos),cands,sig,usedReps) ==
+  LET (funCands,pattCands) == split(cands)
+      (target,newFun,interSig,funLSig,offset,err1) ==
+                                 substituteLhs(fun,funCands,sig,usedReps)
+      (newPatt,finalSig,pattLSig,err2) ==
+                substitutePattern(arg,pattCands,interSig,offset,usedReps)
+  IN (target,apply(newFun,newPatt,pos),finalSig,funLSig+pattLSig,
+                                                        offset,err1+err2)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzeLhs(typed(expr,fct,pos),sig,knowl,firstVar) ==
+  LET (exprCands,nextVar) == analyzeLhs(expr,sig,knowl,firstVar)
+  IN analyzeTyping(fct,pos,sig,exprCands,nextVar)
+
+DEF substituteLhs(typed(expr,fct,pos),cands,sig,usedReps) ==
+  LET (exprCands,fctCands) == split(cands)
+  IN substituteLhs(expr,exprCands,sig,usedReps)
+
+-- ----------------------------------------------------------------------------
+
+FUN analyzePattern: expr[partName]**globSig**knowl**nat -> cands**nat
+
+FUN analyzePatternConstr: expr[partName]**globSig**knowl**nat -> cands**nat
+
+FUN substitutePattern: expr[partName]**cands**globSig**nat**repSet ->
+                                        expr[name]**globSig**locSig**err
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzePattern(val(pname,pos),sig,knowl,nextVar) ==
+  LET (idNames,errors,unusedVar) ==
+                         matchingPatternOp(pname,sig,knowl,nextVar,true)
+  IN IF errors ok? THEN (single(idNames,pos),unusedVar)
+                   ELSE (none(errors),unusedVar)
+     FI
+
+DEF analyzePatternConstr(val(pname,pos),sig,knowl,nextVar) ==
+  LET (idNames,errors,unusedVar) ==
+                        matchingPatternOp(pname,sig,knowl,nextVar,false)
+  IN IF errors ok? THEN (single(idNames,pos),unusedVar)
+                   ELSE (none(errors),unusedVar)
+     FI
+
+DEF substitutePattern(val(pname,pos),cands,sig,offset,usedReps) ==
+  LET (name,newSig,lsig,ambiguousErr) ==
+                selectPatternOp(extract(sig)(cands),sig,offset,usedReps,pos)
+  IN (val(name,pos),newSig,lsig,ambiguousErr)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzePattern(tuple(<>,pos),sig,knowl,firstVar) ==
+  (empty(idFct(cart(<>),empty)%,pos),firstVar)
+
+DEF substitutePattern(tuple(<>,pos),cands,sig,offset,usedReps) ==
+  (tuple(<>,pos),sig,{},ok)
+
+DEF analyzePattern(tuple(elems,pos),sig,knowl,firstVar) ==
+  LET (candsS,nextVar) == analyzePatternSeq(elems,sig,knowl,firstVar)
+      combFct == \\f1,f2,s,v.(cart(f1::(f2%)),s%,v,<>)
+      (newCands,freeVar) == combineSeq(lazy)(sig,pos,nextVar)(combFct)(candsS)
+  IN (newCands,freeVar)
+
+DEF analyzePatternConstr(tuple(elems,pos),sig,knowl,firstVar) ==
+  LET (candsS,nextVar) == analyzePatternConstrSeq(elems,sig,knowl,firstVar)
+      combFct == \\f1,f2,s,v.(cart(f1::(f2%)),s%,v,<>)
+      (newCands,freeVar) == combineSeq(eager)(sig,pos,nextVar)(combFct)(candsS)
+  IN (newCands,freeVar)
+
+DEF substitutePattern(tuple(es,pos),cands,sig,offset,usedReps) ==
+  LET (newElems,newSig,newLSig,errors) ==
+                        substitutePatternSeq(es,cands,sig,offset,usedReps)
+      flatElems == ((\\expr,exprS.
+                       IF expr tuple? THEN elems(expr)++exprS
+                                      ELSE expr::exprS
+                       FI) / <>)(newElems)
+  IN (tuple(flatElems,pos),newSig,newLSig,errors)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzePattern(apply(f,arg,pos),sig,knowl,firstVar) ==
+  LET (funCands,nextVar) == analyzePatternConstr(f,sig,knowl,firstVar)
+      (pattCands,interVar) == analyzePattern(arg,sig,knowl,nextVar)
+      combFct == \\funFct,argFct,subst,v.
+                   LET resFct == var(v)
+                       (newSubsts,free) == unify(sig)
+                                                (funFct,funct(argFct,resFct),
+                                                 subst,succ(v))
+                   IN IF newSubsts <>? THEN (resFct,subst%,succ(v),
+                                             wronglyTypedApplOrInfix(funFct,
+                                                                     argFct,
+                                                                     subst)%)
+                      IF newSubsts ::? THEN (resFct,newSubsts,free,<>)
+                      FI
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
+                                   (funCands,pattCands)
+  IN (newCands,freeVar)
+
+DEF substitutePattern(apply(fun,arg,pos),cands,sig,offset,usedReps) ==
+  LET (funCands,argCands) == split(cands)
+      (newFun,interSig,funLSig,err1) ==
+                        substitutePattern(fun,funCands,sig,offset,usedReps)
+      (newArg,finalSig,argLSig,err2) ==
+                substitutePattern(arg,argCands,interSig,offset,usedReps)
+  IN (apply(newFun,newArg,pos),finalSig,funLSig+argLSig,err1+err2)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzePattern(mix(EBS,pos),sig,knowl,firstVar) ==
+  LET argNopS == ((\\eb,t.LET argS == 1st(t)
+                              opS  == 2nd(t)
+                              thisIsArg == 3rd(t)
+                          IN IF thisIsArg THEN &(1st(eb)::argS,opS,false)
+                             ELSE &(argS,1st(eb)::opS,true)
+                             FI) / &(<>,<>,true)) (EBS)
+      (argCands,argVar) == analyzePatternSeq(1st(argNopS),sig,knowl,firstVar)
+      (opCands,opVar) == analyzePatternConstrSeq(2nd(argNopS),sig,knowl,argVar)
+      candsS == ft(argCands) ::
+                ((\\ao,s.2nd(ao)::(1st(ao)::s)) / <>)
+                  (zip(&)(rt(argCands),opCands))
+  IN IF exist?(none?,candsS) THEN
+       LET dummyCombFct == \\f1,f2,s,v.(cart(f1::(f2%)),s%,v,<>)
+       IN combineSeq(eager)(sig,pos,opVar)(dummyCombFct)(none? | candsS)
+     ELSE
+       LET (newCands,_,freeVar) ==
+                        analyzeMixS(true,EBS,candsS,pos,sig,knowl,0,opVar)
+       IN (newCands,freeVar)
+     FI
+
+
+DEF substitutePattern(mix(EBS,pos),cands,sig,offset,usedReps) ==
+  substituteMix(\\e,c,s,o.substitutePattern(e,c,s,o,usedReps))
+               (EBS,pos,cands,sig,offset)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzePattern(as(pname,expr,pos),sig,knowl,firstVar) ==
+  LET (idNames,errors,nextVar) ==
+                        matchingPatternOp(pname,sig,knowl,firstVar,false)
+      nameCands == IF errors ok? THEN single(idNames,pos) ELSE none(errors) FI
+      (exprCands,interVar) == analyzePattern(expr,sig,knowl,nextVar)
+      combFct == \\nameFct,exprFct,subst,v.
+                   LET (newSubsts,free) == unify(sig)
+                                                (nameFct,exprFct,subst,v)
+                   IN IF newSubsts <>? THEN (exprFct,subst%,v,
+                                             wronglyTypedPatternSynonym
+                                                (nameFct,exprFct,subst)%)
+                      IF newSubsts ::? THEN (exprFct,newSubsts,free,<>)
+                      FI
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
+                                   (nameCands,exprCands)
+  IN (newCands,freeVar)
+
+DEF substitutePattern(as(pname,expr,pos),cands,sig,offset,usedReps) ==
+  LET (nameCands,exprCands) == split(cands)
+      (name,interSig,nameLSig,nameErr) ==
+        selectPatternOp(extract(sig)(nameCands),sig,offset,usedReps,pos)
+      (newExpr,finalSig,exprLSig,exprErr) ==
+                substitutePattern(expr,exprCands,interSig,offset,usedReps)
+  IN (as(name,newExpr,pos),finalSig,nameLSig+exprLSig,nameErr+exprErr)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzePattern(typed(expr,fct,pos),sig,knowl,firstVar) ==
+  LET (exprCands,nextVar) == analyzePattern(expr,sig,knowl,firstVar)
+  IN analyzeTyping(fct,pos,sig,exprCands,nextVar)
+
+DEF analyzePatternConstr(typed(expr,fct,pos),sig,knowl,firstVar) ==
+  LET (exprCands,nextVar) == analyzePatternConstr(expr,sig,knowl,firstVar)
+  IN analyzeTyping(fct,pos,sig,exprCands,nextVar)
+
+DEF substitutePattern(typed(expr,fct,pos),cands,sig,offset,usedReps) ==
+  LET (exprCands,fctCands) == split(cands)
+  IN substitutePattern(expr,exprCands,sig,offset,usedReps)
+
+-- ----------------------------------------------------------------------------
+
+FUN analyzePatternSeq: seq[expr[partName]]**globSig**knowl**nat ->
+                                                                seq[cands]**nat
+
+FUN analyzePatternConstrSeq: seq[expr[partName]]**globSig**knowl**nat ->
+                                                                seq[cands]**nat
+
+FUN substitutePatternSeq: seq[expr[partName]]**cands**globSig**nat**repSet ->
+                                        seq[expr[name]]**globSig**locSig**err
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DEF analyzePatternSeq(<>,sig,knowl,nextVar) == (<>,nextVar)
+DEF analyzePatternSeq(p1::pR,sig,knowl,firstVar) ==
+  LET (c1,nextVar) == analyzePattern(p1,sig,knowl,firstVar)
+      (cR,freeVar) == analyzePatternSeq(pR,sig,knowl,nextVar)
+  IN (c1::cR,freeVar)
+
+DEF analyzePatternConstrSeq(<>,sig,knowl,nextVar) == (<>,nextVar)
+DEF analyzePatternConstrSeq(p1 :: pR,sig,knowl,firstVar) ==
+  LET (c1,nextVar) == analyzePatternConstr(p1,sig,knowl,firstVar)
+      (cR,freeVar) == analyzePatternConstrSeq(pR,sig,knowl,nextVar)
+  IN (c1::cR,freeVar)
+
+DEF substitutePatternSeq(patts,cands,sig,offset,usedReps) ==
+  substitutePatternSeq(patts,splitSeq(patts#)(cands),sig,offset,usedReps)
+
+FUN substitutePatternSeq: seq[expr[partName]]**seq[cands]**globSig**nat**
+                                repSet -> seq[expr[name]]**globSig**locSig**err
+
+DEF substitutePatternSeq(<>,<>,sig,offset,usedReps) == (<>,sig,{},ok)
+DEF substitutePatternSeq(p1::pR,c1::cR,sig,offset,usedReps) ==
+  LET (newP1,interSig,lsig1,err1) ==
+                                substitutePattern(p1,c1,sig,offset,usedReps)
+      (newPR,finalSig,lsig2,err2) ==
+                        substitutePatternSeq(pR,cR,interSig,offset,usedReps)
+  IN (newP1::newPR,finalSig,lsig1+lsig2,err1+err2)

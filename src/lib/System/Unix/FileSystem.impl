@@ -1,0 +1,266 @@
+IMPLEMENTATION FileSystem
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:19 $ ($Revision: 1.1.1.1 $)
+-- access to the file system
+   /$ handcoded $/
+
+IMPORT
+  Void                ONLY void nil
+  Nat                 ONLY nat 0 1 2 3 4 5 6 7 < =
+  Option              ONLY option nil avail
+  String              ONLY string !
+  StringConv          ONLY `
+  Array               ONLY array
+  ArrayConv           ONLY asSeq
+  Com                 ONLY com ans yield okay call
+  ComCompose          ONLY &
+
+
+
+-- EXPORTED TYPES --
+
+-- DATA inode == handcoded
+
+-- DATA device == handcoded
+
+DATA filetype == regular
+                 directory
+                 charSpecial
+                 blockSpecial
+                 fifo
+                 socket
+                 symLink
+                 unknown
+
+DATA permission == setUIdOnExec
+                   setGIdOnExec
+                   stickyBit
+                   ownerRead
+                   ownerWrite
+                   ownerExec
+                   groupRead
+                   groupWrite
+                   groupExec
+                   worldRead
+                   worldWrite
+                   worldExec
+
+-- DATA filemode == handcoded
+
+DATA filestat == filestat( type   : filetype,
+                           mode   : filemode,
+                           inode  : inode,
+                           device : device,
+                           nlinks : nat,
+                           owner  : userid,
+                           group  : groupid,
+                           size   : nat,
+                           atime  : time,
+                           ctime  : time,
+                           mtime  : time
+                         )
+
+
+-- INTERNAL TYPES --
+
+-- EXPORTED FUNCTIONS --
+
+-- FUN < = : inode ** inode -> bool
+-- DEF ... == handcoded
+
+-- FUN < = : device ** device -> bool
+-- DEF ... == handcoded
+
+-- FUN < : filetype ** filetype -> bool
+DEF FType1 < FType2 == ftord(FType1) < ftord(FType2)
+
+-- FUN = : filetype ** filetype -> bool
+DEF FType1 = FType2 == ftord(FType1) = ftord(FType2)
+
+-- FUN < = : filemode ** filemode -> bool
+-- DEF ... == handcoded
+
+-- FUN < : filestat ** filestat -> bool
+DEF Stat1 < Stat2 ==
+  (device(Stat1) < device(Stat2)) or
+  ((device(Stat1) = device(Stat2)) and (inode(Stat1) < inode(Stat2)))
+
+-- FUN = : filestat ** filestat -> bool
+DEF Stat1 = Stat2 ==
+  (device(Stat1) = device(Stat2)) and (inode(Stat1) = inode(Stat2))
+
+-- FUN {} : filemode
+DEF {} == hc_emptymode
+
+-- FUN none? : filemode -> bool
+DEF Mode none? == hc_nonemode(Mode)
+
+-- FUN % : permission -> filemode
+DEF Perm % == {} + Perm
+
+-- FUN + : filemode ** permission -> filemode
+DEF Mode + Perm == hc_addmode(Mode,Perm)
+
+-- FUN - : filemode ** permission -> filemode
+DEF Mode - Perm == hc_delmode(Mode,Perm)
+
+-- FUN + : permission ** permission -> filemode
+DEF Perm1 + Perm2 == %(Perm1) + Perm2
+
+-- FUN + : filemode ** filemode -> filemode
+DEF Mode1 + Mode2 == hc_ormode(Mode1,Mode2)
+
+-- FUN - : filemode ** filemode -> filemode
+DEF Mode1 - Mode2 == hc_andnegmode(Mode1,Mode2)
+
+-- FUN * : filemode ** filemode -> filemode
+DEF Mode1 * Mode2 == hc_andmode(Mode1,Mode2)
+
+-- FUN in : permission ** filemode -> bool
+DEF Perm in Mode == hc_inmode(Perm,Mode)
+
+-- FUN stat : denotation -> filestat
+DEF File stat == call( hc_stat(File) )
+
+-- FUN link : denotation ** denotation -> com[void]
+DEF Old link New == call( hc_link(Old,New) )
+
+-- FUN unlink : denotation -> com[void]
+DEF File unlink == call( hc_unlink(File) )
+
+-- FUN rename : denotation ** denotation -> com[void]
+DEF Old rename New == call( hc_rename(Old,New) )
+
+-- FUN touch : denotation -> com[void]
+DEF File touch == call( hc_utime(File,nil,nil) )
+
+-- FUN utime : denotation ** time ** time -> com[void]
+DEF utime(File,ATime,MTime) == call( hc_utime(File,ATime avail,MTime avail) )
+
+-- FUN chmod : denotation ** filemode -> com[void]
+DEF File chmod Mode == call( hc_chmod(File,Mode) )
+
+-- FUN chown : denotation ** userid -> com[void]
+DEF File chown UserId == call( hc_chown(File,UserId avail,nil) )
+
+-- FUN chgrp : denotation ** groupid -> com[void]
+DEF File chgrp GroupId == call( hc_chown(File,nil,GroupId avail) )
+
+-- FUN mkDir : denotation ** filemode -> com[void]
+DEF Dir mkDir Mode == call( hc_mkdir(Dir,Mode) )
+
+-- FUN rmDir : denotation -> com[void]
+DEF Dir rmDir == call( hc_rmdir(Dir) )
+
+-- FUN readDir : denotation -> com[seq[denotation]]
+DEF Dir readDir ==
+  call( hc_readdir(Dir) ) & (\\DArray.
+  yield(okay( DArray asSeq ))
+  )
+
+-- FUN symLink : denotation ** denotation -> com[void]
+DEF Old symLink New == call( hc_symlink(Old,New) )
+
+-- FUN readLink : denotation -> com[denotation]
+DEF Link readLink == call( hc_readlink(Link) )
+
+-- FUN mkFifo : denotation ** filemode -> com[void]
+DEF Fifo mkFifo Mode == call( hc_mkfifo(Fifo,Mode) )
+
+-- FUN tmpName : com[denotation]
+DEF tmpName == call( hc_tmpnam )
+
+-- old fashioned
+
+-- FUN delete : string -> com[void]
+DEF File delete == unlink(File `)
+
+-- FUN rename : string ** string -> com[void]
+DEF Old rename New == rename(Old `,New `)
+
+-- FUN tmpName : com[string]
+DEF tmpName == tmpName & (\\Deno. yield(okay(Deno !)))
+
+
+-- INTERNAL FUNCTIONS --
+
+FUN ftord : filetype -> nat
+DEF directory    ftord == 0
+DEF regular      ftord == 1
+DEF symLink      ftord == 2
+DEF fifo         ftord == 3
+DEF socket       ftord == 4
+DEF charSpecial  ftord == 5
+DEF blockSpecial ftord == 6
+DEF unknown      ftord == 7
+
+FUN hc_emptymode : filemode
+-- DEF hc_emptymode == handcoded
+
+FUN hc_nonemode : filemode -> bool
+-- DEF hc_nonemode(Mode) == handcoded
+
+FUN hc_addmode : filemode ** permission -> filemode
+-- DEF hc_addmode(Mode,Perm) == handcoded
+
+FUN hc_delmode : filemode ** permission -> filemode
+-- DEF hc_delmode(Mode,Perm) == handcoded
+
+FUN hc_ormode : filemode ** filemode -> filemode
+-- DEF hc_ormode(Mode1,Mode2) == handcoded
+
+FUN hc_andnegmode : filemode ** filemode -> filemode
+-- DEF hc_andnegmode(Mode1,Mode2) == handcoded
+
+FUN hc_andmode : filemode ** filemode -> filemode
+-- DEF hc_andmode(Mode1,Mode2) == handcoded
+
+FUN hc_inmode : permission ** filemode -> bool
+-- DEF hc_inmode(Perm,Mode) == handcoded
+
+FUN hc_stat : denotation -> void -> ans[filestat]
+-- DEF hc_stat(File)(_) == handcoded
+
+FUN hc_link : denotation ** denotation -> void -> ans[void]
+-- DEF hc_link(Old,New) == handcoded
+
+FUN hc_unlink : denotation -> void -> ans[void]
+-- DEF hc_unlink(File)(_) == handcoded
+
+FUN hc_rename : denotation ** denotation -> void -> ans[void]
+-- DEF hc_rename(Old,New)(_) == handcoded
+
+FUN hc_utime : denotation ** option[time] ** option[time] -> void -> ans[void]
+-- DEF hc_utime(File,ATimeOpt,MTimeOpt) == handcoded
+
+FUN hc_chmod : denotation ** filemode -> void -> ans[void]
+-- DEF hc_chmod(File,Mode)(_) == handcoded
+
+FUN hc_chown : denotation ** option[userid] ** option[groupid] ->
+               void -> ans[void]
+-- DEF hc_chown(File,UIdOpt,GIdOpt)(_) == handcoded
+
+FUN hc_mkdir : denotation ** filemode -> void -> ans[void]
+-- DEF hc_mkdir(Dir,Mode)(_) == handcoded
+
+FUN hc_rmdir : denotation -> void -> ans[void]
+-- DEF hc_rmdir(Dir)(_) == handcoded
+
+FUN hc_readdir : denotation -> void -> ans[array[denotation]]
+-- DEF hc_readdir(Dir)(_) == handcoded
+
+FUN hc_symlink : denotation ** denotation -> void -> ans[void]
+-- DEF hc_symlink(Old,New) == handcoded
+
+FUN hc_readlink : denotation -> void -> ans[denotation]
+-- DEF hc_readlink(Link) == handcoded
+
+FUN hc_mkfifo : denotation ** filemode -> void -> ans[void]
+-- DEF hc_mkfifo(Fifo,Mode)(_) == handcoded
+
+FUN hc_tmpnam : void -> ans[denotation]
+-- DFE hc_tmpnam(_) == handcoded
+

@@ -1,0 +1,112 @@
+/* %$ High-Level-Funktionen, angelehnt an Opal-Syntax$ */
+IMPLEMENTATION SynthesizeIO
+
+ IMPORT InterOpal COMPLETELY
+	AnalyzeIO ONLY ~ ? = find?
+
+	Denotation ONLY =
+	Pair COMPLETELY
+	Option COMPLETELY
+	Map ONLY map ! find? def dom {} 
+	Seq ONLY seq <> +% exist? ++
+	SeqMapEnv ONLY *
+	Set ONLY set +
+	SetMap ONLY *
+	SetReduce[nat,<,nat] ONLY /
+    SetFilter ONLY |
+	Nat ONLY nat max 0  < succ
+
+	ABORT ONLY ABORT
+
+-- FUN addNewImport: interOpal ** denotation -> interOpal ** origin
+DEF addNewImport(IO, structname) ==
+    LET os == find?(IO, structname)
+    IN IF avail?(os) THEN (IO, origin(cont(os)))
+       ELSE LET newO == newOrigin(IO)
+                newStruct == struct(?, newO, structname, {}, 
+                                    def(none, <>, {}), {}, {}, <>)
+            IN (upd_struct(IO, newO, newStruct), newO)
+       FI
+
+/* % erst nach dem Namen in den Objekten suchen,
+     dann ggf. neues Objekt anlegen */
+-- FUN addIMPORT: interOpal ** origin ** inst ** 
+--		denotation ** kind -> interOpal ** ident
+DEF (IO,or,in)  addIMPORT (na,k) ==
+	LET str == structs(IO)!or
+	    lookup == find?(\\ _,ob. symbol(ob) = na and kind(ob) ~ k, 
+				objs(str))
+	    (newid,newob) == IF lookup avail? THEN unpair(cont(lookup))
+			     ELSE (newIdent(str), 
+				   object(?, newIdent(str), na,k,imported, <>, <>))
+			     FI
+	    newstr == IF lookup avail? THEN str
+		      ELSE upd_objs(str, def(newid,newob,objs(str)))
+		      FI
+	    newname == name(newid,or,in)
+	    newonlys == def(in, addToOnlys(!(<>)(onlys(str),in),newname),
+                        onlys(str))
+	    newstr2 == upd_onlys(newstr, newonlys)
+	IN (upd_struct(IO, or, newstr2), newid)
+	    
+/* % @code{IO addFUN ("den", k)} fuegt der Hauptstruktur ein neues Objekt
+mit Namen @code{den} und Kind @code{k} hinzu, liefert neues @code{interOpal} und passenden @code{ident} zurueck */
+
+-- FUN addFUN: interOpal ** denotation ** kind -> interOpal ** ident
+DEF IO addFUN (den,k) ==
+	LET newid == newIdent(structs(IO)!main)
+	    newob == object(?, newid, den, k, missing, <>, <>)
+	    newmain == upd_objs(structs(IO)!main, 
+				def(newid, newob, objs(structs(IO)!main)))
+	IN (upd_struct(IO, main, newmain), newid)
+
+/* %@code{IO addDEF (id, eqns)} fuegt dem Objekt die Gleichungen hinzu,
+Implementation muss @code{missing} oder @code{def(eqns)} sein. */
+
+-- FUN addDEF: interOpal ** ident ** seq[eqn] -> interOpal
+DEF IO addDEF (id, eqs) ==
+	LET m == structs(IO)!main
+	    newob == add_eqns(objs(m)!id, eqs)
+	    newmain == upd_objs(m, def(id, newob, objs(m)))
+        IN upd_struct(IO, main, newmain)
+	    
+	    
+/* %$Low-Level-Funktionen auf InterOpal-Ebene$ */
+/* % definiert @code{struct} neu */
+-- FUN upd_struct: interOpal ** origin ** struct -> interOpal
+DEF upd_struct(interOpal(p,ss),or,s) == interOpal(p,def(or,s,ss))
+/* % aendert objs-Eintrag */
+-- FUN upd_objs: struct ** map[ident,<,object] -> struct
+DEF upd_objs(struct(1,2,3,4,5,_,7,8), new) == struct(1,2,3,4,5,new,7,8)
+/* % aendert onlys-Eintrag */
+-- FUN upd_onlys: struct ** map[inst,<,seq[name]] -> struct
+DEF upd_onlys(struct(1,2,3,4,_,6,7,8),new) == struct(1,2,3,4,new,6,7,8)
+
+/* %@code{newIdent(s)} liefert @code{ident}, der in @code{s} nicht vorkommt */
+-- FUN newIdent: struct -> ident
+DEF newIdent(struct(_,_,_,_,_,obs,props, _)) ==
+	ident(succ((max, 0) / no * (dom(obs) + dom(props))))
+
+/* %@code{newOrigin} liefert Origin, der neu ist. */
+-- FUN newOrigin: interOpal -> origin
+DEF newOrigin(interOpal(_, strs)) ==
+    origin(succ((max, 0) / no * origin? | dom(strs)))
+
+/* % fuegt name hinzu, falls noch nicht enthalten */
+-- FUN addToOnlys: seq[name] ** name -> seq[name]
+DEF addToOnlys(sn, n) == IF exist?(\\na. na=n, sn) THEN sn ELSE sn +% n FI
+
+/* % fuegt der Implementation die Gleichungen hinzu, falls moeglich */
+FUN add_eqns: object ** seq[eqn] -> object
+DEF object(1,2,3,4,oldimpl,6,7) add_eqns neweqns ==
+	IF oldimpl missing? THEN object(1,2,3,4,def(neweqns),6,7)
+	IF oldimpl def? THEN object(1,2,3,4,def(eqns(oldimpl) ++ neweqns),6,7)
+	ELSE ABORT("add_eqns'SynthesizeIO: neither missing nor def")
+	FI
+
+/* % erzeugt zu einer Sequenz von Funktionaliaeten eine Sequenz von lokalen 
+Variablen. Numerierung startet wie angegeben, f sagt, wie man aus der Nummer 
+ein Symbol macht. Zurueckgegeben wird die naechste freie Nummer */
+-- FUN asVarSeq: seq[fct] ** nat ** (nat -> denotation) -> nat ** seq[var]
+DEF asVarSeq(fcts, start, f) ==
+	(\\no, fc. (succ(no), var(?, ident(no), f(no), fc))) * (start, fcts)

@@ -1,0 +1,177 @@
+#!/bin/sh
+
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/admin/selftest/selftest,v 1.1.1.1 1998-06-16 16:01:06 wg Exp $
+
+# Script for booting & selftesting a new Opal compiler.
+
+# This script uses a checked-out source hierarchie 
+# suitable for `ocs' (obtained by `ors update') to
+# implement a bootstrap loop as follows.
+
+# At each iteration step, it compiles the library
+# and the compiler found under $TOCS/src/{oc,lib} with
+# (a) the standard compiler, if $TOCS/bin/{oc1,oc2} 
+# does not exist (b) the compiler and library under
+# $TOCS, otherwise. 
+
+# If compilation is sucessfull, it saves a snapshot of the
+# current configuration, i.e. the binarys used
+# for compilation (if they were not the standard compiler),
+# and the sources and their derived objects in 
+# $TOCS/boot-<key>, und restarts the
+# process after cleaning up all derived objects.
+
+
+# NOTE. We should have used `ors' instead of `ocs', but
+# the permant retrieves on the source repository slow down
+# the net too much.
+
+# See also ProjectDefs.selftest
+
+nice=
+restart=no
+iter=3
+
+id=`date +"%H-%d-%m"`
+
+while [ $# -ge 1 ] 
+do
+  case $1 in
+    -update)
+      update=yes
+      shift
+      ;;
+    -nice) 
+      nice=nice
+      shift
+      ;;
+    -restart) 
+      restart=yes
+      shift
+      ;;
+    [1,2,3,4,5,6,7,8,9])
+      iter=$1
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [ $# -ge 1 ]
+then
+  echo "usage: `basename $0` [ -update ] [ -nice ] [ -restart ] [ 1|2|...|9 ]"
+  exit 255
+fi
+
+if [ -z "$TOCS" ]
+then
+  echo "You must define enverionemnt variable TOCS"
+  exit 255
+fi
+
+OCSPROJECT=$TOCS/ProjectDefs.selftest
+export OCSPROJECT
+
+# update of source tree
+
+if [ "$update" = yes ]
+then
+  echo
+  echo "Updating sources"
+  echo
+  (cd $TOCS/src; ors update)
+
+fi
+
+# short test if sources are available
+
+if [ ! -f $TOCS/src/oc/SysDefs ] || [ ! -f $TOCS/src/oc/oc1/SysDefs ] \
+	 || [ ! -f $TOCS/src/lib/SysDefs ]
+then
+  echo "Probably not all sources around."
+  echo "Use \`ors update' or option -update to retrieve them."
+fi
+
+echo
+echo "**** selftest $TOCS ($iter iterations)"
+echo
+ocs info
+echo
+
+cnt=1
+
+while [ $cnt -le $iter ]
+do
+
+  echo
+  echo "==== Starting iteration $cnt"
+  date
+  echo
+
+  # Check wich system to use for compilation
+  if [ -x $TOCS/bin/oc1 ] && [ -x $TOCS/bin/oc2 ] && [ -x $TOCS/bin/genmake ] 
+  then
+    echo "Using last compiled compiler"
+    last=yes
+    ocsparam="EXP_OC1=$TOCS/bin/oc1 EXP_OC2=$TOCS/bin/oc2 EXP_GENMAKE=$TOCS/bin/genmake ocs=expocs"
+  else
+    last=no
+    ocsparam="ocs=expocs"
+    echo "Using standard compiler"
+  fi
+  echo
+
+  if [ "$restart" = "no" ]
+  then
+    echo "Fast clean of derived objects"
+    (cd $TOCS/src; find . -name "OCS" -exec rm -rf {} \; 2>/dev/null)
+  fi
+  restart=no
+
+  echo
+  echo "---- Compiling sources ($cnt time)"
+  date
+  echo
+  (cd $TOCS/src/; $nice ocs $ocsparam) || exit 3
+
+
+  echo
+  echo
+  echo "$cnt iteration done!"
+  if [ -x $TOCS/bin/oc1 ] 
+  then 
+  	echo
+  	echo "checking differences of oc1"
+	strip $TOCS/src/oc/oc1/driver/oc1
+	diff $TOCS/src/oc/oc1/driver/oc1 $TOCS/bin/oc1
+  fi 
+  if [ -x $TOCS/bin/oc2 ] 
+  then 
+  	echo
+  	echo "checking differences of oc2"
+	strip $TOCS/src/oc/oc2/driver/oc2
+	diff $TOCS/src/oc/oc2/driver/oc2 $TOCS/bin/oc2
+  fi 
+  saveconf="boot-$cnt-$id.tar.gz"
+  echo "Saving configuration to $saveconf"
+  date
+  ocsdirs="`find $TOCS/src -type d -name OCS -print`"
+  if [ $last = yes ] 
+  then
+    tar cf - $TOCS/bin/oc1 $TOCS/bin/oc2 $TOCS/bin/genmake $TOCS/src/lib \
+		$ocsdirs | gzip -9 > $saveconf
+  else
+    tar cf - $TOCS/src/lib $ocsdirs | gzip > $saveconf
+  fi
+  echo 
+  echo "Installing new compiler"
+  (cd $TOCS/src/oc/oc1/driver; ocs $ocsparam install) || exit 4
+  (cd $TOCS/src/oc/oc2/driver; ocs $ocsparam install) || exit 4
+  (cd $TOCS/src/om/genmake; ocs $ocsparam install) || exit 4
+
+  cnt=`expr $cnt + 1`
+
+done

@@ -1,0 +1,276 @@
+
+IMPLEMENTATION WinWindow
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Void		COMPLETELY
+	Nat		ONLY nat:SORT = 2 4
+	NatConv		COMPLETELY
+	Real		ONLY real:SORT * /
+	RealConv	COMPLETELY
+	Denotation	COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	StringScan	COMPLETELY
+	BTUnion		COMPLETELY
+	Seq		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	ONLY done
+	ComAgent	COMPLETELY
+
+
+IMPORT	WinInternal	COMPLETELY
+	WinTclTk	COMPLETELY
+	WinConfig	COMPLETELY
+	WinAppl		ONLY screenResolution 
+
+
+-- %$Window Creation and Deletion$ =========================================
+
+DEF window(View) ==
+    window({}, View)
+
+DEF window(Config, View) ==
+    window("", Config, View)
+
+DEF window(Class, Config, View) ==
+    window(root, Class, Config, View)
+
+DEF window(Master, Class, Config, View) ==
+    window(root(Master), Class, Config, View)
+
+FUN window : widget ** denotation ** wconfig ** view -> com[window]
+DEF window(Master, Class, Config, View) ==
+    retain						& (\\ _ .
+    -- create window
+    window(Master, Class)				& (\\ Win .
+    LET Root == root(Win)
+    IN
+
+    -- apply transient
+    (IF asTk(Master) |= asTk(Root) THEN
+	act("wm transient %s %s" <- Root + Master)
+    ELSE
+	succeed(nil)
+    FI)							& (\\ _ .
+
+    act("wm title %s {}" <- Root + Master)		& (\\ _ .
+    -- apply configuration options
+    apply(Win, Config)					& (\\ _ .
+
+    -- display view
+    widget(Root)					& (\\ Wid .
+    displayView(Win, Wid, View)				& (\\ _ .
+
+    -- pack in toplevel
+    act("pack %s -in %s -expand 1 -fill both " <- Wid + Root) 
+    							& (\\ _ .
+
+    submit						& (\\ _ .
+    succeed(Win)
+    )))))))))
+
+
+DEF delete(Win) ==
+    -- destroy Tcl widget 
+    act("destroy %s" <- root(Win))
+    
+
+DEF Win set Config ==
+    retain; apply(Win, Config); submit
+
+
+-- %$Window Configurations$ ==================================================
+
+
+DEF {} == wconfig(<>)
+DEF wconfig(S1) ++ wconfig(S2) == wconfig(S1 ++ S2)
+
+-- %$$State: Exp $ -----------------------------------------------------------------
+
+DATA state == normal iconic withdrawn
+
+DEF state(normal) ==
+    wconfig(\\Win. act("wm deiconify %s" <- root(Win)))
+
+DEF state(iconic) ==
+    wconfig(\\Win. act("wm iconify %s" <- root(Win)))
+
+DEF state(withdrawn) ==
+    wconfig(\\Win. act("wm withdraw %s" <- root(Win)))
+
+DEF Win get state ==
+    eval("wm state %s" <- root(Win))  & (\\Str.
+    LET State == `(Str)
+    IN
+    succeed( 
+    	  IF State = "iconic" 	  THEN iconic
+	  IF State = "withdrawn"  THEN withdrawn
+				  ELSE normal FI  )
+    )
+
+DATA stateRequest == state
+
+
+-- %$$Manager$ ----------------------------------------------------------
+
+
+DATA manager == external internal
+
+DEF manager(external) ==
+    wconfig(\\Win. act("wm overrideredirect %s 0" <- root(Win)))
+
+DEF manager(internal) ==
+    wconfig(\\Win. act("wm overrideredirect %s 1" <- root(Win)))
+
+
+DEF Win get manager ==
+    eval("wm overrideredirect %s" <- root(Win))  & (\\Str.
+    LET State == `(Str)
+    IN
+    succeed( 
+    	  IF State = "1" 	  THEN internal
+    	  			  ELSE external FI )
+    )
+
+DATA managerRequest == manager
+
+
+-- %$$Stacking Order$ -------------------------------------------------------
+
+DEF raise == wconfig(\\Win. act("raise %s" <- root(Win)))
+DEF lower == wconfig(\\Win. act("lower %s" <- root(Win)))
+
+
+-- %$$Title etc $ ---------------------------------------------------------
+
+DEF titleName(Title) ==
+    wconfig(\\Win. act("wm title %s {%s}" <- root(Win) + Title))
+
+DEF iconName(Name) ==
+    wconfig(\\Win. act("wm iconname %s {%s}" <- root(Win) + Name))
+
+
+-- %$$Window Size$ ---------------------------------------------------------
+
+DEF size(Size) ==
+    wconfig(\\Win. 
+	gridded?(Win)					& (\\Gridded? .
+	act("wm geometry %s =%nx%n" 
+		<- root(Win) + asWinSize(width(Size), Gridded?)
+		      	    + asWinSize(height(Size), Gridded?)) 	
+	)
+    )
+
+DEF size(Size, MinSize, MaxSize) ==
+    wconfig(\\Win. 
+	gridded?(Win)					& (\\Gridded? .
+	act("wm minsize %s %n %n" 
+		<- root(Win) + asWinSize(width(MinSize), Gridded?)
+		      	    + asWinSize(height(MinSize), Gridded?)) & (\\ _ .
+	act("wm maxsize %s %n %n" 
+		<- root(Win) + asWinSize(width(MaxSize), Gridded?)
+		      	    + asWinSize(height(MaxSize), Gridded?)) & (\\ _ .
+	act("wm geometry %s =%nx%n" 
+		<- root(Win) + asWinSize(width(Size), Gridded?)
+		      	    + asWinSize(height(Size), Gridded?)) 
+	)))
+    )
+
+FUN gridded? : window -> com[bool]
+DEF gridded?(Win) ==
+    eval("wm grid %s" <- root(Win)) 		& (\\GridInfo.
+    succeed(::?(GridInfo))
+    )
+
+FUN asWinSize : real ** bool -> nat
+DEF asWinSize(Val, IsGridded?) ==
+    IF IsGridded? THEN
+        -- take size as gridding units
+        asNat(Val)
+    ELSE
+        asNat(Val / screenResolution)
+    FI
+
+DEF Win get size ==
+    gridded?(Win)					& (\\Gridded? .
+    eval("winfo width %s" <- root(Win))			& (\\WidthStr .
+    eval("winfo height %s" <- root(Win))			& (\\HeightStr .
+    LET Width == convReal(WidthStr)
+        Height == convReal(HeightStr)
+    IN
+    IF Gridded? THEN
+	succeed(x(Width, Height))
+    ELSE
+	succeed(x(Width * screenResolution,
+		     Height * screenResolution))
+    FI
+    )))
+
+DATA sizeRequest == size
+
+
+-- %$$Window Position$ ------------------------------------------------------
+
+DEF position(@(Xc, Yc)) ==
+    wconfig(\\Win .
+    	act("wm geometry %s +%n+%n"
+    		<- root(Win) + asNat(Xc / screenResolution)
+    		            + asNat(Yc / screenResolution))
+    )
+
+DEF Win get position ==
+    eval("winfo geometry %s" <- root(Win))			& (\\Geo.
+    LET Vals == scan("=%nx%n+%n+%n", Geo)
+    IN
+    IF #(Vals) = 4 THEN
+	LET Xc == asReal(nat(ft(rt(rt(Vals)))))
+	    Yc == asReal(nat(ft(rt(rt(rt((Vals)))))))
+	IN
+	succeed(@(Xc * screenResolution, Yc * screenResolution))
+    ELSE
+	yield(fail("Cannot determine position of window"))
+    FI
+    )
+
+DATA positionRequest == position
+
+
+-- %$$Window Icon$ ----------------------------------------------------------
+
+DEF icon(Image, Mask) ==
+    wconfig(\\Win .
+	act("wm iconbitmap %s {%s}; wm iconmask %s {%s}"
+		  <- root(Win) + name(Image)
+		   + root(Win) + name(Mask))
+    )
+
+DEF icon(Image) ==
+    wconfig(\\Win .
+	act("wm iconbitmap %s {%s}"
+		  <- root(Win) + name(Image))
+    )
+
+-- %$$Window Groups$ ------------------------------------------------------
+
+DEF group(Leader) ==
+    wconfig(\\Win . act("wm group %s %s" <- root(Win) + root(Leader)))
+
+
+-- %$Window Grabbing $ =====================================================
+
+DEF grab(Win) ==
+    act("grab set %s" <- root(Win))
+
+DEF release(Win) ==
+    act("grab release %s" <- root(Win))
+
+DEF focus(Win) ==
+    act("focus %s" <- root(Win))
+
+DEF defaultFocus(Win) ==
+    act("focus default %s" <- root(Win))

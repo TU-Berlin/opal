@@ -1,0 +1,908 @@
+IMPLEMENTATION DbEvaluation
+
+IMPORT  Array           COMPLETELY
+        ComCompose      COMPLETELY
+        ComPairCompose  COMPLETELY
+        ComTripleCompose COMPLETELY
+        ComSeqMap       COMPLETELY
+        ComSeqReduce    COMPLETELY
+        ComState        COMPLETELY
+        Com             COMPLETELY
+        File            COMPLETELY
+        Denotation      COMPLETELY
+        DenotationSplit COMPLETELY
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        FmtSet          COMPLETELY
+        Map             COMPLETELY
+        Nat             COMPLETELY
+        NatConv         COMPLETELY
+        OptionMap       COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Triple          COMPLETELY
+        Process         COMPLETELY
+        RUNTIME         COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqZip          COMPLETELY
+        Seq             COMPLETELY
+        SetConv         COMPLETELY
+        Set             COMPLETELY
+        SetMap          COMPLETELY
+        SetFilter       COMPLETELY
+        SetReduce       COMPLETELY
+        Void            COMPLETELY
+        Char            COMPLETELY
+        String          COMPLETELY
+        StringConv      COMPLETELY
+        StringFormat    COMPLETELY
+        StringFilter    COMPLETELY
+        SeqMapIndex     COMPLETELY
+        ABORT           COMPLETELY
+        Compose         COMPLETELY
+        PrintableChar ONLY $ # rsngquote lbrace rbrace comma
+        StringScan ONLY scan: string -> option[nat] ** string
+        ComState COMPLETELY
+
+IMPORT  -- parsing
+        Argspec         COMPLETELY
+        ArgspecBasic    COMPLETELY
+
+IMPORT  -- repo
+        RepoAbsy        COMPLETELY
+        RepoAn          COMPLETELY
+        RepoCom         COMPLETELY
+        RepoCom1        COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoComAbort    COMPLETELY
+        RepoName        COMPLETELY
+        RepoNameConv    COMPLETELY
+        RepoObjectAccess COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoFocus       COMPLETELY
+        RepoAbsy        COMPLETELY
+        RepoMaintain    COMPLETELY
+        Check           COMPLETELY
+        Compile         COMPLETELY
+        Exec            COMPLETELY
+IMPORT  -- dbshared
+        Expression      COMPLETELY
+        ChannelData     COMPLETELY
+IMPORT  -- dbenv
+        DbConversion    COMPLETELY
+        DbIdentTable    COMPLETELY
+        DbNameStack     COMPLETELY
+        DbUnitTable     COMPLETELY
+        DbAbsyAux       COMPLETELY
+IMPORT  -- this
+        DbGlobalEnv     COMPLETELY
+        DbPrintLayer    COMPLETELY
+        DbEvalTable     COMPLETELY
+        DbComm          COMPLETELY
+        DbCommFastRpc   COMPLETELY
+        DbRequire       COMPLETELY
+        DbSelection     COMPLETELY      
+        DbDebugState    COMPLETELY
+
+IMPORT  RepoNameConv    COMPLETELY
+        File            COMPLETELY
+       DbName2Expr COMPLETELY
+       DbConvEnv COMPLETELY
+        
+
+
+-- FIXME: move to another place
+FUN trim : denotation ** (char -> bool) -> denotation
+DEF trim(D, P) ==
+    -- FIXME: this is not an effiecient implementation
+    `(drop(P, revert(drop(P, revert(!(D))))))
+    
+
+
+-- %$evaluation and execution$ ==============================================
+
+DEF eval(UName,Src) ==
+        -- get selection info and checked expression
+    prepare(UName, Src)                                 & (\\SI, AExpr.
+
+        -- convert this expression into internal format
+    identTable                                          & (\\ITab.
+    query(fct(_,AExpr))                                 & (\\AFct.
+    query(\\R. &(asExpr(R,ITab,AExpr)))                 & (\\EExpr,EFct.
+    succeed(exprReductor(SI)(EExpr))                    & (\\EExpr1.
+    succeed(fctAReductor(SI)(AFct))                     & (\\AFct1.
+    succeed(fctEReductor(SI)(EFct))                     & (\\EFct1.
+
+        -- create a new evaluation entry
+    newEval(Src,AFct1)                                  & (\\EvalId.
+
+        -- do eval EExpr (with functionality Fct)
+    rpc?(eval(EvalId,EExpr1,EFct1),evalAnswer?)         & (\\OptRes.
+    IF avail?(OptRes)
+      THEN query(\\R. defaultHandler(ITab, EFct1, R)(cont(OptRes)))
+      ELSE /* handle breaks */
+           rpc(break,evalAnswer?) & 
+           defaultHandler
+    FI                                                  )))))))))
+
+
+DEF exec(UName,Src) ==
+        -- get selection info and checked expression
+    prepare(UName, Src)                                 & (\\SI, AExpr.
+
+        -- convert this expression into internal format
+    identTable                                          & (\\ITab.
+    query(fct(_,AExpr))                                 & (\\AFct.
+    query(\\R. &(asExpr(R,ITab,AExpr)))                 & (\\EExpr,EFct.
+    succeed(exprReductor(SI)(EExpr))                    & (\\EExpr1.
+    succeed(fctAReductor(SI)(AFct))                     & (\\AFct1.
+    succeed(fctEReductor(SI)(EFct))                     & (\\EFct1.
+
+        -- check if AFct1 is a valid command
+    checkCom(AFct1, EFct1)                              & (\\AFct2,EFct2.
+
+        -- create a new evaluation entry
+    newEval(Src,AFct2)                                  & (\\EvalId.
+
+        -- do exec 
+    rpc?(exec(EvalId,EExpr1,EFct2),execAnswer?)         & (\\OptRes.
+    IF avail?(OptRes)
+      THEN query(\\R. defaultHandler(ITab, EFct2, R)(cont(OptRes)))
+      ELSE /* handle breaks */
+           rpc(break,execAnswer?) & 
+           defaultHandler
+    FI                                                  ))))))))))
+
+
+FUN prepare : unitName ** denotation -> com[pair[selectionInfo,expr'RepoAbsy]]
+DEF prepare(UName, Src0) ==
+    analyseRes(Src0)                                    & (\\Src.  
+        -- analyse selection 
+    analyseSelection(UName, Src)                        & (\\ SI .
+
+        -- the dependencies are the transitive closure of
+        -- the Imports plus addiitonal Context +
+        -- UName, according to relation implImports
+    get(addCtxId)                                       & (\\ AddCtx.
+    LET Imports == ((baseName o unit) 
+                    *[objectName,<,unitName,<] notInCtxImports(SI)) + AddCtx
+        BasicDeps == incl(UName :=_part sign,
+                          incl(UName :=_part impl, Imports))
+    IN
+    query(\\R. related(transitive, implImports)(BasicDeps)(R)
+                + BasicDeps)                            & (\\Deps.
+
+        -- some of the dependencies need a compilation
+    query(\\R. (\\U. ~(interpreted?(U)(R))) | Deps)     & (\\CodedDeps.
+
+        -- check and compile dependencies
+    checkAndCompile(Deps, CodedDeps)                    & (\\ _ .
+
+        -- now check the expression
+    LET Src1 == sourceExtender(SI)(Src)
+    IN
+--    checkExpr(UName,notInCtxImports(SI),Src1)           & \\AExpr .
+    checkExpr(UName,notInCtxImports(SI),AddCtx,Src1)        & (\\AExpr .
+
+        -- ensure that a client is running
+    ensureClient                                        & (\\ _ .
+
+        -- require basic dependencies to be up 
+        -- to date within client process
+    require(BasicDeps)                                  & (\\ _ .
+
+        -- require debug state to be up to date
+    requireDebug                                        & (\\ _ .
+
+        -- succeed selection info and checked expression
+    succeed(SI & AExpr)
+    ))))))))))
+
+
+-- should go to DbRequire
+
+FUN requireDebug : com[void]
+DEF requireDebug == 
+    -- bring debug states up-to-date
+    -- FIXME: use only those debug objects which effect some Deps
+    debugObjects                                        & (\\ DbObjs .
+    LET Deps == (baseName o unit) * DbObjs
+    IN
+    require(Deps)                                       & (\\ _ .
+    (\\O, _ . debugState(O)     & (\\ S .
+              requireDebugState(O, S)
+              ),
+     nil) /& asSeq(DbObjs)
+    ))
+
+-- %$Type information$
+FUN typeInfoId: stateId[bool]
+DEF typeInfoId == EXEC(stateId(false))
+
+DEF setType(show) == typeInfoId => (\\ _ . show)
+DEF getType == get(typeInfoId)
+
+-- %$save exec ============================================================
+
+/* implementation basing on execObject'Exec 
+   ... unless the real exec is stable.
+
+*/
+
+
+DEF saveExec(UName,Src) ==
+        -- the dependencies are the transitive closure of
+        -- the Imports plus UName, according to relation implImports
+    query(\\R. related(transitive, implImports)(UName)(R)
+               + %(UName :=_part sign, UName :=_part impl)) & (\\Deps.
+
+        -- all of the dependencies need a compilation
+    LET CodedDeps == Deps
+    IN
+
+        -- check and compile
+    checkAndCompile(Deps, CodedDeps)                    & (\\ _ .
+
+        -- now check the expression
+    checkExpr(UName,{},Deps,Src)                             & (\\AExpr.
+
+        -- the expression must be a name of a com[void]
+    checkComName(AExpr)                                 & (\\ OName .
+
+    clientArgs                                          & (\\ Args .
+    upd(callObject(OName, Args, stdIn, stdOut, stdErr))
+                                                        & (\\ _ .
+    succeed("")
+    ))))))
+
+-- the function below will go away if saveExec does:
+
+FUN checkComName : expr'RepoAbsy -> com[objectName]
+DEF checkComName(name(_, Oper)) ==
+    query(\\R.
+        LET Fct == fct(Oper)(R)
+        IN
+        IF name?(Fct) THEN
+            LET Sort == sort(Fct)
+            IN
+            IF symbol(Sort)(R) = "com" ANDIF
+                        symbol(baseName(unit(Sort)))(R) = "Com" THEN
+                LET Acts == actuals(Sort)(R) 
+                IN
+                IF ::?(Acts) ANDIF
+                        symbol(ft(Acts))(R) = "void" ANDIF
+                        symbol(baseName(unit(ft(Acts))))(R) = "Void" THEN
+                   true
+                ELSE false FI
+            ELSE false FI
+        ELSE false FI
+    )                                           & (\\ Ok.
+    IF Ok THEN
+        succeed(Oper)
+    ELSE
+        diag(!!(error,freeRef("exec"), "name must be of sort com[void]"))
+                & abort
+    FI
+    )
+DEF checkComName(_) ==
+    diag(!!(error,freeRef("exec"), "demanded a name of sort com[void]"))
+                & abort
+
+
+-- %$checking$ ============================================================
+
+FUN checkAndCompile : set[unitName,<] ** set[unitName,<]
+                                        -> com[void]
+DEF checkAndCompile(Deps, CodedDeps) ==
+    clearErrors                                         & (\\ _ .
+    upd(checkUnits(Deps))                               & (\\ _ .
+    errors?                                             & (\\ CheckErrors? .
+    IF CheckErrors? THEN
+        abort
+    ELSE
+        upd(compileUnits(CodedDeps))                    & (\\ _ .
+        errors?                                         & (\\ CompileErrors? .
+        IF CompileErrors? THEN
+            abort
+        ELSE succeed(nil) FI
+        ))
+    FI
+    )))
+
+FUN checkExpr : unitName ** set[objectName,<] **
+                 set[unitName, <] ** denotation 
+                                        -> com[expr'RepoAbsy]
+DEF checkExpr(UName,Imports, AddCtx, Src) ==
+    LET TrimedSrc == trim(Src, space?)
+    IN
+    -- first try to parse a name directly
+    parse(objectNameSpec, %(TrimedSrc))                 ; (\\Ans.
+    IF okay?(Ans) THEN
+        -- FIXME: what is with generics here??
+        succeed(name(none, data(Ans)))
+    ELSE 
+        -- reasons such as ambiguity may have let
+        -- failed the argument specification parser,
+        -- so let the compiler take over
+        queryUpd(checkExpr(UName, Imports, AddCtx, TrimedSrc)) & (\\ CheckRes .
+        diag(diag(CheckRes))                            & (\\ _ .
+        IF failure?(CheckRes)
+          THEN abort
+          ELSE succeed(expr(CheckRes))
+        FI                                                      
+        ))
+    FI
+    )
+
+
+FUN checkName : unitName ** denotation -> com[objectName]
+DEF checkName(U, Src) ==
+    checkExpr(U, {}, {}, Src)                                       & (\\ Expr .
+    IF name?(Expr) THEN
+        succeed(oper(Expr))
+    ELSE
+        diag(!!(error,freeRef("name check"), "must be a name"))
+                & abort
+    FI
+    )
+
+
+FUN checkCom : fct'RepoAbsy ** fct'Expression
+                -> com[pair[fct'RepoAbsy,fct'Expression]]
+
+DEF checkCom(name(ASort), sort(ESort)) ==
+    query(\\R.
+        IF symbol(ASort)(R) = "com" ANDIF
+                        symbol(baseName(unit(ASort)))(R) = "Com" THEN
+            actuals(ASort)(R) 
+        ELSE <> FI)                             & (\\Actuals.
+    IF #(Actuals) = 1 and #(instances(ESort)) = 1 THEN
+        succeed(name(ft(Actuals)) & sort(ft(instances(ESort))))
+    ELSE
+        diag(!!(error, freeRef("command check"), 
+                "demanded expression of sort com[ _ ]'Com"))
+                                                & (\\ _ .
+        abort
+        )
+    FI
+    )
+
+DEF checkCom(_, _) ==
+    diag(!!(error, freeRef("command check"), 
+                "demanded expression of sort com[ _ ]'Com"))
+                                                & (\\ _ .
+    abort
+    )
+    
+
+-- %$The default-answer-handler$ ========================================
+FUN defaultHandler : answer -> com[denotation]
+DEF defaultHandler(_)           == succeed("")
+DEF defaultHandler(error(Msg))  == break(Msg)
+DEF defaultHandler(result(evalId(_),Den)) ==    
+    succeed(Den)
+DEF defaultHandler(fail(evalId(_),Den))         ==
+    succeed("failed with: `"++Den++"'")
+DEF defaultHandler(broken(evalId(_))) ==
+    select(0)                                   & (\\ImplText.
+    succeed(
+      "evaluation interrupted:\n"++ImplText)    )
+DEF defaultHandler(aborted(evalId(_),Reason)) ==
+    select(0)                                   & (\\ImplText.
+    succeed("evaluation aborted: `"++Reason++"'\n"++
+            ImplText)                           )
+
+
+FUN defaultHandler: identTable ** fct'Expression ** repo -> answer -> com[denotation]
+DEF defaultHandler(_, _, _)(else) == defaultHandler(else)
+DEF defaultHandler(iTab, f, R)(result(E AS evalId(_),Den)) ==
+  getType & (\\ t? .
+  LET ty0 == IF t? THEN pretty(prettyFct(f)) ELSE "" FI 
+      ty == `(replace(iTab, ty0!)(R))
+  IN
+  replace(iTab, R, E, <>)(Den!) & (\\ res0.
+  succeed(+/+("\n")(res0`, ty))
+  ))
+
+FUN replace: identTable ** string -> repo -> string
+DEF replace(iTab, txt)(R) ==
+  LET (a, z) == split(\\c. ~(c = $), txt)
+  IN
+  IF z empty? THEN a
+  IF #(z) < 3 THEN txt
+  OTHERWISE
+  IF ~(ft(rt(z)) = rsngquote) THEN
+    a ++ ($ :: replace(iTab, rt(z))(R))
+   ELSE
+    LET y == rt(rt(z))
+        (on: option[nat], rest) == scan(y)
+    IN
+    IF on nil? THEN
+      a ++ ($ :: rsngquote :: replace(iTab, y)(R))
+    ELSE
+      a ++ !(asDeno(symbolic)(iTab ! objectId(on cont))(R)) ++
+        replace(iTab, rt(rest))(R)
+    FI
+  FI
+
+FUN replace: identTable ** repo ** evalId ** seq[nat] -> string -> com[string]
+DEF replace(iTab,R,eId,tpos)(txt) ==
+  LET (a,z) == split(\\c. c |= $, txt)
+  IN
+  IF z empty? THEN succeed(txt)
+  IF #(z) < 3 THEN succeed(txt)
+  ELSE
+    LET cmd == ft(rt(z))
+    IN
+    IF cmd = rsngquote THEN  
+      LET (on, rest) == scanObj(iTab, rt(rt(z)))
+      IN
+      IF on nil? THEN replace(iTab, R, eId, tpos)(rest) & (\\ res.
+                      succeed(a ++ res))
+      IF on avail? THEN
+        replace(iTab, R, eId, tpos)(rest) & (\\ res.
+        succeed(a ++ !(asDeno(symbolic)(on cont)(R)) ++ res)
+        )
+      FI
+    IF cmd = lbrace THEN
+      scanClosure(iTab, R, eId, tpos, rt(rt(z))) & (\\ res. succeed(a ++ res))
+    ELSE
+      replace(iTab,R, eId, tpos)(rt(z)) & (\\ res.
+      succeed(a ++ $ :: res)
+      )
+    FI
+  FI
+  
+FUN scanClosure: identTable ** repo ** evalId **
+                  seq[nat] ** string -> com[string]
+DEF scanClosure(iTab, R, eId, tpos, txt) ==
+  IF #(txt) < 3 THEN succeed(txt)
+  OTHERWISE
+  IF (ft(txt) |= $) or (ft(rt(txt)) |= rsngquote) THEN succeed(txt)
+  ELSE
+    LET (on, rest) == scanObj(iTab, rt(rt(txt)))
+    IN
+    IF on nil? THEN succeed(txt)
+    IF on avail? THEN
+      LET f == fct2fct(init(R, iTab), fct(on cont)(R))
+      IN
+      IF ~(f funct?) THEN succeed(txt)
+      ELSE
+        scanClosure(iTab, R, eId, tpos, 0, rest, dom(f), codom(f)) & (\\ res.
+        succeed(!(asDeno(symbolic)(on cont)(R)) ++ lbrace :: res)
+        )
+      FI
+    FI
+  FI
+                     
+FUN scanClosure: identTable ** repo ** evalId ** seq[nat] ** nat **
+                  string ** fct'Expression ** fct'Expression -> com[string]
+DEF scanClosure(iTab, R, eId, tpos, cpos, txt, cfct, nfct) ==
+  IF txt <>? THEN succeed(txt)
+  ELSE
+    IF ft(txt) = $ THEN replace(iTab, R, eId, tpos)(rt(txt))
+    ELSE
+      IF (cfct sort?) or (cfct funct?) THEN
+        rpc(iprint(eId, tpos +% cpos, cfct)) & (\\ ans.
+        IF ~(ans iprint?) THEN ABORT("scanClosure'DbEvaluation: wrong answer")
+        ELSE
+          replace(iTab, R, eId, tpos +% cpos)(result(ans)!) & (\\ res1.
+          scanClosure(iTab, R, eId, tpos, cpos succ, txt rt,
+                      nfct dom, nfct codom) & (\\ res2.
+          IF ft(txt rt) = $ THEN succeed(res1 ++ rbrace :: res2)
+          ELSE succeed(res1 ++ rbrace :: lbrace :: res2)
+          FI
+          ))
+        FI)
+      IF cfct cart? THEN
+        IF elems(cfct) <>? THEN -- leeres Tupel
+          scanClosure(iTab, R, eId, tpos, cpos succ, txt rt,
+                      nfct dom, nfct codom) & (\\ res2.
+          IF ft(txt rt) = $ THEN
+            succeed(rbrace :: res2)
+          ELSE
+            succeed(rbrace :: lbrace :: res2)
+          FI
+          )
+        IF rt(elems(cfct)) <>?  THEN -- einelementiges Tupel
+          rpc(iprint(eId, tpos +% cpos, ft(elems(cfct)))) & (\\ ans.
+          IF ~(ans iprint?) THEN
+            ABORT("scanClosure'DbEvaluation: wrong answer/2")
+          ELSE
+          replace(iTab, R, eId, tpos +% cpos)(result(ans)!) & (\\ res1.
+          scanClosure(iTab, R, eId, tpos, cpos succ, txt rt,
+                      nfct dom, nfct codom) & (\\ res2.
+          IF ft(txt rt) = $ THEN succeed(res1 ++ rbrace :: res2)
+          ELSE succeed(res1 ++ rbrace :: lbrace :: res2)
+          FI
+          ))
+          FI)
+        ELSE -- mehrelementiges Tupel
+          rpc(iprint(eId, tpos +% cpos, ft(elems(cfct)))) & (\\ ans.
+          IF ~(ans iprint?) THEN
+            ABORT("scanClosure'DbEvaluation: wrong answer/3")
+          ELSE
+          replace(iTab, R, eId, tpos +% cpos)(result(ans)!) & (\\ res1.
+          scanClosure(iTab, R, eId, tpos, cpos succ, txt rt,
+                      cart(rt(elems(cfct))), nfct) & (\\ res2.
+          succeed(res1 ++ comma :: res2)
+          ))
+          FI
+          )
+        FI
+      FI
+    FI
+  FI
+        
+-- %String sollte mit <number> rsngquote beginnen
+FUN scanObj: identTable** string -> option[objectName] ** string
+DEF scanObj(iTab, txt) ==
+  LET (on, rest) == scan(txt)
+  IN
+  IF on nil? THEN (nil, txt)
+  IF on avail? THEN (avail(iTab ! objectId(on cont)), rt(rest))
+  FI
+
+
+FUN symbol : repo ** identTable -> name -> denotation
+DEF symbol(R,ITab)(name(Id,<>)) == symbol(R,ITab)(Id)
+DEF symbol(R,ITab)(name(Id,Inst)) == 
+    symbol(R,ITab)(Id) ++ "[" ++ join(symbol(R,ITab) * Inst,",") ++ "]"
+
+FUN symbol : repo ** identTable -> objectId -> denotation
+DEF symbol(R,ITab)(Id) ==
+    LET OName == ITab ! Id
+    IN asDeno(symbolic)(OName)(R)
+
+/* %
+ @code{evalAnswer?} is true iff the answer is correct w.r.t. evaluation.
+@code{execAnswer?} is true iff the answer is correct w.r.t. execution.
+@code{btAnswer?} is true iff the answer is correct w.r.t. back trace.
+@code{continueAnswer?} is true iff the answer is correct w.r.t. continue.
+ */
+FUN evalAnswer? execAnswer?  btAnswer? continueAnswer? : answer -> bool
+DEF evalAnswer?(A)      == result?(A) or broken?(A) or aborted?(A)
+DEF execAnswer?(A)      == evalAnswer?(A) or fail?(A)
+DEF btAnswer?(A)        == bt?(A) or error?(A)
+DEF continueAnswer?(A)  == execAnswer?(A) or error?(A)
+
+-- %$debug state$ ========================================================
+
+FUN debugOff    : unitName ** denotation        -> com[denotation]
+FUN debugOn     : unitName ** denotation        -> com[denotation]
+FUN debugBreak  : unitName ** denotation ** option[denotation]  
+                                                -> com[denotation]
+
+DEF debugShow ==
+    debugObjects                                        & (\\ Objs .
+    (\\ O . 
+        asDeno(symbolic)(O)             & (\\ ObjDeno .
+        debugState(O)                   & (\\ S .
+        succeed(lit(ObjDeno) .. ->!(20) .. prettyDebugState(S))
+        ))
+    ) *& asSeq(Objs)                                    & (\\ Fmts .
+    outdatedDebugStates                                 & (\\ States .
+    LET StateFmts == 
+         (\\S. lit("<outdated>") .. ->!(20) .. prettyDebugState(S)
+                        .. lit("`") .. lit(source(S)) .. lit("'")) * States
+    IN
+    succeed(pretty(list(\\X.X, brk, Fmts ++ StateFmts)))
+    )))
+
+    FUN prettyDebugState : debugState -> fmt
+    DEF prettyDebugState(noDebug)     == lit("off")
+    DEF prettyDebugState(debug(_, _)) == lit("monitor")
+    DEF prettyDebugState(break(_, _)) == lit("break")
+    DEF prettyDebugState(guardedBreak(_, _, GS, _)) == 
+        lit("break    "); lit(GS)
+
+
+DEF debugOff(Src) ==
+    focus                                       & (\\ U .
+    debugOff(U, Src)
+    )
+
+DEF debugOff(U, Src) ==
+    checkName(U, Src)                           & (\\ O0 .
+    LET O == baseName(O0)
+    IN
+    debugState(O)                               & (\\ S .
+    IF noDebug?(S) THEN
+        asDeno(symbolic)(O)                             & (\\ Deno .
+        diag(!!(warn, freeRef("debug"),
+                "debugging is not enabled for `%s'",
+                Deno))                                  & (\\ _ .
+        succeed("")
+        ))
+    ELSE
+        setDebugState(O, noDebug)                       & (\\ _ .
+        succeed("")
+        )
+    FI
+    ))
+
+DEF debugOn(Src) ==
+    focus                                       & (\\ U.
+    debugOn(U, Src)
+    )
+
+DEF debugOn(U, Src) ==
+    debugPrepare(U, Src)                        & (\\ _, O .
+    setDebugState(O, debug(Src, U))             & (\\ _ .
+    succeed("")
+    ))
+
+DEF debugBreak(Src, Guard?) ==
+    focus                                       & (\\ U.
+    debugBreak(U, Src, Guard?)
+    )
+
+DEF debugBreak(U, Src, Guard?) ==
+    debugPrepare(U, Src)                        & (\\ _, O .
+    IF nil?(Guard?) THEN
+        setDebugState(O, break(Src, U))             & (\\ _ .
+        succeed("")
+        )
+    ELSE
+        query(\\R. boolResult(R, fct(O)(R)))        & (\\ GuardFct.
+        query(opalFct(GuardFct))                    & (\\ GuardFctDeno.
+        LET GSrc == "(\n" ++ cont(Guard?) ++ "\n) : "
+                        ++ GuardFctDeno
+        IN
+        checkExpr(U, {}, {}, GSrc)                      & (\\ Expr .
+        setDebugState(O, 
+           guardedBreak(Src, U, cont(Guard?), Expr))
+                                                    & (\\ _ .
+        succeed("")
+        ))))
+    FI
+    )
+
+    FUN boolResult : repo ** fct'RepoAbsy -> fct'RepoAbsy
+    DEF boolResult(R, funct(Dom, Codom)) == funct(Dom, boolResult(R, Codom))
+    DEF boolResult(R, _) == name(bool(R))
+        
+DEF debugUpdate == debugUpdate()
+
+FUN debugUpdate : () -> com[denotation]
+DEF debugUpdate() ==
+    outdatedDebugStates                         & (\\ States.
+    IF ::?(States) THEN
+        setOutdatedDebugStates(rt(States))          & (\\ _ .
+        LET S == ft(States)
+        IN
+        IF noDebug?(S) THEN
+            -- forget it
+            debugUpdate()
+        ELSE
+            event(progress(unit(unit(S)),
+                        pretty(lit("updating `") .. lit(source(S)) ..
+                               lit("', ") .. prettyDebugState(S) .. 
+                               lit(" in "))))
+                                                    & (\\ _ .
+            IF debug?(S) THEN
+                debugOn(unit(S), source(S)) & debugUpdate()
+            IF break?(S) THEN
+                debugBreak(unit(S), source(S), nil) & debugUpdate()
+            IF guardedBreak?(S) THEN
+                debugBreak(unit(S), source(S), avail(guardSource(S)))
+                                                        & debugUpdate()
+            FI
+            )
+        FI
+        )
+    ELSE
+        succeed("")
+    FI
+    )
+
+            
+FUN debugPrepare : unitName ** denotation -> com[pair[unitName, objectName]]
+DEF debugPrepare(U0, Src) ==
+    query(\\R. IF library?(U0)(R) THEN 
+                   U0 :=_part sign
+               ELSE U0 FI)                      & (\\ U .
+    upd(requireFullAbsy(U))                     & (\\ _ .
+    upd(requireSource(U))                       & (\\ _ .
+    checkAndCompile(%(U), {})                   & (\\ _ .
+
+    checkName(U, Src)                           & (\\ O0 .
+    LET O == baseName(O0)
+    IN
+    query(object(O))                            & (\\ Obj .
+    IF induced?(impl(Obj)) THEN
+        diag(!!(limit, freeRef("debug"),
+                "cannot debug a function induced by a DATA statement"))
+                & abort
+    OTHERWISE
+    IF ~(def?(impl(Obj))) THEN
+        diag(!!(limit, freeRef("debug"),
+                "cannot debug a function with unknown implementation"))
+                & abort
+    OTHERWISE
+    IF ~(oper?(kind(Obj))) THEN
+        diag(!!(limit, freeRef("debug"),
+                "cannot debug a sort"))
+                & abort
+    OTHERWISE
+    IF ~(funct?(fct(kind(Obj)))) THEN
+        diag(!!(limit, freeRef("debug"),
+                "cannot debug a constant"))
+                & abort
+    ELSE
+        succeed(U0 & O)
+    FI
+    ))))))
+        
+
+-- %$back trace$ ========================================================
+DEF bt ==
+    clientCheck                                 & (\\ _ .
+    identTable                                          & (\\ITab.
+    rpc(bt,btAnswer?)                                   & (\\Answer.
+    IF error?(Answer)
+      THEN defaultHandler(Answer)
+      ELSE query(\\R.join(prettyBt(R,ITab) * stack(Answer),"\n"))
+    FI                                                   )))
+
+FUN prettyBt : repo ** identTable -> nat ** reducedName -> denotation
+DEF prettyBt(R,ITab)(Idx,RName) ==
+        prettyReducedName(R,ITab,Idx)(RName)
+
+FUN prettyReducedName : repo ** identTable ** nat
+                                -> reducedName -> denotation
+DEF prettyReducedName(_,_, Idx)(escaped) == 
+    `(formatS("%-3n : <entering monitor>" <- Idx ))
+DEF prettyReducedName(_,_, Idx)(toplevel) == 
+    `(formatS("%-3n : <toplevel expression>" <- Idx ))
+DEF prettyReducedName(R,ITab, Idx)(name(N,interpreted)) == 
+    `(formatS("%-3n : %s (...)" <- Idx & symbol(R,ITab)(N)))
+DEF prettyReducedName(R,ITab, Idx)(name(N,coded))          == 
+    `(formatS("%-3s   ...\n" ++
+             "%-3n : %s" <- "" & Idx & symbol(R,ITab)(N)))
+
+-- %$continuation of evaluations$ ========================================
+DEF continue ==
+    clientCheck                                         & (\\ _ .
+    requireDebug                                        & (\\ _ .
+    rpc?(continue,continueAnswer?)                      & (\\OptRes.
+    IF avail?(OptRes)
+      THEN defaultHandler(cont(OptRes))
+      ELSE /* handle breaks */
+           rpc(break,execAnswer?) & 
+           defaultHandler
+    FI                                                  )))
+
+-- %$stepwise evaluation$ =================================================
+DEF step(nil) == nStep(1)
+DEF step(avail(N)) == nStep(N)
+
+FUN nStep : nat -> com[denotation]
+DEF nStep(N) ==
+    clientCheck                                         & (\\ _ .
+    requireDebug                                        & (\\ _ .
+    rpc?(singleStep(N),continueAnswer?)                 & (\\OptRes.
+    IF avail?(OptRes)
+      THEN defaultHandler(cont(OptRes))
+      ELSE /* handle breaks */
+           rpc(break,execAnswer?) & 
+           defaultHandler
+    FI                                                  )))
+
+-- %$breakpoints$ =================================================
+DEF breakPoint(Fun & nil) ==
+    clientCheck                                         & (\\ _ .
+    identTable                                          & (\\ITab.
+    rpc(breakPoint(bp(ITab ! Fun)),ready?)              & (\\ _ .
+    succeed("")                                         )))
+DEF breakPoint(Fun & avail(Src)) ==
+    clientCheck                                         & (\\ _ .
+    focus                                               & (\\UName.
+    checkExpr(UName,{},{},Src)                             & (\\AExpr.
+    identTable                                          & (\\ITab.
+    succeed(ITab ! Fun)                                 & (\\FunId.
+        -- require the fct'RepoAbsy
+    query(fct(_,AExpr))                                 & (\\AFct.
+    query(\\R. fct(Fun)(R))                             & (\\FunFct.
+    succeed(etaEnrichedRank(AFct))                      & (\\Rank.
+    succeed(rankDimTable(FunFct,0))                     & (\\Array.(
+    IF #(Array) < Rank
+      THEN break("too much arguments in guard.")
+      ELSE succeed(Array ! Rank)
+    FI)                                                 & (\\Dim.
+    query(\\R. &(asExpr(R,ITab,AExpr)))                 & (\\Guard, _ .
+        -- do eval IExpr (with functionality Fct)
+    succeed(guardedBp(FunId,Guard,Rank,Dim))            & (\\Bp.
+    rpc(breakPoint(Bp),ready?)                          & (\\ _ .
+    succeed("")                                         )))))))))))))
+
+    
+-- %$selection$ ==================================================
+DEF select(No) == 
+    -- FIXME: focus should be parameter as with eval
+    focus                                               & (\\UName.
+    clientCheck                                         & (\\ _ .
+    analyseSelection(UName, No, "")                     & (\\SI.
+    IF avail?(name?(SI)) ANDIF avail?(annotedImpl?(SI))
+                         ANDIF missing?(cont(annotedImpl?(SI)))
+      THEN query(\\R.
+             LET Name == cont(name?(SI))
+                 Symb == symbol(Name)(R)
+                 SSymb== symbol(unit(Name))(R)
+             IN "compiled function "++Symb++"'"++SSymb) 
+    OTHERWISE
+    IF avail?(annotedImpl?(SI)) and avail?(name?(SI))
+      THEN query(\\R. pretty(fmtImpl(cont(name?(SI)),
+                                     cont(annotedImpl?(SI)))(R)))
+    IF avail?(name?(SI)) and nil?(annotedImpl?(SI))
+      THEN query(\\R.
+             LET Name == cont(name?(SI))
+                 Symb == symbol(Name)(R)
+                 SSymb== symbol(unit(Name))(R)
+             IN "breakpoint reached for "++Symb++"'"++SSymb)    
+      ELSE succeed("unrecognizable implementation for selection " ++ `(No))
+    FI                                                  )))
+
+DEF dumpSelection == getSelection & (\\Sel.dumpSelection(Sel))
+    
+FUN dumpSelection : selection -> com[denotation]
+DEF dumpSelection(selection(name(N,K),Pos,BindOffsets)) ==
+    -- FIXME: dump new field notInCtxImports
+    focus                                               & (\\UName.
+    clientCheck                                         & (\\ _ .
+    analyseSelection(UName, "")                         & (\\SI.
+    identTable                                          & (\\ITab.
+    succeed(ITab ! objectId(N))                         & (\\Name.
+    query(\\R. &(lookFor?(R,ITab,Name,Pos)))            & (\\OptNStack,Impl.(
+    IF avail?(OptNStack)
+      THEN succeed(cont(OptNStack))
+      ELSE break("no stack")
+    FI)                                                 & (\\NS.
+    succeed(pretty(fmtNameStack(NS)))                   & (\\NSText.
+    query(symbol(Name))                                 & (\\NameText.
+    succeed(pretty(fmtKind(K)))                         & (\\KText.
+    succeed(pretty(fmtTpos(Pos)))                       & (\\TposText.
+    succeed(pretty(
+        fmtSeq(\\S.fmtSeq(fmtBindOffset)(S))(BindOffsets))) & (\\BOffText.
+    query(\\R. pretty(fmtImpl(Name,Impl)(R)))           & (\\ImplText.
+    succeed(
+        "name:"++NameText++
+        "\nkind:"++KText++
+        "\npos:"++TposText++
+        "\nbindOffsets:"++BOffText++
+        "\nnameStack:"++NSText++
+        "\nimpl:\n"++ImplText++
+        "\n\nEXPRESSION:\n"++ sourceExtender(SI)("EXPR"))
+                                                        )))))))))))))
+
+DEF dumpSelection(selection(_,_,_)) == succeed("unknown position")
+
+-- %$Additional Context$
+
+-- %only signature parts!
+FUN addCtxId: stateId[set[unitName, <]]
+DEF addCtxId == EXEC(stateId({}))
+
+DEF contextAdd(units) == 
+  (addCtxId => (\\u. u + asSet(asSign * units))) & succeed("")
+DEF contextRm(units) ==
+  (addCtxId => (\\u. u - asSet(asSign * units))) & succeed("")
+DEF contextClear ==
+  (addCtxId => (\\ _ . {})) & succeed("")
+DEF contextShow ==
+  get(addCtxId) & (\\ u. asDeno(u))
+
+FUN asSign: unitName -> unitName
+DEF asSign(u) == u :=_part sign
+
+FUN asDeno: set[unitName, <] -> com[denotation]
+
+DEF asDeno(un) ==
+    IF ~({}?(un)) THEN
+      query(\\R. (+/+(" "), "") /[denotation,<,denotation]
+            (\\u. asDeno(symbolic)(u)(R)) * un) 
+    ELSE
+      succeed("")
+    FI

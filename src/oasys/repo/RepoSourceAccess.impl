@@ -1,0 +1,76 @@
+IMPLEMENTATION RepoSourceAccess
+
+IMPORT	Nat			COMPLETELY
+	Set			COMPLETELY
+	SetReduce		COMPLETELY
+	Seq			COMPLETELY
+	SeqMap			COMPLETELY
+	SeqFilter		COMPLETELY
+	Id			COMPLETELY
+	IdTab			COMPLETELY
+	IdTabReduce		COMPLETELY
+
+IMPORT	RepoInternData		COMPLETELY
+	RepoAbsy		COMPLETELY
+	RepoAn			COMPLETELY
+	RepoName		COMPLETELY
+	RepoSource		COMPLETELY
+	RepoObjectAccess	COMPLETELY
+
+DEF items(U0)(R) ==
+    LET U == baseName(U0)
+    IN
+    (\\Id, Item, Set. 
+    	IF removed?(Item) THEN Set
+			  ELSE incl(itemName(no(Id), U0), Set) FI,
+     {}) / items(unitInfo(U)(R))
+
+DEF items(O)(R) ==
+    items(object(O)(R))
+
+DEF itemOrder(U)(R) ==
+    (\\No. itemName(No, U)) * itemOrder(unitInfo(U)(R))
+
+DEF itemImports(U)(R) ==
+    itemImports(unitInfo(U)(R))
+
+DEF item(I)(R) ==
+    items(unitInfo(unit(I))(R)) ! id(no(I))
+
+DEF newItems(U, Items)(R) ==
+    LET (Ids1, R1) == 
+	    updateUnitInfo(U, \\ Info .
+		LET (Ids, ItemTab) == multiNew(#(Items),
+					      \\ _ . Items, 
+					      items(Info))
+		IN
+		(Ids, Info :=_items ItemTab
+			   :=_itemOrder itemOrder(Info) ++ (no * Ids))
+	    )(R)
+    IN
+    ((\\ Id. itemName(no(Id), U)) * Ids1, R1)
+
+DEF updateItem(itemName(No, U), Fun)(R) ==
+    updateUnitInfo(U, \\ Info .
+	Info :=_items upd(id(No), Fun, items(Info))
+    )(R)
+
+DEF removeItem(itemName(No, U))(R) ==
+    updateUnitInfo(U, \\ Info .
+	Info :=_items def(id(No), removed, items(Info))
+             :=_itemOrder (\\ No1 . No1 |= No) | itemOrder(Info)
+    )(R)
+
+DEF updateItemOrder(U, Fun)(R) == 
+    updateUnitInfo(U, \\ Info .
+	Info :=_itemOrder no * Fun(itemOrder(U)(R))
+    )(R)
+
+DEF assocItem(I, Os)(R) ==
+    (\\ O, Ri .
+	updateObject(O, \\ Ob . Ob :=_items incl(I, items(Ob)))(Ri),
+     R) / Os
+
+
+
+

@@ -1,0 +1,312 @@
+/* %-
+-- LAST EDIT: Mon Aug 12 10:13:28 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     insert own imported signature into global signature
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+-- ============================================================================
+*/
+
+IMPLEMENTATION StructOwn
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Objects         COMPLETELY
+        GlobSig4SigAna  COMPLETELY
+        Maps4SigAna     COMPLETELY
+        ImpDecl4SigAna  COMPLETELY
+        Name4SigAna     COMPLETELY
+        Decl4SigAna     COMPLETELY
+        PartNamePrep    COMPLETELY
+        GlobSigImpl     ONLY impl:SORT data none
+        ImpExpEntry     COMPLETELY
+        InterOpal       COMPLETELY
+        InterOpalModifier       COMPLETELY
+--ONLY interOpal:SORT object:SORT origin:SORT main
+        PartNameEntry   ONLY pN:SORT flatPnEle:SORT onlyPNE:SORT errInfo:SORT
+        Attributes      ONLY attr:SORT initAttr setParameter setExported
+        Name            COMPLETELY
+        Table           COMPLETELY
+        -- absy, etc.
+        Pragma          ONLY noPragma
+        Rep             COMPLETELY
+        Pos             ONLY pos
+        Fct             ONLY fct anyFct
+        -- lib
+        Compose         COMPLETELY
+        Triple          COMPLETELY
+        Seq             COMPLETELY
+        SeqIndex        ONLY !
+        SeqMap          ONLY *
+        SeqReduce       COMPLETELY
+        SeqZip          COMPLETELY
+        SeqSort         COMPLETELY
+        MySeqFun1       COMPLETELY
+        MySeqFun2       COMPLETELY
+        AbsyFun2        COMPLETELY
+        Pair            COMPLETELY
+        Nat             COMPLETELY
+        NatMap          COMPLETELY
+        Map             COMPLETELY
+        Option          COMPLETELY
+        OptionMap       COMPLETELY
+       Denotation ONLY = ++
+       ABORT ONLY ABORT
+       GlobPragma ONLY pragmaItem globPragma prag identify lexem lexem? ide
+       GlobSig ONLY updPragmas pragmas impPragmas updImpPragmas
+       DEBUG ONLY PRINT FIELD?[bool]
+       GlobSigToText ONLY ` 
+       AnalyzedGlobSigH ONLY setAttr
+       Attributes ONLY attr:SORT setClosed
+       SeqFilter ONLY |
+       Options ONLY pchecker?
+
+-- ---------------------------------------------------------------------------
+
+FUN insertOwnSignature : options ->
+                          repTab ** globSig ** interOpal ** bool -> globSig
+/* % die Deklarationen der Parameter koennen nicht nachtraeglich als solche
+ markiert werden, da die Tabelle noch nicht statisch ist     Andreas
+
+Müßten hier nicht eigentlich auch Laws etc. eingetragen werden?
+Problem ist sicher, da Laws aus der Signatur erst übersetzt werden müssten.
+Also erstmal lassen und in @code{insertOwnImpDecl} fuer die optionalen
+Spezifikationen bei den Funktionen nil eintragen. (kd)
+
+Achtung: die Pragmas enthalten evtl. Textkonstanten, die noch nicht in der
+RepTab stehen. Da die RepTab aber nachher nicht mehr verwendet wird, habe
+ich mir einen Hack erlaubt: s.u. (kd)
+
+*/
+DEF insertOwnSignature(opts)(RT, gS, sign, RemoweOwnTypes?) == 
+        LET Params == params(sign)
+--          SortedParams == msort(\\P1,P2. no(def(P1)) < no(def(P2)))(Params)
+                        -- sort by parameter position
+            paramDeclNoS == (no o ident) * Params
+            gS1 == (insertOwnDecl(RT,sign,paramDeclNoS, RemoweOwnTypes?) \ gS)
+                                 (objects(sign))
+            gS2 == (insertOwnImport(opts)(RT,sign,paramDeclNoS) \ gS1) 
+                                                (transStructs(sign))
+            GsParams == (\\N. decl(N) & noPragma) * paramDeclNoS 
+            filterP == IF pchecker?(opts) THEN noUnit ELSE \\ _ . true FI
+            gS3 == updPragmas(gS2,
+                              pragmas(gS2) ++
+                              asGlobPragma(sign, RT) *
+                              filterP | pragmas(mainStruct(sign)))
+            gS4 == closeNames(opts)(pragmas(gS3), gS3)
+            finGS == defSignFormParams(gS4, 
+                                getRep(RT, symbol(sign)), GsParams) 
+        IN finGS
+
+FUN insertOwnDecl : repTab ** interOpal ** seq[nat] ** bool -> 
+                        object ** globSig -> globSig
+-- ein Object der eigenen Signatur eintragen
+-- ignores free type information and saves "removeOwnTypes"
+DEF insertOwnDecl(RT, Inter, paramNoS, RemoveOwnTypes?)(Obj, gS) ==
+        LET No == no(ident(Obj))
+            MainStruct == mainStruct(Inter)
+            iD == impDecl(No)
+            Rep == getRep(RT, symbol(Obj))
+            Kind == kind(Obj)
+            expAttr == setExported(initAttr)
+            attr == IF exist?(No = _, paramNoS) THEN 
+                        setParameter(expAttr)
+                    ELSE expAttr FI
+        IN
+        IF sort?(Kind) THEN 
+                addSignSort(gS, iD, Rep, attr,
+                IF ~(RemoveOwnTypes?) ANDIF freeType?(MainStruct, Obj) THEN
+                        LET Prop == freeType(MainStruct, Obj)
+                            Impl == asImpl(Inter, asName(Inter), Prop)
+                        IN
+                        avail(Impl)
+                ELSE nil FI)
+        ELSE LET Fct == IF other?(Kind) THEN
+                          IF id(Kind) = "any" THEN anyFct
+                          ELSE ABORT("insertOwnDecl'StructOwn: unknown `other' kind of `" ++ id(Kind) ++ "'")
+                          FI
+                        IF fct?(Kind) THEN asFct(asName(Inter), fct(Kind)) 
+                        FI
+             IN
+                IF ~(RemoveOwnTypes?) ANDIF constructor?(MainStruct, Obj) THEN
+                        LET Variant == variant(MainStruct, Obj)
+                            Test == impDecl(no(ident(test(Variant))))
+                            Sels == (impDecl o (no o (ident o sel))) 
+                                                * comps(Variant)
+                        IN addSignOperCons(gS, iD, Rep, attr, Fct, Test, Sels)
+                ELSE addSignOper(gS, iD, Rep, attr, Fct)
+                FI
+        FI              
+
+FUN insertOwnImport : options -> repTab ** interOpal ** seq[nat] -> 
+                        struct'InterOpal ** globSig -> globSig
+-- ein importierte Struktur der eigenen Signatur eintragen
+-- %@zoindex traceInsertOwnImport
+DEF insertOwnImport(opts)(RT, Inter, _)(Struct, gS) == 
+        LET Objs == objects(Struct)
+            Orig == no(origin(Struct))
+            Rep == getRep(RT, symbol(Struct))
+            Insts == insts(Struct)
+            Onlys == reverseOnlys(Struct)
+            Params == params(Struct)
+            ParDecls == (\\O. impDecl(no(ident(O))) & noPragma) * Params
+            ParKinds == (asKind(asName(Inter), _) o kind) * Params
+            InstMap == (defSignInst(Inter, Orig) \ mtInstMap)(Insts)
+            GsAndDecls == (insertOwnImpDecl(RT, Inter, Orig, Struct, Onlys) \ 
+                                (gS & mtImpDeclMap(0)))(Objs)
+                                -- size is fixed in Maps4SignAna
+            gS0 == 1st(GsAndDecls)
+            gS1 == defSignImport(gS0, struct(Orig), Rep, 
+                                 ParDecls & ParKinds, InstMap, 2nd(GsAndDecls))
+            oldImpPragmas == impPragmas(gS1)
+            myOldPragmas == IF Rep def? oldImpPragmas THEN
+                              oldImpPragmas ! Rep
+                            ELSE
+                              <>
+                            FI
+            myNewPragmas == myOldPragmas ++
+                            asGlobPragma(Inter, RT) * pragmas(Struct)
+            finGS_1 == updImpPragmas(gS1, def(Rep, myNewPragmas, oldImpPragmas))
+            finGS0 == closeNames(opts)(myNewPragmas, finGS_1)
+            finGS == PRINT(FIELD?[bool]("-ztraceInsertOwnImport"),
+                           \\ . "inserted own import of " ++ symbol(Struct) ++
+                           "\n" ++ `(finGS0)(), finGS0)
+        IN finGS
+
+FUN defSignInst : interOpal ** nat -> 
+        pair[inst'InterOpal,seq[name'InterOpal]] ** instMap -> instMap
+DEF defSignInst(Inter, Struct)(Instio & Names, InstMap) ==
+LET Inst == asInst(Instio)
+IN 
+    IF no(Instio) = 0 THEN 
+        instMap(def(no(Inst), identUninst(<>), tabOf(InstMap)))
+    ELSE 
+        LET NameS == asName(Inter) * Names
+        IN
+                defSignIdentInst(Inst & NameS, InstMap) 
+    FI
+
+FUN insertOwnImpDecl : repTab ** interOpal ** nat ** struct'InterOpal ** 
+                        natMap[seq[inst'InterOpal]] -> 
+        object'InterOpal ** pair[globSig,impDeclMap] -> 
+                        pair[globSig,impDeclMap]
+
+DEF insertOwnImpDecl(RepTab, Inter, StrNo, Structio, OnlyMap)
+        (Obj, Gs & DeclMap) ==
+        LET Kind == kind(Obj)
+            Struct == struct(StrNo)
+            No == no(ident(Obj))
+            ImpDecl == impDecl(No)
+            Rep == getRep(RepTab, symbol(Obj))  
+            Insts == IF def?(No, OnlyMap) THEN asInst * (OnlyMap!No) ELSE <> FI
+        (finGs, finDeclMap) ==
+            IF sort?(Kind) THEN 
+                IF freeType?(Structio, Obj) THEN
+                        LET Prop == freeType(Structio, Obj)
+                            Impl == asImpl(Inter, asName(Inter), Prop)
+                        IN
+                        defSignImpSort(Gs, Struct, DeclMap, ImpDecl, 
+                                        Rep, avail(Impl), Insts)
+                ELSE defSignImpSort(Gs, Struct, DeclMap, ImpDecl,
+                                        Rep, nil, Insts)
+                FI
+            ELSE LET Fct == IF fct?(Kind) THEN
+                              asFct(asName(Inter), fct(Kind)) 
+                            IF other?(Kind) THEN
+                              IF id(Kind) = "any" THEN anyFct
+                              ELSE ABORT("insertOwnImpDecl'StructOwn: unknown other kind")
+                              FI
+                            FI
+                IN 
+                IF constructor?(Structio, Obj) THEN
+                        LET Variant == variant(Structio, Obj)
+                            Test == impDecl(no(ident(test(Variant))))
+                            Sels == (impDecl o (no o (ident o sel))) 
+                                                * comps(Variant)
+                        IN defSignImpOpCons(Gs, Struct, DeclMap, ImpDecl,
+                                Rep, Fct, Insts, Test, Sels)
+                ELSE defSignImpOp(Gs, Struct, DeclMap, ImpDecl,
+                            Rep, Fct, Insts, nil)
+                FI
+            FI
+        IN finGs & finDeclMap
+
+FUN asName : interOpal -> name'InterOpal -> name'Name
+DEF asName(_)(name(ident(No), main, _)) == intName(decl(No))
+DEF asName(Inter)(N AS name(ident(I), origin(O), Inst)) ==
+        LET Struct == struct(O)
+            ImpDecl == impDecl(I)
+        IN
+        IF param?(Inter,N) THEN
+                LET Obj == object(Inter, N)
+                IN formParam(Struct, ImpDecl, paramNo(Inter, N))
+        ELSE extName(struct(O), impDecl(I), asInst(Inst))
+        FI
+DEF asName(Inter)(N AS name(ident(I), local, _)) == local(I)
+
+/*
+FUN owngeneric? : interOpal ** name'InterOpal -> bool
+DEF owngeneric?(Inter, Name) ==
+IF main?(origin(Name)) THEN false
+ELSE 
+        IF param?(Inter, Name) THEN true
+        ELSE LET Inst == inst(Name) IN
+             IF formal?(Inst) THEN true
+             IF none?(Inst) THEN false
+             ELSE LET Struct == structs(Inter) ! origin(Name)
+                      Names == insts(Struct) ! inst(Name)
+                  IN  exist?(owngeneric?(Inter, _), Names)
+             FI
+        FI
+FI
+*/
+
+-- %$Pragmas$
+/* %Hack: eigentlich müßte man die repTab durchschleifen (SeqMapEnv o.s.ä.).
+Da die repTab nicht mehr gebraucht wird, habe ich sie auch hier als
+Eingabeparameter belassen. Das hat zur Folge, daß ord(r) für die noch
+nicht in der repTab vorhandenen Texte immer identisch ist. (kd) */
+FUN asGlobPragma: interOpal ** repTab -> pragma'InterOpal -> globPragma[name'Name]
+DEF asGlobPragma(sign, RT)(pragma(pis)) == prag(asPI(sign, RT) * pis)
+
+FUN asPI: interOpal ** repTab ->
+           pragmaItem'InterOpal -> pragmaItem'GlobPragma[name'Name]
+DEF asPI(sign, _ )(objects(nameS)) == identify(asName(sign) * nameS)
+DEF asPI(sign, RT)(token(p, t)) == 
+  LET (_, r) == insert(RT, t)
+  IN
+  lexem(r, asPos(p))
+
+/* %Die globalen Pragmas, die angeben, welche Theorien direkt importiert
+    werden sollen *nicht* übernommen werden, jedenfalls nicht,
+    wenn pchecker gilt. */
+FUN noUnit: pragma'InterOpal -> bool
+DEF noUnit(pragma(token(_, txt) :: _)) ==
+  IF txt = "ASSERT" THEN false
+  IF txt = "ASSUME" THEN false
+  ELSE true
+  FI
+DEF noUnit(pragma(_else)) == true
+
+
+/* % alle Namen aus übergebenen Pragmas als closed kennzeichnen */
+FUN closeNames: options -> seq[globPragma[name'Name]] ** globSig -> globSig
+DEF closeNames(opts)(prags, sig) == (closeNames(opts), sig) / prags
+
+FUN closeNames: options -> globPragma[name'Name] ** globSig -> globSig
+DEF closeNames(opts)(prag(pIs), sig) == 
+  IF pchecker?(opts) ANDIF pIs ::? ANDIF ft(pIs) lexem? ANDIF
+    ide(ft(pIs)) = assert or ide(ft(pIs)) = assume THEN sig
+  ELSE
+    (closeNames, sig) / pIs
+  FI
+
+FUN closeNames: pragmaItem[name'Name] ** globSig -> globSig
+DEF closeNames(identify(names), sig) ==
+  (setAttr(setClosed, \\ _ . true), sig) / names
+DEF closeNames(lexem(_, _), sig) == sig

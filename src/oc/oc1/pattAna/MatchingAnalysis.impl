@@ -1,0 +1,566 @@
+-- LAST EDIT: Wed Aug  4 01:42:50 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, Jun  9 1993: added debugging options -ztraceMatchAna
+--				 and -ztraceMatchAnaSteps
+--		af, Jun 14 1993: added work-around for bug oc1.30
+--		af, Jun 24 1993: changed layout for ambiguous pattern warning
+--		af, Jun 24 1993: adapted to new absy
+--		af, Jun 24 1993: code runtime-error for missing pattern
+--		af, Aug  4 1993: using pattDescr from Patterns (absy)
+--				 delivering sequence of matching patterns
+-- ============================================================================
+
+IMPLEMENTATION MatchingAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:45 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Char		ONLY char blank newline
+	Denotation	ONLY ++
+	String		COMPLETELY
+	StringConv	ONLY `
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Quadruple	COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqFilter	ONLY |
+	MySeqFun3	ONLY combine
+	Set		COMPLETELY
+	SetReduce	COMPLETELY
+	SetConv		ONLY asSet
+	Map		COMPLETELY
+	MapReduce	ONLY /
+	MapMap		ONLY *
+	Compose		ONLY o
+
+	Pos		ONLY pos `
+	Error		COMPLETELY
+
+	Fct[name]	COMPLETELY
+	Impl[name]	COMPLETELY
+	Patterns[name]	COMPLETELY
+
+	AnalyzedGlobSig	ONLY globSig name local? global? fct
+				eqBase ltName true pos:globSig**name->pos
+			     impl:SORT impl:impl->sortImpl freeType 
+			     ` :globSig**level->name->denotation level minimal
+			     useGenerated selectors test
+
+	DEBUG		ONLY FIELD? PRINT	-- for debugging
+	NatConv		ONLY ` :nat->denotation	-- for debugging
+	BTUnion		ONLY union string
+	StringFormat	ONLY format
+
+-- ----------------------------------------------------------------------------
+
+FUN generateMatchingCases: name**expr**seq[eq]**seq[expr]**globSig ->
+				expr**seq[seq[pattDescr]]**globSig**err
+
+DEF generateMatchingCases(target,lhs,oldEqs,newRhss,sig) ==
+  LET matchTreeNCaseSeq == generateTree(sig)*mkPairs(oldEqs,newRhss,0)
+      matchTreeNIgnored == (addTree(sig)\(noMatch & {}))(matchTreeNCaseSeq)
+      codedTree == debugMatchTree(sig,1st(matchTreeNIgnored))
+      noMatchPatts == (\\ _ . <>)*oldEqs
+  IN codeMatchTree(codedTree,noMatchPatts,lhs,target,sig)
+
+FUN mkPairs: seq[eq]**seq[expr]**nat -> seq[pair[expr,case]]
+
+DEF mkPairs(<>,<>,_) == <>
+
+DEF mkPairs(eq1::eqR,body1::bodyR,no) ==
+  (left(eq1) & alternative(no,pos(eq1),body1))::mkPairs(eqR,bodyR,succ(no))
+
+-- ----------------------------------------------------------------------------
+
+FUN debugMatchTree: globSig**matchTree -> matchTree
+DEF debugMatchTree(sig,tree) ==
+  PRINT(printMatchTree?,printMatchTree(sig,tree),tree)
+
+FUN printMatchTree: globSig**matchTree -> () -> string
+DEF printMatchTree(sig,tree)() == `(sig,0)(tree)
+
+FUN printMatchTree?: bool
+DEF printMatchTree? == FIELD?[bool]("-zprintMatchTree")
+
+-- ----------------------------------------------------------------------------
+
+DATA case == alternative(no:nat,pos:pos,body:expr)
+
+FUN < : case**case -> bool
+DEF c1<c2 == no(c1)<no(c2)
+
+FUN ` : case -> string
+DEF alternative(no,pos,_)` ==
+  !("<" ++ (no`) ++ " at " ++ (pos`) ++ ">")
+
+-- ----------------------------------------------------------------------------
+-- matching tree
+
+DATA matchTree == noMatch
+                  match(cases:set'Set[case,<])
+                  test(pos:seq[nat],
+                       irrel:set'Set[case,<],
+                       constrs:constrMap)
+
+FUN ` : globSig**nat -> matchTree -> string
+
+DEF `(_,n)(noMatch) == line(n,"noMatch"!)(<>)
+
+DEF `(_,n)(match(cases)) == line(n,"match "!)(cases`)
+
+DEF `(sig,n)(test(pos,irrel,constrs)) ==
+  line(n,"test pos"!)(pos`) ++(
+  line(n,"test irrel"!)(irrel`) ++
+  (`(sig,n)(constrs)))
+
+FUN ` : set'Set[case,<] -> string
+DEF cases:set'Set[case,<] ` == ((\\c,t.(blank::(c`))++t) / <>)(cases)
+
+FUN ` : seq[nat] -> string
+DEF pos:seq[nat] ` == ((\\n,t.(blank :: !(n`))++t) / <>)(pos)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- ordering on positions
+
+FUN < : seq[nat]**seq[nat] -> bool
+
+DEF     <>     <     <>     == false
+DEF (p11::p1R) < (p21::p2R) ==
+  IF p11<p21 THEN true
+  IF p11=p21 THEN p1R<p2R
+  IF p11>p21 THEN false
+  FI
+
+-- ----------------------------------------------------------------------------
+-- maps constructors to matching trees
+
+DATA constrMap == map(domain:seq[name],
+                      defined:map[name,ltName,matchTree],
+                      else:option[matchTree])
+
+FUN ` : globSig**nat -> constrMap -> string
+
+DEF `(sig,n)(map(_,defined,nil)) == (`(sig,n) / <>)(defined)
+DEF `(sig,n)(map(_,defined,avail(tree))) ==
+  (`(sig,n) / <>)(defined) ++
+  line(n,"test else "!)(`(sig,succ(n))(tree))
+
+FUN ` : globSig**nat -> name**matchTree**string -> string
+
+DEF `(sig,n)(name,tree,restString) ==
+  line(n,!("test constructor " ++ `(sig,minimal)(name)))
+      (`(sig,succ(n))(tree))
+  ++ restString
+
+FUN line: nat**string -> string -> string
+DEF line(0,pre)(string) == (newline::pre)++string
+DEF line(succ(n),pre)(string) == line(n,blank::pre)(string)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN new: seq[name]**name**matchTree -> constrMap
+
+DEF new(dom,constr,tree) ==
+  IF (dom#)=1 THEN map(dom,(constr,tree) def {},nil)
+  ELSE map(dom,(constr,tree) def {},avail(noMatch))
+  FI
+
+FUN addToAll: constrMap**(matchTree->matchTree) -> constrMap
+
+DEF addToAll(map(dom,def,nil),add) == map(dom,add*def,nil)
+DEF addToAll(map(dom,def,avail(else)),add) == map(dom,add*def,avail(add(else)))
+
+FUN merge: constrMap**constrMap**(matchTree**matchTree->matchTree) -> constrMap
+
+DEF merge(map(dom1,def1,optElse1),map(dom2,def2,optElse2),mergeTrees) ==
+  LET (mfn,trace?) == IF asSet(dom1) =[name,ltName] asSet(dom2) THEN
+						  (mergeForName,false)
+			  -- this should ALWAYS be the case, but see bug oc1.30
+		      ELSE (workAround(dom2),traceWorkArounds?)
+		      FI
+      (newDef,elseNil?) == (1st(HUDEL),2nd(HUDEL))
+      HUDEL == (mfn(def1,optElse1,def2,optElse2,mergeTrees)\({} & true))(dom1)
+      newElse == IF elseNil? THEN nil
+                 ELSE avail(mergeTrees(cont(optElse1),cont(optElse2)))
+                 FI
+  IN PRINT(trace?,"using work-around for bug oc1.30",map(dom1,newDef,newElse))
+
+FUN mergeForName: map[name,ltName,matchTree]**option[matchTree]
+                  **map[name,ltName,matchTree]**option[matchTree]
+			**(matchTree**matchTree->matchTree)
+                  -> name**pair[map[name,ltName,matchTree],bool]
+                        -> pair[map[name,ltName,matchTree],bool]
+
+DEF mergeForName(def1,else1,def2,else2,merge)(c,newDef&full) ==
+  IF c def? def1 THEN
+    IF c def? def2 THEN      ((c,merge(def1!c,def2!c)) def newDef)&full
+    ELSE                ((c,merge(def1!c,cont(else2))) def newDef)&full
+    FI
+  ELSE
+    IF c def? def2 THEN ((c,merge(cont(else1),def2!c)) def newDef)&full
+    ELSE                                                   newDef &false
+    FI
+  FI
+
+FUN workAround: seq[name]
+		-> map[name,ltName,matchTree]**option[matchTree]
+		   **map[name,ltName,matchTree]**option[matchTree]
+		   **(matchTree**matchTree->matchTree)
+                -> name**pair[map[name,ltName,matchTree],bool]
+                -> pair[map[name,ltName,matchTree],bool]
+
+DEF workAround(dom2)(def1,else1,def2,else2,merge)(c1,newDef&full) ==
+  LET c2s == (\\c.c1 eqBase c) | dom2
+      c2 == IF #(c2s) = 1 THEN ft(c2s) FI
+  IN IF c1 def? def1 THEN
+       IF c2 def? def2 THEN     ((c1,merge(def1!c1,def2!c2)) def newDef)&full
+       ELSE                 ((c1,merge(def1!c1,cont(else2))) def newDef)&full
+       FI
+     ELSE
+       IF c2 def? def2 THEN ((c1,merge(cont(else1),def2!c2)) def newDef)&full
+       ELSE                                                   newDef &false
+       FI
+     FI
+
+FUN traceWorkArounds?: bool
+DEF traceWorkArounds? == FIELD?[bool]("-ztraceWorkArounds")
+
+-- ----------------------------------------------------------------------------
+-- 'patterns' used for the 'real' pattern at a position as well as the
+-- selecting expression of this position
+
+DATA pattern == patt(pos:seq[nat], patt:expr)
+
+FUN mkInitialQueue: expr -> seq[pattern]**nat
+
+DEF mkInitialQueue(val(_,_)) == (<>,0)
+
+DEF mkInitialQueue(apply(f,tuple(elems,_),_)) ==
+  LET (1stPart,len1) == mkInitialQueue(f)
+      (2ndPart,len) == mkAdditionalQueue(elems,len1)
+  IN (1stPart++2ndPart,len)
+
+DEF mkInitialQueue(apply(f,a,_)) ==
+  LET (1stPart,len) == mkInitialQueue(f)
+  IN (1stPart+%patt(len%,a),succ(len))
+
+FUN mkAdditionalQueue: seq[expr]**nat -> seq[pattern]**nat
+
+DEF mkAdditionalQueue(<>,prev) == (<>,prev)
+DEF mkAdditionalQueue(e1::eR,prev) ==
+  LET 1st == patt(prev%,e1)
+      (rest,len) == mkAdditionalQueue(eR,succ(prev))
+  IN (1st::rest,len)
+
+-- ----------------------------------------------------------------------------
+
+FUN traceMatchAna?: bool
+DEF traceMatchAna? == FIELD?[bool]("-ztraceMatchAna")
+
+FUN traceMatchAnaSteps?: bool
+DEF traceMatchAnaSteps? == FIELD?[bool]("-ztraceMatchAnaSteps")
+
+FUN resultTreeIndent stepTreeIndent: nat
+DEF resultTreeIndent == 5
+DEF stepTreeIndent == 10
+
+FUN traceGenTree: globSig**case**matchTree -> () -> string
+DEF traceGenTree(sig,case,tree)() ==
+  format("generated tree for case %s:%s",
+         %(string(case`),string(`(sig,resultTreeIndent)(tree))))
+
+FUN debugGenTree: globSig**case**matchTree -> matchTree
+DEF debugGenTree(sig,case,tree) ==
+  PRINT(traceMatchAna? or traceMatchAnaSteps?,traceGenTree(sig,case,tree),tree)
+
+FUN traceAddTree: globSig**case**matchTree -> () -> string
+DEF traceAddTree(sig,case,tree)() ==
+  format("added tree for case %s:%s",
+         %(string(case`),string(`(sig,resultTreeIndent)(tree))))
+
+FUN debugAddTree: globSig**case**matchTree -> matchTree
+DEF debugAddTree(sig,case,tree) ==
+  PRINT(traceMatchAna? or traceMatchAnaSteps?,traceAddTree(sig,case,tree),tree)
+
+FUN traceStep: globSig**matchTree**case**matchTree**set'Set[case,<]
+	       **set'Set[case,<]**set'Set[case,<]
+	       **matchTree
+	       -> () -> string
+DEF traceStep(sig,t1,c1,t2,c2,more,less,t)() ==
+  format("  added tree for case %s:%s\n",
+	 %(string(c1:case `),string(`(sig,stepTreeIndent)(t1)))) ++(
+  format("    to tree for cases {%s}:%s\n",
+	 %(string(c2:set'Set[case,<] `),string(`(sig,stepTreeIndent)(t2)))) ++
+  format("    with more specific cases {%s} and less specific cases {%s} to%s",
+	 %(string(more:set'Set[case,<] `),string(less:set'Set[case,<] `),
+	   string(`(sig,stepTreeIndent)(t)))))
+
+FUN debugStep: globSig**matchTree**case**matchTree**set'Set[case,<]
+	       **set'Set[case,<]**set'Set[case,<]**matchTree
+	       -> matchTree
+DEF debugStep(sig,t1,c1,t2,c2,more,less,t) ==
+  PRINT(traceMatchAnaSteps?,traceStep(sig,t1,c1,t2,c2,more,less,t),t)
+
+-- ----------------------------------------------------------------------------
+
+FUN generateTree: globSig -> pair[expr,case] -> pair[matchTree,case]
+
+DEF generateTree(sig)(lhs&case) ==
+  LET (queue,_) == mkInitialQueue(lhs)
+      tree == genTree(sig)(queue,case)
+  IN debugGenTree(sig,case,tree)&case
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN genTree: globSig -> seq[pattern]**case -> matchTree
+
+DEF genTree(_)(<>,case) == match(case%)
+
+DEF genTree(sig)(patt(pos,val(n,_))::queue,case) ==
+  LET subMatchTree == genTree(sig)(queue,case)
+  IN IF n global? THEN
+       LET consFct == fct(sig,n)
+           constructedSort == object(IF consFct funct? THEN res(consFct)
+                                     IF consFct sort? THEN consFct
+                                     FI)
+           allConstrs == cons*variants(impl(freeType(sig,constructedSort)))
+       IN test(pos,{},new(allConstrs,n,subMatchTree))
+     IF n local?  THEN subMatchTree
+     FI
+
+DEF genTree(sig)
+           (patt(pos,apply(val(constr,_),tuple(elems,_),_))::queue,case) ==
+  LET newQueue == ((\\e,q.q+%patt(pos+%(q#),e)) \ <>)(elems)
+      subMatchTree == genTree(sig)(newQueue++queue,case)
+      consFct == fct(sig,constr)
+      constructedSort == object(IF consFct funct? THEN res(consFct)
+                                IF consFct sort? THEN consFct
+                                FI)
+      allConstrs == cons*variants(impl(freeType(sig,constructedSort)))
+  IN test(pos,{},new(allConstrs,constr,subMatchTree))
+
+DEF genTree(sig)(patt(pos,apply(val(constr,_),expr,_))::queue,case) ==
+  LET newFirst == patt(pos+%0,expr)
+      subMatchTree == genTree(sig)(newFirst::queue,case)
+      consFct == fct(sig,constr)
+      constructedSort == object(IF consFct funct? THEN res(consFct)
+                                IF consFct sort? THEN consFct
+                                FI)
+      allConstrs == cons*variants(impl(freeType(sig,constructedSort)))
+  IN test(pos,{},new(allConstrs,constr,subMatchTree))
+
+DEF genTree(sig)(patt(pos,as(_,expr,_))::queue,case) ==
+  genTree(sig)(patt(pos,expr)::queue,case)
+
+-- ----------------------------------------------------------------------------
+
+FUN addTree: globSig -> pair[matchTree,case]**pair[matchTree,set'Set[case,<]]
+                                            -> pair[matchTree,set'Set[case,<]]
+
+DEF addTree(sig)(addedTree&addedCase,oldTree&oldCases) ==
+  LET tree == add(sig)(addedTree,addedCase,oldTree,oldCases,{},{})
+  IN debugAddTree(sig,addedCase,tree) & incl(addedCase,oldCases)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN add doAdd: globSig
+	       -> matchTree**case**matchTree**set'Set[case,<]
+		  **set'Set[case,<]**set'Set[case,<]
+	       -> matchTree
+
+DEF add(sig)(t1,c1,t2,c2,more,less) ==
+  LET tree == doAdd(sig)(t1,c1,t2,c2,more,less)
+  IN debugStep(sig,t1,c1,t2,c2,more,less,tree)
+
+DEF doAdd(_)(noMatch,_,t2,_,_,_) == t2
+
+DEF doAdd(_)(t1,_,noMatch,_,_,_) == t1
+
+DEF doAdd(_)(match(_),case1,
+               match(match2),_,moreSpec,lessSpec) ==
+  LET overallMoreSpecific == (moreSpec-lessSpec)*match2
+  IN IF overallMoreSpecific {}? THEN
+				match(incl(case1,match2-(lessSpec-moreSpec)))
+     ELSE match(match2)
+     FI
+
+DEF doAdd(sig)(t1 AS match(_),case1,
+               test(p2,irrel2,constrs2),cases2,moreSpec,lessSpec) ==
+  test(p2,incl(case1,irrel2),newConstrs2)
+  WHERE newConstrs2 == addToAll(constrs2,addTree1)
+        addTree1 == \\t.add(sig)(t1,case1,t,cases2,
+					moreSpec+(cases2-irrel2),lessSpec)
+
+DEF doAdd(sig)(test(p1,_,constrs1),case1,
+               t2 AS match(_),cases2,moreSpec,_) ==
+  test(p1,cases2,newConstrs1)
+  WHERE newConstrs1 == addToAll(constrs1,addTree2)
+        addTree2 == \\t.add(sig)(t,case1,t2,cases2,moreSpec,cases2)
+
+DEF doAdd(sig)(t1 AS test(p1,_,constrs1),case1,
+               t2 AS test(p2,irrel2,constrs2),cases2,moreSpec,lessSpec) ==
+  IF p1<p2 THEN test(p1,cases2,newConstrs1)
+                WHERE newConstrs1 == addToAll(constrs1,addTree2)
+                      addTree2 == \\t.add(sig)
+				         (t,case1,t2,cases2,moreSpec,cases2)
+  IF p2<p1 THEN test(p2,incl(case1,irrel2),newConstrs2)
+                WHERE newConstrs2 == addToAll(constrs2,addTree1)
+                      addTree1 == \\t.add(sig)(t1,case1,t,cases2,
+                                              moreSpec+(cases2-irrel2),lessSpec)
+  ELSE test(p2,irrel2,mergedConstrs)
+       WHERE mergedConstrs == merge(constrs1,constrs2,mergeTrees)
+             mergeTrees == \\s1,s2.add(sig)(s1,case1,
+                                            s2,cases2,moreSpec,lessSpec+irrel2)
+  FI
+
+-- ----------------------------------------------------------------------------
+-- pattern description for warnings/hints
+
+FUN mkInitialPattDescr: expr -> pattDescr
+
+DEF mkInitialPattDescr(val(n,_)) == target(n,<>)
+
+DEF mkInitialPattDescr(apply(f,val(_,_),_)) ==
+  LET fPatt == mkInitialPattDescr(f)
+  IN target(fun(fPatt),args(fPatt)+%(irrel%))
+
+DEF mkInitialPattDescr(apply(f,tuple(e,_),_)) ==
+  LET fPatt == mkInitialPattDescr(f)
+  IN target(fun(fPatt),args(fPatt)+%((\\ _ .irrel)*e))
+
+FUN specialize: seq[nat]**name**globSig -> pattDescr -> pattDescr
+
+DEF specialize(<>,newConstr,sig)(irrel) ==
+  patt(newConstr,(\\ _ .irrel)*selectors(sig,newConstr))
+
+DEF specialize(pos1::posR,newConstr,sig)(patt(constr,subPatts)) ==
+  LET (front,tail) == split(pos1,subPatts)
+      newSubPatt == specialize(posR,newConstr,sig)(ft(tail))
+  IN patt(constr,front++(newSubPatt::rt(tail)))
+
+DEF specialize(pos1::posR,newConstr,sig)(target(fun,args1::argsR)) ==
+  IF pos1 < #(args1) THEN
+     LET (front,tail) == split(pos1,args1)
+	 newSubPatt == specialize(posR,newConstr,sig)(ft(tail))
+     IN target(fun,(front++(newSubPatt::rt(tail)))::argsR)
+  ELSE
+     LET dummy == specialize((pos1 - #(args1))::posR,newConstr,sig)
+			    (target(fun,argsR))
+     IN target(fun,args1::args(dummy))
+  FI
+
+FUN indent: string
+DEF indent == !("\n     ")
+
+FUN ` : globSig -> seq[pattDescr] -> string
+
+DEF `(sig)(patt :: <>) == blank:: !(`(`(sig,minimal))(patt))
+DEF `(sig)(patts) == (++ / <>)((\\t.indent++t) * 
+				((! o `(`(sig,minimal))) * patts))
+
+-- ----------------------------------------------------------------------------
+
+FUN codeMatchTree: matchTree**seq[seq[pattDescr]]**expr**name**globSig
+		   -> expr**seq[seq[pattDescr]]**globSig**err
+
+DEF codeMatchTree(mTree,patts,newLhs,target,sig) ==
+  LET (queue,_) == mkInitialQueue(newLhs)
+      newPos == pos(sig,target)
+      patt == mkInitialPattDescr(newLhs)
+  IN code(mTree,patts,queue,patt%,sig,newPos)
+
+FUN code: matchTree**seq[seq[pattDescr]]
+	  **seq[pattern]**seq[pattDescr]**globSig**pos
+	  -> expr**seq[seq[pattDescr]]**globSig**err
+
+DEF code(match(matchingCases),patts,_,patt,sig,tPos) ==
+  LET newPatts == updatePatts(patts,matchingCases,patt)
+  IN
+  IF (matchingCases#)=1 THEN (body(arb(matchingCases)),newPatts,sig,ok)
+  ELSE LET addTrueGuard == \\case,guards.
+                             guard(val(true(sig),tPos),body(case),tPos)::guards
+           addPos == \\case,string. blank :: (!(`(pos(case))) ++ string)
+       IN (cases((addTrueGuard / <>)(matchingCases),none(tPos),tPos),
+	   newPatts,
+           sig,
+           err(warning,"ambiguous patterns at%s for%s",
+               `(sig)(patt),(addPos / <>)(matchingCases),
+               pos(arb(matchingCases))))
+  FI
+
+DEF code(mTree AS test(testPos,irrel,map(dom,def,optElse)),patts,
+         q AS patt(exprPos,expr)::queue,pattD,sig,tPos) ==
+  IF exprPos < testPos THEN code(mTree,patts,queue,pattD,sig,tPos)
+  ELSE -- exprPos=testPos
+    LET (guards,interPatts,interSig,err1) == (1st(HUDEL),2nd(HUDEL),3rd(HUDEL),4th(HUDEL))
+        HUDEL == (codeNextTree(q,pattD,tPos) / &(<>,patts,sig,ok))(def)
+        (newElse,finalPatts,finalSig,err2) ==
+          IF optElse nil? THEN (none(tPos),interPatts,interSig,ok)
+          OTHERWISE
+          IF cont(optElse) noMatch? THEN
+            (rtError(msg`,tPos),interPatts,interSig,
+	     (+ \ ok)(mkHint*missingPatts))
+            WHERE msg == ("missing pattern for"!) ++ `(sig)(missingPatts)
+		  missingPatts == (missing \ <>)(dom)
+                  missing == \\c,s.
+                               IF def?(c,def) THEN s
+                               ELSE (mkPatt(c) * pattD) ++ s
+                               FI
+                  mkPatt == \\c. \\p.specialize(exprPos,c,sig)(p)
+                  mkHint == \\s.err(hint,"missing pattern for %s",
+			            !(`(`(sig,minimal))(s)),tPos)
+          ELSE code(cont(optElse),interPatts,queue,newPattD,interSig,tPos)
+               WHERE newPattD == combine(spec,elseConstrs,pattD)
+                     spec == \\c,p.specialize(exprPos,c,sig)(p)
+                     elseConstrs == (\\c. ~(def?(c,def))) | dom
+          FI
+    IN (cases(guards,newElse,tPos),finalPatts,finalSig,err1+err2)
+  FI
+
+FUN codeNextTree: seq[pattern]**seq[pattDescr]**pos
+		  -> name**matchTree
+		     **quad[seq[guard],seq[seq[pattDescr]],globSig,err]
+		  -> quad[seq[guard],seq[seq[pattDescr]],globSig,err]
+
+DEF codeNextTree(patt(exprPos,expr)::queue,pattD,tPos)
+                (constr,mTree,&(guards,patts,sig,errs)) ==
+  LET sels == selectors(sig,constr)
+      discriminator == test(sig,constr)
+      mapSelToPattern == \\no,sel.
+                           patt(exprPos+%no,apply(val(sel,tPos),expr,tPos))
+      newQueue == mapSelToPattern * sels
+      newPattD == specialize(exprPos,constr,sig)*pattD
+      (newExpr,newPatts,interSig,newErrs) ==
+			code(mTree,patts,newQueue++queue,newPattD,sig,tPos)
+      newTest == apply(val(discriminator,tPos),expr,tPos)
+      useGen == \\name,sign.useGenerated(sign,name)
+      finalSig == (useGen \ interSig)(discriminator::sels)
+  IN &(guard(newTest,newExpr,tPos)::guards,newPatts,finalSig,errs+newErrs)
+
+FUN mapSelToPattern: seq[nat]**pos**expr -> nat**name -> pattern
+DEF mapSelToPattern(exprPos,tPos,expr)(no,sel) ==
+  patt(exprPos+%no,apply(val(sel,tPos),expr,tPos))
+
+FUN * : (nat**name->pattern)**seq[name] -> seq[pattern]
+-- sollte es als Bibliotheksfunktion geben !
+DEF f*s == map(f,0,s)
+
+  FUN map: (nat**name->pattern)**nat**seq[name] -> seq[pattern]
+  DEF map(_,_,<>) == <>
+  DEF map(f,n,ft::rt) == f(n,ft) :: map(f,succ(n),rt)
+
+FUN updatePatts: seq[seq[pattDescr]]**set'Set[case,<]**seq[pattDescr]
+		 -> seq[seq[pattDescr]]
+
+DEF updatePatts(patts,cases,patt) ==
+  LET addPattToCase == \\case,ps.
+		         LET (front,tail) == split(no(case),ps)
+			 IN front ++ ((ft(tail)++patt) :: rt(tail))
+  IN (addPattToCase / patts)(cases)

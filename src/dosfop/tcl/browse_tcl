@@ -1,0 +1,782 @@
+#!/usr/local/bin/wish -f
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/browse_tcl,v 1.1.1.1 1998-06-16 16:00:30 wg Exp $
+
+option readfile $env(DOSFOP)/defaults/options.data
+
+wm title . "Project-Browser"
+
+source $env(DOSFOP)/tcl/global.tcl
+source $env(DOSFOP)/tcl/stack.tcl
+source $env(DOSFOP)/tcl/error.tcl
+source $env(DOSFOP)/tcl/regexprs.tcl
+source $env(DOSFOP)/tcl/filehelp.tcl
+source $env(DOSFOP)/tcl/help.tcl
+
+
+# This stack always contains the current hierarchy path induced by the
+# browsing into subsystems. The top of the stack is the current browsing
+# location.
+
+set locationStack [push [emptyStack] Toplevel]
+
+set helpSupportedWidgets {.locationText .subsystemListboxHeadline \
+                          .subsystemListbox .subsystemDelete .subsystemInsert \
+                          .subsystemRename .subsystemConfig .subsystemMove \
+                          .structsListboxHeadline .structsListbox \
+                          .structsDelete .structsInsert .structsRename \
+                          .structsConfigGlobal .structsConfig \
+                          .mbar.file .mbar.help}
+
+
+
+frame .leftAndRight
+
+###################################################################################
+# global headline #
+###################
+
+frame .locationFrame 
+label .locationText -font $headlineFont
+pack .locationText -in .locationFrame -side top -ipady 1m
+
+###################################################################################
+# subsystem handling #
+######################
+
+frame .left
+frame .right
+
+frame .subsystemListPart 
+
+frame .subsystemListArea -relief flat 
+
+frame .subsystemListboxHeadlineFrame -relief flat 
+label .subsystemListboxHeadline -text "Subsystems:"
+
+proc upLevelCommand {} {
+  global locationStack
+
+  if {[singleton $locationStack]} then {
+  # this case should never be encountered!
+  } else { 
+    saveCurrentLocation
+
+    # switch to upper-level location
+    set locationStack  [pop $locationStack]
+    set newTopLocation [top $locationStack]
+
+    # there is no up-movement for the Toplevel-location
+    if {[string compare $newTopLocation Toplevel] == 0} then {
+      if {[winfo ismapped .upButton]} then {
+        pack forget .upButton
+      } 
+    }
+    # load new data into listboxes (and so on)
+    newDataContext 
+  }
+}
+    
+button .upButton -text "Level Up" -command upLevelCommand
+
+listbox .subsystemListbox  \
+        -xscrollcommand ".subsystemScrollX set" \
+        -yscrollcommand ".subsystemScrollY set" \
+        -width 40 -height 10 -selectmode single
+
+
+scrollbar .subsystemScrollY -command ".subsystemListbox yview"
+scrollbar .subsystemScrollX -command ".subsystemListbox xview" -orient horizontal
+
+
+pack .subsystemListboxHeadline -in .subsystemListboxHeadlineFrame -side left -fill x
+pack .subsystemScrollY \
+      -in .subsystemListArea -side right -fill y
+pack .subsystemListbox .subsystemScrollX \
+     -in .subsystemListArea -side top -fill x
+pack .subsystemListboxHeadlineFrame -in .subsystemListPart -side top -fill x -padx 2m -pady 1m
+pack .subsystemListArea -in  .subsystemListPart \
+                            -side top -fill x -pady 2m -padx 2m
+
+
+bind .subsystemListbox <Double-Button-1> {
+  set selectedEntry [space2underline [%W get [%W nearest %y]]]
+
+  # do not consider selections of empty listbox-entries!
+  if {$selectedEntry != ""} then {
+    set locationStack [push $locationStack $selectedEntry]
+    newDataContext
+  }
+}
+
+##################################
+# general subsystem modification #
+##################################
+
+proc subsystemDeletion {} {
+  
+  set selectionList [.subsystemListbox curselection]
+  if {[llength $selectionList] == 0} then {
+    errorWidget "No Subsystem Name Marked for Deletion!"
+    return
+  }
+
+  set currIndex [lindex [.subsystemListbox curselection] 0]
+  set subsystemName [.subsystemListbox get $currIndex] 
+  .subsystemListbox delete $currIndex
+
+  deleteSubsystemConfig $subsystemName
+}
+
+
+proc subsystemInsertion {} {
+#----------------------
+  disable {.subsystemInsert .subsystemRename .subsystemMove \
+  	   .subsystemDelete .subsystemConfig}
+
+  global newSubsystemEntry
+  global newSubsystemEntryLocation
+  global env
+
+  frame .subsystemInsertionFrame 
+  frame .subsystemDummy 
+
+  frame .subsystemInsertionFrame.nameInputFrame -relief flat
+  label .subsystemInsertionFrame.name -text "Name : " -width 11 -anchor w
+  entry .subsystemInsertionFrame.nameEntry -textvariable newSubsystemEntry 
+
+  frame .subsystemInsertionFrame.locationInputFrame -relief flat
+  label .subsystemInsertionFrame.location -text "Location : " -width 11 -anchor w
+  entry .subsystemInsertionFrame.locationEntry -textvariable newSubsystemEntryLocation 
+
+  frame .subsystemInsertionFrame.buttonFrame 
+  button .subsystemInsertionFrame.insertButton -text "Insert" \
+                       -command setSubsystemInsertionBindings
+  button .subsystemInsertionFrame.clearButton -text "Clear Entry" \
+	                                   -command {set newSubsystemEntryLocation "";\
+					             set newSubsystemEntry ""}
+  button .subsystemInsertionFrame.filebrowserButton  -text "Filebrowser" \
+      -command {exec $env(WISH) $env(DOSFOP)/tcl/filebrowser_tcl [winfo name .] [location2Path [top $locationStack]] &}
+  button .subsystemInsertionFrame.cancelButton -text "Exit" \
+                                               -command cancelSubsystemInsertion
+  pack .subsystemInsertionFrame.insertButton \
+       .subsystemInsertionFrame.clearButton \
+       .subsystemInsertionFrame.filebrowserButton \
+       -in .subsystemInsertionFrame.buttonFrame -side left  -pady 2m -padx 2m
+  pack .subsystemInsertionFrame.cancelButton  \
+       -in .subsystemInsertionFrame.buttonFrame -side right -pady 2m -padx 2m
+
+  pack .subsystemInsertionFrame.name \
+       -in .subsystemInsertionFrame.nameInputFrame -side left
+  pack .subsystemInsertionFrame.nameEntry \
+       -in .subsystemInsertionFrame.nameInputFrame -side top -fill x
+
+  pack .subsystemInsertionFrame.location \
+       -in .subsystemInsertionFrame.locationInputFrame -side left
+  pack .subsystemInsertionFrame.locationEntry \
+       -in .subsystemInsertionFrame.locationInputFrame -side top -fill x
+
+  pack .subsystemInsertionFrame.nameInputFrame \
+       .subsystemInsertionFrame.locationInputFrame \
+       .subsystemInsertionFrame.buttonFrame \
+       -in .subsystemInsertionFrame -side top -fill x -padx 2m -pady 2m
+
+  pack .subsystemInsertionFrame -in .right -fill x -padx 2m -pady 2m 
+  pack .subsystemDummy -in .left -side top  -expand 1 
+}
+
+proc setSubsystemInsertionBindings {} {
+  global newSubsystemEntry
+  global newSubsystemEntryLocation
+  global subsystemStringReg
+  global dir
+
+  ### delete extra whitespace
+  set newSubsystemEntry [string trim $newSubsystemEntry]
+
+  ### check lexical structure of subsystem Name
+  if {[check $newSubsystemEntry $subsystemStringReg] != 1} then {
+    errorWidget "Syntax error in subsystem name!"
+    return
+  }
+
+  ### check lexical structure of directory
+  if {[check $newSubsystemEntryLocation $dir] != 1} then {
+    errorWidget "Syntax error in directory name!"
+    return
+  }
+    
+  ### check for uniqueness
+  if {[glob -nocomplain [loc2SubsConfigFile $newSubsystemEntry]] != {}} then {
+    errorWidget "Subsystem name already exits in project specification!"
+    return
+  }
+  
+  ### do prepare for insertion by cursor click in listbox
+  bind .subsystemListbox <1> {
+    ## write the new entry to mouse click's nearest position
+     %W insert [%W nearest %y] $newSubsystemEntry
+
+    ## prepare initial configuration file
+    initSubsystemConfig $newSubsystemEntry $newSubsystemEntryLocation    
+
+    ## save browsing status (subsystems and files) of current level in file
+    saveCurrentLocation
+
+    ## reset key-bindings and destroy insertion frames
+    cancelSubsystemInsertion
+  }
+  .subsystemInsertionFrame configure -cursor hand1
+  .subsystemListbox configure -cursor hand1
+
+}
+
+proc cancelSubsystemInsertion {} {
+  resetSubsystemInsertionBinding
+
+  enable {.subsystemInsert .subsystemRename .subsystemMove \
+          .subsystemDelete .subsystemConfig}
+
+  destroy .subsystemInsertionFrame
+  destroy .subsystemDummy
+}
+
+proc resetSubsystemInsertionBinding {} {
+    bind .subsystemListbox <1> {%W selection set [%W nearest %y]}
+   .subsystemInsertionFrame configure -cursor top_left_arrow
+   .subsystemListbox configure -cursor top_left_arrow
+}
+
+
+proc subsystemRenaming {} {
+#---------------------
+  global modifiedSubsystemEntry
+  global oldSubsystemEntry
+
+  set selectionList [.subsystemListbox curselection]
+  if {[llength $selectionList] == 0} then {
+    errorWidget "No Subsystem Name Marked for Renaming!"
+    return
+  }
+    
+  disable {.subsystemMove .subsystemConfig .subsystemDelete \
+	  .subsystemRename .subsystemInsert }
+
+  frame .subsystemRenamingFrame
+  frame .subsystemDummy
+
+  frame .subsystemRenamingFrame.inputFrame -relief flat
+
+  set selectedIndex [lindex [.subsystemListbox curselection] 0]
+  set modifiedSubsystemEntry [.subsystemListbox get $selectedIndex]
+  set oldSubsystemEntry $modifiedSubsystemEntry
+
+  entry .subsystemRenamingFrame.renamingEntry -textvariable modifiedSubsystemEntry \
+                                     -width 50
+
+  frame .subsystemRenamingFrame.buttonFrame 
+  button .subsystemRenamingFrame.insertButton -text "Apply"  \
+                                     -command "doSubsystemRenaming $selectedIndex"
+  button .subsystemRenamingFrame.cancelButton -text "Cancel" \
+                                     -command cancelSubsystemRenaming
+  pack .subsystemRenamingFrame.insertButton \
+       -in .subsystemRenamingFrame.buttonFrame -side left -pady 2m -padx 2m
+  pack .subsystemRenamingFrame.cancelButton  \
+       -in .subsystemRenamingFrame.buttonFrame -side right -pady 2m -padx 2m
+  pack .subsystemRenamingFrame.renamingEntry \
+       -in .subsystemRenamingFrame.inputFrame -side top -fill x
+  pack .subsystemRenamingFrame.inputFrame .subsystemRenamingFrame.buttonFrame \
+       -in .subsystemRenamingFrame -side top -fill x -padx 2m -pady 2m
+
+  pack .subsystemRenamingFrame -in .right -fill x -padx 2m -pady 2m 
+  pack .subsystemDummy -in .left -side top  -expand 1 
+}
+
+proc doSubsystemRenaming index {
+  global modifiedSubsystemEntry
+  global oldSubsystemEntry
+  global subsystemStringReg
+
+  set modifiedSubsystemEntry [string trim $modifiedSubsystemEntry]
+
+  ### check for identity
+  if {[string compare $modifiedSubsystemEntry $oldSubsystemEntry] == 0} then {
+    errorWidget "Error : Subsystem names remain the same!"
+    return
+  }
+
+  ### check lexical structure of input
+  if {[check $modifiedSubsystemEntry $subsystemStringReg] != 1} then {
+    errorWidget "Syntax error in subsystem name!"
+    return
+  }
+  
+  if {[glob -nocomplain [loc2SubsConfigFile $modifiedSubsystemEntry]] == {}} then {
+    .subsystemListbox insert $index $modifiedSubsystemEntry
+    .subsystemListbox delete [expr $index+1]
+
+    renameSubsystemConfig $oldSubsystemEntry $modifiedSubsystemEntry
+ 
+    cancelSubsystemRenaming
+  } else {
+    errorWidget "Subsystem name already exits in project specification!"
+    return
+  }
+}
+  
+proc cancelSubsystemRenaming {} { 
+
+  enable {.subsystemMove .subsystemConfig .subsystemDelete \
+          .subsystemInsert .subsystemRename}
+
+  destroy .subsystemRenamingFrame
+  destroy .subsystemDummy
+}
+  
+
+proc subsystemConfiguring {} {
+#------------------------
+  global env
+
+  set selectionList [.subsystemListbox curselection]
+  if {[llength $selectionList] == 0} then {
+    errorWidget "No Subsystem Name Marked for Renaming!"
+    return
+  }
+
+  set selectedIndex [lindex [.subsystemListbox curselection] 0]
+  set selectedEntry [.subsystemListbox get $selectedIndex]
+
+  disable {.subsystemConfig .subsystemRename .subsystemDelete}
+
+  exec $env(WISH) $env(DOSFOP)/tcl/subsystemConfig_tcl [space2underline $selectedEntry] &
+}
+
+proc subsystemMovement {} {
+#---------------------
+  global originIndex
+  global movedEntry
+
+  set selectionList [.subsystemListbox curselection]
+  if {[llength $selectionList] == 0} then {
+    errorWidget "No Subsystem Name Marked for Movement!"
+    return
+  }
+  set originIndex [lindex [.subsystemListbox curselection] 0]
+  set movedEntry [.subsystemListbox get $originIndex]
+  setSubsystemMovementBindings 
+
+}
+
+
+proc setSubsystemMovementBindings {} {
+  bind .subsystemListbox <1> {
+    set destIndex [%W nearest %y]
+    if [expr $destIndex < $originIndex] {
+      %W delete $originIndex
+      %W insert [%W nearest %y] $movedEntry
+    }
+    if [expr $destIndex > $originIndex] {
+      %W insert [%W nearest %y] $movedEntry
+      %W delete $originIndex
+    }
+ 
+    # save change
+    set currentLocation [top $locationStack]
+    saveListInFile .subsystemListbox [loc2SubsFile $currentLocation]
+
+    cancelSubsystemMovement
+  }
+  .subsystemListbox configure -cursor hand1
+}
+
+proc cancelSubsystemMovement {} {
+  # reset binding and cursor shape
+  bind .subsystemListbox <1> {%W selection set [%W nearest %y]}
+ .subsystemListbox configure -cursor top_left_arrow
+
+}
+
+
+frame .subsystemOperationFrame 
+
+button .subsystemDelete -text "Delete" -command subsystemDeletion
+button .subsystemInsert -text "Insert" -command subsystemInsertion
+button .subsystemRename -text "Rename" -command subsystemRenaming
+button .subsystemConfig -text "Config" -command subsystemConfiguring
+button .subsystemMove -text "Move" -command subsystemMovement
+
+
+pack .subsystemDelete .subsystemInsert .subsystemRename .subsystemMove \
+     -in .subsystemOperationFrame -side left -fill x -padx 1m -pady 2m
+pack .subsystemConfig \
+     -in .subsystemOperationFrame -side right -fill x -padx 1m -pady 2m
+
+###############################################################################
+# structure  handling #
+#######################
+
+frame .structsListPart
+
+frame .structsListArea -relief flat
+
+frame .structsListboxHeadlineFrame -relief flat 
+label .structsListboxHeadline -text "Structures:"
+listbox .structsListbox  \
+        -xscrollcommand ".structsScrollX set" \
+        -yscrollcommand ".structsScrollY set" \
+        -width 40 -height 10 -selectmode single
+
+bind .structsListbox <Double-Button-1> {invokeEditor [location2Path [top $locationStack]]/[%W get [%W nearest %y]]}
+
+scrollbar .structsScrollY -command ".structsListbox yview"
+scrollbar .structsScrollX -command ".structsListbox xview" -orient horizontal
+
+pack .structsListboxHeadline -in .structsListboxHeadlineFrame -side left
+pack .structsScrollY \
+      -in .structsListArea -side right -fill y
+pack .structsListbox .structsScrollX \
+     -in .structsListArea -side top -fill x
+pack .structsListboxHeadlineFrame -in .structsListPart -side top -fill x -padx 2m -pady 1m
+pack .structsListArea -in  .structsListPart \
+                            -side top -fill x -pady 2m -padx 2m
+
+
+
+###################################
+# general structures modification #
+###################################
+
+proc structsDeletion {} {
+#-----------------------
+  set selectionList [.structsListbox curselection]
+  if {[llength $selectionList] == 0} then {
+    errorWidget "No Structure Name Marked for Deletion!"
+    return
+  }
+
+  set currIndex [lindex $selectionList 0]
+  set structureName [.structsListbox get $currIndex] 
+  .structsListbox delete $currIndex
+
+  deleteStructureConfig $structureName 
+
+  saveCurrentLocation
+}
+
+proc structsInsertion {} {
+#--------------------
+  global newStructEntry
+  global env
+
+  disable {.structsInsert .structsRename .structsConfigGlobal \
+  	   .structsDelete .structsConfig}
+
+  frame .structsInsertionFrame 
+  frame .structsDummy
+
+  frame .structsInsertionFrame.nameInputFrame -relief flat 
+  label .structsInsertionFrame.name -text "Structure Name : " -anchor w
+  entry .structsInsertionFrame.nameEntry -textvariable newStructEntry 
+
+  frame .structsInsertionFrame.buttonFrame 
+
+  button .structsInsertionFrame.insertButton -text "Insert" \
+                                             -command insertStructure
+  button .structsInsertionFrame.clearButton  -text "Clear" \
+	                                     -command {set newStructEntry ""}
+  button .structsInsertionFrame.filebrowserButton  -text "Filebrowser" \
+	           -command {exec $env(WISH) $env(DOSFOP)/tcl/filebrowser_tcl [winfo name .] [location2Path [top $locationStack]] &}
+  button .structsInsertionFrame.cancelButton -text "Exit" \
+                                             -command cancelStructsInsertion
+  pack .structsInsertionFrame.insertButton  \
+       .structsInsertionFrame.clearButton \
+       .structsInsertionFrame.filebrowserButton \
+       -in .structsInsertionFrame.buttonFrame -side left -pady 1m -padx 1m
+  pack .structsInsertionFrame.cancelButton  \
+       -in .structsInsertionFrame.buttonFrame -side right -pady 1m -padx 1m
+
+  pack .structsInsertionFrame.name  \
+       -in .structsInsertionFrame.nameInputFrame -side left
+  pack .structsInsertionFrame.nameEntry \
+       -in .structsInsertionFrame.nameInputFrame -side top -fill x
+  pack .structsInsertionFrame.nameInputFrame \
+       .structsInsertionFrame.buttonFrame \
+       -in .structsInsertionFrame -side top -fill x -padx 3m -pady 3m
+
+  pack .structsInsertionFrame -in .left -fill x -padx 2m -pady 2m 
+  pack .structsDummy -in .right -side top  -expand 1 
+}
+
+proc insertStructure {} {
+  global newStructEntry
+  global structureStringReg
+
+  ### delete extra whitespace
+  set newStructEntry [string trim $newStructEntry]
+
+  ### check for correctness of input
+  ## check lexical structure of structure name
+  if {[check $newStructEntry $structureStringReg] != 1} then {
+    errorWidget "Syntax error in structure name!"
+    return
+  }
+  ## check if structure is already present
+  if {[glob -nocomplain [struct2StructConfigFile $newStructEntry]] != {}} then {
+    errorWidget "Structure name already exits in project specification!"
+    return
+  }
+
+  ### do insertion:
+  ## insert name in listbox
+  .structsListbox insert end $newStructEntry
+
+  ## prepare initial file for structure
+  initStructureConfig $newStructEntry
+
+  ## save new current browsing context
+  saveCurrentLocation
+
+}
+
+proc cancelStructsInsertion {} {
+  enable {.structsInsert .structsRename .structsConfigGlobal \
+  	   .structsDelete .structsConfig}
+
+  destroy .structsInsertionFrame
+  destroy .structsDummy
+}
+
+proc structsRenaming {} {
+#-------------------
+  global modifiedStructEntry
+  global oldStructEntry
+
+  set selectionList [.structsListbox curselection]
+  if {[llength $selectionList] == 0} then {
+    errorWidget "No Structure Name Marked for Renaming!"
+    return
+  }
+    
+  disable {.structsInsert .structsRename .structsConfigGlobal \
+  	   .structsDelete .structsConfig}
+
+  frame .structsRenamingFrame 
+  frame .structsDummy
+
+  frame .structsRenamingFrame.inputFrame -relief flat
+
+  set selectedIndex [lindex [.structsListbox curselection] 0]
+  set modifiedStructEntry [.structsListbox get $selectedIndex]
+  set oldStructEntry $modifiedStructEntry
+
+  entry .structsRenamingFrame.renamingEntry \
+                                     -textvariable modifiedStructEntry \
+                                     -width 50 
+
+  frame .structsRenamingFrame.buttonFrame 
+  button .structsRenamingFrame.insertButton -text "Apply"  \
+                                     -command "doStructsRenaming $selectedIndex"
+  button .structsRenamingFrame.cancelButton -text "Cancel" \
+                                     -command cancelStructsRenaming
+  pack .structsRenamingFrame.insertButton \
+       -in .structsRenamingFrame.buttonFrame -side left -pady 2m -padx 2m
+  pack .structsRenamingFrame.cancelButton  \
+       -in .structsRenamingFrame.buttonFrame -side right -pady 2m -padx 2m
+  pack .structsRenamingFrame.renamingEntry \
+       -in .structsRenamingFrame.inputFrame -side left
+  pack .structsRenamingFrame.inputFrame .structsRenamingFrame.buttonFrame \
+       -in .structsRenamingFrame -side top -fill x -padx 3m -pady 3m
+
+  pack .structsRenamingFrame -in .left -fill x -padx 2m -pady 2m 
+  pack .structsDummy -in .right -side top  -expand 1 
+}
+
+proc doStructsRenaming index {
+  global modifiedStructEntry
+  global oldStructEntry
+  global structureStringReg
+
+  set modifiedStructEntry [string trim $modifiedStructEntry]
+
+  ### check for identity
+  if {[string compare $modifiedStructEntry $oldStructEntry] == 0} then {
+    errorWidget "Error : Structure names remain the same!"
+    return
+  }
+    
+  ### check lexical structure of input
+  if {[check $modifiedStructEntry $structureStringReg] != 1} then {
+    errorWidget "Syntax error in structure name!"
+    return
+  }
+
+  .structsListbox insert $index $modifiedStructEntry
+  .structsListbox delete [expr $index+1]
+
+  renameStructureConfig $oldStructEntry $modifiedStructEntry  
+  cancelStructsRenaming
+}
+  
+proc cancelStructsRenaming {} { 
+  enable {.structsInsert .structsRename .structsConfigGlobal \
+  	   .structsDelete .structsConfig}
+
+  destroy .structsRenamingFrame
+  destroy .structsDummy
+}
+
+proc structsConfiguring {} {
+#----------------------
+  global env
+
+  set selectionList [.structsListbox curselection]
+  if {[llength $selectionList] == 0} then {
+    errorWidget "No Structure Name Marked for Configuring!"
+    return
+  }
+
+  set selectedIndex [lindex [.structsListbox curselection] 0]
+  set selectedEntry [.structsListbox get $selectedIndex]
+
+  disable {.structsConfig .structsRename .structsDelete}
+
+  exec $env(WISH) $env(DOSFOP)/tcl/structureConfig_tcl [space2underline $selectedEntry] &
+}
+
+proc structsConfiguringGlobal {} {
+#---------------------------
+  global locationStack
+  global env 
+
+  disable {.structsConfigGlobal}
+
+  exec $env(WISH) $env(DOSFOP)/tcl/structuresConfigGlobal_tcl [top $locationStack] &
+}
+
+
+frame .structsOperationFrame
+
+button .structsDelete -text "Delete" -command structsDeletion
+button .structsInsert -text "Insert" -command structsInsertion
+button .structsRename -text "Rename" -command structsRenaming
+button .structsConfigGlobal -text "Config Global" -command structsConfiguringGlobal
+button .structsConfig -text "Config" -command structsConfiguring
+
+
+pack .structsDelete .structsInsert .structsRename  \
+     -in .structsOperationFrame -side left -fill x -padx 1m -pady 2m
+pack .structsConfig .structsConfigGlobal \
+     -in .structsOperationFrame -side right -fill x -padx 1m -pady 2m
+
+
+###############################################################################
+# menu construction #
+#####################
+
+proc saveCurrentLocation {} {
+  global locationStack
+
+  set currentLocation [top $locationStack]
+  saveListInFile .subsystemListbox [loc2SubsFile $currentLocation]
+  saveListInFile .structsListbox   [loc2StructsFile $currentLocation]
+}
+
+proc exitBrowser {} {
+  catch {send dosfop_tcl .projectBrowser configure -state normal}
+  destroy .
+  exit
+}
+
+proc saveBrowser {} {
+  saveCurrentLocation 
+}
+
+proc saveListInFile {listWidget file} {
+  global env
+
+  if {[file exists $file]} then {
+    exec cp [space2underline $file] [space2underline $file].old
+  }
+  set fd [open [space2underline $file] w]
+  for {set i 0} {$i < [$listWidget size]} {incr i} {  
+    set actElement [space2underline [$listWidget get $i]]
+    if {$i == [expr [$listWidget size] - 1]} then {
+      puts -nonewline $fd $actElement
+    } else {
+      puts $fd $actElement
+    } 
+  }
+  close $fd  
+}
+
+set fileMenu [makeStandardMenu $helpSupportedWidgets]
+
+$fileMenu add command -label "Leave Project Browser" \
+                      -command "saveBrowser;exitBrowser" \
+                      -accelerator "  Ctrl+x"
+$fileMenu add separator
+$fileMenu add command -label "Open File Browser" \
+    -command {exec $env(WISH) $env(DOSFOP)/tcl/filebrowser_tcl  [winfo name .] [location2Path [top $locationStack]] &} \
+                      -accelerator "  Ctrl+f"
+
+bind all <Control-x> "saveBrowser;exitBrowser"
+bind all <Control-f> {exec $env(WISH) $env(DOSFOP)/tcl/filebrowser_tcl  [winfo name .] [location2Path [top $locationStack]] &}
+
+pack .mbar -side top -fill x 
+pack .locationFrame -in .leftAndRight -side top -fill x -pady 2m -padx 2m
+pack .subsystemListPart .subsystemOperationFrame \
+     -in .right -side top -fill x -padx 2m -pady 2m 
+
+pack .structsListPart .structsOperationFrame \
+     -in .left -side top -fill x -padx 2m -pady 2m 
+
+pack .left .right -in .leftAndRight -side left -fill y -padx 2m -pady 2m
+pack .leftAndRight 
+
+proc loadFileInListbox {file listboxWidget} {
+  $listboxWidget delete 0 end
+  if {[file exists $file]} then  {
+    set fd [open $file r]
+    while {[eof $fd] == 0} {
+      gets $fd line
+      if {[string length $line] > 0} then {
+        $listboxWidget insert end [underline2space $line]
+      }
+    }
+    close $fd
+  }
+}
+
+proc setHeadline {} {
+  global locationStack
+
+  if {[string compare [top $locationStack] Toplevel] == 0} then {
+    set headline "Project Toplevel"
+  } else {
+    set headline "Subsystem [underline2space [top $locationStack]]"
+    if {[winfo ismapped .upButton]} then {} else {
+
+      pack .upButton -in .subsystemListboxHeadlineFrame -side right
+    }
+  }
+  .locationText configure -text $headline
+}
+
+
+proc newDataContext {} {
+  global locationStack
+
+  loadFileInListbox  [loc2SubsFile    [top $locationStack]] .subsystemListbox
+  loadFileInListbox  [loc2StructsFile [top $locationStack]] .structsListbox
+  setHeadline       
+}
+
+newDataContext 
+
+
+
+
+
+
+
+

@@ -1,0 +1,150 @@
+-- LAST EDIT: Fri Dec  4 20:37:41 1992 by Carola Gerke (kassandra!carola) 
+
+IMPLEMENTATION Struct
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:39 $ ($Revision: 1.1.1.1 $)
+
+-- AutorInnen:  mija + carola
+-- Projekt:     OPAL1-Compiler + property language
+
+IMPORT  PartName        ONLY `  kind:partName->kind 
+                                kind:SORT sort? op?
+        Fct             ONLY fct                -- wg. Impl COMPLETELY
+        Impl[partName:SORT]  COMPLETELY
+        GlobPragma[partName] COMPLETELY
+IMPORT  -- token
+        Rep             ONLY ` rep
+        Lexem           COMPLETELY
+        Pragma          ONLY `
+IMPORT  -- admin
+        Pos             ONLY pos
+IMPORT  -- lib
+        Seq             COMPLETELY
+        SeqMap          ONLY *
+        SeqReduce       ONLY \ /
+        Denotation      COMPLETELY
+        Nat             ONLY nat 0
+        Char            ONLY char blank newline
+        CharConv        ONLY `
+       Pair ONLY pair &
+       MapConv ONLY `
+       SeqConv ONLY `
+       String ONLY string
+       Map ONLY map
+
+-- ---------------------------------------------------------------------------
+-- Textkonversionen
+DATA part == signature implementation extProps intProps
+
+DATA struct ==  
+        -- Compilations Einheit (Signatur- oder Implementationsteil)
+                error
+                  -- Syntaxfehler im Strukturkopf
+                mkstruct(
+                  head:origin,                  -- Kopf (Name,form.Parameter)
+                  imports:seq[import],  -- explizite Importe (IMPORT)
+                  signature:seq[partName], -- neue Sig. (SORT,FUN)
+                  specsign:seq[pair[partName, law]],  -- spez. FUNs
+                  sortImpls:seq[sortImpl], -- Sortenimpl. (DATADef)
+                  funImpls:seq[eq],        -- Funktionsimpl. (DEFEq)
+                  freeTypes:seq[sortImpl], -- frei aufbauende Typen (TYPEDecl)
+                  laws:seq[law],                 -- Eigenschaften (LAWProp)
+                  pragmas:seq[globPragma],      -- pragmas der Struktur
+                  proofHeads: seq[proofHead],   -- proofHeads der Struktur
+                  proofBodies: seq[proofBody],  -- proofBodies der Struktur
+                  relations: map[rep, <, seq[import]],
+                       -- Relationen zu anderen Strukturen, rep zur Info
+                  pos:pos,                      -- Position des Schluesselworts
+                  part:part)                    -- sign, impl, extp
+
+DATA import ==  
+        -- explizite Importe (IMPORT)
+                complete( origin:origin )
+                  -- vollstaendiger Import (nur Strukturname und akt.Parameter)
+                only( origin:origin, only:seq[partName] )
+                  -- spezialisierter Import (mit Only-Namensapplikationen)
+DATA origin ==  
+        -- Herkuenfte:Strukturname, aktuelle/formale Parameter, Strukturpragmas
+                error
+                origin( structIde : rep,        -- Strukturbezeichner
+                        pos : pos,              -- Position des Apostrophs
+                        paramS : seq[partName], -- Instanz
+                        pragma : pragma )       -- Annotation an d. Strukt.
+
+-- ----------------------------------------------------------------------------
+
+DEF  `(s:struct) ==
+        IF s error? THEN "ErrorStruct"
+        ELSE
+          LET
+            fileType == IF part(s) signature? THEN `(signature:lexem)
+                        IF part(s) extProps? THEN `(external:lexem) 
+                                             ++ `(properties:lexem)
+                        IF part(s) intProps? THEN `(internal:lexem) 
+                                             ++ `(properties:lexem)
+                        IF part(s) implementation? THEN
+                                             `(implementation:lexem) 
+                        FI
+            originT ==  fileType ++ " " ++ `(head(s))
+            importT ==  (h1 \ empty )(imports(s))
+            signatureT==(h2 \ empty )(signature(s))
+            specsigns == (+/+("\n") \ empty)(h7 * specsign(s))
+            typesT ==   (h3 \ empty )(sortImpls(s)) 
+            defsT ==    (h4 \ empty )(funImpls(s))
+            freesT ==   (h5 \ empty )(freeTypes(s))
+            lawsT  ==   (newline`) ++ (h6 \ empty )(laws(s)) 
+            pHsT == (+/+("\n"), "") \ (`(`) * proofHeads(s))
+            pBsT == (+/+("\n"), "") \ (`(`) * proofBodies(s))
+            relsT == `(`, `(`))(relations(s))
+            pragmaT ==  IF pragmas(s) <>? THEN ""
+                        ELSE `(pragmaStart) ++ 
+                         (++ \ empty)(` 'GlobPragma (` 'PartName) * pragmas(s))
+                          ++ `(pragmaEnd) ++ `(newline)
+                        FI
+          IN (originT ++ "\n"  ++ importT ++ "\n")
+             ++(signatureT ++ "\n" ++ specsigns ++ "\n")++
+               (typesT ++ " \n" ++ defsT)
+             ++((newline`) ++ freesT ++ "\n"++ lawsT ++ "\n" ++ pragmaT)
+             ++ ("\n" ++ pHsT ++ "\n" ++ pBsT)
+             ++ ("\n" ++ relsT)
+        FI
+          
+        FUN h1:import**denotation->denotation
+        DEF h1(i,t) == "\n" ++ `(i) ++ t
+
+        FUN h2:partName ** denotation->denotation
+        DEF h2(i,t) == "\n" ++ keyword ++ " " ++ `(i) ++ t
+                       WHERE keyword == IF kind(i) sort? THEN `(sort:lexem)
+                                        IF kind(i) op? THEN `(fun)
+                                        ELSE empty :denotation FI
+        FUN h3:sortImpl**denotation->denotation
+        DEF h3(i,t) == 
+          "\n"++ `(data) ++ " " ++ `(` :partName->denotation)(i) ++ t
+        FUN h4:eq**denotation->denotation
+        DEF h4(i,t) == "\n" ++ `(` :partName->denotation)(i) ++ t
+        FUN h5:sortImpl**denotation->denotation
+        DEF h5(i,t) == 
+          "\n" ++ `(type) ++ " " ++ `(` :partName->denotation)(i) ++ t
+        FUN h6:law**denotation->denotation
+        DEF h6(i,t) == "\n" ++ `(` :partName->denotation)(i) ++ t
+
+        FUN h7: pair[partName, law] -> denotation
+        DEF h7(pN & l) == h2(pN, h6(l, empty))
+
+DEF  `(i:import) ==
+        `(import) ++ (`(origin(i)) ++ ((blank`) ++
+        (IF i complete? THEN `(completely)
+         ELSE `(only:lexem) ++ (h6 \ empty )(only(i)) FI)))
+
+        FUN h6:partName**denotation->denotation
+        DEF h6(i,t) == " " ++ `(i) ++ t
+
+
+DEF `(error:origin)      == "ErrorOrigin"
+DEF `(origin(SI,_,<>,Pr)) ==  `(apo) ++ `(SI) ++ `(Pr)
+DEF `(origin(SI,_,PS::RPS,Pr)) == 
+    `(apo) ++ `(SI) ++ 
+    "[" ++ `(PS) ++ ((\\ F,R. "," ++ ` 'PartName(F) ++ R) / "]" )(RPS) ++ `(Pr) 

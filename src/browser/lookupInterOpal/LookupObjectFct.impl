@@ -1,0 +1,226 @@
+IMPLEMENTATION LookupObjectFct
+-- ============================================================================
+-- Autor:	ralfi
+-- Projekt:	OPAL1-Compiler
+-- Zweck:       Library fuer Objekte und Funktionalitaeten
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/lookupInterOpal/LookupObjectFct.impl,v 1.1.1.1 1998-06-16 15:59:55 wg Exp $
+-- ============================================================================
+
+IMPORT	DEBUG		ONLY	PRINT
+	Format		ONLY	format pretty
+	InterOpal	COMPLETELY
+/* ONLY	< cart def fct:SORT fct : fct -> kind fct?
+				formal? funct : fct ** fct -> fct ident:SORT
+				impl:SORT
+				inst insts interOpal kind main? name:SORT
+				name : ident ** origin ** inst -> name no
+				none? object objs origin parameter? part
+				pos:SORT pos : object -> seq 
+				sort : name -> fct sort : kind
+				sort? struct  symbol : object -> denotation
+				symbol : struct -> denotation
+*/
+	InterDumpBase	ONLY	dI
+	Lib		ONLY	id
+	Lib1		ONLY	seq2StringByList
+	LookupLib	ONLY	! addPos applDef callfrom complete? error
+				error? fct? getFct getFct? getFkt getFkt?
+				getImport? getInst getInst? getKind getKind?
+				getProd getProd? globalLocal inArea? info info?
+				inst inst? kind kl_callfrom level msg name
+				name? names? nil nil? objName optimize? origin
+				pos2String
+	Map		ONLY	! def? map
+	MapConv		ONLY	asSeq
+	Nat		ONLY	0 0? 1 100 = >= nat succ
+	OptBrowser	ONLY	allpos? arguments chkUniqueImportInst? dumpObj?
+				v3?
+	Option		ONLY	avail? cont nil nil? option
+	Pair		ONLY	1st 2nd pair
+	Seq		ONLY	# % <> <>? seq ::?
+	SeqFilter	ONLY	|
+	SeqIndex	ONLY	!
+	SeqReduce	ONLY	/
+	SeqMap		ONLY	*
+	String		ONLY	! : denotation -> string ++ = string
+
+FUN getNameInst : interOpal ** arguments -> name ** level ** callfrom ->
+					option[pair[inst,origin]] -> info
+-- callfrom : gibt an, wer getName aufgerufen hat
+-- -> z.B. callfrom = getStruct : keine Herkunft und Instanz noetig!
+-- option[pair[inst,origin]] Instanz und Herkunft der Fkt.
+DEF getNameInst(IO_D AS interOpal(_,Structs),Args)
+	(name(Id,Orig,Inst),Level,CF)(AppInst) ==
+  LET	IO	== PRINT(Args dumpObj?,\\ .("getNameInst: "!)++Name,IO_D)
+	Obj	== ((Structs!Orig)objs)!Id
+	Name	== ! (Obj symbol)
+  IN	IF ((Orig main?)~)and -- abfrage formal gestrichen
+		((AppInst avail?)and((Obj def) parameter?)) THEN
+					-- parameter nicht von main ersetzen
+		-- formalen Namen durch AppInst ersetzen
+	  LET	LOrig	== (AppInst cont) 2nd
+		LInst	== (AppInst cont) 1st
+		Struct	== Structs!LOrig
+		IMap	== Struct insts
+		SeqInNa	== IMap!LInst
+		No	== (Obj def)no
+		SeqName	== (\\LName.getNameInst(IO,Args)
+				    (LName,Level,getInst)(nil))*SeqInNa
+	  IN	IF LInst none? THEN
+			error("^^"!) -- soll nicht vorkommen
+		OTHERWISE
+		IF SeqName <>? THEN error("SeqName <>?"!)
+		OTHERWISE
+		IF No >= (SeqName #) THEN
+			error("No >= (SeqName #)"!)
+		ELSE SeqName!No
+		FI
+	ELSE
+	  LET	InstName== IF CF getImport? THEN ""!
+			   OTHERWISE
+			   IF Inst formal? THEN
+				IF AppInst avail? THEN
+				     getInst(IO,Args)(Inst,Orig)(Level,AppInst)
+				IF AppInst nil? THEN
+				     getInst(IO,Args)(Inst,Orig)(Level,AppInst)
+				FI
+		    	   ELSE getInst(IO,Args)(Inst,Orig)(Level,AppInst)
+			   FI 
+		KindName== getKindInst(IO,Args)(Obj kind,Level)(AppInst)
+		StrName	== IF CF getImport? THEN ""!
+			   ELSE ("'"!) ++ (((Structs!Orig) symbol)!) FI
+	  IN	IF Level names? THEN Name name
+		IF Level inst? THEN info(<>,Name,""!,InstName,""!,nil,nil)
+		IF Level complete? THEN
+		       info(<>,Name,StrName,InstName,(" :"!)++KindName,nil,nil)
+		IF Level fct? THEN
+			IF CF getImport? THEN
+				info(<>,Name,""!,""!,(" :"!)++KindName,nil,nil)
+			OTHERWISE
+			IF KindName=("SORT"!) THEN
+				info(<>,Name,""!,""!,""!,nil,nil)
+			ELSE
+				info(<>,Name,""!,""!,(" :"!)++KindName,nil,nil)
+			FI
+		IF Level optimize? THEN
+			IF CF getImport? THEN Name name
+					-- Rueckschluesse auf Eind. n. mgl
+			IF CF getInst? THEN
+			  IF Args chkUniqueImportInst? THEN
+			    IF (Obj kind)sort? THEN
+				IF uniqueSort(IO,Args)(Name)THEN
+					info(<>,Name,""!,InstName,""!,nil,nil)
+				ELSE info(<>,Name,StrName,InstName,""!,nil,nil)
+				FI
+			    IF (Obj kind)fct? THEN
+				IF uniqueOp(IO,Args)(Name) THEN
+					info(<>,Name,""!,InstName,""!,nil,nil)
+				ELSE info(<>,Name,StrName,InstName,""!,nil,nil)
+			    FI FI
+			  ELSE info(<>,Name,""!,InstName,""!,nil,nil) FI
+			IF CF getFct? THEN
+				IF KindName=("SORT"!) THEN Name name
+				ELSE
+				info(<>,Name,""!,""!,(" :"!)++KindName,nil,nil)
+				 FI
+			FI
+		FI
+	FI
+
+FUN uniqueOp: interOpal ** arguments -> string -> bool
+DEF uniqueOp(interOpal(_,_),Args)(_) ==
+	PRINT(Args v3?,"hint: 'uniqueOp' nyi",true)
+
+FUN uniqueSort: interOpal ** arguments -> string -> bool
+DEF uniqueSort(interOpal(_,Structs),_)(Name) ==
+  LET	SeqStruct	== 2nd*(asSeq(Structs))
+	Anzahl		== /(Struct2SeqObj,0)(SeqStruct)
+	Struct2SeqObj	== \\Struct,Anz.
+			    LET	Seq	== (2nd*(asSeq(Struct objs)))
+				Seq2	== (\\Obj.(Obj kind)sort?)|Seq
+				Seq3	== IF (Struct origin)main? THEN Seq2
+					   ELSE
+					   (\\Obj. ~((Obj def)parameter?))|Seq2
+					   FI
+				LocAnz	== #((\\Obj.((Obj symbol)!) = Name)|Seq3)
+			    IN	IF LocAnz 0? THEN Anz
+				ELSE succ(Anz) FI
+  IN Anzahl = 1
+
+
+FUN getInst : interOpal ** arguments -> inst ** origin ->
+				level ** option[pair[inst,origin]] -> string
+DEF getInst(IO AS interOpal(_,Structs),Args)(Inst,Orig)(Level,AppInst) ==
+	IF Inst none? THEN ""!
+	ELSE
+	  LET	Struct	== Structs!Orig
+		IMap	== Struct insts
+		SeqInNa	== IF Inst def? IMap THEN IMap!Inst
+			   ELSE PRINT(true,
+					\\ .pretty:format ** nat -> denotation
+						(dI(IO)(Orig)(Inst),100),<>)
+			   FI
+	  IN seq2StringByList("["!,","!,"]"!,id)
+	      ((\\Name.
+		LET Info == getNameInst(IO,Args)(Name,Level,getInst)(AppInst)
+		IN	IF Info info? THEN
+			(Info objName)++(Info origin)++(Info inst)++(Info kind)
+			IF Info name? THEN Info!
+			IF Info nil? THEN ""!
+			IF Info error? THEN PRINT(Args v3?,\\ .Info msg,""!)
+			FI)*SeqInNa)
+	FI
+
+FUN getKindInst : interOpal ** arguments -> kind ** level -> 
+					option[pair[inst,origin]] -> string
+DEF getKindInst(_,_)(sort,_)(_) == "SORT"!
+DEF getKindInst(IO,Args)(fct(Fct),Level)(O_P) ==
+	(" "!) ++ getFctInst(IO,Args)(Fct,Level,getKind)(O_P)
+
+FUN getFctInst : interOpal ** arguments -> fct ** level ** kl_callfrom ->
+					option[pair[inst,origin]] -> string
+DEF getFctInst(IO,Args)(sort(Name),Level,_)(O_P) ==
+  LET	Info	== getNameInst(IO,Args)(Name,Level,getFct)(O_P)
+  IN	IF Info info? THEN
+		(Info objName)++(Info origin)++(Info inst)++(Info kind)
+	IF Info name? THEN Info!
+	IF Info nil? THEN ""!
+	IF Info error? THEN PRINT(Args v3?,\\ .Info msg,""!)
+	FI
+
+DEF getFctInst(IO,Args)(cart(SeqFct),Level,_)(O_P) ==
+    IF SeqFct <>? THEN "()"!
+    IF SeqFct ::? THEN
+	seq2StringByList(""!," ** "!,""!,id)
+		((\\Fct.getFctInst(IO,Args)(Fct,Level,getProd)(O_P))*SeqFct)
+    FI
+
+DEF getFctInst(IO,Args)(funct(Dom,Codom),Level,CF)(O_P) ==
+  LET	(K1,K2)	== IF CF getProd? THEN ("("!,")"!)
+		   IF CF getKind? THEN (""!,""!)
+		   IF CF getFkt? THEN ("("!,")"!)
+		   FI
+  IN	K1++getFctInst(IO,Args)(Dom,Level,getFkt)(O_P)++(" -> "!)++
+		getFctInst(IO,Args)(Codom,Level,getKind)(O_P)++K2
+
+FUN getObjAndPos : interOpal ** arguments -> object ** level ->
+					option[pair[inst,origin]] -> info
+DEF getObjAndPos(IO,Args)(Obj,Level)(Opt) ==
+  LET	PosStr	== (pos2String(IO))*(Obj pos)
+	ObjInf	== getObjectInst(IO,Args)(Obj,Level)(Opt)
+  IN	IF Args allpos?
+	THEN	addPos(Obj pos,ObjInf)
+	ELSE	/((\\Pos,Info.IF inArea?(Args)(Pos) THEN
+				IF Info nil? THEN addPos(Pos%,ObjInf)
+				IF Info info? THEN addPos(Pos%,Info)
+				FI
+			     ELSE Info FI),nil)(Obj pos)
+	FI
+
+FUN getObjectInst : interOpal ** arguments -> object ** level ->
+					option[pair[inst,origin]] -> info
+DEF getObjectInst(IO,Args)(Obj,Level)(Opt) ==
+  LET	KindStr	== getKindInst(IO,Args)(Obj kind,Level)(Opt)
+	IdStr	== (Obj symbol)!
+  IN	info(<>,IdStr,""!,""!,(" :"!)++KindStr,nil,nil)
+

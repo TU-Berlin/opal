@@ -1,0 +1,143 @@
+IMPLEMENTATION NIAC
+
+IMPORT  Void            ONLY void
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        Denotation      COMPLETELY
+        BasicIO         COMPLETELY
+        LineFormat      COMPLETELY
+        Nat             COMPLETELY
+        NatConv         COMPLETELY
+        Real            COMPLETELY
+        RealConv        COMPLETELY
+        Int             COMPLETELY
+        IntConv         COMPLETELY
+        Char            COMPLETELY
+        Seq             COMPLETELY
+
+-- %$Imports From the Integrator$
+
+IMPORT  Parser          COMPLETELY
+        Evaluator       COMPLETELY
+        Expr            COMPLETELY
+        Integral        COMPLETELY
+
+-- %$The Top Command$
+
+-- FUN integral : com[void]
+DEF integral == 
+        write(  emptyLine ++
+                emptyLine ++
+                box("I N T E G R A T I O N") ++
+                emptyLine ++
+                "Note: an empty line of input terminates the program\n" ++
+                emptyLine)
+        & dialog()
+
+
+-- %$The Main Dialog$
+/* %The Main dialog reads an expression and starts the application dialog (in
+which the expression may applied arbitrarily often).
+*/
+
+FUN dialog : () -> com[void]
+DEF dialog() ==
+        ask(    emptyLine ++
+                --- ++
+                "Please input function f:\n" ++
+                emptyLine ++
+                "> (f x) == "
+                )
+        & analyseFunction               -- parsing the expression
+
+FUN analyseFunction : denotation -> com[void]
+DEF analyseFunction(Text) ==
+        IF Text = ""    THEN    finish  -- empty input = termination
+        ELSE
+        LET Expr == parse(Text) IN      -- analyse expression
+        IF error?(Expr) THEN    write(message(msg(Expr))) -- error message
+                                & dialog()                -- try again
+        ELSE integrationDialog(theExpr(Expr))   -- continue
+        FI FI
+
+-- %$The Application Dialog$
+/* %The Application dialog uses the expression just read; it reads 
+as long as necessary new limits @i{a}, @i{b} and applies the expression to
+these limits.
+*/
+FUN integrationDialog : expr -> com[void]
+DEF integrationDialog(Function) ==
+        -- %$$read first limit$
+        ask(emptyLine ++ "> a = ") & (\\aText.   
+        IF aText = ""   THEN    dialog()        -- read new function
+        ELSE
+        LET aExpr == parse(aText) IN            -- analyse argument
+        IF error?(aExpr)THEN    write(message(msg(aExpr)))    -- error message
+                                & integrationDialog(Function) -- try again
+        ELSE
+        LET aVal == eval(theExpr(aExpr)) IN
+        IF error?(aVal)THEN     write(message(msg(aVal)))     -- error message
+                                & integrationDialog(Function) -- try again
+        ELSE
+
+        -- %$$read second limit$ 
+        ask(emptyLine ++ "> b = ") & (\\bText.  
+        IF bText = ""   THEN    dialog()        -- read new function
+        ELSE
+        LET bExpr == parse(bText) IN            -- analyse argument
+        IF error?(bExpr)THEN    write(message(msg(bExpr)))    -- error message
+                                & integrationDialog(Function) -- try again
+        ELSE
+        LET bVal == eval(theExpr(bExpr)) IN
+        IF error?(bVal)THEN     write(message(msg(bVal)))     -- error message
+                                & integrationDialog(Function) -- try again
+        ELSE
+
+        -- do calculation of the integral
+        calculateIntegral(Function)(theValue(aVal),theValue(bVal))
+        FI FI FI )
+        FI FI FI )
+
+
+FUN calculateIntegral: expr -> real ** real -> com[void]
+DEF calculateIntegral(Function)(A,B) ==
+        -- %Note: erroneous application of function now means abort
+        write ( emptyLine ++
+                "  Integral(f x)dx\n" ++
+                "  --------------------------\n")
+        & ( \\ _ .
+        LET  List1 == fastIntegrate(apply(Function))(A,B) IN
+        write ( edit(1,List1) ++
+                "  --------------------------\n")  
+        & ( \\ _ .
+        LET List2 == integrate(apply(Function))(A,B) IN
+        write ( edit(1,List2) ++
+                "  --------------------------\n")  
+        & ( \\ _ . 
+        LET Res   == last(List1) IN
+        write ( "  Integral(f x)dx = " ++ ``(Res,6) ++
+                emptyLine ++ emptyLine)
+        & ( \\ _ . 
+        integrationDialog(Function)
+        ))))
+
+FUN edit : nat ** seq[real] -> denotation
+DEF edit(N,Liste) ==
+        IF <>?(Liste)        THEN ""
+        ELSE
+        "                    " ++ ``(ft(Liste),6) ++ " [" ++ `(N) ++"]\n" ++
+        edit(2*N, rt(Liste)) ++ "\n"
+        FI
+
+-- %$Finish$
+
+FUN finish : com[void]
+DEF finish ==
+        write(emptyLine ++ box("See you ...") ++ emptyLine)
+
+-- %$Auxiliary functions$
+FUN emptyLine: denotation
+DEF emptyLine == "\n"
+
+FUN message: denotation -> denotation
+DEF message(d) == center("*", " " ++ d ++ " ")

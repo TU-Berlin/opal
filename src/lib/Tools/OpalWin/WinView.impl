@@ -1,0 +1,124 @@
+
+IMPLEMENTATION WinView
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq		COMPLETELY
+	SeqMap		ONLY *
+	Set		COMPLETELY
+	Denotation	ONLY =
+
+IMPORT	WinInternal	COMPLETELY
+	WinTclTk	COMPLETELY
+	WinConfig	COMPLETELY
+
+
+-- %$Views in General$ ========================================================
+
+DEF V1 <<  V2 == compose(horizontal({}), V1, V2)
+DEF V1 <|< V2 == compose(horizontal(%(fillY)), V1, V2)
+DEF V1 <-< V2 == compose(horizontal(%(fillX)), V1, V2)
+DEF V1 <+< V2 == compose(horizontal(%(fillX,fillY)), V1, V2)
+DEF V1 <*+< V2 == compose(horizontal(%(expand,fillX,fillY)), V1, V2)
+
+DEF V1 ^^  V2 == compose(vertical({}), V1, V2)
+DEF V1 ^|^ V2 == compose(vertical(%(fillY)), V1, V2)
+DEF V1 ^-^ V2 == compose(vertical(%(fillX)), V1, V2)
+DEF V1 ^+^ V2 == compose(vertical(%(fillX,fillY)), V1, V2)
+DEF V1 ^*+^ V2 == compose(vertical(%(expand,fillX,fillY)), V1, V2)
+
+
+    FUN compose : composeOp ** view ** view	-> view
+
+    DEF compose(Op, V1 AS compound(Op1, Views1), 
+    		    V2 AS compound(Op2, Views2)) ==
+	IF Op = Op1 THEN
+	    IF Op = Op2 THEN
+		compound(Op1, Views1 ++ Views2)
+	    ELSE
+		compound(Op1, Views1 +% V2)
+	    FI
+	OTHERWISE
+	IF Op = Op2 THEN
+	    compound(Op2, V1 :: Views2)
+	ELSE
+	    compound(Op, %(V1, V2))
+	FI
+    DEF compose(Op, V1 AS compound(Op1, Views1), V2) ==
+	IF Op = Op1 THEN
+	    compound(Op1, Views1 +% V2)
+	ELSE
+	    compound(Op, %(V1, V2))
+	FI
+    DEF compose(Op, V1, V2 AS compound(Op2, Views2)) ==
+	IF Op = Op2 THEN
+	    compound(Op2, V1 :: Views2)
+	ELSE
+	    compound(Op, %(V1, V2))
+	FI
+    DEF compose(Op, V1, V2) ==
+	compound(Op, %(V1, V2))
+
+
+DEF expand(V) == modify(%(expand), V)
+DEF *(V)      == modify(%(expand), V)
+DEF fillX(V)  == modify(%(fillX), V)
+DEF -(V)      == modify(%(fillX), V)
+DEF fillY(V)  == modify(%(fillY), V)
+DEF |(V)      == modify(%(fillY), V)
+DEF fill(V)   == modify(%(fillX, fillY), V)
+DEF +(V)      == modify(%(fillX, fillY), V)
+DEF *+(V)     == modify(%(expand, fillX, fillY), V)
+
+    FUN modify : set[packOp,<] ** view -> view
+
+    DEF modify(Pack, modified(Pack1, V)) == modified(Pack + Pack1, V)
+    DEF modify(Pack, V)			 == modified(Pack, V)
+
+
+DEF View1 @< View2 ==
+    composeH(View1, modify(%(side_left), View2))
+
+DEF View1 @> View2 ==
+    composeH(View1, modify(%(side_right), View2))
+
+DEF View1 @/\ View2 ==
+    composeH(View1, modify(%(side_top), View2))
+
+DEF View1 @\/ View2 ==
+    composeH(View1, modify(%(side_bottom), View2))
+
+FUN composeH : view ** view -> view
+DEF composeH(compound(hierarchical, Views), View) ==
+    compound(hierarchical, Views +% View)
+DEF composeH(View1, View2) == compound(hierarchical, %(View1, View2))
+
+
+DEF anchor(anchor(Name), View) == 
+    LET Op == IF Name = "n" THEN anchor_n
+    	      IF Name = "ne" THEN anchor_ne
+    	      IF Name = "e" THEN anchor_e
+    	      IF Name = "se" THEN anchor_se
+    	      IF Name = "s" THEN anchor_s
+    	      IF Name = "sw" THEN anchor_sw
+    	      IF Name = "w" THEN anchor_w
+    	      IF Name = "nw" THEN anchor_nw
+    	      ELSE anchor_center FI
+    IN
+    modify(%(Op), View)
+
+-- %$Frame Views$ ==========================================================
+
+DEF frame == basic(\\Win, Wid. act("frame %s" <- Wid))
+
+
+
+-- %$Label Views$ ==========================================================
+
+DEF label == basic(\\Win, Wid. act("label %s" <- Wid))
+
+
+

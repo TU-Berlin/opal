@@ -1,0 +1,65 @@
+IMPLEMENTATION RelHomog
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:05 $ ($Revision: 1.1.1.1 $)
+
+IMPORT AnonPair ONLY 2nd
+       Rel ONLY rel {} incl dom forall? in
+       SetReduce ONLY /
+       Nat ONLY nat 0 succ
+       RelCompose[dom, <, dom, <, data, dom, <, data, data, ++] ONLY o
+       RelReduce ONLY /
+       Set ONLY forall?
+       RelNotForUserPurpose ONLY rep
+       Pair ONLY pair unpair 1st &
+       Option ONLY avail? cont option
+       Map ONLY map !?
+       MapReduce ONLY /
+
+DEF id(S) == (\\s, R. (s,s,gen(s,s)) incl R, {}) / S
+
+DEF iter == ^
+DEF (R ^ 0) == id(dom(R))
+DEF (R ^ succ(0)) == R
+DEF (R ^ succ(x)) == R o (R ^ x)
+
+DEF symmetric?(R) == forall?(\\d, c. (c,d) in R, R)
+
+DEF symClosure(R) ==
+  (\\d, c, #, S. IF (c, d) in S THEN S ELSE (c, d, ~(#)) incl S FI, R) / R
+
+DEF reflexive?(R) == forall?(\\s. (s,s) in R, R dom)
+DEF refClosure(R) ==
+  (\\s, S. IF (s,s) in S THEN S ELSE (s, s,gen(s,s)) incl S FI, R) / dom(R)
+
+DEF transitive?(R) == 2nd(R; R)
+DEF R+ ==
+  LET (newR, new?) == R ; R
+  IN
+  IF new? THEN newR+ ELSE R FI
+DEF transClosure == +
+
+
+DEF R* == (refClosure(R))+
+DEF refTransClosure == *
+
+DEF RSTClosure(R) == transClosure(symClosure(refClosure(R)))
+
+-- %$Auxiliary functions$
+FUN ; : rel ** rel -> rel ** bool
+DEF ;(R1, R2) ==
+  LET M2 == R2 rep
+  IN
+  unpair((\\d, m, #, R . IF avail?(M2 !? m) THEN
+                           (\\c, ##, Rx.
+                                IF (d, c) in 1st(Rx) THEN
+                                  Rx
+                                ELSE
+                                  (d, c, # ++ ##) incl 1st(Rx) & true
+                                FI
+                                , R) / cont(M2 !? m)
+                  ELSE
+                    R
+                  FI, {} & false) / R1)

@@ -1,0 +1,120 @@
+IMPLEMENTATION kdIOname
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/ordinatrice/kdInterOpal/kdIOname.impl,v 1.1.1.1 1998-06-16 16:00:46 wg Exp $
+
+IMPORT InterOpal COMPLETELY
+	Map ONLY map ! find?
+	Denotation ONLY ++ =
+	Option COMPLETELY
+	OptionMap ONLY *
+	Pair COMPLETELY
+	NatConv ONLY nat `
+        Seq COMPLETELY 
+        SeqConv COMPLETELY 
+
+	kdIOstruct ONLY parameterized?
+
+DEF `(IO)(name(ide,orig,_)) == symbol(objs(structs(IO)!orig)!ide)
+DEF ``(IO)(N) == `(IO)(N) ++ "'" ++ `_o(IO)(N)
+
+DEF `_p(IO)(N AS name(ide,orig,inst)) == 
+        `(IO)(N) ++
+        (IF parameterized?(structs(IO)!orig) ANDIF ~(inst none?) THEN
+           `("[",",","]")(`(IO))(insts(structs(IO)!orig)!inst)
+        ELSE
+           ""
+        FI)
+
+DEF txt(name(ident(no),or,in)) == "name(" ++ (no`) ++ "," ++
+		txt(or) ++ "," ++ txt(in) ++ ")"
+
+FUN txt: origin -> denotation
+DEF txt(local) == "local"
+DEF txt(main) == "main"
+DEF txt(origin(no)) == no`
+
+FUN txt: inst -> denotation
+DEF txt(none) == "none"
+DEF txt(formal) == "formal"
+DEF txt(inst(no)) == no`
+DEF txt(generic) == "generic" 					
+
+DEF `_o(IO)(name(_,orig,_)) == symbol(structs(IO)!orig)
+
+DEF objOf(IO)(name(ide,orig,_)) == objs(structs(IO)!orig)!ide
+
+DEF propOf(IO)(name(ide,orig,_)) == props(structs(IO)!orig)!ide
+
+DEF nameOf(IO)(base,orig,k) ==
+	LET optstr == 2nd * find?(\\ _ , str. symbol(str) = orig, structs(IO))
+	IN IF optstr nil? THEN nil
+	   ELSE 
+	     LET optobj == 2nd * find?(\\ _, ob. symbol(ob) = base and 
+					~(kind(ob),k), objs(cont(optstr)))
+	     IN IF optobj nil? THEN nil
+		ELSE name((optobj cont) ident, 
+		          (optstr cont) origin, 
+			  (IF (optstr cont) parameterized? 
+			   THEN formal ELSE none FI)
+			 ) avail
+                FI
+           FI
+
+/* % wie oben, gibt einen Namen zurueck, auf den Praedikat zutrifft */
+-- FUN nameOf: interOpal -> denotation ** denotation ** (kind -> bool)
+--	-> option[name]
+DEF nameOf(IO)(base,orig,P) ==
+	LET optstr == 2nd * find?(\\ _ , str. symbol(str) = orig, structs(IO))
+	IN IF optstr nil? THEN nil
+	   ELSE 
+	     LET optobj == 2nd * find?(\\ _, ob. symbol(ob) = base and 
+					P(kind(ob)), objs(cont(optstr)))
+	     IN IF optobj nil? THEN nil
+		ELSE name((optobj cont) ident, 
+		          (optstr cont) origin, 
+			  (IF (optstr cont) parameterized? 
+			   THEN formal ELSE none FI)
+			 ) avail
+                FI
+           FI
+
+
+         
+DEF nameOfbool(IO) == cont(nameOf(IO)("bool","BOOL",sort))
+DEF nameOftrue(IO) == cont(nameOf(IO)("true","BOOL",fct(sort(nameOfbool(IO)))))
+DEF nameOffalse(IO) == cont(nameOf(IO)("false","BOOL",fct(sort(nameOfbool(IO)))))
+
+DEF n1 = n2 == ~(n1 < n2 or n2 < n1)
+
+
+-- ehemals kdIOkind
+	 
+DEF ~(sort, sort) == true
+DEF ~(fct(f1), fct(f2)) == ~(f1, f2)
+DEF ~(x:kind,y) == false
+
+-- ehemals kdIOfct
+
+IMPORT	Seq ONLY seq % ++ # forall?
+	SeqMap ONLY *
+	SeqOfSeq ONLY flat
+	SeqConv ONLY ` string
+	SeqZip ONLY zip
+	Denotation ONLY ++
+	Nat ONLY nat =
+
+	
+
+DEF sortsIn(sort(s)) == %(s)
+DEF sortsIn(cart(elems)) == flat(sortsIn * elems)
+DEF sortsIn(funct(dom,codom)) == sortsIn(dom) ++ sortsIn(codom)
+
+DEF `(IO)(sort(s)) == `(IO)(s)
+DEF `(IO)(cart(elems)) == `("("," ** ",")")(`(IO))(elems)
+DEF `(IO)(funct(dom,codom)) == 
+		"(" ++ `(IO)(dom) ++ " -> " ++ `(IO)(codom) ++ ")" 
+
+DEF sort(s1) ~ sort(s2) == s1 = s2
+DEF cart(el1) ~ cart(el2) == #(el1) = #(el2) and
+				forall?(\\x.x, zip(~)(el1, el2))
+DEF funct(d1,c1) ~ funct(d2,c2) == d1 ~ d2 and c1 ~ c2
+DEF x:fct ~ y == false

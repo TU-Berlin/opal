@@ -1,0 +1,568 @@
+#!/usr/local/bin/wish -f
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/dosfop_tcl,v 1.1.1.1 1998-06-16 16:00:30 wg Exp $
+
+# At least the DOSFOP environment variable has to be present for execution!
+#
+
+if {[info exists env(DOSFOP)] == 0} then {
+  puts "DOSFOP environment variable does not exist"
+  puts "Set variable before start of DOSFOP"
+  destroy .
+  exit
+}
+
+if {[info exists env(WISH)] == 0} then {
+    puts "WISH environment variable does not exist"
+    puts "using '/usr/local/bin/wish' as default"
+    set env(WISH) "/usr/local/bin/wish"
+}
+
+option readfile $env(DOSFOP)/defaults/options.data
+
+source $env(DOSFOP)/tcl/global.tcl
+source $env(DOSFOP)/tcl/filehelp.tcl
+source $env(DOSFOP)/tcl/error.tcl
+source $env(DOSFOP)/tcl/help.tcl
+set terminated 1
+
+###################################################################################
+# global constants #
+####################
+
+set helpSupportedWidgets {.globalConfig .projectBrowser .checkConsistency \
+                          .dosfop .xdvi .info .html .mbar.help .mbar.file}
+
+####################################################################################
+# DOSFOP execution functions #
+##############################
+
+proc doStartDosfopProc {} {
+  global startDosfopPid
+  global terminated
+  global env
+
+  prepareExec
+  openOutputFrame
+
+  set terminated 0
+  set startDosfopPid [exec $env(WISH) $env(DOSFOP)/tcl/startDosfop.tcl &]
+
+  updateBuffer
+}
+
+proc doCancelDOSFOPExecution {} {
+  global startDosfopPid
+
+    catch { exec kill $startDosfopPid }
+
+  destroy .outputFrame
+  if {[file exists temp]} then {exec rm temp}
+
+}
+
+
+###############################
+# checking config consistency #
+###############################
+
+proc doCheckConsistencyProc {} {
+  global consistencyCheckPid
+  global terminated
+  global env
+
+
+  prepareExec
+  openOutputFrame 
+
+  set terminated 0
+  set consistencyCheckPid [exec $env(WISH) $env(DOSFOP)/tcl/startConsistencyCheck.tcl &] 
+
+}
+
+
+proc doCancelConsistencyCheck {} {
+
+  global startDosfopPid
+  global consistencyCheckPid
+
+  # if called together with DOSFOP-translation:
+  catch {exec kill $startDosfopPid}
+
+  # always:
+  catch {exec kill $consistencyCheckPid}
+
+  destroy .outputFrame
+
+  if {[file exists temp]} then {exec rm temp}
+
+}
+
+##################################
+# Previewer, Hypertext Reader, html viewer #
+##################################
+
+proc doDVIPreview {} {
+  global env
+
+  # the DVI-file is located in the execution directory of dosfop:
+  set dviFilename [getDOCname]/[getDVIname]
+
+  if {[file exists $dviFilename]} then {
+      if {[info exists env(XDVI)]} then {
+	  exec $env(XDVI) $dviFilename &
+      } else {
+	  exec xdvi $dviFilename &
+      }
+ } else {
+    errorWidget "DVI file $dviFilename does not exist"
+ }
+}
+
+proc doReadInfoHypertext {} {
+  global env
+  # the Info-File is located in the DOSFOP-Subdirectory 
+  # of the execution directory of dosfop:
+  set fullInfoFilename [getDOCname]/[getINFOname]
+
+ if {[file exists $fullInfoFilename]} then {
+     if {[info exists env(INFO)]} then {
+	 exec $env(INFO) $fullInfoFilename &
+     } else {
+	 exec xterm -geometry 120x40 -e info --file $fullInfoFilename --dir . &
+     }
+ } else {
+    errorWidget "Info file $fullInfoFilename does not exist"
+ }
+}
+
+proc doHTMLviewer {} {
+  global env 
+  # the html file is located in the DOSFOP subdirectory
+  set fullHTMLFilename [getDOCname]/[getHTMLname]
+
+ if {[file exists $fullHTMLFilename]} then {
+     if {[info exists env(WWWBROWSER)]} then {
+	 exec $env(WWWBROWSER) $fullHTMLFilename &
+     } else {
+	 exec netscape $fullHTMLFilename &
+     } 
+ } else {
+    errorWidget "HTML file $fullHTMLFilename does not exist"
+ }
+}
+
+###############
+# Translators #
+###############
+
+proc doStartTexi2dvi {} {
+  global terminated
+  global env
+
+  set terminated 0
+
+  prepareExec
+  openOutputFrame
+
+#  pack forget .outputFrame.texi2dvi
+  
+  exec $env(WISH) $env(DOSFOP)/tcl/startTexi2dvi.tcl &
+
+}
+
+proc doStartMakeinfo {} {
+  global terminated
+  global env
+
+  set terminated 0
+
+  prepareExec
+  openOutputFrame
+#  pack forget .outputFrame.makeinfo
+
+  exec $env(WISH) $env(DOSFOP)/tcl/startMakeinfo.tcl &
+
+}
+
+proc doStartTexi2html {} {
+  global terminated
+  global env
+
+  set terminated 0
+
+  prepareExec
+ openOutputFrame
+
+#  pack forget .outputFrame.texi2html
+
+  exec $env(WISH) $env(DOSFOP)/tcl/startTexi2html.tcl &
+
+}
+
+#####################
+# end of DOSFOP run #
+#####################
+
+proc doExitDOSFOP {} {
+  destroy .
+  exit
+}
+
+############################################################################
+# the output frame handling #
+#############################
+#
+# generating the output-frame
+#
+
+proc openOutputFrame {} {
+  global status
+
+if "! [winfo exists .outputFrame ]" {
+  toplevel .outputFrame
+  wm title .outputFrame "DOSFOP Execution Window"
+
+  frame .outputFrame.state
+
+  label .outputFrame.stateLabel -text "Status of Execution: " 
+  label .outputFrame.stateText  
+
+  frame .outputFrame.textFrame
+  frame .outputFrame.buttonFrame
+
+  scrollbar .outputFrame.scroll -command ".outputFrame.text yview"
+  text .outputFrame.text -width 70 -height 20 -yscrollcommand ".outputFrame.scroll set"
+  .outputFrame.text delete 0.0 end
+
+  # prepare for later use:
+  button .outputFrame.cancel   -text Exit -command doCancelDOSFOPExecution
+#  button .outputFrame.texi2dvi
+#  button .outputFrame.makeinfo 
+#  button .outputFrame.texi2html
+
+  pack .outputFrame.stateLabel .outputFrame.stateText  \
+       -in .outputFrame.state -side left
+  pack .outputFrame.text    -in .outputFrame.textFrame -side left
+  pack .outputFrame.scroll  -in .outputFrame.textFrame -side right -fill y
+
+  
+  pack .outputFrame.cancel -in .outputFrame.buttonFrame \
+       -side right -padx 2m -pady 2m
+  pack .outputFrame.state .outputFrame.textFrame .outputFrame.buttonFrame \
+       -in .outputFrame -side top -fill x -padx 2m -pady 2m
+} else {
+    raise .outputFrame
+}
+}
+
+
+## prepare running of program
+proc prepareExec { } {
+  
+	disable {.checkConsistency .dosfop .xdvi .mkdvi .info .mkinfo .html .mkhtml};
+
+    }
+
+# E : temp-file in current directory
+#     "terminated" variable for detection of updating end
+# A : updated content of text-frame for output-window
+#
+
+proc updateBuffer {} {
+  global terminated
+
+  # can updating be stopped?
+    if $terminated then {
+	enable {.checkConsistency .dosfop .xdvi .mkdvi .info .mkinfo .html .mkhtml};
+	return;
+    };
+
+  if {[file exists temp]} then  {
+    set outAct [readFile temp]
+    if {[winfo exists .outputFrame]} then {
+      .outputFrame.text delete 0.0 end
+      .outputFrame.text insert end $outAct
+      .outputFrame.text yview -pickplace end
+    } else {
+      return
+    }
+  }
+  update
+  after 300 updateBuffer
+} 
+
+proc renewHeadline {} {
+  set pN [getProjectName]
+    if { [string length pN] == 0 } {
+	set headlineText "DOSFOP" 
+    } else {
+      set headlineText "DOSFOP: documenting "
+      append headlineText [getProjectName]
+    }
+  .headlineText configure -text $headlineText
+}
+
+  
+###############################################################################
+# dosfop main window #
+######################
+
+proc startMainWindow {} {
+
+  global headlineFont
+  global helpSupportedWidgets
+  global env
+
+  wm title . DOSFOP
+
+  frame .all  
+  label .leftarrow1 -text "->"
+  label .leftarrow2 -text "->"
+  frame .left
+  frame .middle
+  frame .right1
+  frame .right2
+  frame .right
+  frame .headlineFrame
+
+  label .headlineText -text "DOSFOP" -font $headlineFont
+  renewHeadline
+  
+  button .globalConfig -text "Global Configuration" \
+	               -command "disable {.globalConfig};exec $env(WISH) $env(DOSFOP)/tcl/globalConfig_tcl &"
+  
+  button .projectBrowser  -text "Project Browser" \
+                          -command "disable {.projectBrowser};exec $env(WISH) $env(DOSFOP)/tcl/browse_tcl Toplevel &"
+  
+  button .checkConsistency -text "Check Configuration Consistency" \
+			   -command doCheckConsistencyProc
+  
+  button .dosfop         -text "Start DOSFOP" \
+			 -command doStartDosfopProc
+
+  button .mkdvi -text "convert to DVI" -command doStartTexi2dvi
+  button .mkinfo -text "convert to Info" -command doStartMakeinfo
+  button .mkhtml -text "convert to HTML" -command doStartTexi2html
+  
+  button .xdvi           -text "DVI previewer" \
+			 -command doDVIPreview
+
+  button .info           -text "Info hypertext reader" \
+			 -command doReadInfoHypertext
+  
+  button .html           -text "HTML viewer" \
+			 -command doHTMLviewer
+  
+  # Menu:
+  #
+  set fileMenu [makeStandardMenu $helpSupportedWidgets]
+  $fileMenu add command -label Exit \
+                        -command doExitDOSFOP \
+                        -accelerator "  Ctrl+x"
+  bind all <Control-x> {doExitDOSFOP}
+  
+  
+  pack .headlineText -in .headlineFrame -padx 2m -pady 2m
+  
+  pack .mbar
+  
+  pack .globalConfig .projectBrowser .checkConsistency \
+        -in .left -side top -fill x -padx 2m -pady 2m
+  
+  pack .dosfop -in .middle -side top -fill x -expand 1 -padx 2m -pady 2m
+
+  pack .mkdvi -in .right1 -side top  -fill x -padx 2m -pady 2m
+  pack .xdvi  -in .right2 -side top -fill x -padx 2m -pady 2m
+
+  pack .mkinfo -in .right1    -fill x -padx 2m -pady 2m
+  pack .info   -in .right2    -fill x -padx 2m -pady 2m
+
+  pack .mkhtml -in .right1 -side bottom  -fill x -padx 2m -pady 2m
+  pack .html   -in .right2 -side bottom -fill x -padx 2m -pady 2m
+
+  pack .right1 -in .right -side left
+  pack .right2 -in .right -side right
+  
+  pack .mbar -side top -fill x
+  pack .headlineFrame -in .all -side top -fill x -padx 2m -pady 2m
+  pack .left .leftarrow1 .middle .leftarrow2 .right \
+        -in .all -side left -padx 2m -pady 2m
+  pack .all
+
+  # check for presence of compilation products:
+  #
+  cyclicPresenceCheck
+}
+
+#######################################
+# check presence of DVI, Info file, HTML file #
+#######################################
+ 
+proc cyclicPresenceCheck {} {
+  global terminated
+
+  set dviFilename [getDOCname]/[getDVIname]
+  set fullInfoFilename [getDOCname]/[getINFOname]
+  set fullHTMLFilename [getDOCname]/[getHTMLname]
+  
+ if {[file exists $dviFilename]} then {
+    .xdvi configure -state normal
+     set dvitime [file mtime [getDOCname]/[getDVIname]]
+ } else {
+    .xdvi configure -state disabled
+     set dvitime 0
+ }
+
+ if {[file exists $fullInfoFilename]} then {
+    .info configure -state normal
+     set infotime [file mtime [getDOCname]/[getINFOname]]
+ } else {
+    .info configure -state disabled
+     set infotime 0
+ }
+
+ if {[file exists $fullHTMLFilename]} then {
+    .html configure -state normal
+     set htmltime [file mtime [getDOCname]/[getHTMLname]]
+ } else {
+    .html configure -state disabled
+     set htmltime 0
+ }
+
+    if { $terminated == 1 } then {
+    if {[file exists [getOutputFileName]]} then {
+	.mkdvi configure -state normal
+	.mkinfo configure -state normal 
+	.mkhtml configure -state normal
+	set texitime [file mtime [getOutputFileName]]
+	if { $texitime > $dvitime } then {
+	    .mkdvi configure -foreground red
+	} else {
+	    .mkdvi configure -foreground black
+	}
+	if { $texitime > $infotime } then {
+	    .mkinfo configure -foreground red
+	} else {
+	    .mkinfo configure -foreground black
+	}
+	if { $texitime > $htmltime } then {
+	    .mkhtml configure -foreground red
+	} else {
+	    .mkhtml configure -foreground black
+	}
+    } else {
+	.mkdvi configure -state disabled
+	.mkinfo configure -state disabled
+	.mkhtml configure -state disabled
+    }
+    }
+ after 1000 cyclicPresenceCheck
+}
+###################################################################################
+# Installation Test #
+#####################
+
+proc environmentPrepared {} {
+  global errorMessage
+  global env
+
+  set errorMessage ""
+  set checkStatus 1
+
+
+  if {[file isdirectory doc] == 0} then {
+    set checkStatus 0
+    append errorMessage "doc subdirectory does not exist\n"
+  }       
+
+  if {[file isdirectory DOSFOP] == 0} then {
+    set checkStatus 0
+    append errorMessage "DOSFOP subdirectory does not exist\n"
+  }       
+
+  if {[file isfile DOSFOP/Toplevel.config] == 0} then {
+    set checkStatus 0
+    append errorMessage "DOSFOP Toplevel configuration file does not exist\n"
+  }       
+
+  if {[file isfile DOSFOP/Toplevel.structures.config] == 0} then {
+    set checkStatus 0
+    append errorMessage "DOSFOP Toplevel structures configuration file does not exist\n"
+  }       
+
+#  if {[file isfile DOSFOP/Library.config] == 0} then {
+#    set checkStatus 0
+#    append errorMessage "DOSFOP Library configuration file does not exist\n"
+#  }       
+
+  return $checkStatus
+}
+
+proc doExitInstall {} {
+  destroy .install
+  exit
+}
+
+proc doInstall {} {
+  global env
+
+  catch {exec mkdir doc}
+  catch {exec mkdir DOSFOP}
+#  exec cp $env(DOSFOP)/defaults/Library.config DOSFOP
+  exec cp $env(DOSFOP)/defaults/options.data   DOSFOP
+  exec cat $env(DOSFOP)/defaults/Toplevel.config.default | \
+	  sed -e s%DIRDEFAULT%[pwd]%            | \
+          sed -e s%OUTPUTDEFAULT%[pwd]/DOSFOP/out.texi% \
+          >DOSFOP/Toplevel.config
+  exec cp $env(DOSFOP)/defaults/Toplevel.structures.config.default \
+          DOSFOP/Toplevel.structures.config
+
+  pack forget .install
+  startMainWindow 
+}
+
+proc install {} {
+  global errorMessage
+
+  wm title . Installation
+
+  frame .install
+  message .msg -width 14c \
+                       -text "Environment is not established:\n\n$errorMessage"
+  
+  frame .buttonFrame
+  button .exitButton     -text Exit    -command doExitInstall
+  button .installButton  -text Install -command doInstall
+
+  pack .installButton   -in .buttonFrame -side left  -padx 2m -pady 2m
+  pack .exitButton      -in .buttonFrame -side right -padx 2m -pady 2m
+
+  pack .msg .buttonFrame -in .install -side top -fill x
+  pack .install
+
+}
+
+
+###########################################################################
+# MAIN
+###########################################################################
+# Installation Check
+# if installed correctly -> DOSFOP-start
+# else install and start DOSFOP
+###########################################################################
+
+if [environmentPrepared] then {
+  startMainWindow
+} else {
+  install
+}
+
+
+
+
+
+
+
+
+
+

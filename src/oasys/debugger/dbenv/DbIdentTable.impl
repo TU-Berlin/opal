@@ -1,0 +1,95 @@
+IMPLEMENTATION DbIdentTable
+
+IMPORT	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqExtensions	COMPLETELY
+	Map		COMPLETELY
+	Array		COMPLETELY
+	ArrayConv	COMPLETELY
+	ArrayReduce	COMPLETELY
+	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	ABORT		COMPLETELY
+	SeqIndex	COMPLETELY
+	Option		COMPLETELY
+	OptionMap	COMPLETELY
+	Fmt		COMPLETELY
+	Set		COMPLETELY
+	SetConv[objectName,~<~]
+			COMPLETELY
+	Denotation	COMPLETELY
+IMPORT
+	RepoAbsy	COMPLETELY
+	RepoName	COMPLETELY
+	RepoInternData	COMPLETELY
+	RepoObjectAccess 
+			COMPLETELY
+IMPORT
+	Expression	ONLY	objectId:nat -> objectId
+				no : objectId -> nat
+	RepoNameConv	COMPLETELY
+	
+DATA identTable == 
+	idTab(	a:	array[objectName],
+		b:	map[objectName,~<~,nat],
+		unused:	nat
+	)
+		
+-- % special ordering of objectNames:
+FUN ~<~ : objectName ** objectName -> bool
+DEF O1 ~<~ O2 ==
+    IF O1 ~ O2 -- same obj. of same structure (but may be
+	       -- diff. parts or instances)
+      THEN false	-- objects are ,,equal''
+      ELSE O1 < O2	-- objects are ordered in ordinary way
+    FI
+
+DEF init == idTab(empty,{},0)
+
+DEF insert(idTab(A,B,UU),ObjectNames) ==
+    LET -- selektieren neuer ObjectNamen
+	NewObjectNames == asSeq(asSet(baseName * ObjectNames) - dom(B))
+	N == #(NewObjectNames)
+	-- Neue ObjectNamen werden ans Ende des Arrays gehängt
+	A1 == A ++ (NewObjectNames asArray)
+	-- Map wird erweitert (nichts passiert bei N=0)
+	B1 == B extend (NewObjectNames,(UU ..> (UU+N))(\\i.i))
+    IN idTab(A1,B1,UU+N)
+
+
+DEF idTab(A,_,UU) ! Id ==
+    IF no(Id) < UU
+      THEN A ! no(Id)
+      ELSE ABORT("!'IdentTable: unknown objectId")
+    FI
+
+DEF ITab ! N ==	 
+    LET OptObjId == ITab !? N
+    IN IF OptObjId avail?
+	 THEN OptObjId cont
+	 ELSE ABORT("!'IdentTable: unknown objectName "++
+			pretty(fmtObjectName(N)))
+       FI
+    
+DEF idTab(_,B,_) !? N == objectId * (B !? baseName(N))
+
+
+FUN fmtIdentTable : repo -> identTable -> fmt
+DEF fmtIdentTable(R)(idTab(Array,_,_)) == 
+    beg(1) ; 
+      lit("---- IdentTable ---------------------------") ;
+      ((\\Idx,Name,Fmt.
+	Fmt ; brk ; 
+	beg(1) ; 
+	   lit(Idx`) ; lit(" |-> ") ; 
+		lit("'") ;
+		lit(symbol(Name)(R)) ;
+		lit("' (") ;
+--		  lit(pretty(R)(Name)) ;
+		lit(")") ;
+	end 
+       ), none) \ Array ; 
+    end
+
+
+

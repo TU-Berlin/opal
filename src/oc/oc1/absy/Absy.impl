@@ -1,0 +1,101 @@
+--  LAST EDIT: Thu Jun  3 11:25:57 1993 by Carola Gerke (kassandra!carola) 
+
+IMPLEMENTATION Absy
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:39 $ ($Revision: 1.1.1.1 $)
+
+-- Autorin:     cg
+-- Projekt:     OPAL1-Compiler (Scanner, Parser)
+-- Zweck:       collecting the types of the abstract syntax into one type
+
+IMPORT    -- reps
+          Pragma                COMPLETELY
+IMPORT    -- absy
+          Struct                COMPLETELY
+          Impl[partName]        COMPLETELY
+          Fct[partName]         COMPLETELY
+          PartName              COMPLETELY
+          GlobPragma[partName]  COMPLETELY
+IMPORT    -- lib                
+          SeqReduce             COMPLETELY
+          SeqMap                COMPLETELY
+          Denotation            COMPLETELY
+          Char                  COMPLETELY
+          CharConv              COMPLETELY
+       Rep ONLY rep `
+-- %- ----------------------------------------------------------------------
+-- %$General Abstract Syntax Type$
+-- %- ----------------------------------------------------------------------
+
+DATA absy    == Struct  (struct:struct)
+                Name    (pName:partName)
+                NameSeq (nSeq:seq[partName])
+                Kind    (kind:kind)
+                Origin  (origin:origin)
+                Fct     (what:fct)
+                Import  (import:seq[import])
+                Type    (type:seq[sortImpl])
+                Data    (data:seq[sortImpl])
+                Variants (variants:seq[variant])
+                Comps   (comps:seq[comp])
+                EqSeq   (eqs:seq[eq])
+                Formula (f:formula)
+                LawSeq  (ls:seq[law])
+                Expr    (e:expr)
+                Guards  (g:seq[guard])
+                Pos     (p:pos)
+                Pragma  (p:pragma)
+                GPragma  (pi:seq[globPragma])
+                ProofHead(ph: proofHead)
+                ProofBody(pb: proofBody)
+                NameSpec (pName: partName, spc: spc)
+                Spc(spc: spc)
+                Relation (type: rep, import: seq[import])
+                noAbsy
+
+FUN structOf : absy -> struct
+DEF structOf(A) == IF A Struct? THEN struct(A) ELSE error FI
+
+-- %- ----------------------------------------------------------------------
+
+
+FUN ` : absy ->  denotation
+DEF ` (Struct(S)) == S `
+DEF ` (Name(PN))  == PN ` : partName->denotation 
+DEF ` (NameSeq(NSeq)) == 
+    "[" ++ (( ++ / ",")(` : partName -> denotation * NSeq) ++ "]")
+DEF ` (Kind(K))     == K  ` : kind->denotation
+DEF ` (Origin(O))   == O  ` : origin->denotation
+DEF ` (Fct(F))      == ` (` : partName -> denotation)(F)
+DEF ` (Import(ISeq)) == (++ / empty)((\\ Imp . `(Imp) ++ `(newline)) * ISeq)
+DEF ` (Type(SISeq))  == "TYPE " ++ 
+                        ((++ /empty) (`(` :partName->denotation) * SISeq))
+DEF ` (Data(SISeq))  == (++ /empty) (`(` :partName->denotation) * SISeq)
+DEF ` (Variants(VSeq)) == (++ /empty) (`(` :partName->denotation) * VSeq)
+DEF ` (Comps(CSeq)) == (++ /empty) (`(` :partName->denotation) * CSeq)
+DEF ` (EqSeq(ESeq))  == (++ /empty) (`(` :partName->denotation) * ESeq)
+DEF ` (LawSeq(LSeq))  == (++ /empty) (`(` :partName->denotation) * LSeq)
+DEF ` (Expr(E))  == `(` :partName->denotation)(E)
+DEF ` (Formula(F))  == "(" ++ `(` :partName->denotation)(F) ++ ")"
+
+
+DEF ` (Guards(GSeq)) == (++ /empty) (`(` :partName->denotation) * GSeq)
+DEF ` (Pos(_)) == "Only Pos available" 
+DEF ` (Pragma(P)) == P ` 
+DEF ` (GPragma(PS)) == 
+    (++ / empty) ((\\ P . (`(` :partName->denotation))(P)) * PS)
+DEF ` (ProofHead(PH)) == `(` : partName -> denotation)(PH)
+DEF ` (ProofBody(PB)) == `(` : partName -> denotation)(PB)
+DEF ` (NameSpec(PN, SPC)) ==
+  "["++ (PN `) ++ `(`)(SPC) ++ "]"
+
+DEF `(Spc(SPC)) == `(`)(SPC)
+DEF ` (Relation(T, ISeq)) == 
+  "RELATION " ++ (T`) ++ " " ++ 
+  (++ / empty)((\\ Imp . `(Imp) ++ `(newline)) * ISeq)
+
+DEF ` (noAbsy) == "No Absy available" 
+

@@ -1,0 +1,649 @@
+IMPLEMENTATION ParseConfig
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/parseConfig/ParseConfig.impl,v 1.1.1.1 1998-06-16 16:00:38 wg Exp $
+
+IMPORT
+   Seq          COMPLETELY       String         COMPLETELY
+   Denotation   COMPLETELY       StringFilter   COMPLETELY
+   Map          COMPLETELY       Pair           COMPLETELY
+   MapConv      COMPLETELY       Void           COMPLETELY       
+   Option       COMPLETELY
+
+/* %Unluckily the @OPAL-compiler is not able to derive the instantiations of
+the following BNF-constructors. So we have to import each constructor with its
+corresponding instantiation: */
+IMPORT 
+  ParseChoice           COMPLETELY       TokenConfig    COMPLETELY
+  ParseSimpleOpts       COMPLETELY       Error          COMPLETELY
+  ParseError            COMPLETELY       Config         COMPLETELY
+  Pos                   COMPLETELY       CharClass      COMPLETELY
+
+  ParseConcat[config,string,none]                       ONLY ;
+  ParseConcat[config,option[string],none]               ONLY ;
+  ParseConcat[config,map[string,<,macroDef],none]       ONLY ;
+  ParseConcat[config,map[opt,<,optSetting],none]        ONLY ;
+  ParseConcat[config,option[structs],none]      ONLY ;
+  ParseConcat[config,seq[subsystem],none]               ONLY ;
+  ParseConcat[config,option[library],none]      ONLY ;
+
+  ParseConcat[struct,string,none]                       ONLY &
+  ParseConcat[struct,map[opt,<,optSetting],none]        ONLY &
+  ParseConcat[seq[struct],struct,<>'Seq[struct]]        ONLY &
+  ParseConcat
+         [option[structs],map[opt,<,optSetting],nil'Option[structs]] ONLY &
+  ParseConcat[option[structs],seq[struct],nil'Option[structs]] ONLY &
+
+  ParseConcat[subsystem,string,none]            ONLY &
+  ParseConcat[subsystem,option[string],none]    ONLY &
+  ParseConcat[subsystem,map[opt,<,optSetting],none] ONLY &
+  ParseConcat[subsystem,option[structs],none]   ONLY &
+  ParseConcat[subsystem,seq[subsystem],none]    ONLY &
+  ParseConcat[subsystem,void,none]              ONLY &
+
+  ParseConcat[seq[subsystem],subsystem,<>'Seq[subsystem]] ONLY &
+
+  ParseConcat[option[library],option[string],nil'Option[library]] ONLY &
+  ParseConcat
+         [option[library],map[opt,<,optSetting],nil'Option[library]] ONLY &
+  ParseConcat[option[library],seq[subsystem],nil'Option[library]] ONLY &
+
+  ParseConcat
+         [map[string,<,macroDef],map[string,<,macroDef],{}'Map[string,<,macroDef]] 
+           ONLY &
+
+
+-- %$Main Configuration-Parsing Function$
+-- %-------------------------------------
+
+/* %As we want to implement the parser in accordance to the syntax-definition
+of the Diplomarbeit, we use the same identifiers for the derivation of the
+nonterminals here. The result of each possible derivation is stored in the
+lambda-variables of the subsequent lambda-expression. This result is composed
+by the term of the abstract syntax deriveable from the start of the current
+token-sequence and the rest token sequence on which the following
+derivation-process is based. This derivationschema is applied for all rules of
+the context-free grammar for the configuration language and will not be
+repeatedly explained on each application.
+
+The following function definition implements the derivation of the top-level
+structure of our configuration language. Notice that except the derivation of
+@c{LocationOption} all other parsing sub-functions can deliver empty
+abstract-syntax-leafs that are represented by the @TYPE-variant @nil.
+
+If all parsing sub-functions worked successfully, it is checked if no
+additional tokens can be found in the token-stream of @c{tok7}. Otherwise a
+parsing error is delivered that consists of the reason for the error and the
+position where it has been encountered.
+
+In case any of the parsing sub-functions detects an error, the parsing-process
+is stopped and the error-condition is returned as the result of the
+function. */
+DEF parseConfig( USER_GLOBAL(_) :: tok0 ) ==
+  LocationOption(tok0);    (\\location, tok1.
+  Survey(tok1);            (\\survey  , tok2.
+  MacroPart(tok2);         (\\macros  , tok3.
+  GlobalOptionPart(tok3);  (\\globalOpts, tok4.
+  UsrStructures(tok4);     (\\usrStructs, tok5.
+  UsrSubsystems(tok5, <>); (\\usrSubsystems, tok6.
+  Library(tok6);           (\\library, tok7.
+    IF <>?(tok7) THEN
+      (config(
+         location,
+         survey,
+         macros,
+         globalOpts,
+         usrStructs,
+         usrSubsystems,
+         library
+       ),
+       ok
+      )
+    ELSE
+      (none, 
+       mkerror(
+         "unexpected continuation of file or syntax error at ", 
+          (pos(ft(tok7)))
+       )
+      )
+    FI
+  )))))))
+
+/* %We identify the first keyword @c{USER_GLOBAL} by pattern-matching. If this
+keyword is not the first token of the given token-stream we face a syntactic
+error. */  
+DEF parseConfig( <> ) == 
+ (none, mkerror("USER_GLOBAL expected initially", initial))
+DEF parseConfig( t :: _ ) == 
+ (none, mkerror("USER_GLOBAL expected at ", pos(t)))
+
+
+-- %$Parsing a Survey$
+-- %------------------
+
+-- %The parsing function
+FUN Survey : seq[token] -> option[string] ** seq[token] ** error
+/* %tries to derive a survey-specification. As survey-specifications are
+optional, the parsing-process is succesfull even if no survey-specification can
+be found. In this case the @nil-variant of the @c{option}-result is
+returned. */ 
+DEF Survey( SURVEY(_)::texinfo(repr, _)::rest ) == (avail(repr), rest, ok)
+DEF Survey( otherTokens )                       == (nil, otherTokens, ok)
+
+/* %If we start with a survey-keyword, a @c{texinfo}-token has to follow
+immediately. Otherwise the following pattern-variant communicates the error. */
+DEF Survey( SURVEY(pos):: _ ) == 
+      ( nil, <>, mkerror("texinfo text expected at ", pos))
+
+-- %$Parsing Macros$
+-- %----------------
+/* %Macros are a very important feature in the DOSFOP configuration language
+that improve the convenence of documentation-input. The function */
+FUN MacroPart : seq[token] -> map[string,<,macroDef] ** seq[token] ** error
+/* %parses an optional macr-specification part. If the introducing keyword
+@c{MACROS} is encountered subsequent macro-definition are parsed and compiled
+into the interal representation of the abstract syntax. In the abstract-syntax
+representation macro definitions are accumulated in a map data-type. This map
+is constructed in @c{MacroDefs} an is empty, initially : */
+DEF MacroPart( MACROS(_)::rest ) == MacroDefs(rest, {})
+
+/* %A macro-specification is optional. So no error is delieved for this
+variant: */ 
+DEF MacroPart( otherToken ) == ({}, otherToken, ok)
+
+
+-- %In the implementation of the function
+FUN MacroDefs : seq[token] ** map[string,<,macroDef] -> 
+                  map[string,<,macroDef] ** seq[token] ** error
+/* %subsequent macro definitions a compiled into the internal
+map-representation. This is done via recurve calls to @c{MacroDef} which parses
+one single macro-definition. If @c{MacroDef} does not deliver a new
+map-element, the recursive calls terminate and the current map is returned as
+internal representation. */ 
+DEF MacroDefs( tok0, actMacroMap ) ==
+  MacroDef(tok0) & (\\newMap, tok1.
+  IF {}?(newMap) THEN
+    (actMacroMap, tok1, ok)
+  ELSE
+    MacroDefs(tok1, actMacroMap <+ newMap)
+  FI)
+
+-- %Pattern-matching is applied for  the realization of
+FUN MacroDef : seq[token] -> map[string,<,macroDef] ** seq[token] ** error
+
+/* %In case the following pattern matches a new one-element map is constructed
+for amalgamation in the calling function. The mapping consists of the name of
+the defined macro and an internal representation of its definition. As macros
+are allowed to have one parameter, the internal representation distinguishes
+paramererized macros and non-parametrized macros. The detection of a
+@c{$}-character provides the basis for this distiction.
+
+For a parameterized macro we store the string in front and after the formal
+parameter in the internal representation, so that the translation process can
+substitute the textual definition and the actual parameter easily. */
+DEF MacroDef( macroname(reprName, _)::equal(_)::texinfo(reprSubst, _)::rest ) ==
+  LET
+    (preParam, postParam) == split(\\x. ~(dollar?(x)), reprSubst)
+  IN
+    IF <>?(postParam) THEN
+      (def(reprName, noParam(preParam), {}), rest, ok) 
+    ELSE
+      (def(reprName, withParam(preParam, rt(postParam)), {}), rest, ok)
+    FI
+
+/* %Macro-definition are optional, too, so no error is encounteres but an empty
+representation-map is returned. This case also serves as the termination case
+for sequences of macro definitions. */
+DEF MacroDef( otherTokens ) == ({}, otherTokens, ok)
+
+-- %$Parsing Global Options$
+-- %------------------------
+
+/* %The derivation of the global options and the default mechanism is realized
+in  */
+FUN GlobalOptionPart : seq[token] -> map[opt,<,optSetting] ** seq[token] ** error
+
+/* %If this variant matches, user defined global-option definitins are
+encounted. A default mechanism is realized here as the basic map which serves
+as the data structure for the user defined options is given by
+@c{globalOptionsDefaultMap}. In this map a default option-setting for each
+globally-defineable option is stored so that one can be sure to find at least
+the default option-setting for a requested option. 
+@cindex Global Default Mechanism */
+DEF GlobalOptionPart( OPTIONAL(_)::rest ) == 
+  GlobalOptions(rest, globalOptionsDefaultMap)
+
+/* %If no user-defined option specifications can be found, the original 
+@c{globalOptionsDefaultMap} is adopted: */
+DEF GlobalOptionPart( otherTokens ) == 
+  (globalOptionsDefaultMap, otherTokens, ok)
+
+-- %Via recursive calls the function
+FUN GlobalOptions : seq[token] ** map[opt,<,optSetting] -> 
+                      map[opt,<,optSetting] ** seq[token] ** error
+/* %tries to derive single option specifications. If one of the given
+nonterminal derivations is applicable a new option-map element has been found
+and entered into the current map. Otherwise the derivatin terminated and the
+current option-map is returned. */
+DEF GlobalOptions( token, actMap ) ==
+  LET
+    (opt, optSetting, restTokenSeq, _) ==
+      TopStructureNameOption(token)   | (\\ .
+      OutputFileNameOption(token)     | (\\ .
+      ProjectNameOption(token)        | (\\ .
+      AuthorsNamesOption(token)       | (\\ .
+      DateOption(token)               | (\\ .
+    
+      FunctionalityIndexOption(token) | (\\ .
+      ConceptIndexOption(token)       | (\\ .
+      ApplicationIndexOption(token)   | (\\ .
+      StructureIndexOption(token)     | (\\ .
+   
+      LibrariesOption(token)          | (\\ .
+      PropertiesOption(token)         | (\\ .
+      OnlyInterfacesOption(token)     | (\\ .
+      SubsystemsOption(token)         | (\\ .
+    
+      LanguageOption(token)           | (\\ .
+      HierarchyVisuOption(token)      | (\\ .
+      SortStructuresOption(token)     | (\\ .
+      NewPagesOption(token)           | (\\ .
+      ImportReferencesOption(token)   | (\\ .
+      UsedFunctionTablesOption(token) | (\\ .
+      LevelsOption(token)             | (\\ .
+      DropEmptyLinesOption(token)     | (\\ .
+      SingleNodeOption(token)         | (\\ .
+        (none, none, token, ok)
+      ))))))))))))))))))))))
+  IN
+    IF none?(opt) THEN
+      (actMap, token, ok)
+    ELSE
+      GlobalOptions(restTokenSeq, (opt, optSetting) def actMap)
+    FI
+
+
+-- %$Parsing User-Implemented Structures$
+-- %-------------------------------------
+
+FUN UsrStructures : seq[token] -> option[structs] ** seq[token] ** error
+
+/* %If the keyword @c{STRUCTURES} is detected we try to parse an
+option-secification part and a sequence of structure definitions. Both elements
+might be empty! */ 
+DEF UsrStructures( STRUCTURES(_)::tok0 ) ==
+  UsrStructuresOptionPart(tok0) & (\\usrStructsOpts, tok1.
+  UsrStructureDefs(tok1, <>)    & (\\structures, tok2.
+    (avail(
+       structs(
+         usrStructsOpts,
+         structures
+       )
+     ),
+     tok2,
+     ok
+    )
+   ))
+
+-- %One does not have to specify a @c{STRUCTURES}-part:
+DEF UsrStructures( otherTokens ) == (nil, otherTokens, ok)
+
+
+FUN UsrStructuresOptionPart : seq[token] -> 
+                               map[opt,<,optSetting] ** seq[token] ** error
+
+/* %The same options as for a single structure specification are applicable
+here so we reference one common derivation function! (in this case the
+derivation-function for single structure options) */
+DEF UsrStructuresOptionPart( token ) == UsrStructureOptionPart(token)
+
+
+-- %$Parsing a Single User-Implemented Structures$
+-- %----------------------------------------------
+
+-- %By
+FUN UsrStructureDefs : seq[token] ** seq[struct] -> 
+                         seq[struct] ** seq[token] ** error
+/* %we derive a sequence of single structure specifications a accumulater the
+defintions in a @c{seq[struct]} data-type. The parsing is realized by a
+recursive call mechanism that terminates, if no further structure specification
+can be read. */ 
+DEF UsrStructureDefs( token, actStructs ) ==
+  UsrStructureDef(token) & (\\struct, tok0.
+    IF none?(struct) THEN          
+      (actStructs, tok0, ok)
+    ELSE
+      UsrStructureDefs(tok0, actStructs+%struct)
+    FI
+  )
+
+
+FUN UsrStructureDef : seq[token] -> struct ** seq[token] ** error
+
+/* %If the keyword @c{STRUCTURE} is encountered the name of the specified
+structure has to be given. This mandatory part is compiled by
+@c{NameOption}. The option-specification part can be omitted as in all cases
+described previously. */ 
+DEF UsrStructureDef( STRUCTURE(_)::tok0 ) ==
+  NameOption(tok0)             & (\\name, tok1.
+  UsrStructureOptionPart(tok1) & (\\usrStructOpts, tok2.
+    (struct(name, usrStructOpts),
+     tok2,
+     ok
+    )
+  ))
+-- %The implementation of the empty structure sequence or the termination case:
+DEF UsrStructureDef( otherTokens ) == (none, otherTokens, ok)
+
+
+FUN UsrStructureOptionPart : seq[token] -> 
+                               map[opt,<,optSetting] ** seq[token] ** error
+
+-- %Either user-defined structure-options are specified and parsed
+DEF UsrStructureOptionPart( OPTIONAL(_)::rest ) == 
+  UsrStructureOptions(rest, {})
+-- %or no options are encountered and an empty option map is delivered
+DEF UsrStructureOptionPart( otherTokens ) ==
+  ({}, otherTokens, ok)
+
+-- %The implementation of
+FUN UsrStructureOptions : seq[token] ** map[opt,<,optSetting] -> 
+                      map[opt,<,optSetting] ** seq[token] ** error
+/* %has the same structure as @c{GlobalOptions} execpt that the set of allowed
+options for single structures or structure groups is reduced. */
+DEF UsrStructureOptions( token, actMap ) ==
+  LET
+    (opt, optSetting, restTokenSeq, _) ==
+      PropertiesOption(token)         | (\\ .
+      OnlyInterfacesOption(token)     | (\\ .
+      ImportReferencesOption(token)   | (\\ .
+      UsedFunctionTablesOption(token) | (\\ .
+      LevelsOption(token)             | (\\ .
+      DropEmptyLinesOption(token)     | (\\ .
+      NewPagesOption(token)           | (\\ .
+        (none, none, token, ok)
+      )))))))
+  IN
+    IF none?(opt) THEN
+      (actMap, token, ok)
+    ELSE
+      UsrStructureOptions(restTokenSeq, (opt, optSetting) def actMap)
+    FI
+
+
+-- %$Parsing User-Implemented Subsystems$
+-- %-------------------------------------
+
+-- %A sequences of subsystem-specification is parsed in the function
+FUN UsrSubsystems : seq[token] ** seq[subsystem] -> 
+                      seq[subsystem] ** seq[token] ** error
+/* %As long as we are able to derive subsystem specifications the currently
+read specification is added to the @c{seq[subsystem]} data-type. */
+DEF UsrSubsystems( tok0, actSubsystems ) ==
+  UsrSubsystem(tok0) & (\\subsystem, tok1.
+    IF none?(subsystem) THEN
+      (actSubsystems, tok1, ok)
+    ELSE
+      UsrSubsystems(tok1, actSubsystems+%subsystem)
+    FI
+  )   
+
+/* %The parsing of one single subsystem specification is done here. Notice that
+a deep nesting of calls to the function can happen as each subsystem can have
+deliberately many sub-subsystems.
+
+If a subsystem specification is introduced be the keyword @c{SUBSYSTEM} the
+specification of name and location are mandatory, so the first two drivation
+functions (@c{NameOption} and @c{LocationOption} have to be successful and
+deliver a valid result.
+
+The recognition of the @c{SUBSYSTEM_END} keyword in @c{EndSubsystem} is
+important for the elimination of ambiguity (see the Diplomarbeit for further
+details!). */
+FUN UsrSubsystem : seq[token] -> subsystem ** seq[token] ** error
+
+DEF UsrSubsystem( SUBSYSTEM(_)::tok0 ) ==
+  NameOption(tok0)             & (\\name, tok1.
+  LocationOption(tok1)         & (\\location, tok2.
+  Survey(tok2)                 & (\\survey, tok3.
+  UsrSubsystemOptionPart(tok3) & (\\usrSubsystemOpts, tok4.
+  UsrStructures(tok4)          & (\\usrStructs, tok5.
+  UsrSubsystems(tok5, <>)      & (\\usrSubsystems, tok6.
+  EndSubsystem(tok6)           & (\\ _ , tok7.
+    (subsystem(
+       name,
+       location,
+       survey,
+       usrSubsystemOpts,
+       usrStructs,
+       usrSubsystems
+     ),
+     tok7,
+     ok
+    )
+  )))))))
+
+DEF UsrSubsystem( otherTokens ) == (none, otherTokens, ok)
+
+/* %The specific derivation of the option-specifiaction part for
+user-subsystems is done here. The set of specifyable options is a proper subset
+of the set of global options. The structure of the implementation is the same
+as for all the other option-part derivation functions realized so far. */
+FUN UsrSubsystemOptionPart : seq[token] -> 
+                               map[opt,<,optSetting] ** seq[token] ** error
+
+DEF UsrSubsystemOptionPart( OPTIONAL(_)::rest ) == 
+  UsrSubsystemOptions(rest, {})
+DEF UsrSubsystemOptionPart( otherTokens ) ==
+  ({}, otherTokens, ok)
+
+FUN UsrSubsystemOptions : seq[token] ** map[opt,<,optSetting] -> 
+                      map[opt,<,optSetting] ** seq[token] ** error
+
+DEF UsrSubsystemOptions( token, actMap ) ==
+  LET
+    (opt, optSetting, restTokenSeq, _) ==
+      HierarchyVisuOption(token)      | (\\ .
+      SortStructuresOption(token)     | (\\ .
+      NewPagesOption(token)           | (\\ . 
+      PropertiesOption(token)         | (\\ .
+      OnlyInterfacesOption(token)     | (\\ .
+      ImportReferencesOption(token)   | (\\ .
+      UsedFunctionTablesOption(token) | (\\ .
+      LevelsOption(token)             | (\\ .
+      DropEmptyLinesOption(token)     | (\\ .
+        (none, none, token, ok)
+      )))))))))
+  IN
+    IF none?(opt) THEN
+      (actMap, token, ok)
+    ELSE
+      UsrSubsystemOptions(restTokenSeq, (opt, optSetting) def actMap)
+    FI
+
+
+-- %$Parsing Library Options$
+-- %-------------------------
+
+/* %Besides the difference of the introductory keyword and the extent of
+allowed option specifications the implementation of the parsing process for 
+library-configurations has the same structure as the implementation of the
+parsing  process for user defined subsystems. */
+FUN Library : seq[token] -> option[library] ** seq[token] ** error
+
+DEF Library( LIBRARY(_)::tok0 ) ==
+  Survey(tok0)                & (\\survey, tok1.
+  LibraryOptionPart(tok1)     & (\\libOpts, tok2.
+  LibrarySubsystems(tok2, <>) & (\\libSubsystems, tok3.
+    (avail(
+       library(
+         survey,
+         libOpts,
+         libSubsystems
+       )
+      ),
+      tok3,
+      ok
+     )
+  )))   
+DEF Library( otherTokens ) == (nil, otherTokens, ok)   
+
+FUN LibraryOptionPart : seq[token] -> 
+                                map[opt,<,optSetting] ** seq[token] ** error
+
+DEF LibraryOptionPart( OPTIONAL(_)::rest ) == LibraryOptions(rest, {})
+DEF LibraryOptionPart( otherTokens )       == ({}, otherTokens, ok)
+
+FUN LibraryOptions : seq[token] ** map[opt,<,optSetting] -> 
+                       map[opt,<,optSetting] ** seq[token] ** error
+
+/* %Please notice the reduced set of options that are allowed in library 
+configurarations. */
+DEF LibraryOptions( token, actMap ) ==
+  LET
+    (opt, optSetting, restTokenSeq, _) ==
+      PropertiesOption(token)         | (\\ .
+      NewPagesOption(token)           | (\\ .
+        (none, none, token, ok)
+      ))
+  IN
+    IF none?(opt) THEN
+      (actMap, token, ok)
+    ELSE
+      LibraryOptions(restTokenSeq, (opt, optSetting) def actMap)
+    FI
+
+
+FUN LibrarySubsystems : seq[token] ** seq[subsystem] -> 
+                          seq[subsystem] ** seq[token] ** error
+
+DEF LibrarySubsystems( tok0, actSubsystems ) ==
+  LibrarySubsystem(tok0) & (\\subsystem, tok1.
+    IF none?(subsystem) THEN
+      (actSubsystems, tok1, ok)
+    ELSE
+      LibrarySubsystems(tok1, actSubsystems+%subsystem)
+    FI
+  )   
+
+FUN LibrarySubsystem : seq[token] -> subsystem ** seq[token] ** error
+
+DEF LibrarySubsystem( SUBSYSTEM(_)::tok0 ) ==
+  NameOption(tok0)             & (\\name, tok1.
+  LocationOption(tok1)         & (\\location, tok2.
+  Survey(tok2)                 & (\\survey, tok3.
+  LibraryOptionPart(tok3)      & (\\libSubsystemOpts, tok4.
+  LibraryStructures(tok4)      & (\\libStructs, tok5.
+  LibrarySubsystems(tok5, <>)  & (\\libSubsystems, tok6.
+  EndSubsystem(tok6)           & (\\ _ , tok7.
+    (subsystem(
+       name,
+       location,
+       survey,
+       libSubsystemOpts,
+       libStructs,
+       libSubsystems
+     ),
+     tok7,
+     ok
+    )
+  )))))))
+
+DEF LibrarySubsystem( otherTokens ) == (none, otherTokens, ok)
+
+
+FUN LibraryStructures : seq[token] -> option[structs] ** seq[token] ** error
+
+DEF LibraryStructures( STRUCTURES(_)::tok0 ) ==
+  LibraryOptionPart(tok0)        & (\\libStructsOpts, tok1.
+  LibraryStructureDefs(tok1, <>) & (\\structures, tok2.
+    (avail(
+       structs(
+         libStructsOpts,
+         structures
+       )
+     ),
+     tok2,
+     ok
+    )
+   ))
+
+DEF LibraryStructures( otherTokens ) == (nil, otherTokens, ok)
+
+FUN LibraryStructureDefs : seq[token] ** seq[struct] -> 
+                         seq[struct] ** seq[token] ** error
+
+DEF LibraryStructureDefs( token, actStructs ) ==
+  LibraryStructureDef(token) & (\\struct, tok0.
+    IF none?(struct) THEN          
+      (actStructs, tok0, ok)
+    ELSE
+      LibraryStructureDefs(tok0, actStructs+%struct)
+    FI
+  )
+
+
+FUN LibraryStructureDef : seq[token] -> struct ** seq[token] ** error
+
+DEF LibraryStructureDef( STRUCTURE(_)::tok0 ) ==
+  NameOption(tok0)        & (\\name, tok1.
+  LibraryOptionPart(tok1) & (\\libStructOpts, tok2.
+    (struct(name, libStructOpts),
+     tok2,
+     ok
+    )
+  ))
+DEF LibraryStructureDef( otherTokens ) == (none, otherTokens, ok)
+
+
+
+-- %$Subsystems End Recognition$
+-- %----------------------------
+
+/* %Each @c{SUBSYSTEM}-keyword has to be terminated by an
+@c{END_SUBSYSTEM}-keyword. The presence of the keyword is checked here: */
+FUN EndSubsystem : seq[token] -> void ** seq[token] ** error
+
+DEF EndSubsystem( END_SUBSYSTEM(_) :: rest ) == (nil, rest, ok)
+
+/* %In case of absence of the keyword an error is delivered and the parsing
+process terminates errorneous. */
+DEF EndSubsystem( <> ) == 
+     (nil, <>, mkerror("'END_SUBSYSTEM' expected at eof", initial))
+DEF EndSubsystem( t :: _ ) == 
+     (nil, <>, mkerror("'END_SUBSYSTEM' expected at ", pos(t)))
+  
+
+-- %$The Global Option Default Map$
+-- %-------------------------------
+
+/* %For each possible option a default setting is given here. This concept
+assures that at least this default-setting can be extracted for each requested
+option setting.
+@cindex Global Option Default Map */
+FUN globalOptionsDefaultMap : map[opt,<,optSetting]
+DEF globalOptionsDefaultMap ==
+  asMap
+    (&(TopStructureName, cont("Main"!)) ::
+    (&(OutputFileName  , cont(<>)) ::
+    (&(ProjectName     , cont(<>)) ::
+    (&(AuthorsNames    , cont(<>)) ::
+    (&(Date            , cont(<>)) ::
+    
+    (&(FunctionalityIndex, Off) ::
+    (&(ConceptIndex      , Off) ::
+    (&(ApplicationIndex  , Off) ::
+    (&(StructureIndex    , Off) ::
+    
+    (&(LibraryInclude   , Off) ::
+    (&(PropertiesInclude, Off) ::
+    (&(OnlyInterfaces   , Off) ::
+    (&(SubsystemsInclude, Off) ::
+    
+    (&(Language          , English) ::
+    (&(HierarchyVisu     , Off) ::
+    (&(SortStructures    , TopDown) ::
+    (&(NewPages          , Off) ::
+    (&(ImportReferences  , Off) ::
+    (&(UsedFunctionTables, Off) ::
+    (&(Levels            , contSeq(<>)) ::
+    (&(DropEmptyLines    , Off) :: <> )))))))))))))))))))))
+

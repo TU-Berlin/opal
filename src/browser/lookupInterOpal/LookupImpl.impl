@@ -1,0 +1,262 @@
+IMPLEMENTATION LookupImpl
+-- ============================================================================
+-- Autor:	ralfi
+-- Projekt:	OPAL1-Compiler
+-- Zweck:       Library fuer Zugriffe auf Implementierungen
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/lookupInterOpal/LookupImpl.impl,v 1.1.1.1 1998-06-16 15:59:55 wg Exp $
+-- ============================================================================
+
+IMPORT	BOOL		ONLY	bool
+	DENOTATION	ONLY	denotation
+	InterOpal	COMPLETELY
+/* ONLY	< apply as block cases data def den eqn
+				expr:SORT fct:SORT formal? guard ident:SORT
+				impl:SORT imported induced inst inst?
+				interOpal:SORT lambda lhs local main missing
+				name no none? object:SORT objs origin parameter
+				pattern pos:SORT struct structs
+				symbol : object -> denotation
+				symbol : struct -> denotation tuple unknown var
+				variant
+*/
+	LookupLib	ONLY	applDef definition globalLocal inArea? info
+				level local name setAppl setGlobal setOrig
+				setPos kl_callfrom getKind
+	LookupObjectFct	ONLY	getFctInst getObjectInst
+	Map		ONLY	! map
+	Nat		ONLY	= nat
+	OptBrowser	ONLY	allpos? argument arguments name name?
+				nameNotPos?
+	Option		ONLY	avail avail? cont nil nil? option
+	Pair		ONLY	& pair
+	Seq		ONLY	% ++ <> seq
+	SeqReduce	ONLY	/ \
+	SeqMap		ONLY	*
+	String		ONLY	! : denotation -> string ++ = string
+
+FUN getAppls : interOpal ** arguments -> impl ** level -> seq[info]
+DEF getAppls(IO,Args)(missing,Level) ==
+	IF Args allpos? THEN %("missing"name) ELSE <> FI
+DEF getAppls(IO,Args)(imported,Level) == 
+	IF Args allpos? THEN %("imported"name) ELSE <> FI
+DEF getAppls(IO,Args)(parameter(_,_),Level) ==
+	IF Args allpos? THEN %("parameter"name) ELSE <> FI
+DEF getAppls(IO,Args)(induced(_,_),Level) ==
+	IF Args allpos? THEN %("induced"name) ELSE <> FI
+DEF getAppls(IO,Args)(data(_),Level) == 
+	IF Args allpos? THEN %("data"name) ELSE <> FI
+DEF getAppls(IO,Args)(def(Eqns),Level) ==
+	/((\\Eq,Seq.(getApplsEq(IO,Args,%(Eq lhs))(Eq,Level))++Seq),<>)(Eqns)
+
+-- -------------------------------------------------------------------------
+--
+-- -------------------------------------------------------------------------
+
+FUN getApplsEq : interOpal ** arguments ** seq[pattern] ->
+						eqn ** level -> seq[info]
+DEF getApplsEq(IO,Args,SeqPatt)(eqn(Pos,Lhs,Patt,Rhs),Level) ==
+  LET	RErg	== getApplsExpr(IO,Args,SeqPatt)(Rhs,Level)
+	LErg	== getApplsPatt(IO,Args,SeqPatt)(Lhs,Level)
+  IN LErg ++ RErg
+
+-- -------------------------------------------------------------------------
+--
+-- -------------------------------------------------------------------------
+
+FUN getApplsExpr : interOpal ** arguments ** seq[pattern] ->
+						expr ** level -> seq[info]
+DEF getApplsExpr(IO,Args,SeqPatt)(name(Pos,name(Id,local,Inst)),Level) ==
+	IF Args allpos? THEN
+		getApplsPattByIdHelp(IO,Args,Id,Pos)(SeqPatt,Level)
+	OTHERWISE
+	IF Args nameNotPos? THEN
+	  LET	OptName	== name(Args)(name?)
+	  IN	IF OptName nil? THEN <>
+		ELSE
+			getApplsPattByIdHelp(IO,Args,Id,Pos)(SeqPatt,Level)
+		FI
+	OTHERWISE
+	IF inArea?(Args)(Pos) THEN
+		getApplsPattByIdHelp(IO,Args,Id,Pos)(SeqPatt,Level)
+	ELSE <>
+	FI
+
+	FUN getApplsPattByIdHelp : interOpal ** arguments ** ident ** pos ->
+					seq[pattern] ** level -> seq[info]
+	DEF getApplsPattByIdHelp(IO,Args,Id,Pos)(SeqPatt,Level) ==
+	  /((\\Patt,Seq.
+	  LET	SeqInfo	== getApplsPattById(IO,Args,Id)(Patt,Level)
+	  IN ((\\Info.setPos(Pos%,Info setAppl))*SeqInfo)++Seq),<>)(SeqPatt)
+
+DEF getApplsExpr(IO,Args,SeqPatt)
+			(name(Pos,Name AS name(Id,Orig,Inst)),Level) ==
+	IF Args allpos? THEN
+		setPos(Pos%,getApplsInfoForName(IO,Args)(Name,Level))%
+	OTHERWISE
+	IF Args nameNotPos? THEN
+	  LET	OptName	== name(Args)(name?)
+	  IN	IF OptName nil? THEN <>
+		OTHERWISE
+		IF =((OptName cont),(((((IO structs)!Orig) objs)!Id) symbol)!)
+		THEN setPos(Pos%,getApplsInfoForName(IO,Args)(Name,Level))%
+		ELSE <> FI
+	OTHERWISE
+	IF inArea?(Args)(Pos) THEN
+		setPos(Pos%,getApplsInfoForName(IO,Args)(Name,Level))%
+	ELSE <>
+	FI
+
+DEF getApplsExpr(IO,Args,SeqPatt)(den(Pos,_),Level) == <>
+DEF getApplsExpr(IO,Args,SeqPatt)(tuple(_,SeqExpr),Level) ==
+   /((\\Expr,Seq.(getApplsExpr(IO,Args,SeqPatt)(Expr,Level))++Seq),<>)(SeqExpr)
+DEF getApplsExpr(IO,Args,SeqPatt)(apply(_,FExpr,AExpr),Level) ==
+	(getApplsExpr(IO,Args,SeqPatt)(FExpr,Level))++
+		(getApplsExpr(IO,Args,SeqPatt)(AExpr,Level))
+DEF getApplsExpr(IO,Args,SeqPatt)(cases(_,SeqGuards,OptExpr),Level) ==
+  LET	ExprStr	== IF OptExpr avail? THEN
+			getApplsExpr(IO,Args,SeqPatt)(OptExpr cont,Level)
+		   ELSE <> FI
+	GuardStr== /((\\Guard,Seq.(getApplsGuard(IO,Args,SeqPatt)
+				(Guard,Level))++Seq),ExprStr)(SeqGuards)
+  IN GuardStr
+DEF getApplsExpr(IO,Args,SeqPatt)(lambda(_,SeqVar,Expr),Level) ==
+  LET	ExprStr	== getApplsExpr(IO,Args,PattSeq)(Expr,Level)
+	PattSeq	== SeqPatt++((\\Var.var(unknown,Var))*(SeqVar))
+  IN	/((\\Var,SeqStr.getVar(IO,Args)(Var,Level)++SeqStr),ExprStr)(SeqVar)
+	
+DEF getApplsExpr(IO,Args,SeqPatt)(block(_,Eqns,Expr),Level) ==
+  LET	ExprStr	== getApplsExpr(IO,Args,PattSeq)(Expr,Level)
+	PattSeq	== SeqPatt++((\\Eqn.lhs(Eqn))*Eqns)
+	EqnEStr	== \((\\Eq,Seq.getApplsEq(IO,Args,PattSeq)(Eq,Level)++Seq),
+								ExprStr)(Eqns)
+  IN EqnEStr
+
+-- -------------------------------------------------------------------------
+--
+-- -------------------------------------------------------------------------
+
+FUN getApplsGuard : interOpal ** arguments ** seq[pattern] ->
+						guard ** level -> seq[info]
+DEF getApplsGuard(IO,Args,SeqPatt)(guard(_,IfExpr,ThenExpr),Level) ==
+	(getApplsExpr(IO,Args,SeqPatt)(IfExpr,Level))++
+		(getApplsExpr(IO,Args,SeqPatt)(ThenExpr,Level))
+
+-- -------------------------------------------------------------------------
+--
+-- -------------------------------------------------------------------------
+
+FUN getApplsPatt : interOpal ** arguments ** seq[pattern] ->
+						pattern ** level -> seq[info]
+
+-- DEF getApplsPatt(IO,Args,SeqPatt)(any(Pos),Level) == 
+--	%("getApplsPatt(IO,Args,SeqPatt)(any(Pos),Level)"!)
+-- DEF getApplsPatt(IO,Args,SeqPatt)(name(Pos,name(Id,local,Inst)),Level) ==
+--	%("getApplsPatt(IO,Args)(name(_,name(Id,local,Inst)),Level)"!)
+-- sollte es nicht geben
+
+DEF getApplsPatt(IO,Args,SeqPatt)
+		(name(Pos,Name AS name(Id,Orig,Inst)),Level) ==
+	IF Args allpos? THEN
+	  setPos(Pos%,getApplsInfoForName(IO,Args)(Name,Level))%
+	IF Args nameNotPos? THEN
+	  LET	OptName	== name(Args)(name?)
+	  IN	IF OptName nil? THEN <> 
+		OTHERWISE
+		IF =((OptName cont),
+			(((((IO structs)!Orig) objs)!Id) symbol)!) THEN
+		    setPos(Pos%,getApplsInfoForName(IO,Args)(Name,Level))%
+		ELSE <> FI
+	OTHERWISE
+	IF inArea?(Args)(Pos) THEN
+	  setPos(Pos%,getApplsInfoForName(IO,Args)(Name,Level))%
+	ELSE <>
+	FI
+
+DEF getApplsPatt(IO,Args,SeqPatt)(var(_,Var),Level)==
+	getVar(IO,Args)(Var,Level)
+
+DEF getApplsPatt(IO,Args,SeqPatt)(as(_,Var,Patt),Level) ==
+	getVar(IO,Args)(Var,Level)++
+		getApplsPatt(IO,Args,SeqPatt)(Patt,Level)
+DEF getApplsPatt(IO,Args,SeqPatt)(tuple(_,SeqPat),Level) ==
+   /((\\Patt,Seq.(getApplsPatt(IO,Args,SeqPatt)(Patt,Level))++Seq),<>)(SeqPat)
+DEF getApplsPatt(IO,Args,SeqPatt)(apply(_,FPatt,APatt),Level) ==
+	(getApplsPatt(IO,Args,SeqPatt)(FPatt,Level))++
+		(getApplsPatt(IO,Args,SeqPatt)(APatt,Level))
+
+-- -------------------------------------------------------------------------
+
+FUN getVar:  interOpal ** arguments -> var ** level -> seq[info]
+DEF getVar(IO,Args)(Var AS var(Pos,Id,Symbol,Fct),Level)==
+	IF Args allpos? THEN getApplsStrForVar(IO,Args)(Var,Level)%
+	OTHERWISE
+	IF Args nameNotPos? THEN
+	  LET	OptName	== name(Args)(name?)
+	  IN	IF OptName nil? THEN <> 
+		OTHERWISE
+		IF (OptName cont) = (Symbol!) THEN
+			getApplsStrForVar(IO,Args)(Var,Level)%
+		ELSE <> FI
+	OTHERWISE
+	IF inArea?(Args)(Pos) THEN getApplsStrForVar(IO,Args)(Var,Level)%
+	ELSE <>
+	FI
+
+-- -------------------------------------------------------------------------
+-- getApplPattById
+-- -------------------------------------------------------------------------
+
+FUN getApplsPattById : interOpal ** arguments ** ident ->
+						pattern ** level -> seq[info]
+
+DEF getApplsPattById(IO,Args,Id)
+		(name(Pos,name(NaId,Orig,Inst)),Level) == <>
+
+DEF getApplsPattById(IO,Args,Id)(var(_,Var),Level)==
+	getVar(IO,Args,Id)(Var,Level)
+
+DEF getApplsPattById(IO,Args,Id)(as(_,Var,Patt),Level) ==
+	getVar(IO,Args,Id)(Var,Level)++
+		getApplsPattById(IO,Args,Id)(Patt,Level)
+DEF getApplsPattById(IO,Args,Id)(tuple(_,SeqPatt),Level) ==
+   /((\\Patt,Seq.(getApplsPattById(IO,Args,Id)(Patt,Level))++Seq),<>)(SeqPatt)
+DEF getApplsPattById(IO,Args,Id)(apply(_,FPatt,APatt),Level) ==
+	(getApplsPattById(IO,Args,Id)(FPatt,Level))++
+		(getApplsPattById(IO,Args,Id)(APatt,Level))
+
+-- -------------------------------------------------------------------------
+
+FUN getVar:  interOpal ** arguments ** ident -> var ** level -> seq[info]
+DEF getVar(IO,Args,Id)(Var AS var(Pos,NaId,Symbol,_),Level)==
+  LET	OptName	== name(Args)(name?)
+	BoolChk	== IF OptName nil? THEN no(Id) = no(NaId)
+		   IF OptName avail? THEN =((OptName cont),Symbol!)
+		   FI
+  IN	IF BoolChk THEN getApplsStrForVar(IO,Args)(Var,Level)%
+	ELSE <>
+	FI
+
+-- -------------------------------------------------------------------------
+--
+-- -------------------------------------------------------------------------
+
+FUN getApplsInfoForName: interOpal ** arguments -> name ** level -> info
+DEF getApplsInfoForName(IO,Args)(name(Id,Orig,Inst),Level) ==
+  LET	Obj	== (((IO structs)!Orig) objs)!Id
+	ObjInfo	== getObjectInst(IO,Args)(Obj,Level)(OptInst)
+	OptInst	== IF Inst none? THEN nil
+		   IF Inst inst? THEN avail(&(Inst,Orig))
+		   IF Inst formal? THEN avail(&(Inst,Orig))
+		   FI
+	OrigStr	== ("'"!) ++ ((((IO structs)!Orig) symbol)!)
+  IN setOrig(OrigStr,ObjInfo setGlobal)setAppl
+
+
+FUN getApplsStrForVar: interOpal ** arguments -> var ** level -> info
+DEF getApplsStrForVar(IO,Args)(var(Pos,Id,Symbol,Fct),Level) ==
+  LET	ObjStr	== Symbol!
+	OrigStr	== ("'"!) ++ ((Struct symbol)!)
+	Struct	== (IO structs)!main
+	FctStr	== getFctInst(IO,Args)(Fct,Level,getKind)(nil)
+  IN info(Pos%,ObjStr,OrigStr,""!,(" : "!)++FctStr,local,definition)
+

@@ -1,0 +1,261 @@
+IMPLEMENTATION AnalyzeIO
+
+IMPORT  InterOpal COMPLETELY
+        Nat ONLY nat =
+        Option COMPLETELY
+        OptionMap ONLY *
+        Denotation ONLY =
+        Map ONLY map find? {}? ! def?
+        Pair COMPLETELY
+        Seq ONLY seq # forall? % <> ++ ::
+        SeqCompare ONLY cmp
+        SeqFilter ONLY |
+        SeqZip ONLY zip
+        SeqMap ONLY *
+        SeqOfSeq ONLY flat
+        RelCmp ONLY rel <?
+
+        ABORT ONLY ABORT
+
+/* %$Funktionen auf einer ganzen Struktur$ */
+/* % die Parameter der Struktur, leer, falls nicht parametrisiert  */
+-- FUN parameter: interOpal ** origin -> seq[name]
+DEF parameter(interOpal(_,ss), or) ==
+        LET s == ss!or
+            in == insts(s)
+        IN IF or main? THEN IF in {}? THEN <> ELSE in!formal FI
+           ELSE IF in {}? THEN <>
+                IF def? (none, in) THEN in!none
+                IF def? (formal, in) THEN in!formal
+                ELSE ABORT("parameter'AnalyzeIO: cannot determine parameter")
+                FI
+           FI
+
+-- FUN parameter: interOpal ** origin ** inst -> seq[name]
+DEF parameter(interOpal(_,ss), or, in) ==
+        IF in none? THEN <>
+        ELSE LET s == ss!or
+             IN IF insts(s) {}? THEN <>
+                ELSE insts(s)!in
+                FI
+        FI
+
+
+
+
+/* %$Suchfunktionen$ */
+/* % suche Struktur mit angegebenen Strukturnamen */
+-- FUN find?: interOpal ** denotation -> option[struct] 
+DEF find?(interOpal(_,ss), d) == 
+        LET lookup == find?(\\ _,st. symbol(st) = d, ss) 
+        IN IF lookup avail? THEN 2nd * lookup ELSE nil FI
+
+/* % suche Objekt mit angegebenem Namen und Kind in Struktur origin */
+-- FUN find?: interOpal ** origin ** denotation ** kind -> option[ident]
+DEF find?(interOpal(_, ss), or, den, k) ==
+        1st * find?(\\ _ ,ob.symbol(ob) = den and kind(ob) = k, objs(ss!or))
+
+/* %$ Funktionen auf @code{fct} $ */
+/* % vgl. zwei Funktionalitaeten, wobei @code{formal ~ inst(x)} gilt */
+-- FUN ~ : fct * fct -> bool
+DEF sort(n1) ~ sort(n2) == n1 ~ n2
+DEF sort(_) ~ _ == false
+DEF cart(el1) ~ cart(el2) == IF #(el1) = #(el2) THEN
+                                forall?(\\x.x, zip(~)(el1, el2))
+                              ELSE
+                                false
+                              FI
+DEF cart(_) ~ _ == false
+DEF funct(d1,c1) ~ funct(d2, c2) == d1 ~ d2 and c1 ~ c2
+DEF funct(_,_) ~ _ == false
+
+/* % vgl. richtig */
+DEF sort(n1) = sort(n2) == n1 = n2
+DEF sort(_) = _ == false
+DEF cart(el1) = cart(el2) == IF #(el1) = #(el2) THEN
+                                forall?(\\x.x, zip(=)(el1, el2))
+                              ELSE
+                                false
+                              FI
+DEF cart(_) = _ == false
+DEF funct(d1,c1) = funct(d2, c2) == d1 = d2 and c1 = c2
+DEF funct(_,_) = _ == false
+
+/* % Ordnung auf Funktionalitaeten */
+-- FUN < : fct ** fct -> bool
+DEF <(sort(a),sort(A)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+false
+FI
+DEF <(sort(_),cart(_)) == true
+DEF <(sort(_),funct(_,_)) == true
+DEF <(cart(_),sort(_)) == false
+DEF <(cart(a),cart(A)) == IF cmp(<)(a,A) <?THEN true
+IF cmp(<)(A,a) <? THEN false
+ELSE
+false
+FI
+DEF <(cart(_),funct(_,_)) == true
+DEF <(funct(_,_),sort(_)) == false
+DEF <(funct(_,_),cart(_)) == false
+DEF <(funct(a,b),funct(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE
+false
+FI
+FI
+
+/* % Sorten in einer @var{fct}, in gleicher Reihenfolge */
+FUN sortsIn: interOpal -> fct -> seq[name]
+DEF sortsIn(IO)(sort(n)) == sortsIn(IO)(n)
+DEF sortsIn(IO)(cart(els)) == flat(sortsIn(IO) * els)
+DEF sortsIn(IO)(funct(d,c)) == sortsIn(IO)(d) ++ sortsIn(IO)(c)
+
+/* %$ Funktionen auf @code{ident} $ */
+-- FUN = : ident ** ident -> bool
+DEF ident(n1) = ident(n2) == n1 = n2
+
+/* % zueghoeriges Objekt in uebergebener Struktur */
+-- FUN objOf: interOpal -> origin -> ident -> object
+DEF objOf(IO)(or)(id) == objs(structs(IO)!or)!id
+
+/* %$ Funktionen auf @code{inst} $ */
+/* % vgl. zwei Instanzen, wobei @code{formal ~ inst(x)} gilt */
+-- FUN ~ : inst ** inst -> bool
+DEF none ~ none == true
+DEF none ~ _    == false
+DEF formal ~ none == false
+DEF formal ~ formal == true
+DEF formal ~ inst(_) == true
+DEF inst(_) ~ none == false
+DEF inst(_) ~ formal == true
+DEF inst(x) ~ inst(y) == x = y
+
+/* % vgl. richtig */
+-- FUN = : inst ** inst -> bool
+DEF none = none == true
+DEF none = _    == false
+DEF formal = formal == true
+DEF formal = _ == false
+DEF inst(x) = inst(y) == x = y
+DEF inst(_) = _ == false
+
+/* %$ Funktionen auf @code{kind} $ */
+/* % vgl. zwei kinds, wobei @code{formal ~ inst(x)} fuer Instanzen gilt */
+-- FUN ~ : kind ** kind -> bool
+DEF sort ~ sort == true
+DEF sort ~ fct(_) == false
+DEF fct(_) ~ sort == false
+DEF fct(f1) ~ fct(f2) == f1 ~ f2
+
+/* % vgl. richtig */
+-- FUN = : kind ** kind -> bool
+DEF sort = sort == true
+DEF sort = fct(_) == false
+DEF fct(_) = sort == false
+DEF fct(f1) = fct(f2) == f1 = f2
+
+/* % alle vorkommenden Sorten in gleicher Reihenfolge */
+FUN sortsIn: interOpal -> kind -> seq[name]
+DEF sortsIn(_)(sort) == <>
+DEF sortsIn(IO)(fct(f)) == sortsIn(IO)(f)
+
+/* %$ Funktionen auf @code{name} $ */
+/* vgl. zwei Namen, wobei @code{formal ~ inst(x)} fuer Instanzen gilt */
+-- FUN ~ : name ** name -> bool
+DEF name(id1,or1,inst1) ~ name(id2,or2,inst2) ==
+        id1 = id2 and or1 = or2 and inst1 ~ inst2
+
+/* % vgl. richtig */
+-- FUN = : name ** name -> bool
+DEF name(id1,or1,inst1) = name(id2,or2,inst2) ==
+        id1 = id2 and or1 = or2 and inst1 = inst2
+
+/* % bezeichnet Name eine Sorte? */
+-- FUN sort?: interOpal -> name -> bool
+DEF sort? (IO)(name(id,or,_)) == 
+        kind(objs(structs(IO)!or)!id) sort?
+
+/* % zu einem Namen zugeordnete Funktionalitaet */
+-- FUN fctOf: interOpal -> name -> fct
+DEF fctOf(IO)(name(id,or,_)) == fct(kind(objs(structs(IO)!or)!id))
+
+/* % zu einem Namen gehoerendes Objekt */
+-- FUN objOf: interOpal -> name -> object
+DEF objOf(IO)(name(id, or, _)) == objs(structs(IO)!or)!id
+
+/* % Sorten in einem Namen - beruekcsichtigt auch Parameter */
+FUN sortsIn: interOpal -> name -> seq[name]
+DEF sortsIn(IO)(N AS name(id,or,in)) ==
+        N :: flat(sortsIn(IO) * (sort?(IO) | parameter(IO,or,in)))
+
+/* %$ Funktionen auf @code{origin} $ */
+-- FUN = : origin ** origin -> bool
+DEF local = local == true
+DEF local = _ == false
+DEF main = main == true
+DEF main = _ == false
+DEF origin(n1) = origin(n2) == n1 = n2
+DEF origin(_) = _ == false
+
+/* %$ Funktionen auf @code{pos} $ */
+/* % alternativer Name fuer @code{unknown} */
+-- FUN ? : pos
+DEF ? == unknown
+-- FUN ? : seq[pos]
+DEF ? == %(unknown)
+
+-- FUN = : pos ** pos -> bool
+DEF =(unknown,unknown) == true
+DEF =(unknown,part(_)) == false
+DEF =(unknown,pos(_,_,_)) == false
+DEF =(part(_),unknown) == false
+DEF =(part(a),part(A)) == =(a,A) 
+DEF =(part(_),pos(_,_,_)) == false
+DEF =(pos(_,_,_),unknown) == false
+DEF =(pos(_,_,_),part(_)) == false
+DEF =(pos(a,b,c),pos(A,B,C)) == 
+        IF =(a,A) THEN IF =(b,B) THEN IF =(c,C) THEN true
+ELSE false FI
+ELSE false FI
+ELSE false FI
+
+/* %$Funktionen auf @code{variant} $ */
+/* % alle Sorten des Konstruktors */
+-- FUN sortsIn: interOpal -> variant -> seq[name]
+DEF sortsIn(IO)(variant(_,name(cId,cOr,_),_,_)) ==
+        sortsIn(IO)(kind(objs(structs(IO)!cOr)!cId))
+
+/* %$Funktionen auf @code{comp}$ */
+-- FUN = : comp ** comp -> bool
+DEF =(comp(a,b),comp(A,B)) == IF =(a,A) THEN IF =(b,B) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+/* %$Funktionen auf @code{part}$ */
+FUN = : part ** part -> bool
+DEF =(signature,signature) == true
+DEF =(signature,extProperties) == false
+DEF =(signature,implementation) == false
+DEF =(signature,intProperties) == false
+DEF =(extProperties,signature) == false
+DEF =(extProperties,extProperties) == true
+DEF =(extProperties,implementation) == false
+DEF =(extProperties,intProperties) == false
+DEF =(implementation,signature) == false
+DEF =(implementation,extProperties) == false
+DEF =(implementation,implementation) == true
+DEF =(implementation,intProperties) == false
+DEF =(intProperties,signature) == false
+DEF =(intProperties,extProperties) == false
+DEF =(intProperties,implementation) == false
+DEF =(intProperties,intProperties) == true
+

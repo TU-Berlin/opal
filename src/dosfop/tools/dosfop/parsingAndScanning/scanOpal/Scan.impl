@@ -1,0 +1,204 @@
+IMPLEMENTATION Scan
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/scanOpal/Scan.impl,v 1.1.1.1 1998-06-16 16:00:39 wg Exp $
+
+IMPORT 
+  String COMPLETELY       Char          COMPLETELY
+  Seq    COMPLETELY       Denotation    COMPLETELY
+
+IMPORT 
+  CharClass     COMPLETELY       Error                  COMPLETELY
+  Pos           COMPLETELY       ScanRegularOpal        COMPLETELY
+  Token         COMPLETELY       ScanDocumentation      COMPLETELY
+  MyString COMPLETELY
+       Option COMPLETELY
+
+DATA commentStrings == commentStrings( lineCommentStart: string,
+                                       commentStart: string,
+                                       commentEnd: string,
+                                       docuStart: string )
+
+FUN opalCommentStrings: commentStrings
+DEF opalCommentStrings == commentStrings("--"!, "/*"!, "*/"!, " %"!)
+
+-- %The general @OPAL-scanning-function
+FUN scan : string ** config -> seq[token] ** error
+/* %initializes the start-state of the finite automaton realizing the 
+DOSFOP-@OPAL-scanner by
+transmitting the complete source string (@c{src}) and initializing the position
+counting (@c{initial}). The position calculation is hidden from the user by
+administrating the initial and all future position processing internally in the
+implementation part. */  
+DEF scan( src, config ) == 
+  LET (toks, err) == start(src, initial, config, <>, ok, opalCommentStrings)
+  IN (revert(toks), err)
+
+/* %@code{start} scans the string with the given start position and current
+    configuration. The following arguments are accumulators for the result. 
+    Note that @code{start} returns the token in reverse order!
+*/
+
+-- %The termination case of the function
+FUN start : string ** pos ** config ** seq[token] ** error ** commentStrings ->
+             seq[token] ** error
+-- %is given by the following defition pattern:
+DEF start( <>             , _ , _ , cToks, cErr, _  ) == (cToks, cErr)
+-- %Scanning stops at errors
+DEF start( _ :: _ , _ , _ , _ , E AS error(_), _) == (<>, E)
+/* %An empty source is handled as a valid input string and leads to a
+successful termination of the scanning process. Otherwise the first character
+of the source has to be examined. The current first character starts a
+distinction process that initiates the proper lexical handling. 
+
+After the successful handling of a single lexem the @c{start}-state of the
+finite automaton is visited again and the rest token sequence has to be
+concatenated with one single derived token. If an error is encountered, the
+scanning process is stopped immediately and the error is reported by copying
+the reason of failure delivered in an error-token to the scanning error data
+type. */
+DEF start( src AS c::rtSrc, act, config, cToks, cErr, commentS ) ==
+-- % We first check for a line comment
+  LET lineComment? == lineCommentStart(commentS) <?| src
+  IN
+  IF avail?(lineComment?) THEN
+    LET src2 == cont(lineComment?)
+        lineDocu? == docuStart(commentS) <??| src2
+        newPos == upd(upd(act, lineCommentStart(commentS)),
+                      docuStart(commentS))
+    IN
+    IF avail?(lineDocu?) THEN
+      LET (token, restSrc, newStart) ==
+            documentationStart(cont(lineDocu?), <>, act, newPos,
+                               lineCommentDocu, config, commentEnd(commentS))
+      IN
+      start(restSrc, newStart, config,
+            token :^: cToks, token <^ cErr, commentS)
+    ELSE
+      LET (token, restSrc, newStart) ==
+            lineComment(cont(lineComment?), lineCommentStart(commentS),
+                        act, upd(act, lineCommentStart(commentS)))
+      IN
+      start(restSrc, newStart, config,
+            token :^: cToks, token <^ cErr, commentS)
+    FI
+  ELSE
+-- %We check for a (nested) comment.
+  LET comment? == commentStart(commentS) <?| src
+  IN
+  IF avail?(comment?) THEN
+    LET src2 == cont(comment?)
+        docu? == docuStart(commentS) <??| src2
+        newPos == upd(upd(act, commentStart(commentS)),
+                      docuStart(commentS))
+    IN
+    IF avail?(docu?) THEN
+      LET (token, restSrc, newStart) ==
+            documentationStart(cont(docu?), <>, act, newPos,
+                               nestedCommentDocu, config, commentEnd(commentS))
+      IN
+      start(restSrc, newStart, config,
+            token :^: cToks, token <^ cErr, commentS)
+    ELSE
+      LET (token, restSrc, newStart) ==
+            possibleCommentOrPragmaOrDocu(rtSrc, c%, act, upd(act, c),
+                                          config, lineCommentStart(commentS),
+                                          commentStart(commentS),
+                                          commentEnd(commentS))
+      IN
+      start(restSrc, newStart, config,
+            token :^: cToks, token <^ cErr, commentS)
+    FI
+  ELSE
+-- %simpler possibilities    
+  IF quote?(c) or slash?(c) THEN
+    LET scanFct == 
+-- %Trying to scan a denotation:      
+                    IF quote?(c) THEN xdenotation
+                    IF slash?(c) THEN possibleCommentOrPragmaOrDocu
+                    FI
+        (token, restSrc, newStart) ==
+                   scanFct(rtSrc, c%, act, upd(act, c), config,
+                           lineCommentStart(commentS),
+                           commentStart(commentS),
+                           commentEnd(commentS))
+     IN
+       start(restSrc, newStart, config, token :^: cToks,
+             token <^ cErr, commentS)
+
+-- %Trying to scan a so called "single-character-token":      
+  IF open?(c) or close?(c) or comma?(c) or apostrophe?(c) or
+       bracketopen?(c) or bracketclose?(c) THEN
+     LET tokFct == IF open?(c) THEN open
+                   IF close?(c) THEN close
+                   IF comma?(c) THEN comma
+                   IF apostrophe?(c) THEN apostrophe
+                   IF bracketopen?(c) THEN bracketopen
+                   IF bracketclose?(c) THEN bracketclose
+                   FI
+     IN
+     start(rtSrc, upd(act, c), config, tokFct(c%, act) :^: cToks, cErr, commentS)
+-- %else layout or identifiers
+  ELSE 
+-- %Scan layout and do @emph{not discard} it:
+  LET textFct == IF space?(c) THEN layout
+                 IF special?(c) or letgit?(c) THEN ideStart
+                 ELSE ideStart
+                 FI
+      (token, restSrc, newStart) == textFct(src, <>, act, act)
+  IN
+    start(restSrc, newStart, config, token :^: cToks, token <^ cErr, commentS)
+  FI
+  FI
+  FI
+
+-- %$Variable Scanning$
+
+DEF scan( src, config, commentS ) ==
+  LET (token, err) == start(src, initial, config, <>, ok, commentS)
+      resToken == revert(token)
+  IN
+  IF commentStart(commentS) <>? THEN
+    (mergeDoc(resToken), err)
+  ELSE
+    (resToken, err)
+  FI
+
+/* %Called, if no nested comments are available.
+    Merges subsequent documentaries. */
+FUN mergeDoc: seq[token] -> seq[token]
+DEF mergeDoc( <> ) == <>
+/* %-
+DEF mergeDoc( (t AS lineComment(_, _)) :: (T) ) ==
+  PRINT(true, "lineComment ", t) :: mergeDoc(T)
+DEF mergeDoc( (t AS layout(_, _)) :: T ) ==
+  PRINT(true, "layout ", t) :: mergeDoc(T)
+DEF mergeDoc( t :: T) == PRINT(true, ": ", t) :: mergeDoc(T)
+*/
+DEF mergeDoc( T AS t :: <> ) == T
+DEF mergeDoc( documentation(s1, p1, nil) ::
+              documentation(s2, p2, nil) :: rest ) ==
+  mergeDoc(documentation(s1 ++ nl ++ s2, p1, nil) :: rest)
+DEF mergeDoc( t1 :: t2 :: rest ) == t1 :: mergeDoc(t2 :: rest)
+
+
+-- % $Auxiliary Functions$
+
+/* %Just add an unused parameter to @code{denotation}, so we can merge calls
+    to @code{denotation} with calls to other scanning functions
+    (@code{possible...}). */
+FUN xdenotation: string ** string ** pos ** pos ** config **
+                  string ** string ** string ->
+                  token ** string ** pos 
+DEF xdenotation( s1, s2, p1, p2, _, _, _, _ ) == denotation(s1, s2, p1, p2)
+
+/* %Extract error information from token and change errors accordingly. */
+FUN <^ : token ** error -> error
+DEF t <^ e ==
+  IF t ok? THEN e
+  IF t error? THEN error(reason(t))
+  IF t warning? THEN e <+ reason(t)
+  FI
+
+/* %Like ordinary cons, but do ignore non ok tokens. */
+FUN :^: : token ** seq[token] -> seq[token]
+DEF t :^: tt == IF ok?(t) THEN t :: tt ELSE tt FI
+

@@ -1,0 +1,256 @@
+/* %
+The structure @code{WinInternal} provides the internal basic data types and
+functions of the @value{OPALWIN} system. 
+
+@emph{Note}: this structure is not if interest for using @value{OPALWIN},
+it is only relevant for extending @value{OPALWIN}.
+
+@emph{Note}: documentation incomplete.
+*/
+
+SIGNATURE WinInternal
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:22 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Real			ONLY real
+	Nat			ONLY nat
+	Void			ONLY void
+	String			ONLY string
+	Seq[configCom]		ONLY seq
+	Seq[wconfigCom]		ONLY seq
+	Seq[view]		ONLY seq
+	Set[packOp,<]		ONLY set
+	Com[void]		ONLY com
+	Com[window]		ONLY com
+	Com[bool]		ONLY com
+
+IMPORT	WinTclTk		ONLY script:SORT widget:SORT
+
+-- %$Windows$ ==============================================================
+
+/* %
+A window is represented by the widget name of the display root and
+a set of resource dispose actions. 
+*/
+
+TYPE window		== window(root: widget)
+FUN  window		: widget ** denotation	-> com[window]
+FUN  registerDispose 	: window ** com[void] 	-> com[void]	
+
+/* %
+A new window is created by the command @code{window(Master, Class)}, the
+window widget root name retrieved with @code{root(Window)}.
+The command @code{registerDispose(Win, Act)} registers an action
+to be executed if the window is destroyed.
+*/
+
+
+
+
+-- %$Views$ ==============================================================
+
+/* %
+Views are represented by terms of either basic views,
+compositions or modifications. 
+*/
+
+TYPE view ==
+	basic(	displayCom : window ** widget -> com[void],
+		config	   : config
+	)
+	compound(
+		op	   : composeOp,
+		views      : seq[view]
+	)
+	modified(
+		pack	   : set[packOp, <],
+		view	   : view
+	)
+
+
+TYPE composeOp == 
+	horizontal	( pack   : set[packOp, <] )
+	vertical  	( pack   : set[packOp, <] )
+	hierarchical
+
+FUN = : composeOp ** composeOp -> bool
+
+SORT packOp
+
+FUN expand	: packOp
+FUN fillX	: packOp
+FUN fillY	: packOp
+FUN side_left	: packOp
+FUN side_right	: packOp
+FUN side_top	: packOp
+FUN side_bottom	: packOp
+FUN anchor_n	: packOp
+FUN anchor_ne	: packOp
+FUN anchor_e	: packOp
+FUN anchor_se	: packOp
+FUN anchor_s	: packOp
+FUN anchor_sw	: packOp
+FUN anchor_w	: packOp
+FUN anchor_nw	: packOp
+FUN anchor_center : packOp
+
+FUN < =	: packOp ** packOp -> bool
+
+
+/* %
+A shortcut for creating a basic view is provided by the following
+function:
+*/
+
+FUN basic : (window ** widget -> com[void]) -> view
+
+
+/* %
+The command @code{displayView(Win, Wid, View)} displays the given view
+in the given window as a Tcl/Tk widget of the given name. The command
+@code{displayView(Win, Wid, View, Pack?)} is a more general version:
+@code{Pack?} specifies whether the topmost widget created for @code{View}
+will be packed by the Tk packer or not. Default is @code{Pack? = true}.
+*/
+
+FUN displayView : window ** widget ** view 	   -> com[bool]
+FUN displayView : window ** widget ** view ** bool   -> com[bool]
+
+/* %
+For a @emph{basic view}, @code{displayCom} is executed, passing it the
+window and the widget name. Afterwards, the configuration is applied
+to a Tcl/Tk widget of the given name, ignoring any errors
+(see @code{forceApply} below).
+
+For a @emph{horizontal composition}, the subviews are packed in increasing
+order to the left side of an invisible Tcl/Tk frame. For a @emph{vertical
+composition} they are packed to the top side. For a @emph{hierarchical
+composition}, the rest of the subview sequence is displayed as children of the
+Tcl/Tk widget displayed by the first view of the sequence.
+
+@sp 1
+
+Displaying views as children of some Tcl/Tk widget is realized by the function
+@code{displayChildren(Win, Wid, Pack, Children)}:
+*/
+
+FUN displayChildren : window ** widget ** string ** seq[view] -> com[bool]
+
+/* %
+Once a child has been displayed using @code{displayView}, it is packed 
+in the parent using @code{Pack} as a packing option.
+
+@sp 1
+*/
+
+/* %
+The command @code{registerDispose(Win, Wid, Act)} registers
+a dispose action to be executed if the widget @code{Wid} is
+destroyed.
+*/
+
+FUN registerDispose : window ** widget ** com[void] -> com[void]
+
+
+
+-- %$View Configurations$ =======================================================
+
+/* %
+A view configuration consists of a sequence of configuration
+commands. A configuration command is parameterized over a window, 
+a widget and a modifier. The modifier specifies if the entire
+widget, the tagged item of a canvas widget, the tagged characters
+of a text widget, or some other entities are addressed.
+*/
+
+TYPE config 	== config(opts: seq[configCom])
+TYPE configCom 	== com(com: window ** widget ** modifier -> com[void])
+TYPE tag	== tag(name: denotation)
+TYPE modifier	== widget
+		   canvas(tag: tag)
+		   text(tag: tag)
+		   menu(item: nat)
+		   other(prefix: string)
+
+/* %
+Several shortcuts are provided for denoting configurations. All
+of them construct a configuration with a single configuration command:
+*/
+
+FUN config		: (window ** widget ** modifier -> com[void])-> config
+
+FUN config		: denotation		 	      	-> config
+FUN config		: script		 	      	-> config
+
+FUN configWidget	: (window ** widget -> com[void])	-> config
+FUN configCanvas	: (window ** widget ** tag -> com[void])-> config
+FUN configText		: (window ** widget ** tag -> com[void])-> config
+FUN configMenu		: (window ** widget ** nat -> com[void])-> config
+FUN configOther		: (window ** widget ** string -> com[void])-> config
+
+/* %
+The version @code{config(\\Wid, Tag . Com)} just packs its
+argument in a configuration with a single configuration command. 
+
+The versions which take a denotation or a script issue the Tcl command
+@code{"<wid> configure <text>"} if the modifier passed at configuration time is 
+@code{widget}, the command @code{"<wid> itemconfigure <tag> <text>"} if the
+modifier is @code{canvas}, the command 
+@code{"<wid> tag configure <tag> <text>"} if the modifier is @code{text},
+and the command @code{"<wid> <prefix> <text>"} if the modifier is
+@code{other}.
+
+The version @code{configWidget} only applys to widgets; if the modifier at 
+configuration time is not @code{widget}, the configuration 
+is ignored.  Similar, the versions @code{configItem}, @code{configText}
+and @code{configOther} behave. Each of this versions extract the argument
+of the constructor of the modifier and directly pass it to the embedded
+configuration command.
+*/
+
+
+/* %
+@sp 1
+The command @code{apply(Wid, Config, Modifier)} applys the given configuration
+to the given widget with the given modifier. 
+The command with @code{forceApply} behaves similar, but ignores
+all errors occuring by the execution of configuration commands.
+The commands @code{doConfig} implement the behaviour as described above
+for the @code{config} versions which take a denotation or script. 
+*/
+
+FUN apply	: window ** widget ** modifier ** config -> com[void]
+FUN forceApply	: window ** widget ** modifier ** config -> com[void]
+
+FUN doConfig	: window ** widget ** modifier ** denotation -> com[void]
+FUN doConfig	: window ** widget ** modifier ** script     -> com[void]
+
+
+-- %$Window Configurations$ ==================================================
+
+/* %
+A window configuration is similar to a view configuration:
+*/
+
+TYPE wconfig 	== wconfig(opts: seq[wconfigCom])
+TYPE wconfigCom	== com	  (com : window -> com[void])
+
+FUN wconfig 	: (window -> com[void])   -> wconfig
+
+
+FUN apply		: window ** wconfig 		-> com[void]
+FUN forceApply		: window ** wconfig 		-> com[void]
+
+
+-- %$Coordinate Conversion$ ===================================================
+
+FUN pixelSize	: real
+FUN asPixel	: real   -> denotation
+FUN asMM	: string -> real 
+
+/* %
+@page
+*/

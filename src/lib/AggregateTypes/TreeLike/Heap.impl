@@ -1,0 +1,201 @@
+IMPLEMENTATION Heap
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:09 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Tree COMPLETELY
+       Compose ONLY o
+       ABORT ONLY ABORT
+       AnonPair ONLY 1st 2nd
+
+
+-- %$The Data Type of Heaps$
+/* %Internally, heaps @emph{are} binary trees. */
+DATA heap == abs(rep: tree[data])
+
+-- %Constructors
+DEF nil == abs(nil)
+DEF node(v, abs(l), abs(r)) == 
+    IF heap0?(node(v, l, r)) THEN abs(node(v, l, r)) 
+    ELSE ABORT("node'Heap: heap condition violated")
+    FI
+
+-- %Discriminators
+DEF nil?(abs(t)) == nil?(t)
+DEF node?(abs(t)) == node?(t)
+
+-- %Selectors
+DEF val(abs(t)) == val(t)
+DEF left(abs(t)) == abs(left(t))
+DEF right(abs(t)) == abs(right(t))
+
+-- %$Constructing a Heap from Datas$
+DEF %(v) == abs(node(v, nil, nil))
+DEF %(v1, v2) == incl(v1, %(v2))
+DEF %(v1, v2, v3) == incl(v1, %(v2, v3))
+DEF %(v1, v2, v3, v4) == incl(v1, %(v2, v3, v4))
+DEF %(v1, v2, v3, v4, v5) == incl(v1, %(v2, v3, v4, v5))
+DEF %(v1, v2, v3, v4, v5, v6) == incl(v1, %(v2, v3, v4, v5, v6))
+DEF %(v1, v2, v3, v4, v5, v6, v7) == incl(v1, %(v2, v3, v4, v5, v6, v7))
+DEF %(v1, v2, v3, v4, v5, v6, v7, v8) == 
+                               incl(v1, %(v2, v3, v4, v5, v6, v7, v8))
+
+DEF incl(d, abs(t)) == abs(incl(d, t))
+DEF excl(d, abs(t)) == abs(1st(excl(d, t)))
+
+FUN incl: data ** tree[data] -> tree[data]
+DEF incl(v, nil) == node(v, nil, nil)
+DEF incl(vv, node(v, l, r)) == 
+    IF vv <= v THEN node(vv, incl(v, r), l)
+    IF v <= vv THEN node(v, incl(vv, r), l)
+    FI
+
+-- % the second parameter tells, whether a deletion took actually place
+FUN excl: data ** tree[data] -> tree[data] ** bool
+DEF excl(_, nil) == (nil, false)
+DEF excl(vv, N AS node(v, l, r)) ==
+    IF vv < v THEN (N, false)
+    IF v < vv THEN 
+      IF 2nd(excl(vv, l)) THEN (node(v, 1st(excl(vv, l)), r), true)
+      ELSE (node(v, l, 1st(excl(vv, r))), 2nd(excl(vv, r)))
+      FI
+    ELSE -- %v = vv
+       (l + r, true)
+    FI
+
+-- %$Constructing a Heap from a Function$
+DEF iter(f, start) == 
+    LET tr == iter(f, start) 
+    IN
+    IF tr heap? THEN abs(tr)
+    ELSE ABORT("iter'Heap: result violates heap condition")
+    FI
+
+-- %$Combining Heaps$
+DEF abs(t1) + abs(t2) == abs(t1 + t2)
+
+FUN + : tree[data] ** tree[data] -> tree[data]
+DEF nil + nil == nil
+DEF nil + (N AS node(_,_,_)) == N
+DEF (N AS node(_,_,_)) + nil == N
+DEF (L AS node(vl, ll, rl)) + (R AS node(vr, lr, rr)) ==
+    IF vl <= vr THEN node(vl, ll + rl, R)
+    IF vr <= vl THEN node(vr, L, lr + rr)
+    FI
+
+/* %- seems that removing a heap is no more efficient than removal of
+the single elements alone, so there is no sense in having special
+function for this.
+
+DEF abs(t1) - abs(t2) == abs(t1 - t2)
+
+FUN - : tree[data] ** tree[data] -> tree[data]
+DEF nil - _ == nil
+DEF (L AS node(_, _, _)) - nil == L
+
+/* %The idea was not to start removing every element from the root,
+but remove the elements from R as soon as they are no longer needed
+during the walk down. Drawback of this method is that you need to
+calculate the modified R for every node */
+/*
+DEF node(vl, ll, rl) - (R AS node(vr, lr, rr)) ==
+    IF vl < vr THEN node(vl, ll - R, rl - R)
+    IF vr < vl THEN node(vl, ll - (lr + rr), rl - (lr + rr))
+    ELSE /* %vl = vr; do not remove vr, as it might be repeated in the
+            subheaps */ 
+        (ll - R) + (rl - R)
+    FI
+*/
+
+/* %This is better: Just destroy the structure of the second tree, and
+remove every element from the root. Worst case is log(#L) * #R */
+DEF (L AS node(vl, ll, rl)) - node(vr, lr, rr) ==
+    (excl(vr, L) - lr) - rr
+
+*/
+
+-- %$Working on a Heap$
+DEF abs(t) :=_val v == 
+    IF heap0?(t :=_val v) THEN abs(t :=_val v)
+    ELSE ABORT(":=_val'Heap: heap condition is violated")
+    FI
+
+DEF abs(t) :=_left abs(new) ==
+    IF heap0?(t :=_left new) THEN abs(t :=_left new)
+    ELSE ABORT(":=_left'Heap: heap condition is violated")
+    FI
+
+DEF abs(t) :=_right abs(new) ==
+    IF heap0?(t :=_right new) THEN abs(t :=_right new)
+    ELSE ABORT(":=_right'Heap: heap condition is violated")
+    FI
+
+DEF swap(abs(t)) == abs(swap(t))
+DEF reflect(abs(t)) == abs(reflect(t))
+
+DEF extractMin(abs(nil)) == 
+    (ABORT("extractMin'Heap: applied to empty heap"), nil)
+DEF extractMin(abs(node(v, l, r))) == (v, abs(l + r))
+
+-- %$Accessing Datas in a Heap$
+DEF min(abs(nil)) == ABORT("min'Heap: applied to empty heap")
+DEF min(abs(node(v, _, _))) == v
+
+DEF leftmost(abs(t)) == leftmost(t)
+DEF rightmost(abs(t)) == rightmost(t)
+
+DEF children(abs(t)) == children(t)
+DEF grandchildren(abs(t)) == grandchildren(t)
+
+DEF level(i, abs(t)) == level(i, t)
+
+DEF front(abs(t)) == front(t)
+
+-- %$Information About a Tree$
+DEF d in abs(t) == d in t
+FUN in : data ** tree[data] -> bool
+DEF d in nil == false
+DEF d in node(v, l, r) ==
+    IF d < v THEN false
+    IF v < d THEN IF d in l THEN true ELSE d in r FI
+    ELSE true  -- % v = d
+    FI
+
+DEF #(abs(t)) == #(t)
+DEF depth(abs(t)) == depth(t)
+DEF width(abs(t)) == width(t)
+DEF leaf?(abs(t)) == leaf?(t)
+
+DEF exist?(P, abs(t)) == exist?(P, t)
+DEF forall?(P, abs(t)) == forall?(P, t)
+DEF find?(P, abs(t)) == find?(P, t)
+
+-- %$Comparing heaps$
+
+DEF <(<<)(abs(t1), abs(t2)) == <(<<)(t1, t2)
+DEF abs(t1) {<} abs(t2) == <(<)(t1, t2)
+
+DEF =(:=:)(abs(t1), abs(t2)) == =(:=:)(t1,t2)
+
+-- %$Auxiliaries$
+/* %@code{heap?} checks, whether the tree fulfills the heap condition;
+@code{heap0?}, checks only values of root, left and right child, and
+assumes that the children are already checked. */
+DEF heap?(nil) == true
+DEF heap?(node(_, nil, nil)) == true
+DEF heap?(node(v, l AS node(vl, _, _), nil)) == v <= vl and heap?(l)
+DEF heap?(node(v, nil, r AS node(vr, _, _))) == v <= vr and heap?(r)
+DEF heap?(node(v, l AS node(vl, _, _), r AS node(vr, _, _))) ==
+    v <= vl and v <= vr and heap?(l) and heap?(r)
+
+DEF heap0?(nil) == true
+DEF heap0?(node(_, nil, nil)) == true
+DEF heap0?(node(v, node(vl, _, _), nil)) == v <= vl
+DEF heap0?(node(v, nil, node(vr, _, _))) == v <= vr
+DEF heap0?(node(v, node(vl, _, _), node(vr, _, _))) == 
+                                                    v <= vl and v <= vr
+
+FUN <= : data ** data -> bool
+DEF d1 <= d2 == ~(d2 < d1)

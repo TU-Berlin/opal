@@ -1,0 +1,142 @@
+
+IMPLEMENTATION WinMenu
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	String		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	COMPLETELY
+
+
+IMPORT	WinTclTk	COMPLETELY
+	WinInternal	COMPLETELY
+	WinConfig	COMPLETELY
+	WinWindow	COMPLETELY
+
+
+
+-- %$Menu Windows$ ======================================================
+
+DEF menu(Items) == menu(root, {}, Items) 
+DEF menu(Config, Items) == menu(root, {}, Items)
+
+FUN menu : widget ** wconfig ** items -> com[window]
+
+DEF menu(Master, Config, Items) ==
+    retain						& (\\ _ .
+    widget(Master)					& (\\ Root .
+    extDefine(callback(Root), freeWidget(Root))		& (\\ _ .
+    act("menu %s" <- Root)				& (\\ _ .
+    act("bind %s <Destroy> {+ %s}" 
+    			<- Root + callback(Root))	& (\\ _ .
+    LET Win == window(Root)
+    IN
+    forceApply(Win, Config)				& (\\ _ .
+    eval("%s cget -tearoff" <- Root)			& (\\ Str .
+    LET Start == IF Str = !("0") THEN 0 ELSE 1 FI
+    IN
+    addItems(Win, items(Items), Start)			& (\\ _ .
+    submit						& (\\ _ .
+    succeed(Win)
+    )))))))))
+
+DEF post == 
+    wconfig(\\ Win .
+	Win get position				& (\\ Pos .
+	act("%s post %s %s" <- root(Win) 
+			     + asPixel(xc(Pos))
+			     + asPixel(yc(Pos)))
+	)
+    )
+
+DEF post(Pos) == 
+    wconfig(\\ Win .
+	act("%s post %s %s" <- root(Win) 
+			     + asPixel(xc(Pos))
+			     + asPixel(yc(Pos)))
+    )
+
+DEF unpost == 
+    wconfig(\\ Win .
+	act("%s unpost" <- root(Win))
+    )
+
+DEF tearOff(true) ==
+    wconfig(\\ Win . act("%s configure -tearoff 1" <- root(Win)))
+
+DEF tearOff(false) ==
+    wconfig(\\ Win . act("%s configure -tearoff 0" <- root(Win)))
+
+
+
+-- %$Menu Items$
+
+DATA items == items(items: seq[item])
+DATA item  == item(type : denotation, config: config)
+
+DEF I1 ++ I2 == items(items(I1) ++ items(I2))
+
+DEF items(Is) with C == items( (\\I. item(type(I), config(I) ++ C)) * Is )
+
+FUN addItems : window ** seq[item] ** nat -> com[void]
+DEF addItems(Win, Item :: Items, N) == 
+    act("%s add %s" <- root(Win) 
+                     + format(type(Item) <- root(Win) + N))	& (\\ _ .
+    forceApply(Win, root(Win), menu(N), config(Item))		& (\\ _ .
+    addItems(Win, Items, succ(N))
+    ))
+DEF addItems(Win, <>, N) == done
+
+
+FUN basic	: denotation	-> items
+DEF basic(Type) == items(%(item(Type, {})))
+
+DEF button 	== basic("command")
+DEF checkButton == 
+    basic("checkbutton -variable %s_%n -onvalue 1 -offvalue 0")
+DEF radioButton == 
+    basic("radiobutton -variable %s_%n -value 1")
+DEF separator 	== basic("separator")
+DEF cascade 	== basic("cascade")
+
+
+DEF label(Den:denotation)	== config("-label {%s}" <- Den)
+DEF label(Str:string)		== config("-label {%s}" <- Str)
+
+DEF accelerator(Den:denotation)	== config("-accelarator {%s}" <- Den)
+DEF accelerator(Str:string)	== config("-accelarator {%s}" <- Str)
+
+DEF submenu(Items) == submenu({}, Items)
+DEF submenu(Config, Items) ==
+    configMenu(\\ Win, Wid, Item.
+	menu(Wid, Config, Items)		& (\\ Menu .
+	act("%s itemconfigure %n -menu %s"
+		<- Wid + Item + root(Menu))
+	)
+    )
+
+
+
+-- %$Menu Button Views$
+
+DEF menuButton(Items) ==
+    menuButton({}, Items)
+
+DEF menuButton(Config, Items) ==
+    basic(\\ Win, Wid .
+    	act("menubutton %s" <- Wid)		& (\\ _ .
+	menu(Wid, Config, Items)		& (\\ Menu .
+	act("%s config -menu %s" <- Wid + root(Menu))
+	))
+    )
+
+/* %
+@page
+*/

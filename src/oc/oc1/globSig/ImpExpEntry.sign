@@ -1,0 +1,171 @@
+-- LAST EDIT: Tue Sep 22 18:44:47 1992 by Michael Jatzeck (trabi!michel) 
+-- ============================================================================
+-- Autor:       mija
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Es werden Repreasentationen fuer die IMPORT-Statements und
+--              eine Beschreibung der Exportdateien zur Verfuegung gestellt.
+--              Die Ziffern in Klammern beschreiben die an der Stelle moegl.
+--              Varianten der Sorte name (s. Name.de).
+-- ============================================================================
+
+SIGNATURE ImpExpEntry
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  PartNameEntry           ONLY pN:SORT errInfo:SORT
+        GlobSigImpl             ONLY impl:SORT
+        Objects                 ONLY inst:SORT impDecl:SORT  instPN:SORT
+                                        struct:SORT
+        Attributes              ONLY attr:SORT
+        Name                    ONLY name
+        Pragma                  ONLY pragma
+        Table[impDeclE]         ONLY table
+        Table[instE]            ONLY table
+        Table[pN]               ONLY table
+        -- absy
+        Fct[name]               ONLY fct
+        -- token
+        Rep                     ONLY rep
+        -- err
+        Pos                     ONLY pos
+        -- lib
+        Nat                     ONLY nat
+        Pair[seq[pair[impDecl,pragma]],seq[option]]     ONLY pair
+        Pair[impDecl,pragma]    ONLY pair
+        Pair[inst,nat]  ONLY pair
+        Seq[pair[impDecl,pragma]]       ONLY seq
+        Seq[instAppl]           ONLY seq
+        Seq[impDecl]            ONLY seq
+        Seq[name]               ONLY seq
+        Seq[inst]               ONLY seq
+        Seq[option[fct]]             ONLY seq
+        Option[fct]             ONLY option
+        Option[rep]             ONLY option
+
+
+TYPE structE ==                 -- Beschreibung einer importierten Struktur
+        preStruct(              -- noetig zur ersten Indexvergabe
+                structIde : errInfo,
+                insts : table[instE] )
+        unparamTrans(           -- ausschliesslich Reexport, unparametrisiert
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE])-- Namen der Struktur
+        unparam(                -- unparametrisiert (PseudoInst 0 !!)
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE],-- Namen der Struktur
+                onlyS : nat,               -- Liste der onlyPartName
+                dummy : bool,
+                reExpS : seq[name])        -- Reexporte (3) (fuer ONLY-Appls)
+        paramTrans(             -- ausschliesslich Reexport, parametrisiert
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE],-- Namen der Struktur
+                insts : table[instE],      -- Instantiierungen (nur 2)
+                formParamS :pair[seq[pair[impDecl,pragma]],seq[option[fct]]])
+                                           -- formale Strukturparameter (3,5)
+        param(                  -- parametrisiert
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE],-- Namen der Struktur
+                insts : table[instE],      -- Instantiierungen (1,2)->(4)
+                formParamS :pair[seq[pair[impDecl,pragma]],seq[option[fct]]],
+                                           -- formale Strukturparameter (3,5)
+                reExpS : seq[name])        -- Reexporte (3) (fuer ONLY-Appls)
+
+FUN updImpDecls : table[impDeclE] -> structE -> structE
+FUN updImpDecls : (structE -> table[impDeclE]) -> structE -> structE
+FUN updInsts : table[instE] -> structE -> structE
+FUN updInsts : (structE -> table[instE]) -> structE -> structE
+FUN updReExps : seq[name] -> structE -> structE
+
+
+TYPE instE ==                   -- Aktualisierungen
+        -- Varianten bis einschliesslich zum Nudeln
+        mtInstE                 -- Dummy zum Voreintragen (Nummernvergabe)
+        explInst(               -- (1aa) expliziter instantiierter Import
+                pos : pos,              -- Position der expliziten Instanz
+                inst : instPN,          -- Instanzenliste
+                onlyS : nat)
+        explInstCycle(          -- (1ab) wie 1a, aber in Bearbeitung
+                pos : pos,              -- Position der expliziten Instanz
+                inst : instPN,          -- Instanzenliste
+                onlyS : nat)
+        explUninst(             -- (1b) expliziter uninstantiierter Import
+                otherInsts: seq[inst],-- generierte Instanzeneintraege
+                onlyS : nat)
+        transitive(             -- (2a) transitiver Import (wg. Reexport)
+                inst : seq[name])       -- Instanzenliste (2,3,6)->(1,2,3)
+        genericTransitives(     -- (2b) trans. Import mit Ref. auf form.Params
+                otherInsts : seq[inst],
+                dummy:  bool,
+                pattern : seq[name] )
+        genericTransitive(      -- (2bx) Inhalt von 2b
+                struct : struct,        -- direkt importierte Struktur
+                inst : inst,            -- Instanz der importierten Struktur
+                pattern : seq[name])    -- Namen mit ownActParam
+        -- Varianten nach dem Nudeln    
+        doubleInst(             -- (3) Import mit identischer Instanzenliste
+                same : instE,           -- identischer instE
+                inst : inst)            -- Zeiger auf identischen importEntry 
+        identInst(              -- (4a) identifizierter expliziter inst. Import
+                inst : seq[name])       -- Liste von Instanzenliste (1,2,3)
+        identUninst(            -- (4b) ident. expliziter uninst. Import
+                otherInsts: seq[inst])-- generierte Instanzeneintraege
+        unusedInst(
+                same : instE )
+
+
+TYPE impDeclE ==                -- importierte Namen(spattern)
+        sort( ide:rep, instS:seq[instAppl], type:impl )
+          -- Sorte (immer "abgeschlossen")
+        op( ide:rep, instS:seq[instAppl], fct:fct, spc: option[rep] )
+          -- eventuell "abgeschlossen" import. Operation
+        opCons( ide:rep, instS:seq[instAppl], fct:fct, test:impDecl, 
+                selS:seq[impDecl] )
+          -- eventuell "abgeschlossen" import. freier Konstruktor
+        closedOp(  ide:rep, instS:seq[instAppl], fct:fct, spc: option[rep] )
+          -- "abgeschlossen" import. Operation
+        closedOpCons(           -- "abgeschlossen" import. freier Konstruktor
+                ide:rep,                -- Bezeichner
+                instS:seq[instAppl], -- Liste der Instanzen (inst,onlyC)
+                fct:fct,                -- Funktionalitaet (3,5)
+                test:impDecl,           -- Testfunktion (in derselben Strukt.)
+                selS:seq[impDecl])      -- Liste der Selektoren ( " )
+        unclosedOp(             -- nicht "abgeschlossen" import. Name
+                ide:rep, instS:seq[instAppl])
+
+--      Ein inst-Zeiger 0 ist die Pseudoinstanz der unparametrisierten
+--      Strukturen. Der OnlyC gibt an, wie oft diese Instanz durch 
+--      eine ONLY-Applikation noch referenziert wird. (COMPLETELY 
+--      erhoeht den Zaehler auch um eins).
+
+FUN updInstS : seq[instAppl] -> impDeclE -> impDeclE
+FUN updInstS : (impDeclE -> seq[instAppl]) -> impDeclE -> impDeclE
+FUN updFct : fct[name] -> impDeclE -> impDeclE
+FUN updAttr : (attr -> attr) ** inst -> impDeclE -> impDeclE
+
+TYPE instAppl ==                -- applizierte Instanzen (+OnlyC)
+        instAppl( instOf : inst,        -- Instanz
+                  importedC  : nat,     -- Anzahl d. Importe
+                  attr  : attr )        -- weitere Attribute
+
+FUN instOf : instAppl -> inst
+FUN toInstAppl : inst -> instAppl       -- ohne eine (OnlyC=0)
+FUN applied : instAppl -> instAppl
+FUN notApplied : instAppl -> instAppl
+FUN applied? : instAppl -> bool
+FUN applyCount : instAppl -> nat
+FUN transferApplyCount : nat ** instAppl -> instAppl
+FUN addApplyCounts : instAppl ** instAppl -> instAppl
+FUN updDoubleInst : inst ** instAppl -> instAppl
+FUN updAttr : (attr->attr) -> instAppl -> instAppl
+FUN = : instAppl ** instAppl -> bool
+
+--
+-- Functinality for the dump functions
+--
+FUN ` : instE -> denotation
+FUN ` : instAppl -> denotation
+FUN ` : impDeclE -> denotation
+FUN ` : structE -> denotation

@@ -1,0 +1,165 @@
+/* %Because of the configurability provided by the DOSFOP documentation tool
+the construction of hypertext-pointers for the Info-representation is 
+really complex. The functions of the following module try to generalize the
+operations needed in the upper-level modules during pointer calculation.
+
+Especially the node-name searching functions provide a powerful means to operate
+on the internal source-table representation, as the calculation of Info-node
+references enforces a often very complex searching process. */
+SIGNATURE TransPointers
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransPointers.sign,v 1.1.1.1 1998-06-16 16:00:41 wg Exp $
+
+IMPORT String 			ONLY string
+       Seq[string] 		ONLY seq
+       Seq[usrSourceInfo] 	ONLY seq
+       Seq[libSourceInfo] 	ONLY seq
+       Seq[seq[string]]		ONLY seq
+       Option[string]		ONLY option       
+
+IMPORT SourceTab 			ONLY fileType:SORT usrSourceInfo:SORT 
+                             		     libSourceInfo:SORT
+                             		     usrInfos:SORT libInfos:SORT
+       Config 				ONLY config:SORT
+       SubsystemType[usrSourceInfo] 	ONLY subsystem:SORT
+       SubsystemType[libSourceInfo] 	ONLY subsystem:SORT
+
+
+-- %$Getting Adjacent Node Names$
+-- %-----------------------------
+
+/* %@Specification:
+
+nextModuleNode( alreadyBuilt, toBuild, envNextNode, actFileType, config )
+
+@table @code
+@item alreadyBuilt
+List of structure-names whose nodes are already constructed.
+@item toBuild
+List of structure-names whose nodes are to be consatructed. The concatenation
+of @c{alreadyBuilt} and @c{toBuild} has to be the complete file-name sequence
+of the current abstraction level.
+@item envNextNode
+In some cases a next-node name cannot be extracted from the previous two lists. In this
+special case the @c{envNextNode} parameter is delivered as result.
+@item actFileType
+The file-type (SIGNATURE, IMPLEMENTATION, ...) influences the construction of the 
+node-name and has to be provided as a parameter.
+@item config
+As the user-specifications on the entent of module inclusions have to be considered
+the configuration database has to be given.
+@end table */
+
+FUN nextModuleNode : 
+  seq[string] ** seq[string] ** string ** fileType ** config **
+  seq[usrSourceInfo]-> string
+
+-- %Special variant for Libraries
+FUN nextModuleNode : 
+  seq[string] ** seq[string] ** string ** fileType ** config -> string
+
+
+/* %@Specification:
+
+nextModuleNode( alreadyBuilt, toBuild, actFileType, config, usrSourceInfos )
+
+@table @code
+@item alreadyBuilt
+List of structure-names whose nodes are already constructed.
+@item toBuild
+List of structure-names whose nodes are to be consatructed. The concatenation
+of @c{alreadyBuilt} and @c{toBuild} has to be the complete file-name sequence
+of the current abstraction level.
+@item actFileType
+The file-type (SIGNATURE, IMPLEMENTATION, ...) influences the construction of the 
+node-name and has to be provided as a parameter.
+@item config
+As the user-specifications on the entent of module inclusions have to be considered
+the configuration database has to be given.
+@item usrSourceInfos
+The source-table specification has to consistent with the file name list given by
+@c{alreadyBuilt} and @c{toBuild} i.e. for each given module name information entries
+have to be present in the @c{usrSourceInfos}.
+@end table */
+
+FUN prevModuleNode : 
+  seq[string] ** seq[string] ** fileType ** config ** seq[usrSourceInfo] -> 
+    string
+
+/* %Besides the additional @string-parameter the semantics of the parameters
+for @c{prevModuleNodeLib} are the same. The prevoius-node search is realized for
+library structures. The additional @c{string} is delivered as the previous-node result
+name in case no derivation can be made from the existing library-structure data of the
+current level provided by @c{seq[libSourceInfo]}. */
+
+FUN prevModuleNodeLib : 
+  seq[string] ** seq[string] ** string ** fileType ** config **
+    seq[libSourceInfo] -> string
+                
+
+-- %$Global Node Name Extraction$
+-- %-----------------------------
+
+/* %@Specification:
+@code{nodeLastName(usrSourceInfos, fileName, fileType)}
+
+The function @code{nodeLastName} builds the node-name-string
+for a structure specified by its @code{fileName} and its @code{fileType}.
+@code{fileType} can be one of @code{sign, impl, extp, intp} for
+user files. @code{fileType} can be @code{libSign, libExtp} for libraries. */
+
+FUN nodeLastName : seq[usrSourceInfo] ** string ** fileType ** config -> string
+FUN nodeLastName : seq[libSourceInfo] ** string ** fileType ** config -> string
+
+/* %@Specification:
+
+@code{nodeLastName(usrSourceInfos, fileName, config)}
+
+The function @code{nodeLastName} builds the node-name-string
+for a structure specified by its @code{fileName}. It uses the @code{config}
+parameter to distinguish which last node type hast to searched for. */
+
+FUN nodeLastName : seq[usrSourceInfo] ** string ** config -> string
+FUN nodeLastName : seq[libSourceInfo] ** string ** config -> string
+
+FUN lastSourcesNode : seq[seq[string]] ** usrInfos ** libInfos ** config -> string 
+FUN lastProjectNode : seq[seq[string]] ** usrInfos ** libInfos ** config -> string 
+FUN lastNode : subsystem[libSourceInfo] ** config -> option[string]
+FUN lastNode : subsystem[usrSourceInfo] ** config -> option[string]
+
+/* %The following functions provide a convenient solution of the 
+next-node searching problem and are self-containing. */
+FUN nodeAfterLastUsrFile : config -> string
+FUN nodeAfterLibs        : config -> string
+FUN nodeAfterFunIndex    : config -> string
+
+
+-- %$Node Name Construction$
+-- %------------------------
+
+/* %@Specification:
+
+@code{fullPartName(parentNodeName, subNodeName, fileType)}
+
+@code{fullPartName} constructs a complete texinfo node name for
+subparts of OPAL structures. This function is overloaded. The correct function
+has to be chosen depending on the @code{subNodeName}. If the @code{subNodeName}
+already encompasses the structKind extension the short @code{fullpartName} function
+has to be used in order to be consistent with the dosfop texinfo naming
+convention. */
+
+FUN fullPartName : string ** string ** fileType ** config -> string
+FUN fullPartName : string ** string ** config -> string
+
+/* %@code{partName} builds the string used as the sub-part-specification
+of a OPAL structure's sub node. The resulting string is started with
+a leading @code{space} !! */
+
+FUN partName : string ** fileType ** config -> string
+FUN partName : string ** config -> string
+
+
+/* %Constant string for texinfo-node-name of lib-intro node */
+FUN libIntro : string
+
+FUN mkNodeName: string ** fileType -> string
+FUN mkForeignNodeName: string -> string

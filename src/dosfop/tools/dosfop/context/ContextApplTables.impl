@@ -1,0 +1,238 @@
+IMPLEMENTATION ContextApplTables
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/context/ContextApplTables.impl,v 1.1.1.1 1998-06-16 16:00:34 wg Exp $
+
+IMPORT Seq          	COMPLETELY
+       SeqSort      	COMPLETELY
+       SeqReduce	COMPLETELY
+       SeqMap		COMPLETELY
+       String       	COMPLETELY
+       Nat          	COMPLETELY
+       Set          	COMPLETELY
+       SetConv      	COMPLETELY
+       Map          	COMPLETELY
+       Option       	COMPLETELY
+
+
+IMPORT InterOpal     	COMPLETELY
+       MyString      	COMPLETELY
+       Config       	COMPLETELY
+       ConfigFun       	COMPLETELY
+       ConfigTest      	COMPLETELY
+       InterOpalFun  	COMPLETELY
+
+
+-- %The @TYPE-definitions are directly converted to @DATA-implementations:
+DATA applContextEntry == applContextEntry(
+                           identifier   : string,
+                           applications : seq[application]
+                         )
+DATA application == application( appliedFunctionName : string,
+                                 defModuleName       : string )
+
+
+FUN updateApplMap : 
+      object ** interOpal ** map[nat,<,seq[applContextEntry]] ** config ->
+        map[nat,<,seq[applContextEntry]]
+
+
+/* %Based on the @c{actApplMap} all implementing equations are extracted for 
+@c{actObj}. The first position of any implementing equation is stored in 
+the local variable @c{pos}. By application of @c{eqns2ApplSequence} all
+equations are examined for function applications. If the @c{applSeq} is not empty,
+a new entry in the current application-map is constructed. 
+
+If no used-function tables are to be constructed at all, an empty application
+map is deliveree immediately. This fact is detected by @c{usedFunctionTablesGeneral?}
+w.r.t. the @c{actModuleName}. */
+DEF updateApplMap( actObj,
+                   completeInterOpal,
+                   actApplMap,
+                   config ) ==
+  LET
+    actModuleName == symbol(structs(completeInterOpal)!main)!
+  IN
+    IF usedFunctionTablesGeneral?(config, actModuleName) THEN
+      LET
+        (pos, eqns) == getPosAndEquations(actObj, completeInterOpal)
+	applSeq     == 
+          (++ / <>) (eqn2ApplSeq(_, completeInterOpal, config) * eqns)
+      IN
+	IF <>?(applSeq) THEN
+	  actApplMap                                   -- nothing to update
+	ELSE
+	  LET                                          -- new entry
+	    newApplMapEntry == %(applContextEntry(
+				   conc(symbol(actObj)!,
+					!(" : "),
+					kind2String(
+						kind(actObj),
+						v3,
+						completeInterOpal
+					)
+				   ), 
+				   sortAndUnique(applSeq)
+				)                )
+	  IN
+	    def(row(pos), newApplMapEntry, actApplMap) -- update map
+	FI
+    ELSE
+      {}                                               -- no UFTs
+    FI
+
+
+       
+-- %$Conversion of Equations to Application Sequences$
+-- %--------------------------------------------------
+/* %The following function provide a homomorphism on the internal equation
+representation supplied by the @c{interOpal}-database. */
+
+FUN eqn2ApplSeq : eqn ** interOpal ** config -> seq[application]
+/* %Applied functions in pattern-definition on the left-hand-side of an 
+equation are considered, too. So we have to apply the homomorphism on the 
+@c{arg} part of the left-hand-side. */
+DEF eqn2ApplSeq( eqn, interOpal, config ) ==
+  expr2ApplSeq(rhs(eqn), interOpal, config) ++
+    -- consider only erguments of lhs
+    (IF apply?(lhs(eqn)) THEN
+      pattern2ApplSeq(arg(lhs(eqn)), interOpal, config)
+    ELSE
+      <>
+    FI)
+
+
+FUN expr2ApplSeq : expr ** interOpal ** config -> seq[application]
+
+-- %An atomic @c{name} has been found in an expression:
+DEF expr2ApplSeq( name(_, name2), interOpal, config ) ==
+  name2ApplSeq(name2, interOpal, config)
+-- %There cannot be any application in a denotation:
+DEF expr2ApplSeq( den  (_, _), _, _ ) == <>
+-- %Examine all tuple elements for function applications:
+DEF expr2ApplSeq( tuple(_, elems), interOpal, config ) ==
+  (++ / <>) (expr2ApplSeq(_, interOpal, config) * elems)
+-- %Examine @c{funct} and @c{arg} for function applications:
+DEF expr2ApplSeq( apply(_, funct, arg), interOpal, config ) ==
+  expr2ApplSeq(funct, interOpal, config) ++
+    expr2ApplSeq(arg, interOpal, config)
+-- %Look for applications in all guards as well as an optional else-part:
+DEF expr2ApplSeq( cases(_, guards, optionalElse), interOpal, config ) ==
+  (++ / <>) (guard2ApplSeq(_, interOpal, config) * guards) ++
+    (IF avail?(optionalElse) THEN
+       expr2ApplSeq(cont(optionalElse), interOpal, config)
+     ELSE
+       <>
+     FI)
+-- %Examine only the body of a @c{lambda}-expression for further applications:
+DEF expr2ApplSeq( lambda(_, _, body), interOpal, config ) ==
+  expr2ApplSeq( body, interOpal, config)
+/* %A block is a @LET- or @WHERE-expression. All equations have to be
+examined for application besides the @c{body} of the expression: */ 
+DEF expr2ApplSeq( block(_, eqns, body), interOpal, config ) ==
+  (++ / <>) (eqn2ApplSeq(_, interOpal, config) * eqns) ++
+    expr2ApplSeq(body, interOpal, config)
+
+
+-- %Examine @c{if}- and @c{else}-part of a single guard for applications
+FUN guard2ApplSeq : guard ** interOpal ** config -> seq[application]
+DEF guard2ApplSeq( guard(_, if, else), interOpal, config ) ==
+  expr2ApplSeq(if, interOpal, config) ++
+     expr2ApplSeq(else, interOpal, config)
+
+-- %Look for function applications in patterns:
+FUN pattern2ApplSeq : pattern ** interOpal ** config -> seq[application]
+DEF pattern2ApplSeq( name(_, namePrime), interOpal, config ) ==
+  name2ApplSeq(namePrime, interOpal, config)
+DEF pattern2ApplSeq( as(_, _, pattern), interOpal, config ) ==
+  pattern2ApplSeq(pattern, interOpal, config)
+DEF pattern2ApplSeq( apply(_, fun, arg), interOpal, config ) ==
+  pattern2ApplSeq(fun, interOpal, config) ++
+    pattern2ApplSeq(arg, interOpal, config)
+DEF pattern2ApplSeq( tuple(_, <>), _, _) == <>
+DEF pattern2ApplSeq( tuple(pos, ftPattern::rtPattern), interOpal, config ) ==
+  pattern2ApplSeq(ftPattern, interOpal, config) ++
+    pattern2ApplSeq(tuple(pos, rtPattern), interOpal, config)
+-- %There cannot be any applications in the following pattern variants:
+DEF pattern2ApplSeq( any(_), _, _ ) == <>
+DEF pattern2ApplSeq( var(_, _), _, _ ) == <>
+
+
+FUN name2ApplSeq : name ** interOpal ** config -> seq[application]
+/* %Local names are not included in the application-map! */
+DEF name2ApplSeq(name(_, local, _), _, _) == <>
+
+/* %According to the user-specified configuration a new application-map element
+is constructed. */
+DEF name2ApplSeq(name(ide, org, ins), interOpal, config) ==
+  LET 
+    originName     == symbol(structs(interOpal) ! org)!
+    mainStructName == symbol(structs(interOpal) ! main)!
+  IN
+    IF isLibrary?(config)(originName) and
+         usedFunctionTablesNoLibsGeneral?(config, mainStructName) THEN
+      <>  -- current name is applied from library no library inclusion
+          -- is specified in configuration 
+    ELSE
+      application(
+        symbol(objs(structs(interOpal) ! org) ! ide)!,
+        originName ++ instantiation
+      )%
+      WHERE
+        instantiation ==
+          IF usedFunctionTablesNoInst?(config, mainStructName) or
+             usedFunctionTablesNoLibsNoInst?(config, mainStructName) THEN
+            <> -- user has specified: no instantiation
+          ELSE
+            IF inst?(ins) THEN
+                inst2String(
+                  insts(structs(interOpal)!org)!ins,
+                  instantiationLevel,
+                  interOpal
+                )
+              WHERE
+                instantiationLevel ==
+                  IF usedFunctionTables?(config, mainStructName) or
+                     usedFunctionTablesNoLibs?(config, mainStructName) THEN 
+                    v1
+                  IF usedFunctionTablesMediumInst?(config, mainStructName) or
+                     usedFunctionTablesNoLibsMediumInst?(config, mainStructName) THEN 
+                    v2
+                  IF usedFunctionTablesLowInst?(config, mainStructName) or
+                     usedFunctionTablesNoLibsLowInst?(config, mainStructName) THEN 
+                    v3
+                  FI
+           ELSE
+             <>
+           FI
+         FI
+    FI
+
+
+
+-- %$Basic Functions on Application Sequences$
+-- %------------------------------------------
+/* %Each function application should be reported ony @emph{once} in the 
+application-list, so
+we convert the assembled applications into a set and re-convert the set into
+a sequence. This sequence is sorted w.r.t. the applied function names. If two function
+names are identical, the origin of the function is considered as a sorting aspect. */
+FUN sortAndUnique : seq[application] -> seq[application]
+
+DEF sortAndUnique( applications ) ==
+  msort(<)(explode(implode'SetConv[application,<] (applications)))
+
+FUN < : application ** application -> bool
+DEF application(fnName1, defName1) < application(fnName2, defName2) ==
+  IF fnName1 < fnName2 THEN
+    true
+  IF fnName1 > fnName2 THEN
+    false
+  ELSE
+    IF defName1 < defName2 THEN
+      true
+    IF defName1 > defName2 THEN
+      false
+    ELSE
+      false
+    FI
+  FI
+

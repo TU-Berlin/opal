@@ -1,0 +1,42 @@
+IMPLEMENTATION ParserL
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:24 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Option ONLY option avail nil avail? cont nil?
+       ABORT ONLY ABORT
+       String ONLY string split ! =
+       Denotation ONLY # 
+       Nat ONLY nat
+
+
+DATA parser == asParser(asFct: string -> option[data] ** string)
+
+
+DEF succeed(d) == asParser(\\s. (avail(d), s))
+-- DEF break == asParser(\\s. (nil, s))
+DEF break == asParser(breakI)
+FUN breakI: string -> option[data] ** string
+DEF breakI == \\s. (nil, s)
+
+DEF den |-> d == asParser(\\s. LET (s1, s2) == split(den#, s) IN 
+                               IF (den!) = s1 THEN (avail(d), s2) 
+                               ELSE (nil, s) FI)
+
+DEF asParser(f) @ s == LET (o, _) == f(s) IN o
+DEF asParser(f) @! s == 
+        LET (o, _) == f(s) 
+        IN IF o avail? THEN cont(o)
+           ELSE ABORT("@!'ParserL: failed")
+           FI
+
+-- %$Alternative$
+
+-- %order matters, first parser is tried first
+DEF P1 | P2 == asParser(\\s.
+  LET (d1, r1) == asFct(P1)(s) 
+  IN IF d1 nil? THEN asFct(P2)(s)
+     ELSE (d1, r1)
+     FI)

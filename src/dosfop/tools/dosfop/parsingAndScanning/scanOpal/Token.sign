@@ -1,0 +1,143 @@
+/* %This module implements the basic data structures and supporting functions
+for handling lexical units in the scanner. In contrast to scanners with the
+purpose of processing programming languages efficiently, our scanner handles
+all kinds of @OPAL-comments, too. Therefore special token symbols have to be
+provided. Moreover the DOSFOP special comment (the so called
+@emph{documentary}) is supported in this module, although the special syntactic
+representation (line-documentary or nested-documentary) cannot be reconstructed
+by the token representation. */ 
+SIGNATURE Token
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/scanOpal/Token.sign,v 1.1.1.1 1998-06-16 16:00:39 wg Exp $
+
+IMPORT String           ONLY string <
+       Set[string,<]    ONLY set
+       Seq[token]       ONLY seq
+       Seq[string]      ONLY seq
+       Nat              ONLY nat
+       Seq[seq[token]]  ONLY seq
+       Option[string]   ONLY option
+
+IMPORT Pos ONLY pos
+
+-- %$The token definitions$
+-- %-----------------------
+
+/* %The token representation is implemented via a multi-variant @TYPE, with a
+different variant for each distinguished token-type. For each token-type a
+position is embedded, denoting the first character of the represented lexem. */
+TYPE token == 
+-- %Variant for all kind of @OPAL-identifiers:
+              identifier      ( cont : string, pos : pos )
+-- %Storing the @OPAL denotation (@c{"..."}):
+              denotation      ( cont : string, pos : pos )
+-- %Variant for storing @OPAL-keywords like @FUN, @DEF, @TYPE ...:
+              keyword         ( cont : string, pos : pos )
+/* %Two alternatives for line-comments starting with two @c{-} characters
+and nested-comments which are written using the standard @OPAL notation for
+nested comments. */
+              lineComment     ( cont : string, pos : pos )
+              comment         ( cont : string, pos : pos )
+-- %The seldomly used @OPAL-pragma (@c{/$ ... $/}) has its own variant:
+              pragma          ( cont : string, pos : pos )
+/* %We have to store layout in the token-representation as we must reconstruct
+the source later on: */
+              layout          ( cont : string, pos : pos )  
+/* %The following single character keywords represent the characters indicated
+by their names: */
+              open            ( cont : string, pos : pos )  -- (
+              close           ( cont : string, pos : pos )  -- )
+              comma           ( cont : string, pos : pos )  -- ,
+              apostrophe      ( cont : string, pos : pos )  -- '
+              bracketopen     ( cont : string, pos : pos )  -- [
+              bracketclose    ( cont : string, pos : pos )  -- ]
+
+/* %The following three variants handle DOSFOP-documentations. The special
+characters for introducing documentaries and special-documentaries are not
+stored in the type, as we need not reconstruct the representation but the
+contents of the documentary-specifications later on. The first variant
+represents the "simple"-documentary with an optional level-specification. The
+@c{cont} part only contains the @c{text} of the documentary! */
+              documentation   ( cont    : string, 
+                                pos     : pos,
+                                levelId : option[string] )
+/* %Special documentary token for property references. The @c{cont} part
+contains a string with internal colon separating the different references. */
+              docuProps       ( cont : string, pos : pos )  
+/* %This token-type denotes sub-part-headlines enabling sub-sectioning of
+@OPAL-modules. The split level encodes the nesting-depth of the scanned
+split-token. This level is defined below: */ 
+              docuFileSplit   ( cont  : string, 
+                                pos   : pos,
+                                level : splitLevel )  
+
+/* %An @c{error} token can be returned by the DOSFOP scanner in case some
+lexical errors are encountered while reading the current lexem. The @c{reason}
+for the failure can be given: */ 
+              error           ( reason : denotation )
+/* %A @c{warning} token is returned for lexical errors in which the DOSFOP
+scanner can recover. */    
+              warning         ( reason : denotation )
+
+-- % A predicate for distinguishing real tokens from errors and warnings
+FUN ok? : token -> bool
+
+-- %Pos by errors and warnings need not be given
+FUN error: denotation -> token
+FUN warning: denotation -> token
+
+-- %$Handling different splitting Levels$
+-- %-------------------------------------
+
+/* %The @c{docuFileSplit}-token applies the following @TYPE that indicates the respective
+nesting level of the file-split command. The current upper bound of the depth is four: */
+TYPE splitLevel == subPart
+                   subsubPart  
+                   subsubsubPart
+                   subsubsubsubPart
+
+/* %The @c{incr} operation enables to increase the @c{splitLevel}-depth. If @c{subsubsubsubPart}
+is used as argument the function implements the @emph{identity}-function so that the resulting
+@c{splitLevel} will never raise above the upper bound. */
+FUN incr : splitLevel -> splitLevel
+
+
+-- %$Functions on tokens$ 
+-- %---------------------
+
+/* %@c{token2String} converts the token-representation of the incoming 
+token-sequence to one single string: */
+FUN token2String : seq[token] -> string
+
+/* %Convenience function for scanner implementations, deciding if the given @string belongs to
+the set of predefined @OPAL-tokens: */
+FUN isKeyword : string -> bool
+
+-- %The functions
+FUN skipLayout  : seq[token] -> seq[token]
+FUN eraseLayout : seq[token] -> seq[token]
+/* %enable the deletion of @c{layout}-tokens at the beginning of a given token-sequence 
+(@c{skipLayout}) or the deletion of @c{layout}-tokens at the beginning @emph{and} at the end of the
+given token-sequence. 
+
+The function */
+FUN eraseLayoutNewlines : seq[token] -> seq[token]
+/* %however, just erases @c{layout}-token that contain single newline-characters. Note 
+that the @c{layout}-token is only deleted if it contains a single @c{newline} as its
+sole content character!
+
+Convert the @emph{contents} of a token-sequence to a set or a sequence: */
+FUN tokenSeq2StringSet : seq[token] -> set[string,<]
+FUN tokenSeq2StringSeq : seq[token] -> seq[string]
+
+/* %An ordering on tokens based on the ordering of the respective contents: */
+FUN < : token ** token -> bool
+
+-- %@or-composition of @c{documentation?} and @c{docuProps?} 
+FUN codeEnd? : token -> bool
+
+-- %The function
+FUN splitActLine : seq[token] -> seq[token] ** seq[token]
+/* %takes a token-sequence as argument and splits the first line (specified by the
+position of the first token in the sequence). The first result-token-sequence is the 
+this first line whereas the second result-token-sequence contains the rest of the 
+argument-token-sequence. */

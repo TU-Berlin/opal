@@ -1,0 +1,220 @@
+-- LAST EDIT: Tue May 18 18:30:09 1993 by OPAL compiler (athene!opal) 
+-- ============================================================================
+-- Autor:       af
+-- Projekt:     OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION OcStream
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:35 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             ONLY nat
+        Void            COMPLETELY
+        Char            ONLY char 
+        Denotation      COMPLETELY
+        String          COMPLETELY
+        Option          COMPLETELY
+        Com             COMPLETELY
+        Stream          COMPLETELY
+        File            COMPLETELY
+        ComCompose      COMPLETELY
+
+IMPORT  OcExit          ONLY ioError
+        Options         ONLY options cop?
+
+-- ---------------------------------------------------------------------------
+
+FUN traceIO: denotation
+
+DEF traceIO == "traceIO"
+
+FUN traceReading
+    traceWriting: options**denotation -> com[void]
+
+DEF traceReading(options,fn) ==
+  IF cop?(traceIO,options) THEN writeLineFlush(stdOut,"reading "++fn) ;
+                                yield(okay(nil))
+  ELSE yield(okay(nil))
+  FI
+
+DEF traceWriting(options,fn) ==
+  IF cop?(traceIO,options) THEN writeLineFlush(stdOut,"writing "++fn) ;
+                                yield(okay(nil))
+  ELSE yield(okay(nil))
+  FI
+
+-- ---------------------------------------------------------------------------
+
+FUN open: options**denotation -> com[input]
+
+DEF open(options,fn) ==
+  traceReading(options,fn) ;
+  (\\ _ .open(fn) ;
+         (\\a.IF a okay? THEN yield(a)
+              IF a fail? THEN writeErr(fn,error(a)) ;
+                              yield(fail(ioError))
+              FI))
+
+FUN tryOpen: options**denotation -> com[option[input]]
+
+DEF tryOpen(options,fn) ==
+  traceReading(options,fn) ;
+  (\\ _ .open(fn) ;
+         (\\a.IF a okay? THEN yield(okay(avail(data(a))))
+              -- IF a fail? THEN writeWarn(fn,error(a)); yield(okay(nil))
+              IF a fail? THEN yield(okay(nil))
+              FI))
+  
+FUN close: options**input -> com[void]
+
+DEF close(_,input:input) ==
+  close(input) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN read: options**input -> com[char]
+
+DEF read(_,input) ==
+  read(input) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN look: options**input -> com[char]
+
+DEF look(_,input) ==
+  look(input) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN read: options**input ** nat -> com[string]
+
+DEF read(_,input,n:nat) ==
+  read(input,n) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN read: options**input ** (char -> bool) -> com[string]
+
+DEF read(_,input,p:char->bool) ==
+  read(input,p) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN readLine: options**input -> com[string]
+
+DEF readLine(_,input) ==
+  readLine(input) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+-- ---------------------------------------------------------------------------
+
+FUN create: options**denotation -> com[output]
+
+DEF create(options,fn) ==
+  traceWriting(options,fn) ;
+  (\\ _ .create(fn) ;
+         (\\a.IF a okay? THEN yield(a)
+              IF a fail? THEN writeErr(fn,error(a)) ;
+                              yield(fail(ioError))
+              FI))
+
+FUN append: options**denotation -> com[output]
+
+DEF append(options,fn) ==
+  traceWriting(options,fn) ;
+  (\\ _ .append(fn) ;
+         (\\a.IF a okay? THEN yield(a)
+              IF a fail? THEN writeErr(fn,error(a)) ;
+                              yield(fail(ioError))
+              FI))
+
+FUN close:  options**output -> com[void]
+
+DEF close(_,output:output) ==
+  close(output) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN write: options**output ** char -> com[void]
+
+DEF write(_,output,c:char) ==
+  write(output,c) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN write: options**output ** denotation -> com[void]
+
+DEF write(_,output,s:denotation) ==
+  write(output,s) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN write: options**output ** string -> com[void]
+
+DEF write(_,output,s:string) ==
+  write(output,s) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN writeLine: options**output ** denotation -> com[void]
+
+DEF writeLine(_,output,s:denotation) ==
+  (writeLineFlush(output,s)) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+FUN writeLine: options**output ** string -> com[void]
+
+DEF writeLine(_,output,s:string) ==
+  (writeLineFlush(output,s)) ;
+  (\\a.IF a okay? THEN yield(a)
+       IF a fail? THEN writeErr("",error(a)) ;
+                       yield(fail(ioError))
+       FI)
+
+-- ---------------------------------------------------------------------------
+
+FUN writeErr writeWarn : denotation**denotation -> com[void]
+
+DEF writeErr(fn,msg) ==
+  writeLineFlush(stdErr,"I/O error:" ++ fn ++ ": " ++ msg) 
+
+DEF writeWarn(fn,msg) ==
+  writeLineFlush(stdErr,"I/O warning:" ++ fn ++ ": " ++ msg) 
+
+-- ---------------------------------------------------------------------------
+
+FUN writeLineFlush : output ** denotation -> com[void]
+FUN writeLineFlush : output ** string     -> com[void]
+
+DEF writeLineFlush(Out, Den:denotation) == 
+    writeLine(Out, Den) & flush(rep(Out))
+DEF writeLineFlush(Out, Str:string) == 
+    writeLine(Out, Str) & flush(rep(Out))
+

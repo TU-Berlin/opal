@@ -1,0 +1,357 @@
+/* %-
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     representation of (imported) structures
+-- ============================================================================
+-- ============================================================================
+*/
+
+IMPLEMENTATION ImpExpEntry
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             ONLY 0 succ? pred succ + =
+        Objects         COMPLETELY
+        Pair            COMPLETELY
+        Attributes      COMPLETELY
+        SeqMap          ONLY * seq
+        PartNameEntry   ONLY ide
+        Seq             ONLY :: exist? seq
+        SeqConv         ONLY ` string
+        NatConv         ONLY `
+        Denotation      ONLY ++
+        Option          COMPLETELY
+        OptionConv      ONLY `
+        Name            COMPLETELY
+        Rep             ONLY rep lexem ` 
+        GlobSigImpl     ONLY ` : impl -> denotation impl:SORT   
+        Compose         ONLY o
+        Fct[name]       ONLY ` fct
+        Pos             ONLY pos `
+        DEBUG           ONLY FIELD?     
+        Table           ONLY ` table
+
+-- -------------------------------------------------------------------------
+
+DATA structE ==                 -- Beschreibung einer importierten Struktur
+        preStruct(              -- noetig zur ersten Indexvergabe
+                structIde : errInfo,
+                insts : table[instE] )
+        unparamTrans(           -- ausschliesslich Reexport, unparametrisiert
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE])-- Namen der Struktur
+        unparam(                -- unparametrisiert (PseudoInst 0 !!)
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE],-- Namen der Struktur
+                onlyS : nat,               -- Liste der onlyPartName
+                dummy : bool,
+                reExpS : seq[name])        -- Reexporte (3) (fuer ONLY-Appls)
+        paramTrans(             -- ausschliesslich Reexport, parametrisiert
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE],-- Namen der Struktur
+                insts : table[instE],      -- Instantiierungen (nur 2)
+                formParamS :pair[seq[pair[impDecl,pragma]],seq[option[fct]]])
+                                           -- formale Strukturparameter (3,5)
+        param(                  -- parametrisiert
+                structIde : errInfo,       -- Strukturname
+                impDecls : table[impDeclE],-- Namen der Struktur
+                insts : table[instE],      -- Instantiierungen (1,2)->(4)
+                formParamS :pair[seq[pair[impDecl,pragma]],seq[option[fct]]],
+                                           -- formale Strukturparameter (3,5)
+                reExpS : seq[name])        -- Reexporte (3) (fuer ONLY-Appls)
+
+-- -------------------------------------------------------------------------
+
+DATA instE ==                   -- Aktualisierungen
+        -- Varianten bis einschliesslich zum Nudeln
+        mtInstE                 -- Dummy zum Voreintragen (Nummernvergabe)
+        explInst(               -- (1aa) expliziter instantiierter Import
+                pos : pos,              -- Position der expliziten Instanz
+                inst : instPN,          -- Instanzenliste
+                onlyS : nat)
+        explInstCycle(          -- (1ab) wie 1a, aber in Bearbeitung
+                pos : pos,              -- Position der expliziten Instanz
+                inst : instPN,          -- Instanzenliste
+                onlyS : nat)
+        explUninst(             -- (1b) expliziter uninstantiierter Import
+                otherInsts: seq[inst],-- generierte Instanzeneintraege
+                onlyS : nat)
+        transitive(             -- (2a) transitiver Import (wg. Reexport)
+                inst : seq[name])       -- Instanzenliste (2,3,6)->(1,2,3)
+        genericTransitives(     -- (2b) trans. Import mit Ref. auf form.Params
+                otherInsts : seq[inst],
+                dummy:  bool,
+                pattern : seq[name] )
+        genericTransitive(      -- (2bx) Inhalt von 2b
+                struct : struct,        -- direkt importierte Struktur
+                inst : inst,            -- Instanz der importierten Struktur
+                pattern : seq[name])    -- Namen mit ownActParam
+        -- Varianten nach dem Nudeln    
+        doubleInst(             -- (3) Import mit identischer Instanzenliste
+                same : instE,           -- identischer instE
+                inst : inst)            -- Zeiger auf identischen importEntry 
+        identInst(              -- (4a) identifizierter expliziter inst. Import
+                inst : seq[name])       -- Liste von Instanzenliste (1,2,3)
+        identUninst(            -- (4b) ident. expliziter uninst. Import
+                otherInsts: seq[inst])-- generierte Instanzeneintraege
+        unusedInst(
+                same : instE )
+
+-- -------------------------------------------------------------------------
+
+DATA impDeclE ==                -- importierte Namen(spattern)
+        sort( ide:rep, instS:seq[instAppl], type:impl )
+          -- Sorte (immer "abgeschlossen")
+        op( ide:rep, instS:seq[instAppl], fct:fct, spc: option[rep] )
+          -- eventuell "abgeschlossen" import. Operation
+        opCons( ide:rep, instS:seq[instAppl], fct:fct, test:impDecl, 
+                selS:seq[impDecl] )
+          -- eventuell "abgeschlossen" import. freier Konstruktor
+        closedOp(  ide:rep, instS:seq[instAppl], fct:fct, spc: option[rep] )
+          -- "abgeschlossen" import. Operation
+        closedOpCons(           -- "abgeschlossen" import. freier Konstruktor
+                ide:rep,                -- Bezeichner
+                instS:seq[instAppl], -- Liste der Instanzen (inst,onlyC)
+                fct:fct,                -- Funktionalitaet (3,5)
+                test:impDecl,           -- Testfunktion (in derselben Strukt.)
+                selS:seq[impDecl])      -- Liste der Selektoren ( '' )
+        unclosedOp(             -- nicht "abgeschlossen" import. Name
+                ide:rep, instS:seq[instAppl]) 
+
+-- -------------------------------------------------------------------------
+
+DATA instAppl ==                -- applizierte Instanzen (+OnlyC)
+        instAppl( instOf : inst,        -- Instanz
+                  importedC  : nat,     -- Anzahl d. Importe
+                  attr  : attr )        -- weitere Attribute
+
+
+--FUN toInstAppl : inst -> instAppl     -- ohne eine (OnlyC=0)
+DEF toInstAppl(i) == instAppl(i,0,initAttr)
+
+--FUN applied : instAppl -> instAppl
+DEF applied(iA) == instAppl(instOf(iA),succ(importedC(iA)),attr(iA))
+
+--FUN notApplied : instAppl -> instAppl
+DEF notApplied(iA) == instAppl(instOf(iA),pred(importedC(iA)),attr(iA))
+
+--FUN applied? : instAppl -> bool
+DEF applied?(iA) == importedC(iA) succ?
+
+DEF applyCount == importedC
+
+DEF updDoubleInst(inst,iA) == instAppl(inst,importedC(iA),attr(iA))
+
+DEF updAttr(attrF)(iA) == instAppl(instOf(iA),importedC(iA),attrF(attr(iA)))
+
+DEF transferApplyCount(n,iA) == instAppl(instOf(iA),n,attr(iA))
+
+DEF addApplyCounts(iA1,iA2) == 
+        instAppl(instOf(iA1),importedC(iA1)+importedC(iA2), attr(iA1)+attr(iA2))
+
+DEF iA1 = iA2 == instOf(iA1) = instOf(iA2)
+
+-- -------------------------------------------------------------------------
+
+DEF updImpDecls(tabF:(structE -> table[impDeclE]))(structE) ==
+        updImpDecls(tabF(structE))(structE)
+DEF updImpDecls(tab:table[impDeclE])(structE) ==
+        IF structE unparamTrans? THEN
+          unparamTrans(structIde(structE), tab)
+        IF structE unparam? THEN
+          unparam(structIde(structE), tab, onlyS(structE),true,reExpS(structE))
+        IF structE paramTrans? THEN
+          paramTrans(structIde(structE), tab, insts(structE), 
+                  formParamS(structE))
+        IF structE param? THEN
+          param(structIde(structE), tab, insts(structE), 
+                  formParamS(structE), reExpS(structE))
+        FI
+
+DEF updInsts(tabF:(structE -> table[instE]))(structE) ==
+        updInsts(tabF(structE))(structE)
+DEF updInsts(tab:table[instE])(structE) ==
+        IF structE paramTrans? THEN
+          paramTrans(structIde(structE), impDecls(structE), tab, 
+                formParamS(structE))
+        IF structE param? THEN
+          param(structIde(structE), impDecls(structE), tab,
+                  formParamS(structE),  reExpS(structE))
+        FI
+
+DEF updReExps(nameS)(structE) ==
+        IF structE unparam? THEN
+          unparam(structIde(structE), impDecls(structE), onlyS(structE), true,nameS)
+        IF structE param? THEN
+          param(structIde(structE), impDecls(structE), insts(structE), 
+                  formParamS(structE), nameS)
+        FI
+
+DEF updInstS(instSF:(impDeclE -> seq[instAppl:SORT]))(iDE) ==
+        updInstS(instSF(iDE))(iDE)
+DEF updInstS(instS:seq[instAppl:SORT])(iDE) ==
+        IF iDE sort? THEN
+          sort(ide(iDE), instS, type(iDE))
+        IF iDE op? THEN
+          op(ide(iDE), instS, fct(iDE), spc(iDE))
+        IF iDE opCons? THEN
+          opCons(ide(iDE), instS, fct(iDE), test(iDE), selS(iDE))
+        IF iDE closedOp? THEN
+          closedOp(ide(iDE), instS, fct(iDE), spc(iDE))
+        IF iDE closedOpCons? THEN
+          closedOpCons(ide(iDE), instS, fct(iDE), test(iDE), selS(iDE))
+        IF iDE unclosedOp? THEN
+          unclosedOp(ide(iDE), instS)
+        FI
+
+DEF updFct(fct:fct[name:SORT])(iDE) ==
+        IF iDE op? THEN
+          op(ide(iDE), instS(iDE), fct, spc(iDE))
+        IF iDE opCons? THEN
+          opCons(ide(iDE), instS(iDE), fct, test(iDE), selS(iDE))
+        IF iDE closedOp? THEN
+          closedOp(ide(iDE), instS(iDE), fct, spc(iDE))
+        IF iDE closedOpCons? THEN
+          closedOpCons(ide(iDE), instS(iDE), fct, test(iDE), selS(iDE))
+        FI
+
+DEF updAttr(attrF,inst)(iDE) ==
+        IF iDE sort? THEN
+          sort(ide(iDE), InstS, type(iDE))
+        IF iDE op? THEN
+          op(ide(iDE), InstS, fct(iDE), spc(iDE))
+        IF iDE opCons? THEN
+          opCons(ide(iDE), InstS, fct(iDE), test(iDE), selS(iDE))
+        IF iDE closedOp? THEN
+          closedOp(ide(iDE), InstS, fct(iDE), spc(iDE))
+        IF iDE closedOpCons? THEN
+          closedOpCons(ide(iDE), InstS, fct(iDE), test(iDE), selS(iDE))
+        IF iDE unclosedOp? THEN
+          unclosedOp(ide(iDE), InstS)
+        FI
+        WHERE
+        InstS == 
+          IF exist?(eqInst(inst),instS(iDE)) THEN
+            uAttr(attrF,inst) * instS(iDE)
+          ELSE instAppl(inst, 0, attrF(initAttr)) :: instS(iDE) FI
+
+        FUN uAttr : (attr -> attr) ** inst -> instAppl -> instAppl
+        DEF uAttr(attrF,inst)(iA) ==
+          IF inst = instOf(iA) THEN
+            instAppl(inst, importedC(iA), attrF(attr(iA)))
+          ELSE iA FI
+
+        FUN eqInst : inst -> instAppl -> bool
+        DEF eqInst(i)(iA) == i = instOf(iA)
+
+-- -------------------------------------------------------------------------
+-- Dumproutine fuer DATA instE
+-- -------------------------------------------------------------------------
+
+FUN ` : instE -> denotation
+DEF `(instE:instE) == head ++ "(" ++ tail ++ ")"
+        WHERE (head, tail) ==
+        IF instE mtInstE? THEN ("mtInstE", "")
+        IF instE explInst? THEN ("explInst",
+          `'NatConv(no : instPN -> nat (inst(instE))) ++ "," ++ 
+                `'NatConv(onlyS(instE)))
+        IF instE explInstCycle? THEN ("explInstCycle",
+          `'NatConv(no : instPN -> nat (inst(instE))) ++ "," ++ 
+                `'NatConv(onlyS(instE)))
+        IF instE explUninst? THEN ("explUninst", 
+           `(`'NatConv o no)(otherInsts(instE)) ++ "," ++ 
+                `'NatConv(onlyS(instE)))
+        IF instE transitive? THEN ("transitive", 
+          `'SeqConv(`)(inst(instE)))
+        IF instE genericTransitives? THEN ("genericTransitives",
+           `(`'NatConv o no)(otherInsts(instE)) ++ "," ++
+           `'SeqConv(`'Name)(pattern(instE))) -- evtl. Fehler 
+        IF instE genericTransitive? THEN ("genericTransitive",
+          `'NatConv(no : struct -> nat (struct(instE))) ++ "," ++ 
+                `'NatConv(no : inst -> nat (inst(instE))) ++ "," ++ 
+                `'SeqConv(`)(pattern(instE)))
+        IF instE doubleInst? THEN ("doubleInst",
+          `'NatConv(no : inst -> nat(inst(instE))) ++ ","  ++ 
+                ` : instE -> denotation (same(instE)))
+        IF instE identInst? THEN ("identInst",
+          (`'SeqConv(`)((inst(instE))))) -- Fehler
+        IF instE identUninst? THEN ("identUninst",
+          `(`'NatConv o no)(otherInsts(instE)))
+        IF instE unusedInst? THEN ("unusedInst", 
+                ` : instE -> denotation (same(instE))) 
+        FI
+--
+-- Dump fuer instAppl
+--
+FUN ` : instAppl -> denotation
+DEF `(iA) == 
+        "(" ++ `'NatConv(no(instOf(iA))) ++ "," ++ 
+        `'NatConv(importedC(iA)) ++ `'Attributes(attr(iA)) ++ ")"
+
+--
+-- Dump fuer impDeclE
+--
+FUN ` : impDeclE -> denotation
+DEF `(impDeclE:impDeclE) == 
+        head ++ "(" ++ tail ++ ")"
+        WHERE tail == lexem(ide(impDeclE)) ++ "," ++ 
+                `(` : instAppl -> denotation)(instS(impDeclE)) ++ 
+                        "," ++ tail2 ++ tail4
+          (head, tail2) ==
+          IF impDeclE sort? THEN ("sort", `'GlobSigImpl(type(impDeclE)))
+          IF impDeclE unclosedOp? THEN ("unclosedOp", "")
+          ELSE (head3, `'Fct(`'Name)(fct(impDeclE)) ++ tail3)
+            WHERE (head3, tail3) ==
+            IF impDeclE op? THEN ("op", "")
+            IF impDeclE closedOp? THEN ("closedOp", "") 
+            IF impDeclE opCons? THEN ( "opCons",
+              "," ++ `'NatConv(no(test(impDeclE))) ++ 
+                        `'SeqConv(`'NatConv o no)(selS(impDeclE)))
+            IF impDeclE closedOpCons? THEN ( "closedOpCons",
+              "," ++ `'NatConv(no(test(impDeclE))) ++ 
+                        `'SeqConv(`'NatConv o no)(selS(impDeclE)))
+            FI
+        FI
+        tail4 == IF (impDeclE op?) or (impDeclE closedOp?) THEN
+                   "SPC: " ++ `(`)(spc(impDeclE))
+                 ELSE
+                   ""
+                 FI  
+
+
+--
+-- Dump fuer structE
+--
+FUN ` : structE -> denotation
+DEF `(structE:structE) == 
+        head ++ "(" ++ lexem(ide(structIde(structE))) ++ 
+                "," ++ "\n" ++ tail ++ ")" 
+        WHERE (head, tail) ==
+          IF structE preStruct? THEN
+            ("preStruct", "  InstTab...\n" ++ 
+             `("  ",(` : instE -> denotation), insts(structE)))
+          IF structE unparamTrans? THEN
+            ("unparamTrans", "  ImpDecls...\n" ++
+                `("  ",` , impDecls(structE)))
+          IF structE unparam? THEN
+            ("unparam", "  ImpDecls...\n" ++ 
+            `("  ",` , impDecls(structE)) ++ 
+            "onlys:" ++ `'NatConv(onlyS(structE)) ++ "," ++
+            `'SeqConv(`'Name)(reExpS(structE)) ++ "\n")
+          IF structE paramTrans? THEN
+            ("paramTrans", "  ImpDecls...\n" ++ 
+             `("  ",`, impDecls(structE)) ++
+             "  InstTab...\n" ++ 
+                `("  ",` , insts(structE)))
+          IF structE param? THEN
+            ("param", "  ImpDecls...\n" ++ 
+             `("  ",`, impDecls(structE)) ++
+             "  InstTab...\n" ++ 
+                `("  ",` , insts(structE)) ++ 
+                  `(`)(reExpS(structE)) ++ "\n")
+          FI
+

@@ -1,0 +1,147 @@
+#!/usr/local/bin/wish -f
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/structureConfig_tcl,v 1.1.1.1 1998-06-16 16:00:31 wg Exp $
+
+# Parameter: Name of Structure
+
+option readfile $env(DOSFOP)/defaults/options.data
+
+source $env(DOSFOP)/tcl/global.tcl
+source $env(DOSFOP)/tcl/error.tcl
+source $env(DOSFOP)/tcl/regexprs.tcl
+source $env(DOSFOP)/tcl/output.tcl
+source $env(DOSFOP)/tcl/filehelp.tcl
+source $env(DOSFOP)/tcl/configWidgets.tcl
+source $env(DOSFOP)/tcl/help.tcl
+
+stateMsgInit
+stateMsg "Initializing"
+
+####################
+# global constants #
+####################
+
+set structure_options {name \
+                       properties_include only_interfaces \
+                       import_references used_function_tables \
+                       new_pages levels drop_empty_lines}
+
+set structureConfigFile  "DOSFOP/$argv.config"
+set structureName        $argv
+set helpSupportedWidgets {.name \
+                          .properties_include_config .properties_include_setting \
+                          .only_interfaces_config .only_interfaces_setting \
+                          .import_references_config .import_references_setting \
+                          .used_function_tables_config .used_function_tables_setting \
+                          .new_pages_config .new_pages_setting \
+                          .drop_empty_lines_config .drop_empty_lines_setting \
+                          .levels_config .mbar.help .mbar.file}
+
+######################################################################################
+# MAIN ###############################################################################
+######################################################################################
+    
+################################################
+# reading the actual configuration for structure
+################################################
+
+if {[file exists $structureConfigFile]} then {
+  readSettings $structureConfigFile $structure_options
+} else {
+  puts "Internal Error : File $structureConfigFile not found !"
+  puts "This should never happen!!"
+  beep
+  exit
+}
+
+########################################
+# reading context settings for structure
+########################################
+
+stateMsg "Constructing Configuration File"
+
+constructConfigFile .
+
+stateMsg "Get Settings for $argv"
+
+set contextSettings [exec $env(DOSFOP)/bin/getsetting $argv ./ struct]
+extractContextSettings $contextSettings $structure_options
+
+stateMsgExit
+
+###########################################
+# here setting-mainpulations can take place
+###########################################
+# windows are placed here
+
+
+#################
+# widget headline
+#################
+
+wm title . "Structure Configurator" 
+
+frame .all
+
+############
+# inclusions
+############
+
+frame .inclusions
+
+pack [propertiesIncludeWidget setting 1] \
+     [onlyInterfacesWidget setting 1]    \
+     -in .inclusions -side top -expand 1 -fill x
+
+###############
+# other options
+###############
+
+frame .others 
+
+pack [importReferencesWidget setting 1] \
+     [usedFunctionTablesWidget setting 1] \
+     [newPagesWidget setting 1] \
+     [dropEmptyLinesWidget setting 1] \
+     -in .others -side top -expand 1 -fill x
+
+set fileMenu [makeStandardMenu $helpSupportedWidgets]
+
+$fileMenu add command -label "Save Settings And Exit" \
+   -command "saveConfig $structureConfigFile [list $structure_option_ordering] ;\
+             exitStructureConfig" \
+                      -accelerator "  Ctrl+x"
+$fileMenu add separator
+$fileMenu add command -label "Save Settings" \
+  -command "saveConfig $structureConfigFile [list $structure_option_ordering]" \
+                      -accelerator "  Ctrl+s"
+$fileMenu add command -label "Discard Changes and Exit" \
+                      -command exitStructureConfig \
+                      -accelerator "  Ctrl+c"
+
+bind all <Control-x> "saveConfig $structureConfigFile [list $structure_option_ordering] ;\
+                       exitStructureConfig"
+bind all <Control-s> "saveConfig $structureConfigFile [list $structure_option_ordering]"
+bind all <Control-c> {exitStructureConfig}
+
+pack .mbar -side top -fill x
+pack [nameWidget "Structure " $structureName] \
+     [levelsWidget setting 1]    \
+     .inclusions \
+     .others \
+     -in .all -side top -fill x -padx 2m -pady 2m 
+
+pack .all
+
+
+proc exitStructureConfig {} {
+  catch {send browse_tcl {enable {.structsConfig .structsRename .structsDelete}}}
+  cancelConfig
+}
+  
+
+
+
+
+
+
+

@@ -1,0 +1,193 @@
+-- %Formatting strings for output. 
+SIGNATURE StringFormat
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:59 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat        ONLY nat       
+        Int        ONLY int
+        Real       ONLY real      
+        Char       ONLY char
+        String     ONLY string      
+        Seq[union] ONLY seq
+        BTUnion    ONLY union
+
+
+-- %$Basic Formatting$
+
+/* %@code{format(pattern, args)} converts arguments as described in 
+    @code{pattern} to a string. The pattern format is modelled after C and
+    specified below. */
+
+FUN format      : denotation ** seq[union] -> string
+FUN format      : string ** seq[union] -> string        
+
+-- %$Script Formatting$
+
+/* % The expression @code{format(Pattern <- Val1 & Val2 & ... & ValN)}
+is equivalent to 
+@code{format(Pattern, %(t1(Val1),t2(Vale),...,tN(ValN)))},
+where @code{tI} is the according union constructor from 
+@ref{@Overview{BTUnion}}.
+*/
+
+SORT script
+
+FUN <- : denotation ** denotation -> script
+FUN <- : denotation ** string -> script
+FUN <- : denotation ** real -> script
+FUN <- : denotation ** nat -> script
+FUN <- : denotation ** int -> script
+
+FUN & : script ** denotation -> script
+FUN & : script ** string -> script
+FUN & : script ** real -> script
+FUN & : script ** nat -> script
+FUN & : script ** int -> script
+
+FUN formatS: script -> string
+
+-- %$Pattern Specification$
+/* %
+The format of @code{pattern} is interpreted with the following grammar.
+Metasymbols are @b{bold}, comments are in @i{italics}.
+
+@multitable @columnfractions 0.1 0.1 0.8
+@item
+@var{format} @tab  ::= @tab @b{@{} @var{formatEl} @b{@}}
+@item
+@var{formatEl} @tab ::= @tab % % @i{output single %} @b{|}
+               % @b{@{} @var{flag} @b{@}} @b{[} @var{len} @b{]}
+               @b{[} . @b{[} @var{prec} @b{]} @b{]} @var{type}  @b{|} @var{other char}
+@item
+@var{flag}    @tab ::= @tab -       @i{left justify} @b{|}
+@item @tab @tab              +       @i{always prepend sign} @b{|}
+@item @tab @tab              space   @i{prepend space if not negative} @b{|}
+@item @tab @tab              0    @i{justify with zeros} @b{|}
+@item @tab @tab              #    @i{alternate format}
+@item
+@var{len}    @tab ::= @tab * @i{read length from @code{seq[union]}, must be @code{nat}} @b{|} @var{number} 
+@item
+@var{prec}   @tab ::= @tab * @i{read precision from @code{seq[union]}, must be @code{nat}} @b{|} 
+@item @tab @tab @var{number}
+@item
+@var{number} @tab ::= @tab @b{@{} 0 @b{|} .. @b{|} 9 @b{@}}  @i{no leading zeros}
+@item
+@var{type}   @tab ::= @tab n @i{nat} @b{|} i @i{int} @b{|} s @i{string} @b{|} c @i{char} @b{|} b @i{bool} @b{|}
+             r @i{real-1} @b{|} R @i{real-2} @b{|} e @i{real-3} @b{|} d @i{denotation}
+@item
+@var{other char} @tab ::= @tab print as themselve
+@end multitable
+
+
+@code{%} - formats are interpreted thus:
+@table @var
+@item len
+
+ specifies minimal field width. Spaces will be prepended until field
+        width is reached. If @var{flag} - is given, spaces will be appended.
+        
+  If @code{*} is given for @var{len} or @var{precision} the value is given by
+  the 
+  current head of the @code{seq[union]}, which must be of type @code{nat}.
+
+  The head of the @code{seq[union]}
+  must be of the given type. It is removed from
+  the seq and formatted as specified.  
+@end table
+
+@table @i  
+@item output of nats:
+@table @var
+@item precision
+prepend zeros until number has @var{precision} digits
+@item flag +
+prepend + character
+@item flag space
+ignored
+@item flag 0
+prepend zeros instead of spaces; ignored if @var{flag} - is given
+@item flag #
+ignored
+@end table
+
+@item  output of ints:
+@table @var
+@item precision
+prepend zeros until number has @var{precision} digits
+@item flag +
+prepend + character, if number not negative
+@item flag space
+prepend space, if number not negative
+@item flag 0
+prepend zeros instead of spaces; ignored if @var{flag} - is given
+@item flag #
+ignored
+@end table
+
+@item  output of reals:
+@table @var
+@item precision
+produce exactly @var{precision} digits after the point, default 6
+               (but trailing zeros are removed unless flag 0 is given)
+@item flag +
+prepend + character if number not negative
+@item flag space
+prepend space, if number not negative
+@item flag 0
+do not remove trailing zeros
+@item flag #
+always add decimal point
+@end table
+
+Three different formats are available for real numbers:
+
+@multitable @columnfractions 0.05 0.1 0.85
+@item  %r @tab @i{real-1} @tab if (abs(number) <= max'Nat and abs(number) > 1e-4) or number = 0
+                  then output [+|-]nnnn.ddddd else [+|-]n.dddddd e[+|-]nnn
+@item  %R @tab @i{real-2} @tab  output as [+|-]nnnnnnnnnnn.ddddddddd
+@item  %e @tab @i{real-3} @tab  output as [+|-]n.dddddd[e][+|-]nnnn
+@end multitable
+
+  @b{Note:} trailing zeros are not removed if they are result of rounding
+        e.g. "0.899" with 2 digits precision is always printed as "0.90"
+
+        Sometimes trailing zeros are not removed, presumably due to
+        inaccuracies of conversion from binary to decimal representation.
+
+@item  output of strings and denotations:
+@table @var
+@item precision
+ output only the first @var{precision} characters
+@item flag +
+ ignored
+@item flag space
+ ignored
+@item flag 0
+ ignored
+@item flag #
+ ignored
+@end table
+
+@item  output of characters:
+         Characters are treated like strings.
+  
+@item  output of booleans:
+  Output the string @i{true} or @i{false}.
+@table @var
+@item precision
+ output only the first @var{precision} characters 
+               of @i{true} or @i{false}
+@item flag +
+ ignored
+@item flag space
+ ignored
+@item flag 0
+ output true as "1" and false as "0"
+@item flag #
+ use uppercase (@i{TRUE}, @i{FALSE})
+@end table
+@end table                
+*/               

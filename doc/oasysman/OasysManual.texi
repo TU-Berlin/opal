@@ -1,0 +1,1746 @@
+\input texinfo  @c -*-texinfo-*-
+
+@c %**start of header
+@setfilename OasysManual.info
+@settitle Oasys Manual
+@c %**end of header
+
+@tex
+\paragraphindent 0
+@end tex
+
+@ifinfo
+This is the manual for Oasys, the Opal application development system,
+as bundled with the Opal distribution 2.3a
+
+Copyright @copyright{} 1997 
+@end ifinfo
+@finalout
+@titlepage
+@title Oasys Manual
+@author Klaus Didrich
+Copyright @copyright{} 1997 
+@end titlepage
+
+@ifinfo
+@node Top, Introduction, (dir), (dir)
+@top Oasys Manual
+
+@end ifinfo
+
+
+@c ein paar nette Makros (groﬂer Anfangsbuchstabe!)
+
+
+@menu
+* Introduction::                
+* Configuring Oasys::           
+* Basic Usage of Oasys::        
+* Alphabetic Listing of Oasys Shortcut Commands::  
+* Alphabetic Listing of Ordinary Oasys Commands::  
+@end menu
+
+@ifhtml
+<hr>
+@end ifhtml
+@node Introduction, Configuring Oasys, Top, Top
+@chapter Introduction
+
+@c vielleicht noch etwas umformulieren, damit die Naehe zum Minitutorial
+@c nicht so auff‰llt.
+From version 2.3a onwards, the Opal compilation system provides an
+alternative to the @code{ocs} command for developing Opal
+applications: the @code{oasys} tool. Oasys supports
+functionality similar to @code{ocs}, but extends the latter's possibilities by incorporating an interpreter-debugger which allows
+expressions to be evaluated `on the fly', and the execution
+of functions to be monitored. 
+
+Oasys was developed by Wolfgang Grieskamp and Eckard
+Lehmann and the latter programmed the interpreter-debugger as part of
+his master's thesis. Further improvements were added by Klaus
+Didrich.
+
+@b{Note:} This manual is still incomplete as regards the debugger
+functionality. 
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node Configuring Oasys, Basic Usage of Oasys, Introduction, Top
+@chapter Configuring Oasys
+
+
+@menu
+* Global Configuration::        
+* User Configuration of Oasys::  
+* Project Configuration ::      
+* Defining New Oasys Commands::  
+@end menu
+
+@node Global Configuration, User Configuration of Oasys, Configuring Oasys, Configuring Oasys
+@section Global Configuration
+
+@cindex global configuration
+The global configuration normally need not be edited by the user.
+
+@cindex @code{$OASYSGLOBALRC}
+@cindex @code{$OASYSLIB}
+@cindex @code{$OCSDIR}
+@cindex @code{startup.oasys}
+The global configuration is a Tcl script which is read when Oasys is
+invoked. It is looked for at the following locations:
+@enumerate
+@item
+@file{$OASYSGLOBALRC}
+@item
+@file{$OASYSLIB/startup.oasys}
+@item
+@file{$OCSDIR/lib/oasys/startup.oasys}
+@item
+@file{/usr/ocs/lib/oasys/startup.oasys}
+@end enumerate
+
+@c shortcuts werden von startup gelesen
+@c @INDEX shortcuts
+@c @CODEINDEX shortcuts.oasys
+@c The @emph{shortcuts}
+@c  are defined in a separate file @file{shortcuts.oasys} which is
+@c included by for at the same place where the system configuration is found.
+
+@node  User Configuration of Oasys, Project Configuration , Global Configuration, Configuring Oasys
+@section User Configuration
+
+@cindex user configuration
+A user may customize Oasys. The user configuration is a Tcl script
+which is read after the global configuration has been
+read. It is read from one of the following locations:
+
+@cindex @code{$OASYSRC}
+@cindex @code{$HOME}
+@cindex @code{.oasysrc}
+@enumerate
+@item
+@file{$OASYSRC}
+@item
+@file{$HOME/.oasysrc}
+@end enumerate
+
+The user configuration may contain any Oasys or Tcl commands.
+
+@node  Project Configuration , Defining New Oasys Commands, User Configuration of Oasys, Configuring Oasys
+@section Project Configuration 
+
+@cindex project configuration
+@cindex @code{config.oasys}
+After having read the global and the user configuration, Oasys tries to
+read the project configuration from the file @file{config.oasys} in the
+current directory.
+
+@cindex oasys search path
+Whenever a directory is added to the search path of Oasys
+(@pxref{oasys-path}), the @file{config.oasys} file of that directory will
+be loaded if present.
+
+@node  Defining New Oasys Commands,  , Project Configuration , Configuring Oasys
+@section Defining New Oasys Commands
+
+@cindex new Oasys commands
+The Oasys command-line interpreter is a Tcl interpreter, so the user
+can use any feature of Tcl when writing global or local configuration
+files. 
+
+@cindex completion
+For defining new procedures, however, the Oasys command @code{oasys-proc}
+(@pxref{oasys-proc}) should be used. This has two advantages: input of
+unit names or file names is supported by completion and the procedure is
+registered with the Oasys help system.
+
+As a short example, we present the definition of a command @code{A}, which
+registers all units in the current directory (see @ref{a} for the simple
+variant). 
+
+@example
+oasys-proc @{A@} \
+           @{Add all units in current directory.@} \
+           @{CMD@} \
+           @{ foreach s [glob *.sign] @{a $s@} @}
+@end example
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node Basic Usage of Oasys, Alphabetic Listing of Oasys Shortcut Commands, Configuring Oasys, Top
+@chapter Basic Usage of Oasys
+
+@menu
+* Basic Commands::              
+* Printing Results::            
+* Debugging::                   
+@end menu
+
+@node Basic Commands, Printing Results, Basic Usage of Oasys, Basic Usage of Oasys
+@section Basic Commands
+
+@menu
+* Managing Units::              
+* Evaluating Expressions::      
+* Information::                 
+* Compiler Functionality::      
+@end menu
+
+@node Managing Units, Evaluating Expressions, Basic Commands, Basic Commands
+@subsection Managing Units
+
+@cindex registered units
+Every unit which is to be used in Oasys must be registered before the
+first use. 
+
+@table @b
+@item a UNIT
+Add @var{UNIT} to the set of registered units. @var{UNIT} must be found in the
+current search path (@pxref{oasys-path}).
+@item l
+@itemx ll
+List the set of known units in short or in long format.
+@end table
+
+@node Evaluating Expressions, Information, Managing Units, Basic Commands
+@subsection Evaluating Expressions
+
+@cindex current context
+@cindex focus
+@cindex evaluation
+Expressions are always evaluated in a so-called @emph{current context}. This
+context is one of the registered units. It is called the @emph{focus}.
+(See also @ref{oasys-additional-context}.)
+
+Before evaluating expressions, any units whose source code have been
+changed are checked and compiled.
+
+@cindex RES
+@cindex expression history
+All expressions are stored. The history can be retrieved
+(@pxref{oasys-values}). Element @var{I} can be referred to by the identifier
+@code{RES}@var{I}, e.g. @code{RES2} for expression number 2. The last
+expression can always be referred to with @code{RES}. 
+
+@cindex @code{com[data]}
+@cindex execution
+@cindex monad
+The evaluation of expressions of the built-in monadic type @code{com[data]}
+yields a constant, but does not execute the command. 
+
+@table @b
+@item f UNIT
+Set focus to @var{UNIT}. 
+@item e EXPR
+Evaluate expression in current focus.
+@item ex EXPR
+Evaluate expression in current focus. Execute the resulting command.
+@item x NAME
+Execute command.
+@item t
+Switch printing of result type on or off.
+@end table
+
+@node Information, Compiler Functionality, Evaluating Expressions, Basic Commands
+@subsection Information
+
+@table @b
+@item h [ CMD ]
+Print information on @var{CMD} or all commands.
+@item i
+Print brief information on Oasys commands.
+@end table
+
+@node Compiler Functionality,  , Information, Basic Commands
+@subsection Compiler Functionality
+
+@cindex state
+@cindex loaded unit
+@cindex checked unit
+@cindex compiled unit
+@cindex object code
+Every unit can have one of three states:
+@table @asis
+@item loaded
+The source code has been loaded.
+@item checked
+Abstract syntax of the unit is available.
+@item compiled
+Object code of the unit is available. (Signature units can never have this
+state.)
+@end table
+
+The @code{r} and @code{c} commands
+without arguments refer to all structures whose source code has been
+changed. 
+
+@table @b
+@item r
+Reload structures.
+@item c
+Reload structures, then check structures.
+@item ld COM
+Reload structures, then create executable named @var{COM} which executes the
+command @var{COM}.
+@item ar FOLDER
+Reload structures, then archive structures in @var{FOLDER}
+@end table
+
+@node Printing Results, Debugging, Basic Commands, Basic Usage of Oasys
+@section Printing Results
+
+In order to print the result of an evaluation, Oasys must know how to
+transform a given data type into textual representation. The Opal
+library contains two data types for texts: @code{denotation} and
+@code{fmt}, the latter being a structured text which supports pretty
+printing.
+
+@cindex print function
+A @emph{print function} for type @var{data} is a function of type
+@var{data}@code{ -> denotation} or @var{data}@code{ -> fmt}. If the type is
+parameterized, the print function must have one additional higher-order
+parameter for the print functions of the parameter types. For example, a
+print function for type @code{map[dom, <, codom]} must have either
+functionality @code{(dom -> denotation) ** (codom -> denotation) -> map[dom,
+<, codom] -> denotation} or @code{(dom -> fmt) ** (codom -> fmt) -> map[dom,
+<, codom] -> fmt} (you may not mix @code{denotation} and @code{fmt}).
+
+@cindex print functions, finding
+@cindex finding print functions
+The user may define print functions explicitly (see @ref{oasys-print-method}).
+If no print function is defined for type @var{type} in structure
+@var{struct}, Oasys tries to find one. If one of the structures 
+@var{struct}, @code{Fmt}@var{struct}, @var{struct}@code{Conv} (in this order)
+contains possible candidates for print functions, one of these candidates is
+chosen. Selector functions are not considered.
+
+@cindex @code{<some>}
+If no print function can be found, Oasys prints @code{<some>} to indicate
+that `some' result has been obtained, but cannot be represented.
+
+@subsection Printing Functions
+Functions, i.e. expressions with function functionality, are represented
+by their internal representation. For known functions their
+(internally unique) name is used, otherwise a lambda
+expression is printed.
+
+@b{Example:}
+@noindent
+@example
+Denotation.sign>e @{+/+(",")@}
+@print{} +/+'Denotation,1(,)
+@end example
+
+@cindex overloading
+Names are annotated with their origin. In this example, there is also an
+additional number to distinguish overloaded functions.
+
+@cindex local variables
+@cindex lambda expressions
+@cindex infix application
+Local variables of lambda expressions are renamed, and infix applications
+are converted into prefix applictions.
+
+@b{Example:}
+@noindent
+@example
+Denotation.sign>e @{IF false THEN \\a, b. a ++ b 
+                             ELSE \\a, b. a ++ "::" ++ b FI@}
+@print{} \\ a0, a1. ++'Denotation(a0, ++'Denotation("::", a1))
+@end example
+
+In some cases local variables are not treated properly. 
+
+@node Debugging,  , Printing Results, Basic Usage of Oasys
+@section Debugging
+
+Commands starting with the letter `d' are used for debugging.  Note that
+the debugging features are experimental and not stable yet.
+
+@table @b
+@item dm NAME
+Enable monitoring of execution of function @var{NAME}. A monitored
+function execution can be interrupted by hitting @var{C-C}. Technically,
+a monitored function is going to be interpreted.
+@item db NAME [EXPR]
+Set a breakpoint for function @var{NAME}. Whenever this function
+is entered, execution is interrupted. The actual arguments of
+the function can be inspected by using the formal parameter names
+in expression evaluation. If @var{EXPR} is given, it must denote
+a boolean expression over the formal parameters of the function;
+execution is only interrupted if the guard expression is true.
+@item do NAME
+Disable debugging for function @var{NAME} (cancelling a previous
+monitor or break-point command).
+@item ds 
+Show which functions are monitored or which have a breakpoint
+@item dt 
+Show backtrace.
+@item dc
+Continue an interrupted execution
+@item dn NUMBER
+Perform a number of steps after interrupted evaluation
+@item df NUMBER
+Select frame
+@end table
+@c @example
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node Alphabetic Listing of Oasys Shortcut Commands, Alphabetic Listing of Ordinary Oasys Commands, Basic Usage of Oasys, Top
+@chapter Alphabetic Listing of Oasys Shortcut Commands
+
+@menu
+* a::                           
+* ar::                          
+* c::                           
+* db::                          
+* dc::                          
+* df::                          
+* di::                          
+* dm::                          
+* dn::                          
+* do::                          
+* ds::                          
+* dt::                          
+* e::                           
+* ex::                          
+* f::                           
+* h::                           
+* i::                           
+* l::                           
+* ld::                          
+* ll::                          
+* q::                           
+* r::                           
+* t::                           
+* x::                           
+@end menu
+
+@ifhtml
+<hr>
+@end ifhtml
+@node a, ar, Alphabetic Listing of Oasys Shortcut Commands, Alphabetic Listing of Oasys Shortcut Commands
+@section a
+
+@deffn synopsis a STRUCTURE
+
+@cindex imported structures
+@cindex registered structures
+@cindex oasys search path
+Add structure @var{STRUCTURE} and all imported structures to the set of
+registered structures. @var{STRUCTURE} may contain a directory path or a file
+suffix; both will be removed. @var{STRUCTURE} and its imported structures
+must be found in the Oasys search path (@pxref{oasys-path}). 
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+> a Rational.
+@print{} loading Rational.sign
+@print{} loading Rational.impl
+@end example
+
+See also @ref{l}, @ref{ll}, @ref{oasys-register}.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node ar, c, a, Alphabetic Listing of Oasys Shortcut Commands
+@section ar
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis ar FOLDER
+
+Reload, then create object archive for folder@var{FOLDER} to be used with
+the @code{ocs} command.
+
+@end deffn
+
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node c, db, ar, Alphabetic Listing of Oasys Shortcut Commands
+@section c
+
+@deffn synopsis c
+
+@cindex registered structures
+@cindex checking structures
+@cindex abstract syntax
+Reload all registered structures whose source has changed, then check these
+structures.
+
+This command is rarely needed, because all actions are also part of the
+@code{e} command (@pxref{e}).
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+> c
+@print{} loading Rational.impl
+@print{} checking Rational.impl
+@print{} ERROR [Rational.impl at 43.5]: 
+@print{} improperly named function definition target or parameter foo
+@print{} ERROR [check]: language error
+@end example
+
+See also @ref{oasys-check}, @ref{oasys-verbosity}.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node db, dc, c, Alphabetic Listing of Oasys Shortcut Commands
+@section db
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis db NAME [ EXPR ]
+
+Set breakpoint for function @var{NAME} with optional guard @var{EXPR}.
+
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node dc, df, db, Alphabetic Listing of Oasys Shortcut Commands
+@section dc
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis dc
+
+Continue after interrupted evaluation.
+
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node df, di, dc, Alphabetic Listing of Oasys Shortcut Commands
+@section df
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis df NUMBER
+
+Select frame @var{NUMBER}.
+
+@end deffn
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node di, dm, df, Alphabetic Listing of Oasys Shortcut Commands
+@section di
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis di
+
+Introduction to oasys debugging commands.
+
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node dm, dn, di, Alphabetic Listing of Oasys Shortcut Commands
+@section dm
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis dm NAME
+
+Enable monitoring of execution of function @var{NAME}.
+
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node dn, do, dm, Alphabetic Listing of Oasys Shortcut Commands
+@section dn
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis dn [ STEPS ]
+Perform @var{STEPS} steps after interrupted evaluation.
+@end deffn
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node do, ds, dn, Alphabetic Listing of Oasys Shortcut Commands
+@section do
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis do NAME
+Disable debugging for function @var{NAME}.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node ds, dt, do, Alphabetic Listing of Oasys Shortcut Commands
+@section ds
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis ds
+Show debugged functions.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node dt, e, ds, Alphabetic Listing of Oasys Shortcut Commands
+@section dt
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis dt
+Print back-trace.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node e, ex, dt, Alphabetic Listing of Oasys Shortcut Commands
+@section e
+
+@deffn synopsis e EXPR
+
+@cindex known structures
+@cindex evaluation
+@cindex focus
+Reload all registered structures whose source has changed, check these structures
+and compile them, then evaluate @var{EXPR} in current focus (see @ref{f})
+and print the result.
+If @var{EXPR} contains spaces or quotes, it should be surrounded by curly
+brackets. Errors in the expressions are reported with line number 0.
+
+@cindex @code{com[data]}
+@emph{Note} that monadic expressions (expressions of type @code{com[data]})
+are evaluated but @emph{not} executed.
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+Rational.impl>e 24 / 8
+@print{} [3/1]
+Rational.impl>e 34 / 8
+@print{} ERROR [at 0.1]: no matching operation for 34
+@print{} ERROR [check]: language error
+@print{} aborted
+@end example
+
+See also @ref{ex}, @ref{f}, @ref{t}, @ref{x}, @ref{oasys-eval},
+@ref{oasys-print-method}, @ref{oasys-show-type}, @ref{oasys-values}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node ex, f, e, Alphabetic Listing of Oasys Shortcut Commands
+@section ex
+
+@deffn synopsis ex EXPR
+
+@cindex registered structures
+@cindex evaluation
+@cindex execution
+@cindex @code{com[data]}
+Reload all registered 
+structures whose source has changed, check these structures
+and compile them, then evaluate @var{EXPR} in current focus (see @ref{f}),
+@emph{execute} the resulting command and print the result.
+The expression must be of type @code{com[data]}.
+
+If @var{EXPR} contains spaces or quotes, it should be surrounded by curly
+brackets. Errors in the expressions are reported with line number 0.
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+BasicIO.sign>ex writeLine("abc")
+@print{} abc
+@print{} nil
+@end example
+
+@cindex side effect
+Note that @code{abc} is the side effect of the execution of the command, and
+@code{nil} is the value returned by the command.
+
+See also @ref{e}, @ref{f}, @ref{t}, @ref{x}, @ref{oasys-exec},
+@ref{oasys-print-method}, @ref{oasys-show-type}, @ref{oasys-values}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node f, h, ex, Alphabetic Listing of Oasys Shortcut Commands
+@section f
+
+@deffn synopsis f UNIT
+
+@cindex focus
+Set focus to @var{UNIT} (structure name + @samp{.sign} or @samp{.impl}).
+@var{UNIT} is the context in which the following expressions are evaluated.
+The current focus is included in the oasys prompt.
+
+@cindex library structure
+The focus can not be set to implementation parts of library structures
+(@pxref{oasys-path}). 
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+> f Nat.sign
+@end example
+
+See also @ref{e}, @ref{ex}, @ref{x}, @ref{oasys-focus}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node h, i, f, Alphabetic Listing of Oasys Shortcut Commands
+@section h
+
+@deffn synopsis h [ CMD ]
+
+@cindex help
+Print short help on all commands (default) or the specified @var{CMD}.
+@end deffn
+
+
+@b{Example:}
+@noindent
+@example
+> h a
+@print{} Add STRUCTURE to known units.
+@print{}  A possible directory path and .sign or .impl suffix will be stripped
+@print{}  from STRUCTURE.
+@end example
+
+See also @ref{oasys-help}.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node i, l, h, Alphabetic Listing of Oasys Shortcut Commands
+@section i
+
+@deffn synopsis i
+
+@cindex introduction
+Print a short summary (introduction) of the most important Oasys
+commands. 
+
+@end deffn
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node l, ld, i, Alphabetic Listing of Oasys Shortcut Commands
+@section l
+
+@deffn synopsis l
+
+@cindex registered units
+@cindex list of units
+List all registered units.
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+> l
+@dots{}
+String.sign String.impl OptionConv.sign OptionConv.impl Com.sign 
+Com.impl ComConv.sign ComConv.impl
+@end example
+
+See also @ref{ll}, @ref{oasys-units}.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node ld, ll, l, Alphabetic Listing of Oasys Shortcut Commands
+@section ld
+
+@deffn synopsis ld COM
+
+@cindex registered structures
+@cindex executable
+@cindex link
+@cindex @code{com[void]}
+Reload all registered
+ structures whose source has changed, check these structures
+and compile them, then create an executable file which will execute @var{COM}.
+@var{COM} must be a constant of type @code{com[void]}. The executable file
+will have the name @var{COM} as well.
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+HelloWorld.sign> ld hello
+@print{} linking hello'HelloWorld.sign
+@end example
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node ll, q, ld, Alphabetic Listing of Oasys Shortcut Commands
+@section ll
+
+@deffn synopsis ll
+
+@cindex list of units 
+@cindex registered units
+@cindex state
+List all registered units, together with their internal number and state.
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+HelloWorld.sign>ll
+@print{} @dots{}
+@print{} HelloWorld.impl, (#43), checked
+@print{} BasicIO.sign   , (#44), checked, library
+@print{} BasicIO.impl   , (#45), checked, compiled, library
+@print{} Pair.sign      , (#46), checked, library
+@print{} Pair.impl      , (#47), checked, compiled, library
+@end example
+
+See also @ref{l}, @ref{oasys-units}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node q, r, ll, Alphabetic Listing of Oasys Shortcut Commands
+@section q
+
+@deffn synopsis q
+
+@cindex quit
+Quit Oasys.
+
+@end deffn
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node r, t, q, Alphabetic Listing of Oasys Shortcut Commands
+@section r
+
+@deffn synopsis r
+
+@cindex registered units
+@cindex reloading units
+Reload all registered units whose source has changed.
+
+@end deffn
+
+This command is rarely needed, because it is part of the @ref{c} and the
+@ref{e} and @ref{ex} commands.
+
+@b{Example:}
+@noindent
+@example
+Rational.sign>r
+@print{} loading Rational.sign
+@end example
+
+See also @ref{oasys-reload}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node t, x, r, Alphabetic Listing of Oasys Shortcut Commands
+@section t
+
+@cindex result type
+@deffn synopsis t
+
+Control whether the result type of expressions is printed. The command
+toggles between on and off.
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+Rational.sign>t
+@print{} show types is on
+Rational.sign>e +
+@print{} +'Rational
+@print{} rat'Rational ** rat'Rational -> rat'Rational
+@end example
+
+See also @ref{e}, @ref{ex}, @ref{oasys-show-type}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node x,  , t, Alphabetic Listing of Oasys Shortcut Commands
+@section x
+
+@deffn synopsis x COM
+
+@cindex registered structures
+@cindex execution
+@cindex @code{com[void]}
+Reload all known structures whose source has changed, then
+execute @var{COM} which must be a constant of type @code{com[void]}.
+This is faster than @ref{ex}.
+
+@end deffn
+
+@b{Example:}
+@noindent
+@example
+HelloWorld.sign>x hello
+@print{} Hello, World!
+@end example
+
+See also @ref{ex}, @ref{oasys-run}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node Alphabetic Listing of Ordinary Oasys Commands,  , Alphabetic Listing of Oasys Shortcut Commands, Top
+@chapter Alphabetic Listing of Ordinary Oasys Commands
+
+@menu
+* oasys-additional-context::    
+* oasys-all-commands::          
+* oasys-archive::               
+* oasys-args::                  
+* oasys-args-show::             
+* oasys-bt::                    
+* oasys-check::                 
+* oasys-compile::               
+* oasys-continue::              
+* oasys-debug::                 
+* oasys-eval::                  
+* oasys-exec::                  
+* oasys-focus::                 
+* oasys-help::                  
+* oasys-link::                  
+* oasys-new::                   
+* oasys-path::                  
+* oasys-print-method::          
+* oasys-proc::                  
+* oasys-quit::                  
+* oasys-really-all-commands::   
+* oasys-register::              
+* oasys-related::               
+* oasys-reload::                
+* oasys-run::                   
+* oasys-save::                  
+* oasys-select::                
+* oasys-show-type::             
+* oasys-source::                
+* oasys-step::                  
+* oasys-unit-compiled::         
+* oasys-unit-interpreted::      
+* oasys-units::                 
+* oasys-values::                
+* oasys-verbosity::             
+@end menu
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-additional-context, oasys-all-commands, Alphabetic Listing of Ordinary Oasys Commands, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-additional-context
+
+@deffn synopsis oasys-additional-context ( @r{add} UNIT* | @r{rm} UNIT* | @r{clear} |@r{show} )
+
+@cindex additional context
+@cindex current context
+Oasys manages a set of units which are always added to the current
+context when evaluating expressions. 
+@table @code
+@item add @var{UNITS}
+Add units to the additional context. Implementation units will be
+replaced by their corresponding signature parts.
+@item rm @var{UNITS}
+Remove units from the additional context. Implementation units will be
+replaced by their corresponding signature parts.
+@item clear
+Make the additional context the empty set.
+@item show
+Print the additional context.
+@end table
+
+@end deffn
+
+The smaller the set of imported units, the faster expressions will be
+evaluated. Additional imported units may cause ambiguities and even cyclic
+dependency errors.
+
+See also @ref{oasys-focus}, @ref{oasys-eval}, @ref{oasys-exec}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-all-commands, oasys-archive, oasys-additional-context, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-all-commands
+
+@deffn synopsis oasys-all-commands
+
+Commands from this section are not available for completion on the command
+line and are hidden from the help command by default. This command makes
+them available.
+
+@end deffn
+
+See also @ref{oasys-really-all-commands}
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-archive, oasys-args, oasys-all-commands, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-archive
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-archive [ FOLDER-NAME ]
+
+Create object archive for use with the ocs-command for the given
+@var{FOLDER-NAME}.
+@var{FOLDER-NAME} is the base name of the source path.
+If @var{FOLDER-NAME} is omitted, archives are created for all folders.
+
+@end deffn
+
+See also @ref{ar}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-args, oasys-args-show, oasys-archive, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-args
+
+@deffn synopsis oasys-args @{ ARG @}
+
+Set arguments for next invocation of the evaluator process. This is for
+debugging purposes only.
+
+@end deffn
+
+See also @ref{oasys-args-show}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-args-show, oasys-bt, oasys-args, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-args-show
+
+@deffn synopsis oasys-args-show
+
+Print arguments set with last call of @ref{oasys-args}.
+
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-bt, oasys-check, oasys-args-show, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-bt
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-bt
+Print back trace.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-check, oasys-compile, oasys-bt, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-check
+
+@cindex checked unit
+@cindex registered units
+@cindex imported units
+@deffn synopsis oasys-check @{ UNITS @}
+Check the given @var{UNITS} (if no units are given, all registered units are
+checked).
+It is not checked, whether the source code of @var{UNITS} has changed.
+
+Imported units are checked first.
+@end deffn
+
+See also @ref{c}, @ref{oasys-reload}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-compile, oasys-continue, oasys-check, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-compile
+
+@cindex compiled unit
+@cindex registered units
+@cindex imported units
+@deffn synopsis oasys-compile @{ UNITS @}
+Compile the given @var{UNITS} (if no units are given, all registered
+units are checked). Imported
+units are checked and compiled if necessary.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-continue, oasys-debug, oasys-compile, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-continue
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-continue
+Continue the last broken evaluation.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-debug, oasys-eval, oasys-continue, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-debug
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-debug [ monitor NAME | off NAME | break NAME @{ EXPR @} | update ]
+Maintain debugging state.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-eval, oasys-exec, oasys-debug, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-eval
+
+@cindex evaluation
+@cindex focus
+@deffn synopsis oasys-eval EXPR
+Evaluate @var{EXPR} in current focus (see @ref{oasys-focus} and
+@ref{oasys-additional-context}) and print the result.
+If @var{EXPR} contains spaces, quotes or square brackets, it should be
+surrounded by curly brackets. Errors in the expressions are reported with
+line number 0. 
+
+@cindex monadic expression
+@emph{Note} that monadic expressions (expressions of type @code{com[data]})
+are evaluated but @emph{not} executed.
+
+@end deffn
+
+See also @ref{e}, @ref{oasys-exec}, @ref{oasys-focus}, @ref{oasys-run},
+@ref{oasys-print-method}, @ref{oasys-show-type},
+@ref{oasys-additional-context}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-exec, oasys-focus, oasys-eval, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-exec
+
+@cindex evaluation
+@cindex execution
+@cindex @code{com[data]}
+@cindex focus
+@deffn synopsis oasys-exec EXPR
+Evaluate @var{EXPR} in current focus (see @ref{oasys-focus} and
+@ref{oasys-additional-context}),
+@emph{execute} the resulting command and print the result.
+The expression must be of type @code{com[data]}.
+
+If @var{EXPR} contains spaces, quotes or square brackets, it should be
+surrounded by curly brackets. Errors in the expressions are reported with
+line number 0. 
+
+@end deffn
+
+See also @ref{ex}, @ref{oasys-eval}, @ref{oasys-focus}, @ref{oasys-run},
+@ref{oasys-print-method}, @ref{oasys-show-type}.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-focus, oasys-help, oasys-exec, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-focus
+
+@deffn synopsis oasys-focus [ @var{UNIT} ]
+
+@cindex focus
+Set focus to @var{UNIT} (structure name + @samp{.sign} or @samp{.impl}).
+@var{UNIT} is the context in which the following expressions are evaluated.
+(See @ref{oasys-additional-context} for extending this context.)
+The current focus is included in the oasys prompt.
+
+
+@cindex library structure
+The focus can not be set to implementation parts of library structures
+(@pxref{oasys-path}). 
+
+If no @var{UNIT} is given, the command returns the current
+focus. 
+
+@end deffn
+
+See also @ref{oasys-additional-context}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-help, oasys-link, oasys-focus, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-help
+
+@deffn synopsis oasys-help [ CMD ]
+
+@cindex help
+Print short help on all commands (default) or the specified @var{CMD}.
+@end deffn
+
+See also @ref{h}
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-link, oasys-new, oasys-help, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-link
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@cindex executable
+@cindex @code{com[void]}
+@deffn synopsis oasys-link OBJECTNAME> [ EXEC-NAME ]
+Link top-level command to executable @var{EXEC-NAME}. If @var{EXEC-NAME} is
+omitted, use name of top-level command. @var{OBJECTNAME} must be a constant
+of type @code{com[void]}.
+@end deffn
+
+See also @ref{ld}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-new, oasys-path, oasys-link, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-new
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-new STRUCTNAME
+Create a new structure with name @var{STRUCTNAME}.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-path, oasys-print-method, oasys-new, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-path
+
+@deffn synopsis oasys-path [ @r{add} ( @r{ocs} | @r{library} ) PATH ]
+
+@cindex oasys search path
+@cindex library structure
+@cindex @code{config.oasys}
+@itemize @bullet
+@item
+@code{oasys-path} just returns the current search path as a sequence
+of pairs. The first element of each pair is the path to the sources, the
+second element is the path to compiler results.
+@item
+@code{oasys-path add ocs} @var{PATH} adds @var{PATH} to the search
+path. If @var{PATH} contains a file @file{config.oasys}, it will be read and
+executed.
+@item
+@code{oasys-path add library} @var{PATH} adds @var{PATH} to the search
+path. Structures in this path are considered to be @emph{library structures}.
+If @var{PATH} contains a file @file{config.oasys}, it will be read and
+executed.
+@end itemize
+
+@end deffn
+
+@cindex library structure
+Difference between library and ordinary structures is that library
+structures are never checked for reloading (library structures are never
+outdated), and that compiler results are located in a different place.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-print-method, oasys-proc, oasys-path, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-print-method
+
+@cindex print function
+@deffn synopsis oasys-print-method @var{SORT} @var{FUN}
+Define @var{FUN} to be the print function for @var{SORT}. Any evaluated
+Opal expression of type @var{SORT} is passed to this function to obtain a
+printable representation. @var{FUN} must
+have the type @var{SORT}@code{ -> fmt} or @var{SORT}@code{ -> denotation}.
+
+In case @var{SORT} is parameterized, @var{FUN} must have a higher-order
+parameter of type @var{data}@code{ -> fmt} or @var{data}@code{ ->
+denotation} for every parameter sort @var{data}.
+@end deffn
+
+Take care in chosing a total function as print function.
+
+See also @ref{Printing Results}.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-proc, oasys-quit, oasys-print-method, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-proc
+
+@cindex new Oasys command
+@deffn synopsis oasys-proc ARGSPEC HELP ARGS BODY 
+Define a new oasys command. As all of the above arguments consist of several
+words, they should be enclosed in curly brackets.
+
+@cindex completion
+@var{ARGSPEC} specifies the syntax (including the name of the new command).
+Elements of @var{ARGSPEC} are
+@multitable @columnfractions .3 .7
+@item @var{STRING} @tab literal
+@item @@@var{VAR} @tab variable
+@item @@#@var{UNIT} @tab variable with unit completion
+@item @@^@var{FILE} @tab variable with filename completion.
+@end multitable
+Each of the elements may be prefixed with @code{?} to indicate optional
+elements or @code{*} to indicate repeatitions.
+
+@var{HELP} contains the help text printed by the commands @ref{h} and
+@ref{oasys-help}.
+
+@var{ARGS} is a list of Tcl variables for each of the elements of
+@var{ARGSPEC} (including literals).
+
+@var{BODY} is a sequence of Tcl commands which may refer to the variables
+in @var{ARGS}. Optional elements and repetitions are represented as Tcl
+lists.
+
+@end deffn
+
+See @ref{Defining New Oasys Commands} for an example.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-quit, oasys-really-all-commands, oasys-proc, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-quit
+
+@deffn synopsis oasys-quit
+
+@cindex quit
+Quit Oasys
+
+@end deffn
+
+See also @ref{q}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-really-all-commands, oasys-register, oasys-quit, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-really-all-commands
+
+@deffn synopsis oasys-really-all-commands
+
+There is a set of commands with prefix @code{oasys-intern} which are hidden
+unless this command is given.
+@end deffn
+
+See also @ref{oasys-all-commands}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-register, oasys-related, oasys-really-all-commands, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-register
+
+@deffn synopsis oasys-register @{ STRUCTURE @}
+
+@cindex registered structures
+Register the given structures and load them into
+the repository unless they are already loaded.
+
+@cindex oasys search path
+@var{STRUCTURE} may contain a directory path or a file
+suffix; both will be removed. @var{STRUCTURE} and its imported structures
+must be found in the Oasys search path (@pxref{oasys-path}). 
+@end deffn
+
+See also @ref{a}, @ref{oasys-path}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-related, oasys-reload, oasys-register, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-related
+
+@deffn synopsis oasys-related [ MODE ] [ RELATION ]  @{ @var{UNIT} @}
+Print all units which related by @var{RELATION} with a unit from @var{UNIT}.
+@var{MODE} is either @code{direct} (default) or @code{transitive} and
+modifies the @var{RELATION}.
+
+@cindex import relation
+@cindex relation
+@cindex imported units
+@var{RELATION} is one of
+@multitable @columnfractions .25 .75
+@item @code{imports} @tab gives the imported basic units. If @var{UNIT} is an
+implementation, its signature part is regarded as an import. 
+@item @code{importers} @tab is the reversed relation of @code{imports}, and
+gives the basic units which import @var{UNIT}. If @var{UNIT} is a signature,
+its implementation part is regarded as an importer. 
+@item @code{implImports} @tab is the set of implementation units which are
+used to realize @var{UNIT}. If @var{UNIT} is a signature, then it will be
+treated identical to the implementation of this signature. 
+@item @code{implImporters} @tab is the reversed relation of
+@code{implImports}, and delivers all units which use @var{UNIT} (or its
+implementation part, if @var{UNIT} is a signature) for their implementation.
+@end multitable
+@end deffn
+The default @var{RELATION} is @code{imports}.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-reload, oasys-run, oasys-related, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-reload
+
+@cindex reloading units
+@deffn synopsis oasys-reload @{ @var{UNIT} @}
+Reload @var{UNIT} if its source has changed.
+@end deffn
+
+See also @ref{r}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-run, oasys-save, oasys-reload, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-run
+
+@cindex execution
+@cindex @code{com[void]}
+@deffn synopsis oasys-run 
+Execute @var{COM} which must be a constant of type @code{com[void]}.
+This is faster than @ref{oasys-exec}.
+@end deffn
+
+See also @ref{x}, @ref{oasys-exec}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-save, oasys-select, oasys-run, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-save
+
+@cindex save repository
+@cindex @code{default.repo}
+@deffn synopsis oasys-save [ PATHNAME ]
+Save current state of the repository to @var{PATHNAME} (default is
+@file{default.repo}). 
+@end deffn
+
+If @var{PATHNAME} is given to Oasys as argument when it is called, it
+will read the saved repository.
+
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-select, oasys-show-type, oasys-save, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-select
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-select NUMBER
+
+Select an item in evaluation stack (@pxref{oasys-bt}).
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-show-type, oasys-source, oasys-select, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-show-type
+
+
+@cindex result type
+@deffn synopsis oasys-show-type [ @r{on} | @r{off} | @r{toggle} | @r{show} ]
+Control whether the result type of expressions is printed.
+@multitable @columnfractions .2 .8
+@item on @tab result type is printed
+@item off @tab result type is not printed
+@item toggle @tab current state is toggled
+@item show @tab current state is printed
+@end multitable
+@end deffn
+
+See also @ref{t}, @ref{oasys-eval}, @ref{oasys-exec}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-source, oasys-step, oasys-show-type, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-source
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-source [ @var{UNIT} ]
+This command is not implemented.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-step, oasys-unit-compiled, oasys-source, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-step
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-step [ STEPS ]
+Evaluate a @var{STEPS} steps in current evaluation.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-unit-compiled, oasys-unit-interpreted, oasys-step, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-unit-compiled
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+
+@deffn synopsis oasys-unit-compiled @{ UNIT @}
+Declare units to be compiled.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-unit-interpreted, oasys-units, oasys-unit-compiled, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-unit-interpreted
+
+@ifhtml
+<p><blink>DRAFT</blink></P>
+@end ifhtml
+@tex
+This section is still draft.
+@end tex
+@deffn synopsis oasys-unit-interpreted @{ UNIT @}
+Declare units to be interpreted.
+@end deffn
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-units, oasys-values, oasys-unit-interpreted, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-units
+
+@cindex unit information
+@cindex list of units
+@cindex state
+@deffn synopsis oasys-units [ @r{full} | @r{name} | @r{file} ]
+Print information about the registered units. For every unit are printed:
+@itemize @bullet
+@item
+full: unit name, internal number, state.
+@item
+name: unit name
+@item
+file: path name
+@end itemize
+@end deffn
+
+See also @ref{l}, @ref{ll}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-values, oasys-verbosity, oasys-units, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-values
+
+@cindex expression history
+@cindex list of evaluated expressions
+@deffn synopsis oasys-values
+Show a list of expressions which have been evaluated.
+@end deffn
+
+The printed representation is the user input. The stored value is the result
+of the evaluation in the environment which was current at the time the
+expression was evaluated for the first time.
+
+@cindex RES
+The expressions can be accessed by the identifiers @code{RES0}, @code{RES1},
+@dots{} The last evaluated expression can also be accessed as @code{RES}.
+
+See also @ref{Evaluating Expressions}.
+
+@ifhtml
+<hr>
+@end ifhtml
+@node oasys-verbosity,  , oasys-values, Alphabetic Listing of Ordinary Oasys Commands
+@section oasys-verbosity
+
+@deffn synopsis oasys-verbosity ( @r{diag} ( @r{hint} | @r{warn} | @r{error} ) | @r{message} LEVEL )
+
+@cindex verbosity
+@cindex Opal errors, warnings, hints
+@cindex diagnostics
+@cindex messages
+Control the verbosity of Oasys.
+@need 10
+@multitable @columnfractions .33 .66
+@item diag hint @tab Show all diagnostics from checking Opal code.
+@item diag warn @tab Show warnings and errors from checking Opal code.
+@item diag error @tab Show only errors from checking Opal code.
+@item message @var{LEVEL} @tab Show messages of level @var{LEVEL} and
+below. (Currently levels 0 and 3 are used.)
+@end multitable
+@end deffn
+
+
+@ifhtml
+<hr>
+@end ifhtml
+
+@node Index,  , Alphabetic Listing of Ordinary Oasys Commands, Top
+
+@unnumbered Index
+@printindex cp
+
+@contents
+@bye

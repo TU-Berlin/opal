@@ -1,0 +1,190 @@
+
+IMPLEMENTATION TransType
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject: Translation of types to stores
+-- project: ac/trans
+-- author:  wg
+-- version: $$
+
+IMPORT	Nat		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMapEnv	ONLY *
+	Option		COMPLETELY
+
+IMPORT	Ide		ONLY ide global?
+	Store		COMPLETELY
+	TypeAn		COMPLETELY
+			NatMap ONLY natMap
+	TransAn		COMPLETELY
+	Ac		ONLY unit:SORT
+	TypeAnFun	ONLY importedTypeDecs typeDecs typeDec reduce
+	TransAnFun	ONLY typeStore? setTypeStore setConstructorStore
+			
+
+
+IMPORT  Store		ONLY store
+	TypeAn		ONLY type:SORT
+	Ac		ONLY unit:SORT
+
+
+-- ==========================================================================
+-- Entrys
+-- ==========================================================================
+
+-- FUN transTypes : popts ** unit -> unit
+DEF transTypes(o,T) ==
+    LET T1  == (transTypeDec / T)(importedTypeDecs(anyTypeDec,T))
+	T2  == (transTypeDec / T1)(typeDecs(anyTypeDec,T1))
+    IN
+    T2
+
+  FUN anyTypeDec : typeDec -> bool
+  DEF anyTypeDec(d) == true
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+-- FUN type2Store : unit -> type -> store
+DEF type2Store(T)(t) ==
+    IF some?(t) THEN some:store
+    IF ide?(t)  THEN IF global?(ide(t)) THEN cont(typeStore?(T,ide(t)))
+					ELSE some:store FI
+    IF fun?(t)  THEN someClos
+    IF prod?(t) THEN IF <>?(comps(t)) 	THEN somePrim
+					ELSE someProd FI
+    IF sum?(t)  THEN some:store
+    IF spec?(t) THEN type2Store(T)(gen(t))
+    IF gen?(t)  THEN type2Store(T)(scope(t))
+    IF tup?(t)  THEN 
+	IF <>?(comps(t)) THEN tup(<>) ELSE someProd FI
+    FI
+
+
+-- ==========================================================================
+-- Calculation of Store of Type Declarations
+-- ==========================================================================
+
+FUN transTypeDec : typeDec ** unit -> unit
+DEF transTypeDec(d,T) ==
+    LET (T1,_) == transTypeIde(T,ide(d))  -- drive the translation
+    IN
+    T1
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+FUN transTypeIde : unit ** ide -> unit ** store
+DEF transTypeIde(T,i) ==
+    LET st? == typeStore?(T,i)
+    IN
+    IF avail?(st?) THEN
+	-- already or currently calculated.
+	(T,cont(st?))
+    ELSE
+	-- calculate now.
+	LET d == typeDec(T,i)
+	IN
+	IF binding?(d) THEN
+	    LET T1      == setTypeStore(T,i,some:store) 
+					-- if we pass this point again
+	        (T2,st) == transType(T1,def(d))
+	    IN
+	    (setTypeStore(T2,i,st),st)
+	IF foreign?(d) THEN
+	    (setTypeStore(T,i,store(d)),store(d))
+	ELSE
+	    (setTypeStore(T,i,some:store),some:store)
+	FI
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN transType : unit ** type -> unit ** store
+DEF transType(T,t) ==
+    IF some?(t) THEN 
+	(T,some:store)
+    IF ide?(t) THEN 
+	IF global?(ide(t)) THEN
+	    transTypeIde(T,ide(t))
+	ELSE
+	    -- polymorphic variable
+	    (T,some:store)
+	FI
+    IF fun?(t) THEN 
+	(T,someClos)
+    IF prod?(t) THEN 
+	IF <>?(comps(t)) THEN
+	    LET T1 == setConstructorStore(T,cons(t),onePrim(0))
+	    IN
+	    (T1,somePrim)
+	ELSE
+	    LET (T1,csts) == (transType)*(T,comps(t))
+		st == oneProd(0,csts)
+		T2 == setConstructorStore(T1,cons(t),st)
+	    IN
+	    (T2,someProd)
+	FI
+    IF sum?(t) THEN
+	transSum(T,t)
+    IF spec?(t) THEN
+	transType(T,gen(t))
+	/*
+        LET t1 == reduce(?(T,typeDec:unit**ide->typeDec))(t)
+        IN
+        IF spec?(t1) THEN
+	    -- not reducable
+	    (T,some:store)
+	ELSE
+	    transType(T,t1)
+	FI
+	*/
+    IF gen?(t) THEN
+	transType(T,scope(t))
+    IF tup?(t) THEN
+	IF comps(t)<>? THEN (T,tup(<>)) ELSE (T,someProd) FI 
+    FI
+
+  FUN transSum : unit ** type -> unit ** store
+  DEF transSum(T,t) ==
+    LET (T1,prims,prods) == transSum(T,members(t),0,0,0) 
+    IN
+    IF prims = 0 THEN (T1,someProd)
+    IF prods = 0 THEN (T1,somePrim)	
+		 ELSE (T1,some) FI
+
+  FUN transSum : unit ** seq[type:SORT] ** nat ** nat ** nat
+					     -> unit ** nat ** nat
+  DEF transSum(T,ts,prims,prods,tag) ==
+    IF <>?(ts) THEN
+	(T,prims,prods)
+    ELSE
+	IF <>?(comps(ft(ts))) THEN
+	    LET (T1,finalPrims,finalProds) == 
+			transSum(T,rt(ts),succ(prims),prods,succ(tag))
+		st ==    IF finalPrims > 1 THEN
+		     	     prim(tag)
+		         ELSE
+			     onePrim(tag)
+		         FI
+		T2  == setConstructorStore(T1,cons(ft(ts)),st)
+	    IN
+	    (T2,finalPrims,finalProds)
+	ELSE
+	    LET (T1,finalPrims,finalProds) == 
+			transSum(T,rt(ts),prims,succ(prods),succ(tag))
+		(T2,csts)  == (transType)*(T1,comps(ft(ts)))
+		st    == IF finalProds > 1 THEN
+			     prod(tag,csts)
+		         ELSE
+			     oneProd(tag,csts)
+		         FI
+		T3  == setConstructorStore(T2,cons(ft(ts)),st)
+	    IN
+	    (T3,finalPrims,finalProds)
+   	FI 
+    FI

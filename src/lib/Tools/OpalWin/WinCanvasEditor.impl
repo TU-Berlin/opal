@@ -1,0 +1,395 @@
+IMPLEMENTATION WinCanvasEditor
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Int		COMPLETELY
+	IntConv		COMPLETELY
+	Real		COMPLETELY
+	RealConv	COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	Char		COMPLETELY
+	Denotation	COMPLETELY
+	Option		COMPLETELY
+	Seq		COMPLETELY
+	SeqIndex	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	Set		COMPLETELY
+	SetReduce	COMPLETELY
+	SetConv		COMPLETELY
+	Pair		COMPLETELY
+	Void		COMPLETELY
+	ABORT		COMPLETELY
+
+IMPORT	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	COMPLETELY
+	ComSeqReduce	COMPLETELY
+	ComAgent	COMPLETELY
+	ComService	COMPLETELY
+	ComCheck	ONLY |
+	ComState	COMPLETELY
+	ComStateWith	COMPLETELY
+	ComSeqAction	COMPLETELY
+	ComSemaphor	COMPLETELY
+
+IMPORT	WinTclTk	COMPLETELY
+	WinInternal	COMPLETELY
+	WinConfig	COMPLETELY
+	WinEvent	COMPLETELY
+	WinEmitter	COMPLETELY
+	WinRegulator	COMPLETELY
+	WinAppl		ONLY screenResolution silently
+	WinTag		COMPLETELY
+
+
+-- %$Text Editors in General$ ===============================================
+
+DATA canvasEditor == editor(provider: stateId[provider])
+
+DATA provider == provided       (win: window, wid: widget) 
+                 unprovided     (sem: semaphor)
+
+DEF canvasEditor == 
+    semaphor                    & (\\ S. 
+    reserve(S)                  & (\\ _ .
+    stateId(unprovided(S))      & (\\ Id .
+    succeed(editor(Id))
+    )))
+
+DEF register(Ed, Win, Wid) ==
+    with(provider(Ed), \\ Prv .
+        IF provided?(Prv) THEN
+            (provided(Win, Wid), done)
+        ELSE
+            (provided(Win, Wid), release(sem(Prv)))
+        FI
+    )                                           & (\\ Act .
+    registerDispose(Win, Wid,
+                    semaphor & (\\ Sem . 
+                    reserve(Sem) & (\\ _ .
+                    with(provider(Ed), \\ _ . unprovided(Sem))
+                    ))
+    )                                           & (\\ _ .
+    Act
+    ))
+
+DEF edit(Ed) ==
+    configWidget(\\Win, Wid. register(Ed, Win, Wid))
+
+
+FUN provider    : canvasEditor -> com[provider]
+FUN request     : canvasEditor ** script  -> com[string]
+FUN request     : canvasEditor ** denotation      -> com[string]
+FUN request     : canvasEditor ** string  -> com[string]
+
+DEF provider(Ed) ==
+    -- Below, we have a problem if during the execution of 
+    -- @code{get(provider(Ed))} and its continuation a provider
+    -- is registered or unregistered. However, since this will virtually
+    -- never happen in practice (the use of canvas editors is not
+    -- to permanentaley register und unregister them), we ignore the
+    -- the problem for the sake of efficiency.
+    get(provider(Ed))                           & (\\ Prv .
+    IF unprovided?(Prv) THEN
+        reserve(sem(Prv))                       & (\\ _ .
+        release(sem(Prv))                       & (\\ _ .
+        provider(Ed)
+        ))
+    ELSE
+        succeed(Prv)
+    FI
+    )
+
+DEF request(Ed, Den:denotation) == request(Ed, (!(Den)):string)
+DEF request(Ed, Scr) == request(Ed, format(Scr))
+
+DEF request(Ed, Str:string) == 
+    get(provider(Ed))                           & (\\ Prv .
+    IF unprovided?(Prv) THEN
+        reserve(sem(Prv))                       & (\\ _ .
+        release(sem(Prv))                       & (\\ _ .
+        request(Ed, Str)
+        ))
+    ELSE
+       eval("%s %s" <- wid(Prv) + Str)
+    FI
+    )
+
+
+
+-- %$Addressing Drawings$ ===================================================
+
+
+DEF all		== tag("all")
+DEF current	== tag("current")
+
+
+DEF withTag(Ed, Tag) ==
+    requestTags(Ed, "find withtag %s" <- name(Tag))
+
+DEF above(Ed, Tag) ==
+    requestTag(Ed, "find above %s" <- name(Tag))
+
+DEF below(Ed, Tag) ==
+    requestTag(Ed, "find below %s" <- name(Tag))
+
+DEF closest(Ed, Point) ==
+    closest(Ed, Point, 0)
+
+DEF closest(Ed, @(Xc, Yc), Dist) ==
+    requestTag(Ed, "find closest %s %s %s" 
+    		      <- asPixel(Xc) + asPixel(Yc) + asPixel(Dist))
+
+DEF enclosed(Ed, @(Xc1, Yc1), @(Xc2, Yc2)) ==
+    requestTags(Ed, "find enclosed %s %s %s %s" 
+    		      <- asPixel(Xc1) + asPixel(Yc1) 
+    		       + asPixel(Xc2) + asPixel(Yc2))
+
+DEF overlapping(Ed, @(Xc1, Yc1), @(Xc2, Yc2)) ==
+    requestTags(Ed, "find overlapping %s %s %s %s" 
+    		      <- asPixel(Xc1) + asPixel(Yc1) 
+    		       + asPixel(Xc2) + asPixel(Yc2))
+
+
+
+FUN requestTags : canvasEditor ** script -> com[set[tag, <]]
+DEF requestTags(Ed, Script) ==
+    request(Ed, Script)						& (\\ Str .
+    succeed( (\\S, R. incl(tag(`(S)), R), {}) / convList(Str) )
+    )
+
+FUN requestTag : canvasEditor ** script -> com[tag]
+DEF requestTag(Ed, Script) ==
+    request(Ed, Script)						& (\\ Str .
+    succeed( tag(`(Str)) )
+    )
+
+
+
+
+-- %$Displaying and Modifying$ ==============================================
+
+DEF Ed display Drawing ==
+    silently(
+    	display(Ed, _) @& comps(Drawing)
+    )
+
+    FUN display : canvasEditor ** basicDrawing -> com[void]
+
+    DEF Ed display item(Class, Pts, Config) ==
+	request(Ed, "create %s%s" <- Class + asPoints(Pts))	& (\\ ItemTag .
+	Ed set (tag(`(ItemTag)), Config)
+	)
+
+
+    DEF Ed display view(View, Pts, Config) ==
+    	provider(Ed)						& (\\ Prv .
+    	widget(wid(Prv))					& (\\ Wid .
+    	define(callback(Wid), freeWidget(Wid))			& (\\ _ .
+    	displayView(win(Prv), Wid, View, false)			& (\\ _ .
+	request(Ed, "create window%s -window %s " 
+		     <- asPoints(Pts) + Wid)			& (\\ ItemTag .
+	Ed set (tag(`(ItemTag)), Config)			& (\\ _ .
+	-- use <Unmap> event to track the deletion of the view
+	-- since the view us unfortunately not automatically
+	-- destroyed on deletion (such as in text widgets)
+	-- don't know if this works in all cases ??
+    	act("bind %s <Unmap> {+ destroy %s}" <- Wid + Wid)	& (\\ _ .
+    	done
+        )))))))
+
+
+    FUN asPoints : seq[point] -> string
+    DEF asPoints(Pts) ==
+	(\\Pt, R. format(" %s %s%s" <- asPixel(xc(Pt))
+				     + asPixel(yc(Pt))
+				     + R),
+		       <>) / Pts
+
+    
+DEF Ed delete Tag == 
+    request(Ed, "delete %s" <- name(Tag))  & done
+
+DEF Ed set (Tag, Config) ==
+    provider(Ed)						& (\\ Prv .
+    forceApply(win(Prv), wid(Prv), canvas(Tag), Config)
+    )
+
+DEF Ed focus Tag == 
+    request(Ed, "focus %s" <- name(Tag))  & done
+
+DEF Ed lower Tag ==  
+    request(Ed, "lower %s" <- name(Tag)) & done
+
+DEF Ed raise Tag ==  
+    request(Ed, "raise %s" <- name(Tag)) & done
+
+/*
+DEF Ed coords (Tag, Pts) == 
+    request(Ed, "coords %s %s" <- name(Tag) + asPoints(Pts)) & done
+*/
+
+DEF Ed move (Tag, Pt) ==
+    request(Ed, "move %s %s %s" <- name(Tag) 
+				 + asPixel(xc(Pt)) + asPixel(yc(Pt)))
+	& done
+
+DEF Ed scale (Tag, @(Xo, Yo), Xs, Ys) ==
+    request(Ed, "scale %%s %s %s %s %s" 
+    				<- asPixel(Xo) + asPixel(Yo)
+    				 + `(Xs) + `(Ys))
+	& done
+
+DEF Ed bbox Tag == 
+    request(Ed, "bbox %s" <- name(Tag))			& (\\ Box .
+    LET List == convList(Box)
+    IN
+    IF ::?(List) THEN
+	succeed(@(convReal(List ! 0) * pixelSize, 
+		      convReal(List ! 1) * pixelSize) &
+		@(convReal(List ! 2) * pixelSize, 
+		      convReal(List ! 3) * pixelSize))
+    ELSE
+	succeed(@(0,0) & @(0,0))
+    FI
+    )
+
+/*
+DEF Ed scrollRegion (Pt1, Pt2) ==
+    request(Ed, "configure -scrollregion {%s %s %s %s}" 
+    		 <- asPixel(xc(Pt1)) + asPixel(yc(Pt1))
+    		  + asPixel(xc(Pt2)) + asPixel(yc(Pt2)))	
+	  & done
+*/
+
+
+-- %$Drawings$ ================================================================
+
+DATA drawing == drawing(comps: seq[basicDrawing])
+DATA basicDrawing == 
+	item(class:  denotation, points: seq[point], config: config)
+	view(view:   view,   points: seq[point], config: config)
+
+DEF {} == drawing(<>)
+
+DEF drawing(B1) ++ drawing(B2) == 
+    drawing(B1 ++ B2)
+
+DEF drawing(B) with C == 
+    drawing( with(C) * B )
+
+    FUN with : config -> basicDrawing -> basicDrawing
+    DEF with(C)(item(Class,  Pts, Config)) == item(Class, Pts, Config ++ C)
+    DEF with(C)(view(View,   Pts, Config)) == view(View,   Pts, Config ++ C)
+
+DEF move(drawing(B), Pt) ==
+    drawing( move(Pt) * B )
+
+    FUN move : point -> basicDrawing -> basicDrawing
+    DEF move(Pt)(item(Class, Pts, Config)) == 
+	item(Class, move(Pt) * Pts, Config)
+    DEF move(Pt)(view(View,   Pts, Config)) == 
+    	view(View,   move(Pt) * Pts, Config)
+
+    FUN move : point -> point -> point
+    DEF move(@(Xm, Ym))(@(Xc, Yc)) == @(Xc + Xm, Yc + Ym)
+
+
+-- %$$Basic Drawings$
+
+FUN item : denotation ** seq[point] -> drawing
+FUN item : denotation ** seq[point] ** config -> drawing
+DEF item(Class, Pts) == drawing(%(item(Class, Pts, {})))
+DEF item(Class, Pts, Config) == drawing(%(item(Class, Pts, Config)))
+
+
+DEF line(Pts) 	    	== item("line", Pts)
+DEF arc(Pt1, Pt2)   	== item("arc", Pt1 :: Pt2 :: <>, config("-style arc"))
+DEF pie(Pt1, Pt2)  == item("pie", Pt1 :: Pt2 :: <>, config("-style pieslice"))
+DEF chord(Pt1, Pt2) 	== item("pie", Pt1 :: Pt2 :: <>, config("-style chord"))
+DEF rectangle(Pt1, Pt2) == item("rectangle", Pt1 :: Pt2 :: <>)
+DEF oval(Pt1, Pt2) 	== item("oval", Pt1 :: Pt2 :: <>)
+DEF polygon(Pts) 	== item("polygon", Pts)
+DEF text(Pt)		== item("text", Pt :: <>)
+DEF bitmap(Pt)		== item("bitmap", Pt :: <>)
+DEF image(Pt)		== item("image", Pt :: <>)
+DEF view(Pt, View)	== drawing(%(view(View, Pt :: <>, {})))
+
+
+-- %$$Tagging Configurations$
+
+DEF tag(Tag)		== (tags(%(Tag))):config
+DEF tags(Tags)		== config("-tags {all %s}" <- asTk(Tags))
+			   
+DEF addTag(Tag)		== (addTags(%(Tag))):config
+DEF addTags(Tags)	== 
+    configCanvas(\\ Win, Wid, Tag .
+	act("%s addtag %s {%s}" <- Wid + name(Tag) + asTk(Tags))
+    )
+
+
+    FUN asTk : set[tag, <] -> string
+    DEF asTk(Tags) ==
+	(\\T, R. format(" %s%s" <- name(T) + R), <>) / Tags
+
+
+-- %$$Line Style Configurations$
+
+DATA arrowWhere		== none first last both
+DEF  arrow(none)	== config("-arrow none")
+DEF  arrow(first)	== config("-arrow first")
+DEF  arrow(last)	== config("-arrow last")
+DEF  arrow(both)	== config("-arrow both")
+
+DEF  arrowShape(R1, R2, R3)	== config("-arrowshape {%s %s %s}"
+					 <- asPixel(R1)
+					  + asPixel(R2)
+					  + asPixel(R3))
+
+DEF  lineWidth(W)	== config("-width %s" <- asPixel(W))
+
+DATA capStyle		== butt projecting round
+DEF  cap(butt)		== config("-capstyle butt")
+DEF  cap(projecting)	== config("-capstyle projecting")
+DEF  cap(round)		== config("-capstyle round")
+
+
+DATA joinStyle		== bevel miter round
+DEF  join(bevel)	== config("-joinstyle bever")
+DEF  join(miter)	== config("-joinstyle mitel")
+DEF  join(round)	== config("-joinstyle round")
+
+DEF  smooth(true)	== config("-smooth 1")
+DEF  smooth(false)	== config("-smooth 0")
+
+DEF  splineSteps(N)	== config("-splinesteps %n" <- N)
+
+
+
+-- %$$Arc Style Configurations$
+
+DEF  start(D)		== config("-start %r" <- D)
+DEF  extent(D)		== config("-extent %r" <- D)
+DEF  slice(D1,D2)	== config(("-start %r -extent %r" <- D1) + D2)
+
+
+-- %$$Fill Style Configurations$
+
+DEF  fill(Color)	== config("-fill %s" <- name(Color))
+DEF  outline(Color)	== config("-outline %s" <- name(Color))
+DEF  outlineStipple(BM)	== config("-outlinestipple %s" <- name(BM))
+
+
+-- %$$Text Style Configurations$
+
+DATA justifyHow		== left right center
+DEF  justify(left)	== config("-justify left")
+DEF  justify(right)	== config("-justify right")
+DEF  justify(center)	== config("-justify center")
+

@@ -1,0 +1,272 @@
+IMPLEMENTATION ContextApplIndex
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/context/ContextApplIndex.impl,v 1.1.1.1 1998-06-16 16:00:34 wg Exp $
+
+IMPORT Seq          COMPLETELY
+       SeqReduce    COMPLETELY
+       SeqMap       COMPLETELY
+       String       COMPLETELY
+       Nat          COMPLETELY
+       Map          COMPLETELY
+       Option       COMPLETELY
+
+
+IMPORT InterOpal        COMPLETELY
+       MyMap            COMPLETELY
+       Config           COMPLETELY
+       ConfigFun        COMPLETELY
+       ConfigTest       COMPLETELY
+       InterOpalFun     COMPLETELY
+       ContextIndex     COMPLETELY
+       MyString COMPLETELY
+       SpecialString COMPLETELY
+
+
+FUN updateApplIndexMap : 
+      object ** interOpal ** map[nat,<,seq[indexEntry]] ** config ->
+        map[nat,<,seq[indexEntry]]
+
+/* %After checking if the generation of an application index is actually desired,
+we extract all @c{equations} for the @c{actObj} and pass them to the
+index-element extraction process. */
+DEF updateApplIndexMap( actObj, completeInterOpal, actIndexMap, config ) ==
+  IF applicationIndexGeneral?(config) THEN 
+    LET
+      (_, equations) == getPosAndEquations(actObj, completeInterOpal)
+    IN
+      updateApplIndexMapIntern(
+        equations,
+        completeInterOpal,
+        actIndexMap, 
+        config 
+      )
+  ELSE
+    actIndexMap
+  FI
+
+/* %Recusively all equations are handled separately and @c{merge}d with the
+current @c{actApplIndexMap}. The correct merging is very important because of
+multiple function applications in one single source-code line. */
+FUN updateApplIndexMapIntern : 
+      seq[eqn] ** interOpal ** map[nat,<,seq[indexEntry]] ** config ->
+        map[nat,<,seq[indexEntry]]
+
+DEF updateApplIndexMapIntern( <>, _, actIndexMap, _ ) == actIndexMap
+DEF updateApplIndexMapIntern( 
+      actEqn::rtEqns, 
+      completeInterOpal, 
+      actIndexMap, 
+      config ) == 
+  updateApplIndexMapIntern(
+    rtEqns,
+    completeInterOpal,
+    merge(
+      actIndexMap,
+      eqn2IndexMap(completeInterOpal, config)(actEqn)
+    ),
+    config
+  )
+
+
+/* %A homomorphism is implemented converting an equation in to a partial map
+of application index entries. Each partial map has to be merge in order to
+get the complete application index map for the particular considered object. 
+The homomorphism is implementated in the same way as in the module 
+@c{ContextApplTable}! */
+FUN eqn2IndexMap : 
+      interOpal ** config -> eqn -> map[nat,<,seq[indexEntry]]
+
+DEF eqn2IndexMap( completeInterOpal, config )( eqn ) ==
+  merge(  
+    pattern2IndexMapD(completeInterOpal, config)(lhs(eqn)),
+    expr2IndexMap(completeInterOpal, config)(rhs(eqn))
+  )
+
+/* %There are two functions that work on patterns. The @code{D} variant
+    inserts a single name or the leftmost name in an applications sequence
+    into the defintion index. Otherwise it behaves like the standard function
+    and inserts its names in the application index. 
+*/
+
+FUN pattern2IndexMapD :
+      interOpal ** config -> pattern -> map[nat,<,seq[indexEntry]]
+
+DEF pattern2IndexMapD( completeInterOpal, config )
+                        ( name(pos(_,row,_), fun) ) ==
+  def(row, makeDefIndexEntry(fun, completeInterOpal, config)%, {})
+
+DEF pattern2IndexMapD( completeInterOpal, config ) ( apply(_, fun, arg) ) ==
+  merge(  
+    pattern2IndexMapD(completeInterOpal, config)(fun),
+    pattern2IndexMap(completeInterOpal, config)(arg)
+  )
+
+DEF pattern2IndexMapD( completeInterOpal, config )
+                        ( else ) == 
+  pattern2IndexMap(completeInterOpal, config)(else)
+
+
+FUN pattern2IndexMap : 
+      interOpal ** config -> pattern -> map[nat,<,seq[indexEntry]]
+
+/* %A @c{name} has been found and a one-element partial application index map
+is constructed. This can only be done if a complete position is specified
+for @c{name}: */
+DEF pattern2IndexMap( completeInterOpal, config ) 
+                        ( name(pos(_,row,_), fun) ) ==
+  def(row, makeApplIndexEntry(fun, completeInterOpal, config)%, {})
+
+DEF pattern2IndexMap( completeInterOpal, config ) ( as(_, _, asPattern) ) ==
+  pattern2IndexMap(completeInterOpal, config)(asPattern)
+
+DEF pattern2IndexMap( completeInterOpal, config ) ( apply(_, fun, arg) ) ==
+  merge(  
+    pattern2IndexMap(completeInterOpal, config)(fun),
+    pattern2IndexMap(completeInterOpal, config)(arg)
+  )
+    
+DEF pattern2IndexMap( completeInterOpal, config ) ( tuple(_, elems) ) ==
+  (merge / {})(pattern2IndexMap(completeInterOpal, config) * elems)
+
+DEF pattern2IndexMap( _, _ ) ( _ ) == {}
+
+
+FUN expr2IndexMap : 
+      interOpal ** config -> expr -> map[nat, <, seq[indexEntry]]
+
+/* %A @c{name} has been found and a one-element partial application index map
+is constructed. This can only be done if a complete position is specified
+for @c{name}: */
+DEF expr2IndexMap( completeInterOpal, config ) 
+                     ( name(pos(_,row,_), fun) ) ==
+  def(row, makeApplIndexEntry(fun, completeInterOpal, config)%, {})
+
+DEF expr2IndexMap( completeInterOpal, config ) ( tuple(_, exprs) ) ==
+  (merge / {})(expr2IndexMap(completeInterOpal, config) * exprs)
+
+DEF expr2IndexMap( completeInterOpal, config ) ( apply(_, fun, arg) ) ==
+  merge(  
+    expr2IndexMap(completeInterOpal, config)(fun),
+    expr2IndexMap(completeInterOpal, config)(arg)
+  )
+
+DEF expr2IndexMap( completeInterOpal, config ) ( cases(_, guards, else) ) ==
+  merge(  
+    (merge / {})(guard2IndexMap(completeInterOpal, config) * guards),
+    IF avail?(else) THEN    
+      expr2IndexMap(completeInterOpal, config)(cont(else))
+    ELSE
+      {}
+    FI
+  )
+
+DEF expr2IndexMap( completeInterOpal, config ) ( lambda(_, _, lexpr) ) ==
+  expr2IndexMap(completeInterOpal, config)(lexpr)
+
+DEF expr2IndexMap( completeInterOpal, config ) ( block(_, eqns, body) ) ==
+  merge(
+    (merge / {})(eqn2IndexMap(completeInterOpal, config) * eqns ),
+    expr2IndexMap(completeInterOpal, config)(body)
+  )
+
+-- %In any other case nothing can be entered into the application index map, so
+DEF expr2IndexMap( _, _ ) ( _ ) == {}
+
+
+FUN guard2IndexMap :   
+      interOpal ** config -> guard -> map[nat, <, seq[indexEntry]]
+
+DEF guard2IndexMap( completeInterOpal, config )( guard(_, ifPart, thenPart)) ==
+  merge(
+    expr2IndexMap(completeInterOpal, config)(ifPart),
+    expr2IndexMap(completeInterOpal, config)(thenPart)
+  )
+  
+
+
+FUN makeApplIndexEntry : name ** interOpal ** config -> indexEntry
+DEF makeApplIndexEntry == makeIndexEntry("@apindex")
+
+FUN makeDefIndexEntry : name ** interOpal ** config -> indexEntry
+DEF makeDefIndexEntry == makeIndexEntry("@dfindex")
+
+FUN makeIndexEntry : denotation -> name ** interOpal ** config -> indexEntry
+/* %The following algorithm is applied:
+@enumerate
+@item
+The structure where the @c{name} is defined is extracted from @c{completeInterOpal}
+@item
+The @c{actObject} representation is extracted from the @c{struct} representation
+where @c{name} has been defined.
+@item
+If no referencing of library applications is desired the entry becomes @c{invalid}
+@item
+The @c{indexEntry} is constructed w.r.t. the specified level of verbosity
+@end enumerate
+Before any access on maps is done, definedness is checked
+to prevent runtime-errors. If the
+disired information cannot be extracted from a particular map the application
+index entry is @c{invalid}. This can only happen because of a faulty 
+InterOpal-implementation @c{:-)} */
+DEF makeIndexEntry( indextype ) (name, 
+                                 completeInterOpal AS interOpal(_,structs),
+                                 config ) ==
+
+  IF  def?(origin(name), structs) THEN
+    LET
+      actStruct == structs ! origin(name)
+    IN
+      IF def?(ident(name), objs(actStruct)) THEN
+        LET
+          actObject == objs(actStruct) ! ident(name) 
+        IN
+          IF applicationIndexNoLibsGeneral?(config) and 
+                 isLibrary?(config)(symbol(actStruct)!) THEN
+            invalid
+          ELSE
+            indexEntry(indextype, 
+                       conc(
+                            escTexinfo(
+                                       conc(
+                                            symbol(actObject)!,
+                                            optionalSpace(symbol(actObject)!),
+                                            " : "!
+                                           )
+                                      ),
+                            encloseFct(
+                                       escTexinfo(
+                                                  kind2String(
+                                                              kind(actObject),
+                                                              verboseLevel,
+                                                              completeInterOpal
+                                                             )
+                                                 )
+                                      )
+                           )
+                      )
+            WHERE
+              verboseLevel == 
+                  IF applicationIndex?(config) or
+                     applicationIndexNoLibs?(config) THEN 
+                    v1
+                  IF applicationIndexMediumInst?(config) or
+                     applicationIndexNoLibsMediumInst?(config) THEN 
+                    v2
+                  IF applicationIndexNoInst?(config) or
+                     applicationIndexNoLibsNoInst?(config) THEN 
+                    v3
+                  FI
+          FI
+     ELSE
+      invalid
+    FI
+  ELSE
+    invalid
+  FI
+
+
+
+
+
+
+
+

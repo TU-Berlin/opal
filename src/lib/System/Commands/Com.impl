@@ -1,0 +1,128 @@
+IMPLEMENTATION Com
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:16 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq	COMPLETELY
+	SeqMap	COMPLETELY
+	Void	COMPLETELY
+	ABORT	COMPLETELY
+
+/* %
+The data type of answers is implemented as specified:
+*/
+
+DATA ans ==
+	okay(data: data)	
+	fail(error: denotation)
+
+
+/* %
+The data type of commands is implemented as specified:
+*/  
+
+
+DATA com ==
+    sequence	(proc	: void -> ans,  
+    		 conts  : seq[contCom])
+    choice	(alts	: seq[com])	 
+
+DATA contCom ==
+    contCom	(cont:  ans  -> com)
+
+
+/* % @noindent
+For the choice command, a normal form is assumed: the alternatives 
+of a choice are no choices.
+*/
+
+
+/* %
+The function @code{sequenceCompose} implements the sequential composition
+of a command with a sequence of continuations. For the case of choices, 
+the continuations are distributed to each of the alternatives. This
+function is used to implement the user-oriented functions from
+structure @code{ComCompose}.
+*/
+
+
+DEF sequence(Com, Conts) sequenceCompose Follow ==
+    sequence(Com, Conts ++ Follow)
+
+DEF choice(Alts) sequenceCompose Follow ==
+    choice( (\\Alt. sequence(proc(Alt), conts(Alt) ++ Follow)) * Alts )
+
+/$ unfold [sequenceCompose] $/
+
+/* %
+The function @code{choiceCompose} implements the choice composition
+of two commands. Choices as arguments are normalized accordingly. This
+function is used to implement the user-oriented functions from
+structure @code{ComChoice}.
+*/
+
+DEF choice(Alts1) choiceCompose  choice(Alts2) ==
+    choice(Alts1 ++ Alts2)
+
+DEF choice(Alts) choiceCompose Com ==
+    choice(Com :: Alts)
+
+DEF Com choiceCompose choice(Alts) ==
+    choice(Com :: Alts)
+
+DEF Com1 choiceCompose Com2 ==
+    choice(%(Com1, Com2))
+
+/$ unfold [choiceCompose] $/
+
+
+
+/* %
+The following shortcuts are provided:
+*/
+
+DEF call(Proc) 		== sequence(Proc, <>)
+DEF Com followedBy Cont == Com sequenceCompose %(contCom(Cont))
+
+DEF yield(Ans) 		== call(yieldProc(Ans))
+DEF exit(Code) 		== call(exitProc(Code))
+
+DEF succeed(Data) 	== call(yieldProc(okay(Data)))
+DEF break(Message) 	== call(yieldProc(fail(Message)))
+
+
+FUN yieldProc	: ans -> void -> ans
+FUN exitProc	: nat -> void -> ans
+
+/$ handcoded [yieldProc, exitProc] $/
+
+/$ unfold [call,yield,followedBy] $/
+
+
+
+/* %
+The following function defines the stand-alone execution of a command.
+*/
+
+DEF execCom(sequence(Proc, <>)) ==
+    monitor(Proc(nil))
+
+DEF execCom(sequence(Proc, Cont :: Conts)) ==
+    execCom(cont(Cont)(monitor(Proc(nil))) sequenceCompose Conts)
+
+DEF execCom(_) ==
+    ABORT(
+ "<execution>'Com: choice command only allowed as behavior of agent")
+
+
+/$ handcoded [EXEC] $/
+
+/* % 
+The following handcoded function is used as a monitor an the
+answer of command execution. See the handcoding interfaces. */
+
+FUN monitor : ans -> ans
+
+/$ handcoded [monitor] $/

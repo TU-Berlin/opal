@@ -1,0 +1,181 @@
+IMPLEMENTATION ConstructIO
+
+IMPORT  InterOpal COMPLETELY
+
+	Map ONLY map {} def ! {}? extend find?
+	Nat ONLY nat 0 succ
+	Seq ONLY seq <> % find? ++
+	SeqMap ONLY *
+	SeqMapEnv ONLY *
+	Option ONLY option nil? cont
+	Denotation ONLY ++ =
+	Pair COMPLETELY 
+	ABORT COMPLETELY
+	DEBUG COMPLETELY
+
+	kdIOstruct ONLY updInsts updObjs getstruct addStruct addOnly addObj
+			parameterized?
+	kdIOname ONLY `
+
+
+DATA cEnv == @(nextIde: nat, nextOrig: nat)
+
+FUN <> : cEnv 
+DEF <> == @(0, 0)
+
+FUN nextIde: cEnv -> cEnv ** ident
+DEF nextIde(@(i,o)) == (@(succ(i), o), ident(i))
+
+FUN nextOrig : cEnv -> cEnv ** origin
+DEF nextOrig(@(i,o)) == (@(i, succ(o)), origin(o))
+
+DEF new(p,d) == 
+	( <>, 
+	interOpal(p, def(main,struct(%(unknown), main, d, {}, {}, {}, {}, <>), {}))
+	)
+
+DEF (c, i) copyParameter muster ==
+	LET pars == insts(structs(muster)!main) IN
+	IF pars {}? THEN (c, updInsts(i, main, {}))
+	ELSE
+	LET obs == objs(structs(muster)!main)
+	    parids == ident * (pars!formal)
+	    parobs == (obs ! _) * parids
+            (c1, newids) == (\\cE, _ . nextIde(cE)) * (c, parids)
+	    rename == extend({}'Map[ident,<,ident], parids, newids)
+	    newinst:map[inst,<,seq[name]] == def(formal, name(_, main, none) * newids, {})
+	    newobjs == extend(objs(structs(i)!main), newids, ren(rename, _) * parobs)
+        IN (c1, updObjs(updInsts(i, main, newinst), main, newobjs))
+	FI
+
+/*
+DEF (c, i) addParameter (n,k) ==
+	LET (c1, o, id) == 
+		c newObject(n, k, parameter(unknown, succ(##(i)(main))))
+*/
+-- DEF (c, i) import (strname,impname) ==
+
+/* % fuegt die noetigen Importe zu erstem InterOpal um Sorten set aus 
+	zweitem InterOpal zu importieren */
+FUN debugImportSort: bool DEF debugImportSort == true
+FUN importSort: cEnv ** interOpal ** interOpal ** name  -> 
+						cEnv ** interOpal
+DEF (c, i) importSort (old, srt0) == 
+	LET srt == PRINT(debugImportSort, "importSort: " ++ `(old)(srt0), srt0) IN
+	LET ostruct == structs(old)!origin(srt)
+	    strname == symbol(ostruct)
+	    istruct == getstruct(i, strname)
+	IN
+	IF istruct nil? THEN 
+	   LET (c1, newstr) == c newstruct (strname)
+		i1 == i addStruct newstr
+	   IN 
+	   IF ostruct parameterized? THEN
+		LET i99 == PRINT(true, "importSort: old parametrisiert!", i) IN
+	      (c, i99)
+	   ELSE
+	      LET (c2, s, id) == newObject(c1, `(old)(srt), sort, imported)
+		  i2 == addOnly(i1, origin(newstr), none, 
+				name(id, origin(newstr), none))
+		  i3 == addObj(i2, origin(newstr), id, s)
+	      IN (c2, i3)
+           FI
+        ELSE -- schon importiert
+	  LET istr == cont(istruct)
+	  IN
+	  IF ostruct parameterized? THEN
+	      LET i99 == PRINT(true, "importSort: old parametrisiert!, schon dabei", i)
+	      IN (c, i99)
+	  ELSE
+	    LET onlyobjs == (\\id.objs(istr)!id) * ident * (onlys(istr)!none)
+	    IN  IF find?(\\ob.symbol(ob) = `(old)(srt) and 
+				(kind(ob) sort?) , onlyobjs) nil?
+		THEN
+	          LET (c1, s, id) == newObject(c, `(old)(srt), sort, imported)
+		  i1 == addOnly(i, origin(istr), none, 
+				name(id, origin(istr), none))
+		  i2 == addObj(i1, origin(istr), id, s)
+	          IN (c1, i2)
+                ELSE
+		  (c,i)
+                FI
+          FI
+        FI
+		  
+-- FUN importFct: cEnv ** interOpal ** denotation ** denotation ** fct -> 
+--	      	   cEnv ** interOpal
+
+DEF (c,i) importFct (fn, strn, f) ==
+	LET (c1,ob,id) == newObject(c, fn, fct(f), imported)
+	    lookup == find?(\\ _,s.symbol(s) = strn, structs(i))
+	IN IF lookup nil? THEN unpair(ABORT("importFct: cannot import " ++
+			fn ++ "'" ++ strn))
+	   ELSE
+	   LET (iorig,_) == unpair(cont(lookup))
+	       fname == name(id,iorig,none)
+	   IN (c1, addOnly(addObj(i,iorig,id,ob), iorig, none, fname))
+	   FI
+
+/* % (c, i) addFUN_DEF (fname, fct)
+	fuegt in main das Aequivalent zu  FUN fname : fct  
+	ein */
+-- FUN addFUN: cEnv ** interOpal ** denotation ** fct **
+-- 	-> cEnv ** interOpal ** ident
+
+DEF (c,i) addFUN(fname, fc) ==
+	LET (c1, ob, id) == c newObject (fname, fct(fc), missing)
+	    i1 == addObj(i, main, id, ob)
+	IN (c1, i1, id)
+
+DEF (c,i) addDEF (eqs, id) ==
+	LET ob == objs(structs(i)!main)!id
+	    newob == 
+	 	IF def(ob) missing? THEN
+			object(pos(ob), ident(ob), symbol(ob), kind(ob), 
+				def(eqs), props(ob), pragmas(ob))
+           	IF def(ob) def? THEN
+			object(pos(ob), ident(ob), symbol(ob), kind(ob), 
+				def(eqns(def(ob)) ++ eqs), props(ob), pragmas(ob))
+	   	ELSE 
+			ABORT("addDEF: id (" ++ symbol(ob) ++ 
+					") neither missing nor def")
+           	FI
+        IN (c, updObjs(i, main, def(id, newob, objs(structs(i)!main))))
+        
+
+
+-- =====================================================================
+FUN newObject: cEnv ** denotation ** kind ** impl -> 
+		cEnv ** object ** ident
+DEF c newObject(n,k,i) ==
+	LET (c1, id) == nextIde(c)
+	IN (c1, object(<>, id, n, k, i, <>, <>), id)
+
+FUN newstruct: cEnv ** denotation -> cEnv ** struct
+DEF c newstruct den == LET (c1, orig) == nextOrig(c)
+		       IN (c1, struct(%(unknown), orig, den, {}, {}, {}, {}, <>))
+
+
+FUN ren : map[ident,<,ident] ** object -> object
+DEF ren(m, object(p, id, sym, k, parameter(_, no), props, prags)) ==
+	object(p, m!id, sym, ren(m, k), parameter(unknown, no), 
+		(\\i1.m!i1) * props, (\\ pr. ren(m, pr)) * prags)
+
+FUN ren: map[ident,<,ident] ** kind -> kind
+DEF ren(_, sort) == sort
+DEF ren(m, fct(f)) == fct(ren(m, f))
+
+FUN ren: map[ident,<,ident] ** fct -> fct
+DEF ren(m, sort(n)) == sort(name(m!ident(n), origin(n), inst(n)))
+DEF ren(m, cart(elems)) == cart(ren(m,_) * elems)
+DEF ren(m,funct(dom, codom)) == funct(ren(m,dom), ren(m,codom))
+
+FUN ren: map[ident, <, ident] ** pragma -> pragma
+DEF ren(m, pragma(items)) == pragma(ren(m) * items)
+
+FUN ren: map[ident, <, ident] -> pragmaItem -> pragmaItem
+DEF ren(m)(objects(names)) == objects(ren(m) * names)
+DEF ren(m)(T AS token(_,_)) == T
+
+FUN ren: map[ident, <, ident] -> name -> name
+DEF ren(m)(name(i, o, inst)) == name(m!i, o, inst)

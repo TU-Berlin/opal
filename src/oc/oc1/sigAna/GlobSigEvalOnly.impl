@@ -1,0 +1,147 @@
+-- LAST EDIT: Wed Aug 30 00:18:57 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     evaluation of names in only lists
+-- ============================================================================
+
+IMPLEMENTATION GlobSigEvalOnly
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	AnalyzedGlobSig	ONLY	` level standard
+	AnalyzedGlobSigH
+			ONLY	checkNameSet
+	Com		COMPLETELY
+	ComCompose	ONLY	;
+	Compose		ONLY	o
+	DEBUG		ONLY	FIELD? PRINT string
+	Denotation	ONLY	++
+	ErrCom		ONLY	emptyImport hintGottfriedsRule unclosedOnly
+	GlobSig		ONLY	globSig
+	GlobSigEvalInst	ONLY	eqRealName
+	MySeqFun1	ONLY	||
+	MySeqFun2	ONLY	/
+	Name		ONLY	` name extName?
+	Name4SigAna	ONLY	closed getFlatPN isClosed? isUnclosed?  getIde
+				realInst unclosed
+	NameTerm	ONLY	hidden? nameTerm toNameTerm `
+	Nat		ONLY	0 2 = nat
+	Objects		ONLY	inst struct
+	Options		ONLY	options warnLevel pchecker?
+	Pair		COMPLETELY
+	PartNameEntry	COMPLETELY
+	Pos		ONLY	pos
+	Seq		COMPLETELY
+	SeqConv		ONLY	`
+	SeqMap		ONLY	*
+    Rep ONLY rep codedP??
+
+-- ---------------------------------------------------------------------------
+
+FUN evalOnly : options -> globSig ** struct'Objects ** inst ** onlyPNE 
+			-> com[pair[globSig,bool:SORT]]
+  -- Auswerten der Only-Applikationen
+  -- Es kann nichts zusaetzlich erzeugt werden.
+DEF evalOnly(options)(gS, _, _, oPN) ==
+	LET cands == name:flatPnEle->name * getFlatPN(pN(oPN)) IN
+	IF cands <>? THEN 
+	  emptyImport(options, errInfo(oPN)) ; yield(okay(gS & false))
+	ELSE
+	  IF (warnLevel(options) = 2) THEN
+	    IF (rt(uniqueCands) ::?) THEN 
+          IF pchecker?(options) ANDIF codedP?(gS, ft(uniqueCands)) THEN
+            yield(okay(gS & true))
+          ELSE
+            hintGottfriedsRule(options,Pos,nameS); yield(okay(gS & true))
+          FI
+	      WHERE 
+	      Pos == pos(errInfo(oPN))
+	      nameS == `'SeqConv(tabT,tabT,"")(`(gS,standard))(finCands)
+	      finCands == (myCheck(gS) o realInst(gS)) * (uniqueCands)
+	      tabT == "\n      "
+	    ELSE yield(okay(gS & true)) FI
+	    WHERE uniqueCands == (eqRealName(gS)||cands)
+	  ELSE yield(okay(gS & true)) FI
+	FI
+
+        FUN myCheck : globSig -> name -> name
+        DEF myCheck(gS)(name) == finName
+          WHERE (_,finName) == checkNameSet(gS)(0,name)
+
+        FUN codedP? : globSig ** name -> bool
+        DEF codedP?(gS, n) ==
+          IF extName?(n) THEN
+            codedP??(getIde(gS, n))
+          ELSE
+            false
+          FI
+        
+
+-- ---------------------------------------------------------------------------
+
+--FUN closeOpImpDeclS : options
+--		      -> globSig ** struct'Objects ** inst ** onlyPNE 
+--		      -> com[pair[globSig,bool:SORT]]
+DEF closeOpImpDeclS(options)(gS, struct, inst, oPN) ==
+	(closeOpImpDeclh(options, errI, struct, inst) / (gS & true))
+		(getFlatPN(pN(oPN)))
+	WHERE errI == errInfo(oPN)
+
+-- ab hier die neue Version des Abgeschlossenheitstests
+-- 19.8.93 mija
+
+FUN closeOpImpDeclh : options ** errInfo ** struct'Objects ** inst
+                      -> pair[globSig,bool:SORT] ** flatPnEle
+                      -> com[pair[globSig,bool:SORT]]
+-- PRE: - der name in flatPnEle ist ein extName
+--      - Instanzenevaluierung abgeschlossen 
+--              -> doubleInsts erkannt
+--              -> nur die Varianten identInst, identUninst, genericTransitives
+--      - die Instanzierung der Namen wurde schon getestet. Es geht nur noch um
+--        das Abtesten der Only-Counter der Instanzen. Dieser Test ist auf
+--        oberster Ebene redundant, da durch das Nudeln schon erledigt.
+DEF closeOpImpDeclh(options,errInfo,struct,inst)(gSOk, flatPN) ==
+        LET onlyName == name(flatPN) -- zu testende Onlyapplikation
+        IN checkClosed(options,errInfo,onlyName,struct,inst)(gSOk, onlyName)
+
+-- Ausgabe des betrachteten Namens der Only-Liste vor der Analyse
+FUN closeOpImpDecl? : bool
+DEF closeOpImpDecl? == FIELD?[bool:SORT]("-zcloseOpImpDecl")
+
+        -- Ausgabe der globalen Signatur vor der Analyse des Namens (Only)
+        FUN checkClosedHidden? : bool
+        DEF checkClosedHidden? == 
+            FIELD?[bool:SORT]("-zcheckClosedHidden")
+
+        FUN `` :  name ** name -> denotation
+        DEF ``(o,n) == "Only-name:" ++ `'Name(o) ++ " --> " ++ `(n)
+
+FUN checkClosed : options ** errInfo ** name ** struct'Objects ** inst
+                      -> pair[globSig,bool:SORT] ** name
+                      -> com[pair[globSig,bool:SORT]]
+-- name00   -> auf Abgeschlossenheit zu testender "Teil-Name"
+-- onlyName -> urspruenglicher Name in der Onlyliste
+-- PRE siehe closeOpImpDeclh
+
+DEF checkClosed(options,errInfo,onlyName,struct,inst)(gSOk, name00) ==
+    LET (gS, ok) == (1st(gSOk),2nd(gSOk))
+        name0 == realInst(gS, name00)           -- doubleInst nachgehen
+        name  == PRINT(closeOpImpDecl?, \\ . ``(onlyName,name0),name0) 
+    IN
+    IF isClosed?(gS,name) THEN yield(okay(gSOk))  -- schon getestet
+    IF isUnclosed?(gS,name) THEN yield(okay(gSOk))  -- schon getestet
+    ELSE     
+      -- hier die Brutalomethode, alles erst zum Term machen, das kann dauern..
+      LET (newGS, nameTerm) == toNameTerm(gS,struct,inst)(name) IN
+      IF nameTerm hidden? THEN
+        LET finGS == PRINT(checkClosedHidden?, `(newGS), newGS) 
+             (hiddenS, _, _, _, errName) == `(gS,nameTerm)
+        IN
+        unclosedOnly(options, pos(errInfo), errName, hiddenS); 
+        yield(okay(unclosed(finGS,name) & false))
+      ELSE yield(okay(closed(gS,name) & ok)) FI
+    FI

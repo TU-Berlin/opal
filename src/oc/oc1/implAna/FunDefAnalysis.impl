@@ -1,0 +1,199 @@
+-- LAST EDIT: Mon Jun 28 02:07:39 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, May 14 1993: adapted to lazy candidate sets
+--		af, Jun 15 1993: set known types of locals
+--        	af, Jun 18 1993: added typing for avoiding bug oc1.34
+--		af, Jun 21 1993: removed unnecessary typing
+--		af, Jun 27 1993: added handling of mix expressions
+-- ============================================================================
+
+IMPLEMENTATION FunDefAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Pair		COMPLETELY
+	Triple		COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqCompare	ONLY eq?
+
+	Pos		ONLY pos `
+	Error		ONLY err ok + ok? errKind error
+			     string
+
+	Rep		ONLY rep `
+
+	PartName	ONLY partName:SORT
+	Fct[name]	ONLY fct
+	Impl[partName]	COMPLETELY
+	Impl[name]	COMPLETELY
+
+	AnalyzedGlobSig	ONLY globSig name global? internal? local
+				eqBase var origInst
+				` :globSig**level->name->denotation
+				level standard
+			     impl:SORT defImpl impl:globSig**name->impl
+				none parameter canonical def
+			     locSig:SORT +
+
+	RepSet		ONLY repSet {} - * toSeq
+	Knowledge	ONLY knowl empty defAsLocal defAsLocalOrConstr locals
+	Substitution	ONLY subst unify:globSig
+			                 ->fct[name]**fct[name]**subst**nat
+			                 ->seq[subst]**nat
+	Reason		ONLY reason wronglyTypedImplementation
+	Candidates	ONLY cands eval none?:cands->bool errors
+			     combine split bestOf
+			     mode eager 
+	DataDefAnalysis	ONLY parameterImplementation duplicateImplementation
+	TypeIndepExprAnalysis	COMPLETELY
+	TypeDepExprAnalysis	COMPLETELY
+	LhsAnalysis		COMPLETELY
+
+DEF target(eq(left,right,pos)) == target(left)
+
+DEF analyzeFunDef(eq,sig) ==
+  LET (rearrangedEq,knowl,nextLocal,usedReps,scopeErr) == typeIndepAna(eq,sig)
+  IN IF ~(scopeErr ok?) THEN (sig,scopeErr)
+     ELSE LET (cands,freeLocal) == typeDepAna(rearrangedEq,sig,knowl,nextLocal)
+          IN IF cands none? THEN (sig,scopeErr+errors(cands))
+             ELSE LET idents == identFunctions(sig)(cands)
+                      (target,newEq,extSig,partSig,localOffset,ambigErr) ==
+				substitute(rearrangedEq,idents,sig,usedReps)
+                  IN IF ~(ambigErr ok?) THEN (extSig,scopeErr+ambigErr)
+                     ELSE LET (newSig,implErr) ==
+				include(extSig,target,newEq,partSig,
+                                        freeLocal+localOffset)
+                          IN (newSig,(scopeErr+ambigErr)+implErr)
+                     FI
+             FI
+     FI
+
+FUN typeIndepAna: eq[partName]**globSig ->
+					eq[partName]**knowl**nat**repSet**err
+-- liefert Gleichung mit sortierten Lets,
+-- Wissen ueber die Verwendung von Bezeichnern
+--   sowie kleinste, noch nicht fuer lokale Namen verwendete Nummer,
+-- benutzte Bezeichner,
+-- Scope-Fehler & Sortierungs-Fehler & Hinweise auf (rechts) unbenutzte Locals
+
+DEF typeIndepAna(eq(left,right,pos),sig) ==
+  LET (rearrangedRight,ignoredLets,innerVars,usedReps,scopeErrHintsRight) ==
+							rearrange(right,{})
+      (_,patternVars,pattVarOrConstrs,scopeErrLeft) == idUses(left,sig)
+      newPattVarOrConstrs == pattVarOrConstrs-innerVars
+      scopeErrEq == ((\\rpp,e.
+                        LET (rep,pattern,inner) == (1st(rpp),2nd(rpp),3rd(rpp))
+                        IN err(error,duplOverlLocal,rep`,pattern`,inner)+e)
+                     \ ok)(patternVars*innerVars)
+  IN (eq(left,rearrangedRight,pos),
+      build(patternVars,newPattVarOrConstrs),
+      usedReps,
+      (scopeErrHintsRight+scopeErrLeft)+scopeErrEq)
+
+FUN typeDepAna: eq[partName]**globSig**knowl**nat -> cands**nat
+-- liefert Menge von Kandidatenfunktionen sowie unbenutzte lokale Variable
+
+DEF typeDepAna(eq(left,right,pos),sig,knowl,nextLocal) ==
+  LET (leftCands,nextVar) == analyzeLhs(left,sig,knowl,0)
+      (leftCands2,typedKnowl,nextVar2) ==
+		setKnownFcts(sig,locals(knowl),leftCands,knowl,nextVar)
+      (rightCands,freeLocal,interVar) ==
+				analyze(right,sig,typedKnowl,nextLocal,nextVar2)
+      combFct == \\leftFct,rightFct,subst,var.
+                   LET (newSubsts,free) ==
+					unify(sig)(leftFct,rightFct,subst,var)
+                   IN IF newSubsts <>? THEN (leftFct,subst%,var,
+                                             wronglyTypedImplementation
+						     (leftFct,rightFct,subst)%)
+                      IF newSubsts ::? THEN (leftFct,newSubsts,free,<>)
+                      FI
+      (cands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
+							(leftCands2,rightCands)
+      (finalCands,_) == eval(sig,freeVar)(cands)
+  IN (finalCands,freeLocal)
+
+FUN identFunctions: globSig -> cands -> cands
+-- reduziert Menge von Kandidatenfunktionen zur Menge der Identifizierungen
+
+DEF identFunctions(sig) == bestOf(betterEq(sig))
+
+FUN betterEq: globSig -> name**name -> bool
+
+DEF betterEq(sig)(local(n1),local(n2)) == n1=n2
+DEF betterEq(sig)(local(n1),global2)   == false
+DEF betterEq(sig)(global1  ,local(n2)) == true
+DEF betterEq(sig)(global1  ,global2)   == eq(sig)(global1,global2)
+
+FUN eq: globSig -> name**name -> bool
+
+DEF eq(sig)(var(id1),name2) == false
+DEF eq(sig)(name1,var(id2)) == false
+DEF eq(sig)(name1,name2) ==
+  IF eqBase(name1,name2) THEN
+    IF name1 internal? THEN true
+    ELSE eq?(eq(sig))(origInst(sig,name1),origInst(sig,name2))
+    FI
+  ELSE false
+  FI
+
+FUN substitute: eq[partName]**cands**globSig**repSet ->
+				name**eq[name]**globSig**locSig**nat**err
+-- wendet die Identifizierungsfunktionen an, liefert
+-- - den Namen der definierten Funktion
+-- - die eingesetzte Gleichung (mit normalisierten Lets)
+-- - die (um verwendete Namen erweiterte) globale Signatur
+-- - die (partielle) lokale Signatur
+-- - den Offset fuer lokale Namen
+-- - die Menge der Mehrdeutigkeitsfehler & Hinweise auf (links) unbenutzte Vars
+
+DEF substitute(eq(left,right,pos),cands,sig,usedReps) ==
+  LET (leftCands,rightCands) == split(cands)
+      (target,newLeft,extSig,leftLocSig,localOffset,leftAmbigErr) ==
+				substituteLhs(left,leftCands,sig,usedReps)
+      (newRight,newSig,rightLocSig,rightAmbigErr) ==
+			substitute(right,rightCands,extSig,localOffset)
+  IN (target,eq(newLeft,newRight,pos),newSig,
+      leftLocSig+rightLocSig,localOffset,leftAmbigErr+rightAmbigErr)
+
+FUN include: globSig**name**eq[name]**locSig**nat -> globSig**err
+-- erweitert in der globalen Signatur die Implementierung des Namens
+--   um die angegebene Gleichung und partielle lokale Signatur und
+--   setzt die Nummer des naechsten freien lokalen Namens
+-- liefert die erweiterte globale Signatur
+--   sowie ggf. einen Implementierungsfehler
+
+DEF include(sig,target,eq,locSig,free) ==
+  LET (extImpl,err) == extendImpl(sig,target,impl(sig,target),eq,locSig,free)
+  IN (defImpl(sig,target,extImpl),err)
+
+FUN extendImpl: globSig**name**impl**eq[name]**locSig**nat -> impl**err
+
+DEF extendImpl(sig,name,none,eq,lsig,no) == (def(eq%,lsig,no),ok)
+
+DEF extendImpl(sig,name,parameter,eq(l,r,pos),lsig,no) ==
+  (parameter,err(error,parameterImplementation,`(sig,standard)(name),pos))
+
+DEF extendImpl(sig,name,canonical(pos1),eq(l,r,pos2),lsig,no) ==
+  (canonical(pos1),
+   err(error,duplicateImplementation,`(sig,standard)(name),pos1`,pos2))
+
+DEF extendImpl(sig,name,def(eqs,lsig,no),eqN,lsigN,noN) ==
+  (def(eqs+%eqN,lsig+lsigN,noN),ok)
+
+FUN build: repSet**repSet -> knowl**nat
+
+DEF build(locals,localOrConstrs) ==
+  (2nd(P),1st(P))
+  WHERE P == def(defAsLocal,toSeq(locals))
+                (def(defAsLocalOrConstr,toSeq(localOrConstrs))
+                    (0 & empty))
+        def == \\d,reps. \\pair.
+                 ((\\rep,p.succ(1st(p)) & d(rep,1st(p),2nd(p))) \ pair)(reps)

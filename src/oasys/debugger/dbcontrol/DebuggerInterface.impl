@@ -1,0 +1,442 @@
+IMPLEMENTATION DebuggerInterface
+
+
+IMPORT  -- lib
+        Argspec         COMPLETELY
+        ArgspecBasic    COMPLETELY
+        ArgspecCompose  COMPLETELY
+        ArgspecOp       COMPLETELY
+        ArrayConv       COMPLETELY
+        Array           COMPLETELY
+        Char            COMPLETELY
+        Cmdtable        COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        ComPairCompose  COMPLETELY
+        ComSeqMap       COMPLETELY
+        ComSeqReduce    COMPLETELY
+        ComCheck        COMPLETELY
+        Compose         COMPLETELY
+        Denotation      COMPLETELY
+        File            COMPLETELY
+        Fmt             COMPLETELY
+        FmtArray        COMPLETELY
+        FmtBasicTypes   COMPLETELY
+        FmtSeq          COMPLETELY
+        Nat             COMPLETELY
+        Option          COMPLETELY
+        OptionMap       COMPLETELY
+        Pair            COMPLETELY
+        Seq             COMPLETELY
+        SeqZip          COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqFold         COMPLETELY
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        Set             COMPLETELY
+        SetMap          COMPLETELY
+        SetOfSet        COMPLETELY
+        SetConv         COMPLETELY
+        SetTopSort      COMPLETELY
+        SetFilter       COMPLETELY
+        String          COMPLETELY
+        Void            COMPLETELY
+IMPORT  -- oasyslib
+        DenoExtensions  COMPLETELY
+        OasysCmdtable   COMPLETELY
+IMPORT  -- repo, compile
+        Check           COMPLETELY
+        Repo            COMPLETELY
+        RepoAbsy        COMPLETELY
+        RepoCom         COMPLETELY
+        RepoCom1        COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoFocus       COMPLETELY
+        RepoName        COMPLETELY
+        RepoNameConv    COMPLETELY
+        RepoObjectAccess COMPLETELY
+        RepoSource      COMPLETELY
+        RepoSourceAccess COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoComAbort    COMPLETELY
+        RepoMaintain    COMPLETELY
+IMPORT  -- dbshared
+        Expression      COMPLETELY
+        ChannelData     COMPLETELY
+
+IMPORT  -- dbenv
+        DbConvEnv       COMPLETELY
+        DbConversion    COMPLETELY
+        DbGlobalEnv     COMPLETELY
+        DbIdentTable    COMPLETELY
+        DbUnitTable     COMPLETELY
+
+IMPORT  -- this
+        DbPrintLayer    COMPLETELY
+        DbComm          COMPLETELY
+        DbCommFastRpc   COMPLETELY
+        DbEvaluation    COMPLETELY
+        DbEvalTable     COMPLETELY
+        DbRequire       COMPLETELY
+        DbDebugState    COMPLETELY
+       ComAction ONLY done
+        
+
+-- %$Initialisierung$ =======================================================
+DEF initDebugger == 
+                -- initialize the identtable as empty table
+        :=_identTable(init)                             & (\\ _ .
+                -- initialize the unittable as empty as well
+        :=_unitTable(init)                              & (\\ _ .
+        register(globEnvHandler)                        & (\\ _ .
+        register(debugStateHandler)                     & (\\ _ .
+        register(prelimObjectHandler)                   & (\\ _ .
+        register(debuggerCmdtable)                      & (\\ _ .
+        succeed(nil)                                    ))))))
+
+
+  -- FIXME: this handler terminates a client as soon as an object is updated
+  -- which is in the unit table. This works around that we currently
+  -- cannot update coded structures in the client (BFDLinker support
+  -- missing)
+
+FUN prelimObjectHandler : event -> com[void]
+DEF prelimObjectHandler(newObject(UName)) ==
+    unitTable                                   & (\\ UTab.
+    IF avail?(UTab !? UName) THEN
+        terminateClient
+    ELSE succeed(nil) FI
+    )
+DEF prelimObjectHandler(_) ==
+    succeed(nil)
+
+    
+
+-- %$Terminierung$ =======================================================
+DEF finitDebugger == 
+    terminateClient
+
+
+-- %$Die Kommando-Tabelle$ ==================================================
+FUN debuggerCmdtable : cmdtable[denotation]
+DEF debuggerCmdtable ==
+
+    (cmd(lit("oasys-eval") o var("EXPR") & 2nd o *(var("EXPRCONT")) @ 
+        (\\A. section(succeed(nil), clientCheck, eval(A))),
+        "Evaluate expression."
+    ) 
+    ++
+    cmd(lit("oasys-exec") o var("EXPR") & 2nd o *(var("EXPRCONT")) @ 
+        (\\A. section(succeed(nil), clientCheck, exec(A))),
+        "Execute command."
+    )
+    ++
+    cmd(lit("oasys-show-type") o
+        ?(lit("on") | lit("off") | lit("toggle") | lit("show")) & 2nd
+        @ showType,
+        "set, reset, toggle (default), show, whether types of evaluated or" ++
+        " executed expressions are printed"
+       )
+    )
+    ++ (
+    cmd((lit("oasys-additional-context") o
+         (lit("add") o *(unitNameSpec))) & 2nd & 2nd @ contextAdd,
+        "add units to context in which expressions are evaluated"
+        )
+    ++
+    cmd((lit("oasys-additional-context") o
+         (lit("rm") o *(unitNameSpec))) & 2nd & 2nd @ contextRm,
+        "remove units from context in which expressions are evaluated"
+        )
+    ++
+    cmd(lit("oasys-additional-context") o lit("clear") @ 
+        (\\ _ . contextClear),
+        "clear context list of units in which expressions are evaluated"
+       )
+    ++
+    cmd(lit("oasys-additional-context") o lit("show") @ 
+        (\\ _ . contextShow),
+        "show context in which expressions are evaluated"
+        )
+    ++ (
+    cmd(lit("oasys-run") o var("EXPR") & 2nd o *(var("EXPRCONT")) @ saveExec, 
+"Execute named command, specified by expression, without using the evaluator."
+    )
+    ++
+    cmd(lit("oasys-source") o ?(unitNameSpec) & 2nd & focusAsDefault
+        @ source,
+        "Show source of unit (focus unit is default)."
+    )
+    ++
+    cmd(lit("oasys-intern-db-dump-identTable") @ dumpIdentTable,
+        "Dump contents of identTable."
+    )
+    ++ 
+    cmd(lit("oasys-intern-db-dump-client") @ (\\ _ .debug),
+        "Dump internal contents of client process."
+    )
+    ++ 
+    cmd(lit("oasys-intern-db-dump-selection") @ (\\ _ .dumpSelection),
+        "Dump contents of selection."
+    )
+    ++ 
+    cmd(lit("oasys-intern-db-client") @ externClient & succeed("ok."),
+        "Open channel to extern client."
+    )
+    ++ 
+    cmd(lit("oasys-intern-db-kill") @ terminateClient & succeed("ok."),
+        "Kill the evaluator proces."
+    )
+    ++ 
+    cmd(lit("oasys-intern-db-sync") 
+        @ (\\ _ . 
+              clientSync  & (\\ Yes . 
+              IF Yes THEN succeed("evaluator alive")
+                     ELSE succeed("evaluator dead") FI
+              )
+          ),
+        "check if the evaluator client is alive, and re-synchronize."
+    )
+    ++
+    cmd(lit("oasys-print-method") o objectNamesSpec & 2nd
+                        o objectNamesSpec
+        @
+        assocPrintFun,
+        "print-method <SORT> <PRINT-FUN>: select a print function for sort"
+    )
+    ++
+    cmd(lit("oasys-unit-interpreted") o *(unitNameSpec) & 2nd
+        @ asInterpreted,
+        "Declare units to be interpreted."
+    )
+    ++ 
+    cmd(lit("oasys-unit-compiled") o *(unitNameSpec) & 2nd
+        @ asCompiled,
+        "Declare units to be compiled."
+    )
+    ++
+    cmd(lit("oasys-bt") 
+        @ section(succeed(nil), clientCheck, bt),
+        "Print back trace."
+    )
+    ++
+    cmd(lit("oasys-continue") 
+        @ continue,
+        "Continue the last broken evaluation."
+    ))
+    ++
+    cmd(lit("oasys-select") o nat("NUMBER",noCompletion) & 2nd
+        @ (\\A1. section(succeed(nil), clientCheck, select(A1))),
+        "Select an item in evaluation stack (see bt)."
+    )
+    ++
+    cmd(lit("oasys-values")
+        @ section(succeed(nil), clientCheck, history),
+        "Show the values of expressions evalutated up to now."
+    )
+    ++
+    cmd(lit("oasys-step") o ?(nat("STEPS",noCompletion)) & 2nd
+        @ (\\A1. section(succeed(nil), clientCheck, step(A1))),
+        "Evaluate a STEPS steps in current evaluation."
+    )
+    ++
+    cmd(((lit("oasys-intern-breakpoint") o 
+         objectNameSpec & 2nd) 
+         o ?(var("EXPRESSION")))
+        @ breakPoint,
+        "Set a breakpoint with optional guard."
+    )
+    ++
+    cmd(lit("oasys-args") o *(var("ARG",noCompletion)) & 2nd
+        @ setProcessArgs,
+        "Set process arguments for next eval or exec."
+    ) 
+    ++
+    cmd(lit("oasys-args-show") @ showProcessArgs,
+        "Show process arguments for next eval or exec."
+    )
+    ++
+    cmd(lit("oasys-debug") o 
+          ?( (lit("monitor") o var("NAME",noCompletion) & 2nd
+                & debugOn
+             )
+           | (lit("off") o var("NAME",noCompletion) & 2nd
+                & debugOff
+             )
+           | ((lit("break") o var("NAME",noCompletion) & 2nd) 
+                            o *(var("EXPR",noCompletion))
+                & (\\P . 
+                      LET Expr == join(2nd(P), " ")
+                      IN
+                      IF forall?(space?, !(Expr)) THEN
+                          debugBreak(1st(P), nil)
+                      ELSE debugBreak(1st(P), avail(Expr)) FI)
+             )
+           | (lit("update") & (\\ _ . debugUpdate))
+           ) & 2nd @ (\\Com?. section(succeed(nil), clientCheck,
+                                IF avail?(Com?) THEN cont(Com?)
+                                                ELSE debugShow FI)),
+       "Maintain debugging state.")
+    )
+ 
+
+FUN focusAsDefault : seq[unitName] -> com[seq[unitName]]
+DEF focusAsDefault(<>) == focus & (succeed o %)
+DEF focusAsDefault(S)  == succeed(S)
+
+-- %$eval$ ========================================================
+FUN eval : pair[denotation, seq[denotation]] -> com[denotation]
+DEF eval(First & Cont) ==
+    -- focus fails if no focus is selected
+    focus                                               & (\\UName.
+    eval(UName,join(First :: Cont, " "))                                
+    )
+
+FUN exec saveExec : pair[denotation, seq[denotation]] -> com[denotation]
+DEF exec(First & Cont) == 
+    focus                                               & (\\UName.
+    exec(UName,join(First :: Cont, " "))                                
+    )
+
+DEF saveExec(First & Cont) == 
+    focus                                               & (\\UName.
+    saveExec(UName,join(First :: Cont, " "))                            
+    )
+
+-- %$associate print funs$ ================================================
+FUN assocPrintFun : 
+        pair[set[objectName,<],set[objectName,<]] -> com[denotation] 
+DEF assocPrintFun(SNames & PNames) ==
+    query(\\R.
+        LET Sorts == (\\N. sort?(N)(R)) | SNames
+        IN IF #(Sorts) = 1
+             THEN succeed(arb(Sorts))
+             ELSE break("unique sort name required.")
+           FI)                                          & (\\Sort.
+    query(\\R.
+        LET Prints == validPrintFun?(R,Sort) | PNames
+        IN IF #(Prints) = 1
+             THEN succeed(arb(Prints))
+             ELSE break("matching name of print function required "++
+                        "for `"++symbol(Sort)(R)++"'")
+           FI)                                          & (\\PrintFun.
+    upd(setPrintFun(Sort,PrintFun))                     & (\\ _ .
+    :=_unitTable(def(unit(Sort),changed,_))             & (\\ _ .
+/*
+    asAssocPrintFun?(Sort, PrintFun)                    & (\\ as? . (
+    IF as? nil? THEN
+      break("??? asAssocPrintFun failed")
+    ELSE
+      rpc(assocPrintFuns(%(as? cont))) & done
+      FI)                                               & (\\ _ .
+*/
+    succeed("")                                         ))))
+-- ))
+
+-- %$source$ ========================================================
+FUN source : unitName -> com[denotation]
+DEF source(UName) ==
+    query(\\R.
+      LET ItemNameSeq   == itemOrder(UName)(R)
+          TextParts     == (\\N. text(item(N)(R))) * ItemNameSeq
+      IN join(TextParts,"")
+    )
+
+
+FUN history : com[denotation]
+DEF history ==
+    fmtEvalTable                                & (\\Fmt.
+    succeed(pretty(Fmt))                        )
+ 
+-- %$dump identTable$ =====================================================
+FUN dumpIdentTable : com[denotation]
+DEF dumpIdentTable ==
+    identTable                                          & (\\ITab.
+    query(\\R.succeed(pretty(fmtIdentTable(R)(ITab))))  )
+
+
+FUN asInterpreted : seq[unitName] -> com[denotation]
+DEF asInterpreted(UNames) ==
+    (asInterpreted, nil) /& (\\U. U :=_part sign) * UNames      & (\\ _ .
+    (asInterpreted, nil) /& (\\U. U :=_part impl) * UNames      & (\\ _ .
+    succeed("")                                                 ))
+
+  FUN asInterpreted : unitName ** void -> com[void]
+  DEF asInterpreted(UName, _) ==
+      query(interpreted?(UName))                                & (\\ Interp? .
+      IF Interp? THEN
+          succeed(nil)
+      ELSE
+          upd(requireFullAbsy(UName))                           & (\\ _ .
+          upd(requireSource(UName))                             & (\\ _ .
+          upd(setInterpreted(UName, true))                      & (\\ _ .
+          -- set unit state to changed
+          -- FIXME: neeed an abstraction here
+          :=_unitTable(\\T. def(UName, changed, T))             & (\\ _ .
+          succeed(nil)
+          ))))
+      FI
+      )
+
+FUN asCompiled : seq[unitName] -> com[denotation]
+DEF asCompiled(UNames) ==
+    (asCompiled, nil) /& (\\U. U :=_part sign) * UNames         & (\\ _ .
+    (asCompiled, nil) /& (\\U. U :=_part impl) * UNames         & (\\ _ .
+    succeed("")                                                 ))
+
+  FUN asCompiled : unitName ** void -> com[void]
+  DEF asCompiled(UName,_) ==
+      query(interpreted?(UName))                                & (\\ Interp? .
+      IF ~(Interp?) THEN
+          succeed(nil)
+      ELSE
+          -- FIXME: rethink: keep the fullAbsy and source once it was set
+          upd(setInterpreted(UName, false))                     & (\\ _ .
+          -- set unit state to changed
+          :=_unitTable(\\T. def(UName, changed, T))             & (\\ _ .
+          succeed(nil)
+          ))
+      FI
+      )
+
+-- %$arguments$ ===========================================================
+
+FUN setProcessArgs : seq[denotation] -> com[denotation]
+DEF setProcessArgs(Args) ==
+    :=_clientArgs(Args) & (\\ _ .
+    terminateClient     & (\\ _ .
+    succeed("")
+    ))
+    
+FUN showProcessArgs: com[denotation]
+DEF showProcessArgs ==
+  clientArgs & (\\as.
+  succeed((+/+(","), "") / as)
+  )
+
+-- %$Show type$
+
+FUN showType: option[denotation] -> com[denotation]
+DEF showType(c) ==
+  LET cmd == cont("show")(c)
+  IN
+  IF cmd = "on" THEN setType(true) & succeed("")
+  IF cmd = "off" THEN setType(false) & succeed("")
+  IF cmd = "toggle" THEN getType & (\\ g. setType(g~) & succeed(""))
+  IF cmd = "show" THEN getType & (\\ g. 
+                        succeed("show types is " ++ 
+                                (IF g THEN "on" ELSE "off" FI))
+                       )
+  FI
+
+-- %$debug the client process$ ============================================ 
+FUN debug : com[denotation]
+DEF debug ==
+    rpc(debug,ready?)                                   & (\\ _ .
+    succeed("ok")                                       )
+
+-- %$some stuff$ ==========================================================
+FUN dump  : fmt -> com[denotation]
+DEF dump(Fmt) ==
+    write(stdErr,(pretty(Fmt)):denotation) & succeed("")

@@ -1,0 +1,114 @@
+IMPLEMENTATION WinImage
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Void		COMPLETELY
+	Nat		COMPLETELY
+	Real		COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+
+IMPORT	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	COMPLETELY
+	ComSeqAction	COMPLETELY
+
+IMPORT	WinInternal	COMPLETELY
+	WinTclTk	COMPLETELY
+	WinConfig	COMPLETELY
+	WinAppl		COMPLETELY
+
+
+
+-- %$Images in General$ =====================================================
+
+DATA image 	== image(name: denotation)
+DATA iconfig	== iconfig(opts : seq[string])
+
+FUN iconfig	: denotation	-> iconfig
+FUN iconfig	: script	-> iconfig
+
+DEF iconfig(Den) == iconfig(%(!(Den)))
+DEF iconfig(Scr) == iconfig(%(format(Scr)))
+
+DEF {}		== iconfig(<>)
+DEF C1 ++ C2	== iconfig(opts(C1) ++ opts(C2))
+
+
+DEF images ==
+    eval("image names")					& (\\ Str .
+    succeed( (\\ I. image(`(I))) * convList(Str) )
+    )
+
+DEF delete(Image) ==
+    act("image delete %s" <- name(Image))
+
+DEF size(Image) ==
+    eval("image width  %s" <- name(Image))		& (\\ WdStr .
+    eval("image height %s" <- name(Image))		& (\\ HtStr .
+    succeed( convReal(WdStr) / screenResolution
+	       x convReal(HtStr) / screenResolution )
+    ))
+
+DEF Image set Config ==
+    (\\ Opt . act("%s config %s" <- name(Image) + Opt); done) @& opts(Config)
+
+
+-- %$Bitmaps$ ==============================================================
+
+DEF bitmap == 
+    bitmap({})
+
+DEF bitmap(Config) ==
+    eval("image create bitmap")				& (\\ Str .
+    LET Image == image(`(Str))
+    IN
+    Image set Config					& (\\ _ .
+    succeed( Image )
+    ))
+
+DEF data(Deno:denotation) == data(!(Deno))
+DEF data(Str:string) 	== iconfig("-data %s" <- Str)
+
+DEF maskData(Deno:denotation)== maskData(!(Deno))
+DEF maskData(Str:string)== iconfig("-maskdata %s" <- Str)
+
+DEF file(Deno:denotation) == file(!(Deno))
+DEF file(Str:string) 	== iconfig("-file %s" <- Str)
+
+DEF maskFile(Deno:denotation)== maskFile(!(Deno))
+DEF maskFile(Str:string)== iconfig("-maskfile %s" <- Str)
+
+
+
+-- %$Photos$ ==============================================================
+
+DEF photo == 
+    photo({})
+
+DEF photo(Config) ==
+    eval("image create photo")				& (\\ Str .
+    LET Image == image(`(Str))
+    IN
+    Image set Config					& (\\ _ .
+    succeed( Image )
+    ))
+
+DEF gamma(V) 		== iconfig("-gamma %r" <- V)
+
+DEF greyPalette(Shades) == iconfig("-palette %n" <- Shades)
+DEF colorPalette(R,G,B) == iconfig((("-palette %n/%n/%n" <- R) + G) + B)
+
+DEF pixelWidth(W)	== iconfig("-width %n" <- W)
+DEF pixelHeight(H)	== iconfig("-height %n" <- H)
+
+
+
+-- %$Attaching Images to Views$ =============================================
+
+DEF image(Image) 	== config("-image %s" <- name(Image))

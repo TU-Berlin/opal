@@ -1,0 +1,84 @@
+IMPLEMENTATION Evaluator
+
+IMPORT  Real    ONLY    real + - * / pow sin cos exp ln abs sqrt = > <= 0 pi
+        Expr    COMPLETELY
+
+DATA result == value(theValue: real)
+               error(msg: denotation)
+
+-- FUN apply: expr -> real -> real
+-- FUN apply: expr -> real**real -> real
+DEF apply(Expr)(Arg) ==
+        LET Res == apply(Expr)(number(Arg)) IN
+        IF value?(Res) THEN theValue(Res) FI    -- abort on error!
+DEF apply(Expr)(Arg1,Arg2) ==
+        LET Res == apply(Expr)(number(Arg1),number(Arg2)) IN
+        IF value?(Res) THEN theValue(Res) FI    -- abort on error!
+
+-- FUN apply: expr -> expr -> result
+-- FUN apply: expr -> expr**expr -> result
+DEF apply(Expr)(Arg) ==
+        eval(subst(Expr, varx?, Arg))   -- replace variable 'x' and evaluate
+DEF apply(Expr)(Arg1,Arg2) ==
+        LET
+           Expr1 == subst(Expr, varx?, Arg1)    -- replace variable 'x'
+           Expr2 == subst(Expr1,vary?, Arg2)    -- replace variable 'y'
+        IN
+        eval(Expr2)     -- evaluate
+
+-- %@code{eval} only works on expressions @emph{without} variables!
+-- FUN eval : expr -> result
+DEF eval(Expr) ==
+    IF binop?(Expr)     THEN calculate( op(Expr), 
+                                        eval(left(Expr)), 
+                                        eval(right(Expr)))
+    IF unop?(Expr)      THEN calculate( op(Expr), 
+                                        eval(arg(Expr)))
+    IF pi?(Expr)        THEN value(pi)
+    IF number?(Expr)    THEN value(theNumber(Expr))
+    IF varx?(Expr)      THEN error("Variable x not allowed here.")
+    IF vary?(Expr)      THEN error("Variable y not allowed here.")
+    IF error?(Expr)     THEN error(msg(Expr))
+    FI
+
+
+-- %Calculation of binary operators
+FUN calculate : operator ** result ** result -> result
+DEF calculate(Op, X, Y) ==
+        IF error?(X)    THEN X
+        IF error?(Y)    THEN Y
+        ELSE
+        LET x == theValue(X)
+            y == theValue(Y)
+        IN
+        IF add?(Op)     THEN value(x + y)
+        IF sub?(Op)     THEN value(x - y)
+        IF mul?(Op)     THEN value(x * y)
+        IF div?(Op)     THEN IF y = 0 THEN error("Division by zero!")
+                                      ELSE value(x / y)
+                             FI
+        IF pow?(Op)     THEN value(x pow y)
+        FI
+        FI
+
+
+-- %Calculation of unary operators
+FUN calculate : operator ** result  -> result
+DEF calculate(Op, X) ==
+        IF error?(X)    THEN X
+        ELSE
+        LET x == theValue(X)
+        IN
+        IF sin?(Op)     THEN value(sin(x))
+        IF cos?(Op)     THEN value(cos(x))
+        IF exp?(Op)     THEN value(exp(x))
+        IF log?(Op)     THEN IF x <= 0 THEN error("Logarithm undefined for non-positive values!")
+                                       ELSE value(ln(x))
+                             FI
+        IF abs?(Op)     THEN value(abs(x))
+        IF neg?(Op)     THEN value(-(x))
+        IF sqrt?(Op)    THEN value(sqrt(x))
+        FI
+        FI
+
+    

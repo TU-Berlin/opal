@@ -1,0 +1,272 @@
+
+/* %-
+-- LAST EDIT: Wed Jun 30 18:44:43 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+*/
+
+IMPLEMENTATION TypeDepFormAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		ONLY nat
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMap		COMPLETELY
+
+	Pos		ONLY pos:SORT
+	Error		ONLY err:SORT + ok
+
+	PartName	ONLY partName:SORT ide
+	Fct[name]	ONLY fct:SORT
+	Impl[partName]	COMPLETELY
+	Impl[name]	COMPLETELY
+
+	AnalyzedGlobSig	ONLY globSig locSig name +
+
+	Knowledge	ONLY knowl
+	Substitution	ONLY subst unify empty
+	Candidates	ONLY cands split combine mode eager hide none rule idFct empty
+	Reason		ONLY reason wronglyTypedEquality
+	TypeDepExprAnalysis ONLY analyze analyzePair analyzeLocalDefs
+				 substitute substitutePair substituteLocalDefs
+				 setKnownFcts
+    GlobSigImpl ONLY {}
+       GlobSig ONLY denotation
+       Fct ONLY fct sort
+
+FUN analyze: formula[partName]**globSig**knowl**nat**nat -> cands**nat**nat
+
+-- %-FUN analyze: expr[partName]**globSig**knowl**nat**nat -> cands**nat**nat
+/* % Für einen Ausdruck, eine globale Signatur, Wissen über die Verwendung
+   Verwendung von lokalen Bezeichnern sowie den kleinsten noch nicht für
+   lokale Namen bzw. Variablen verwendeten Nummern,
+ wird die Menge der möglichen Zuordnungsfunktionen berechnet.
+ Weitere Ergebnisse sind die neuen kleinsten noch nicht fuer lokale Namen
+   bzw. Variablen verwendeten Nummern */
+
+FUN substitute: formula[partName]**cands**globSig**nat ->
+					formula[name]**globSig**locSig**err
+/* % Ersetzung der partiellen Namen durch Namen bzgl. der (nicht leeren!)
+ Menge von Identifizierungsfunktionen sowie
+ Normalisierung (Teilung) von Gleichungen mit mehrstelliger rechter Seite;
+ liefert Fehlermenge bei mehrdeutiger Menge von Identifizierungsfunktionen
+*/
+
+--   %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$dfd$
+
+DEF analyze(dfd(e,_),sig,knowl,firstLocal,firstVar) ==
+  analyze(e,sig,knowl,firstLocal,firstVar)
+
+DEF substitute(dfd(e,pos),cands,sig,offset) ==
+  LET (E,newSig,newLSig,errors) == substitute(e,cands,sig,offset)
+  IN (dfd(E,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$equal$
+DEF analyze(equal(l,r,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (lCands,rCands,freeLocal,nextVar) ==
+			analyzePair(l,r,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combEqual(sig))
+                                   (lCands,rCands)
+  IN (newCands,freeLocal,freeVar)
+
+FUN combEqual: globSig
+	       -> fct[name]**fct[name]**subst**nat
+	       -> fct[name]**seq[subst]**nat**seq[reason]
+
+DEF combEqual(sig)(leftFct,rightFct,subst,var) ==
+  LET (newSubsts,free) == unify(sig)
+			       (leftFct,rightFct,subst,var)
+  IN IF newSubsts <>? THEN (leftFct,subst%,var,
+			    wronglyTypedEquality(leftFct,
+						 rightFct,
+						 subst)%)
+     IF newSubsts ::? THEN (leftFct,newSubsts,free,<>)
+		      -- must deliver a functionality
+		      -- that can be unified with var
+		      -- (because of lazy candidates)
+     FI
+
+DEF substitute(equal(l,r,pos),cands,sig,offset) ==
+  LET (newL,newR,newSig,newLSig,errors) ==
+				substitutePair(l,r,cands,sig,offset)
+  IN (equal(newL,newR,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$ineq$
+
+DEF analyze(ineq(l,r,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (lCands,rCands,freeLocal,nextVar) ==
+			analyzePair(l,r,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combEqual(sig))
+                                   (lCands,rCands)
+  IN (newCands,freeLocal,freeVar)
+
+DEF substitute(ineq(l,r,pos),cands,sig,offset) ==
+  LET (newL,newR,newSig,newLSig,errors) ==
+				substitutePair(l,r,cands,sig,offset)
+  IN (ineq(newL,newR,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$neg$
+
+DEF analyze(neg(f,_),sig,knowl,firstLocal,firstVar) ==
+  analyze(f,sig,knowl,firstLocal,firstVar)
+
+DEF substitute(neg(f,pos),cands,sig,offset) ==
+  LET (F,newSig,newLSig,errors) == substitute(f,cands,sig,offset)
+  IN (neg(F,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$and$
+
+DEF analyze(and(l,r,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (lCands,rCands,freeLocal,nextVar) ==
+			analyzePair(l,r,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combOk)
+                                   (lCands,rCands)
+  IN (newCands,freeLocal,freeVar)
+
+FUN combOk: fct[name]**fct[name]**subst**nat
+	    -> fct[name]**seq[subst]**nat**seq[reason]
+
+DEF combOk(leftFct,_,subst,var) ==
+  (leftFct,subst%,var,<>)
+		      -- must deliver a functionality
+		      -- that can be unified with var
+		      -- (because of lazy candidates)
+
+DEF substitute(and(l,r,pos),cands,sig,offset) ==
+  LET (newL,newR,newSig,newLSig,errors) ==
+				substitutePair(l,r,cands,sig,offset)
+  IN (and(newL,newR,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$or$
+
+DEF analyze(or(l,r,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (lCands,rCands,freeLocal,nextVar) ==
+			analyzePair(l,r,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combOk)
+                                   (lCands,rCands)
+  IN (newCands,freeLocal,freeVar)
+
+DEF substitute(or(l,r,pos),cands,sig,offset) ==
+  LET (newL,newR,newSig,newLSig,errors) ==
+				substitutePair(l,r,cands,sig,offset)
+  IN (or(newL,newR,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$imply$
+
+DEF analyze(imply(l,r,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (lCands,rCands,freeLocal,nextVar) ==
+			analyzePair(l,r,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combOk)
+                                   (lCands,rCands)
+  IN (newCands,freeLocal,freeVar)
+
+DEF substitute(imply(l,r,pos),cands,sig,offset) ==
+  LET (newL,newR,newSig,newLSig,errors) ==
+				substitutePair(l,r,cands,sig,offset)
+  IN (imply(newL,newR,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$eqv$
+
+DEF analyze(eqv(l,r,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (lCands,rCands,freeLocal,nextVar) ==
+			analyzePair(l,r,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combOk)
+                                   (lCands,rCands)
+  IN (newCands,freeLocal,freeVar)
+
+DEF substitute(eqv(l,r,pos),cands,sig,offset) ==
+  LET (newL,newR,newSig,newLSig,errors) ==
+				substitutePair(l,r,cands,sig,offset)
+  IN (eqv(newL,newR,pos),newSig,newLSig,errors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$all$
+
+DEF analyze(all(vars,body,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (varsCands,extKnowl,nextLocal,nextVar,locals) ==
+		analyzeLocalDefs(vars,pos,sig,knowl,firstLocal,firstVar)
+      (varsCands2,typedKnowl,nextVar2) ==
+		setKnownFcts(sig,ide*vars,varsCands,extKnowl,nextVar)
+      (bodyCands,freeLocal,interVar) ==
+		analyze(body,sig,typedKnowl,nextLocal,nextVar2)
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combOk)
+                                   (varsCands2,bodyCands)
+      (finalCands,ultimateFreeVar) == hide(sig,freeVar)(locals)(newCands)
+  IN (finalCands,freeLocal,ultimateFreeVar)
+
+DEF substitute(all(vars,body,pos),cands,sig,offset) ==
+  LET (varsCands,bodyCands) == split(cands)
+      (newVars,interSig,lsig1,varsErrors) ==
+			substituteLocalDefs(vars,varsCands,sig,offset)
+      (newBody,finalSig,lsig2,bodyErrors) ==
+			substitute(body,bodyCands,interSig,offset)
+  IN (all(newVars,newBody,pos),finalSig,lsig1+lsig2,varsErrors+bodyErrors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$ex$
+
+DEF analyze(ex(vars,body,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (varsCands,extKnowl,nextLocal,nextVar,locals) ==
+		analyzeLocalDefs(vars,pos,sig,knowl,firstLocal,firstVar)
+      (varsCands2,typedKnowl,nextVar2) ==
+		setKnownFcts(sig,ide*vars,varsCands,extKnowl,nextVar)
+      (bodyCands,freeLocal,interVar) ==
+		analyze(body,sig,typedKnowl,nextLocal,nextVar2)
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combOk)
+                                   (varsCands2,bodyCands)
+      (finalCands,ultimateFreeVar) == hide(sig,freeVar)(locals)(newCands)
+  IN (finalCands,freeLocal,ultimateFreeVar)
+
+DEF substitute(ex(vars,body,pos),cands,sig,offset) ==
+  LET (varsCands,bodyCands) == split(cands)
+      (newVars,interSig,lsig1,varsErrors) ==
+			substituteLocalDefs(vars,varsCands,sig,offset)
+      (newBody,finalSig,lsig2,bodyErrors) ==
+			substitute(body,bodyCands,interSig,offset)
+  IN (ex(newVars,newBody,pos),finalSig,lsig1+lsig2,varsErrors+bodyErrors)
+
+--  %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$informal$
+-- %vgl. @code{analyze(den(rep,pos)..)} aus @Impl{TypeDepExprAnalysis}
+
+DEF analyze(informal(_, pos), sig, _, firstLocal, firstVar) ==
+  (empty(idFct(sort(denotation(sig)),empty)%,pos), firstLocal, firstVar)
+
+DEF substitute(informal(txt, pos), _, sig, _) ==
+  (informal(txt, pos), sig, {} , ok)
+
+-- %- -------------------------------------------------------------------------
+-- %$Paare von Formeln$
+
+FUN analyzePair: formula[partName]**formula[partName]
+		 **globSig**knowl**nat**nat
+		 -> cands**cands**nat**nat
+
+DEF analyzePair(f1,f2,sig,knowl,firstLocal,firstVar) ==
+  LET (c1,nextLocal,nextVar) == analyze(f1,sig,knowl,firstLocal,firstVar)
+      (c2,freeLocal,freeVar) == analyze(f2,sig,knowl,nextLocal,nextVar)
+  IN (c1,c2,freeLocal,freeVar)
+
+FUN substitutePair: formula[partName]**formula[partName]
+		    **cands**globSig**nat
+		    -> formula[name]**formula[name]**globSig**locSig**err
+
+DEF substitutePair(f1,f2,cands,sig,offset) ==
+  LET (c1,c2) == split(cands)
+      (newE1,interSig,lsig1,err1) == substitute(f1,c1,sig,offset)
+      (newE2,finalSig,lsig2,err2) == substitute(f2,c2,interSig,offset)
+  IN (newE1,newE2,finalSig,lsig1+lsig2,err1+err2)

@@ -1,0 +1,190 @@
+IMPLEMENTATION Rel
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:05 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Map COMPLETELY
+       Seq COMPLETELY
+       MapReduce ONLY /
+       SetReduce ONLY /
+       Set COMPLETELY
+       MapFilter ONLY |
+       MapMap ONLY *
+       Option COMPLETELY
+       ABORT ONLY ABORT
+       Nat ONLY 0? 0 + = 1
+       OptionMap ONLY *
+       Pair COMPLETELY
+       Triple COMPLETELY
+
+-- %$The Type Itself$
+
+DATA rel == abs(rep: map[dom, <, map[codom, <, data]])
+
+-- %$Non-Free Constructors$
+
+DEF {} == {}
+DEF (d, c, #) incl abs(M) == abs(def(d, def(c, #, M @ d), M))
+DEF (d, c, f) incl abs(M) == abs(def(d, def(c, f(d, c), M @ d), M))
+
+-- %$Construct a Relation From Datas$
+DEF (d :-> c)(#) == abs(def(d, def(c, #, {}), {}))
+DEF (d :-> c)(f) == abs(def(d, def(c, f(d, c), {}), {}))
+-- incl s.o.
+DEF (d, c) excl abs(M) == 
+  IF undef(c, (M @ d)) {}? THEN abs(undef(d, M))
+  ELSE abs(def(d, undef(c, M @ d), M))
+  FI
+
+DEF extend(R, <>, <>, <>) == R
+DEF extend(R, d :: doms, c :: codoms, # :: datas) ==
+  extend((d, c, #) incl R, doms, codoms, datas)
+DEF extend(_, _, _, _ : seq) ==
+  ABORT("extend'Rel: sequences have different length")
+
+DEF extend(R, <>, <>, _ : (dom ** codom -> data)) == R
+DEF extend(R, d :: doms, c :: codoms, f) ==
+  extend((d, c, f(d, c)) incl R, doms, codoms, f)
+DEF extend(R, _, _, _ : (dom ** codom -> data)) == 
+  ABORT("extend'Rel: sequences have different length")
+
+-- %$Construct a Relation From Sets$
+DEF (A x B)(f) == abs(((\\ a, M. def(a, init(B, \\b. f(a, b)), M)), {}) / A)
+DEF (a x B)(f) == abs(def(a, init(B, \\b. f(a, b)), {}))
+DEF (A x b)(f) == abs(((\\ a, M. def(a, def(b, f(a, b), {}), M)), {}) / A)
+
+-- %$Combining Relations$
+DEF abs(M) + abs(N) == abs(((\\ d, cM, rM. def(d, rM @ d <+ cM, rM)), M) / N)
+DEF abs(M) - abs(N) ==
+  abs(((\\ d, cM, rM. def(d, rM @ d <- dom(cM), rM)), M) / N)
+DEF abs(M) * abs(N) == 
+  LET newdom == dom(M) * dom(N)
+  IN
+  abs((\\d, rM. def(d, (\\c, _ . def?(c, N @ d))| M @ d, rM), {}) / newdom)
+
+DEF A <| abs(M) == abs((\\a, rM. 
+                       IF def?(a, M) THEN def(a, M!a, rM) ELSE rM FI,
+                       {}) / A)
+
+DEF abs(M) |> B == abs(clean(filter * M))
+                   WHERE filter == \\ cM1. (\\c, _ . c in B) | cM1
+
+DEF A <~| abs(M) == abs((\\a, rM. undef(a, rM), M) / A)
+
+DEF abs(M) |~> B == abs(clean(filter * M))
+                   WHERE filter == \\ cM1. (\\c, _ . ~(c in B)) | cM1
+
+-- %$Accessing Data$
+
+DEF arb == min
+DEF arb(R) == (arb(R), R!arb(R))
+
+DEF abs(M) ! d == dom(M @ d)
+DEF abs(M) ! A == (\\a, R. dom(M @ a) + R, {}) / A
+
+DEF abs(M) !_c c ==
+  (\\d, cM, R. IF def?(c, cM) THEN incl(d, R) ELSE R FI, {}) / M
+
+DEF abs(M) !_c B ==
+  (\\d, cM, R. IF (B * dom(cM)) {}? THEN R ELSE incl(d, R) FI, {}) / M
+
+
+DEF abs(M)!(d, c) == 
+  LET ocs == M !? d
+  IN IF ocs nil? THEN ABORT("!'Rel: pair not in relation")
+     ELSE LET ods == cont(M !? d) !? c
+          IN
+          IF ods nil? THEN ABORT("!'Rel: pair not in relation")
+          ELSE cont(ods)
+          FI
+      FI
+
+DEF abs(M)!?(d, c) == 
+  LET ocs == M !? d
+  IN IF ocs nil? THEN nil
+     ELSE cont(M !? d) !? c
+     FI
+
+-- %$Information About a Relation$
+DEF {}?(R) == #(R) 0?  -- %ACHTUNG! Map braucht nicht {} zu sein
+
+DEF (d, c) in abs(M) == 
+  LET ocs == M !? d
+  IN IF ocs nil? THEN false
+     ELSE LET ods == cont(M !? d) !? c
+          IN
+          ods avail? 
+      FI
+
+DEF abs(M) def? d == IF avail?(M !? d) THEN ~({}?(cont(M !? d))) ELSE false FI
+DEF abs(M) def_c? c == exist?(\\ _, cM. def?(c, cM), M)
+
+DEF abs(M) # == (+, 0) / (# * M)
+
+DEF dom(abs(M)) == dom(clean(M))
+DEF codom(abs(M)) == (+, {}) / (dom * M)
+
+DEF bijective?(R) == function?(R) and #(dom(R)) = #(codom(R))
+DEF function?(abs(M)) == forall?(\\ _, cM.  #(dom(cM)) = 1, clean(M))
+
+DEF min(abs(M1)) == LET M == clean(M1)
+                        d == min(dom(M))
+                    IN
+                    (d, min(dom(M!d)))
+
+DEF max(abs(M1)) == LET M == clean(M1)
+                        d == max(dom(M))
+                    IN
+                    (d, max(dom(M!d)))
+
+DEF exist?(P, abs(M)) == exist?(\\d, cM. exist?(\\c, _ . P(d, c), cM), M)
+DEF find?(P: dom ** codom -> bool, abs(M)) ==
+  (\\d, cM, found?. 
+   IF found? avail? THEN found?
+   ELSE
+     (\\o. d & 1st(o)) * find?(\\c, _ . P(d, c), cM)
+   FI, nil) / M
+DEF forall?(P, abs(M)) == forall?(\\d, cM. forall?(\\ c, _ . P(d, c), cM), M)
+
+DEF exist?(P, abs(M)) == exist?(\\d, cM. exist?(\\c, # . P(d, c, #), cM), M)
+DEF find?(P: dom ** codom ** data -> bool, abs(M)) ==
+  (\\d, cM, found?. 
+   IF found? avail? THEN found?
+   ELSE
+     (\\o. &(d, 1st(o), 2nd(o))) * find?(\\c, # . P(d, c, #), cM)
+   FI, nil) / M
+DEF forall?(P, abs(M)) == forall?(\\d, cM. forall?(\\ c, # . P(d, c, #), cM), M)
+
+-- %$Comparing Relations$
+DEF abs(M) = abs(N) == cmp(=, =)(M, N)
+DEF R < S == (R <= S) and ~(R = S)
+DEF abs(M) <= abs(N) == cmp(<=, <=)(M, N)
+
+FUN cmp: (set[dom, <] ** set[dom, <] -> bool) **
+          (set[codom, <] ** set[codom, <] -> bool) ->
+          map[dom, <, map[codom, <, data]] **
+          map[dom, <, map[codom, <, data]] -> bool
+DEF cmp(&,&&)(M, N) ==
+  IF dom(M) & dom(N) THEN
+    forall?(\\d. dom(M!d) && dom(N!d), dom(M))
+  ELSE
+    false
+  FI
+
+DEF disjoint?(abs(M), abs(N)) ==
+  forall?(\\d. {}?(dom(M!d) * dom(N!d)), dom(M) * dom(N))
+
+DEF abs(M) {<} abs(N) ==
+  (\\d, less?. 
+    IF less? THEN less?
+    ELSE dom(M @ d) {<} dom(N @ d)
+    FI, false) / dom(M) + dom(N)
+
+-- %$Auxiliary functions$
+FUN @ : map[dom, <, map[codom, <, data]] ** dom -> map[codom, <, data]
+DEF M @ d == !({})(M, d)
+
+FUN clean: map[dom, <, map[codom, <, data]] -> map[dom, <, map[codom, <, data]]
+DEF clean(M) == (\\ _, cM. ~(cM {}?)) | M 

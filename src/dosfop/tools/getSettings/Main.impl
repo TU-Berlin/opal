@@ -1,0 +1,287 @@
+IMPLEMENTATION Main
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/getSettings/Main.impl,v 1.1.1.1 1998-06-16 16:00:44 wg Exp $
+
+IMPORT Nat              COMPLETELY
+       Char             COMPLETELY
+       ComCompose       COMPLETELY
+       Com              COMPLETELY
+       String           COMPLETELY
+       StringConv       COMPLETELY
+       Seq              COMPLETELY
+       SeqMap           COMPLETELY
+       SeqReduce	COMPLETELY
+       Env              COMPLETELY
+       Set		COMPLETELY
+       Stream           COMPLETELY
+       Denotation	COMPLETELY
+
+IMPORT Config           COMPLETELY
+       ConfigFun        COMPLETELY
+       Error		COMPLETELY
+       ScanConfig       COMPLETELY
+       ParseConfig      COMPLETELY
+       MyComStream      COMPLETELY 
+
+DEF getsetting ==
+  arg(1) ; 
+  (\\ nameResult . 
+    IF okay?(nameResult) THEN
+     arg(2) ; 
+     (\\ pathResult . 
+        IF okay?(pathResult) THEN
+          (writeLine(stdOut, "start processing...") &
+	  readFile(!(data(pathResult) ++ "DOSFOP/config"))) ;
+	  (\\readConfigResult.
+	     IF okay?(readConfigResult) THEN
+	       LET
+		 (tokenSeq, res) == scanConfig(data(readConfigResult))
+	       IN
+		 IF ok?(res) THEN
+		   writeLine(stdOut, "scanning of configuration ok ...") & (\\ _ .
+		   LET
+		     (config, res2) == parseConfig(tokenSeq)
+		   IN
+		     IF ok?(res2) THEN
+		       writeLine(stdOut, "parsing of configuration ok ...") & 
+                       (arg(3) ; 
+                       (\\searchTypeResult.
+                          IF okay?(searchTypeResult) THEN
+                            IF "struct" = data(searchTypeResult) THEN
+                              (properties(config, data(nameResult)!) & 
+                              (interfaces(config, data(nameResult)!) &             
+                              (importrefs(config, data(nameResult)!) &
+                              (ufts(config, data(nameResult)!) &
+                              (newpages(config, data(nameResult)!) &
+                              (levels(config, data(nameResult)!) &
+                              (dropempty(config, data(nameResult)!) &
+                              exit(0)))))))) 
+                            ELSE
+                              (hierarchySub(config, data(nameResult)!) & 
+                              (sortStructuresSub(config, data(nameResult)!) &
+                              (propertiesSub(config, data(nameResult)!) & 
+                              (interfacesSub(config, data(nameResult)!) &    
+                              (importrefsSub(config, data(nameResult)!) &
+                              (uftsSub(config, data(nameResult)!) &
+                              (newpagesSub(config, data(nameResult)!) &
+                              (levelsSub(config, data(nameResult)!) &
+                              (dropemptySub(config, data(nameResult)!) &
+                              exit(0))))))))) )
+                            FI
+                          ELSE
+                            writeLine(stdErr, error(searchTypeResult))
+                          FI
+                       ) -- \\searchTypeResult
+                       ) -- arg
+                     ELSE
+                       write(stdErr, reason(res2))
+                     FI
+                   ) -- \\ _
+                 ELSE
+                   write(stdErr, reason(res))
+                 FI
+             ELSE
+               writeLine(stdErr, error(readConfigResult))
+             FI
+          ) -- \\readConfigResult
+        ELSE
+          writeLine(stdErr, error(pathResult))
+        FI 
+     ) -- \\pathResult
+   ELSE
+     writeLine(stdErr, error(nameResult))
+   FI    
+ ) -- \\nameResult
+
+
+
+-- %$Structures$
+-- $------------
+
+FUN properties : config ** string -> com[void]
+DEF properties( config, name ) ==
+  IF propertiesInclude?(config, name) THEN
+    write(stdOut, "properties_include = on\n")
+  ELSE    
+    write(stdOut, "properties_include = off\n")
+  FI	
+
+FUN interfaces : config ** string -> com[void]
+DEF interfaces( config, name ) ==
+  IF onlyInterfaces?(config, name) THEN
+    write(stdOut, "only_interfaces = on\n")
+  ELSE    
+    write(stdOut, "only_interfaces = off\n")
+  FI	
+
+FUN newpages : config ** string -> com[void]
+DEF newpages( config, name ) ==
+  IF newPages?(config, name) THEN
+    write(stdOut, "new_pages = on\n")
+  ELSE    
+    write(stdOut, "new_pages = off\n")
+  FI	
+
+FUN importrefs : config ** string -> com[void]
+DEF importrefs( config, name ) ==
+  IF importReferences?(config, name) THEN
+    write(stdOut, "import_references = on\n")
+  IF importReferencesNoLibs?(config, name) THEN
+    write(stdOut, "import_references = on_no_libs\n")
+  ELSE    
+    write(stdOut, "import_references = off\n")
+  FI	
+
+FUN ufts : config ** string -> com[void]
+DEF ufts( config, name ) ==
+  IF usedFunctionTables?(config, name) THEN
+    write(stdOut, "used_function_tables = on\n")
+  IF usedFunctionTablesMediumInst?(config, name) THEN
+    write(stdOut, "used_function_tables = on_medium_verb\n")
+  IF usedFunctionTablesLowInst?(config, name) THEN
+    write(stdOut, "used_function_tables = on_low_verb\n")
+  IF usedFunctionTablesNoInst?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_verb\n")
+  IF usedFunctionTablesNoLibs?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs\n")
+  IF usedFunctionTablesNoLibsMediumInst?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs_medium_verb\n")
+  IF usedFunctionTablesNoLibsLowInst?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs_low_verb\n")
+  IF usedFunctionTablesNoLibsNoInst?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs_no_verb\n")
+  ELSE
+    write(stdOut, "used_function_tables = off\n")
+  FI
+
+
+
+FUN levels : config ** string -> com[void]
+DEF levels( config, name ) ==
+  IF levelsOn?(config, name) THEN
+    write(stdOut, !("levels = ") ++ ((+++ / <>) (levels(config, name))) ++ !("\n"))
+  ELSE
+    write(stdOut, "levels = off\n")
+  FI
+
+FUN dropempty : config ** string -> com[void]
+DEF dropempty( config, name ) ==
+  IF dropEmptyLines?(config, name) THEN
+    write(stdOut, "drop_empty_lines = on\n")
+  ELSE    
+    write(stdOut, "drop_empty_lines = off\n")
+  FI	
+
+
+-- %$Subsystems$
+-- %------------
+
+FUN hierarchySub : config ** string -> com[void]
+DEF hierarchySub( config, name ) ==
+  IF hierarchyVisuSub?(config, name) THEN
+    write(stdOut, "hierarchy_visu = on\n")
+  IF hierarchyVisuNoSubsSub?(config, name) THEN
+    write(stdOut, "hierarchy_visu = on_no_subs\n")
+  IF hierarchyVisuNoStructsSub?(config, name) THEN
+    write(stdOut, "hierarchy_visu = on_no_structs\n")
+  ELSE    
+    write(stdOut, "hierarchy_visu = off\n")
+  FI	
+
+FUN sortStructuresSub: config ** string -> com[void]
+DEF sortStructuresSub( config, name ) == 
+  IF sortStructuresTopDownSub?(config, name ) THEN
+    write(stdOut, "sort_structures = top_down\n")
+  IF sortStructuresBottomUpSub?(config, name) THEN
+    write(stdOut, "sort_structures = bottom_up\n")
+  IF sortStructuresAlphabeticallySub?(config, name) THEN
+    write(stdOut, "sort_structures = alphabetically\n")
+  IF sortStructuresUserDefinedSub?(config, name) THEN
+    write(stdOut, "sort_structures = user_defined\n")
+  ELSE
+    write(stdOut, "sort_structures = off\n")
+  FI
+
+
+FUN propertiesSub : config ** string -> com[void]
+DEF propertiesSub( config, name ) ==
+  IF propertiesIncludeSub?(config, name) THEN
+    write(stdOut, "properties_include = on\n")
+  ELSE    
+    write(stdOut, "properties_include = off\n")
+  FI	
+
+FUN interfacesSub : config ** string -> com[void]
+DEF interfacesSub( config, name ) ==
+  IF onlyInterfacesSub?(config, name) THEN
+    write(stdOut, "only_interfaces = on\n")
+  ELSE    
+    write(stdOut, "only_interfaces = off\n")
+  FI	
+
+FUN newpagesSub : config ** string -> com[void]
+DEF newpagesSub( config, name ) ==
+  IF newPagesSub?(config, name) THEN
+    write(stdOut, "new_pages = on\n")
+  ELSE    
+    write(stdOut, "new_pages = off\n")
+  FI	
+
+FUN importrefsSub : config ** string -> com[void]
+DEF importrefsSub( config, name ) ==
+  IF importReferencesSub?(config, name) THEN
+    write(stdOut, "import_references = on\n")
+  IF importReferencesNoLibsSub?(config, name) THEN
+    write(stdOut, "import_references = on_no_libs\n")
+  ELSE    
+    write(stdOut, "import_references = off\n")
+  FI	
+
+FUN uftsSub : config ** string -> com[void]
+DEF uftsSub( config, name ) ==
+  IF usedFunctionTablesSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on\n")
+  IF usedFunctionTablesMediumInstSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on_medium_verb\n")
+  IF usedFunctionTablesLowInstSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on_low_verb\n")
+  IF usedFunctionTablesNoInstSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_verb\n")
+  IF usedFunctionTablesNoLibsSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs\n")
+  IF usedFunctionTablesNoLibsMediumInstSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs_medium_verb\n")
+  IF usedFunctionTablesNoLibsLowInstSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs_low_verb\n")
+  IF usedFunctionTablesNoLibsNoInstSub?(config, name) THEN
+    write(stdOut, "used_function_tables = on_no_libs_no_verb\n")
+  ELSE
+    write(stdOut, "used_function_tables = off\n")
+  FI
+
+
+FUN levelsSub : config ** string -> com[void]
+DEF levelsSub( config, name ) ==
+  IF levelsOnSub?(config, name) THEN
+    write(stdOut, !("levels = ") ++ ((+++ / <>) (levelsSub(config, name))) ++ !("\n"))
+  ELSE
+    write(stdOut, "levels = off\n")
+  FI
+
+FUN dropemptySub : config ** string -> com[void]
+DEF dropemptySub( config, name ) ==
+  IF dropEmptyLinesSub?(config, name) THEN
+    write(stdOut, "drop_empty_lines = on\n")
+  ELSE    
+    write(stdOut, "drop_empty_lines = off\n")
+  FI	
+
+
+
+-- %$Misc$
+-- %------
+
+FUN +++ : string ** string -> string
+DEF +++(<>, <>) == <>
+DEF +++(a , <>) == !("{") ++ a ++ !("}")
+DEF +++(<>, b ) == !("{") ++ b ++ !("}") 
+DEF +++(a , b ) == b ++ !(",{") ++ a ++ !("}") 

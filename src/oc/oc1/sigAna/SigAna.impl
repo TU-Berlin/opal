@@ -1,0 +1,87 @@
+/* %-
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     complete signature analysis
+-- Zweck:       Hauptfunktion der Signaturanalsye
+--              PRE: Es koennen keine IO-Fehler passieren,
+--                   Die parsierte Struktur enthaelt keine Fehler
+--              Eingabe ist das parsierte Programm und die Repraesentations-
+--              tabelle. Fehler werden als Seiteneffekt waehrend der Analyse
+--              ausgegeben. Der Parser muss fuer sigAna folgendes zusichern:
+--              - nur selektiver Import (ONLY) im Signaturteil.
+--              - kein "compound object"
+--              - kein "empty export"
+--              - kein "operation as sort" 
+--              Das Ergebnis von sigAna ist die globale Signatur, 
+--              wenn die Analyse keine Fehler gefunden hat,
+--              sonst scheitert sigAna
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- Changes:     af, Jun 30 1993: added analysis of property parts
+-- ============================================================================
+*/
+
+IMPLEMENTATION SigAna
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  AbsyPrep        ONLY absyPrep
+        GlobSigInit     ONLY globSigInit
+        GlobSigFix      ONLY globSigFix
+        GlobSigEval     ONLY globSigEval
+        SigAnaTexts     ONLY signAnaSubPhase
+        GlobSig4SigAna  ONLY finitSigAna
+        GlobSigToText   ONLY ` -- : globSig->()->denotation
+        -- lib
+        Verbose         ONLY verb subphase
+        Void            ONLY void
+        Nat             ONLY nat
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        Seq             ONLY seq ++ <> ::
+        DEBUG           ONLY PRINT string
+        Options         ONLY cop?
+        Pair            COMPLETELY
+
+        Struct          COMPLETELY
+       Map ONLY map codom
+       SeqOfSeq ONLY flat
+       SeqMap ONLY *
+       PartName ONLY partName sort
+       Rep ONLY rep theory
+       Option ONLY nil option
+       Pragma ONLY pragma noPragma
+       Pos ONLY pos firstPos
+
+-- ---------------------------------------------------------------------------
+
+FUN sigAna:     options -> pair[struct,repTab] -> com[globSig]
+
+DEF sigAna(options)
+          (Struct & RepTab) ==
+  verb(options,subphase,signAnaSubPhase) &
+  (\\ _ .(((absyPrep(imports(Struct) ++ addT * flat(codom(relations(Struct))),
+                     RepTab,options) &
+            globSigInit(head(Struct),signature(Struct),
+                        specsign(Struct), options)) &
+            globSigFix(options)) &
+            globSigEval(options)) &
+            finitSigAna(options))
+
+FUN finitSigAna: options -> globSig -> com[globSig]
+DEF finitSigAna(options)(gS) ==
+  yield(okay(PRINT(cop?("printGsAna", options), `(finGs), finGs)))
+  WHERE
+  finGs == finitSigAna(gS)
+
+/* %add THEORY to an only import */
+FUN addT: import -> import
+DEF addT(i) == 
+  IF i complete? THEN i
+  IF i only? THEN 
+    only(origin(i), partName(theory, nil, <>, p, sort, noPragma, p) :: only(i))
+    WHERE p == IF origin?(origin(i)) THEN pos(origin(i)) ELSE firstPos FI
+  FI

@@ -1,0 +1,96 @@
+IMPLEMENTATION Integral
+
+IMPORT  Real            COMPLETELY
+        Nat             COMPLETELY
+        Seq             COMPLETELY
+        SeqReduce       COMPLETELY
+
+
+-- %$Standard Numeric Integration$
+
+-- FUN integrate: (real->real) -> real**real -> seq[real]
+DEF integrate(f)(a,b) == 
+        LET 
+            h == (b - a)
+            Y == (f(a)/2) 
+                 :: (f(b)/2) :: <>
+            S == h * (+,0) / Y
+        IN
+        S :: iterate(f,a)(Y,h,S)
+
+FUN hmin : real
+DEF hmin == 1/4
+
+FUN iterate : (real->real)**real -> seq[real]**real**real -> seq[real]
+DEF iterate(f,a)(Y,h,S) ==
+        LET 
+            hnew == h / 2
+            Ynew == insert(f,a+hnew,h)(Y)
+            Snew == hnew * (+,0) / Ynew
+        IN
+        Snew ::
+        (IF (S ~ Snew)
+            and
+            (hnew < hmin)       
+                                THEN    <>
+                                ELSE    iterate(f,a)(Ynew,hnew,Snew)
+        FI)
+
+
+FUN ~ : real ** real -> bool
+DEF X ~ Y == (abs(X-Y) < ("0.000001"!))
+
+
+FUN insert : (real->real)**real**real -> seq[real] -> seq[real]
+DEF insert(f,x,h)(Y) ==
+        ft(Y) :: ins(f,x,h)(rt(Y))
+
+FUN ins : (real->real)**real**real -> seq[real] -> seq[real]
+DEF ins(f,x,h)(Y) ==
+        IF   <>?(Y)  THEN Y
+        IF ~(<>?(Y)) THEN f(x) :: ft(Y) :: ins(f,x+h,h)(rt(Y))
+        FI
+
+
+-- %$Fast Numeric Integration$
+-- FUN fastIntegrate: (real->real) -> real**real -> seq[real]
+DEF fastIntegrate(f)(a,b) == 
+        LET 
+            h == (b - a)
+            Y == (f(a)/2) 
+                 :: (f(b)/2) :: <>
+            s == h * (+,0) / Y
+        IN
+        s :: extraPolate(f,a)(Y, h :: <>, s :: <>)
+
+
+FUN extraPolate: (real->real)**real -> seq[real]**seq[real]**seq[real] 
+                -> seq[real]
+DEF extraPolate(f,a)(Y,H,S) ==
+        LET
+           h    == ft(H)
+           hnew == h / 2
+           Hnew == hnew :: H
+           Ynew == insert(f,a+hnew,h)(Y)
+           snew == hnew * (+,0) / Ynew
+           Snew == interPolate(snew,hnew,S,H)
+        IN
+        last(Snew) ::
+        (IF (last(S) ~ last(Snew))
+           and
+           (hnew < hmin)        
+                                THEN <>
+                                ELSE extraPolate(f,a)(Ynew,Hnew,Snew)
+        FI)
+
+
+FUN interPolate: real**real**seq[real]**seq[real] -> seq[real]
+DEF interPolate(s,h,S,H) ==
+        IF <>?(S) THEN       s :: <>
+                  ELSE  s :: interPolate(snew,h,rt(S),rt(H))
+                        WHERE
+                        snew == s + ((s-ft(S))/((ft(H)/h)-1))
+        FI
+
+
+

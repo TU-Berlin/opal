@@ -1,0 +1,1121 @@
+/* %-
+-- LAST EDIT: Sun Nov  7 14:05:17 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:       af
+-- Projekt:     OPAL1-Compiler
+-- Changes:     af, May 14 1993: incorporated "lazy" candidate sets
+--                               restructured combine functions
+--                               added positions to non-empty candidate sets
+--                               more detailed tracing
+--              af, Jun 15 1993: added extraction of types of local names
+--              af, Jun 22 1993: changed function bestOf (fixes bug oc1.32)
+--              af, Jun 27 1993: added handling of mix expressions
+--              af, Sep  4 1993: tracing of noBetterCand
+--                               evaluating type variables in noBetterCand
+--                               corrected type `storage' in dotted selFuns
+--              af, Sep 16 1993: corrected typing mistake
+-- ============================================================================
+*/
+
+IMPLEMENTATION Candidates
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             COMPLETELY
+        Pair            COMPLETELY
+        Triple          COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqCompare      COMPLETELY
+        SeqZip          COMPLETELY
+        SeqFilter       ONLY |
+        Compose         COMPLETELY
+
+        Denotation      COMPLETELY              -- for debugging
+        NatConv         ONLY `                  -- for debugging
+        BoolConv        ONLY `                  -- for debugging
+        DEBUG           COMPLETELY              -- for debugging
+
+
+        Union2          COMPLETELY
+        MySeqFun1       COMPLETELY
+        MySeqFun3       COMPLETELY
+
+        Pos             ONLY pos
+        Error           ONLY err:SORT ok + err errKind error
+
+        Rep             ONLY rep `
+        PartName        ONLY partName:SORT
+        Fct[name]       ONLY fct = cart var var? ` noFct
+
+        AnalyzedGlobSig ONLY globSig name local? no:name->nat globalSet?
+                                rep fct origInst:globSig**name->seq[name]
+                             eqName eqBase
+                             level minimal 
+                             ` : globSig**level -> name -> denotation
+
+        Substitution    ONLY subst empty + apply
+                            unify:globSig->fct**fct**subst**nat->seq[subst]**nat
+        Reason          COMPLETELY
+        PartialSignatures ONLY partSig {} addLocal addGlobal combine getLocal
+                                hideLocal isLocal getLocalFct
+        PrioTab COMPLETELY
+       GlobSig COMPLETELY
+       SeqConv ONLY `
+
+-- 
+-- ----------------------------------------------------------------------------
+
+DATA idName == idName (name:name,rep:rep,fct:fct,subst:subst)
+
+DATA idFct == idFct (fct:fct,subst:subst)
+
+-- ----------------------------------------------------------------------------
+
+DATA cands == cands (cands:seq[cand],whyNoOthers:alternReasons,pos:pos)
+              lazy (combFct:fct**fct**subst**nat
+                            -> fct**seq[subst]**nat**seq[reason],
+                    combCand:candFun**candFun**fct**fct**fct**partSig**subst
+                             ->cand,
+                    left:cands,right:cands,pos:pos)
+              none (errors:err)
+
+DATA cand == cand (selFun:candFun,lFct:fct,rFct:fct,fct:fct,
+                   partSig:partSig,subst:subst)
+
+DATA mixInfo == nil
+                avail(opNo:nat,argFct:fct,rule:rule,top:bool)
+
+DATA candFun == <>`
+                %` (name:name)
+                &` (left:candFun,right:candFun,mix:mixInfo)
+                oo (eagerPart:candFun,eagerFct:fct,
+                    innerEagerPart:candFun,innerEagerFct:fct,
+                    dots:seq[fct],dotteds:seq[fct],
+                    topFct:fct)
+
+DATA mode == Eager Lazy
+
+FUN eager lazy:mode
+
+DEF eager == IF lazyCands? THEN Lazy ELSE Eager FI
+
+DEF lazy == IF eagerCands? THEN Eager ELSE Lazy FI
+
+-- 
+-- ----------------------------------------------------------------------------
+
+TYPE candFun == <>
+                % (name:name)
+                & (left:candFun,right:candFun,mix:mixInfo)
+                o (eagerPart:candFun,eagerFct:fct,
+                   innerEagerPart:candFun,innerEagerFct:fct,
+                   dots:seq[fct],dotteds:seq[fct],
+                   topFct:fct)
+
+DEF <> == traceEmptyCandFun(<>`)
+
+DEF %(name) == traceSingleCandFun(name,%`(name))
+
+DEF &(left,right,mix) == traceSplitCandFun(left,right,mix,&`(left,right,mix))
+
+DEF o(eagerPart,eagerFct,innerEagerPart,innerEagerFct,dots,dotteds,topFct) ==
+        traceDottedCandFun(eagerPart,eagerFct,
+                           innerEagerPart,innerEagerFct,
+                           dots,dotteds,topFct,
+                           oo(eagerPart,eagerFct,
+                              innerEagerPart,innerEagerFct,
+                              dots,dotteds,topFct))
+
+DEF <>?(x) == <>`?(x)
+
+DEF %?(x) == %`?(x)
+
+DEF &?(x) == &`?(x)
+
+DEF o?(x) == oo?(x)
+
+-- %@zoindex traceCandFuns
+FUN traceCandFuns?: bool
+DEF traceCandFuns? == FIELD?[bool]("-ztraceCandFuns")
+
+FUN printEmptyCandFun: candFun -> () -> denotation
+DEF printEmptyCandFun(_)() == "building of <> not reported!"
+
+FUN traceEmptyCandFun: candFun -> candFun
+DEF traceEmptyCandFun(cf) == PRINT(traceCandFuns?,printEmptyCandFun(cf),cf)
+
+FUN printSingleCandFun: name**candFun -> () -> denotation
+DEF printSingleCandFun(_,_)() == "built %(_)"
+
+FUN traceSingleCandFun: name**candFun -> candFun
+DEF traceSingleCandFun(n,cf) ==
+    PRINT(traceCandFuns?,printSingleCandFun(n,cf),cf)
+
+FUN printSplitCandFun: candFun**candFun**mixInfo**candFun -> () -> denotation
+DEF printSplitCandFun(_,_,nil,_)() == "built &(_,_,nil)"
+DEF printSplitCandFun(_,_,avail(n,f,r,t),_)() ==
+  "built &(_,_,avail("  ++(
+  `(n)                  ++(
+  ","                   ++(
+  `(\\ _ .".")(f)       ++(
+  ","                   ++(
+  `'GlobSig: rule -> denotation(r)                  ++(
+  ","                   ++(
+  `(t)                  ++
+  "))"                  )))))))
+
+FUN traceSplitCandFun: candFun**candFun**mixInfo**candFun -> candFun
+DEF traceSplitCandFun(l,r,m,cf) ==
+    PRINT(traceCandFuns?,printSplitCandFun(l,r,m,cf),cf)
+
+FUN printDottedCandFun: candFun**fct**candFun**fct
+                        **seq[fct]**seq[fct]**fct**candFun
+                        -> () -> denotation
+DEF printDottedCandFun(_,_,_,_,_,_,_,_)() ==
+    "built o(_,_,_,_,_,_,_)"
+
+FUN traceDottedCandFun: candFun**fct**candFun**fct
+                        **seq[fct]**seq[fct]**fct**candFun
+                        -> candFun
+DEF traceDottedCandFun(e,ef,i,if,d,ds,tf,cf) ==
+    PRINT(traceCandFuns?,printDottedCandFun(e,ef,i,if,d,ds,tf,cf),cf)
+
+-- 
+-- ----------------------------------------------------------------------------
+-- %@zoindex traceCands
+FUN traceCands?: bool
+DEF traceCands? == FIELD?[bool]("-ztraceCands") or traceAllCands?
+
+-- %@zoindex traceAllCands
+FUN traceAllCands?: bool
+DEF traceAllCands? == FIELD?[bool]("-ztraceAllCands")
+
+FUN ` : cands -> denotation
+DEF cands(cs,_,_)` == `(cs#) ++ " cands "
+DEF lazy(_,_,left,right,_)` == `(left) ++ ("* " ++ `(right))
+DEF none(_)`       == "no cands "
+
+FUN ` : seq[cands] -> denotation
+DEF cands:seq ` == "[ " ++ (++ / empty)(` * cands) ++ "] "
+
+FUN printEmpty: cands -> () -> denotation
+DEF printEmpty(cands)() == `(cands) ++ "empty created"
+
+FUN traceEmpty: cands -> cands
+DEF traceEmpty(cands) == PRINT(traceCands?,printEmpty(cands),cands)
+
+FUN printSingle: cands -> () -> denotation
+DEF printSingle(cands)() == `(cands) ++ "single created"
+
+FUN traceSingle: cands -> cands
+DEF traceSingle(cands) == PRINT(traceCands?,printSingle(cands),cands)
+
+FUN printCombine: mode**cands**cands**cands -> () -> denotation
+DEF printCombine(Eager'Candidates,c1,c2,cands)() ==
+  `(c1) ++ (`(c2) ++ ("combined to " ++ `(cands)))
+DEF printCombine(Lazy'Candidates,c1,c2,cands)() ==
+  `(c1) ++ (`(c2) ++ ("lazily combined to " ++ `(cands)))
+
+FUN traceCombine: mode**cands**cands -> cands -> cands
+DEF traceCombine(m,c1,c2)(cands) ==
+  PRINT(traceCands?,printCombine(m,c1,c2,cands),cands)
+
+FUN printDoCombine: mode**cands**cands**cands -> () -> denotation
+DEF printDoCombine(Eager'Candidates,c1,c2,cands)() ==
+  `(c1) ++ (`(c2) ++ ("combined internally to " ++ `(cands)))
+DEF printDoCombine(Lazy'Candidates,c1,c2,cands)() ==
+  `(c1) ++ (`(c2) ++ ("lazily combined internally to " ++ `(cands)))
+
+FUN traceDoCombine: mode**cands**cands -> cands -> cands
+DEF traceDoCombine(m,c1,c2)(cands) ==
+  PRINT(traceAllCands?,printDoCombine(m,c1,c2,cands),cands)
+
+FUN printCombineSeq: mode**seq[cands]**cands -> () -> denotation
+DEF printCombineSeq(Eager'Candidates,cs,cands)() ==
+  `(cs) ++ ("combined to " ++ `(cands))
+DEF printCombineSeq(Lazy'Candidates,cs,cands)() ==
+  `(cs) ++ ("lazily combined to " ++ `(cands))
+
+FUN traceCombineSeq: mode**seq[cands] -> cands -> cands
+DEF traceCombineSeq(m,cs)(cands) ==
+  PRINT(traceCands?,printCombineSeq(m,cs,cands),cands)
+
+FUN printEval: cands**cands -> () -> denotation
+DEF printEval(c,cands)() == `(c) ++ ("evaluated to " ++ `(cands))
+
+FUN traceEval: cands -> cands -> cands
+DEF traceEval(c)(cands) == PRINT(traceCands?,printEval(c,cands),cands)
+
+FUN printHide: seq[rep] -> () -> denotation
+DEF printHide(reps)() == `(reps#) ++ " locals hidden"
+
+FUN traceHide: seq[rep] -> cands -> cands
+DEF traceHide(reps)(cands) == PRINT(traceCands?,printHide(reps),cands)
+
+FUN printBestOf: cands**cands -> () -> denotation
+DEF printBestOf(c,cands)() == `(c) ++ ("reduced to " ++ `(cands))
+
+FUN traceBestOf: cands -> cands -> cands
+DEF traceBestOf(c)(cands) == PRINT(traceCands?,printBestOf(c,cands),cands)
+
+FUN printCombineMix: mode**cands**cands**cands**nat**cands -> () -> denotation
+DEF printCombineMix(Eager'Candidates,c1,c2,c3,no,cands)() ==
+  `(c1) ++ (`(c2) ++ (`(c3) ++ ("infix " ++ (`(no) ++ (
+  " combined to " ++ `(cands))))))
+DEF printCombineMix(Lazy'Candidates,c1,c2,c3,no,cands)() ==
+  `(c1) ++ (`(c2) ++ (`(c3) ++ ("infix " ++ (`(no) ++ (
+  " lazy-eagerly combined to " ++ `(cands))))))
+
+FUN traceCombineMix: mode**cands**cands**cands**nat -> cands -> cands
+DEF traceCombineMix(m,c1,c2,c3,no)(cands) ==
+  PRINT(traceCands?,printCombineMix(m,c1,c2,c3,no,cands),cands)
+
+FUN printUniteMix: seq[cands]**cands -> () -> denotation
+DEF printUniteMix(cs,cands)() ==
+  `(cs) ++ ("united to " ++ `(cands))
+
+FUN traceUniteMix: seq[cands] -> cands -> cands
+DEF traceUniteMix(cs)(cands) ==
+  PRINT(traceCands?,printUniteMix(cs,cands),cands)
+
+FUN printBestMix: cands**cands -> () -> denotation
+DEF printBestMix(from,to)() ==
+  `(from) ++ ("mix-reduced to " ++ `(to))
+
+FUN traceBestMix: cands -> cands -> cands
+DEF traceBestMix(from)(to) ==
+  PRINT(traceCands?,printBestMix(from,to),to)
+
+FUN printUnmix: cands**cands -> () -> denotation
+DEF printUnmix(cands,c1)() ==
+  `(cands) ++ ("unmixed to " ++ `(c1))
+
+FUN traceUnmix: cands -> cands -> cands
+DEF traceUnmix(cands)(c1) ==
+  PRINT(traceCands?,printUnmix(cands,c1),c1)
+
+-- 
+-- ----------------------------------------------------------------------------
+-- %@zoindex traceMixFix
+FUN traceMixfix?: bool
+DEF traceMixfix? == FIELD?[bool]("-ztraceMixfix")
+
+FUN ` : cand -> denotation
+DEF cand(selFun,_,_,_,_,_) ` == selFun `
+
+FUN ` : candFun -> denotation
+
+DEF <> :candFun ` == "<>"
+
+DEF %(_) ` == "%(_)"
+
+DEF &(l,r,nil) ` == "&("  ++(
+                    `(l)     ++(
+                    ","   ++(
+                    `(r)     ++(
+                    ","   ++(
+                    "nil" ++
+                    ")"   )))))
+
+DEF &(l,r,avail(op,f,w,t)) ` == "&("   ++(
+                                 `(l)     ++(
+                                 ","      ++(
+                                 `(r)     ++(
+                                 ","      ++(
+                                 ("avail("      ++(
+                                  `(op)            ++(
+                                  ","      ++(
+                                  `(\\ _ .".")(f) ++(
+                                  ","      ++(
+                                  `(w)             ++(
+                                  ","      ++(
+                                  `(t)             ++
+                                  ")"      )))))))
+                                 )        ++
+                                 ")"      )))))
+
+DEF o(e,_,i,_,_,_,_) ` == "o("      ++(
+                                    `(e)         ++(
+                                    ",_,"        ++(
+                                    `(i)         ++
+                                    ",_,_,_)" )))
+
+
+FUN printTestedMixfix: cand -> () -> denotation
+DEF printTestedMixfix(cand)() == "tested mixfix: " ++ `(cand)
+
+FUN traceTestedMixfix: cand -> cand
+DEF traceTestedMixfix(cand) == PRINT(traceMixfix?,printTestedMixfix(cand),cand)
+
+FUN printMixfixResult: seq[cand]**seq[cand] -> () -> denotation
+DEF printMixfixResult(_     ,<>)() == "mixfix rejected"
+DEF printMixfixResult(former,new1::newR)() ==
+  IF #(former) = #(newR) THEN
+       "mixfix accepted: " ++ `(rule(mix(selFun(new1))))
+  ELSE "mixfix rejected"
+  FI
+
+FUN traceMixfixResult: seq[cand] -> seq[cand] -> seq[cand]
+DEF traceMixfixResult(former)(now) ==
+  PRINT(traceMixfix?,printMixfixResult(former,now),now)
+
+-- 
+-- ----------------------------------------------------------------------------
+
+FUN empty: seq[idFct]**pos -> cands
+-- mehrelementige Menge von leeren Zuordnungsfunktionen
+
+DEF empty(idFcts,pos) ==
+  traceEmpty(cands((\\idFct.cand(<>,noFct,noFct,fct(idFct),{},subst(idFct)))
+                   *idFcts,or(<>),pos))
+
+-- ----------------------------------------------------------------------------
+
+FUN single: seq[idName]**pos -> cands
+-- Menge von 'einstelligen' Zuordnungsfunktionen
+
+DEF single(idNames,pos) == traceSingle(cands(makeSingle*idNames,or(<>),pos))
+
+FUN makeSingle: idName -> cand
+DEF makeSingle(idName(name,rep,fct,subst)) ==
+  cand(name%,
+       noFct,noFct,fct,
+       IF name local? THEN addLocal({},no(name),rep,fct)
+                      ELSE addGlobal({},rep)
+       FI,
+       subst)
+
+-- 
+-- ----------------------------------------------------------------------------
+
+FUN combine: mode -> globSig**pos**nat ->
+             (fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason]) ->
+             cands**cands -> cands**nat
+-- Kombination zweier Mengen von Zuordnungsfunktion
+-- Argument ist eine Funktion zur Kombination der Funktionalitaeten,
+--   die entweder
+--   - die Resultatsfunktionalitaet, alle moeglichen Substitutionen,
+--       die erste unbenutzte Variable und eine leere Liste von Gruenden, oder
+--   - eine Funktionalitaet, eine Fehlersubstitution, die erste unbenutzte
+--       Variable und die Liste der Gruende, die zum Scheitern der
+--       Kombination fuehrten,
+--   liefert
+
+DEF combine(mode)(sig,pos,minVar)(combFct)(cs1,cs2) ==
+  LET && == \\l,r,lf,rf,f,p,s.cand(&(l,r,nil),lf,rf,f,p,s)
+      (cands,freeVar) == doCombine(mode)(sig,pos,minVar)(combFct)(&&,false)
+                                                                 (cs1,cs2)
+  IN (traceCombine(mode,cs1,cs2)(cands),freeVar)
+
+FUN doCombine
+    DoCombine: mode -> globSig**pos**nat ->
+               (fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason]) ->
+               (candFun**candFun**fct**fct**fct**partSig**subst->cand)**bool ->
+               cands**cands -> cands**nat
+-- intern verwendete Funktion, analog zu combine
+-- mit folgenden zusaetzlichen Argumenten
+-- - Funktion zum Aufbau der Kandidatenfunktion bei der erfolgreichen
+--     Kombination zweier Kandidaten
+-- - boolscher Wert, der - falls true - besagt, dass die Gruende des Scheiterns
+--     von Kombinationen aufbewahrt werden sollen, selbst wenn andere
+--     Kombinationen erfolgreich durchfuehrbar sind.
+
+DEF doCombine(mode)(sig,pos,minVar)(combFct)(&&,pres)(cs1,cs2) ==
+  LET (cands,freeVar) ==
+        DoCombine(mode)(sig,pos,minVar)(combFct)(&&,pres)(cs1,cs2)
+  IN (traceDoCombine(mode,cs1,cs2)(cands),freeVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- Eager/Lazy: none bleibt none
+
+DEF DoCombine(Eager)(_  ,_  ,minVar)(_      )(_ ,_   )(none(r1),none(r2)) ==
+                                                        (none(r1+r2),minVar)
+DEF DoCombine(Lazy) (_  ,_  ,minVar)(_      )(_ ,_   )(none(r1),none(r2)) ==
+                                                        (none(r1+r2),minVar)
+
+DEF DoCombine(Eager)(_  ,_  ,minVar)(_      )(_ ,_   )(n1 AS none(_),_) ==
+                                                                    (n1,minVar)
+DEF DoCombine(Lazy) (_  ,_  ,minVar)(_      )(_ ,_   )(n1 AS none(_),_) ==
+                                                                    (n1,minVar)
+
+DEF DoCombine(Eager)(_  ,_  ,minVar)(_      )(_ ,_   )(_,n2 AS none(_)) ==
+                                                                    (n2,minVar)
+DEF DoCombine(Lazy) (_  ,_  ,minVar)(_      )(_ ,_   )(_,n2 AS none(_)) ==
+                                                                    (n2,minVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- Eager: Kombination von "eager" Kandidatenmengen
+
+DEF DoCombine(Eager)(sig,pos,minVar)(combFct)(&&,pres)
+                                    (cands(c1,or(r1),_),cands(c2,or(r2),_)) ==
+  LET (successfulCands,failReasons,freeVar) ==
+        combineCandSeqs(sig,pos,combFct,&&)(c1,c2,minVar)
+  IN IF successfulCands <>? THEN
+       LET reasons == failReasons++(r1++r2)
+       IN (none(error(pos,or(reasons),sig)),freeVar)
+     IF successfulCands ::? THEN
+       LET reasons == IF pres or allReasons? THEN failReasons++(r1++r2)
+                      ELSE <>
+                      FI
+       IN (cands(successfulCands,or(reasons),pos),freeVar)
+     FI
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- Eager: Kombination mit "lazy" Kandidatenmengen
+
+DEF DoCombine(Eager)(sig,pos,minVar)(combFct)(&&,pres)
+             (c1 AS lazy(_,_,_,_,_),
+              c2 AS lazy(_,_,_,_,_)) ==
+  LET (c1Eager,freeVar) == eval(sig,minVar)(c1)
+  IN doCombine(Eager)(sig,pos,freeVar)(combFct)(&&,pres)(c1Eager,c2)
+
+DEF DoCombine(Eager)(sig,pos,minVar)(combFct)(&&,pres)
+                (c1 AS cands(_,_,_),c2 AS lazy(_,_,_,_,_)) ==
+  LET (c2Dotted,nextVar,suspended) == dot(sig,minVar)(c2)
+      &&& == \\l,r,lf,_,f,p,s.cand(o(l,lf,
+                                      innerEagerPart(r),innerEagerFct(r),
+                                      rt(dots(r)),dotteds(r),f),
+                                    noFct,noFct,ft(dots(r)),p,s)
+      (c12Dotted,freeVar) ==
+        doCombine(Eager)(sig,pos,nextVar)(combFct)(&&&,true)(c1,c2Dotted)
+  IN undot(sig,freeVar,&&,pres)(c12Dotted,suspended)
+
+DEF DoCombine(Eager)(sig,pos,minVar)(combFct)(&&,pres)
+                (c1 AS lazy(_,_,_,_,_),c2 AS cands(_,_,_)) ==
+  LET (c1Dotted,nextVar,suspended) == dot(sig,minVar)(c1)
+      &&& == \\l,r,_,rf,f,p,s.cand(o(r,rf,
+                                      innerEagerPart(l),innerEagerFct(l),
+                                      rt(dots(l)),dotteds(l),f),
+                                    noFct,noFct,ft(dots(l)),p,s)
+      (c12Dotted,freeVar) ==
+        doCombine(Eager)(sig,pos,nextVar)(combFct)(&&&,true)(c1Dotted,c2)
+      &&&& == \\l,r,lf,rf,f,p,s. &&(r,l,rf,lf,f,p,s)
+  IN undot(sig,freeVar,&&&&,pres)(c12Dotted,suspended)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- Lazy: nicht-leere Kandidatenmengen
+
+DEF DoCombine(Lazy)(_,pos,minVar)(combFct)(&&,_)(c1,c2) ==
+  (lazy(combFct,&&,c1,c2,pos),minVar)
+
+-- 
+-- ----------------------------------------------------------------------------
+
+FUN combineCandSeqs: globSig**pos
+                     **(fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason])
+                     **(candFun**candFun**fct**fct**fct**partSig**subst->cand)
+                     -> seq[cand]**seq[cand]**nat
+                     -> seq[cand]**seq[sumOfReasons]**nat
+-- Kombination zweier Sequenzen von Kandidaten
+-- liefert die Sequenz der erfolgreichen Kombinationen und
+--   die Sequenz der Gruende fuer das Scheitern der anderen Kombinationen
+
+DEF combineCandSeqs(sig,pos,combFct,&&)(candS1,candS2,minVar) ==
+  LET allPairs == combine(&,candS1,candS2)       -- all combinations
+      (freeVar,cAll) ==
+        (combineCands(sig,pos,minVar,combFct,&&) \* minVar)(allPairs)
+                                                 -- map to cand seqs resp.
+                                                 --  error reasons
+                                                 -- under nat environment
+/* -- preferred version:
+      (nestedCands,reasons) == data1? partition cAll
+                                                 -- partition cand seqs from
+                                                 --  error reasons
+  IN (cont1 * flat(nestedCands),cont2 * reasons,freeVar)
+*/ -- for efficiency reasons:
+      candsNreasons == ((\\cOr,cNr.
+                           IF cOr data1? THEN (cont1(cOr)++1st(cNr)) & 2nd(cNr)
+                           IF cOr data2? THEN 1st(cNr) & (cont2(cOr)::2nd(cNr))
+                           FI) \ (<> & <>))(cAll)
+  IN (1st(candsNreasons),2nd(candsNreasons),freeVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN combineCands: globSig**pos**nat
+                  **(fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason])
+                  **(candFun**candFun**fct**fct**fct**partSig**subst->cand)
+                  -> nat**pair[cand,cand]
+                  -> nat**union[seq[cand],sumOfReasons]
+-- Kombinination zweier Kandidaten
+-- liefert entweder
+--   - die Liste der erfolgreichen Kombinationen oder
+--   - die Gruende fuer das Scheitern
+
+DEF combineCands(sig,pos,minVar,combFct,&&)
+                (prevMaxVar,
+                 cand(sel1,_,_,fct1,partSig1,subst1) &
+                 cand(sel2,_,_,fct2,partSig2,subst2)) ==
+  LET (newFct,fctSubsts,nextVar,fctReasons) ==
+                                combFct(fct1,fct2,subst1+subst2,minVar)
+      (newPartSig,newSubsts,freeVar,partSigReasons) ==
+                        combine(sig)(partSig1,partSig2,fctSubsts,nextVar)
+      reasons == fctReasons++partSigReasons
+  IN IF reasons <>? THEN
+        (max(freeVar,prevMaxVar),
+         data1((\\newSubst. &&(sel1,sel2,fct1,fct2,newFct,newPartSig,newSubst))
+              * newSubsts)
+        )
+     IF reasons ::? THEN (prevMaxVar,data2(and(pos,reasons)))
+     FI
+
+-- 
+-- ----------------------------------------------------------------------------
+
+DATA suspCands == susp(combCand:candFun**candFun**fct**fct**fct**partSig**subst
+                                ->cand,
+                       cands:cands)
+
+FUN dot: globSig**nat -> cands -> cands**nat**seq[suspCands]
+-- Berechnet eine "dotted" "eager" Kandidatenmenge, die in einer "lazy"
+--   Kandidatenmenge die rechte Kandidatenmenge durch einen Dummy (dot) ersetzt
+
+DEF dot(sig,minVar)(lazy(cf,cc,l,r,p)) ==
+  LET (lDotted,nextVar,suspended) == dot(sig,minVar)(l)
+      dotFct == var(nextVar)
+      rDot == cands(%(cand(<>,noFct,noFct,dotFct,{},empty)),or(<>),pos(r))
+      &&& == \\lcf,_,_,_,fct,psig,sub.
+               cand(o(<>,noFct,innerEagerPart(lcf),innerEagerFct(lcf),
+                      dots(lcf)+%dotFct,dotteds(lcf)+%fct,cart(<>)),
+                    noFct,noFct,fct,psig,sub)
+  IN (doCombine(Eager)(sig,p,succ(nextVar))
+               (cf)(&&&,false)(lDotted,rDot),
+      suspended+%susp(cc,r))
+
+DEF dot(_  ,minVar)(cands(cs,rs,p)) ==
+  LET toEmptyDotted == \\c.cand(o(<>,noFct,selFun(c),fct(c),<>,<>,cart(<>)),
+                                noFct,noFct,fct(c),partSig(c),subst(c))
+  IN (cands(toEmptyDotted * cs,rs,p),minVar,<>)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN undot: globSig**nat
+           **(candFun**candFun**fct**fct**fct**partSig**subst->cand)**bool
+           -> cands**seq[suspCands]
+           -> cands**nat
+
+DEF undot(sig,minVar,&&,evalPres)(c1,susp(&,c2) :: <>) ==
+  LET &&& == \\l,r,_,rf,_,p,s. LET f == ft(dotteds(l)) IN
+                                &&(eagerPart(l),
+                                   selFun(&(innerEagerPart(l),r,
+                                            innerEagerFct(l),rf,f,p,s)),
+                                   eagerFct(l),f,topFct(l),p,s)
+  IN doCombine(Eager)(sig,pos(c2),minVar)(equalize(sig))(&&&,evalPres)(c1,c2)
+
+DEF undot(sig,minVar,&&,evalPres)(c1dotted,susp(&,c2) :: cR) ==
+  LET &&& == \\l,r,_,rf,_,p,s.LET f == ft(dotteds(l)) IN
+                               cand(o(eagerPart(l),eagerFct(l),
+                                      selFun(&(innerEagerPart(l),r,
+                                               innerEagerFct(l),rf,f,p,s)),f,
+                                      rt(dots(l)),rt(dotteds(l)),topFct(l)),
+                                    noFct,noFct,ft(dots(l)),p,s)
+      (c1,nextVar) == doCombine(Eager)(sig,pos(c2),minVar)(equalize(sig))
+                                                        (&&&,true)(c1dotted,c2)
+  IN undot(sig,nextVar,&&,evalPres)(c1,cR)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN equalize: globSig->fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason]
+
+DEF equalize(sig)(fct1,fct2,subst,minVar) ==
+  LET (newSubsts,freeVar) == unify(sig)(fct1,fct2,subst,minVar)
+  IN IF newSubsts <>? THEN (fct1,subst%,minVar,unexpectedFct(fct1,fct2,subst)%)
+     IF newSubsts ::? THEN (fct1,newSubsts,freeVar,<>)
+     FI
+
+-- 
+-- ----------------------------------------------------------------------------
+
+FUN combineSeq: mode -> globSig**pos**nat ->
+                (fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason]) ->
+                seq[cands] -> cands**nat
+-- Kombination einer (nicht leeren!) Sequenz von Mengen von
+--   Zuordnungsfunktionen
+-- Die als Argument angegebene Funktion zur Kombination zweier
+--   Funktionalitaeten (s.o.) muss assoziativ sein!
+
+DEF combineSeq(mode)(sig,pos,minVar)(combFct)(candsS) ==
+  LET (cands,freeVar) == doCombineSeq(mode)(sig,pos,minVar)(combFct)(candsS)
+  IN (traceCombineSeq(mode,candsS)(cands),freeVar)
+
+FUN doCombineSeq: mode -> globSig**pos**nat ->
+                  (fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason]) ->
+                  seq[cands] -> cands**nat
+
+DEF doCombineSeq(_   )(_  ,_  ,minVar)(_      )(c1 :: <>) == (c1,minVar)
+
+DEF doCombineSeq(mode)(sig,pos,minVar)(combFct)(c1 :: (c2 :: <>)) ==
+  LET && == \\l,r,lf,rf,f,p,s.cand(&(l,r,nil),lf,rf,f,p,s)
+  IN doCombine(mode)(sig,pos,minVar)(combFct)(&&,false)(c1,c2)
+
+DEF doCombineSeq(mode)(sig,pos,minVar)(combFct)(c1 :: (c2 :: cR)) ==
+  LET && == \\l,r,lf,rf,f,p,s.cand(&(l,r,nil),lf,rf,f,p,s)
+      (c12,nextVar) == doCombine(mode)(sig,pos,minVar)(combFct)(&&,true)(c1,c2)
+  IN doCombineSeq(mode)(sig,pos,nextVar)(combFct)(c12 :: cR)
+
+-- 
+-- ----------------------------------------------------------------------------
+
+FUN hide: globSig**nat -> seq[rep] -> cands -> cands**nat
+-- macht lokale Namen unsichtbar
+
+DEF hide(_  ,minVar)(reps)(cands(candS,reasons,pos)) ==
+  (traceHide(reps)(cands(hide(reps)*candS,reasons,pos)),minVar)
+
+DEF hide(sig,minVar)(reps)(lazy(cf,cc,l,r,p)) ==
+  LET (newCands,freeVar) == eval(sig,minVar)(lazy(cf,cc,l,r,p))
+  IN hide(sig,freeVar)(reps)(newCands)
+
+DEF hide(_  ,minVar)(_   )(none) == (none,minVar)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN hide: seq[rep] -> cand -> cand
+
+DEF hide(reps)(cand(sel,lFct,rFct,fct,pSig,subst)) ==
+  cand(sel,lFct,rFct,fct,(hideLocal \ pSig)(reps),subst)
+
+-- ----------------------------------------------------------------------------
+
+FUN eval: globSig**nat -> cands -> cands**nat
+-- wertet alle verzoegerten Kandidatenmengen aus
+
+DEF eval(sig,minVar)(cLazy AS lazy(cf,cc,l,r,p)) ==
+  LET (cEager,freeVar) == doCombine(Eager)(sig,p,minVar)(cf)(cc,false)(l,r)
+  IN (traceEval(cLazy)(cEager),freeVar)
+
+DEF eval(_  ,minVar)(cands) == (traceEval(cands)(cands),minVar)
+
+-- ----------------------------------------------------------------------------
+
+FUN extractLocalFcts: globSig**nat -> cands -> rep
+                      -> seq[pair[fct,bool]]**cands**nat
+-- identifizierte Funktionalitaeten eines lokalen Namens mit dem angegebenen
+--   Bezeichner
+-- dabei wird u.U. eine verzoegerte Kandidatenmenge ausgewertet
+
+DEF extractLocalFcts(sig,minVar)(cands)(ide) ==
+  IF noTypeKnowl? THEN (<>,cands,minVar)
+  ELSE LET (eagerCands,freeVar) == eval(sig,minVar)(cands)
+       IN (traceExtractLocalFcts(sig,ide,
+                                 doExtractLocalFcts(sig,ide,eagerCands)),
+           eagerCands,freeVar)
+  FI
+
+FUN doExtractLocalFcts: globSig**rep**cands -> seq[pair[fct,bool]]
+
+DEF doExtractLocalFcts(_  ,_  ,none(_)) == <>
+
+DEF doExtractLocalFcts(sig,ide,cands(candS,_,_)) ==
+  LET localCandS == (\\cand.isLocal(ide,partSig(cand))) | candS
+      getFct == \\cand. &(apply(subst(cand),getLocalFct(ide,partSig(cand))))
+  IN IF exactTypeKnowl? THEN
+        IF #(localCandS) = 1 THEN getFct(ft(localCandS))% ELSE <> FI
+     ELSE LET eqFct == \\f1,f2. =(=(sig))(1st(f1),1st(f2))
+          IN eqFct || (getFct * localCandS)
+     FI
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %@zoindex noTypeKnowl
+FUN noTypeKnowl?: bool
+
+DEF noTypeKnowl? == FIELD?[bool]("-znoTypeKnowl")
+
+-- %@zoindex exactTypeKnowl
+FUN exactTypeKnowl?: bool
+
+DEF exactTypeKnowl? == FIELD?[bool]("-zexactTypeKnowl")
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+-- %@zoindex traceTypeKnowl
+FUN traceTypeKnowl?: bool
+
+DEF traceTypeKnowl? == FIELD?[bool]("-ztraceTypeKnowl")
+
+FUN printExtractLocalFcts: globSig**rep**seq[pair[fct,bool]] -> () -> denotation
+
+DEF printExtractLocalFcts(sig,ide,fcts)() ==
+  "extracted types for local " ++ (
+  `(ide) ++ (
+  ":" ++
+  ((\\fct,s. " " ++ (`(`(sig,minimal))(1st(fct)) ++ s)) / empty)(fcts)))
+
+FUN traceExtractLocalFcts: globSig**rep**seq[pair[fct,bool]]
+                           -> seq[pair[fct,bool]]
+
+DEF traceExtractLocalFcts(sig,ide,fcts) ==
+  PRINT(traceTypeKnowl?,printExtractLocalFcts(sig,ide,fcts),fcts)
+
+-- ----------------------------------------------------------------------------
+
+FUN extract: globSig -> cands -> seq[idName]
+-- identifizierte Namen aus einer (nicht leeren) Menge von
+--   einstelligen Zuordnungsfunktionen
+
+DEF extract(globSig)(cands(candS,_,_)) ==
+  LET getIdName == \\cand.
+                     LET thisName == name(selFun(cand))
+                     IN IF thisName local? THEN idName(thisName,
+                                                       getLocal(no(thisName),
+                                                                partSig(cand)),
+                                                       subst(cand))
+                        ELSE idName(thisName,rep(globSig,thisName),
+                                    fct(globSig,thisName),subst(cand))
+                        FI
+  IN =(globSig) || (applySubst*(getIdName*candS))
+
+FUN applySubst: idName -> idName
+
+DEF applySubst(idName(name,rep,fct,subst)) ==
+  IF name local? THEN
+    LET (substFct,_) == apply(subst,fct)
+    IN idName(name,rep,substFct,subst)
+  ELSE
+    LET (substName,_) == apply(subst,name)
+    IN idName(substName,rep,fct,subst)
+  FI
+
+FUN = : globSig -> idName**idName -> bool
+
+DEF =(sig)(idName(n1,_,f1,_),idName(n2,_,f2,_)) ==
+  IF =(sig)(n1,n2) THEN
+    IF n2 local? THEN =(=(sig))(f1,f2)
+    ELSE true
+    FI
+  ELSE false
+  FI
+
+FUN = : globSig -> name**name -> bool
+
+DEF =(sig)(n1,n2) ==
+  IF (n1 globalSet?) or (n2 globalSet?) THEN
+    IF eqBase(n1,n2) THEN eq?(=(sig))(origInst(sig,n1),origInst(sig,n2))
+    ELSE false
+    FI
+  ELSE eqName(sig)(n1,n2)
+  FI
+
+-- ----------------------------------------------------------------------------
+
+FUN split: cands -> cands**cands
+-- Aufteilen einer (nicht leeren) Menge von Zuordnungsfunktionen, die
+--   durch combine aufgebaut wurde.
+
+DEF split(cands(candS,reasons,pos)) ==
+  LET splitCand ==
+            \\c.(cand(left(selFun(c)),noFct,noFct,noFct,partSig(c),subst(c)),
+                 cand(right(selFun(c)),noFct,noFct,noFct,partSig(c),subst(c)))
+      (candS1,candS2) == unzip(splitCand)(candS)
+  IN (cands(candS1,reasons,pos),cands(candS2,reasons,pos))
+
+-- ----------------------------------------------------------------------------
+
+FUN splitSeq: nat -> cands -> seq[cands]
+-- Aufteilen einer (nicht leeren) Menge von Zuordnungsfunktionen, die
+--   durch combineSeq aus n Mengen von Zuordnungsfunktionen aufgebaut wurde.
+
+DEF splitSeq(n)(cands) ==
+  IF n=1 THEN cands%
+  IF n>1 THEN LET (front,last) == split(cands)
+              IN splitSeq(n-1)(front)+%last
+  FI
+
+-- 
+-- ----------------------------------------------------------------------------
+
+FUN bestOf: (name**name->bool) -> cands -> cands
+-- Reduzieren einer (nicht leeren!) Menge von Zuordnungsfunktionen auf die
+--   Zuordnungsfunktionen, die in ihrem linken Teil maximal
+--   bzgl. einer partiellen Ordnung auf Namen sind
+
+DEF bestOf(>=)(cs AS cands(candS,reasons,pos)) ==
+  LET bestCands == \\cand,formerBests.
+                     LET betterExist ==
+                              exist?(\\c.better(>=)(c,cand) better?,formerBests)
+                     IN IF betterExist THEN formerBests
+                        ELSE
+                          LET removedWorse ==
+                                (\\c. ~(better(>=)(cand,c) better?))
+                                | formerBests
+                          IN cand::removedWorse
+                        FI
+  IN traceBestOf(cs)(cands((bestCands \ (ft(candS)%))(rt(candS)),reasons,pos))
+
+DATA res == better equal other
+
+FUN better: (name**name->bool) -> cand**cand -> res
+DEF better(>=)(cand(&(left1,_,_),_,_,_,_,s1),
+               cand(&(left2,_,_),_,_,_,_,s2)) ==
+  betterLhs(>=)(left1,s1,left2,s2)
+
+FUN betterLhs: (name**name->bool) -> candFun**subst**candFun**subst -> res
+DEF betterLhs(_ )(%(_)      ,_ ,%(_)      ,_ ) == equal
+DEF betterLhs(>=)(&(l1,r1,_),s1,&(l2,r2,_),s2) ==
+  LET left == betterLhs(>=)(l1,s1,l2,s2)
+  IN IF left better? THEN LET right == betterPattern(>=)(r1,s1,r2,s2)
+                          IN IF right better? THEN better
+                             IF right equal?  THEN better
+                             IF right other?  THEN other
+                             FI
+     IF left equal?  THEN betterPattern(>=)(r1,s1,r2,s2)
+     IF left other?  THEN other
+     FI
+
+FUN betterPattern: (name**name->bool) -> candFun**subst**candFun**subst -> res
+DEF betterPattern(>=)(c1,s1,c2,s2) == betterSeq(>=)(flatten(c1),s1,flatten(c2),s2)
+
+FUN flatten: candFun -> seq[name]
+DEF flatten(<>) == <>
+DEF flatten(n%) == n%
+DEF flatten(&(l,r,_)) == flatten(l) ++ flatten(r)
+
+FUN betterSeq: (name**name->bool) -> seq[name]**subst**seq[name]**subst -> res
+DEF betterSeq(_ )(      <>,_ ,      <>,_ ) == equal
+DEF betterSeq(>=)(n1 :: <>,s1,n2 :: <>,s2) ==
+  LET (substName1,_) == apply(s1,n1)
+      (substName2,_) == apply(s2,n2)
+  IN IF substName1>=substName2 THEN
+        IF substName2>=substName1 THEN equal ELSE better FI
+     ELSE other
+     FI
+DEF betterSeq(>=)(l1::r1,s1,l2::r2,s2) ==
+  LET left == betterSeq(>=)(l1%,s1,l2%,s2)
+  IN IF left better? THEN LET right == betterSeq(>=)(r1,s1,r2,s2)
+                          IN IF right better? THEN better
+                             IF right equal?  THEN better
+                             IF right other?  THEN other
+                             FI
+     IF left equal?  THEN betterSeq(>=)(r1,s1,r2,s2)
+     IF left other?  THEN other
+     FI
+
+-- ----------------------------------------------------------------------------
+-- Funktionen zur Bearbeitung von mix-Ausdruecken
+
+FUN combineMix: bool
+                -> mode
+                -> globSig**pos**nat
+                -> (fct[name]**fct[name]**subst**nat
+                    ->fct[name]**seq[subst]**nat**seq[reason])
+                 **(fct[name]**fct[name]**subst**nat
+                    ->fct[name]**seq[subst]**nat**seq[reason])
+                -> cands**cands**cands**nat
+                -> cands**nat
+-- Kombination dreier Mengen von Zuordnungsfunktionen
+
+DEF combineMix(top?)(mode)(sig,pos,minVar)(combFct1,combFct2)(cs1,cs2,cs3,no) ==
+  LET && == \\l,r,lf,rf,f,p,s.cand(&(l,r,nil),lf,rf,f,p,s)
+      (23cands,nextVar) == doCombine(mode)(sig,pos,minVar)(combFct2)(&&,false)
+                                                                    (cs2,cs3)
+      mm == \\l,r,lf,rf,f,p,s.cand(&(l,r,avail(no,rf,none,top?)),lf,rf,f,p,s)
+      (cands,freeVar) == doCombine(Eager)(sig,pos,nextVar)(combFct1)(mm,false)
+                                                                 (cs1,23cands)
+  IN (traceCombineMix(mode,cs1,cs2,cs3,no)(cands),freeVar)
+
+/* %- nun in PrioTab
+-- ----------------------------------------------------------------------------
+
+DATA prio == left right both
+
+-- ----------------------------------------------------------------------------
+
+DATA rule == none assumedLAssoc assumedRAssoc
+
+-- ----------------------------------------------------------------------------
+*/
+
+FUN uniteMix: seq[cands]**pos -> cands
+-- vereinigt Kandidatenmengen
+
+DEF uniteMix(candsS,P) ==
+  traceUniteMix(candsS)(
+  LET successful == cands? | candsS
+  IN IF successful <>? THEN none(noPossibleInfix(P))
+     IF successful ::? THEN
+        cands((++ \ <>)(cands * successful),
+              or(IF allReasons? THEN (++ \ <>)
+                                     ((alterns o whyNoOthers) * successful)
+                 ELSE <>
+                 FI),
+              P)
+     FI)
+
+-- ----------------------------------------------------------------------------
+
+FUN bestMix: (prio**fct[name]**name**fct[name]**name**fct[name]**subst
+              -> prio**rule)
+             ** (fct[name]->fct[name]**fct[name])
+             -> cands -> cands
+-- entfernt Kandidaten, fuer die bessere existieren
+
+DEF bestMix(_          ,_         )(none(errors)) == none(errors)
+
+DEF bestMix(getPrefered,getArgFcts)(cs AS cands(successful,whyNoOthers,P)) ==
+  traceBestMix(cs)(
+  cands((noBetterCand(getPrefered,getArgFcts) \ <>)(successful),
+        whyNoOthers,P))
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN doNoBetterCand
+    noBetterCand: (prio**fct[name]**name**fct[name]**name**fct[name]**subst
+                   -> prio**rule)
+                  ** (fct[name]->fct[name]**fct[name])
+                  -> cand**seq[cand]
+                  -> seq[cand]
+
+DEF noBetterCand(getPrefered,getArgFcts)(testedCand,acceptedCands) ==
+  LET thisCand   == traceTestedMixfix(testedCand)
+      unfoldVars == \\f.IF f var? THEN -- brute force !
+                          LET (noVarF,_) == apply(subst(testedCand),f) IN noVarF
+                        ELSE f
+                        FI
+      o          == \\f,g. \\x.f(g(x))
+      newCands   == doNoBetterCand(getPrefered,getArgFcts o unfoldVars)
+                                (thisCand,acceptedCands)
+  IN traceMixfixResult(acceptedCands)(newCands)
+
+-- %@zoindex debugPrio
+DEF doNoBetterCand(getPrefered,getArgFcts)
+                (cand(&(%(topOp),
+                        &(topPre AS 
+                           &(%(leftOp) ,_,avail(_,leftArgFct ,_,false)),
+                          topPost AS
+                           &(%(rightOp),_,avail(_,rightArgFct,_,false)),
+                          nil),
+                        avail(topNo,topArgFct,_,top?)),
+                      lf,rf,f,p,subst),
+                 candS) ==
+  LET LocalFun == \\ .
+  LET (topPreFct,  topPostFct)   == getArgFcts(topArgFct)
+      (leftPreFct, leftPostFct)  == getArgFcts(leftArgFct)
+      (rightPreFct,rightPostFct) == getArgFcts(rightArgFct)
+      (leftPrioA,whyLeft) == getPrefered(left,
+                                        leftPreFct,leftOp,leftPostFct,
+                                                   topOp,topPostFct,
+                                        subst)
+      (rightPrioA,whyRight) == getPrefered(right,
+                                          topPreFct,topOp,
+                                          rightPreFct,rightOp,rightPostFct,
+                                          subst)
+      leftPrio == PRINT(FIELD?[bool]("-zdebugPrio"), \\ . "dNBC/2/links:" ++ `(leftPrioA), leftPrioA)
+      rightPrio == PRINT(FIELD?[bool]("-zdebugPrio"), \\ . "dNBC/2/rechts:" ++ `(rightPrioA), rightPrioA)
+  IN IF leftPrio right? THEN candS
+     IF rightPrio left? THEN candS
+     ELSE
+       LET why == IF leftPrio left? THEN whyLeft
+                  IF rightPrio right? THEN whyRight
+--                  IF whyLeft assumedLAssoc?  THEN assumedLAssoc
+--                  IF whyRight assumedRAssoc? THEN assumedRAssoc
+                  ELSE none
+                  FI
+           thisCand == cand(&(%(topOp),
+                              &(topPre,topPost,nil),
+                              avail(topNo,topArgFct,why,top?)),lf,rf,f,p,subst)
+       IN thisCand :: candS
+     FI
+  IN
+  LocalFun()
+
+-- %@zoindex debugPrio
+DEF doNoBetterCand(getPrefered,getArgFcts)
+                (cand(&(%(topOp),
+                        &(topPre AS 
+                           &(%(leftOp),_,avail(_,leftArgFct,_,false)),
+                          topPost,
+                          nil),
+                        avail(topNo,topArgFct,_,top?)),
+                      lf,rf,f,p,subst),
+                 candS) ==
+  LET LocalFun == \\ .
+  LET (_         ,topPostFct ) == getArgFcts(topArgFct)
+      (leftPreFct,leftPostFct) == getArgFcts(leftArgFct)
+      (leftPrioA,whyLeft) == getPrefered(left,
+                                        leftPreFct,leftOp,leftPostFct,
+                                                   topOp,topPostFct,
+                                        subst)
+      leftPrio == PRINT(FIELD?[bool]("-zdebugPrio"), \\ . "dNBC/links:" ++ `(leftPrioA), leftPrioA)
+  IN IF leftPrio right? THEN PRINT(FIELD?[bool]("-zdebugPrio"),
+                                   "einfach/ links falsch", candS)
+     ELSE
+       LET why == IF leftPrio left?  THEN whyLeft
+                  ELSE none
+                  FI
+           thisCand == cand(&(%(topOp),
+                              &(topPre,topPost,nil),
+                              avail(topNo,topArgFct,why,top?)),lf,rf,f,p,subst)
+       IN thisCand :: candS
+     FI
+  IN
+  LocalFun()
+
+-- %@zoindex debugPrio
+DEF doNoBetterCand(getPrefered,getArgFcts)
+                (cand(&(%(topOp),
+                        &(topPre,
+                          topPost AS
+                           &(%(rightOp),_,avail(_,rightArgFct,_,false)),
+                          nil),
+                        avail(topNo,topArgFct,_,top?)),
+                      lf,rf,f,p,subst),
+                 candS) ==
+  LET LocalFun == \\ .
+  LET (topPreFct  ,_)            == getArgFcts(topArgFct)
+      (rightPreFct,rightPostFct) == getArgFcts(rightArgFct)
+      (rightPrioA,whyRight) == getPrefered(right,
+                                          topPreFct,topOp,
+                                          rightPreFct,rightOp,rightPostFct,
+                                          subst)
+      rightPrio == PRINT(FIELD?[bool]("-zdebugPrio"), \\ . "dNBC/rechts:" ++ `(rightPrioA), rightPrioA)
+  IN IF rightPrio left? THEN candS
+     ELSE
+       LET why == IF rightPrio right? THEN whyRight
+                  ELSE none
+                  FI
+           thisCand == cand(&(%(topOp),
+                              &(topPre,topPost,nil),
+                              avail(topNo,topArgFct,why,top?)),lf,rf,f,p,subst)
+       IN thisCand :: candS
+     FI
+   IN
+   LocalFun()
+
+DEF doNoBetterCand(_,_)(cand,candS) == cand :: candS
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN noPossibleInfix: pos -> err
+
+DEF noPossibleInfix(P) == err(error,"no possible bracketing for infix found",P)
+
+-- ----------------------------------------------------------------------------
+
+FUN unmix: (prio**fct[name]**name**fct[name]**name**fct[name]**subst
+            -> prio**rule)
+           ** (fct[name]->fct[name]**fct[name])
+           -> cands
+           -> cands**cands**cands**seq[nat]**rule
+-- entfernt Kandidaten, fuer die bessere existieren
+-- teilt restliche (mit combineMix aufgebaute) Kandidaten auf,
+-- liefert (falls eindeutig) die Regel, nach der die Kandidaten ausgewaehlt
+--   wurden, sonst 'none'
+
+DEF unmix(getPrefered,getArgFcts)(C AS cands(cs,r,p)) ==
+  LET bestCands == (noBetterCand(getPrefered,getArgFcts) \ <>)(cs)
+      (opCands,argCands) == split(cands(bestCands,r,p))
+      (preCands,postCands) == split(argCands)
+      opNoS == uniqueSort(<)((opNo o (mix o selFun))*(bestCands))
+      selectedRule ==
+         ((\\this,min.
+--                    IF this assumedLAssoc? THEN assumedLAssoc
+--                    IF this assumedRAssoc? THEN assumedRAssoc
+                      IF this none? THEN min 
+                      ELSE this
+--                      ELSE min
+                      FI) \ none)((rule o (mix o selFun))*(bestCands))
+  IN (traceUnmix(C)(opCands),preCands,postCands,opNoS,selectedRule)

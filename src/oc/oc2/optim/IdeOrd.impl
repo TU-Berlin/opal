@@ -1,0 +1,209 @@
+IMPLEMENTATION IdeOrd
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: partial orderings on equations and topsort 
+-- project: acc
+-- author:  wg 11.10.91 
+
+
+IMPORT	Nat			COMPLETELY
+	Seq			COMPLETELY
+	SeqReduce		ONLY /
+	SeqMap			ONLY *
+	Array			COMPLETELY
+	ArrayReduce		ONLY /
+	ArrayMap		ONLY *
+	NatConv			ONLY `
+	Pair			COMPLETELY
+
+IMPORT	Format			COMPLETELY
+	FormatFun1		COMPLETELY
+	Ide			COMPLETELY
+	IdeSet			ONLY ideSet {} in explode implode incl
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+DATA	ideOrd == mkA(A: array[elem])
+DATA	elem == null mkE(predCt: nat, succs: seq[nat])
+
+FUN	growSize : nat
+DEF	growSize == 24
+
+DEF {} == mkA(init(growSize,null))
+
+DEF {}?(ord) == 0?(#(A(ord)))
+
+FUN arc : ide -> ide ** ideOrd -> ideOrd
+DEF arc(eq1)(eq2,ord) ==
+	LET arr == extend(succ(max(i,k)),A(ord)) 
+	    i == #(eq2) k == #(eq1)
+	IN
+	LET arr1 == upd(i,\\e.
+	    		IF null?(e) THEN mkE(0,k%)
+			            ELSE mkE(predCt(e),k::succs(e)) FI,
+			arr)
+	    arr2 == upd(k,\\e.
+	    		IF null?(e) THEN mkE(1,<>[nat])
+			            ELSE mkE(succ(predCt(e)),succs(e)) FI,
+			arr1)
+	IN
+	mkA(arr2)
+
+    FUN extend : nat ** array[elem] -> array[elem]
+    DEF extend(s,A) ==
+	IF s > #(A) THEN init(max(s,#(A) + growSize),
+			      \\n.IF n < #(A) THEN A!n ELSE null FI)
+		    ELSE A FI
+	
+FUN point: ide ** ideOrd -> ideOrd
+DEF point(local(i),ord AS mkA(arr)) ==
+    IF i < #(arr) ANDIF mkE?(arr!i) THEN ord
+    ELSE
+	LET newarr == extend(succ(i),arr)
+	IN
+	mkA(upd(i,mkE(0,<>),newarr))
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN format: ideOrd -> format
+DEF format(mkA(arr)) ==
+    blk(0, 
+	( \\i,e,r. 
+		IF mkE?(e) THEN
+		   blk(0,%(format(local(i)),
+			    str(" (rc="),str(`(predCt(e))),str(")"),
+			    list(str(" -> <"),str(","),str(">"),
+				 	\\j.format(local(j)))
+				(succs(e)),
+			    nl
+			   )
+		       ) :: r
+		-- ELSE blk(0,%(format(local(i)),str(" null"),nl)) :: r FI
+		ELSE r FI
+	  ,<>) / arr
+    )
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+-- NB. extract might introduce "dangling" pointers in successor lists
+-- which have to be accounted in algorithms
+
+FUN extract: ideOrd ** ideSet -> ideOrd ** ideOrd
+DEF extract(mkA(arr),elems) ==
+    LET (newarr,neword) == extr(elems,arr,{},explode(elems))
+    IN
+    (mkA(newarr),neword)
+
+FUN extr: ideSet ** array[elem] ** ideOrd ** seq[ide]
+						-> array[elem] ** ideOrd
+DEF extr(elems,arr,ord,<>) == (arr,ord)
+DEF extr(elems,arr,ord,(id AS local(i))::ides) ==
+    IF i >= #(arr) ORIF null?(arr!i) THEN
+	-- elems allowed to be a superset of what is actually in ordering,
+	-- hence ignore this ide
+	extr(elems,arr,ord,ides)
+    ELSE
+	-- process successors
+	LET (tmparr,neword) == extrSuccs(elems,arr,point(id,ord),
+					 id,succs(arr!i))
+	IN
+	-- delete entry
+	LET newarr == upd(i,null,tmparr)
+	IN
+	extr(elems,newarr,neword,ides)
+    FI
+
+FUN extrSuccs: ideSet ** array[elem] ** ideOrd ** ide ** seq[nat] 
+						-> array[elem] ** ideOrd
+DEF extrSuccs(elems,arr,ord,id,<>) == (arr,ord)
+DEF extrSuccs(elems,arr,ord,id,s::ss) ==
+    IF local(s) in elems THEN
+        -- this successor becomes or is already extracted, just account arc
+    	extrSuccs(elems,arr,arc(local(s))(id,ord),id,ss)
+    OTHERWISE
+    IF s < #(arr) ANDIF mkE?(arr!s) THEN
+	-- this sucessor becomes not extracted:
+	-- 1. follow all its transient successors to draws arcs to 
+	--    extraced elems indirectly greater then id 
+	-- 2. decrement its reference count. 
+	LET neword == 2nd(
+		(drawTransArcs(elems,arr,id),{} & ord) / succs(arr!s)
+		      )
+	    newarr == upd(s,\\e.mkE(pred(predCt(e)),succs(e)),arr)
+	IN
+	extrSuccs(elems,newarr,neword,id,ss)
+    ELSE
+	-- dangling successor
+	extrSuccs(elems,arr,ord,id,ss)
+    FI
+
+FUN drawTransArcs : ideSet ** array[elem] ** ide 
+			-> nat ** pair[ideSet,ideOrd] -> pair[ideSet,ideOrd]
+DEF drawTransArcs(elems,arr,p)(s,P AS visited & ord) ==
+    IF local(s) in elems THEN
+	-- found extracted indirect successor: account arc
+	visited & arc(local(s))(p,ord)
+    OTHERWISE
+    IF s < #(arr) ANDIF mkE?(arr!s) ANDIF ~(local(s) in visited) THEN
+	-- indirect successor not extracted: follow on its successors
+	LET P1 == incl(local(s),visited) & ord
+	IN
+	(drawTransArcs(elems,arr,p),P1)/ succs(arr!s)
+    ELSE
+	-- dangling successor or already visited
+	P
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+FUN uppers: ideOrd ** ide -> ideSet
+DEF uppers(mkA(arr),local(i)) ==
+    upps(arr)(i,{})
+
+    FUN upps: array[elem] -> nat ** ideSet -> ideSet
+    DEF upps(arr)(i,s) ==
+	LET s1 == incl(local(i),s)
+	IN
+	IF i < #(arr) ANDIF mkE?(arr!i) THEN
+	    (upps(arr),s1) / succs(arr!i)
+	ELSE s1 FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+DEF topSort(mkA(arr)) ==
+    LET mins == ( \\i,e,s. IF mkE?(e) ANDIF 0?(predCt(e)) THEN
+			      local(i)::s
+			   ELSE s FI
+		  , <> ) / arr
+    IN
+    tsort(mins,arr)
+
+FUN tsort : seq[ide] ** array[elem] -> seq[ideSet]
+DEF tsort(<>, arr) == <>
+DEF tsort(mins,arr) ==
+    LET (newmins, newarr) == decr(mins,<>,arr)
+    IN
+    implode(mins)::tsort(newmins,newarr)
+
+FUN decr: seq[ide] ** seq[ide] ** array[elem] -> seq[ide] ** array[elem]
+DEF decr(<>,newmins,arr) == (newmins,arr)
+DEF decr(min::mins,newmins,arr) ==
+    decr(mins,decrSuccs(succs(arr! #(min)),newmins,arr))
+
+FUN decrSuccs: seq[nat] ** seq[ide] ** array[elem] -> seq[ide] ** array[elem]
+DEF decrSuccs(<>,newmins,arr) == (newmins,arr)
+DEF decrSuccs(s::ss,newmins,arr) ==
+    IF s < #(arr) ANDIF mkE?(arr!s) THEN
+        LET cnt    == pred(predCt(arr!s))
+	    newarr == upd(s,\\e.mkE(cnt,succs(e)),arr)
+        IN
+        IF cnt 0? THEN decrSuccs(ss,local(s)::newmins,newarr)
+	          ELSE decrSuccs(ss,newmins,newarr) FI
+    ELSE
+	decrSuccs(ss,newmins,arr)
+    FI

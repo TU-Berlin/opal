@@ -1,0 +1,151 @@
+
+
+IMPLEMENTATION OptimUnfold
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: calculation of unfold annotation and unfold order
+-- project: acc
+-- author:  wg
+
+IMPORT	Nat		ONLY nat succ 1 max:nat
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	Compose		ONLY o
+	Option		COMPLETELY
+
+IMPORT	Ide		ONLY ide origin:ide->origin origin:SORT target
+		     	     = : origin ** origin -> bool global?
+	IdeSet		ONLY ideSet {} incl in explode #
+	IdeMap		ONLY ideMap {} def !? ! 
+	IdeMSC		ONLY ideMSC
+	OptimAn		COMPLETELY
+	An		ONLY an optim:an->optimAn set:an**optimAn->an
+	Ac 		COMPLETELY
+	AcFun		ONLY dec decs setDec format
+	PreparedOptions ONLY unfold?
+
+-- =========================================================================
+
+IMPORT Format	COMPLETELY
+       FormatFun1 COMPLETELY
+       FormatDebug ONLY PRINT
+       DEBUG ONLY FIELD?
+
+FUN format : unit -> seq[seq[ide]] -> format
+DEF format(U)(msc) ==
+    list(str(""),nl,str(""),list(str("<"),str(","),str(">"),format(U)))(msc)
+
+-- =========================================================================
+
+-- FUN optimUnfold : popts -> unit -> unit ** seq[dec:SORT]
+DEF optimUnfold(o)(T) ==
+    LET funs0	  == PRINT(FIELD?[bool]("-zdumpMSC"),
+			   list(str("{"),str(","),str("}"),format(T)),
+			   ide * decs(function?,T),decs(function?,T))
+	dps 	  == (sampleDeps(T) / deps({}[ideSet],{}[nat]))
+					 		(funs0)
+	msc0	  == ideMSC(graph(dps))
+	msc	  == PRINT(FIELD?[bool]("-zdumpMSC"),format(T),msc0,msc0)
+	(T1,funs) == annotateUnfold(T,dps,msc)
+    IN
+    (T1,funs ++ decs(constant?,T1))
+
+  FUN function? : dec -> bool
+  DEF function?(d) == 
+    IF binding?(d) THEN lambda?(def(d)) ELSE false FI
+
+  FUN constant? : dec -> bool
+  DEF constant?(d) == 
+    IF binding?(d) THEN ~(lambda?(def(d))) ELSE false FI
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+DATA deps == 
+    deps(graph: ideMap[ideSet], incount: ideMap[nat])
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN sampleDeps : unit -> dec ** deps -> deps
+DEF sampleDeps(T)(dec,dps) ==
+    LET ides  == sample(T)(def(dec),{}'IdeSet)
+	count == (incr / incount(dps))(explode(ides))
+    IN
+    deps(def(ide(dec),ides,graph(dps)),count)
+
+    FUN incr : ide ** ideMap[nat] -> ideMap[nat]
+    DEF incr(i,M) ==
+	IF avail?(n?) THEN def(i,succ(cont(n?)),M)
+		      ELSE def(i,1,M) FI
+	    WHERE n? == M!?i
+
+
+FUN sample : unit -> exp ** ideSet -> ideSet
+DEF sample(T)(e,S) ==
+    IF ide?(e) THEN
+	IF global?(ide(e)) THEN 
+	    LET d == dec(T,ide(e))
+	    IN
+	    IF function?(d) THEN incl(ide(e),S) ELSE S FI
+	ELSE S FI
+    IF apply?(e)  THEN (sample(T)/sample(T)(fun(e),S))(args(e)) 
+    IF lambda?(e) THEN sample(T)(scope(e),S)
+    IF block?(e)  THEN 
+   	LET S1 == ((\\X,Y. sample(T)(def:dec -> exp (X), Y))/S)(binds(e))
+	IN
+	sample(T)(scope(e),S1)
+    IF case?(e)   THEN 
+   	LET S1 == ((\\X,Y.sample(T)(scope:match -> exp (X),Y))/S)(matches(e))
+	IN
+	sample(T)(discr(e),sample(T)(default(e),S1))
+    ELSE
+	S
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN annotateUnfold : unit ** deps ** seq[seq[ide:SORT]] 
+					-> unit ** seq[dec:SORT]
+DEF annotateUnfold(T,deps,msc) ==
+    IF <>?(msc) THEN
+	(T,<>[dec:SORT])
+    ELSE
+	LET (T1,rest) == annotateUnfold(T,deps,rt(msc))
+	    ds        == (getTargetFunction(T) / <>[dec:SORT])(ft(msc))
+	IN
+	IF <>?(ds) THEN
+	    (T1,rest)
+	ELSE
+	    LET d	  == ft(ds)
+	        nonRec?   == IF <>?(rt(ds)) THEN
+			         ~(ide(d) in (graph(deps)!ide(d)))
+		             ELSE false FI
+	    IN
+	    IF nonRec? THEN
+	        (T2,d1::rest)
+	    	WHERE 
+	    	d1  == binding(a,ide(d),mode(d),def(d))
+	  	a   == set(an(d),
+			bindingAn(c,rank(optim(an(d))),maxIdeNo(optim(an(d)))))
+		c   == IF error?(scope(def(d))) THEN max:nat
+						ELSE #(graph(deps)!ide(d)) FI
+		T2  == setDec(T1,ide(d),d1)
+	    ELSE
+	        (T1,ds++rest)
+	    FI
+	FI
+    FI
+
+  FUN getTargetFunction : unit -> ide ** seq[dec:SORT] -> seq[dec:SORT]
+  DEF getTargetFunction(T)(i,ds) ==
+    IF origin(i) = target THEN
+        dec(T,i)::ds
+    ELSE
+	ds
+    FI
+	 

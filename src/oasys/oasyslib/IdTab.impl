@@ -1,0 +1,186 @@
+IMPLEMENTATION IdTab[codom] 
+
+IMPORT	Id		COMPLETELY
+
+IMPORT	IdSet		COMPLETELY
+	IdMap		COMPLETELY
+	IdMapReduce	COMPLETELY
+	Pair  		COMPLETELY
+	Option		COMPLETELY
+	OptionMap	COMPLETELY
+	Array		COMPLETELY
+	ArrayReduce	COMPLETELY
+	Nat		COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	Fmt      	COMPLETELY
+	FmtSeq   	COMPLETELY
+	ABORT		COMPLETELY
+	NatConv		COMPLETELY
+	Denotation	COMPLETELY
+
+DATA idtab == abs(store: array[codom], next: nat)
+
+
+DEF {} == abs(empty, 0)
+
+DEF {}?(abs(_, Next)) == Next = 0
+
+FUN grow extra : nat
+DEF grow	== !("33")	-- growth by grow% + extra
+DEF extra	== !("8")	
+
+DEF free(T) == id(next(T))
+
+
+DEF new(Mk, abs(A, N)) ==
+  LET E == Mk(id(N))
+  IN
+  IF N < #(A) THEN
+    (id(N), abs(upd(N, E, A), succ(N)))
+  ELSE
+    LET A1 == extend(A, ((#(A) * grow) / 100) + extra, E)
+    IN
+    (id(N), abs(A1, succ(N)))
+  FI
+
+DEF multiNew(M, Mk, T AS abs(A, N)) ==
+  IF M = 0 THEN
+    (<>, T)
+  ELSE
+      LET N1 == (N + M) - 1
+	  Is == (N .. N1)(id)
+	  Es == Mk(Is)
+      IN
+      IF N1 < #(A) THEN
+	(Is, abs(updS(Is, Es, A), succ(N1)))
+      ELSE
+	LET A1 == extend(A, ((#(A) * grow) / 100) + max(extra, M), ft(Es))
+	IN
+	(Is, abs(updS(rt(Is), rt(Es), A1), succ(N1)))
+      FI
+  FI
+
+  FUN updS : seq[id] ** seq[codom] ** array[codom] -> array[codom]
+  DEF updS(I :: Is, E :: Es, A) ==
+      updS(Is, Es, upd(#(I), E, A))
+  DEF updS(<>, <>, A) == A
+
+DEF enrich(T AS abs(A, N), M, Default) ==
+    LET Free 	   == free(M)
+	(A1, N1)   == IF no(Free) <= N THEN
+			  (A, N)
+		      ELSE
+		      	  (extend(A, no(Free) - N, Default),
+			   no(Free))
+		      FI
+    IN
+    (\\Id, Val, T1 . def(Id, Val, T1), abs(A1, N1)) / M
+
+DEF join(T1 AS abs(A1, N1), T2 AS abs(A2, N2), Mk) ==
+  IF N1 = 0 THEN 
+    (T2, \\ X . X)
+  OTHERWISE
+  IF N2 = 0 THEN
+    (T1, \\ X . X)
+  ELSE
+    LET N3	== (N1 + N2) - 1
+	RenArr	== init(N2, \\ I. id(I + N1))
+	RenFun	== \\ Id . IF #(Id) < N2 THEN RenArr ! #(Id)
+					 ELSE Id FI
+	A3	== IF N3 < #(A1) THEN A1
+				 ELSE extend(A1, ((#(A1) * grow) / 100)
+						     + max(extra, N2),
+						 A1 ! 0) FI
+    IN
+    (abs(rename(A3, A2, Mk, RenFun, N2, 0, N1), N3), RenFun)
+  FI
+
+  FUN rename : array[codom] ** array[codom] 
+		** (codom ** (id -> id) -> codom)
+		** (id -> id) 
+		** nat ** nat ** nat -> array[codom]
+  DEF rename(A3, A2, Mk, RenFun, succ(N), I, J) ==
+    rename(upd(J, Mk(A2 ! I, RenFun), A3), A2, Mk, RenFun, N, succ(I), succ(J))
+  DEF rename(A3, _, _, _, 0, _, _) == A3 
+
+
+DEF def(Id, Codom, abs(A, N)) ==
+  IF #(Id) < N THEN abs(upd(#(Id), Codom, A), N) FI
+
+DEF upd(Id, Fun, abs(A, N)) ==
+  IF #(Id) < N THEN abs(upd(#(Id), Fun, A), N) FI
+
+DEF abs(A, N) ! Id == 
+    IF #(Id) < N 
+      THEN A ! #(Id) 
+      ELSE ABORT("!'IdTab: selection undefined at "++ `(#(Id)))
+    FI
+
+DEF Id def? abs(_, N) == #(Id) < N
+
+DEF abs(A, N) !? Id ==
+    IF #(Id) < N THEN avail(A ! #(Id)) ELSE nil FI
+
+
+DEF dom(abs(_, 0)) == {}
+DEF dom(abs(_, N)) == (0 .. N-1)(id)
+
+DEF codom(M) == codomST(M, \\ _ . true)
+
+DEF codomST(abs(A, N), Pred) == codom1(Pred, A, N, 0)
+
+  FUN codom1 : (codom -> bool) ** array[codom] ** nat ** nat -> seq[codom]
+  DEF codom1(Pred, A, N, I) ==
+    IF I < N THEN
+      IF Pred(A ! I) THEN (A ! I) :: codom1(Pred, A, N, succ(I))
+		     ELSE codom1(Pred, A, N, succ(I)) FI
+    ELSE <> FI
+
+
+DEF exists?(P, abs(A, N)) ==
+    exists?(P, A, N)
+
+    FUN exists? : (codom -> bool) ** array[codom] ** nat -> bool
+    DEF exists?(P, A, succ(I)) ==
+    	IF P(A ! I) THEN true ELSE exists?(P, A, I) FI
+    DEF exists?(P, A, 0) == false
+
+DEF forall?(P, T) == ~(exists?(\\ X. ~(P(X)), T))
+
+DEF find?(P, T) ==
+    2nd * find?(\\Id, X. P(X), T)
+
+DEF find?(P, abs(A, N)) ==
+    find?(P, A, N)
+
+    FUN find? : (id ** codom -> bool) ** array[codom] ** nat 
+    				      -> option[pair[id,codom]]
+    DEF find?(P, A, succ(I)) ==
+    	IF P(id(I), A ! I) THEN avail(id(I) & A ! I)
+			   ELSE find?(P, A, I) FI
+    DEF find?(P, A, 0) == nil
+
+
+DEF asTab(Seq, Default) ==
+    LET Max == (\\Pair, M . IF none?(M) THEN 1st(Pair)
+    					ELSE max(1st(Pair), M) FI,
+		none) \ Seq
+    IN
+    IF none?(Max) THEN
+    	abs(init(0, Default), 0)
+    ELSE
+    	abs( (\\Id_Val, A . (A, no(1st(Id_Val))) := 2nd(Id_Val),  
+	      init(succ(no(Max)), Default)) \ Seq,
+	     succ(no(Max)) )
+    FI
+	
+DEF fmtIdtab(Fmt)(M) ==
+    list(\\ Pair. fmtId(1st(Pair)); lit(" = "); Fmt(2nd(Pair)),
+         lit("["), lit(","), lit("]"), 
+	 asSeq(M))
+
+
+DEF asSeq(abs(A, N)) ==
+    (\\ I, V, R . IF I < N THEN id(I) & V :: R ELSE R FI, <>) / A
+

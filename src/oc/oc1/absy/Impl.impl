@@ -1,0 +1,313 @@
+-- %- LAST EDIT: Fri Dec  4 20:32:58 1992 by Carola Gerke (kassandra!carola) 
+
+-- %- AutorInnen:  mija + carola
+-- %- Projekt:     OPAL1-Compiler (Frontend) + property language
+
+
+IMPLEMENTATION Impl[obj]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:39 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  -- absy
+        Fct[obj]        COMPLETELY
+IMPORT  -- token
+        Lexem           COMPLETELY
+        Rep             ONLY rep : SORT ` nilRep
+IMPORT  -- admin
+        Pos             COMPLETELY
+        DEBUG           COMPLETELY
+IMPORT  -- lib
+        Denotation      COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          ONLY *
+        SeqReduce       ONLY / seq 
+        Nat             COMPLETELY
+        Bitset          COMPLETELY
+        Char            ONLY char newline tab blank
+        CharConv        ONLY `
+        Pair[expr,set]  ONLY pair & 
+       SeqFilter ONLY |
+       OptionConv ONLY `
+       Option ONLY avail
+
+-- %- ------------------------------------------------------------------------
+DATA sortImpl== sortImpl( sort:obj, variants:seq[variant], pos:pos )
+DATA variant == variant( cons:obj, test:obj, comps:seq[comp], pos:pos )
+DATA comp    == comp( sel:obj, fct:fct, pos:pos )
+DATA eq      == eq( left:expr, right:expr, pos:pos )
+DATA law     == law(ide:rep, form:formula, pos:pos)
+DATA spc == spc(head: eq, pre: option[formula], post: formula, pos:pos)
+DATA proofHead == proofHead(ide: rep, prems: seq[obj], concl: obj, pos: pos)
+DATA proofBody == proofBody(proof: obj, body: expr, pos: pos)
+DATA formula == dfd(which:expr, pos:pos)
+                equal(left:expr, right:expr, pos:pos)
+                ineq(left:expr, right:expr, pos:pos)
+                neg(which:formula, pos:pos)
+                and(left:formula, right:formula, pos:pos)
+                or(left:formula, right:formula, pos:pos)
+                imply(left:formula, right:formula, pos:pos)
+                eqv(left:formula, right:formula, pos:pos)
+                all(vars:seq[obj], which:formula, pos:pos)
+                ex(vars:seq[obj], which:formula, pos:pos)
+                informal(text: rep, pos:pos)
+                none(pos:pos)
+
+DATA expr    == none(pos:pos)
+                rtError(msg:denotation,pos:pos) 
+                den( string:rep, pos:pos )
+                tuple( elems:seq[expr], pos:pos )
+                apply( funct:expr, arg:expr, pos:pos )
+                cases( guards:seq[guard], else:expr, pos:pos )
+                lambda( vars:seq[obj], body:expr, pos:pos )
+                val( object:obj, pos:pos)
+                as( patName:obj, expr:expr, pos:pos )
+                block( defs:seq[eq], body:expr, pos:pos )
+                typed( expr:expr, fct:fct, pos:pos )
+                mix( fix:seq[pair[expr,set]],pos:pos)
+
+DATA guard   == guard( if:expr, then:expr, pos:pos )
+
+FUN fun arg op inOp postOp : nat
+DEF fun     == 1          DEF arg     == 2
+DEF op      == 3          DEF inOp    == 4
+DEF postOp  == 5
+
+
+DEF fun == fun %          DEF arg     == arg %
+DEF op  == op %           DEF inOprnd == inOp % 
+DEF postOprnd == postOp %
+
+DEF fun? (BS)       == fun in BS
+DEF arg? (BS)       == arg in BS
+DEF op?  (BS)       == op in BS
+DEF inOprnd? (BS)   == inOp in BS
+DEF postOprnd? (BS) == postOp in BS
+
+-- %- ------------------------------------------------------------------------
+-- %$Textrepraesentationen$
+-- %$$Formeln$$
+DEF `(``)(dfd(W,P)) == `(dfd:lexem) ++ " " ++ `(``)(W) ++ outP(P)
+
+DEF `(``)(equal(L,none(_),P)) == 
+    `(``)(L) ++ " " ++ outP(P)
+DEF `(``)(equal(L,R,P)) == 
+    `(``)(L) ++ " " ++ (`(equal:lexem)++ " " ++ `(``)(R)) ++ outP(P)
+
+DEF `(``)(ineq(L,R,P)) == 
+    `(``)(L)++ " " ++ `(ineq:lexem) ++ " " ++ `(``)(R) ++ outP(P)
+DEF `(``)(neg(W,P))    == 
+    `(not:lexem) ++ " " ++ `(``)(W) ++ outP(P)
+DEF `(``)(and(L,R,P)) == 
+    ("(" ++ `(``)(L)++ ")" ++ `(and:lexem))++("(" ++ `(``)(R) ++ ")" ++ outP(P))
+DEF `(``)(or(L,R,P)) == 
+    ("(" ++ `(``)(L)++ ")" ++ `(or:lexem)) ++ ("(" ++ `(``)(R) ++ ")" ++ outP(P))
+DEF `(``)(imply(L,R,P)) == 
+   ("(" ++ `(``)(L)++ ")" ++ `(implies:lexem))++("(" ++ `(``)(R)++ ")" ++outP(P))
+DEF `(``)(eqv(L,R,P)) == 
+    ("(" ++ `(``)(L) ++ ")" ++ `(eqv:lexem))++("(" ++ `(``)(R) ++ ")" ++ outP(P))
+DEF `(``)(all(V,W,P)) == 
+    `(all:lexem)++ " " ++
+        (++ / `(dot))((\\PN. ``(PN) ++ " ") * V) ++ `(``)(W) ++ outP(P)
+
+DEF `(``)(ex(V,W,P)) == 
+    `(ex:lexem)++ " " ++ 
+           (++ / `(dot))((\\PN. ``(PN) ++ " ") * V) ++ `(``)(W) ++ outP(P)
+
+DEF `(``)(informal(TXT,P)) == "[""" ++ (TXT`) ++ """" ++ outP(P) ++ "]"
+
+DEF `(_)(none:pos->formula (P)) == "error Formula" ++ outP(P)
+    
+-- %$$sortImpl$
+DEF  `(``)(sortImpl(S,VarS,P)) ==
+     ``(S) ++ `(equation) ++ 
+     ((\\ V,R . `(newline) ++ `(tab) ++ `(``)(V) ++ R) / empty)(VarS) ++ outP(P)
+
+-- %$$Variant$
+DEF  `(``)(variant(C,_,<>,P))    ==  ``(C) ++ outP(P) 
+DEF  `(``)(variant(Co,_,Comp :: R,P)) ==
+     ``(Co) ++ "(" ++ 
+     `(``)(Comp) ++ ((\\C,D. "," ++ `(``)(C) ++ D) / ")" )(R) ++ outP(P)
+
+-- %$$comp$
+DEF  `(``)(comp(S,F,P)) == ``(S) ++ `(colon) ++ `(``)(F) ++ outP(P)
+
+-- %$$eq$
+DEF  `(``)(e:eq) == `(``,e,empty) ++ outP(pos(e))
+
+FUN  ` :(obj->denotation) ** eq ** denotation -> denotation
+DEF  `(``,eq(L,R,_),tabs) == 
+     " " ++ `(``,L,tabs) ++ (" " ++ `(equation) ++ " ") ++ `(``,R,tabs)
+
+-- %$$law$
+DEF  `(``)(l:law) == `(``,l,empty) ++ outP(pos(l))
+FUN  ` :(obj->denotation) ** law ** denotation -> denotation
+DEF  `(``,law(I,R,_),_) == 
+     `(law:lexem) ++ " " ++ `(I) ++ (" " ++ `(equation) ++ " ") ++ `(``)(R)
+-- %$$spc$
+DEF  `(``)(s:spc) == `(``,s,empty) ++ outP(pos(s))
+
+FUN ` :(obj->denotation) ** spc ** denotation -> denotation
+DEF  `(``,spc(h,Pre,Post,_), _) == 
+  (`(spc:lexem) ++ " " ++ `(``)(h) ++ " ") ++
+  (`(pre:lexem) ++ " " ++ `(`(``))(Pre) ++ " ") ++ 
+  (`(post:lexem) ++ " " ++ `(``)(Post)) 
+
+-- %$$proofHead$
+DEF `(``)(proofHead(I, PS, C, _)) ==
+  `(proof:lexem) ++ " " ++ `(I) ++ ":  " ++
+  ((+/+(" "), "") / (`` * PS)) ++ " " ++ 
+  `(turnstile:lexem) ++ " " ++ ``(C)
+
+-- %$$proofBody$
+DEF `(``)(proofBody(N, B, _)) ==
+  `(proof:lexem) ++ " " ++ ``(N) ++ `(equation:lexem) ++ " " ++ `(``)(B)
+
+-- %$$expr$
+DEF  `(``)(e:expr) == `(``,e,tabP)
+
+FUN  ` :(obj->denotation) ** expr ** denotation -> denotation
+DEF `(_,none(P),_)      == "errExpr" ++ outP(P)
+DEF `(_,rtError(S,P),_) == "rtError:" ++ S ++ outP(P)
+DEF `(``,val(V,Pos),_)   == ``(V) ++ outP(Pos) 
+DEF `(_,den(S,P),_) == """" ++ `(S) ++ """" ++ outP(P)
+
+DEF `(_,tuple(<>,_),_)    == empty
+DEF `(``,tuple(Elems,P),tabs) ==
+     `(openBr)++ Ele ++ `(closeBr) ++ outTuplePos(P)
+     WHERE Ele == `(``,ft(Elems),tabs) ++ (h3(``,tabs) / empty)(rt(Elems))
+
+DEF `(``,apply(Funct,Arg,P),tabs) ==
+    `(``,Funct,tabs) ++ "(" ++ `(``,Arg,tabs) ++ ")" ++ outApplPos(P)
+
+DEF `(``,cases(Guards,none(_),P),tabs)== 
+     LET newTabs == tabP ++ tabs
+         ifs == (h4(``,newTabs) / empty )(Guards)
+     IN ifs ++ `(newline) ++ newTabs ++ `(fi) ++ outP(P)
+
+DEF `(``,cases(Guards,Else,P),tabs)== 
+     LET newTabs == tabP ++ tabs
+         ifs == (h4(``,newTabs) / empty )(Guards)
+         el  == " \n " ++ newTabs ++ `(else:lexem) ++ " " ++ `(``,Else,newTabs)
+     IN ifs ++ el ++ `(newline) ++ newTabs ++ `(fi) ++ outP(P)
+
+DEF `(``,lambda(<>,Body,P),tabs)      == 
+    `(lambda) ++ "(" ++ `(``)(Body) ++ ")" ++ outP(P)
+DEF `(``,lambda(V1 :: R,Body,P),tabs) ==
+    `(lambda) ++ ``(V1) ++ ((\\V,VS. "," ++ ``(V) ++ VS) / `(dot))(R) 
+    ++ ("(" ++ `(``)(Body) ++ ")" ++ outP(P))
+
+DEF `(``,block(Defs,Body,P),tabs) ==
+    LET nT == tabP ++ tabs
+        nlT == `(newline) ++ nT
+        eqs == (h6(``,nT) / empty :denotation)(Defs)
+    IN ( nlT ++ `(let)++ eqs ++ nlT ++ `(in))++(nlT ++ `(``,Body,nT) ++ outP(P))
+
+DEF `(``,as(Pat,Expr,P),tabs) ==
+    ``(Pat) ++ " " ++ `(as:lexem) ++ " " ++ `(``,Expr,tabs) ++ outP(P)
+
+DEF `(``,typed(Expr,Fct,P),tabs) ==
+    `(``,Expr,tabs) ++ "," ++ `(``)(Fct) ++ outP(P)
+
+DEF `(``,mix(Fix,_),_) ==  (++ / empty) (`(``) * Fix)
+
+        FUN ` : (obj->denotation) -> pair[expr,set] -> denotation
+        DEF `(``)(ex & _) == `(``)(ex) ++ " "
+
+        FUN h3:(obj->denotation)**denotation->expr**denotation->denotation
+        DEF h3(``,tabs)(x,t) == `(comma) ++ (`(``,x,tabs) ++ t)
+        FUN h4:(obj->denotation)**denotation->guard**denotation->denotation
+        DEF h4(F,tabs)(x,t) == `(newline) ++ (tabs ++ (`(F,x,tabs) ++ t))
+/* %- unused
+        FUN h5:(obj->denotation)->obj**denotation->denotation
+        DEF h5(``)(x,t) == `(comma) ++ (``(x) ++ t)
+*/
+        FUN h6:(obj->denotation)**denotation->eq**denotation->denotation
+        DEF h6(F,tabs)(x,t) == `(newline) ++ (tabs ++ (`(F,x,tabs) ++ t))
+
+-- %$$Guard$
+DEF  `(``)(g:guard) == `(``,g,empty:denotation)
+
+-- Hilfsfunktion fuers Pretty-Printing
+FUN  ` : (obj->denotation) ** guard ** denotation -> denotation
+DEF  `(``,guard(I,T,_),tabs) ==
+     `(if:lexem) ++ " " ++ `(``,I,tabs) ++ `(then:lexem) ++ " " ++ `(``,T,tabs)
+
+-- eigener Tabulator
+FUN tabP : denotation
+DEF tabP == "   "
+
+FUN outP : pos -> denotation
+DEF outP (P) == IF printPos? THEN P ` ELSE empty FI
+
+FUN outApplPos outTuplePos: pos -> denotation
+DEF outApplPos (P) == 
+    IF printPos? or printApplyPos? THEN P ` ELSE empty FI
+DEF outTuplePos (P) == 
+    IF printPos? or printTuplePos? THEN P ` ELSE empty FI
+
+-- %@zoindex printPos
+-- %@zoindex printApplyPos
+-- %@zoindex printTuplePos
+FUN printPos? printApplyPos? printTuplePos?: bool
+DEF printPos? == FIELD?[bool]("-zprintPos")
+DEF printApplyPos? == FIELD?[bool]("-zprintApplyPos")
+DEF printTuplePos? == FIELD?[bool]("-zprintTuplePos")
+
+
+-- %$eq-Funktionen$
+DEF revert(eq(lhs, rhs, pos)) == eq(rhs, lhs, pos)
+
+-- %$formula-Funktionen$
+DEF block(eqns, dfd(wh, pF), pos) == dfd(block(eqns, wh, pos), pF)
+DEF block(eqns, equal(l, r, pF), pos) ==
+/* %Spezialfall abfangen, daß rechte Seite true'BOOL ist, erfordert leider
+    zu viele Änderungen (kd) */
+  equal(block(eqns, l, pos), block(eqns, r, pos), pF)
+DEF block(eqns, ineq(l, r, pF), pos) ==
+  ineq(block(eqns, l, pos), block(eqns, r, pos), pF)
+DEF block(eqns, neg(wh, pF), pos) == neg(block(eqns, wh, pos), pF)
+DEF block(eqns, and(l, r, pF), pos) ==
+  and(block(eqns, l, pos), block(eqns, r, pos), pF)
+DEF block(eqns, or(l, r, pF), pos) ==
+  or(block(eqns, l, pos), block(eqns, r, pos), pF)
+DEF block(eqns, imply(l, r, pF), pos) ==
+  imply(block(eqns, l, pos), block(eqns, r, pos), pF)
+DEF block(eqns, eqv(l, r, pF), pos) ==
+  eqv(block(eqns, l, pos), block(eqns, r, pos), pF)
+-- %Hier wirds gefährlich wg. Namenskonflikten in eqns und vars
+DEF block(eqns, all(vars, wh, pF), pos) == all(vars, block(eqns, wh, pos), pF)
+DEF block(eqns, ex(vars, wh, pF), pos) == ex(vars, block(eqns, wh, pos), pF)
+DEF block(_, F AS informal(_,_),_) == F
+DEF block(_, F AS none(_), _) == F:formula
+
+DEF mkSpecLaw(spc(EQ AS eq(left, right, posEq), avail(pre), post, pos)) ==
+  law(nilRep,
+      all(extractVars(left), 
+          imply(pre, block(revert(EQ)%, post, posEq), pos),
+          pos),
+      pos)
+
+DEF mkSpecLaw(spc(EQ AS eq(left, right, posEq), nil, post, pos)) ==
+  law(nilRep,
+      all(extractVars(left), 
+          block(revert(EQ)%, post, posEq),
+          pos),
+      pos)
+
+FUN extractVars: expr -> seq[obj]
+DEF extractVars(E AS apply(_, _, _)) == extractVarsI(E)
+DEF extractVars(E AS typed(tE, _, _)) == extractVars(tE)
+DEF extractVars(_) == <>
+
+FUN extractVarsI: expr -> seq[obj]
+DEF extractVarsI(tuple(els, _)) == object * val? | els
+DEF extractVarsI(apply(val(_, _), a, _)) == extractVarsI(a)
+DEF extractVarsI(apply(typed(val(_, _), _, _), a, _)) == extractVarsI(a)
+DEF extractVarsI(apply(f, a, _)) == extractVarsI(f) ++ extractVarsI(a)
+DEF extractVarsI(val(o, _)) == o%
+DEF extractVarsI(typed(e, _, _)) == extractVarsI(e)
+DEF extractVarsI(_) == <>
+

@@ -1,0 +1,104 @@
+IMPLEMENTATION DbGlobalEnv
+
+IMPORT	ComState	COMPLETELY
+	Option		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ProcessConnect[answer,task]
+			COMPLETELY
+	RepoEvent	COMPLETELY
+	RepoName	COMPLETELY
+	DbUnitTable	COMPLETELY
+	Void		COMPLETELY
+	Fmt		COMPLETELY
+	File		COMPLETELY
+	Map		COMPLETELY
+	MapFilter	COMPLETELY
+	Denotation	COMPLETELY
+	Seq		COMPLETELY
+
+IMPORT	ChannelData	COMPLETELY
+
+IMPORT	DEBUG		ONLY FIELD?
+
+FUN traceChannel?	: bool
+DEF traceChannel?	== FIELD?[bool]("-ztraceChannel")
+
+
+-- %$identTable$ ==================================================
+DEF identTable == get(identTableId) & (\\Opt. succeed(cont(Opt)))
+
+DEF :=_identTable(ITab) == identTableId => (\\ _ . avail(ITab))
+
+DEF :=_identTable(Upd) == identTableId => (\\Opt. avail(Upd(cont(Opt))))
+
+    FUN identTableId : stateId[option[identTable]]
+    DEF identTableId == EXEC(stateId(nil))
+
+
+
+-- %$Channel$ ==================================================
+DEF channel == 
+	get(channelId)					& (\\Opt. 
+	IF Opt avail?
+	  THEN succeed(cont(Opt))
+	  ELSE break("no connection to client process established")
+	FI						)
+
+DEF :=_channel(Ch) == channelId => (\\ _ . avail(Ch))
+
+    FUN channelId : stateId[option[channel]]
+    DEF channelId == EXEC(stateId(nil))
+
+DEF resetChannel == channelId => (\\ _ . nil)
+
+DEF readChannel == 
+    channel		& (\\Chan. 
+    read(Chan)		& (\\Answer.
+    IF traceChannel? THEN
+	writeLine(stdErr,"sIN: " ++ pretty(fmtAnswer(Answer))) & (\\ _ .
+	succeed(Answer)
+	)
+    ELSE succeed(Answer) FI
+    ))
+
+DEF writeChannel(Task) == 
+    (IF traceChannel? THEN
+	writeLine(stdErr,"sOUT: " ++ pretty(fmtTask(Task)))
+     ELSE succeed(nil) FI)	& (\\ _ .
+    channel			& (\\Chan. 
+    write(Chan, Task)
+    ))
+
+
+-- %$UnitTable$ =======================================================
+
+DEF unitTable == get(unitTableId) & (\\Opt. succeed(cont(Opt)))
+
+DEF :=_unitTable(ITab) == unitTableId => (\\ _ . avail(ITab))
+
+DEF :=_unitTable(Upd) == unitTableId => (\\Opt. avail(Upd(cont(Opt))))
+
+    FUN unitTableId : stateId[option[unitTable]]
+    DEF unitTableId == EXEC(stateId(nil))
+
+
+-- %$Client Args ==================================================
+
+FUN clientArgsId : stateId[seq[denotation]]
+DEF clientArgsId == EXEC(stateId(<>))
+
+DEF clientArgs		== get(clientArgsId)
+DEF :=_clientArgs(Args) == with(clientArgsId, \\ _ . Args)
+
+
+-- %$Event Handler$ ==================================================
+
+DEF globEnvHandler(newAbsy(UName)) ==
+    :=_unitTable(\\UTab. (UName,changed) def UTab)
+
+DEF globEnvHandler(newObject(UName)) ==
+    :=_unitTable(\\UTab. (UName,changed) def UTab)
+
+DEF globEnvHandler(_) == succeed(nil)
+

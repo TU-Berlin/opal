@@ -1,0 +1,59 @@
+IMPLEMENTATION TreeMapEnv
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:09 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Tree ONLY tree node nil
+
+/* % top-down direction 
+first a new value and two new environments are computed
+then the children are processed
+*/
+DEF f *_V (e, nil) == nil
+DEF f *_V (e, node(d, t1, t2)) == 
+        LET (e1, e2, new) == f(e, d)
+        IN node(new, f *_V (e1, t1), f *_V (e2, t2))
+
+/* % bottom-up direction
+first the children are processed
+with the environments of the children a new value and a new environment
+    is computed
+*/
+DEF f *_^ (e, nil) == (e, nil)
+DEF f *_^ (e, node(d, t1, t2)) ==
+        LET (e1, newt1) == f *_^ (e, t1)
+            (e2, newt2) == f *_^ (e, t2)
+            (newe, newd) == f(e1, e2, d)
+        IN
+            (newe, node(newd, newt1, newt2))
+
+-- %$Traversing a Tree$
+/* % These functions visit the the nodes in preorder, inorder or
+postorder, always using the environment from the previous
+computation. */
+
+FUN *_pre *_in *_post: 
+    (env ** from -> env ** to) ** env ** tree[from] -> env ** tree[to]
+
+DEF *_pre(_, e, nil) == (e, nil)
+DEF *_pre(f, e, node(v, l, r)) ==
+    LET (eL, newV) == f(e, v)
+        (eR, newL) == *_pre(f, eL, l)
+        (newE, newR) == *_pre(f, eR, r)
+    IN (newE, node(newV, newL, newR))
+
+DEF *_in(_, e, nil) == (e, nil)
+DEF *_in(f, e, node(v, l, r)) ==
+    LET (eV, newL) == *_in(f, e, l)
+        (eR, newV) == f(eV, v)
+        (newE, newR) == *_in(f, eR, r)
+    IN (newE, node(newV, newL, newR))
+
+DEF *_post(_, e, nil) == (e, nil)
+DEF *_post(f, e, node(v, l, r)) ==
+    LET (eR, newL) == *_post(f, e, l)
+        (eV, newR) == *_post(f, eR, r)
+        (newE, newV) == f(eV, v)
+    IN (newE, node(newV, newL, newR))

@@ -1,0 +1,167 @@
+IMPLEMENTATION Token
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/scanOpal/Token.impl,v 1.1.1.1 1998-06-16 16:00:39 wg Exp $
+
+IMPORT 
+  String        COMPLETELY       SeqFilter      COMPLETELY
+  Set           COMPLETELY       Char           COMPLETELY
+  SetConv       COMPLETELY
+  Seq           COMPLETELY       NatConv        COMPLETELY
+  SeqMap        COMPLETELY       Nat            COMPLETELY
+  SeqReduce     COMPLETELY
+  SetByBST      COMPLETELY
+  SetByBSTMap   COMPLETELY
+  Denotation    COMPLETELY
+
+IMPORT Pos      COMPLETELY
+
+/* %The @DATA-definition for the @SORT @c{token} matches exactly the @TYPE-definition
+of the signature part. */
+DATA token == identifier      ( cont : string, pos : pos )
+              denotation      ( cont : string, pos : pos )
+              keyword         ( cont : string, pos : pos )
+              lineComment     ( cont : string, pos : pos )
+              comment         ( cont : string, pos : pos )
+              pragma          ( cont : string, pos : pos )
+              layout          ( cont : string, pos : pos )
+              open            ( cont : string, pos : pos )
+              close           ( cont : string, pos : pos )
+              comma           ( cont : string, pos : pos )
+              apostrophe      ( cont : string, pos : pos )
+              bracketopen     ( cont : string, pos : pos )
+              bracketclose    ( cont : string, pos : pos )
+              documentation   ( cont     : string,
+                                pos      : pos, 
+                                levelId  :  option[string] )
+              docuProps       ( cont : string, pos : pos ) 
+              docuFileSplit   ( cont  : string, 
+                                pos   : pos,
+                                level : splitLevel ) 
+              error           ( reason : denotation  )
+              warning         ( reason : denotation  )
+
+-- %Pseudo constructor
+DEF ok?( tok ) == ~(error?(tok) or warning?(tok))
+
+-- DEF error(reas) == error(("<ERROR>" ++ reas)!, reas, pos(0,0))
+-- DEF warning(reas) == warning(("<WARNING>" ++ reas)!, reas, pos(0,0))
+
+-- %@OPAL-sections are applied for the subsequent implementations:
+DEF token2String( toks )       == (++ / <>) (tokenSeq2StringSeq(toks))
+
+DEF tokenSeq2StringSet( toks ) == asSet(tokenSeq2StringSeq(toks))
+
+DEF tokenSeq2StringSeq( toks ) == cont(_) * toks
+
+
+DEF t1 < t2  == cont(t1) < cont(t2)
+
+
+FUN skipLayout : seq[token] -> seq[token]
+DEF skipLayout( tokenSeq ) == 
+  LET (layouts, rest) == split(layout?, tokenSeq)
+  IN
+  IF layouts <>? THEN
+    rest
+  ELSE
+    ft(layouts) :: (((\\x. layout(<>, pos(x))) * rt(layouts)) ++ rest)
+  FI
+
+/* %Delete @c{layout}-token that contain single newlines: */
+FUN skipLayoutNewline : seq[token] -> seq[token]
+DEF skipLayoutNewline( tokenSeq ) == 
+  LET (layouts, rest) == 
+      split((\\tok. 
+            IF layout?(tok) ANDIF (cont(tok) = %(newline)) THEN
+              true
+            ELSE
+              false
+            FI
+            ),
+            tokenSeq
+           )
+  IN
+  IF layouts <>? THEN
+    rest
+  ELSE
+-- %one newline should be preserved
+    ft(layouts) :: (((\\x. layout(<>, pos(x))) * rt(layouts)) ++ rest)
+  FI
+
+
+-- %The implementation of the function
+FUN eraseLayout : seq[token] -> seq[token]
+-- %is based on @c{skipLayout}:
+DEF eraseLayout( tokenSeq ) == revert(skipLayout(revert(skipLayout(tokenSeq))))
+
+-- %The implementation of the function is based on @c{skipLayoutNewline}:
+DEF eraseLayoutNewlines( tokenSeq ) == 
+  revert(skipLayoutNewline(revert(skipLayoutNewline(tokenSeq))))
+
+
+FUN codeEnd? : token -> bool
+DEF codeEnd?( token ) ==
+  documentation?(token) or docuProps?(token) 
+
+/* % @c{isKeyword} checks if the @c{testString} can be found in the predefined
+list of @OPAL keywords */
+DEF isKeyword( testString ) == testString in keywordSet
+
+
+/* %The set of @OPAL-keyword (without recognition of special keywords of the
+property-language! The property-language-keyword are currently handled the same
+way as simple identifiers): */
+FUN keywordSet: set'SetByBST[string,<]
+DEF keywordSet == ! *
+incl("AS",  
+incl("ANDIF",   
+incl("COMPLETEL\x59",  
+incl("DATA", -- ==
+incl("DEF", -- ==
+incl("ELSE",    
+incl("FI",  
+incl("FUN",     
+incl("IF",
+incl("IMPLEMENTATION",      
+incl("IMPORT",  
+incl("IN",  
+incl("LET",
+incl("ONL\x59",    
+incl("OTHERWISE",   
+incl("ORIF",    
+incl("SIGNATURE", 
+incl("SORT",    
+incl("THEN",    
+incl("TYPE",   -- == 
+incl("WHERE", 
+incl("**",  
+incl("->",  
+incl(".",   
+incl(":",   
+incl("==",  
+incl("\\\\", 
+{}'SetByBST[denotation,<])))))))))))))))))))))))))))
+
+
+FUN splitActLine : seq[token] -> seq[token] ** seq[token]
+DEF splitActLine( <>       ) == (<>, <>)   -- no token -> no splitting !
+DEF splitActLine( tokenSeq ) ==
+    split((\\x.line(pos(x)) = actLine), tokenSeq)
+  WHERE
+    actLine == line(pos(ft(tokenSeq)))
+
+
+
+DATA splitLevel == subPart
+                   subsubPart  
+                   subsubsubPart
+                   subsubsubsubPart
+
+
+FUN incr : splitLevel -> splitLevel
+DEF incr(subPart)          == subsubPart
+DEF incr(subsubPart)       == subsubsubPart
+DEF incr(subsubsubPart)    == subsubsubsubPart
+-- %This implementation variant ensures valid results for all parameters of @c{incr}:
+DEF incr(subsubsubsubPart) == subsubsubsubPart  
+
+

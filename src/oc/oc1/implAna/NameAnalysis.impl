@@ -1,0 +1,927 @@
+-- LAST EDIT: Mon Aug 14 21:24:54 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      af
+-- Project:     OPAL1-Compiler (implementation analysis)
+-- Purpose:     matching names 
+-- Changes:     af, May 14 1993 matchingInternalOp does not yield parameters 
+--                              any more (fixes bug oc1.12)
+--                              nothing has to be done for sorts and canonical
+--                              operations, because their identification is
+--                              unique, so that a post-check for parameter
+--                              implementation is sufficient.
+--              af, Jun 15 1993 knowledge about type of locals is used
+--              af, Jun 18 1993: added typing for avoiding bug oc1.34
+--              af, Jun 21 1993: removed unnecessary typing
+--              af, Jun 24 1993: no hints for unused generated identifiers
+-- ============================================================================
+-- ============================================================================
+
+
+IMPLEMENTATION NameAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Denotation      ONLY ++
+        Nat             COMPLETELY
+        NatConv         ONLY `
+        String          COMPLETELY
+        StringConv      ONLY `
+        BTUnion         COMPLETELY
+        StringFormat    COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Triple          COMPLETELY
+        Seq             COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqZip          COMPLETELY
+        SeqFilter       ONLY |
+        Map             COMPLETELY
+
+        Error           ONLY err ok + ok? errKind error warning hint
+        Pos             ONLY pos
+
+        MySeqFun2       ONLY cmp
+
+        Rep             ONLY rep = ` generated?
+
+        PartName        COMPLETELY
+        Fct[partName]   COMPLETELY
+        Fct[name]       COMPLETELY
+
+        AnalyzedGlobSig ONLY globSig name local var
+                                no:name->nat id local? var? global? globalSet?
+                                rep origIde fct sort?
+                                origInst:globSig**name->seq[name:SORT]
+                                origInst:name->seq[name] replInst
+                             single eqName eqBase
+                             ` : globSig**level -> name -> denotation
+                                level standard minimal
+                             actStructIde actStructParams bool
+                             matchingOps matchingSorts matchingNames
+                                matchingInternalOps
+                             getInternalOp getInternalSort
+                             isFreeConstr
+                             useOp useConstr
+                             impl:SORT impl:globSig**name->impl parameter?
+                             locSig {} %
+
+        RepSet          ONLY repSet in
+        Knowledge       ONLY knowl no canBeLocal? canBeGlobal? defAsLocal
+                                   knownFcts
+        Substitution    ONLY subst empty apply
+        Candidates      ONLY/* % */ idName idFct name rep fct subst:idName->subst
+        Reason          COMPLETELY
+
+        DEBUG           COMPLETELY              -- for debugging
+
+-- ============================================================================
+-- Analyse im Kontext lokaler Signaturen
+-- ----------------------------------------------------------------------------
+
+DATA anaName == op     (ide:rep,
+                        structIde:option[rep],
+                        pars:seq[name],
+                        fct:fct[name])
+                sort   (ide:rep,
+                        structIde:option[rep],
+                        pars:seq[name])
+                unknown(ide:rep,
+                        structIde:option[rep],
+                        pars:seq[name])
+
+-- ----------------------------------------------------------------------------
+
+FUN matchingOp: partName**globSig**knowl**nat -> seq[idName]**err**nat
+-- liefert alle passenden lokalen und globalen Namen (je nach knowl)
+--  oder aufgetretene Fehler
+
+DEF matchingOp(pname,sig,knowl,firstVar) ==
+  LET (anas,aerr,interVar) == components(pname,sig,firstVar)
+  IN IF kind(pname) sort? THEN
+                        (<>,sortAsOperation(pname)+aerr,firstVar)
+     OTHERWISE
+     IF ~(aerr ok?) THEN (<>,aerr,firstVar)
+     ELSE LET (locs,lerr,lFreeVar) ==
+                IF canBeLocal?(ide(pname),knowl) THEN
+                   IF (pname partName?) and (paramS(pname) <>?) THEN
+                      IF kind(pname) none? THEN
+                         LET (idNames,freeVar) ==
+                                   localIdNames(ide(pname),knowl,interVar)
+                         IN (idNames,ok,freeVar)
+                      IF kind(pname) op? THEN
+                         ((\\aname.idName(local(no(ide(pname),knowl)),
+                                          ide(pname),fct(aname),empty))
+                          *anas,
+                          ok,interVar)
+                      FI
+                   ELSE (<>,localNameWithOrigin(pname),firstVar)
+                   FI
+                ELSE (<>,ok,firstVar)
+                FI
+              (globs,gerr,gFreeVar) ==
+                IF canBeGlobal?(ide(pname),knowl) THEN
+                  (1st(T),2nd(T),3rd(T))
+                  WHERE T == ((\\aname,namesNerrNfree.
+                               LET (ns,free) == matchingOps(sig,
+                                                        ide(aname),
+                                                        structIde(aname),
+                                                        pars(aname),
+                                                        IF kind(pname) none?
+                                                          THEN nil
+                                                        ELSE avail(fct(aname))
+                                                        FI,
+                                                        interVar)
+                               IN IF ns <>? THEN namesNerrNfree
+                                  IF ns ::? THEN &(((\\n.idName(n,ide(aname),
+                                                                fct(sig,n),
+                                                                empty))
+                                                    *ns)++1st(namesNerrNfree),
+                                                   ok,
+                                                 max(free,3rd(namesNerrNfree)))
+                                  FI)
+                                \ &(<>,noMatchingOp(pname),interVar))(anas)
+                ELSE (<>,ok,firstVar)
+                FI
+          IN (locs++globs,
+              IF (locs++globs) <>? THEN lerr+gerr ELSE ok FI,
+              max(lFreeVar,gFreeVar))
+     FI
+
+-- ----------------------------------------------------------------------------
+
+FUN matchingInternalOp: partName**globSig**nat -> seq[idName]**err**nat
+-- liefert alle passenden internen Namen (nicht Parameter)
+--  oder aufgetretene Fehler
+
+DEF matchingInternalOp(pname,sig,firstVar) ==
+  LET (anas,aerr,ignoredVar) == components(pname,sig,firstVar)
+      ownParams == actStructParams(sig)
+  IN IF kind(pname) sort? THEN (<>,sortDefinedByFunDef(pname)+aerr,firstVar)
+     IF IF structIde(pname) avail?
+          THEN ~(cont(structIde(pname))=actStructIde(sig))
+        ELSE false
+        FI THEN (<>,actStructIdeExpected(pname)+aerr,firstVar)
+     IF (#(paramS(pname))>0)
+        and (#(paramS(pname))|= #(ownParams)) THEN
+                        (<>,wrongNumberOfParameters(pname)+aerr,firstVar)
+     OTHERWISE
+     IF ~(aerr ok?) THEN (<>,aerr,firstVar)
+     ELSE LET ownAna? == \\ana.IF pars(ana) <>? THEN true
+                               IF pars(ana) ::? THEN
+                                 (and\true)
+                                  (zip(contains(sig))(pars(ana),ownParams))
+                               FI
+              internalAnas == ownAna? | anas
+              (ids,errs) == (1st(P),2nd(P))
+              P == ((\\aname,namesNerr.
+                    LET nsWithParams == matchingInternalOps(sig,
+                                         ide(aname),
+                                         IF kind(pname) none? THEN nil
+                                         ELSE avail(fct(aname))
+                                         FI)
+                        ns == (\\n. ~(impl(sig,n) parameter?)) | nsWithParams
+                    IN IF ns <>? THEN namesNerr
+                       IF ns ::? THEN
+                                 &(((\\n.idName(n,ide(aname),fct(sig,n),empty))
+                                      *ns)++1st(namesNerr),ok)
+                       FI) \ &(<>,improperlyNamedFunction(pname)))
+                                                                (internalAnas)
+          IN (ids,errs,firstVar)
+     FI
+
+-- ----------------------------------------------------------------------------
+
+FUN matchingPatternOp: partName**globSig**knowl**nat**bool ->
+                                                seq[idName]**err**nat
+-- liefert alle passenden lokalen und Konstruktor Namen (je nach knowl)
+--  oder aufgetretene Fehler
+-- das boolsche Argument gibt an, ob die Konstruktorfunktionalitaet eine
+--  Sorte sein muss
+
+DEF matchingPatternOp(pname,sig,knowl,firstVar,mustHaveSortFct) ==
+  LET (anas,aerr,interVar) == components(pname,sig,firstVar)
+  IN IF kind(pname) sort? THEN (<>,sortAsPattern(pname)+aerr,firstVar)
+     OTHERWISE
+     IF ~(aerr ok?) THEN (<>,aerr,firstVar)
+     ELSE LET (locs,lerr,lFreeVar) ==
+                IF canBeLocal?(ide(pname),knowl) THEN
+                   IF (pname partName?) and (paramS(pname) <>?) THEN
+                      IF kind(pname) none? THEN
+                         LET (idNames,freeVar) ==
+                                   localIdNames(ide(pname),knowl,interVar)
+                         IN (idNames,ok,freeVar)
+                      IF kind(pname) op? THEN
+                         ((\\aname.idName(local(no(ide(pname),knowl)),
+                                          ide(pname),fct(aname),empty))
+                          *anas,
+                          ok,interVar)
+                      FI
+                   ELSE (<>,localNameWithOrigin(pname),firstVar)
+                   FI
+                ELSE (<>,ok,firstVar)
+                FI
+              (globs,gerr,gFreeVar) ==
+                IF canBeGlobal?(ide(pname),knowl) THEN
+                  (1st(T),2nd(T),3rd(T))
+                  WHERE T == ((\\aname,namesNerrNfree.
+                               LET (ns,free) == matchingOps(sig,
+                                                         ide(aname),
+                                                         structIde(aname),
+                                                         pars(aname),
+                                                         IF kind(pname) none?
+                                                           THEN nil
+                                                         ELSE avail(fct(aname))
+                                                         FI,
+                                                         interVar)
+                                   cs == (\\n.isFreeConstr(sig,n))|ns
+                                   fcs == IF mustHaveSortFct THEN
+                                            (\\n.fct(sig,n) sort?)|cs
+                                          ELSE cs
+                                          FI
+                               IN IF fcs <>? THEN namesNerrNfree
+                                  IF fcs ::? THEN &(((\\n.idName(n,ide(aname),
+                                                                fct(sig,n),
+                                                                empty))
+                                                    *fcs)++1st(namesNerrNfree),
+                                                   ok,
+                                                 max(free,3rd(namesNerrNfree)))
+                                  FI)
+                                \ &(<>,noMatchingConstr(pname),interVar))(anas)
+                ELSE (<>,ok,firstVar)
+                FI
+          IN (locs++globs,
+              IF (locs++globs) <>? THEN lerr+gerr ELSE ok FI,
+              max(lFreeVar,gFreeVar))
+     FI
+
+-- ----------------------------------------------------------------------------
+
+FUN localIdNames: rep**knowl**nat -> seq[idName]**nat
+
+DEF localIdNames(ide,knowl,firstVar) ==
+  LET fcts == knownFcts(ide,knowl)
+  IN IF fcts <>? THEN
+        (idName(local(no(ide,knowl)),ide,nonCartVar(firstVar),empty)%,
+         succ(firstVar))
+     IF fcts ::? THEN
+        LET (newFcts,freeVar) == (1st(p),2nd(p)) WHERE p ==
+                           ((\\thisFctNmono,restFctsNmaxVar.
+                             LET thisFct  == 1st(thisFctNmono)
+                                 thisMono == 2nd(thisFctNmono)
+                                 restFcts == 1st(restFctsNmaxVar)
+                                 maxVar   == 2nd(restFctsNmaxVar)
+                             IN IF thisMono THEN (thisFct::restFcts) & maxVar
+                                ELSE LET (newFct,nextVar,_) ==
+                                                renumber(thisFct,firstVar,{})
+                                     IN (newFct::restFcts) & max(maxVar,nextVar)
+                                FI)
+                            \ (<> & firstVar))(fcts)
+        IN ((\\fct.idName(local(no(ide,knowl)),ide,fct,empty)) * newFcts,
+            freeVar)
+     FI
+
+FUN renumber: fct[name]**nat**map[nat,<,nat] -> fct[name]**nat**map[nat,<,nat]
+
+DEF renumber((var(id)):fct[name],new,map) ==
+  LET optNewId == map !? id
+  IN IF optNewId nil?   THEN (var(new),succ(new),(id,new) def map)
+     IF optNewId avail? THEN (var(cont(optNewId)),new,map)
+     FI
+
+DEF renumber(nonCartVar(id),new,map) ==
+  LET optNewId == map !? id
+  IN IF optNewId nil?   THEN (nonCartVar(new),succ(new),(id,new) def map)
+     IF optNewId avail? THEN (nonCartVar(cont(optNewId)),new,map)
+     FI
+
+DEF renumber(funct(arg,res),firstNew,firstMap) ==
+  LET (newArg,nextNew,nextMap)   == renumber(arg,firstNew,firstMap)
+      (newRes,finalNew,finalMap) == renumber(res,nextNew,nextMap)
+  IN (funct(newArg,newRes),finalNew,finalMap)
+
+DEF renumber(cart(elems),new,map) ==
+  LET (newElems,finalNew,finalMap) == (1st(T),2nd(T),3rd(T))
+      WHERE T == ((\\first,restNnewNmap.
+                     LET (rest,thisNew,thisMap) == (1st(restNnewNmap),
+                                                    2nd(restNnewNmap),
+                                                    3rd(restNnewNmap))
+                         (newFirst,nextNew,nextMap) ==
+                                         renumber(first,thisNew,thisMap)
+                     IN &(newFirst::rest,nextNew,nextMap))
+                 / &(<>,new,map))(elems)
+  IN (cart(newElems),finalNew,finalMap)
+
+DEF renumber(sort(name),new,map) ==
+  LET (newName,finalNew,finalMap) == renumber(name,new,map)
+  IN (sort(newName),finalNew,finalMap)
+
+FUN renumber: name**nat**map[nat,<,nat] -> name**nat**map[nat,<,nat]
+
+DEF renumber(nm,new,map) ==
+  IF nm var? THEN
+    LET optNewId == map !? id(nm)
+    IN IF optNewId nil?   THEN (var(new),succ(new),(id(nm),new) def map)
+       IF optNewId avail? THEN (var(cont(optNewId)),new,map)
+       FI
+  IF nm globalSet? THEN
+    LET inst == origInst(nm)
+        (newInst,finalNew,finalMap) == (1st(T),2nd(T),3rd(T))
+        WHERE T == ((\\first,restNnewNmap.
+                       LET (rest,thisNew,thisMap) == (1st(restNnewNmap),
+                                                      2nd(restNnewNmap),
+                                                      3rd(restNnewNmap))
+                           (newFirst,nextNew,nextMap) ==
+                                           renumber(first,thisNew,thisMap)
+                       IN &(newFirst::rest,nextNew,nextMap))
+                   / &(<>,new,map))(inst)
+    IN (replInst(nm,newInst),finalNew,finalMap)
+  ELSE (nm,new,map)
+  FI
+
+-- ----------------------------------------------------------------------------
+
+FUN matchingFcts: fct[partName]**globSig**nat -> seq[idFct]**err**nat
+-- liefert moegliche Funktionalitaeten
+--  oder aufgetretene Fehler
+
+DEF matchingFcts(fct,sig,firstVar) ==
+  LET (fcts,err,freeVar) == functionalities(fct,sig,firstVar)
+  IN ((\\f.idFct(f,empty))*fcts,err,freeVar)
+
+FUN functionalities: fct[partName]**globSig**nat -> seq[fct[name]]**err**nat
+
+DEF functionalities(sort(pname),sig,firstVar) ==
+  LET (anas,aerr,interVar) == components(pname,sig,firstVar)
+  IN IF kind(pname) op? THEN (<>,operationAsSort(pname)+aerr,firstVar)
+     OTHERWISE
+     IF ~(aerr ok?) THEN (<>,aerr,firstVar)
+     ELSE LET (fcts,freeVar) == (1st(P),2nd(P))
+              P == ((\\aname,fctsNfree.
+                                    LET (ns,free) == matchingSorts(sig,
+                                                             ide(aname),
+                                                             structIde(aname),
+                                                             pars(aname),
+                                                             firstVar)
+                                    IN IF ns <>? THEN fctsNfree
+                                       IF ns ::? THEN &((sort*ns)++
+                                                        1st(fctsNfree), 
+                                                      max(free,2nd(fctsNfree)))
+                                       FI) \ &(<>,interVar))(anas)
+              fctErr == IF fcts <>? THEN noMatchingSort(pname) ELSE ok FI
+          IN (fcts,fctErr,freeVar)
+     FI
+
+DEF functionalities(cart(elems),sig,firstVar) ==
+  LET (fcts,err,nextVar) == fctSeq(elems,sig,firstVar)
+  IN (cart*combinations(fcts),err,nextVar)
+
+DEF functionalities(funct(arg,res),sig,firstVar) ==
+  LET (argFcts,argErr,nextVar) == functionalities(arg,sig,firstVar)
+      (resFcts,resErr,freeVar) == functionalities(res,sig,nextVar)
+  IN (combinations(argFcts,resFcts),argErr+resErr,freeVar)
+
+FUN fctSeq: seq[fct[partName]]**globSig**nat -> seq[seq[fct[name]]]**err**nat
+DEF fctSeq(<>,sig,firstVar) == (<>,ok,firstVar)
+DEF fctSeq(f1::fR,sig,firstVar) ==
+  LET (fs1,err1,nextVar) == functionalities(f1,sig,firstVar)
+      (fsR,errR,freeVar) == fctSeq(fR,sig,nextVar)
+  IN (fs1::fsR,err1+errR,freeVar)
+
+-- ----------------------------------------------------------------------------
+
+FUN combinations: seq[seq[fct[name]]] -> seq[seq[fct[name]]]
+
+DEF combinations(fctSetSeq) ==
+  (g / %(<>))(fctSetSeq)
+  WHERE g == \\fctSet,fctSeqSet.(h(fctSeqSet) \ <>)(fctSet)
+        h == \\fctSeqSet. \\fct,newFctSeqSet.i(fct,fctSeqSet)++newFctSeqSet
+        i == \\fct,fctSeqSet.(\\fctSeq.fct::fctSeq)*fctSeqSet
+
+FUN combinations: seq[fct[name]]**seq[fct[name]] -> seq[fct[name]]
+
+DEF combinations(fct1S,fct2S) ==
+  ((\\fct2,seq.((\\fct1.funct(fct1,fct2))*fct1S)++seq) \ <>)(fct2S)
+
+-- ----------------------------------------------------------------------------
+
+FUN parameters: seq[partName]**globSig**nat -> seq[seq[name]]**err**nat
+-- liefert Sequenz moeglicher Parameterlisten oder aufgetretene Fehler
+
+DEF parameters(<>,sig,firstVar) == (<> %,ok,firstVar)
+DEF parameters(p1::pR,sig,firstVar) ==
+  LET (a1,err1,nextVar) == parameter(p1,sig,firstVar)
+      (aR,errR,freeVar) == parameters(pR,sig,nextVar)
+  IN (combinations(a1,aR),err1+errR,freeVar)
+
+FUN parameter: partName**globSig**nat -> seq[name]**err**nat
+
+DEF parameter(pname,sig,firstVar) ==
+  LET (anas,aerr,interVar) == components(pname,sig,firstVar)
+  IN IF ~(aerr ok?) THEN (<>,aerr,firstVar)
+     ELSE LET (ps,pfree) == ((1st(P),2nd(P))
+                            WHERE P ==
+                            ((\\aname,namesNfree.
+                              LET (ns,free) == IF kind(pname) sort? THEN
+                                                      matchingSorts(sig,
+                                                              ide(aname),
+                                                              structIde(aname),
+                                                              pars(aname),
+                                                              firstVar)
+                                               IF kind(pname) op? THEN
+                                                      matchingOps(sig,
+                                                            ide(aname),
+                                                            structIde(aname),
+                                                            pars(aname),
+                                                            avail(fct(aname)),
+                                                            firstVar)
+                                               IF kind(pname) none? THEN
+                                                      matchingNames(sig,
+                                                              ide(aname),
+                                                              structIde(aname),
+                                                              pars(aname),
+                                                              firstVar)
+                                               FI
+                              IN IF ns <>? THEN namesNfree
+                                 IF ns ::? THEN &(ns++1st(namesNfree),
+                                                  max(free,2nd(namesNfree)))
+                                 FI) \ &(<>,interVar))(anas))
+              perr == IF ps <>? THEN noMatchingName(pname) ELSE ok FI
+          IN (ps,perr,pfree)
+     FI
+
+-- ----------------------------------------------------------------------------
+
+FUN combinations: seq[name]**seq[seq[name]] -> seq[seq[name]]
+
+DEF combinations(par1S,parRS) ==
+  ((\\parR,seq.((\\par1.par1::parR)*par1S)++seq) \ <>)(parRS)
+
+-- ----------------------------------------------------------------------------
+
+FUN traceAnaNames?: bool
+DEF traceAnaNames? == FIELD?[bool]("-ztraceAnaNames")
+
+FUN ` : seq[anaName] -> denotation
+DEF anas` == `(anas#) ++ " possible components "
+
+FUN printComponents: seq[anaName] -> () -> denotation
+DEF printComponents(anas)() == `(anas) ++ "found"
+
+FUN traceComponents: seq[anaName]**err**nat -> seq[anaName]**err**nat
+DEF traceComponents(anas,err,free) ==
+  (PRINT(traceAnaNames?,printComponents(anas),anas),err,free)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN components: partName**globSig**nat -> seq[anaName]**err**nat
+
+DEF components(pname,sig,firstVar) ==
+  traceComponents(yieldComponents(pname,sig,firstVar))
+
+FUN yieldComponents: partName**globSig**nat -> seq[anaName]**err**nat
+
+DEF yieldComponents(pname,sig,firstVar) ==
+  LET i == ide(pname)
+      s == structIde(pname)
+      (ps,pe,nextVar) == parameters(paramS(pname),sig,firstVar)
+  IN IF kind(pname) none? THEN
+       IF ps <>? THEN (<>,pe,firstVar)
+       IF ps ::? THEN (mkUnknownAnaName(i,s)*ps,pe,nextVar)
+       FI
+     IF kind(pname) sort? THEN
+       IF ps <>? THEN (<>,pe,firstVar)
+       IF ps ::? THEN (mkSortAnaName(i,s)*ps,pe,nextVar)
+       FI
+     IF kind(pname) op? THEN
+       LET (fs,fe,unusedVar) == functionalities(fct(kind(pname)),sig,nextVar)
+       IN IF (ps <>?)
+          or (fs <>?) THEN (<>,pe+fe,firstVar)
+          ELSE (mkOpAnaName(i,s)*combinations(ps,fs),pe+fe,unusedVar)
+          FI
+     FI
+
+-- ----------------------------------------------------------------------------
+
+FUN mkUnknownAnaName: rep**option[rep] -> seq[name] -> anaName
+
+DEF mkUnknownAnaName(ide,structIde)(pars) == unknown(ide,structIde,pars)
+
+FUN mkSortAnaName: rep**option[rep] -> seq[name] -> anaName
+
+DEF mkSortAnaName(ide,structIde)(pars) == sort(ide,structIde,pars)
+
+FUN mkOpAnaName: rep**option[rep] -> pair[seq[name],fct[name]] -> anaName
+
+DEF mkOpAnaName(ide,structIde)(parsNfct) ==
+  op(ide,structIde,pars,fct)
+  WHERE (pars,fct) == (1st(parsNfct),2nd(parsNfct))
+
+-- ----------------------------------------------------------------------------
+
+FUN combinations: seq[seq[name]]**seq[fct[name]] ->
+                                        seq[pair[seq[name],fct[name]]]
+
+DEF combinations(parsS,fctS) ==
+  ((\\fct,seq.((\\pars.pars&fct)*parsS)++seq) \ <>)(fctS)
+
+-- ============================================================================
+
+FUN localNameDef: partName**globSig**knowl**nat**nat ->
+                                        seq[idName]**knowl**err**nat**nat
+-- liefert einen neuen lokalen Namen und erweitertes "Wissen"
+--   oder aufgetretene Fehler
+
+DEF localNameDef(pname,sig,knowl,firstLocal,firstVar) ==
+  LET (anas,aerr,interVar) == components(pname,sig,firstVar)
+      extKnowl == defAsLocal(ide(pname),firstLocal,knowl)
+      freeLocal == succ(firstLocal)
+  IN IF kind(pname) sort? THEN
+                (<>,extKnowl,sortAsOperation(pname)+aerr,freeLocal,firstVar)
+     OTHERWISE
+     IF ~(aerr ok?) THEN (<>,extKnowl,aerr,freeLocal,firstVar)
+     ELSE IF (pname partName?) and (paramS(pname) <>?) THEN
+             IF kind(pname) none? THEN
+                (idName(local(firstLocal),
+                        ide(pname),
+                        nonCartVar(firstVar),
+                        empty)%,
+                 extKnowl,ok,freeLocal,succ(firstVar))
+             IF kind(pname) op? THEN
+                ((\\aname.idName(local(firstLocal),
+                                 ide(aname),fct(aname),empty))
+                 *anas,
+                 extKnowl,ok,freeLocal,interVar)
+             FI
+          ELSE (<>,extKnowl,localNameWithOrigin(pname),freeLocal,firstVar)
+          FI
+      FI
+
+-- ============================================================================
+
+FUN traceLSig?: bool
+
+DEF traceLSig? == FIELD?[bool]("-ztraceLSig")
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN traceLSig: globSig**nat**rep**fct[name] -> () -> denotation
+
+DEF traceLSig(sig,no,rep,fct)() ==
+  `(format("built local signature with %n %s %s",
+         nat(no)::(denotation(rep`)::(denotation(`(`(sig,minimal))(fct))%))))
+
+-- ----------------------------------------------------------------------------
+
+FUN selectName: seq[idName]**globSig**nat**pos -> name**globSig**err
+-- liefert aus einer Menge von idNames einen Namen und
+--   vermerkt ihn in der Signatur als benutzt
+--   liefert Fehler, falls mehr als ein Name bezeichnet wird.
+
+DEF selectName(idName(name,rep,fct,subst) :: <>,sig,offset,pos) ==
+  IF name local? THEN
+    LET (substFct,monomorph) == apply(subst,fct)
+        newNumber == no(name)+offset
+        newName == local(newNumber)
+    IN IF monomorph THEN (newName,sig,ok)
+       ELSE (newName,sig,ambiguousLocalFct(rep,substFct,sig,pos))
+       FI
+  IF name global? THEN
+    IF name globalSet? THEN
+      LET (substName,instantiated) == apply(subst,name)
+      IN IF instantiated THEN LET (extSig,singleName) == single(sig,substName)
+                              IN (singleName,useOp(extSig,singleName),ok)
+         ELSE (substName,sig,uninstantiated(substName,sig,pos))
+         FI
+    ELSE (name,useOp(sig,name),ok)
+    FI
+  FI
+
+DEF selectName(idNames,sig,offset,pos) ==
+  (name(ft(idNames)),sig,ambiguousIdentification(idNames,sig,pos))
+
+-- ----------------------------------------------------------------------------
+
+FUN selectDeclaredName: seq[idName]**globSig**nat**pos ->
+                                                name**globSig**locSig**err
+-- liefert aus einer Menge von idNames einen Namen und
+--   traegt ihn in die lokale Signatur ein
+--   liefert Fehler, falls mehr als ein Name bezeichnet wird.
+
+DEF selectDeclaredName(idName(name,rep,fct,subst) :: <>,sig,offset,pos) ==
+  IF name local? THEN
+    LET (substFct,monomorph) == apply(subst,fct)
+        newNumber == no(name)+offset
+        newName == local(newNumber)
+    IN IF monomorph THEN LET (extSig,singleFct) == single(sig,substFct)
+                             (hidden,unused) ==
+                                matchingOps(extSig,rep,nil,<>,avail(singleFct),0)
+                             hiddenHint == IF hidden <>? THEN ok
+                                           IF hidden ::? THEN
+                                                hiddenGlobalHint(extSig,rep,
+                                                                 hidden,pos)
+                                           FI
+                         IN (newName,extSig,
+                             PRINT(traceLSig?,
+                                   traceLSig(extSig,newNumber,rep,singleFct),
+                                   %(newNumber,rep,singleFct)),
+                             hiddenHint)
+       ELSE (newName,sig,{},ambiguousLocalFct(rep,substFct,sig,pos))
+       FI
+  FI
+
+DEF selectDeclaredName(idNames,sig,offset,pos) ==
+  (name(ft(idNames)),sig,{},ambiguousIdentification(idNames,sig,pos))
+
+-- ----------------------------------------------------------------------------
+
+FUN selectDefinitionTarget: seq[idName]**globSig**pos -> name**err
+-- liefert aus einer Menge von idNames einen Namen,
+-- liefert Fehler, falls mehr als ein Name bezeichnet wird.
+
+DEF selectDefinitionTarget(idName(name,rep,fct,subst) :: <>,sig,pos) ==
+  (name,ok)
+
+DEF selectDefinitionTarget(idNames,sig,pos) ==
+  (name(ft(idNames)),ambiguousIdentification(idNames,sig,pos))
+
+-- ----------------------------------------------------------------------------
+
+FUN selectPatternOp: seq[idName]**globSig**nat**repSet**pos ->
+                                                name**globSig**locSig**err
+-- liefert aus einer Menge von idNames einen Namen,
+--   vermerkt ihn in der Signatur als benutzt in Pattern
+--     bzw. traegt ihn in die lokale Signatur ein
+--   liefert Fehler, falls mehr als ein Name bezeichnet wird sowie
+--     Hinweis auf unbenutzte Pattern-Variable
+
+DEF selectPatternOp(idName(name,rep,fct,subst) :: <>,sig,offset,used,pos) ==
+  IF name local? THEN
+    LET (substFct,monomorph) == apply(subst,fct)
+        newNumber == no(name)+offset
+        newName == local(newNumber)
+        unusedHint == IF rep in used THEN ok
+                      IF rep generated? THEN ok
+                      ELSE unusedPatternVar(rep,pos)
+                      FI
+    IN IF monomorph THEN LET (extSig,singleFct) == single(sig,substFct)
+                             (hidden,unused) ==
+                                matchingOps(extSig,rep,nil,<>,avail(singleFct),0)
+                             hiddenWarn == IF hidden <>? THEN ok
+                                           IF hidden ::? THEN
+                                                hiddenGlobalWarn(extSig,rep,
+                                                                 hidden,pos)
+                                           FI
+                         IN (newName,
+                             extSig,
+                             PRINT(traceLSig?,
+                                   traceLSig(extSig,newNumber,rep,singleFct),
+                                   %(newNumber,rep,singleFct)),
+                             hiddenWarn+unusedHint)
+       ELSE (newName,sig,{},
+                        ambiguousLocalFct(rep,substFct,sig,pos)+unusedHint)
+       FI
+  IF name global? THEN
+    IF name globalSet? THEN
+      LET (substName,instantiated) == apply(subst,name)
+      IN IF instantiated THEN LET (extSig,singleName) == single(sig,substName)
+                              IN (singleName,useConstr(extSig,singleName),
+                                                                        {},ok)
+         ELSE (substName,sig,{},uninstantiated(substName,sig,pos))
+         FI
+    ELSE (name,useConstr(sig,name),{},ok)
+    FI
+  FI
+
+DEF selectPatternOp(idNames,sig,offset,used,pos) ==
+  (name(ft(idNames)),sig,{},ambiguousIdentification(idNames,sig,pos))
+
+-- ----------------------------------------------------------------------------
+
+FUN ambiguousLocalFct: rep**fct[name]**globSig**pos -> err
+
+DEF ambiguousLocalFct(rep,substFct,sig,pos) ==
+  err(error,msg,rep`,`(`(sig,minimal))(substFct),pos)
+  WHERE msg ==
+    "ambiguous identification: functionality of local name %s:%s ambiguous"
+
+-- ----------------------------------------------------------------------------
+
+FUN uninstantiated: name**globSig**pos -> err
+
+DEF uninstantiated(name,sig,pos) ==
+  err(error,msg,`(sig,standard)(name),pos)
+  WHERE msg == "ambiguous identification: uninstantiated global name %s"
+
+-- ----------------------------------------------------------------------------
+
+FUN ambiguousIdentification: seq[idName]**globSig**pos -> err
+
+DEF ambiguousIdentification(idNames,sig,pos) ==
+  err(error,msg,(++ / <>)(`` * idNames),pos)
+  WHERE msg == "ambiguous identification: cannot select from%s"
+        `` == \\idName.
+                LET (substName,ign1) == apply(subst(idName),name(idName))
+                IN IF substName local? THEN
+                     format("\n                          %s:%s",
+                                                denotation(r)::(denotation(f)%))
+                     WHERE r == rep(idName)`
+                           f == `(`(sig,minimal))(substFct)
+                           (substFct,ign2) == apply(subst(idName),fct(idName))
+                   IF substName global? THEN
+                     format("\n                          %s",denotation(n)%)
+                     WHERE n == `(sig,standard)(substName)
+                   FI
+
+-- ----------------------------------------------------------------------------
+
+FUN unusedPatternVar: rep**pos -> err
+
+DEF unusedPatternVar(rep,pos) ==
+  err(hint,msg,rep`,pos)
+  WHERE msg == "unused pattern variable %s"
+
+-- ----------------------------------------------------------------------------
+
+FUN hiddenGlobalWarn: globSig**rep**seq[name]**pos -> err
+
+DEF hiddenGlobalWarn(sig,rep,hidden1 :: <>,pos) ==
+  err(warning,msg,rep`,hidden,pos)
+  WHERE hidden == `(sig,standard)(hidden1)
+        msg == "pattern variable %s hides constant %s"
+
+DEF hiddenGlobalWarn(sig,rep,hidden1 :: hiddenR,pos) ==
+  err(warning,msg,rep`,hidden,pos)
+  WHERE hidden == (add \ `(sig,standard)(hidden1))(hiddenR)
+        add == \\n,s.s ++ ((", ") ++ `(sig,standard)(n))
+        msg == "pattern variable %s hides constants %s"
+
+-- ----------------------------------------------------------------------------
+
+FUN hiddenGlobalHint: globSig**rep**seq[name]**pos -> err
+
+DEF hiddenGlobalHint(sig,rep,hidden1 :: <>,pos) ==
+  err(hint,msg,rep`,hidden,pos)
+  WHERE hidden == `(sig,standard)(hidden1)
+        msg == "local variable %s hides constant %s"
+
+DEF hiddenGlobalHint(sig,rep,hidden1 :: hiddenR,pos) ==
+  err(hint,msg,rep`,hidden,pos)
+  WHERE hidden == (add \ `(sig,standard)(hidden1))(hiddenR)
+        add == \\n,s.s ++ ((", ") ++ `(sig,standard)(n))
+        msg == "local variable %s hides constants %s"
+
+-- ============================================================================
+-- liefert den (induzierten) deklarierten Namen sowie
+--   einen Fehler, falls der partielle Name diesem nicht entspricht
+
+FUN inducedSort: partName**globSig -> name**err
+
+DEF inducedSort(pname,sig) ==
+  LET indName == getInternalSort(sig,ide(pname))
+      (anaNames,err,ignoredVar) == components(pname,sig,0)
+  IN (indName,
+      IF ~(err ok?) THEN err
+      OTHERWISE
+      IF (or\false)(matches(sig,indName)*anaNames) THEN ok
+      ELSE improperlyNamedFreeTypeOrDataDef(pname)
+      FI)
+
+FUN improperlyNamedFreeTypeOrDataDef: partName -> err
+
+DEF improperlyNamedFreeTypeOrDataDef(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "improperly named free type/data definition: %s does not match the declared name"
+
+-- ----------------------------------------------------------------------------
+
+FUN inducedSelector: partName**name**fct[name]**globSig -> name**err
+
+DEF inducedSelector(pname,sortName,resFct,sig) ==
+  LET indName == getInternalOp(sig,ide(pname),funct(sort(sortName),resFct))
+      (anaNames,err,ignoredVar) == components(pname,sig,0)
+  IN (indName,
+      IF ~(err ok?) THEN err
+      OTHERWISE
+      IF (or\false)(matches(sig,indName)*anaNames) THEN ok
+      ELSE improperlyNamedSelector(pname)
+      FI)
+
+FUN improperlyNamedSelector: partName -> err
+
+DEF improperlyNamedSelector(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg ==
+        "improperly named selector: %s does not match the declared name"
+
+-- ----------------------------------------------------------------------------
+
+FUN inducedConstr: partName**name**seq[fct[name]]**globSig -> name**err
+
+DEF inducedConstr(pname,sortName,<>,sig) ==
+  LET indName == getInternalOp(sig,ide(pname),sort(sortName))
+      (anaNames,err,ignoredVar) == components(pname,sig,0)
+  IN (indName,
+      IF ~(err ok?) THEN err
+      OTHERWISE
+      IF (or\false)(matches(sig,indName)*anaNames) THEN ok
+      ELSE improperlyNamedConstructor(pname)
+      FI)
+
+DEF inducedConstr(pname,sortName,argFct :: <>,sig) ==
+  LET indName == getInternalOp(sig,ide(pname),funct(argFct,sort(sortName)))
+      (anaNames,err,ignoredVar) == components(pname,sig,0)
+  IN (indName,
+      IF ~(err ok?) THEN err
+      OTHERWISE
+      IF (or\false)(matches(sig,indName)*anaNames) THEN ok
+      ELSE improperlyNamedConstructor(pname)
+      FI)
+
+DEF inducedConstr(pname,sortName,argFct,sig) ==
+  LET indFct == funct(cart(argFct),sort(sortName))
+      indName == getInternalOp(sig,ide(pname),indFct)
+      (anaNames,err,ignoredVar) == components(pname,sig,0)
+  IN (indName,
+      IF ~(err ok?) THEN err
+      OTHERWISE
+      IF (or\false)(matches(sig,indName)*anaNames) THEN ok
+      ELSE improperlyNamedConstructor(pname)
+      FI)
+
+FUN improperlyNamedConstructor: partName -> err
+
+DEF improperlyNamedConstructor(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg ==
+        "improperly named constructor: %s does not match the declared name"
+
+-- ----------------------------------------------------------------------------
+
+FUN inducedDiscr: partName**name**globSig -> name
+
+DEF inducedDiscr(pname,sortName,sig) ==
+  getInternalOp(sig,ide(pname),funct(sort(sortName),sort(bool(sig))))
+
+-- ----------------------------------------------------------------------------
+
+FUN matchingFct: fct[partName]**globSig -> fct[name]**globSig
+-- liefert die (eindeutig vorhandene) Funktionalitaet
+--   vermerkt in der Signatur die enthaltenen Sorten als benutzt
+
+DEF matchingFct(f,sig) ==
+  LET (idFcts,ignoredErr,ignoredVars) == matchingFcts(f,sig,0)
+      thisFct == fct(ft(idFcts))
+  IN (thisFct,markUsedSorts(thisFct,sig))
+
+FUN markUsedSorts:  fct[name]**globSig -> globSig
+
+DEF markUsedSorts(sort(n),sig) == useOp(sig,n)
+-- useOp ist nicht ganz zutreffend verwendet
+
+DEF markUsedSorts(cart(e),sig) == (markUsedSorts \ sig)(e)
+
+DEF markUsedSorts(funct(a,r),sig) == markUsedSorts(a,markUsedSorts(r,sig))
+
+-- ----------------------------------------------------------------------------
+
+FUN matches: globSig**name -> anaName -> bool
+-- nur fuer globale Namen
+
+DEF matches(sig,name)(op(i,s,p,f)) ==
+  (i=rep(sig,name)) and
+  ((IF s nil? THEN true ELSE cont(s)=origIde(sig,name) FI) and
+  ((IF p <>? THEN true
+    ELSE cmp(contains(sig))(p,origInst(sig,name))
+    FI) and
+   (IF sort?(sig,name) THEN false ELSE =(contains(sig))(f,fct(sig,name)) FI)))
+
+DEF matches(sig,name)(sort(i,s,p)) ==
+  (i=rep(sig,name)) and
+  ((IF s nil? THEN true ELSE cont(s)=origIde(sig,name) FI) and
+  ((IF p <>? THEN true
+    ELSE cmp(contains(sig))(p,origInst(sig,name))
+    FI) and
+   sort?(sig,name)))
+
+DEF matches(sig,name)(unknown(i,s,p)) ==
+  (i=rep(sig,name)) and
+  ((IF s nil? THEN true ELSE cont(s)=origIde(sig,name) FI) and
+  (IF p <>? THEN true
+   ELSE cmp(contains(sig))(p,origInst(sig,name))
+   FI))
+
+FUN contains: globSig -> name**name -> bool
+
+DEF contains(sig)(n1,n2) ==
+  IF n1 var? THEN true
+  IF n1 globalSet? THEN
+    IF n1 eqBase n2 THEN (and\true)
+                        (zip(contains(sig))(origInst(sig,n1),origInst(sig,n2)))
+    ELSE false
+    FI
+  ELSE eqName(sig)(n1,n2)
+  FI

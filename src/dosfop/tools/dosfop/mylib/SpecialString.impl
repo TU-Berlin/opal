@@ -1,0 +1,104 @@
+IMPLEMENTATION SpecialString
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/mylib/SpecialString.impl,v 1.1.1.1 1998-06-16 16:00:36 wg Exp $
+                                              
+IMPORT Seq              COMPLETELY
+       StringIndex      COMPLETELY
+       String           COMPLETELY
+       StringFilter     COMPLETELY
+       Nat              COMPLETELY
+       Denotation       COMPLETELY
+       Char             COMPLETELY
+       Set              COMPLETELY
+
+IMPORT CharClass        COMPLETELY
+       MyString         COMPLETELY
+
+-- %$Handling of TeX- and Texinfo Strings$
+-- %--------------------------------------
+
+DEF escTeX( <>  ) == <>
+DEF escTeX( c::rtStr ) ==
+  (IF texSpecial?(c) THEN
+    !("\\") +% c
+  IF indexmark?(c) THEN
+    "\\char94 "!  -- display real hat (^) character
+  IF at?(c) THEN
+    "\\char64 "!    -- display read at (@) charcter
+  IF backslash?(c) THEN
+    "\\"!
+  ELSE
+    c%
+  FI) ++ escTeX(rtStr)   
+
+/* %The code for @code{escTexinfo} assumes that a variable @code{colon} is set
+in the texinfo environment! */
+DEF escTexinfo( <>  ) == <>
+DEF escTexinfo( c::rtStr ) ==
+  (IF c = !(":") THEN
+     "@value{colon}"!
+   IF texinfoSpecial?(c) THEN
+     !("@") +% c
+   IF c = !("'") or c = !("`")THEN
+     !("@w{") ++ (c :: !("}"))
+   ELSE
+     c%
+   FI) ++ escTexinfo(rtStr)   
+
+DEF noBreakTexinfo(<>) == <>
+DEF noBreakTexinfo( c::rtStr ) ==
+  IF space?(c) THEN LET (leer, nichtleer) == split(space?, rtStr)
+                    IN (c :: leer) ++ noBreakTexinfo(nichtleer)
+  ELSE LET (nichtleer, leer) == split(\\x. ~(space?(x)), rtStr)
+       IN ("@w{"!) ++ (c :: nichtleer) ++ ("}"!) ++ noBreakTexinfo(leer)
+  FI
+  
+
+-- %$Texinfo Command-Constants$
+-- %---------------------------
+
+FUN texinfoSpecialCommands : set[string,<]
+DEF texinfoSpecialCommands ==
+  %("@@"!, "@{"!, "@}"!, "@*"!, "@."!, "@:"!, "@-"!)
+
+FUN texinfoCommands : set[string,<]
+DEF texinfoCommands ==
+  %("@asis"!,"@enumerate"!) +
+  %("@example"!,"@flushleft"!,"@flushright"!,"@group"!) +
+  %("@ifinfo"!,"@iftex"!,"@ignore"!,"@item"!,"@itemize"!,"@itemx"!) +
+  %("@quotation"!,"@table"!,"@tex"!,"@bullet"!,"@copyright"!,"@dots"!) +
+  %("@minus"!, "@sp"!, "@TeX"!, "@today"!, "@b"!, "@code"!,"@emph"!) +
+  %("@footnote"!,"@i"!,"@r"!,"@sc"!,"@t"!,"@w"!,"@center"!,"@need"!) +
+  %("@noindent"!,"@page"!,"@cindex"!,"@end"!)
+
+
+FUN forbiddenTexinfoCommands: set[string,<]
+DEF forbiddenTexinfoCommands == 
+    %("@bye"!, "@setfilename"!, "@top"!)
+
+-- %$Simple String Formatting$
+-- %--------------------------
+
+FUN prefill postfill : string ** nat -> string
+
+DEF postfill( str, 0   ) == <>
+DEF postfill( str, len ) == slice( str ++ blankline(len), 0, len )
+
+DEF prefill( str, 0   ) == <>
+DEF prefill( str, len ) ==
+  IF #(str) >= len THEN
+    slice( str, 0, len - 1)
+  ELSE
+    slice( blankline(len - #(str)) ++ str, 0 , len - 1 )
+  FI
+
+-- %Generation of blank of parametrizeable length:
+FUN blankline : nat -> string
+DEF blankline(len) == init(len, " "!)
+
+
+-- %$Special String Manipulation$
+-- %-----------------------------
+
+DEF optInBrackets( true,  str ) == !("(") ++ str ++ !(")")
+DEF optInBrackets( false, str ) == str
+

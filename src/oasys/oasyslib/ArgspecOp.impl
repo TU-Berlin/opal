@@ -1,0 +1,142 @@
+IMPLEMENTATION ArgspecOp
+
+IMPORT	Argspec		COMPLETELY
+	Triple		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComPairCompose	COMPLETELY
+	ComTripleCompose COMPLETELY
+	Pair		COMPLETELY
+	Triple		COMPLETELY
+	Option		COMPLETELY
+	Denotation	COMPLETELY
+	Seq		COMPLETELY
+	Set		COMPLETELY
+	ArgspecIntern	COMPLETELY
+
+--  ---------------------------
+FUN ? : argspec[data]			-> argspec[option[data]]
+DEF ?(argspec(P,C,Cx,_,U,_,_)) ==
+    argspec(?(P),C,?(Cx),true,"[ "++U++" ]",nil,true)
+
+-- % @code{?}-parser:
+FUN ? : (seq[denotation] -> 
+		com[triple[data,seq[denotation],denotation]]) -> 
+	  (seq[denotation] -> 
+		com[triple[option[data],seq[denotation],denotation]])
+DEF ?(Parser)(Args) ==
+    Parser(Args)					; (\\AnsDataRt.
+    IF AnsDataRt okay?
+      THEN yield(AnsDataRt)				& (\\Data,Rt,Err.
+	   succeed(&(avail(Data),Rt,Err))		)
+      ELSE succeed(&(nil,Args,error(AnsDataRt)))
+    FI							)
+
+-- % @code{?}-cxtfinder:
+FUN ? : (seq[denotation] -> com[pair[cxt,seq[denotation]]])
+		 ->
+	(seq[denotation] -> com[pair[cxt,seq[denotation]]])
+DEF ?(CxtFind)(Args) ==
+    CxtFind(Args)		      & (\\Res,Rt.
+    IF Res fail?
+      THEN succeed(done & Args)
+    IF Res done?
+      THEN succeed(done & Args)
+--  IF Res stop?
+      ELSE succeed(Res & Rt)
+    FI					)
+    
+--  ---------------------------
+FUN * : argspec[data]			-> argspec[seq[data]]
+DEF *(argspec(P,C,Cx,_,U,_,_)) ==
+    argspec(*(P),C,*(Cx),true,"{ "++U++" }",nil,true)
+
+-- % @code{*}-parser:
+FUN * : (seq[denotation] -> 
+		com[triple[data,seq[denotation],denotation]]) -> 
+	  (seq[denotation] -> 
+		com[triple[seq[data],seq[denotation],denotation]])
+DEF *(Parser)(Args) ==
+    Parser(Args)					; (\\AnsDataRt.
+    IF AnsDataRt okay?
+      THEN yield(AnsDataRt)				& (\\Data,Rt1,Err1.
+	   *(Parser)(Rt1)		  		& (\\Seq,Rt2,Err2.
+	   succeed(&(Data::Seq,Rt2,Err1++Err2))	))
+      ELSE succeed(&(<>,Args,error(AnsDataRt)))
+    FI							)
+
+-- % @code{*}-cxtfinder:
+FUN * : (seq[denotation] -> com[pair[cxt,seq[denotation]]])
+		 ->
+	(seq[denotation] -> com[pair[cxt,seq[denotation]]])
+DEF *(CxtFind)(Args) ==
+    CxtFind(Args)		      & (\\Res,Rt.
+    IF Res done?
+      THEN *(CxtFind)(Rt)
+    IF Res stop?
+      THEN succeed(Res & Rt)
+--  IF Res fail?
+      ELSE succeed(done & Args)
+    FI					)
+
+FUN | : argspec[data] ** argspec[data]	-> argspec[data]
+DEF argspec(P1,C1,Cx1,E1,U1,Pr1,_) | argspec(P2,C2,Cx2,E2,U2,Pr2,_) ==
+    argspec(
+	P1 | P2,
+	C1 | C2,
+	Cx1 | Cx2,
+	E1 or E2,
+	U1++" | "++U2,
+	IF (avail?(Pr1) and avail?(Pr2)) ANDIF
+		 cont(Pr1) = cont(Pr2)
+	  THEN Pr1
+	  ELSE nil
+	FI,
+	false		-- no braces around usage text
+    )
+
+FUN | : (denotation -> com[set[denotation,<]]) ** 
+	(denotation -> com[set[denotation,<]]) ->
+	(denotation -> com[set[denotation,<]])
+DEF (C1 | C2)(D) == C1(D) & (\\Set1. C2(D) & (\\Set2.succeed(Set1+Set2)))
+
+-- % @code{|}-parser:
+FUN | : (seq[denotation] -> 
+		com[triple[data,seq[denotation],denotation]]) ** 
+	(seq[denotation] -> 
+		com[triple[data,seq[denotation],denotation]]) -> 
+	(seq[denotation] -> 
+		com[triple[data,seq[denotation],denotation]])
+DEF (P1 | P2)(Args) ==
+    P1(Args)			    ; (\\AnsDataRt:
+					   ans[triple[data,seq[denotation],denotation]].
+    IF AnsDataRt okay?
+      THEN yield(AnsDataRt)
+      ELSE P2(Args)		    ; (\\AnsDataRt2:
+					   ans[triple[data,seq[denotation],denotation]].
+	   IF AnsDataRt2 okay?
+	     THEN yield(AnsDataRt2)
+	     ELSE break(err(AnsDataRt) ++ err(AnsDataRt2))
+	   FI			    )
+    FI				    )
+
+-- % @code{|}-cxtfinder:
+FUN | : (seq[denotation] -> com[pair[cxt,seq[denotation]]])
+		**
+	(seq[denotation] -> com[pair[cxt,seq[denotation]]])
+		->
+	(seq[denotation] -> com[pair[cxt,seq[denotation]]])
+DEF (C1 | C2)(Args) ==
+    C1(Args)				& (\\Res,Rt.
+    IF Res done?
+      THEN succeed(Res & Rt)
+    IF Res stop?
+      THEN C2(Args)			& (\\Res1,Rt1.
+	   IF Res1 stop?
+	     THEN succeed(stop(completer(Res)|completer(Res1)) & Rt1)
+	     ELSE succeed(Res & Rt)
+	   FI				)
+      ELSE C2(Args)
+    FI					)
+
+

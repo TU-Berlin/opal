@@ -1,0 +1,216 @@
+-- LAST EDIT: Tue Aug  6 18:10:31 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija, fetti, carola
+-- Project:     OPAL1-Compiler (frontend)
+-- Purpose:	Driver for oc1 (Opal -> Ac translation)
+-- Changes:	af, Jun 23 1993: integrated new scanner/parser
+--				 (including syntax analysis of property parts)
+--		af, Jun 29 1993: writing interOpal files
+--				 included context analysis of property parts
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+IMPLEMENTATION Driver
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT 	Void		COMPLETELY
+	Pair		COMPLETELY
+	Triple		COMPLETELY
+	Seq		ONLY seq
+	Com 		COMPLETELY
+	ComCompose	COMPLETELY
+	Stream		COMPLETELY
+
+	Verbose		COMPLETELY
+	Options		COMPLETELY
+	OcExit		ONLY exit languageError
+	OcSetup		COMPLETELY
+	OcStream	COMPLETELY
+
+	RepTab		ONLY repTab
+	Token		ONLY token:SORT
+	Struct		ONLY struct imports
+
+	Scanner		ONLY scan
+	Parser		ONLY parseSign parseImpl parseIntp parseExtp
+	AbsyIO		ONLY readAbsy writeAbsy
+
+	GlobSig		ONLY globSig
+
+	AbsyPrep		ONLY dumpDeps import
+ 	SigAna		        ONLY sigAna
+	ImplementationAnalysis	ONLY implAna
+	PatternAnalysis		ONLY pattAna
+	InterOpalGeneration	ONLY dumpInterOpal
+	Translation		ONLY trans
+
+-- ---------------------------------------------------------------------------
+
+FUN oc1: com[void]
+
+DEF oc1 ==
+  init(oc1) ;
+  (\\a.IF a fail? THEN -- yield(fail(error(a))) ; exit(a)
+			exit(fail(error(a)))
+       IF a okay? THEN
+         LET options == data(a) IN compile(options) ; finit(options)
+       FI)
+
+-- ---------------------------------------------------------------------------
+
+FUN compile: options -> com[void]
+
+DEF compile(options) ==
+  IF sign?(options) THEN compileSign(options)
+  IF impl?(options) THEN compileImpl(options)
+  IF extp?(options) THEN compileExtp(options)
+  IF intp?(options) THEN compileIntp(options)
+  FI
+
+-- ---------------------------------------------------------------------------
+
+FUN compileSign: options -> com[void]
+
+DEF compileSign(options) ==
+  IF onlyParse? (options) THEN 
+	syntaxAnaSign(options) & (\\StructRep.
+	dumpDeps(options, imports(1st(StructRep))) & (\\ _ .
+	writeAbsy(options)(StructRep)))
+  IF doNotParse?(options) THEN readAbsy     (options) & contextAnaSign(options)
+  ELSE			       syntaxAnaSign(options) & contextAnaSign(options)
+  FI
+
+-- ---------------------------------------------------------------------------
+
+FUN compileImpl: options -> com[void]
+
+DEF compileImpl(options) ==
+  IF onlyParse? (options) THEN
+        syntaxAnaImpl(options) & (\\StructRep.
+	dumpDeps(options, imports(1st(StructRep))) & (\\ _ .
+	writeAbsy(options)(StructRep)))
+  IF doNotParse?(options) THEN
+       (readAbsy     (options) & contextAnaImpl(options)) & acTrans(options)
+  ELSE (syntaxAnaImpl(options) & contextAnaImpl(options)) & acTrans(options)
+  FI
+   
+
+-- ---------------------------------------------------------------------------
+
+FUN compileExtp: options -> com[void]
+DEF compileExtp(options) ==
+  IF onlyParse? (options) THEN 
+	syntaxAnaExtp(options) & (\\StructRep.
+	dumpDeps(options, imports(1st(StructRep))) & (\\ _ .
+	writeAbsy(options)(StructRep)))
+  IF doNotParse?(options) THEN readAbsy     (options) & contextAnaExtp(options)
+  ELSE			       syntaxAnaExtp(options) & contextAnaExtp(options)
+  FI
+
+-- ---------------------------------------------------------------------------
+
+FUN compileIntp: options -> com[void]
+DEF compileIntp(options) ==
+  IF onlyParse? (options) THEN 
+	syntaxAnaIntp(options) & (\\StructRep.
+	dumpDeps(options, imports(1st(StructRep))) & (\\ _ .
+	writeAbsy(options)(StructRep)))
+  IF doNotParse?(options) THEN readAbsy     (options) & contextAnaIntp(options)
+  ELSE			       syntaxAnaIntp(options) & contextAnaIntp(options)
+  FI
+
+-- ---------------------------------------------------------------------------
+
+FUN syntaxAnaSign: options -> com[pair[struct,repTab]]
+
+DEF syntaxAnaSign(options) ==
+  verb(options,phase,syntaxAnaPhase) ;
+  (\\ _ .scan(options) & parseSign(options))
+
+-- ---------------------------------------------------------------------------
+
+FUN syntaxAnaImpl: options -> com[pair[struct,repTab]]
+
+DEF syntaxAnaImpl(options) ==
+  verb(options,phase,syntaxAnaPhase) ;
+  (\\ _ .scan(options) & parseImpl(options))
+
+-- ---------------------------------------------------------------------------
+
+FUN syntaxAnaExtp: options -> com[pair[struct,repTab]]
+DEF syntaxAnaExtp(options) ==
+  verb(options,phase,syntaxAnaPhase) ;
+  (\\ _ .scan(options) & parseExtp(options))
+
+-- ---------------------------------------------------------------------------
+
+FUN syntaxAnaIntp: options -> com[pair[struct,repTab]]
+DEF syntaxAnaIntp(options) ==
+  verb(options,phase,syntaxAnaPhase) ;
+  (\\ _ .scan(options) & parseIntp(options))
+
+-- ---------------------------------------------------------------------------
+
+FUN contextAnaSign: options -> pair[struct,repTab] -> com[void]
+
+DEF contextAnaSign(options)(input AS struct&repTab) ==
+  verb(options,phase,contextAnaPhase) ; (\\ _ .
+  (sigAna(options)(input) & implAna(options,struct)) & pattAna(options) &
+  dumpInterOpal(options))
+
+
+-- ---------------------------------------------------------------------------
+
+FUN contextAnaImpl: options -> pair[struct,repTab] -> com[globSig]
+
+DEF contextAnaImpl(options)(input AS struct&repTab) ==
+  verb(options,phase,contextAnaPhase) ;
+  (\\ _ .
+	sigAna(options)(input) & 
+	implAna(options,struct) &
+	pattAna(options) & (\\s.
+        dumpInterOpal(options)(s) & (\\ _ .
+	yield(okay(s)))
+  ))
+
+
+-- ---------------------------------------------------------------------------
+
+FUN contextAnaExtp: options -> pair[struct,repTab] -> com[void]
+
+DEF contextAnaExtp(options)(input AS struct&repTab) ==
+  verb(options,phase,contextAnaPhase) ; (\\ _ .
+  sigAna(options)(input) & implAna(options,struct) & pattAna(options) & 
+  dumpInterOpal(options)
+  )
+
+-- ---------------------------------------------------------------------------
+
+FUN contextAnaIntp: options -> pair[struct,repTab] -> com[void]
+
+DEF contextAnaIntp(options)(input AS struct&repTab) ==
+  verb(options,phase,contextAnaPhase) ;
+  (\\ _ .((sigAna(options)(input) & implAna(options,struct)) &
+	   pattAna(options)) & dumpInterOpal(options))
+
+-- ---------------------------------------------------------------------------
+
+FUN acTrans: options -> globSig -> com[void]
+
+DEF acTrans(options)(input) ==
+  verb(options,phase,acTransPhase) ;
+  (\\ _ .trans(options)(input))
+
+-- ===========================================================================
+-- Texte
+
+FUN syntaxAnaPhase contextAnaPhase acTransPhase: denotation
+DEF syntaxAnaPhase == "syntax checking ..."
+DEF contextAnaPhase == "context checking ..."
+DEF acTransPhase == "translating to applicative code ..."

@@ -1,0 +1,81 @@
+IMPLEMENTATION Link
+
+IMPORT  Pair                    COMPLETELY
+        Set                     COMPLETELY
+        SetReduce               COMPLETELY
+        Pair                    COMPLETELY
+        Option                  COMPLETELY
+        Seq                     COMPLETELY
+        SeqReduce               COMPLETELY
+        SeqMap 			ONLY *
+        SetConv 		ONLY asSeq
+        SetReduce 		COMPLETELY
+	SetFilter		COMPLETELY
+        NatConv                 COMPLETELY
+        Denotation              COMPLETELY
+
+IMPORT  Com                     COMPLETELY
+        ComCheck                ONLY |
+        Env                     COMPLETELY
+        ComCompose              COMPLETELY
+        ComPairCompose          COMPLETELY
+        FileName                COMPLETELY
+       	File 			ONLY stdIn stdOut stdErr
+
+IMPORT  RepoUnitAccess          COMPLETELY
+        RepoDiag                COMPLETELY
+        RepoComAbort            COMPLETELY
+        RepoEvent               COMPLETELY
+        RepoEvent               COMPLETELY
+        RepoName                COMPLETELY
+        RepoGlobalAccess        COMPLETELY
+        RepoAdmin 		COMPLETELY
+
+IMPORT  InternExec              COMPLETELY
+        Check                   COMPLETELY
+        Compile                 COMPLETELY
+
+
+DEF guessLinkObject(O)(R) ==
+    guessCompileUnits(incl(unit(O), guessCheckUnitsForExec(%(unit(O)))(R)))(R)
+
+DEF linkObject(O, Params, ExecFile)(R) ==
+    clearErrors                                 & (\\ _ .
+    LET (Check, Compile) == unpair(guessLinkObject(O)(R))
+    IN
+    compileUnits(Check + Compile)(R)            & (\\ R1 .
+    -- FIXME: check if O is a com[void]
+    errors?                                     & (\\ Err? .
+    IF Err? THEN
+        succeed(R1)
+    ELSE
+        LET Structs == incl(unit(O),
+                            related(transitive, implImports)
+			           (unit(O))(R1))
+            (LibStructs, DevelStructs) == partition(\\U.library?(U)(R1), Structs)
+            Objects == (\\U. path(objectFile(U)(R1))) * asSeq(DevelStructs)
+	    Libs == (\\U,S. incl(dirName(path(objectFile(U)(R1))),
+	                         S), {}[denotation,<]) / LibStructs
+            LdPath == (\\F, S.
+	    		IF libFolder?(kind(F)) ANDIF objectPath(F) in Libs THEN
+			    objectPath(F) :: 
+			    baseName(dirName1(objectPath(F))) :: S
+			ELSE S FI,
+		       <>) / searchPath(R1)
+        IN      
+        oasysLibDir                              & (\\ Dir .
+	event(progress(object(O), "linking"))(R1) & (\\ R2 .
+        call(normPath(Dir) ++ "linker", 
+             "linker" :: ExecFile :: symbol(unit(O))(R2) :: `(no(O)) 
+                      :: (Objects ++ ("-libs" :: LdPath) 
+		                  ++ ("-params" :: Params)),
+             stdIn, stdOut, stdErr)(R2)         ; (\\ Ans? .
+        IF okay?(Ans?) THEN
+            succeed(R2)
+        ELSE
+            diag(!!(error,freeRef("link"), error(Ans?)))(R2)
+        FI
+        )))
+    FI
+    )))
+

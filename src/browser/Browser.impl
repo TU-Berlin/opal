@@ -1,0 +1,90 @@
+IMPLEMENTATION Browser
+-- ============================================================================
+-- Autor:	ralfi
+-- Projekt:	OPAL1-Compiler
+-- Zweck:       Top-Level Struktur
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/Browser.impl,v 1.1.1.1 1998-06-16 15:59:54 wg Exp $
+-- ============================================================================
+
+IMPORT	Com		ONLY	ans com data error fail fail? okay okay? yield
+	ComCompose	ONLY	& ;
+	Env		ONLY	args
+	Stream		ONLY	output stdErr stdOut writeLine
+	Denotation	ONLY	++
+	DEBUG		ONLY	PRINT
+	Format		ONLY	format write
+	InterOpal	ONLY	interOpal:SORT
+	InterOpalIO	ONLY	readInterOpal
+	Lib		ONLY	id
+	Lib1		ONLY	seq2StringByNewLine
+	Nat		ONLY	- 10 100 20 < = nat
+	OptBrowser	ONLY	arguments command: arguments -> option
+				error? : arguments -> bool error:arguments
+				filename : arguments -> option nil v2? v3?
+	Option		ONLY	avail? cont nil? option
+	Pair		ONLY	1st 2nd pair
+	Parser		ONLY	parseArguments
+	Seq		ONLY	<> rt seq
+	SeqReduce	ONLY	/
+	String		ONLY	! ++ string
+	StringConv	ONLY	`
+	Switch		ONLY	com com2 comDump
+	Void		ONLY	nil void
+
+DEF browser == (((writeLine(stdOut,"BROWSER 1.0 : written by Ralf Dziallas 1993"!) &
+		parseOptions) & doCommand) & (\\SeqStr.
+		writeLine(stdOut,seq2StringByNewLine(id)(SeqStr))));
+		exit
+
+FUN doCommand : arguments -> com[seq[string]]
+DEF doCommand (Args) == 
+  LET	OptPair	== command(Args)
+  IN	IF OptPair nil? THEN yield(fail("doCommand: no commands found"))
+	ELSE
+	  LET	Pair	== OptPair cont
+	  IN PRINT(Args v2?,\\ .("doCommands: "!)++(Pair 1st),
+		IF (Pair 2nd)=10 THEN
+		   readIO(Args)&(\\IO.write(stdOut,comDump(IO,Args),100-20)&
+			yield(okay(<>)))
+		IF (Pair 2nd)<10 THEN yield(okay(com(Pair 2nd,Args)))
+		ELSE readIO(Args) & (\\IO.yield(okay(com2(IO)(Pair 2nd,Args))))
+		FI)
+	FI
+
+FUN readIO : arguments -> com[interOpal]
+-- PRE Args # error
+DEF readIO (Args) == 
+  LET	OptFilename	== filename(Args)
+	Verbose?	== Args v2?
+  IN	IF OptFilename avail? THEN
+	  readInterOpal(Verbose?,(cont(OptFilename))`) & (\\OptIO.
+	  	IF OptIO avail? THEN yield(okay(cont(OptIO)))
+		ELSE yield(fail("readIO: InterOpalfile read error"++""))
+		FI)
+	IF OptFilename nil? THEN
+		yield(fail("readIO: Filename error"))
+	FI
+
+FUN exit : ans[void] -> com[void]
+DEF exit(Ans) ==
+	IF Ans fail? THEN
+		writeLine(stdOut,("BROWSER: "!)++((error(Ans))!))
+	IF Ans okay? THEN
+		yield(okay(nil))
+	FI
+
+FUN parseOptions : com[arguments]
+DEF parseOptions ==
+  args ;
+  (\\a.	IF a fail? THEN writeLine(stdErr,a error) & yield(okay(nil))
+        IF a okay? THEN
+	  LET	Args	== parseArguments(rt(a data))
+	  IN	(IF Args error? THEN
+			yield(fail("readIO: parse error"))
+		IF Args v3? THEN
+		     writeLine(stdOut,(/(\\S1,S2.(S1++("@"))++S2,"")(a data))!)
+		ELSE yield(okay(nil))
+		FI) &
+		  yield(okay(Args))
+	FI)
+

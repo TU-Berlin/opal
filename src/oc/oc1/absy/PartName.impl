@@ -1,0 +1,132 @@
+-- LAST EDIT: Wed Sep  2 11:01:49 1992 by Michael Jatzeck (trabi!michel) 
+
+
+IMPLEMENTATION PartName
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:39 $ ($Revision: 1.1.1.1 $)
+
+-- Autor:       mija 
+-- Projekt:     OPAL1-Compiler
+
+IMPORT  Seq             ONLY <>? ft rt seq :: <>
+        SeqReduce       ONLY / seq
+        Denotation      ONLY ++  empty 
+        Char            ONLY char blank
+        Nat             ONLY nat 0 <
+        SeqCompare      ONLY cmp rel <? >? eq? 
+
+IMPORT 
+        Pragma          ONLY `
+        Lexem           COMPLETELY
+        Rep             ONLY |= ` = <
+        Fct[partName:SORT] ONLY ` = <
+        Option ONLY option = avail nil < avail? cont
+       SeqConv ONLY `
+       String ONLY string
+
+
+
+DATA partName ==        -- partielle Namen (Applikationen von Namen)
+                noName
+                partName(
+                        ide : rep,              -- Bezeichner
+                        structIde : option[rep],        -- Herkunft
+                        paramS : seq[partName], -- Instanz
+                        instPos : pos,          -- Position der Instanz
+                        kind : kind,            -- Typ
+                        pragma : pragma,        -- annotierte Pragmas
+                        pos : pos)              -- Position d. Bez.
+
+DATA kind ==    sort                    -- Sorten
+                op( fct : fct )         -- Operationen
+                law                     -- Gesetze
+                proof                   -- Beweise
+                none                    -- nicht angegeben oder fehlerhaft
+
+
+-- %- ------------------------------------------------------------------------
+-- %$Gleichheiten$
+
+DEF noName = noName == true
+DEF partName(i1, s1, p1, _, k1, _, _) = partName(i2, s2, p2, _, k2, _, _) ==
+    (i1 = i2) and (=(=)(s1, s2)) and (k1 = k2) and
+    (eq?(= :partName**partName->bool)(p1, p2)) 
+DEF noName = partName(_, _, _, _, _, _, _) == false
+DEF partName(_, _, _, _, _, _, _) = noName == false
+
+DEF k1 = k2:kind ==
+        IF k1 sort?             THEN k2 sort?
+        IF (k1 op?) and (k2 op?)THEN 
+          =(= :partName**partName->bool)(fct(k1),fct(k2))
+        IF k1 none?             THEN k2 none?
+        IF k1 law? THEN k2 law?
+        IF k1 proof? THEN k2 proof?
+        ELSE false
+        FI
+
+
+DEF p1 < p2:partName ==
+        IF ide(p1) < ide(p2) THEN true
+        IF ide(p2) < ide(p1) THEN false
+        OTHERWISE
+        IF kind(p1) < kind(p2) THEN true
+        IF kind(p2) < kind(p1) THEN false
+        OTHERWISE
+        IF cmp(< :partName**partName->bool)(paramS(p1),paramS(p2)) <? THEN true
+        IF cmp(< :partName**partName->bool)(paramS(p1),paramS(p2))>? THEN false
+        ELSE
+        <(<)(structIde(p1), structIde(p2))
+        FI
+
+-- Reihenfolge op < none < sort < law < proof
+FUN < : kind ** kind -> bool
+DEF k1 < k2:kind ==
+        IF k1 op? THEN 
+          IF k2 op? THEN <(< :partName**partName->bool)(fct(k1),fct(k2))
+          ELSE true FI
+        IF k1 none? THEN (k2 sort?) or (k2 law?) or (k2 proof?)
+        IF k1 sort? THEN (k2 law?) or (k2 proof?)
+        IF k1 law? THEN (k2 proof?)
+        IF k1 proof? THEN false
+        FI
+
+-- %- ------------------------------------------------------------------------
+-- %$Textkonversionen$
+
+DEF `(noName) == "noName available"
+
+DEF `(partName(I,avail(SI),ParS,_,K,Pr,_)) == 
+    (`(I) ++ `(apo) ++ `(SI)) ++ (`_pSeq(ParS) ++ `(K) ++ `(Pr))
+
+DEF `(partName(I,nil,ParS,_,K,Pr,_)) == 
+    `(I) ++ `_pSeq(ParS) ++ `(K) ++ `(Pr) 
+                           
+FUN `_pSeq : seq[partName] -> denotation
+DEF `_pSeq (<>)      == empty
+DEF `_pSeq (P :: R)  == "[" ++ `(P) ++ ((\\F,D. "," ++ `(F) ++ D) / "]")(R) 
+
+DEF `(none)    == empty
+DEF `(sort)    == `(colon) ++ ` (sort:lexem)
+DEF `(law)    == `(colon) ++ ` (law:lexem)
+DEF `(proof) == `(colon) ++ `(proof:lexem)
+DEF `(op(Fct)) == `(colon) ++ ` 'Fct (` : partName -> denotation)(Fct)
+
+DEF ``(noName) == "noName"
+DEF ``(partName(I, sI, ps, _, k, _, _)) ==
+  `(I) ++
+  (IF avail?(sI) THEN `(apo) ++ `(cont(sI)) ELSE "" FI) ++
+  (IF ps <>? THEN "" ELSE ``_pSeq(ps) FI) ++
+  ``(k)
+
+FUN `` : kind -> denotation
+DEF ``(none)    == empty
+DEF ``(sort)    == `(colon) ++ ` (sort:lexem)
+DEF ``(law)    == `(colon) ++ ` (law:lexem)
+DEF ``(proof)    == `(colon) ++ ` (proof:lexem)
+DEF ``(op(Fct)) == `(colon) ++ ` 'Fct (`` : partName -> denotation)(Fct)
+
+FUN ``_pSeq : seq[partName] -> denotation
+DEF ``_pSeq  == `("[", ", ", "]")(``)

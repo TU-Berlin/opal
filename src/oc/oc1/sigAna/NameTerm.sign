@@ -1,0 +1,63 @@
+-- LAST EDIT: Tue Aug 29 21:09:49 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     This structure tries to abstract from the details of 
+--              the current globSig structure which is quite crude.
+-- ============================================================================
+
+SIGNATURE NameTerm
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+
+IMPORT 	Name		ONLY name
+	GlobSig		ONLY globSig
+	Objects		ONLY struct:SORT inst:SORT
+
+SORT nameTerm
+
+FUN = : nameTerm ** nameTerm -> bool
+  -- immer false bei Fehlertermen
+
+FUN toNameTerm : globSig -> name -> globSig ** nameTerm
+  -- PRE: Darf erst nach der Nudelphase (GlobSigFix) aufgerufen werden !!
+  -- this function does the work to transform a name of a globSig environment
+  -- into a standalone term expression. This can be used for further
+  -- processing. 
+  -- If toNameTerm cannot succeed because of hidden subnames, ambiguities 
+  -- uninstantiated or cyclic names it returns an error term.
+  -- The global signature is changed whenever the list of instances for a
+  -- given structure is detected to much "hidden", i.e. 
+  -- a. there is a used hidden instance which has an equivalent non hidden 
+  -- one or
+  -- b. there is a used hidden instance for which exists a more generic 
+  -- non hidden one. 
+  -- In both cases the hidden one is made "unhidden" and for a. it is marked
+  -- double.
+  -- The above two cases result from unfinished processing of the applications
+  -- in ONLY lists. Indirect applied names like sorts in functionalities of
+  -- these names are marked hidden, although there is a matching non hidden
+  -- sort from a different import statement.
+
+FUN toNameTerm : globSig ** struct ** inst -> name -> globSig ** nameTerm
+  -- like the above version with the possibility to specify an external
+  -- instance context for the given name. This is especially important for
+  -- names in only lists, which depends on the instance provided in the
+  -- IMPORT statement. If inst equals unparam then the name-internal context
+  -- is used.
+
+FUN error? hidden? ambiguous? uninst? cyclic?: nameTerm -> bool
+  -- Abfragen auf Fehler im Aufbau des Terms (nach toNameTerm)
+
+FUN ` : nameTerm -> denotation
+  -- Umwandlung in Text (ohne Ausgabe der Fehlermengen)
+
+FUN ` : globSig ** nameTerm -> 
+	denotation ** denotation ** denotation ** denotation ** denotation
+  -- PRE nameTerm error?
+  -- Umwandlung in (hiddenS, ambiguousS, uninstS, cyclicS, errorTerm)
+
+FUN hidden? : globSig ** name -> bool

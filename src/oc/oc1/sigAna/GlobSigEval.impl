@@ -1,0 +1,127 @@
+/* %-
+-- LAST EDIT: Tue Aug 29 23:59:10 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     full evaluation 
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+-- ============================================================================
+*/
+
+IMPLEMENTATION GlobSigEval
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Com             COMPLETELY
+        ComCompose      ONLY    &
+        DEBUG           ONLY    FIELD? PRINT string
+        GlobSig         ONLY    globSig decls
+        GlobSig4SigAna  ONLY    treatDeclS treatInstAppls treatInstS 
+                                treatOnlyS treatOpDeclS
+        GlobSigEvalDecl ONLY    evalDecl findDoubleOpDecl
+        GlobSigEvalInst ONLY    checkDoubleInst checkInstAppls evalInst 
+                                evalInstFin
+        GlobSigEvalOnly ONLY    closeOpImpDeclS evalOnly
+        GlobSigEvalParam
+                        ONLY    evalParameters
+        GlobSigToText   ONLY    `
+        ImpExpEntry     ONLY    instAppl:SORT instE
+        Nat             ONLY    nat
+        Objects         ONLY    decl inst struct no impDecl
+        OcExit          ONLY    languageError
+        Options         ONLY    cop? options pchecker?
+        Pair            ONLY    & pair
+        PartNameEntry   COMPLETELY
+        Seq             ONLY    seq
+        SigAnaTexts     ONLY    verbEvalSigAna
+        Table           ONLY    table !
+        Verbose         ONLY    definition verb
+        Void            ONLY    void
+       DeclEntry ONLY op? impl spc declE pos
+       GlobSigImpl ONLY parameter? ` locSig
+       Option ONLY nil? option
+       Error ONLY err warning errKind errors
+       Rep ONLY `
+       AnalyzedGlobSig ONLY standard ` level parameter?
+       Name ONLY intName
+
+-- ---------------------------------------------------------------------------
+
+FUN globSigEval : options -> globSig -> com[globSig]
+
+DEF globSigEval(options)(gS) == 
+          verb(options, definition, verbEvalSigAna) &
+          -- Analysieren der expliziten Instanzen (Importe)
+          (\\ _ . treatInstS(evalInst(options), gS, true) &
+                  evalGlobSig1(options))
+
+FUN evalGlobSig1 : options -> pair[globSig,bool] ->com[globSig]
+DEF evalGlobSig1(options)(gS & ok) ==
+    treatInstS(evalInstFin(options), gS, ok) & evalGlobSig2(options)
+
+
+
+FUN evalGlobSig2 : options -> pair[globSig,bool] ->com[globSig]
+DEF evalGlobSig2(options)(gS & ok) ==
+   treatDeclS(evalDecl(options), gS2, ok) &
+   evalGlobSig3(options)
+   WHERE gS2 == PRINT(printGsEvalInst?,`'GlobSigToText(gS),gS)
+
+FUN evalGlobSig3 : options -> pair[globSig,bool] ->com[globSig]
+DEF evalGlobSig3(options)(gS & ok) ==
+     treatOnlyS(evalOnly(options), gS2, ok) &
+     evalGlobSig3b(options)
+     WHERE gS2 == PRINT(printGsEvalDecl?,`'GlobSigToText(gS1),gS1)
+           gS1 == treatInstAppls(gS0, checkInstAppls)
+           gS0 == PRINT(printGsEvalDoubleInst?,`' GlobSigToText(gS00),gS00)
+           gS00 == treatInstS(gS, checkDoubleInst)
+
+FUN evalGlobSig3b : options -> pair[globSig,bool] -> com[globSig]
+DEF evalGlobSig3b(options)(gS & ok) ==
+   treatOnlyS(closeOpImpDeclS(options), gS1, ok) &
+   evalGlobSig4(options)
+   WHERE gS1 == PRINT(printGsEvalOnly?,`'GlobSigToText(gS),gS)
+
+
+FUN evalGlobSig4 : options -> pair[globSig,bool] -> com[globSig]
+DEF evalGlobSig4(options)(gS & ok) ==
+  evalParameters(options, finGS, ok) & evalGlobSig5(options)
+  WHERE gS1 == PRINT(printGsEvalClose?,`'GlobSigToText(gS),gS)
+        gS2 == treatOpDeclS(findDoubleOpDecl, gS1)
+        finGS == PRINT(printGsEvalDouble?,`'GlobSigToText(gS2),gS2)
+
+
+
+FUN evalGlobSig5 : options -> pair[globSig,bool] -> com[globSig]
+DEF evalGlobSig5(options)(gS & ok) ==
+  IF ok THEN yield(okay(PRINT(cop?("printGsEval",options), `'GlobSigToText(gS), gS)))
+  ELSE yield(fail(languageError)) FI
+
+
+-- %@zoindex printGsEvalInst
+FUN printGsEvalInst? : bool
+DEF printGsEvalInst? == FIELD?[bool:SORT]("-zprintGsEvalInst")
+
+-- %@zoindex printGsEvalDecl
+FUN printGsEvalDecl? : bool
+DEF printGsEvalDecl? == FIELD?[bool:SORT]("-zprintGsEvalDecl")
+
+-- %@zoindex printGsEvalDoubleInst
+FUN printGsEvalDoubleInst? : bool
+DEF printGsEvalDoubleInst? == FIELD?[bool:SORT]("-zprintGsEvalDoubleInst")
+
+-- %@zoindex printGsEvalOnly
+FUN printGsEvalOnly? : bool
+DEF printGsEvalOnly? == FIELD?[bool:SORT]("-zprintGsEvalOnly")
+
+-- %zoindex printGsEvalClose
+FUN printGsEvalClose? : bool
+DEF printGsEvalClose? == FIELD?[bool:SORT]("-zprintGsEvalClose")
+
+-- %@zoindex printGsEvalDouble
+FUN printGsEvalDouble? : bool
+DEF printGsEvalDouble? == FIELD?[bool:SORT]("-zprintGsEvalDouble")

@@ -1,0 +1,1371 @@
+IMPLEMENTATION TransUsrSources
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransUsrSources.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT 
+  String        COMPLETELY      ComCompose      COMPLETELY
+  Seq           COMPLETELY      Stream          COMPLETELY
+  SeqMap        COMPLETELY      Void            COMPLETELY
+  SeqOfSeq      COMPLETELY      Compose         COMPLETELY
+  Com           COMPLETELY      Option          COMPLETELY
+
+IMPORT
+  MyString      COMPLETELY      Language        COMPLETELY
+  Content       COMPLETELY      TransNode       COMPLETELY
+  SourceTab     COMPLETELY      TransType       COMPLETELY
+  SourceTabFun  COMPLETELY      TransHelp       COMPLETELY
+  TopSort       COMPLETELY      TransPointers   COMPLETELY
+  SubsystemType COMPLETELY      TransReference  COMPLETELY
+  Config        COMPLETELY
+  ConfigFun     COMPLETELY      TransHierarchy  COMPLETELY
+  ConfigSearch  COMPLETELY
+  Context       COMPLETELY      TransMenu       COMPLETELY
+  MyComAction COMPLETELY
+       StringConv ONLY `
+       Denotation ONLY ++
+       ConfigExt ONLY include?
+       ConfigTest ONLY getPath
+
+-- %$Translation of all User Modules$
+-- %---------------------------------
+
+FUN buildAllUsrNodes : seq[string] ** usrInfos ** config ** output -> com[void]
+
+DEF buildAllUsrNodes( sortedUsrFileNames, usrInfos, config, outputFile ) ==
+   (writeLine(stdErr, "translating top level modules ...") &
+   (LET
+
+/* %The name of the node that follows the translation of the top-level source is
+calculated. It is needed as environment node for the translation of user-subsystems 
+in the function @c{buildUsrSubsystems}: */
+      nodeAfterTopLevelSources ==
+        IF subsystemsInclude?(config) THEN
+          IF <>?(subsystems(usrInfos)) THEN
+            nodeAfterLastUsrFile(config)
+          ELSE
+            USER_SUBSYSTEM(name(ft(subsystems(usrInfos))))
+          FI
+        ELSE
+          nodeAfterLastUsrFile(config)
+        FI
+
+    IN
+      buildUsrNodes(
+        sortedUsrFileNames,
+        <>,
+        sources(usrInfos),
+        "Top"!,
+        "Top"!,
+        nodeAfterTopLevelSources,
+        chapter,
+        config,
+        outputFile
+      )
+  ) -- LET
+  ) & 
+  (\\ _ .
+      IF subsystemsInclude?(config) THEN
+        (writeLine(stdErr, "translating user subsystems ...") &
+        (LET
+           nodePreviousToUsrSubsystems == 
+             IF <>?(sources(usrInfos)) THEN
+               "Top"!
+             ELSE
+               nodeLastName(
+                 sources(usrInfos),
+                 last(sortedUsrFileNames),
+                 config
+               )
+             FI
+         IN
+           buildUsrSubsystems(
+             subsystems(usrInfos),
+             nodePreviousToUsrSubsystems,
+             "Top"!,
+             nodeAfterLastUsrFile(config),
+             chapter,
+             config,
+             outputFile
+           )
+        ) -- LET
+        ) -- writeLine
+      ELSE
+        yield(okay(nil))
+      FI
+  ) -- \\ _
+  
+
+
+-- %$Translation of User-Defined Subsystems$
+-- %----------------------------------------
+-- %The function
+
+FUN buildUsrSubsystems : 
+      seq[subsystem[usrSourceInfo]] ** string ** string ** string **
+        partType ** config ** output -> com[void]
+
+/* %recusively translates user-implemented subsystems into a Texinfo intermediate 
+representation. This is done in the following order:
+@enumerate
+@item The header of the @c{actSubsystem} is constructed and written to @c{output} 
+containing administrative information including node-pointers for Info and sectioning
+commands for the printable documentation.
+@item An optional survey on the current subsystem is extracted from the 
+configuration-database @c{config} and written out.
+@item The hierarchy-visualizations for the structures of the current subsystem and any
+lower-level subsystems of the current subsystem are calculated and emitted to the 
+@c{output}-stream.
+@item The Texinfo-menu is build and printed out.
+@item The sequence of structures that are member of the @c{actSubsystem} is 
+translated.
+@item The lower-level subsystems of the current subsystems are translated. This is 
+realized by a recursive call to @c{buildUsrSubsystems} with a newly calculated node
+environment parameters.
+@item All succeeding subsystems of the same level as @c{actSubsystem} are translated
+by a recursive call to @c{buildUsrSubsystems} with newly calculated node
+environment.
+@end enumerate 
+Before concatenating the parts of the user-implemented subsystems as top-level
+structures, a lot of pointer calculation has to occur, as each successive
+(sometimes recursive) call to a lower-level translation function needs a specific
+node-context. */
+
+DEF buildUsrSubsystems( actSubsystem :: rtSubsystems,
+                        actSubsystemPrevNodeEnv,
+                        actSubsystemUpNode,
+                        actSubsystemNextNodeEnv,
+                        actSubsystemPartType,
+                        config,
+                        outputFile 
+    ) ==
+
+  LET
+/* %The Texinfo-representation of the node-name and the section-name
+for the current subsystem:  */
+
+    actSubsystemNodeName == USER_SUBSYSTEM(name(actSubsystem))
+    actSubsystemPartName == User_Subsystem_:_(name(actSubsystem))
+
+/* %Depending on the contents of the current subsystem the next-pointer of the 
+node-specification has to be determined: */
+
+    actSubsystemNextNode == IF <>?(sources(actSubsystem)) THEN
+                              IF <>?(subsystems(actSubsystem)) THEN
+                                IF <>?(rtSubsystems) THEN
+                                  actSubsystemNextNodeEnv
+                                ELSE
+                                  USER_SUBSYSTEM(name(ft(rtSubsystems)))
+                                FI
+                              ELSE
+                                USER_SUBSYSTEM(
+                                  name(ft(subsystems(actSubsystem)))
+                                              )
+                              FI
+                            ELSE
+                              Overview(ft(flat(sortedUsrFileLevels)))
+                            FI
+
+/* %Determining the name of the node that follows the  translation of the 
+sources of the actual subsystem: */
+
+    actSubsystemSourcesNextNode == 
+                            IF <>?(subsystems(actSubsystem)) THEN
+                              IF <>?(rtSubsystems) THEN
+                                actSubsystemNextNodeEnv
+                              ELSE
+                                USER_SUBSYSTEM(name(ft(rtSubsystems)))
+                              FI
+                            ELSE
+                              USER_SUBSYSTEM(
+                                name(ft(subsystems(actSubsystem)))
+                                            )
+                            FI
+
+/* %Find the name of the node that precedes the subsystems of the @c{actSubsystem}: */
+
+    actSubsystemSubsystemsPrevNode ==
+                            IF <>?(sources(actSubsystem)) THEN
+                              actSubsystemNodeName
+                            ELSE               
+                              nodeLastName(
+                                sources(actSubsystem),
+                                last(flat(sortedUsrFileLevels)),
+                                config
+                              )
+                            FI
+
+/* %Compute the last node-name of the @c{actSubsystem}. It depends on the presence
+of sub-subsystems of the current subsystem: */
+
+    actSubsystemLastNode == IF <>?(subsystems(actSubsystem)) THEN
+                              actSubsystemSubsystemsPrevNode
+                            ELSE
+                              cont(
+                                lastNode(
+                                  last(subsystems(actSubsystem)),
+                                  config
+                                )
+                              )
+                            FI
+
+/* %During the translation of subsystems of the current subsystem we have to
+pass the name of a next-pointer where the last node of the sub-subsystem
+translation points to. This node can be determined with the context information
+of the current subsystem: */ 
+
+    subSubsystemsNextNodeEnv == IF <>?(rtSubsystems) THEN
+                                 actSubsystemNextNodeEnv
+                               ELSE
+                                 USER_SUBSYSTEM(name(ft(rtSubsystems)))
+                               FI
+
+/* %The succession of user-source-structures is determined by a topological
+sorting algorithm. The resulting @c{sortedUsrFileLevels} are a basic
+information for the calculation of successor- and predecessor-nodes of
+lower-level translations. Moreover the sequence is needed to determine the
+succession of translation of the structures of the current subsystem in the
+function @c{buildUsrNodes}. */
+
+    sortedUsrFileLevels == revert(topologicalSort(sources(actSubsystem),
+                                  config, 
+                                  name(actSubsystem)))
+
+  IN
+    writeLine(stdErr, !("translating: USER SUBSYSTEM ") 
+                          ++ name(actSubsystem) ++ !(" ...")
+    ) &
+
+-- %Texinfo-node adminstration:
+    (\\ _ .                                    
+        write(
+          outputFile,
+          actSubsystemHeader
+        ) &
+
+-- %Informal subsystem overview:
+    (\\ _ .                                    
+        write(
+          outputFile,
+          subsystemSurvey(
+            name(actSubsystem),
+            config
+          )
+        ) &
+
+-- %Hierarchy Visualization
+    (\\ _ .
+        write(
+          outputFile,
+          subsystemHierarchyVisu(
+            name(actSubsystem),
+            sources(actSubsystem), 
+            config
+          )
+        ) &
+    (\\ _ .
+        write(
+          outputFile,
+          subsystemLevelSubsystemVisu(
+            name(actSubsystem),
+            subsystems(actSubsystem),
+            config
+          )
+        ) &
+
+-- %Menu:
+    (\\ _ .                                    
+        write(
+          outputFile,
+          actSubsystemMenu%
+        ) &
+
+-- %Sources of the current Subsystem:
+    (\\ _ .
+           buildUsrNodes(
+             flat(sortedUsrFileLevels),      -- user sources to build
+             <>,                             -- no user sources already built
+             sources(actSubsystem),
+             actSubsystemNodeName,           -- previous node
+             actSubsystemNodeName,           -- up node
+             actSubsystemSourcesNextNode,    -- node after last lib node
+             addDepth(actSubsystemPartType), -- increase sectioning level
+             config,
+             outputFile
+           )
+    ) & 
+
+-- %Lower-level subsystems:
+    (\\ _ .                
+        buildUsrSubsystems(
+          subsystems(actSubsystem),
+          actSubsystemSubsystemsPrevNode, -- prevNode
+          actSubsystemNodeName,           -- up node
+          subSubsystemsNextNodeEnv,       -- next node
+          addDepth(actSubsystemPartType), -- increase sectioning level
+          config,
+          outputFile
+        ) & 
+
+-- %Rest-subsystems of the same level:
+    (\\ _ .                         
+        buildUsrSubsystems(         
+          rtSubsystems,             
+          actSubsystemLastNode,         -- prev node
+          actSubsystemUpNode,           -- up node
+          actSubsystemNextNodeEnv,      -- next node
+          actSubsystemPartType,         -- do not increase sectioning level !
+          config,
+          outputFile
+        ) &
+
+-- %Finalize translation of @c{actSubsystem}:
+    (\\ _ .                                    
+        write(
+          outputFile,
+          actSubsystemTrailer
+        ) 
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+
+  WHERE
+
+/* %In older versions, the configuration for the current subsystem determines 
+if a new page is started for displaying the subsystem node in the printable 
+documentation. Now we begin a new page for a subsystem in any case
+(only structures have optional page breaks).
+Moreover the header for the current subsystem is composed with the calculated node-settings: */
+
+    actSubsystemHeader == texinfo(
+                            line("@page")
+                            /*
+                            optionalNewPageSubsystem(
+                              config,
+                              name(actSubsystem)
+                            )
+                            */
+                          ) % 
+                          buildHeader(
+                            env(
+                              actSubsystemNodeName,
+                              actSubsystemNextNode,
+                              actSubsystemPrevNodeEnv,
+                              actSubsystemUpNode,
+                              actSubsystemPartType,
+                              actSubsystemPartName
+                            )
+                          )
+
+/* %The menu for the current subsystem points to all structure overviews of structures 
+that belong to the @c{actSubsystem} as well as to all introductory nodes of all
+subsystems of the current subsystem that are its direct descendent: */
+
+   actSubsystemMenu    == texinfo(
+                            conc(
+                              nl,
+                              line("@ifinfo"),
+                              Sources_of_User_Subsystem_: ,
+                              nl,
+                              line("@end ifinfo"),
+                              buildMenu(
+                                strings2MenuEntries(
+                                  name * sources(actSubsystem), Overview
+                                )
+                              ),
+                              nl, nl
+                            ) ++
+                            conc(
+                              line("@ifinfo"),
+                              Subsystems_of_User_Subsystem_: ,
+                              nl,
+                              line("@end ifinfo"),
+                              buildMenu(
+                                strings2MenuEntries(
+                                  name * subsystems(actSubsystem), 
+                                  USER_SUBSYSTEM
+                                )
+                              ),
+                              nl
+                            )
+                          )
+
+/* %If specified, the current subsystem node has to be terminated by a 
+@c{@@page}-command. This Texinfo markup-command forces the formatter to start
+a new page: */
+
+    actSubsystemTrailer == texinfo(
+                             optionalNewPageSubsystem(
+                               config, 
+                                 name(actSubsystem)
+                             )
+                           )%
+
+/* %If no subsystems are present, no output can be generated. This equation serves as
+the termination case for the calculation of subsystem-sequence translation: */
+
+DEF buildUsrSubsystems( <>, _, _, _, _, _, _ ) == yield(okay(nil))
+
+
+
+
+-- %$$Subsystem Introductory Text$
+-- %-----------------------------
+
+FUN subsystemSurvey : string ** config -> seq[outputElem]
+
+DEF subsystemSurvey( name , config ) ==
+  LET
+    optionalSurvey == surveySub(config, name)
+  IN
+    IF nil?(optionalSurvey) THEN
+      <>
+    ELSE
+      %(overviewPrefix,
+        documentation(cont(optionalSurvey)),
+        overviewSuffix
+      )
+    FI
+
+
+-- %$$Hierarchy Visualizations for Subsystems$
+-- %-------------------------------------------
+/* %Each subsystem-introductory-node can contain a hierarchy visualization of the
+structures belonging to it and the hierarchy of the sub-subsystems. See the 
+corresponding Diplomarbeit for further details. */ 
+
+FUN subsystemHierarchyVisu : 
+      string **seq[usrSourceInfo] ** config -> seq[outputElem]
+DEF subsystemHierarchyVisu( name, usrSourceInfos, config ) ==
+  IF hierarchyVisuSub?(config, name) or
+     hierarchyVisuNoSubsSub?(config, name) THEN
+    LET
+      sortedUsrFileLevels == topologicalSort(usrSourceInfos, config, name)
+    IN
+      texinfo(
+        constructHierarchyVisualization(
+          revert(
+            sortedUsrFileLevels
+          ),
+          config,
+          searchOptionSettingSub(SortStructures, \\x.x, config, name)
+        ) ++
+        line("@page")
+      )%
+  ELSE
+    <>
+  FI
+
+FUN subsystemLevelSubsystemVisu : 
+      string ** seq[subsystem[usrSourceInfo]] ** config -> seq[outputElem]
+DEF subsystemLevelSubsystemVisu( name, usrSubsystems, config ) ==
+  IF hierarchyVisuSub?(config, name) or
+     hierarchyVisuNoStructsSub?(config, name) THEN
+    texinfo(
+      subsystemVisu(usrSubsystems, config) ++
+      line("@page")
+    )%
+  ELSE
+    <>
+  FI
+
+-- %$Webbing the Structure of User-Implemented Modules$
+-- %---------------------------------------------------
+/* %A complete structure can be composed of four @OPAL-source-code modules. The 
+translation of these parts is done for all user-files of a common subsystem
+or for top-level structures. Additionally DOSFOP allows the formulation of an
+informal introductory text for all structures. We call this section the 
+@b{Overview}-part of each structure which is the mandatory ---probably empty--
+part of each structure's translation.
+
+An initial call to @c{buildUsrNodes} has to pass the sequence of @c{filesToBuild} as a
+first parameter and an empty string-sequence of @c{filesAlreadyBuilt} as subsequent
+parameter. During
+the translation process the concatenation of @c{filesToBuild} and 
+@c{filesAlreadyBuilt} will always define the complete sequence of structures of the 
+current subsystem or the top-level. The location of the splitting denotes the 
+current state of translation. In order to supply each separate translation 
+function with the required context information for node-pointer construction, the 
+complete sequence of structure names has to be accessable permanently. 
+
+The settings of the configuration-database determines the extent of module
+inclusion and influences the node-pointer calculation of the called
+functions. */
+
+FUN buildUsrNodes : seq[string] ** seq[string] **
+                      seq[usrSourceInfo] ** 
+                        string ** string ** string ** partType **
+                          config ** output
+                            -> com[void]
+
+DEF buildUsrNodes( filesToBuild AS actNode::restFilesToBuild,
+                   filesAlreadyBuilt,
+                   usrSourceInfos,
+                   prevNodeEnv,
+                   upNodeEnv,
+                   nextNodeEnv,
+                   partType,
+                   config,
+                   outputFile ) ==
+
+  LET
+    outputFileName == actNode ++ (!".doc.texi")
+    docFileName == LET p? == getPath(actNode)(config) 
+                   IN IF avail?(p?) THEN 
+                        cont(p?) ++ ("/OCS/"!) ++ outputFileName
+                      ELSE 
+                        ("DOSFOP/"!) ++ outputFileName
+                      FI
+    overNodeName == Overview(actNode)
+    overNextNode == IF <>?(restFilesToBuild) THEN
+                      IF <>?(filesAlreadyBuilt) THEN
+                        mkNodeName(actNode, sign)       -- single file project
+                      ELSE
+                        mkNodeName(ft(filesAlreadyBuilt), sign)
+                                                    -- last project overview
+                      FI
+                    ELSE
+                      Overview(ft(restFilesToBuild)) 
+                                                    -- next file overview
+                    FI
+    overPrevNode == IF <>?(filesAlreadyBuilt) THEN
+                      prevNodeEnv
+                    ELSE
+                      Overview(last(filesAlreadyBuilt))
+                    FI
+    overPartName == actNode
+  IN  
+  write(outputFile, redef("DFNODENAME", overNodeName) ++
+                    redef("DFNEXTNODE", overNextNode) ++
+                    redef("DFPREVNODE", overPrevNode) ++
+                    redef("DFUPNODE", upNodeEnv)) & (\\ _ .
+  write(outputFile, !("\n@include ") ++ docFileName ++ !("\n")) & (\\ _ .
+  include?(actNode) & (\\ incl? .
+  incl? -?-> (\\ .
+  writeLine(stdErr, !("translating: ") ++ actNode ++ !(" ...")) & (\\ _ .
+  create(docFileName`) ; (\\ output? .
+  ((output? fail?) -!-> (\\ . 
+        "ERROR in opening doc file `" ++ (docFileName`) ++
+        "' for structure "  ++ (actNode`) ++ "\nReason: " ++
+        error(output?))) & (\\ _ .
+  LET actOutputFile == data(output?)
+  IN
+/* %The translation of the overview and the signature part is @c{mandatory}
+    for each structure. The inclusion of other structure modules depends on
+    the settings in @c{config}: */
+
+  buildOverview( filesToBuild, filesAlreadyBuilt, usrSourceInfos, prevNodeEnv,
+                 upNodeEnv, partType, config, actOutputFile ) & (\\ _ .
+  (IF usrSourceInfo?(cont(get(usrSourceInfos, \\x.x, actNode))) THEN
+   -- %@OPAL signature
+      buildSignature(filesToBuild, filesAlreadyBuilt,
+                     usrSourceInfos, nextNodeEnv, addDepth(partType),
+                     config, actOutputFile) &  (\\ _ .
+      (~(onlyInterfaces?(config, actNode)) -?->
+       (\\ . buildImplementation(filesToBuild, filesAlreadyBuilt,
+                                 usrSourceInfos, nextNodeEnv,
+                                 addDepth(partType), config,
+                                 actOutputFile))) & (\\ _ .
+      (propertiesInclude?(config, actNode) -?->
+        (\\ . buildExtp(filesToBuild, filesAlreadyBuilt, usrSourceInfos,
+                        nextNodeEnv, addDepth(partType), config,
+                        actOutputFile))) & (\\ _ .
+      (propertiesInclude?(config, actNode) and
+         ~(onlyInterfaces?(config, actNode)) -?->
+         (\\ . buildIntp(filesToBuild, filesAlreadyBuilt, usrSourceInfos,
+                         nextNodeEnv, addDepth(partType), config,
+                         actOutputFile)))
+      )))
+    ELSE
+    -- %foreign structure
+      buildForeign(filesToBuild, filesAlreadyBuilt, usrSourceInfos,
+                   nextNodeEnv, addDepth(partType), config, actOutputFile)
+    FI) & (\\ _ .
+    close(actOutputFile)
+    )))))))))  & ( \\ _ .
+/* %The recursive call to @c{buildUsrNodes} is induced subsequently. The sequence 
+of @c{filesAlreadyBuilt} is
+increased by the name of the structures that has been translated previously 
+(@c{actNode}): */
+
+    buildUsrNodes(
+        restFilesToBuild,
+        filesAlreadyBuilt +% actNode,
+        usrSourceInfos,
+        actNode ++ !(" OVERVIEW"), -- prev Node Env
+        upNodeEnv,
+        nextNodeEnv,
+        partType,
+        config,
+        outputFile
+                 )
+  )
+
+DEF buildUsrNodes( <>, _, _, _, _, _, _, _, _ ) == yield(okay(nil))
+  
+
+
+-- %$$Translating the Overview Node$ 
+-- %--------------------------------
+
+/* %The overview node contains:
+@enumerate
+@item An optional introductory text for the complete structure named @c{actNode}.
+@item A menu that points to the initial node of all structure's modules whose inclusion
+is specified in the current @c{config}uration. 
+@end enumerate
+*/
+FUN buildOverview : seq[string] ** seq[string] ** 
+                      seq[usrSourceInfo] ** 
+                        string ** string ** partType **
+                          config ** output -> 
+                            com[void]
+
+DEF buildOverview (actNode :: restFilesToBuild,
+                   filesAlreadyBuilt,
+                   usrSourceInfos,
+                   overPrevNodeEnv,
+                   overUpNode,
+                   overPartType,
+                   config,
+                   outputFile
+    ) ==
+  LET               
+    surveyTextOpt == IF usrSourceInfo?(cont(get(usrSourceInfos,
+                                           \\x.x, actNode))) THEN
+                        cont(
+                             get(
+                                 usrSourceInfos, 
+                                 (survey o content) o sign, 
+                                 actNode
+                                )
+                            )
+                     ELSE
+                       cont(get(usrSourceInfos,
+                                (survey o content) o file,
+                                actNode
+                           ))
+                     FI
+    overNodeName == Overview(actNode)
+    overNextNode == IF <>?(restFilesToBuild) THEN
+                      IF <>?(filesAlreadyBuilt) THEN
+                        mkNodeName(actNode, sign)       -- single file project
+                      ELSE
+                        mkNodeName(ft(filesAlreadyBuilt), sign)
+                                                    -- last project overview
+                      FI
+                    ELSE
+                      Overview(ft(restFilesToBuild)) 
+                                                    -- next file overview
+                    FI
+    overPrevNode == IF <>?(filesAlreadyBuilt) THEN
+                      overPrevNodeEnv
+                    ELSE
+                      Overview(last(filesAlreadyBuilt))
+                    FI
+    overPartName == actNode
+
+  IN
+    write(
+      outputFile,
+      header ++ %(overviewPrefix, text, overviewSuffix, menu)
+    )
+
+    WHERE
+      header ==
+        %(texinfo(optionalNewPage(config, actNode)),
+          buildHeader(env(
+                      "@DFNODENAME{}"!, -- overNodeName,
+                      "@DFNEXTNODE{}"!, -- overNextNode,
+                      "@DFPREVNODE{}"!, -- overPrevNode,
+                      "@DFUPNODE{}"!, -- overUpNode,
+                      overPartType,
+                      overPartName
+                     )
+          ),
+          texinfo(("@pindex "!) ++ actNode ++ ("\n"!))
+         )
+      text ==
+        IF nil?(surveyTextOpt) THEN
+          documentation(<>)
+        ELSE
+          documentation(cont(surveyTextOpt)++nl) 
+        FI
+
+      menu == IF usrSourceInfo?(cont(get(usrSourceInfos,
+                                           \\x.x, actNode))) THEN
+        texinfo( !("\n@ifclear dfSingleNode\n") ++ 
+          buildMenu( 
+            %(menuEntry(mkNodeName(actNode, sign), <>)) ++
+            (IF onlyInterfaces?(config, actNode) THEN
+               <>
+             ELSE
+               %(menuEntry(mkNodeName(actNode, impl), <>))
+             FI) ++
+             (IF propertiesInclude?(config, actNode) THEN
+                %(menuEntry(mkNodeName(actNode, extp), <>)) ++
+                (IF onlyInterfaces?(config, actNode) THEN
+                   <>
+                 ELSE
+                   %(menuEntry(mkNodeName(actNode, intp), <>))
+                 FI)
+              ELSE
+                <>
+              FI)
+        ) ++ !("\n@end ifclear\n") )
+        ELSE
+          texinfo(!("\n@ifclear dfSingleNode\n") ++ 
+          buildMenu( 
+            %(menuEntry(mkForeignNodeName(actNode), <>))
+                   ) ++
+          !("\n@end ifclear\n"))
+        FI
+
+
+
+-- %$$Translating a Signature Part$ 
+-- %-------------------------------
+/* %The concept of translation for the four subsequent structure modules are
+analogous. We will explain the function @c{buildSignature} as a template for the
+three remaining implementations.
+
+The function */ 
+
+FUN buildSignature : seq[string] ** seq[string] **
+                       seq[usrSourceInfo] ** 
+                         string ** partType **
+                           config ** output ->
+                             com[void] 
+
+/* %compiles the contents of the signature module of a user-implemented structure. This
+encompasses the repetition of source-code as well as the translation of informal
+documentaries
+and inherent documentation elements into intermediate Texinfo representation. The 
+webbing of node-pointers is realized according to the description of the 
+corresponding Diplomarbeit. The intermediate Texinfo representation for a 
+user-implemented signature part contains the following sections:
+@table @asis
+@item The Header
+This part contains all administrative information that is needed for Info-hypertext
+construction as well as adequate @TeX{}-sectioning, assuming the current 
+abstraction level where the signature has to be located.
+@item The Menu
+If the user has specified any subsectioning for the current signature part, the @c{menu}
+cointains references to all its sub-parts. If the inclusion of the implementation-part
+is specified a pointer for direct access is provided, too.
+@item The Import References
+A list of Texinfo-references to the nodes of imported structures is integrated w.r.t.
+the determined configuration-database. These references are translated to 
+hypertext-links in the Texinfo-representation of the project's documentation but
+induce specially typeset page-references in the printable version. 
+@item The Source
+The source-code ---enriched with inherent documentation-information--- is finally 
+appended and written to the @c{output}-stream.
+@end table */
+
+DEF buildSignature( filesToBuild AS actNode :: _,
+                    filesAlreadyBuilt,
+                    usrSourceInfos,
+                    allUsrStructuresNextNodeEnv,
+                    signPartType,
+                    config,
+                    outputFile
+    ) ==
+  LET
+    signContent      == cont(
+                          get(
+                            usrSourceInfos,
+                            content o sign,
+                            actNode
+                          )
+                        )
+    signPartNames    == content2PartNames(signContent)
+    signContext      == cont(
+                          get(
+                            usrSourceInfos, 
+                            context o sign, 
+                            actNode
+                          )
+                        )
+    signImports      == cont(
+                          get(
+                            usrSourceInfos, 
+                            imports o sign, 
+                            actNode 
+                          )
+                        )
+
+    signNodeName == mkNodeName(actNode, sign)
+
+    signEnvNextNode == nextModuleNode(
+                         filesAlreadyBuilt,
+                         filesToBuild,
+                         allUsrStructuresNextNodeEnv,
+                         sign,
+                         config,
+                         usrSourceInfos
+                       )
+
+    signNextNode == IF <>?(signPartNames) THEN
+                      signEnvNextNode
+                    ELSE
+                      fullPartName(actNode, ft(signPartNames), sign, config)
+                    FI
+
+    signPrevNode == prevModuleNode(
+                      filesAlreadyBuilt,
+                      filesToBuild,
+                      sign,
+                      config,
+                      usrSourceInfos
+                    )
+
+    signUpNode   == Overview(actNode)
+    signPartName == Signature_of_(actNode)
+
+  IN
+
+    write(
+      outputFile, 
+        header     ++ 
+        menu       ++
+        importRefs ++
+        source     
+    )
+
+    WHERE
+      header ==
+        texinfo(optionalNewPage(config, actNode))
+        %
+        buildHeaderO(
+          env(
+            signNodeName,
+            signNextNode,
+            signPrevNode,
+            signUpNode,
+            signPartType,
+            signPartName
+          )
+        )
+     
+      menu ==
+        texinfo( !("\n@ifclear dfSingleNode\n") ++ 
+          buildMenu((IF onlyInterfaces?(config, actNode) THEN
+                       <>
+                     ELSE
+                       menuEntry(
+                         mkNodeName(actNode, impl),
+                         IMPLEMENTATION_(actNode)
+                       )% 
+                    FI) ++
+                    strings2MenuEntries(
+                      signPartNames, 
+                      partName(signNodeName, config)
+                    )
+        ) ++ !("@end ifclear\n") )%
+
+      importRefs ==
+        buildImportReferences(actNode, signImports, config)
+
+      source ==
+        buildBody(
+          signContent,
+          signContext,
+          signEnvNextNode,
+          signNodeName,
+          signPartType,
+          actNode,
+          config
+        ) 
+
+
+
+-- %$$Translating an External Property Part$ 
+-- %----------------------------------------
+
+FUN buildExtp : seq[string] ** seq[string] ** 
+                  seq[usrSourceInfo] ** 
+                    string ** partType **
+                      config ** output ->
+                        com[void]
+
+DEF buildExtp( filesToBuild AS actNode :: _,
+               filesAlreadyBuilt,
+               usrSourceInfos,
+               allUsrStructuresNextNodeEnv,
+               extpPartType,
+               config,
+               outputFile
+    ) ==
+  LET
+    extpContent      == cont(
+                          get(
+                            usrSourceInfos,
+                            ((content o cont) o extProp) o sign,
+                            actNode
+                          )  
+                        )
+    extpPartNames    == content2PartNames(extpContent)
+    extpContext      == cont(
+                          get(
+                            usrSourceInfos, 
+                            ((context o cont) o extProp) o sign,
+                            actNode
+                          )
+                        )
+    extpImports      == cont(
+                          get(
+                            usrSourceInfos, 
+                            ((imports o cont) o extProp) o sign,
+                            actNode
+                          )
+                        )
+
+    extpNodeName == mkNodeName(actNode, extp)
+
+    extpEnvNextNode == nextModuleNode(
+                         filesAlreadyBuilt,
+                         filesToBuild,
+                         allUsrStructuresNextNodeEnv,
+                         extp,
+                         config,
+                         usrSourceInfos
+                       )
+    extpNextNode == IF <>?(extpPartNames) THEN
+                      extpEnvNextNode
+                    ELSE
+                      fullPartName(extpNodeName, ft(extpPartNames), config)
+                    FI
+
+    extpPrevNode == prevModuleNode(
+                      filesAlreadyBuilt,
+                      filesToBuild,
+                      extp,
+                      config,
+                      usrSourceInfos
+                    )
+
+    extpUpNode   == Overview(actNode)
+    extpPartName == External_Property_Part_of_(actNode)
+
+  IN
+
+    write(
+      outputFile,
+       header     ++
+       menu       ++  
+       importRefs ++
+       source     
+    )
+
+    WHERE
+      header ==
+        texinfo(optionalNewPage(config, actNode))
+        %
+        buildHeaderO(
+          env(
+            extpNodeName,
+            extpNextNode,
+            extpPrevNode,
+            extpUpNode,
+            extpPartType,
+            extpPartName
+          )
+        )
+     
+      menu ==
+        texinfo( !("\n@ifclear dfSingleNode\n") ++ 
+          buildMenu(
+            (IF onlyInterfaces?(config, actNode) THEN
+              <>
+            ELSE
+              menuEntry(
+                mkNodeName(actNode, intp),
+                INTERNAL_PROPERTY_PART_(actNode)
+              )%
+            FI) ++
+            strings2MenuEntries(
+              extpPartNames, 
+              partName(extpNodeName, config)
+            )
+          ) ++ !("\n@end ifclear\n")
+        )%
+
+      importRefs ==
+        buildImportReferences(actNode, extpImports, config)
+
+      source ==
+        buildBody(
+          extpContent,
+          extpContext,
+          extpEnvNextNode,
+          extpNodeName,
+          extpPartType,
+          actNode,
+          config
+        )
+
+
+-- %$$Translating an Implementation Part$
+-- %-------------------------------------
+
+FUN buildImplementation : seq[string] ** seq[string] **
+                            seq[usrSourceInfo] ** 
+                              string ** partType **
+                                config ** output ->
+                                  com[void] 
+
+DEF buildImplementation( filesToBuild AS actNode :: _,
+                         filesAlreadyBuilt,
+                         usrSourceInfos,
+                         allUsrStructuresNextNodeEnv,
+                         implPartType,
+                         config,
+                         outputFile
+    ) ==
+  LET
+    implContent      == cont(
+                          get(
+                            usrSourceInfos,
+                            content o impl,
+                            actNode
+                          )
+                        )
+    implPartNames    == content2PartNames(implContent)
+    implContext      == cont(
+                          get(
+                            usrSourceInfos,
+                            context o impl,
+                            actNode
+                          )
+                        )
+    implImports      == cont(
+                          get(
+                            usrSourceInfos,
+                            imports o impl,
+                            actNode
+                          )
+                        )
+
+    implNodeName == mkNodeName(actNode, impl)
+    implEnvNextNode == nextModuleNode(
+                         filesAlreadyBuilt,
+                         filesToBuild,
+                         allUsrStructuresNextNodeEnv,
+                         impl,
+                         config,
+                         usrSourceInfos
+                       )
+
+    implNextNode == IF <>?(implPartNames) THEN
+                      implEnvNextNode
+                    ELSE
+                      fullPartName(implNodeName, ft(implPartNames), config)
+                    FI
+
+    implPrevNode == prevModuleNode(
+                      filesAlreadyBuilt,
+                      filesToBuild,
+                      impl,
+                      config,
+                      usrSourceInfos
+                    )
+
+    implUpNode   == mkNodeName(actNode, sign)
+    implPartName == Implementation_of_(actNode)
+
+  IN
+
+    write(
+      outputFile,
+      header     ++
+      menu       ++
+      importRefs ++
+      source     
+    )
+
+    WHERE
+      header ==
+        texinfo(optionalNewPage(config, actNode))
+        %
+        buildHeaderO(
+          env(
+            implNodeName,
+            implNextNode,
+            implPrevNode,
+            implUpNode,
+            implPartType,
+            implPartName
+          )
+        )
+    
+      menu ==
+        texinfo( !("\n@ifclear dfSingleNode\n") ++ 
+          buildMenu(strings2MenuEntries(
+                      implPartNames, 
+                      partName(implNodeName, config)
+          )         ) ++ !("\n@end ifclear\n")
+        )%
+  
+      importRefs ==
+        buildImportReferences(actNode, implImports, config)
+
+      source ==
+        buildBody(
+          implContent,
+          implContext,
+          implEnvNextNode,
+          implNodeName,
+          implPartType,
+          actNode,
+          config
+        )
+
+
+
+-- %$$Translating an Internal Property Part$ 
+-- %----------------------------------------
+
+FUN buildIntp : seq[string] ** seq[string] ** 
+                  seq[usrSourceInfo] ** 
+                    string ** partType **
+                      config ** output ->
+                        com[void] 
+
+DEF buildIntp( filesToBuild AS actNode :: _,
+               filesAlreadyBuilt,
+               usrSourceInfos,
+               allUsrStructuresNextNodeEnv,
+               intpPartType,
+               config,
+               outputFile
+    ) ==
+  LET
+    intpContent      == cont(
+                          get(
+                            usrSourceInfos,
+                            ((content o cont) o intProp) o impl,
+                            actNode
+                          )
+                        )
+    intpPartNames    == content2PartNames(intpContent)
+    intpContext      == cont(
+                          get(
+                            usrSourceInfos,
+                            ((context o cont) o intProp) o impl,
+                            actNode
+                          )
+                        )
+    intpImports      == cont(
+                          get(
+                            usrSourceInfos,
+                            ((imports o cont) o intProp) o impl,
+                            actNode
+                          )
+                        )
+
+    intpNodeName == mkNodeName(actNode, intp)
+
+    intpEnvNextNode == nextModuleNode(
+                         filesAlreadyBuilt,
+                         filesToBuild,
+                         allUsrStructuresNextNodeEnv,
+                         intp,
+                         config,
+                         usrSourceInfos
+                       )
+
+    intpNextNode == IF <>?(intpPartNames) THEN
+                      intpEnvNextNode
+                    ELSE
+                      fullPartName(intpNodeName, ft(intpPartNames), config)
+                    FI
+    intpPrevNode == prevModuleNode(
+                      filesAlreadyBuilt,
+                      filesToBuild,
+                      intp,
+                      config,
+                      usrSourceInfos
+                    )
+
+    intpUpNode   == mkNodeName(actNode, extp)
+    intpPartName == Internal_Property_Part_of_(actNode)
+
+  IN
+    write(
+      outputFile,
+      header     ++
+      menu       ++
+      importRefs ++
+      source     
+    )
+
+    WHERE
+      header ==
+        texinfo(optionalNewPage(config, actNode))
+        %
+        buildHeaderO(
+          env(
+            intpNodeName,
+            intpNextNode,
+            intpPrevNode,
+            intpUpNode,
+            intpPartType,
+            intpPartName
+           )
+        )
+    
+      menu ==
+        texinfo( !("\n@ifclear dfSingleNode\n") ++ 
+          buildMenu(
+            strings2MenuEntries(
+              intpPartNames, 
+              partName(intpNodeName, config)
+            )
+          ) ++ !("\n@end ifclear\n")
+        )%
+      
+      importRefs ==
+        buildImportReferences(actNode, intpImports, config)
+
+      source ==
+        buildBody(
+          intpContent,
+          intpContext,
+          intpEnvNextNode,
+          intpNodeName,
+          intpPartType,
+          actNode,
+          config
+        )
+
+-- %$$Translating a Foreign Structure$
+
+FUN buildForeign : seq[string] ** seq[string] **
+                       seq[usrSourceInfo] ** 
+                         string ** partType **
+                           config ** output ->
+                             com[void] 
+
+
+
+DEF buildForeign( filesToBuild AS actNode :: _,
+                    filesAlreadyBuilt,
+                    usrSourceInfos,
+                    allUsrStructuresNextNodeEnv,
+                    foreignPartType,
+                    config,
+                    outputFile
+    ) ==
+  LET
+    foreignContent      == cont(
+                          get(
+                            usrSourceInfos,
+                            content o file,
+                            actNode
+                          )
+                        )
+    foreignPartNames    == content2PartNames(foreignContent)
+    foreignContext      == cont(
+                          get(
+                            usrSourceInfos, 
+                            context o file, 
+                            actNode
+                          )
+                        )
+    foreignImports      == cont(
+                          get(
+                            usrSourceInfos, 
+                            imports o file, 
+                            actNode 
+                          )
+                        )
+
+    foreignNodeName == mkForeignNodeName(actNode)
+
+    foreignEnvNextNode == nextModuleNode(
+                         filesAlreadyBuilt,
+                         filesToBuild,
+                         allUsrStructuresNextNodeEnv,
+                         sign,
+                         config,
+                         usrSourceInfos
+                       )
+
+    foreignNextNode == IF <>?(foreignPartNames) THEN
+                      foreignEnvNextNode
+                    ELSE
+                      fullPartName(actNode, ft(foreignPartNames),
+                                   sign, config)
+                    FI
+
+    foreignPrevNode == prevModuleNode(
+                      filesAlreadyBuilt,
+                      filesToBuild,
+                      sign,
+                      config,
+                      usrSourceInfos
+                    )
+
+    foreignUpNode   == Overview(actNode)
+    foreignPartName == Foreign_Structure(actNode)
+
+  IN
+
+    write(
+      outputFile, 
+        header     ++ 
+        menu       ++
+        importRefs ++
+        source     
+    )
+
+    WHERE
+      header ==
+        texinfo(optionalNewPage(config, actNode))
+        %
+        buildHeaderO(
+          env(
+            foreignNodeName,
+            foreignNextNode,
+            foreignPrevNode,
+            foreignUpNode,
+            foreignPartType,
+            foreignPartName
+          )
+        )
+     
+      menu ==
+        texinfo( !("\n@ifclear dfSingleNode\n") ++ 
+          buildMenu(
+                    strings2MenuEntries(
+                      foreignPartNames, 
+                      partName(foreignNodeName, config)
+                    )
+        ) ++ !("@end ifclear\n") )%
+
+      importRefs ==
+        buildImportReferencesO(actNode, foreignImports, config)
+
+      source ==
+        buildBody(
+          foreignContent,
+          foreignContext,
+          foreignEnvNextNode,
+          foreignNodeName,
+          foreignPartType,
+          actNode,
+          config
+        ) 
+-- %$Texinfo$
+FUN redef: denotation ** string -> string
+DEF redef(mname, contents) ==
+  conc(nl,
+       conc(("@unmacro "!), mname!, nl),
+       conc(("@macro "!), mname!, nl),
+       contents, nl,
+       ("@end macro"!), nl
+      )

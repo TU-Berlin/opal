@@ -1,0 +1,47 @@
+IMPLEMENTATION MyComStream
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/mylib/MyComStream.impl,v 1.1.1.1 1998-06-16 16:00:36 wg Exp $
+
+IMPORT Com        COMPLETELY
+       String     COMPLETELY
+       StringConv COMPLETELY
+       ComCompose COMPLETELY
+       Stream     COMPLETELY
+       Nat ONLY nat max
+
+/* %Both opening, closing and handling of the file handle is hidden from the
+    applying user. */
+DEF readFile( fileName ) ==
+  open(fileName`);
+    (\\openFileResult.
+      IF okay?(openFileResult) THEN
+--        read(data(openFileResult), max);
+        read(data(openFileResult), \\ _ . true);
+                                   -- read until eof
+          (\\readFileResult.
+            IF okay?(readFileResult) THEN
+              close(data(openFileResult));
+                (yield(okay(data(readFileResult))))
+            ELSE
+              yield(fail(error(readFileResult)))
+            FI
+          ) -- \\readFileResult
+        
+      ELSE
+        yield(fail(error(openFileResult)))
+      FI
+    ) -- \\openFileResult
+
+
+DEF readFileErr( fileName, errorMsg ) ==
+  readFile(fileName) ; (\\a.
+  IF okay?(a) THEN succeed(data(a))
+  IF fail?(a) THEN break(errorMsg)
+  FI)
+
+/* %@ignore
+copy from new version of bibop */
+DEF load(fn) == open(fn) & (\\f.
+                readLines(f) & (\\res.
+                close(f) & (\\ _ .
+                succeed(res))))
+-- %@ignore

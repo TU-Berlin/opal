@@ -1,0 +1,154 @@
+IMPLEMENTATION BasicIO
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:18 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Char ONLY char ! =
+       Denotation ONLY init ++ empty  +/+
+       Nat ONLY nat < > 1 0 succ !
+       Com ONLY com EXEC succeed okay? data exit ans fail? error
+       Env ONLY env
+       ComCompose ONLY ; &
+       Option ONLY option avail nil? cont
+       Stream ONLY readLine stdIn write stdOut writeLine output input
+       StringScan ONLY scan union
+       String ONLY string  empty?
+       StringConv ONLY `
+       AnonPair ONLY 2nd
+       SeqMapEnv ONLY *
+       Pair ONLY 1st 2nd
+       SeqMap ONLY *
+       Seq ONLY seq ::
+       Array ONLY array # !
+       ArrayConv ONLY asArray
+       PrintableChar ONLY y
+       LineFormat ONLY box
+       BoolConv ONLY `
+       NatConv ONLY `
+       IntConv ONLY `
+       RealConv ONLY `
+       SeqReduce ONLY /
+       CharConv ONLY `
+
+-- %$Input$
+
+-- FUN ask: denotation -> com[bool]
+DEF ask(pr) == 
+    write(pr) & (readLine(stdIn) & (\\ str.
+    LET (o:option[bool], rest) == scan(str)
+    IN IF o nil? THEN beep & (writeLine("expected bool!") & ask(pr))
+       OTHERWISE
+       IF rest empty? THEN succeed(cont(o))
+       ELSE
+       beep &( writeLine("extra characters!") & ask(pr))
+       FI))
+
+-- FUN ask: denotation -> com[nat]
+DEF ask(pr) ==  
+    write(pr) & (readLine(stdIn) & (\\ str.
+    LET (o:option[nat], rest) == scan(str)
+    IN IF o nil? THEN beep & (writeLine("expected nat!") & ask(pr))
+       OTHERWISE
+       IF rest empty? THEN succeed(cont(o))
+       ELSE
+       beep & (writeLine("extra characters!") & ask(pr))
+       FI))
+
+-- FUN ask: denotation -> com[int]
+DEF ask(pr) == 
+    write(pr) & (readLine(stdIn) & (\\ str.
+    LET (o:option[int], rest) == scan(str)
+    IN IF o nil? THEN beep & (writeLine("expected int!") & ask(pr))
+       OTHERWISE
+       IF rest empty? THEN succeed(cont(o))
+       ELSE
+       beep & (writeLine("extra characters!") & ask(pr))
+       FI))
+
+-- FUN ask: denotation -> com[real]
+DEF ask(pr) == 
+    write(pr) & (readLine(stdIn) & (\\ str.
+    LET (o:option[real], rest) == scan(str)
+    IN IF o nil? THEN beep & (writeLine("expected real!") & ask(pr))
+       OTHERWISE
+       IF rest empty? THEN succeed(cont(o))
+       ELSE
+       beep & (writeLine("extra characters!") & ask(pr))
+       FI))
+
+-- FUN ask: denotation -> com[char]
+DEF ask(pr) == 
+    write(pr) & (readLine(stdIn) & (\\ str.
+    LET (o:option[char], rest) == scan(str)
+    IN IF o nil? THEN beep & (writeLine("expected char!") & ask(pr))
+       OTHERWISE
+       IF rest empty? THEN succeed(cont(o))
+       ELSE
+       beep & (writeLine("extra characters!") & ask(pr))
+       FI))
+
+-- FUN ask: denotation -> com[denotation]
+DEF ask(pr) ==
+    write(pr) & (readLine(stdIn) & (\\str. succeed(str`)))
+
+-- %$Output$
+
+-- FUN write: denotation -> com[void]
+DEF write(d:denotation) == write(stdOut, d)
+DEF write(d:bool) == write(stdOut, d`)
+DEF write(d:nat) == write(stdOut, d`)
+DEF write(d:int) == write(stdOut, d`)
+DEF write(d:real) == write(stdOut, d`)
+DEF write(d:char) == write(stdOut, d)
+
+-- FUN writeLine: denotation -> com[void]
+DEF writeLine(d) == writeLine(stdOut, d)
+DEF writeLine(d:bool) == writeLine(stdOut, d`)
+DEF writeLine(d:nat) == writeLine(stdOut, d`)
+DEF writeLine(d:int) == writeLine(stdOut, d`)
+DEF writeLine(d:real) == writeLine(stdOut, d`)
+DEF writeLine(d:char) == writeLine(stdOut, d`)
+
+-- FUN menu: denotation ** seq[pair[denotation, com[void]]] -> com[void]
+DEF menu(title, items) ==
+    LET start == box(title) ++ 
+                 (+/+("\n"), empty) / 2nd((pItem, 1) * 1st * items) ++
+                 "\n\n0: END\n\n"
+        comArray == asArray(exit(0) :: 2nd * items)
+        pItem == \\n, d. (succ(n), (n`) ++ ": " ++ d)
+    IN repeat(imenu(start, comArray))
+
+/* %print @code{start} on stdOut, ask for a natural number and perform
+   the corresponding command from the @code{comAr} */
+FUN imenu: denotation ** array[com[void]] -> com[void]
+DEF imenu(start, comAr) ==
+    write(start) & (
+    ask("your choice: ") & (\\ch.
+    IF ch < #(comAr) THEN comAr!ch 
+    ELSE beep & writeLine("this choice is too large!") & 
+    imenu(start, comAr)
+    FI))
+
+
+-- %produce a sound
+-- FUN beep: com[void]
+DEF beep == write("\a")
+
+-- %$Commands$
+
+-- %Repeat a command forever. 
+-- FUN repeat: com[void] -> com[void]
+DEF repeat(c) == 
+    c ; (\\ d. IF d okay? THEN repeat(c) ELSE exit(1) FI)
+
+-- FUN repeatAsk: denotation ** com[void] -> com[void]
+DEF repeatAsk(pr, c) ==
+    c ; (\\ d.
+    IF d okay? THEN ask(pr ++ "(y/n)?") & (\\yn.
+                           IF yn = y THEN repeatAsk(pr, c)
+                           ELSE exit(0)
+                           FI)
+    IF d fail? THEN writeLine(error(d)) & exit(1)
+    FI)                         

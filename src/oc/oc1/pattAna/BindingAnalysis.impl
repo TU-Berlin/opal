@@ -1,0 +1,79 @@
+-- LAST EDIT: Tue May 18 19:23:19 1993 by OPAL compiler (athene!opal) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION BindingAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:45 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMap		COMPLETELY
+
+	Pos		ONLY pos
+
+	Impl[name]	COMPLETELY
+
+	GlobSig		ONLY globSig
+	Name		ONLY name local?
+	AnalyzedGlobSig	ONLY globSig name global? local? selectors
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN generateBindings: expr**seq[eq]**globSig -> seq[expr]
+
+DEF generateBindings(lhs,<>,sig) == <>
+
+DEF generateBindings(lhs,eq1::eqR,sig) ==
+  LET eqs1 == generateLhsBindings(lhs,left(eq1),sig)
+      rhsR == generateBindings(lhs,eqR,sig)
+  IN IF eqs1 <>? THEN right(eq1)::rhsR
+     IF eqs1 ::? THEN block(eqs1,right(eq1),pos(eq1))::rhsR
+     FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN generateLhsBindings: expr**expr**globSig -> seq[eq]
+
+DEF generateLhsBindings(val(n1,p1),val(n2,p2),sig) == <>
+
+DEF generateLhsBindings(apply(fun1,arg1,p1),apply(fun2,arg2,p2),sig) ==
+  LET lhsEqs == generateLhsBindings(fun1,fun2,sig)
+      argEqs == generatePatternBindings(arg1,arg2,sig)
+  IN lhsEqs++argEqs
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN generatePatternBindings: expr**expr**globSig -> seq[eq]
+
+DEF generatePatternBindings(e1,e2 AS val(n2,p2),sig) ==
+  IF n2 local? THEN eq(e2,e1,p2)%
+  IF n2 global? THEN <>
+  FI
+
+DEF generatePatternBindings(tuple(e1,p1),tuple(e2,p2),sig) ==
+  generatePatternSeqBindings(e1,e2,sig)
+
+DEF generatePatternBindings(e1,apply(val(constr,cpos),arg,apos),sig) ==
+  LET sels == selectors(sig,constr)
+      select == \\e. \\sel.apply(val(sel,apos),e,apos)
+      selectedExprs == select(e1)*sels
+      argSeq == IF arg tuple? THEN elems(arg) ELSE arg% FI
+  IN generatePatternSeqBindings(selectedExprs,argSeq,sig)
+
+DEF generatePatternBindings(e1,as(n2,e2,p2),sig) ==
+  eq(val(n2,p2),e1,p2) :: generatePatternBindings(val(n2,p2),e2,sig)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN generatePatternSeqBindings: seq[expr]**seq[expr]**globSig -> seq[eq]
+
+DEF generatePatternSeqBindings(<>,<>,sig) == <>
+DEF generatePatternSeqBindings(e11::e1R,e21::e2R,sig) ==
+  generatePatternBindings(e11,e21,sig)
+  ++ generatePatternSeqBindings(e1R,e2R,sig)

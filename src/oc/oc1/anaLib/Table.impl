@@ -1,0 +1,90 @@
+-- LAST EDIT: Sat Aug 10 17:25:58 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     table data structure for global signature with nat keys
+--		depending on phase, tables are either arrays or sequences
+--		with corresponding usage properties.
+-- Zweck:	Basisdatenstruktur fuer die Datenhaltung der globalen Signatur.
+--		Es wird ein Mapping nat->entry modeliert, das insbesondere
+--		nicht injektiv sein muss (Mehrfacheintraege). Der Wertebereich
+--		wird implizit durch die entsprechenden Funktionen erweitert.
+--		Ein codomain-Wert undefined bedeutet, dass ein beliebiger Wert
+--		zurueckgegeben wird.
+--		Aus Effizienzgruenden gibt es zwei Varianten, die sogenannten
+--		dynamischen und statischen Tabellen. Erstere zeigen ein gutes
+--		Aufbauverhalten O(cons) aber auch schlechten Zugriff O(n) und
+--		sind fuer die Aufbauphase vorgesehen.
+--		Die statischen haben beim Hinzufuegen (i.A.) O(n*n) Aufwand,
+--		aber dafuer O(cons) Zugriffszeiten. (Vergroessert werden die
+--		statischen bei Bedarf immer um 50%). Sie sollen waehrend der
+--		Bearbeitungsphase der Tabellen benutzt werden.
+-- Kommentar:	Als Domain wird ein Nat-Interval ab 0 benutzt.
+--		Zur effizienten Umwandlung dynamisch->statisch wird eine
+--		Sequenzen der Funktionspaare anstatt der codomain-Werte abge-
+--		speichert.
+-- ============================================================================
+
+IMPLEMENTATION Table[entry]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	NatConv		ONLY `
+        DArray          COMPLETELY
+        DArrayReduce    COMPLETELY
+	Option[entry]	COMPLETELY
+	Pair[nat,entry]	COMPLETELY
+	Seq		COMPLETELY
+        SetConv         COMPLETELY
+	Denotation	ONLY ++ 
+	DEBUG		ONLY ASSERT
+
+
+DATA table ==	asTable(asDArray : dArray[entry])
+
+
+-- ---------------------------------------------------------------------------
+-- Aufbauphase fuer unbekannte Tabellengroesse und Domain
+
+DEF {}(_) == {}
+
+DEF asTable(table) {}? == table empty?
+
+DEF incl(entry,asTable(table)) == 
+	LET newN == IF new(table) = 0 THEN 1 ELSE new(table) FI
+	IN (newN, asTable(upd(newN,entry,table)))
+
+DEF  table toStatic == table
+DEF asTable(tab1) + asTable(tab2)  == asTable(\ (upd, tab1, tab2))
+
+-- ---------------------------------------------------------------------------
+-- Aufbauphase fuer unbekannte Tabellengroesse und bekanntes Domain
+
+DEF {} == asTable(empty)
+
+DEF def(n, entry, asTable(table)) == asTable(upd(n, entry, table))
+
+DEF !?(n, asTable(M)) == M !? n
+
+DEF  n:nat ! asTable(table) == table ! n
+
+DEF  upd(n,entry:entry,asTable(M)) == asTable(upd(n,entry,M))
+
+DEF  upd(n,mapF:entry->entry,asTable(table)) == asTable(upd(n,mapF,table))
+
+-- ---------------------------------------------------------------------------
+-- Umwandlung in Textrepraesentation
+
+DEF  `(offset, F:entry->denotation, asTable(table))== 
+               offset++"table:\n" ++ `_dArray(offset, F)(table)
+
+FUN `_dArray : denotation ** (entry -> denotation) 
+             -> dArray[entry] -> denotation
+DEF `_dArray(offset, F)(A) == 
+/(\\N,E,S. offset ++ `(N) ++ ":" ++ F(E) ++ "\n" ++ S, "", A)
+
+

@@ -1,0 +1,316 @@
+IMPLEMENTATION Check
+
+IMPORT  Int             COMPLETELY
+        Char            COMPLETELY
+        Denotation      COMPLETELY
+        Set             COMPLETELY
+        SetConv         COMPLETELY
+        SetMap          COMPLETELY
+        SetFilter       COMPLETELY
+        SetReduce       COMPLETELY
+        Seq             COMPLETELY
+        Com             COMPLETELY
+        ComSeqReduce    COMPLETELY
+        ComCompose      COMPLETELY
+        ComPairCompose  COMPLETELY
+        Pair            COMPLETELY
+        IdTab           COMPLETELY
+        IdMap           COMPLETELY
+        File            COMPLETELY
+        Option          COMPLETELY
+        Nat             COMPLETELY
+
+
+IMPORT  RepoDiag        COMPLETELY
+        RepoName        COMPLETELY
+        RepoAbsy        COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoObjectAccess COMPLETELY
+        RepoSourceAccess COMPLETELY
+        RepoInternAbsy  COMPLETELY
+        RepoInternData  COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoSource      COMPLETELY
+        RepoNameConv    COMPLETELY
+
+IMPORT  InternCompile   COMPLETELY
+
+IMPORT  DenoScanBasic   COMPLETELY
+        DenoScanCompose COMPLETELY
+        DenoScanOp      COMPLETELY
+       DEBUG ONLY FIELD?[bool] PRINT
+       BasicIO COMPLETELY
+
+
+-- %$Checking Units$ ========================================================
+
+
+DEF guessCheckUnits(Units)(R) ==
+    LET Imports == related(transitive, imports, needsCheck?(R))(Units)(R)
+                        -- we assume that for a unit which dosn't needs a check
+                        -- also all imported units do not -- thus
+                        -- we can evaluted needsCheck? before of
+                        -- building the closure with `transitive' 
+    IN
+    (needsCheck?(R) | Units) + Imports
+
+DEF guessCheckUnitsForExec(Units)(R) ==
+    LET Impls == related(transitive, implImports, needsCheck?(R))(Units)(R)
+    IN
+    guessCheckUnits(Units + Impls)(R)
+
+DEF checkUnits(Units)(R) ==
+    checkUnitsInOrder(guessCheckUnits(Units)(R))(R)
+
+
+DEF checkUnitsForExec(Units)(R) ==
+    checkUnitsInOrder(guessCheckUnitsForExec(Units)(R))(R)
+
+FUN checkUnitsInOrder : set[unitName,<] -> repo -> com[repo]
+DEF checkUnitsInOrder(Units)(R) ==
+    LET Order == revert(topSort(imports, needsCheck?(R))(Units)(R))
+    IN
+    checkSomeUnits(true, Order)(R)
+
+--    LET (Signs, Impls) == partition(\\U. sign?(part(U)), Units)
+--        SignsOrd       == revert(topSort(imports, needsCheck?(R))(Signs)(R))
+--        Ord            == asSeq(Impls)
+--    IN
+--    (checkSomeUnits(true), checkResult(ok, {}) & R) 
+--              /& (SignsOrd ++ ImplsOrd)
+
+
+FUN checkSomeUnits : bool ** seq[set[unitName,<]] -> repo -> com[repo]
+FUN checkSomeUnit  : unitName -> repo -> com[pair[bool,repo]]
+
+DEF checkSomeUnits(Cont?, Units :: Order)(R) ==
+    (\\ Ui, Ok_Ri. 
+            LET Oki == 1st(Ok_Ri) Ri == 2nd(Ok_Ri)
+            IN
+            IF Oki or Cont? THEN
+                checkSomeUnit(Ui)(Ri)                           & (\\ Okj, Rj .
+                succeed(Oki and Okj & Rj)
+                )
+            ELSE succeed(Oki & Ri) FI,
+    true & R) /& asSeq(Units)                           & (\\ Ok1, R1.
+    IF Ok1 THEN
+        checkSomeUnits(Cont?, Order)(R1)
+    ELSE succeed(R1) FI
+    )
+DEF checkSomeUnits(_, <>)(R) == succeed(R)
+     
+    
+DEF checkSomeUnit(U)(R) ==
+    LET Deps == related(direct,imports)(U)(R)
+    IN
+    IF Deps <= checked(R) THEN
+        -- go ahead
+        event(progress(unit(U), "checking"))(R)             & (\\ R1 .
+        checkUnit(U)(R1)                                    & (\\ Diag, R2 .
+        diag(Diag)(R2)                                      & (\\ R3 .
+        IF ok?(Diag) THEN
+            -- load abstract syntax
+            loadUnitAbsy(U)(R3)                             & (\\ R4 .
+            LET R5 == updateUnitInfo(U, \\ Info .
+                        Info :=_state checked
+                      )(R4)
+            IN
+            succeed(true & R5)
+            )
+        ELSE
+            succeed(false & R3)
+        FI
+        )))
+    ELSE
+        -- cannot check (errors in checking imported units occured)
+        succeed(false & R)
+    FI
+
+
+FUN needsCheck? : repo -> unitName -> bool
+DEF needsCheck?(R)(U) == ~(library?(U)(R) or checked?(U)(R))
+
+-- %$Checking Expressions$ ============================================
+
+
+DATA checkExprResult ==
+        failure         (diag   : diag)
+        success         (diag   : diag,
+                         expr   : expr)
+
+FUN strangeConstName strangeLetName: denotation
+DEF strangeConstName == "????_EXPRCHECKCONST_????"
+DEF strangeLetName == "????_EXPRCHECKLET_????"
+
+FUN traceExpr? : bool
+DEF traceExpr? == FIELD?[bool]("-ztraceExpr")
+
+DEF checkExpr(U, Add, Text)(R) == checkExpr(U, Add, {}, Text)(R)
+
+DEF checkExpr(U, Add, CDepsX, Text)(R) == 
+    LET Deps == (\\O, S. incl(baseName(unit(O)), S), %(U)) / Add
+        CDeps == excl(U, CDepsX)
+    IN
+    checkUnits(Deps + CDeps)(R)                            & (\\ _ .
+    -- build a pseudo definition and check it as an unit extension
+    LET oImports == 
+            IF {}?(Add) THEN ""
+            ELSE
+                "IMPORT " ++
+                (\\O, D. opalOrigin(unit(O))(R) ++ " ON" ++ "LY "
+                                ++ symbol(O)(R)
+                                ++ " : "
+                                ++ opalKind(kind(O)(R))(R)
+                                ++ " " ++ D,
+                 "") / Add
+            FI
+        cImports == IF CDeps {}? THEN ""
+                    ELSE "IMPORT " ++ 
+                         (+/+(" "), "") /[denotation,<,denotation]
+                         ((\\u. symbol(u)(R) ++ " COMPLETELY") * CDeps)
+                    FI
+        Imports == +/+(" ")(oImports, cImports)
+        Def0 == Imports ++ "\n" ++ 
+               "FUN " ++ strangeConstName ++ " : bool'BOOL " ++
+               "DEF " ++ strangeConstName ++ " == " ++ 
+               "LET " ++ strangeLetName   ++ " == \\\\ . (\n" ++
+               Text ++
+               "\n) IN true'BOOL"
+        Def == PRINT(traceExpr?, Def0, Def0)
+    IN
+    extendUnit(U, Def, excl(U, Deps + CDeps))(R)      & (\\ ExRes_R1 .
+    LET ExRes == 1st(ExRes_R1)  R1 == 2nd(ExRes_R1)
+        ExDiag == IF traceExpr? THEN diag(ExRes)
+                  ELSE transDiag(trans, diag(ExRes)) FI
+    IN
+    IF ~(ok?(ExDiag)) THEN
+--        writeLine("error in ExDiag") & 
+        succeed(failure(ExDiag) & R1)
+    ELSE
+        -- read the interopal resulting from the extension
+        LET (RdRes, R2) == readAbsy(absy(ExRes), true)(R1)
+        IN
+        IF ~(ok?(diag(RdRes))) THEN
+--            writeLine("error in readAbsy") & 
+            succeed(failure(ExDiag <+ diag(RdRes)) & R2)
+        ELSE
+            -- extract the expression
+            LET Obj?  == find?(\\Ob. symbol(Ob) = strangeConstName,
+                               objects(RdRes))
+            IN
+            IF avail?(Obj?) THEN
+                -- okay, from now on we trust
+                LET Expr == 
+                        body(rhs(ft(eqns(rhs(ft(eqns(impl(cont(Obj?)))))))))
+                IN
+                -- we have to insert the local signatures in U as well ...
+                LET R3 == updateUnitInfo(U, \\ Info .
+                                 Info :=_localSigns 
+                                        enrich(localSigns(Info), 
+                                               localSigns(RdRes),
+                                               removed)
+                              )(R2)
+                IN
+                succeed(success(ExDiag <+ diag(RdRes), Expr) & R3)
+            ELSE
+                succeed(failure(ExDiag <+ diag(RdRes)
+                        <+ !!(error,freeRef("internal"),
+                              "illformed abstract syntax"))
+                        & R2)
+            FI
+        FI
+    FI
+    ))
+
+    FUN trans : diag -> option[diag]
+    DEF trans(Diag) ==
+        LET Msg == msg(Diag)
+        IN
+        IF localNotUsed?(Msg) ORIF
+           #(Msg) > #(strangeNotUsed) ANDIF
+           slice(Msg, #(Msg) - #(strangeNotUsed), #(Msg) - 1) 
+                        = strangeNotUsed
+           THEN
+            nil
+        ELSE
+            LET Ref == ref(Diag)
+            IN
+            IF textRef?(Ref) 
+                   ANDIF locator(Ref) in region(pos(0,0), pos(2,maxCol)) THEN
+                nil
+            ELSE
+                -- shift three lines: one lien for imports,
+                -- one line for LET-Expression and another
+                -- one for local bindings (DbEvaluation)
+                avail(shift(!("-3"), 0)(Diag))
+            FI
+        FI
+
+    FUN strangeNotUsed : denotation
+    DEF strangeNotUsed == strangeLetName ++ " is not used"
+
+    FUN localNotUsed? : denotation -> bool
+    DEF localNotUsed?(Msg) ==
+        okay?(
+          (lit("local name ")                   o (\\ _ .
+                *(char(_ |= !(" ")))            o (\\ _ .
+                lit(" is not used")             o (\\ _ .
+                empty                           )))
+          )(Msg))
+
+-- %$Incremental Update of Units$ =========================================
+
+/* % The command @code{updateUnit(U, Updates)(R)} performs a
+sequence of incremental updates on the unit @code{U}, trying to
+preserve the checking-state of the unit. @code{U} and all its
+signature imports must have the checked-state, otherwise the command
+fails. */
+
+DATA update ==
+        addItem         (item           : item)
+        replaceItem     (name           : itemName,
+                         item           : item)
+        removeItem      (name           : itemName)
+        
+DATA updateResult ==
+        updateResult    (diag           : diag,
+                                        -- ok if no error
+                         effects        : updateEffects
+                        )
+
+DATA updateEffects ==
+        localEffects    (newImports     : set[objectName,<],
+                         removedImports : set[objectName,<],
+                         newObjects     : set[objectName,<],
+                         removedObjects : set[objectName,<],
+                         newImpls       : set[objectName,<],
+                         removedImpls   : set[objectName,<])
+        globalEffects   (uncheckedUnits : set[unitName,<])
+
+
+DEF updateUnit(U, Updates)(R) == 
+    break("NYI")
+    /*
+    -- partition updates
+    LET (Rems, Rest)  == partition(removeItem?, Updates)
+        (Repls, Adds) == partition(replaceItem?, Rest)
+    IN
+    -- process removes
+    LET Res == updateResult(ok, localEffects({},{},{},{},{},{}))
+        Res_R1 == (removeItem, Res & R) \ Rems
+        Res_R2 == (replaceItem, Res_R1) \ Repls
+        Res_R3 == (addItem, Res_R1) \ Repls
+    IN
+    succeed(Res_R3)
+    */
+
+
+-- %$Messages$ ============================================================
+
+FUN unitMsg : unitName -> repo -> denotation
+DEF unitMsg(U)(R) ==
+    (IF sign?(part(U)) THEN "signature of `"
+                       ELSE "implementation of `" FI) ++
+    symbol(U)(R) ++
+    "'"
+

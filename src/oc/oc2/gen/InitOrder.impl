@@ -1,0 +1,169 @@
+
+IMPLEMENTATION InitOrder
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject: calculate initialization order
+-- project: ac/gen
+-- author:  wg 6-92
+
+IMPORT	Nat		ONLY nat > >= 1
+	Denotation	ONLY  ++
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+
+IMPORT	Pos		ONLY pos:SORT firstPos
+	Error		ONLY err:SORT ok err:errKind**denotation**pos->err +
+			     errKind:SORT error
+
+IMPORT	Ide		ONLY ide origin:SORT global? origin:ide->origin
+			     target = : origin**origin->bool
+	IdeMap		ONLY ideMap {} def def? !
+	IdeSet		ONLY ideSet {} incl explode in
+	IdeMSC		ONLY ideMSC
+	Ic		COMPLETELY
+			Store ONLY store
+			SourceAn ONLY pos:SORT errorKind
+			NatMap ONLY natMap
+	IcFun		ONLY obj objs
+
+
+
+-- =========================================================================
+
+FUN initOrder : popts ** mod -> err ** seq[obj:SORT]
+DEF initOrder(o,M) ==
+    LET G         == (calcConstDep(M) \ {}[ideSet])(objs(constant?,M))
+			-- construct dependency graph
+	msc       == ideMSC(G)
+			-- calculate max strong components
+	(e,order) == checkOrder(M,G,msc)
+			-- get constant init order & 
+			-- check cycle errors
+    IN
+    (e,order)
+
+
+
+-- =========================================================================
+
+FUN checkOrder : mod ** ideMap[ideSet] ** seq[seq[ide:SORT]] 
+						-> err ** seq[obj:SORT]
+DEF checkOrder(M,G,msc) ==
+    IF <>?(msc) THEN (ok,<>[obj:SORT])
+    ELSE
+	LET (e,order) == checkOrder(M,G,rt(msc))
+	    obs       == (M obj:mod**ide->obj _ ) * ft(msc)
+	IN
+        IF (#(ft(msc)) > 1) and exist?(constant?,obs) THEN
+	    -- indirect cycle error
+	    LET e1 == e+err(error,("indirect cyclic initialization: ")
+			       ++ (symbol(ft(obs)) 
+			       ++ (nextSym / "")(rt(obs))),
+			    firstPos)
+	    IN
+	    (e1,order)
+	OTHERWISE
+	IF constant?(ft(obs)) THEN
+	    IF ft(ft(msc)) in (G!ft(ft(msc))) THEN
+		-- direct cycle error
+	        LET e1 == e+err(error,("direct cyclic initialization: ")
+			       		++ symbol(ft(obs)),
+			        firstPos)
+	        IN
+		(e1,order)
+	    ELSE
+	        (e,ft(obs)::order)
+	    FI
+	ELSE
+	    (e,order)
+	FI
+    FI
+        
+  FUN nextSym : obj ** denotation -> denotation
+  DEF nextSym(ob,t) ==
+    (",") ++ (symbol(ob) ++ t)
+
+-- =========================================================================
+
+FUN calcConstDep : mod -> obj ** ideMap[ideSet] -> ideMap[ideSet]
+DEF calcConstDep(M)(ob,G) ==
+    LET app == applied(M)(init(ob),{}'IdeSet)
+	G1  == def(ide(ob),app,G)
+    IN
+    (calcProcDep(M) \ G1)(explode(app))
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN calcProcDep : mod -> ide ** ideMap[ideSet] -> ideMap[ideSet]
+DEF calcProcDep(M)(i,G) ==
+    LET ob == obj(M,i)
+    IN
+    IF procedure?(ob) THEN
+        IF ide(ob) def? G THEN
+            -- already visited
+	    G
+        ELSE
+	    LET app == applied(M)(stm(ob),{}'IdeSet)
+	    	G1  == def(ide(ob),app,G)
+	    IN
+	    (calcProcDep(M) \ G1)(explode(app))
+        FI
+    ELSE
+	G
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN applied : mod -> stm ** ideSet -> ideSet
+DEF applied(M)(s:stm,A) ==
+    IF ass?(s) THEN
+	((applied(M)):ide**ideSet->ideSet \ A)(ins(s))
+    IF call?(s) THEN
+	((applied(M)):ide**ideSet->ideSet \ applied(M)(ide(s),A))(ins(s))
+    IF eval?(s) THEN
+       LET A1 == (applied(M) \ A)(ins(s))
+	   target? == IF global?(ide(s)) THEN origin(ide(s)) = target
+					 ELSE false FI
+	   fullApp? == 
+	     IF target? THEN
+	       LET ob == obj(M,ide(s))
+	       IN
+	       IF procedure?(ob) THEN
+		   #(ins(s)) >= #(ins(ob))
+	       ELSE true FI
+	     ELSE false FI
+       IN
+       IF fullApp? THEN
+	   -- encounter evaluated ide, since code it refers to
+	   -- is actually called
+	   applied(M)(ide(s),A1)
+       ELSE A1 FI
+    IF cons?(s) or reuse?(s) THEN
+	((applied(M)):ide**ideSet->ideSet \ A)(ins(s))
+    IF block?(s) THEN
+	((applied(M)):stm**ideSet->ideSet \ A)(stms(s))
+    IF case?(s) THEN
+	((applied(M)):match**ideSet->ideSet \ A1)(matches(s))
+	WHERE A1 == applied(M)(ide(s),applied(M)(default(s),A))
+    ELSE
+	A
+    FI
+
+FUN applied : mod -> match ** ideSet -> ideSet
+DEF applied(M)(m:match,A) ==
+    ((applied(M)):stm**ideSet->ideSet \ A)(stms(m))
+    
+FUN applied : mod -> ide ** ideSet -> ideSet
+DEF applied(M)(i:ide,A) ==
+    IF global?(i) THEN
+	IF origin(i) = target THEN
+	    incl(i,A)
+	ELSE A FI
+    ELSE A FI
+

@@ -1,0 +1,3048 @@
+% Local Variables: 
+% mode: latex
+% TeX-master: "opalreport"
+% outline-regexp: "\\\\chap\\|\\\\\\(sub\\)*section"
+% End: 
+
+\documentclass[11pt]{report}
+% LAST EDIT: Fri Jan 26 15:49:08 1996 by Christian Maeder (andromache!maeder) 
+%
+% Mar  2 1994 MS: monadic structure of the I/O system
+%
+% Apr  2 1993 AF: semicompleteness changed in appendix A (minor technical)
+% Apr  1 1993 AF: TYPEs are not inherited from sign to impl (major technical)
+% Mar 30 1993 AF: some minor technical corrections in appendix A
+% Jan 17 1993 WG: article -> report, added acknowledgement
+%
+% Die folgenden Punkte habe ich gemaess Besprechung vom 10.12.92 geaendert:
+%   1. Titelseite
+%   2. non-terminals werden kursiv gesetzt (\newcommand{\nt}[1]{...})
+%   3. Environments example, examples. Beide ruecken nicht mehr ein.
+%   4. Bibliography an das Ende verschoben.
+%   5. Anhang "Acknowledgements" (leer) eingefuegt
+%   6. WORDs weiche Trennzeichen (-) entfernt
+%   7. Headings eingefuehrt (\pagestyle{headings})
+%      (Die Eintraege koennen mittels markleft, markright, markboth
+%       geaendert werden.)
+%   8. \paragraph{} statt \enumerate
+%      (All paragraph labels are empty!)
+%   9. Die Syntaxregeln von den semantischen Bedingungen getrennt
+%      (environment "synrule" vs "concon")
+%  10. "\" fuer die Mengendifferenz
+%  11. Einrueckung der verbatim-Codesequenzen einheitlich auf 4 Spaces
+%  12. Querverweise angepasst
+%  13. Der Satz der Syntaxregeln kann jetzt gesteuert werden mittels
+%        - \nt{non-terminal},
+%        - \tm{terminal} und
+%        - \ms{metasymbol}
+%      durch Aenderung der entsprechenden "\newcommand" Befehle
+%      Continuation lines (Umbruch) in Syntaxregeln werden durch
+%        "\contsynrule" eingeleitet.
+%  14. Spacing der example(s)-environment geregelt
+%
+% Die folgenden Punkte habe ich noch ___nicht___ geaendert:
+%   1. Inhaltlich nichts geandert, insbesondere keine Aenderung der
+%      Libarybeschreibung, der Einleitung, der Acknowledgements, ...
+
+\usepackage{latexsym}
+\addtolength{\textheight}{3cm}
+\addtolength{\topmargin}{-1.5cm}
+\addtolength{\textwidth}{2cm}
+\addtolength{\oddsidemargin}{-1cm}
+\addtolength{\evensidemargin}{-1cm}
+
+\pagestyle{headings}
+
+% The command "\tm" is used to set terminal symbols in syntax rules
+\newcommand{\tm}[1]{``\texttt{#1}''} % '|' may not appear in the argument!
+% The command "\nt" is used to enclose non-terminals
+\newcommand{\nt}[1]{\mbox{\em #1}}
+% The command "\ms" is used to set metasymbols in syntax rules
+\newcommand{\ms}[1]{\mbox{#1}}
+
+% The command "\vb" is used to set source text in-line and in syntax rules
+\newcommand{\vb}[1]{\texttt{#1}} % '|' may not appear in the argument!
+% The command sets a backslash
+\newcommand{\bs}{\mbox{$\backslash$}}
+% The command "\ul" abbreviates underlining
+\newcommand{\ul}[1]{\underline{#1}}
+% The command "\dul" underlines twice
+\newcommand{\dul}[1]{\underline{\underline{#1}}}
+
+% The environment "example(s)" serves to set examples
+\newenvironment{example}{\begin{list}{}{\leftmargin0pt\labelwidth0pt\labelsep0pt}%
+\item[{\em Example:}]\ }{\end{list}\nopagebreak\vspace*{-24pt}\hspace*{\fill}$\Box$\vspace*{8pt}}
+\newenvironment{examples}{\begin{list}{}{\leftmargin0pt\labelwidth0pt\labelsep0pt}%
+\item[{\em Examples:}]\ }{\end{list}\nopagebreak\vspace*{-24pt}\hspace*{\fill}$\Box$\vspace*{8pt}}
+
+% The environment "synrule" serves to set syntax rules
+\newenvironment{synrule}{\renewcommand{\baselinestretch}{1.5}%
+\begin{list}{}{\leftmargin0pt\labelwidth0pt\labelsep0pt}\item[]\medskip\large}%
+{\normalsize\end{list}\renewcommand{\baselinestretch}{1}}
+% The command "\contsynrule" is used to indent continuation lines of syntax rules
+\newcommand{\contsynrule}{\vspace*{-1ex}\hspace*{4em}}
+
+% The environment "concon" serves to set context conditions
+% Items without the optional label are preceded by \conconsymbol
+\newcommand{\conconsymbol}{\mbox{\copyright}}
+\newenvironment{concon}[1]{\par\begin{list}{\conconsymbol}{\sloppy}#1}{\end{list}\par}
+
+\begin{document}
+
+\title{{\sc The Programming Language Opal}\\
+       {\small 5$^{\mbox{\small th}}$ corrected edition}}
+\author{The {\sc Opal} Group\\
+        Fachbereich Informatik\\
+        Technische Universit\"at Berlin\\[1ex]
+        {\small Edited by PETER PEPPER}}
+\date{November 1997 \bigskip
+}
+
+\bigskip
+
+
+\maketitle
+
+% \renewcommand{\thefootnote}{\fnsymbol{footnote}}
+% \footnotetext[2]{The current members of the {\sc Opal} Language Group
+%                  are Peter Pepper, Wolfgang Grieskamp, Andreas Fett, 
+%                  and Carola Gerke}
+\renewcommand{\thefootnote}{\arabic{footnote}}
+
+\tableofcontents
+
+
+% Befehle für Sprachbeschreibung
+\newcommand{\cce}{{\ms{::=}}}%                                          ::=
+\newcommand{\opt}[1]{\ms{[} #1 \ms{]}}%                                 [ #1 ]
+\newcommand{\bra}[1]{\ms{(} #1 \ms{)}}%                                 ( #1 )
+\newcommand{\plu}{\ms{$^+$}}%                                           +
+\newcommand{\kle}{\ms{$^*$}}%                                              *
+\newcommand{\bb}{\ms{$\|$}}%                                               ||
+\newcommand{\alt}{\ms{$|$}}%                                               |
+\newcommand{\snl}{\\ \contsynrule}%
+% The command "\contsynrule" is used to indent continuation lines of syntax rules
+% \newcommand{\contsynrule}{\vspace*{-1ex}\hspace*{4em}}
+% The environment "concon" serves to set context conditions
+\newcommand{\cosi}[1]{\item[\hfill\copyright\hfill]{\underline{#1}:}}
+\newcommand{\codo}[1]{\item[\hfill\copyright\hfill]{\underline{\underline{#1}}:}}
+\newcommand{\opal}{{\sc Opal}}
+\newcommand{\cs}{$\bullet$}
+\newcommand{\Da}{$\Downarrow$}
+
+\chapter{Introduction}
+
+The {\sc Opal} project is an experiment that sets out to explore
+the optimal compilation of purely 
+applicative programming languages. Hence, the language {\sc Opal}
+comprises those features of 
+applicative languages that we consider essential
+for our research on optimal compilation. If 
+our intention had been to design a language
+for actual software production, some design 
+decisions would have turned out differently.
+We hope to produce (at some future date) a 
+follow-up version of the language, including all
+the nice syntactic features that make a 
+language truly comfortable to work with. It should not come
+as a surprise that {\sc Opal}
+resembles other applicative languages such as {\sc Ml}
+or --- even more closely --- {\sc Hope}.
+
+In order to understand our main design choices more clearly,
+one should bear in mind the
+context into which we would like to embed {\sc Opal}.
+We envisage a programming environment
+in which program development starts
+from high-level algebraic specifications. These
+specifications are then transformed
+and refined in a stepwise process until they are brought 
+into a constructive form. This is where {\sc Opal} should take over.
+
+This methodological background suggests
+that a language like {\sc Opal} should comprise three
+components: a signature part, a specification part,
+and an implementation part. The specification aspects,
+in particular the compatibility between specification
+and implementation, will be 
+the subject of a research project that we intend to
+conduct (in cooperation with others) in the 
+near future. {\em The version of {\sc Opal}, as presented
+in this report, deals only with the
+constructive aspects of the language, i.e., the signature part
+and the implementation part.}
+
+When using more traditional development methods,
+the programmer has to produce classical 
+code from a specification, employing either transformation
+or verification techniques, such 
+that the result runs efficiently and meets the specification.
+Our hope is that, for a certain class 
+of constructive specifications, this task
+can be performed automatically by a compiler.
+
+It was these considerations that motivated the following design choices:
+\begin{itemize}
+  \item The overall appearance of {\sc Opal} programs
+        is {\em strongly algebraic}. In particular, we have
+        signatures and recursive equations.
+  \item {\em Modularization} is an important element in modern specification
+        and programming languages. Hence, {\sc Opal} programs are built up from
+        structures (each consisting of a signature and
+        an implementation part) that are organized in a hierarchical usage
+        relation, providing import and export interfaces.
+  \item Applicative languages should treat functions as
+        ``first-class citizens''. Hence, {\sc Opal}
+        provides {\em higher-order functions}, i.e., functions with functions
+        as arguments and/or results.
+  \item The orientation towards algebraic specification
+        languages as well as the interest in
+        efficient implementation leads to a {\em strong typing discipline}.
+        This does not, however, rule out attractive features
+        like parameterization and overloading.
+  \item The need to produce truly efficient code does
+        --- as far as we are aware --- make eager
+        evaluation mandatory. In other words, we employ
+        a {\em call-by-value} mechanism.
+  \item Input and output are realized by means of
+        referentially transparent input/output {\em continuations}.
+\end{itemize}
+
+\section*{Overview}
+
+An {\sc Opal} program consists of a collection of {\em structures}.
+A structure is the {\sc Opal} counter-part
+of what is usually referred to as ``module'',
+``cluster'', ``package'', ``encapsulation'', ``class'', etc.
+Semantically speaking, structures are algebras.
+The structures of an {\sc Opal} program are in an
+acyclic hierarchical dependency relation, the ``uses'' or
+``import'' relation.
+
+An {\sc Opal} structure consists of a visible
+{\em signature part} and a hidden {\em implementation part}.
+These are discussed in sections \ref{StructSign} and \ref{StructImpl}.
+
+Structures can be parameterized by sorts and operations.
+Parameterized structures are 
+introduced in section \ref{parameterization}.
+
+Overloading and parameterization call for flexible
+naming of {\sc Opal} objects. These naming
+facilities are explained in section \ref{NameScope}.
+
+A description of how to construct an {\sc Opal} program
+rounds off this report.
+
+A formal syntax, an availability notice, acknowledgements and a bibliography
+are given in the appendices.
+
+\section*{Remarks on the Syntax}
+
+When reading this report, the following syntactic conventions
+should be kept in mind.
+
+{\sc Opal} distinguishes four kinds of lexical symbols:
+\begin{itemize}
+  \item alphanumeric symbols such as: {\tt hallo x3 1}
+  \item graphic symbols such as: \vb{++ \% -- ==>}
+  \item separators: \nt{blanks} {\tt , ( [ ) ] '}
+  \item strings such as: {\tt "Hello World!"}
+\end{itemize}
+
+Two alphanumeric, two graphic symbols, or two strings
+have to be separated from each other 
+by suitable separator symbols; however, the direct
+juxtapositioning of different kinds of 
+symbols is allowed. Moreover two different symbols can be combined by an
+underscore. 
+\begin{examples}
+The following compositions are legal without separators:
+\begin{verbatim}
+    x++y       x-1       nat**bool
+\end{verbatim}
+
+A composition of different symbols by an underscore which are interpreted as one
+lexical symbol looks like : 
+\begin{verbatim}
+    no_%        -_1     add_one
+\end{verbatim}
+
+The following composition requires a separator:
+\begin{verbatim}
+    <| :text**text->bool
+\end{verbatim}
+\end{examples}
+
+Note that the {\em question mark} plays a special role:
+it may be appended directly to both
+alphanumeric and graphic symbols.
+
+{\sc Opal} makes substantial use of keywords.
+{\em Keywords} are written in {\tt CAPITAL} letters. They are reserved
+words.
+
+There are two ways of writing {\em comments}. The first supports
+readability of layouts in print or
+on terminals; this kind is started by the symbol \vb{--}
+(i.e., a double dash) and it is terminated at
+the end of the line. The second is more structure-oriented;
+it starts with the symbol {\tt /*} and
+terminates with the symbol {\tt */}. This allows, in particular,
+``nested comments''. The comment symbols are keywords!
+
+{\sc Opal} includes {\em denotations} which are given as strings,
+i.e., character sequences enclosed in double quotes, e.g.,
+\vb{"Hello World!"}.
+
+{\sc Opal} {\em identifiers} are arbitrary graphic or alphanumeric character
+sequences (except for the reserved words); for example,
+{\tt 2}, {\tt +} and {\tt OPAL} are identifiers.
+
+The items in a {\em tuple} (e.g., parameters of a function)
+are separated by commas and, if
+necessary, enclosed in parantheses. By contrast,
+mere {\em collections} of items whose order is
+irrelevant are enumerated without commas.
+Tuples are used only where necessary, e.g., for
+function parameters; collections, on the other hand,
+are used wherever possible.
+
+\chapter{Structure Signature}
+\label{StructSign}
+
+The major programming units of {\sc Opal} are {\em structures}.
+They define data elements as well as
+operations.  The {\em interface} of a structure, i.e.,
+the components that are visible to the outside 
+world, is given by the {\em structure signature} (which plays
+a similar role to the ``definition
+modules'' in MODULA2). It consists of the following items:
+\begin{itemize}
+  \item the {\em signature} describes the ``syntactic aspects'',
+    i.e., the sorts and the operation (together with their functionalities);
+  \item the {\em free types} give a certain structural appearance
+    to the data elements.
+\end{itemize}
+
+\begin{example}
+The following structure \vb{Text} is intended to give an
+initial intuitive introduction to 
+the {\sc Opal} syntax. It introduces sequences of characters
+and operations on them.
+\begin{verbatim}
+    SIGNATURE Text
+    IMPORT  Char  ONLY char                     -- imported
+            Nat   ONLY nat                      --  signature
+    -- free type
+    TYPE text == empty                          -- empty text
+                 ::(first: char, rest: text)    -- appending a character
+    -- additional operations
+    FUN ++     : text ** text -> text           -- concatenation
+        revert : text         -> text           -- revert
+        length : text         -> nat            -- length
+        =      : text ** text -> bool           -- equality
+\end{verbatim}
+\end{example}
+
+\section{Signature}
+
+The two components of a signature are:
+\begin{itemize}
+  \item a set S of {\em sorts}, where a sort is a name for a set of values;
+  \item a set O of {\em operations}, where an operation is a name for
+    a constant or a function. Each operation $o\in$ ) has a
+    {\em functionality}.
+\end{itemize}
+
+The sorts and operations of a structure come from two sources:
+either they are listed explicitly 
+in the signature (including free types), or they are inherited
+from the imported structures.
+
+The scope of the sorts and operations is the whole structure.
+
+{\sc Opal} is a strongly typed language which does, however, allow
+overloading and parameterization. The basic requirement, therefore,
+is that each name can be unequivocally identified. The 
+detailed conditions that follow from this principle
+are listed in section \ref{NameScope}.
+
+\subsection{Sorts}
+
+{\em Sorts} are simply names. Semantically, they denote carrier sets.
+These carrier sets may consist 
+of elementary values such as the natural or real numbers,
+or they may consist of complex data 
+structures such as sequences, trees, graphs, or arrays. 
+
+\begin{examples}
+The sorts of the booleans, the natural numbers,
+and texts are denoted by
+\begin{verbatim}
+    SORT  bool  nat  text
+\end{verbatim}
+\end{examples}
+
+\subsection{Operations}
+
+{\em Operations} are names for elementary values or functions.
+Elementary values are elements of 
+carrier sets; functions are mappings from arguments to results.
+Each operation has a functionality, which describes
+its sort or its domain and range.
+
+Functions are ``first-class citizens'' in {\sc Opal}.
+Hence, functionalities exhibit a deeper structure
+than the simple ``argument-tuple-plus-result'' pattern:
+we have Cartesian products and
+mappings, built on top of sorts.
+
+\begin{examples}
+\begin{verbatim}
+    FUN 0  1  2  3  4  5  6  7  8  9:nat     -- constants
+    FUN pi:real                              -- constant
+    FUN divmod:nat**nat->nat**nat            -- function
+    FUN filter:(char->bool)->(text->text)    -- higher-order function
+\end{verbatim}
+\end{examples}
+
+Cartesian products may not be nested, e.g. products such as {\tt
+A**(B**C)**D} are not permitted. The mapping operator \vb{->}
+associates to the right; i.e., \vb{A->B->C} is equivalent to
+\vb{A->(B->C)}. Finally, the empty tuple is only allowed as the domain
+of a function, thus characterizing it as a nullary function.
+
+\section{Free Types}
+\label{FreeType}
+
+Recursive type definitions are an elegant means of
+defining many kinds of data structures. 
+Moreover, they support clear function definitions
+by means of structural induction (``call-by-pattern'';
+see section \ref{operation}). However, the principle of information hiding
+requires that the internal structure of data elements should not
+transit the interface. {\sc Opal} therefore provides
+the concept of {\em free types}, allowing a data type to be viewed as
+if defined by a recursive type 
+definition, irrespective of the actual implementation
+which has to be {\em behaviourally equivalent} (see section \ref{DataType}).
+
+Only one free type may be given for each sort.
+Each free type induces its signature (see below).
+
+\begin{example}
+The free type \vb{text} is recursively defined
+with {\tt empty} and \vb{::} as the free constructor
+operations, and \vb{empty?} and \vb{::?} as its discriminator operations.
+The selector operations are \vb{first} and \vb{rest}.
+\begin{verbatim}
+    TYPE text == empty
+                 :: (first:char, rest:text)
+\end{verbatim}
+
+The type \vb{text} automatically induces the following signature:
+\begin{verbatim}
+    SORT text                               -- texts
+    FUN empty  : text                       -- the empty text
+        ::     : char**text->text           -- prefixing a character
+        empty? : text->bool                 -- test for emptiness
+        ::?    : text->bool                 -- test for nonemptiness
+        first  : text->char                 -- the first character
+        rest   : text->text                 -- the remaining characters
+\end{verbatim}
+
+The operations (have to) obey the following laws:
+\begin{eqnarray*}
+ \forall e,s & : &  \vb{empty?}(\vb{empty}) \wedge \neg\vb{empty?}(e::s) \\
+ \forall e,s & : &      \vb{::?}(e::s) \wedge \neg\vb{::?}(\vb{empty}) \\
+ \forall e,s & : &      \vb{first}(e::s) \equiv e \\
+ \forall e,s & : &      \vb{rest}(e::s) \equiv s \\
+ \forall s   & : &      \vb{::?}(s) \Rightarrow
+                                  \vb{first}(s)\vb{::}\vb{rest}(s) \equiv s \\
+ \forall s   & : &      \vb{empty?}(s) \vee \vb{::?}(s)
+\end{eqnarray*}
+\end{example}
+
+Free types are a counterpart of data types; see also section \ref{DataType}.
+
+\section{Export and Import}
+
+\paragraph{}
+
+The {\em export} of a structure is its complete signature part.
+Exported sorts and operations of a structure can be {\em imported}
+by another structure.
+
+The import becomes part of the signature.
+Hence, all sorts and operations that are imported in
+the signature part are automatically re-exported.
+This has the effect that it is possible, say, to
+import from the structure \vb{Text} the sort \vb{nat} from \vb{Nat}.
+
+\paragraph{}
+
+The basic syntactical form of
+an import from a structure is the {\em selected import}: only the
+explicitly listed sorts and operations are imported.
+When an overloaded identifier is listed, all
+its (matching) instances are imported (see section \ref{OverloadResolution}).
+The alternative form of an import is
+the {\em complete import} which is only allowed
+in the implementation part of a structure.
+
+\begin{example}
+In the structure \vb{Text}, we import from \vb{Nat}
+only the sort \vb{nat}.
+\begin{verbatim}
+    IMPORT Nat ONLY nat
+\end{verbatim}
+However, if we wish to import everything from \vb{Nat}
+in the implementation part, we can write
+\begin{verbatim}
+    IMPORT Nat COMPLETELY
+\end{verbatim}
+\end{example}
+
+The same structure may be imported several times.
+If the selections are not disjoint, the
+common sorts and operations are actually imported only once.
+
+\paragraph{}
+
+Every structure implicitly imports all sorts and
+operations from the predefined structures \vb{BOOL} and \vb{DENOTATION}.
+
+\chapter{Structure Implementation}
+\label{StructImpl}
+
+Implementations provide the actual definitions
+of the various items of a structure.  The two 
+components of an implementation are:
+\begin{itemize}
+  \item a set of {\em carrier sets},
+    which are defined by means of data definitions;
+  \item a set of {\em values} and {\em functions},
+    which are defined by means of (recursive) equations.
+\end{itemize}
+
+These carrier sets, values and functions must be
+in a one-to-one relationship with the sorts and 
+operations listed in the signature of the structure. 
+
+Continuing our example, the implementation part
+of the structure \vb{Text} may be defined as follows:
+\begin{verbatim}
+    IMPLEMENTATION Text
+    IMPORT  Char  ONLY =                        -- additionally needed
+            Nat   COMPLETELY                    --  signature
+    -- data definition
+    DATA text == empty
+                 ::(first:char, rest:text)
+    -- concatenation
+    DEF t1++t2 == IF t1 empty? THEN t2          -- simple definition
+                  ELSE first(t1)::(rest(t1)++t2) FI
+    -- length
+    DEF length(empty) == 0                      -- pattern-based
+    DEF length(_ ::t) == succ(length(t))        --  definition
+    -- revert
+    DEF revert(t) == rev(t,empty)
+    FUN rev:text**text->text
+    DEF rev(empty,z) == z
+    DEF rev(c::t,z)  == rev(t,c::z)
+    -- equality
+    DEF empty=empty == true
+    DEF (_ :: _)=empty == false
+    DEF empty=(_ :: _) == false
+    DEF (c1::t1)=(c2::t2) == IF c1=c2 THEN t1=t2 ELSE false FI
+\end{verbatim}
+
+\section{Signature Extension}
+
+The implementation part inherits the signature (including the induced signature
+of the free types) of the corresponding signature part, but it can be enriched
+by hidden signatures and free types which may also come from additional imports.
+
+\begin{example}
+The implementation part of the structure \vb{Text}
+has the additional import of \vb{Nat} and
+\vb{Char}, and the hidden function \vb{rev}.
+\end{example}
+
+\section{Data Types}
+\label{DataType}
+
+The types (here: free types and data types) of {\sc Opal}
+correspond to the classical mathematical
+constructions of direct product and direct sum.
+As a result, we obtain the canonical operations 
+such as projection functions (in lieu of special language features), etc.
+This is of particular benefit in connection with the direct sum,
+where we have a very clear and precise conception.
+
+The syntax of type definitions is chosen in such a way
+that it comprises all the necessary 
+information in a very compact way.
+The signature of these operations is automatically derived 
+from the type definition.
+
+\subsection{The Definition of Data Types}
+
+A {\em data definition} introduces a {\em sort}
+(as its left-hand side) together with a structural description 
+of the corresponding data elements (as its right-hand side):
+\begin{itemize}
+  \item A data definition consists of the direct sum of one or more variants.
+  \item Each {\em variant} is either a constant or a direct product of
+    one or more components.
+  \item Each {\em product} consists of the description of
+    a constructor operation and a selector operation for every component.
+  \item For each variant, we have a {\em discriminator} operation
+    that tests whether a given data element belongs
+    to the variant or not. The identifier for this discriminator operation is
+    obtained by simply appending a question mark
+    to the corresponding constructor.
+\end{itemize}
+
+The variant names, the constructor operation as well as
+the selector operations and the sorts of 
+the components. The signature of these operations
+is automatically deduced from the data definition.
+
+\begin{examples}
+The data type \vb{text} is recursively defined
+as a sum: \vb{empty} and \vb{::} are the
+constructor operations, and \vb{empty?} and \vb{::?} its
+discriminator operations. The selector operations are \vb{first}
+and \vb{rest}.
+\begin{verbatim}
+    DATA text == empty
+                 :: (first:char, rest:text)
+\end{verbatim}
+
+The signature of the induced canonical operations
+is like the one for the equivalent free type 
+(see section \ref{FreeType}).
+
+The following (enumeration) type simply introduces two constants:
+\begin{verbatim}
+    DATA bool == true  false
+\end{verbatim}
+
+A data type \vb{player} is a typical instance of a product type.  Note
+that the sort and the constructor operations may have identical
+identifiers (but this need not be so). Note also that functions are
+admitted as components of products.
+\begin{verbatim}
+    DATA player == player(name:text,
+                          age:nat,
+                          statistics:game->points)
+\end{verbatim}
+
+The same selector identifier may appear in different variants of a sum. It is then actually one 
+selector:
+\begin{verbatim}
+    DATA address == short(name:text, prename:text, street:text)
+                    long( name:text, prename:text, street:text,
+                          state:text, tel:nat)
+\end{verbatim}
+Note that the same constructor name may not be used for short and
+long, because the resulting discrimination operations would have the
+same name (see section \ref{OverloadResolution}).
+\end{examples}
+
+Except for the canonical operations, no additional operations are
+automatically defined on types: neither an equality nor an order or
+anything else. The main reason for such a rigorous decision is that
+{\sc Opal} types can incorporate functions, and there is no computable
+equality on functions.
+
+\subsection{Free Types and Data Types}
+
+A data definition looks very similar to a free type. Both concepts are
+strongly connected, but there are also essential differences. Both a
+data definition and a free type automatically induce the signature,
+consisting of the appropriate sort and the canonical constructor,
+selector and discriminator operations. However, a data definition also
+constitutes a concrete implementation for the data elements and for
+the operations. This is not the case for free types. It is therefore
+the programmer's task to explicitly provide definitions of the sorts
+and the canonical operations of the free types.
+
+Free types must be implemented by behaviourally equivalent data types
+(see \cite{Sanella87}). It should not be possible to distinguish
+between the free type and the data type by evaluating exported
+functions.
+
+\begin{example}
+  Consider an alternative data definition of texts, where texts
+  are implemented by a sequence of bounded character arrays. For
+  details of (parameterized) sequences and arrays, see section
+  \ref{parameterization}.
+\begin{verbatim}
+    DATA text  == text (chunks:seq[chunk])
+    DATA chunk == chunk(chars:array[char], from:nat, to:nat)
+\end{verbatim}
+
+The operations of the free type now have to be programmed on the basis
+of the given data type; we can do this using the above type structure:
+\begin{verbatim}
+    DEF empty == text(<>)
+    DEF c::t == IF chunks(t) <>?      THEN text(singleton:: <>)
+                ELSE IF from(fst) = 0 THEN text(singleton::chunks(t))
+                                      ELSE text(new::rest(chunks(t)))
+                     FI WHERE fst == first(chunks(t))
+                              new == chunk((chars(fst),from(fst)-1):=c,
+                                                   from(fst)-1,to(fst))
+                FI WHERE singleton == chunk(init(10,c),9,9)
+    -- etc.
+\end{verbatim}
+
+From the user's point of view, only the free type as given in section
+\ref{FreeType} is visible. Hence, the free type and the data type are
+indistinguishable. But note that, for the above implementation, the
+laws of the free type that state equivalences on texts only hold for
+behavioural equivalence.
+
+The equivalences
+\vspace*{-7pt}
+\begin{eqnarray*}
+  \forall e,s & : & \vb{rest}(e::s) \equiv s \\
+  \forall s   & : & \vb{::?}(s) \Rightarrow \vb{first}(s)\vb{::rest}(s) \equiv s \\
+\end{eqnarray*}
+\vspace*{-4pt}
+actually stand for the behavioural equalities
+\begin{eqnarray*}
+\forall e,s & : & \vb{first}(\vb{rest}(e\vb{::}s)) \equiv \vb{first}(s)
+                  \wedge \vb{length}(\vb{rest}(e\vb{::}s))
+                  \equiv \vb{length}(s) \wedge \\
+            & & \vb{empty?}(\vb{rest}(e\vb{::}s)) \equiv \vb{empty?}(s)
+                \wedge \vb{::?}(\vb{rest}(e\vb{::}s)) \equiv \vb{::?}(s) \\
+\forall s   & : & \vb{::?}(s) \Rightarrow \vb{first}(\vb{first}(s)\vb{::rest}(s)) \equiv \vb{first}(s) \wedge \\
+                        & & \vb{length}(\vb{first}(s)\vb{::rest}(s)) \equiv \vb{length}(s) \wedge \\
+                        & &     \vb{empty?}(\vb{first}(s)\vb{::rest}(s)) \equiv \vb{empty?}(s) \wedge \\
+                        & & \vb{::?}(\vb{first}(s)\vb{::rest}(s)) \equiv \vb{::?}(s)
+\end{eqnarray*}
+\end{example}
+
+\vspace*{-4pt}
+Only free types allow function definition by pattern matching. If
+there is no free type defined, then the data type automatically
+induces a corresponding free type.
+
+\section{Operations}
+\label{operation}
+
+In {\sc Opal}, the notion of {\em operations} includes {\em functions}
+as well as {\em elementary values} (``constants''). Owing to the
+algebraic orientation of the {\sc Opal} programming style, function
+definitions are not written as lambda abstractions, but rather in the
+form of special equations. For these equations, there are two
+notational variants: {\em standard definitions} and {\em pattern-based
+definitions}.
+
+\subsection{Standard Definitions}
+
+\paragraph{}
+
+The standard form of a function definition has the following appearance:
+\begin{quote}
+    \vb{f(x$_1$,\ldots,x$_m$) \ldots\ (z$_1$,\ldots,z$_n$) ==} \nt{expression}
+\end{quote}
+That is, the left-hand side is the application of a function
+identifier to zero or more tuples of {\em parameters}, and the
+right-hand side is an arbitrary expression. (Function applications are
+described in section \ref{FunctionApplication}.) The functionalities
+of the parameters are induced by the functionality of f as listed in
+the signature. Empty parameter tuples, denoted by \vb{()}, are
+admissible.
+
+\begin{examples}
+The following examples implement constants based on suitably defined functions.
+\begin{verbatim}
+    DEF 1  == succ(0)
+    DEF pi == computePi()
+\end{verbatim}
+The concatenation function on texts, with \vb{++} as its identifier
+and \vb{t1}, \vb{t2} as parameters, is defined as follows:
+\begin{verbatim}
+    DEF t1 ++ t2 == IF empty?(t1) THEN t2
+                    ELSE first(t1) :: (rest(t1)++t2) FI
+\end{verbatim}
+A typical higher-order function is given in the following example: the
+function \vb{filter} extracts from a text those elements that fulfil a
+certain predicate.
+\begin{verbatim}
+    FUN filter: (char->bool)->text->text
+    DEF filter(p)(t) ==
+        IF t empty? THEN empty
+        OTHERWISE
+        IF p(first(t)) THEN first(t)::filter(p)(rest(t))
+                       ELSE           filter(p)(rest(t)) FI
+\end{verbatim}
+\end{examples}
+
+\paragraph{}
+
+Since higher-order functions are allowed, it may --- under certain
+circumstances --- be possible to omit some of the final parameter
+tuples.
+
+\begin{example}
+    Given the function \vb{filter} (see above) and a predicate
+    \vb{isCaps} that tests whether a character is a capital letter, we
+    can define a function that extracts all capital letters from a
+    given text. In the signature, we have to write
+\begin{verbatim}
+    FUN Caps: text->text
+\end{verbatim}
+and the definition can be written equivalently in either of the forms
+\begin{verbatim}
+    DEF Caps(T) == filter(isCaps)(T)
+    DEF Caps    == filter(isCaps)
+\end{verbatim}
+\end{example}
+
+\paragraph{}
+
+The scope of the parameters is the function definition. Therefore, the
+expression that forms this function body can be built up from the
+global names of the structure under consideration (i.e.\ import plus
+signature) together with the parameters.
+
+\subsection{Pattern-Based Definitions}
+
+Functions are often defined inductively on the structure of the underlying
+types. This paradigm is supported in {\sc Opal} by pattern-based definitions,
+which, essentially, look like normal definitions, with the exception that the
+left-hand side may also contain patterns in addition to parameters. A {\em
+  pattern} is a constructor operation from a free type applied to arguments,
+which are either {\em pattern variables} or, again, patterns (nested patterns
+are allowed).  All of the variables in a pattern must be distinct (because there
+is no predefined equivalence on sorts). Their scope is the equation. A special
+pattern variable {\em wildcard ( \verb"_" ) \/} is a placeholder for pattern
+variables which are unreferenced at the right hand side of the definition.
+
+\begin{example}
+The function \vb{filter} can be alternatively defined by patterns:
+\begin{verbatim}
+    DEF filter(_)(empty) == empty
+    DEF filter(p)(x::t)  == IF p(x) THEN x::filter(p)(t)
+                                    ELSE    filter(p)(t) FI
+\end{verbatim}
+Here, \vb{empty} and \vb{x::t} are patterns, and \vb{x} and \vb{t} are
+pattern variables. 
+\end{example}
+
+The set of equations need not be exhaustive; there may be values that
+do not match any of the given patterns. In this case, the function is
+simply undefined for such arguments (see also section
+\ref{CaseDistinction}).
+
+The case analysis is realized by reference to a best-fit criterion: if
+a pattern is an instance of another pattern, the more specific pattern
+is checked first; otherwise, even if patterns overlap, the order in
+which they are checked is left open (see also section
+\ref{CaseDistinction}).
+
+Using the abstract properties of free types, pattern matching is
+nothing more than a shorthand notation for an expression with explicit
+test and selector applications.
+
+\begin{example}
+The equality function (see introductory example to section \ref{StructImpl})
+\begin{verbatim}
+    DEF empty=empty == true
+    DEF (_ :: _)=empty == false
+    DEF empty=(_ :: _) == false
+    DEF (c1::t1)=(c2::t2) == IF c1=c2 THEN t1=t2 ELSE false FI
+\end{verbatim}
+is translated into the following code (according to the given
+strategy):
+\label{TranslatedEqExample}
+\begin{verbatim}
+    DEF s1=s2 ==
+         IF s1 empty? THEN IF s2 empty? THEN true
+                           IF s2 ::?    THEN false FI
+         IF s1 ::?    THEN IF s2 empty? THEN false
+                           IF s2 ::?    THEN
+                                LET (c1,t1) == (first(s1),rest(s1))
+                                    (c2,t2) == (first(s2),rest(s2))
+                                IN IF c1=c2 THEN t1=t2 ELSE false FI
+                           FI
+         FI
+\end{verbatim}
+\end{example}
+
+References to the complete argument in the equation's right-hand side
+are facilitated by giving it a name in addition to the pattern.
+
+\begin{example}
+The function fac may be written as follows:
+\begin{verbatim}
+    DEF fac(0)            == 1
+    DEF fac(m AS succ(n)) == m * fac(n)
+\end{verbatim}
+\end{example}
+
+{\em Note}: If we define a pattern as a pattern variable or a
+constructor operation from a free type applied to patterns, we can
+subsume the standard form of function definition as a trivial case of
+pattern-based definition. This is done from now on. Note that all
+parameters on the left-hand side are then viewed as pattern variables!
+
+\section{Expressions}
+
+{\em Expressions} are used to define the right-hand sides of function
+definitions. In general, they are evaluated each time the defined
+operation is applied. There is one exception, however: {\em constant
+expressions}, i.e., expressions that contain no free variables are
+evaluated during program initialization.
+
+There are essentially six different forms of expressions:
+\begin{itemize}
+  \item {\em atomic expressions}, i.e., applied occurrences of names or denotations,
+  \item {\em tuples} of expressions,
+  \item {\em function applications},
+  \item {\em lambda abstractions},
+  \item {\em case distinctions}, i.e., collections of guarded expressions and conditionals, and
+  \item {\em extended expressions}, i.e., expressions with 
+    auxiliary names introduced in {\tt LET} or {\tt WHERE} clauses.
+\end{itemize}
+
+All expressions in {\sc Opal} are strongly typed.
+
+\subsection{Atomic Expressions}
+
+An {\em atomic expression} is either an applied occurrence of a name,
+or a denotation. In the former case, the sort of the atom is the sort
+of the name; in the latter case, it is the basic sort \vb{denotation}.
+
+\begin{examples}
+Applied occurrences of names are
+\begin{verbatim}
+    pi       1       +       x
+\end{verbatim}
+
+Denotations are
+\begin{verbatim}
+    "Hello World!"      "3.14159"      "2137"      "\t foo \n bar"
+\end{verbatim}
+\end{examples}
+
+It should be noted that {\sc Opal} does not possess predefined number
+systems and the like. For example, the only way to represent numbers
+in the familiar decimal notation is to write them as denotations (and
+to apply an explicitly programmed conversion function).
+
+\subsection{Tuples}
+
+A {\em tuple} of expressions, enclosed in parantheses and separated by
+commas, is itself an expression. An empty tuple () is possible as the
+argument of a function application. The functionality of a tuple is
+the Cartesian product of the functionalities of its component
+expressions.
+
+\begin{example}
+The following expression consists of an argument value, a function and the
+corresponding result value:
+\begin{verbatim}
+    (pi, sin, sin(pi))
+\end{verbatim}
+
+Hence, its functionality is \vb{real**(real->real)**real}.
+\end{example}
+
+{\em Note}: Tuples may be nested, but this is only a syntactic
+feature. The functionality of a tuple is always that of the unnested
+version.
+
+\subsection{Function Applications and Mixfix Notation}
+\label{FunctionApplication}
+
+\paragraph{}
+
+The {\em application} of a function to an argument expression is
+itself an expression. The resulting expression may again be a function
+and, thus, be applied in turn to an argument.  This way, we obtain
+iterated function applications. The arguments of a function
+application must always be enclosed in parentheses. Function
+application associates to the left; that is \vb{f(x)(y)} is the same as
+\vb{(f(x))(y)}.
+
+\paragraph{}
+
+The semantics of the function application is {\em call-by-value}. In
+other words, both the function expression and the argument expression
+are evaluated before the actual application takes place. The
+functionality of a function application is the result functionality of
+the function as given in the signature.
+
+\paragraph{}
+
+To improve readability of {\sc Opal} programs, it is possible to write
+function applications in infix or postfix notation. The function
+symbol may be inserted at any point in the first argument list, i.e.,
+if a function \vb{@} has the functionality:
+\begin{quote}
+    \vb{FUN @ : A ** B ** C ->} \ldots
+\end{quote}
+then all the following expressions denote the same function application:
+\begin{verbatim}
+    @(a,b,c)  (a)@(b,c)  (a,b)@(c)  (a,b,c)@
+\end{verbatim}
+If the argument list to the left or right of an infix or postfix
+application has arity one, the parentheses may be omitted. Thus, we
+could also write
+\begin{verbatim}
+    a@(b,c)  (a,b)@c
+\end{verbatim}
+in the above example. Infix and postfix applications have lower
+precedence than the standard prefix application. 
+
+\begin{examples}
+A standard situation of a function application is
+\begin{verbatim}
+    +(pred(x),succ(y))
+\end{verbatim}
+which can be made more readable by using the familiar infix notation
+\begin{verbatim}
+    (pred(x))+(succ(y))
+\end{verbatim}
+and, if we use the binding rules, is even more readable
+\begin{verbatim}
+    pred(x)+succ(y)
+\end{verbatim}
+With higher-order functions, we obtain situations like
+\begin{verbatim}
+    filter(even)(S)
+\end{verbatim}
+The application to the first argument list can also be written in
+postfix notation:
+\begin{verbatim}
+    (even filter)(S)
+\end{verbatim}
+\end{examples}
+
+We employ a restricted infix notation to allow more than one infix
+application of one operator in sequence. For a given sequence of operators and
+operands during context analysis the compiler tries to deduce an unambiguous
+structure on operators and operands dependent on the functionality of the
+operator. If the deduced type is ambiguous then for the operators, which must be
+identitical, right-associativity is assumed (universal right-associative rule). 
+
+\begin{example}
+  The functionality of prepending a data with a list and an infix notion of
+  concat (here instantiated) would look like: 
+  \begin{verbatim}
+  :: : nat ** seq[nat] -> seq[nat]
+  1 :: 2 :: 3 :: <>
+  \end{verbatim}
+
+  The only type correct interpretation is: 
+  \begin{verbatim}
+  1 :: ( 2 :: ( 3 :: <>))
+  \end{verbatim}
+
+  The functionality of concatenating two lists and an infix notion of concat
+  (again instantiated) would look like: 
+  \begin{verbatim}
+  ++ : seq[nat] ** seq[nat] -> seq[nat]
+  (1 :: <>) ++ (2 :: <>) ++ (3 :: <>) 
+  \end{verbatim}
+
+  Here, two bracketings are possible. But due to the universal
+  right-associative rule the following bracketing is deduced: 
+  \begin{verbatim}
+  (1 :: <>) ++ ((2 :: <>) ++ (3 :: <>))
+  \end{verbatim}
+\end{example}
+
+\subsection{Lambda Abstractions}
+\label{LambdaAbstraction}
+
+The general form of lambda abstraction is
+\begin{quote}
+  \bs\bs \nt{names} . \nt{expression}
+\end{quote}
+where \nt{names} is a (possibly empty) list of names for {\em
+lambda-bound variables}.  Instead of a \nt{name} a \nt{wildcard} (\verb"\_" ) can
+be used to denote a placeholder for unused let-bound variables. 
+The body of the abstraction is
+\nt{ex\-press\-ion}. The scope of the lambda-bound variables is the
+whole lambda abstraction.
+
+The resulting expression is an unnamed function with the Cartesian
+product of the functionalities of the lambda-bound variables as its
+domain and the functionality of the body as its co-domain.
+
+\begin{example}
+    A curried version of the addition function \vb{+} from
+    \vb{Nat} can be written in the following way:
+\begin{verbatim}
+    \\x.\\y.x+y
+\end{verbatim}
+Its functionality is \vb{nat->nat->nat}.
+\end{example}
+
+\subsection{Sections}
+
+Sections are a short-hand notion for delayed evaluation of function
+applications. In an application arguments can be replaced by a section
+placeholder (\verb"_") to indicate the missing argument value. The behaviour
+of such an expression is explained best in giving the syntactical
+transformation: a lambda abstraction is built around the function application
+and for each placeholder a new lambda-bound variable is generated. 
+
+\begin{example}
+  An expression \verb"a + _" is (syntactically) transformed into 
+  \verb" \\ new. a + new" where \verb"new" is a new variable.  Multiple
+  placeholders are 
+  possible, as in \verb"f(_,a,b,_)" which is transformed into 
+  \verb" \\ new1,new2. f(new1,a,b,new2)". And an application like
+  \verb"f(\_,a)(b,\_)"
+  is transformed into \verb" \\ new1. \\ new2. f(new1,a)(b,new2)"
+\end{example}
+
+\subsection{Case Distinctions}
+\label{CaseDistinction}
+
+The basis for case distinctions is the guarded expression, which is of the form
+\begin{quote}
+  \vb{IF} \nt{guard} \vb{THEN} \nt{expression}
+\end{quote}
+
+The \nt{guard} is a boolean expression. The \nt{expression} is only
+evaluated if the \nt{guard} yields true. Its functionality is the
+functionality of the whole guarded expression.
+
+Several guarded expressions can be assembled to form a {\em case
+distinction} of the form
+\begin{quote}
+  \vb{IF}  \nt{guard$_1$}  \vb{THEN}  \nt{expression$_1$} \\
+          \vdots \\
+  \vb{IF}  \nt{guard$_n$}  \vb{THEN}  \nt{expression$_n$}  \vb{FI}
+\end{quote}
+
+The operational semantics of the case distinction is defined as
+follows: The order in which the various guards are checked is left
+open (but fixed at compile time). When the first guard yielding true
+is encountered, its corresponding expression is evaluated. If none of
+the guards yields true, the case distinction is undefined (i.e., the
+program execution aborts).
+
+{\em Note}: Each case distinction is {\em deterministic} in the sense
+that, once compiled, it is evaluated every time in the same order
+(even though this order is left to the compiler's discretion). For
+instance, we have the following property: the equation
+\begin{verbatim}
+                      f(x) == IF x>=0 THEN g(x)
+                              IF x<=0 THEN h(x) FI
+\end{verbatim}
+is equivalent to the operation
+\begin{eqnarray*}
+    x>0 & \Rightarrow &  f(x) \equiv g(x) \\
+    x<0 & \Rightarrow &  f(x) \equiv h(x) \\
+    x=0 & \Rightarrow &  f(x) \equiv g(x) \vee f(x) \equiv h(x)
+\end{eqnarray*}
+This equivalence characterizes the semantics of ``nondeterminism'' as
+realized by the {\sc Opal} compiler.
+
+Sometimes we wish to evaluate certain guards {\em before} evaluating
+others.  Then, we write
+\begin{quote}
+\vb{IF}  \nt{guard$_1$}   \vb{THEN}  \nt{expression$_1$} \\
+        \vdots \\
+\vb{IF}  \nt{guard$_m$}   \vb{THEN}  \nt{expression$_m$} \\
+\vb{OTHERWISE}\\
+\vb{IF}  \nt{guard$_{m+1}$} \vb{THEN}  \nt{expression$_{m+1}$} \\
+        \vdots \\
+\vb{IF}  \nt{guard$_n$}   \vb{THEN}  \nt{expression$_n$}  \vb{FI}
+\end{quote}
+Here, the guards of the second block are only checked after all guards
+in the first block have yielded false. Of course, a case distinction
+can contain several sequential blocks separated by \vb{OTHERWISE}.
+
+Finally, we can conclude a case distinction --- with or without
+\vb{OTHERWISE} constructs --- by an \vb{ELSE} branch, which is only
+evaluated if none of the guards yields true.
+\begin{quote}
+\vb{IF}  \nt{guard$_1$}   \vb{THEN}  \nt{expression$_1$} \\
+        \vdots \\
+\vb{IF}  \nt{guard$_n$}   \vb{THEN}  \nt{expression$_n$} \\
+               \vb{ELSE}  \nt{expression$_{n+1}$}  \vb{FI}
+\end{quote}
+In all cases, the keyword \vb{FI} concludes the case distinction, thus
+allowing the unambiguous nesting of several case distinctions.
+
+\begin{examples}
+The lexicographic order \vb{<=} of texts is based on a case distinction like
+\begin{verbatim}
+    DEF R<=S ==
+          IF R empty?          THEN true
+          OTHERWISE
+          IF S empty?          THEN false
+          OTHERWISE
+          IF first(R)<first(S) THEN true
+          IF first(R)>first(S) THEN false
+                               ELSE rest(R)<=rest(S) FI
+\end{verbatim}
+Our case distinctions also include the familiar \vb{IF-THEN-ELSE-FI}
+construct as a special case:
+\begin{verbatim}
+    IF x<0 THEN -(x) ELSE x FI
+\end{verbatim}
+\end{examples}
+
+The {\em guards\/} can be sequentialized in using the keywords \vb{ANDIF} or
+\vb{ORIF}. These are only shortcuts for syntactical transformations as shown in
+the example. 
+
+\begin{example}
+
+  \begin{quote}
+  \vb{IF} \nt{guard$_1$} \vb{ANDIF} \nt{guard$_2$} \vb{THEN} \nt{expression$_1$} 
+  \dots
+  \end{quote}
+  is transformed into 
+  \begin{quote}
+    \vb{IF} \vb{IF} \nt{guard$_1$} \vb{THEN} \nt{guard$_2$} \vb{ELSE} \nt{false}
+    \vb{FI} \vb{THEN} \nt{expression$_1$} \dots
+  \end{quote}
+  and 
+  \begin{quote}
+  \vb{IF} \nt{guard$_1$} \vb{ORIF} \nt{guard$_2$} \vb{THEN} \nt{expression$_1$} 
+  \dots
+  \end{quote}
+  is transformed into 
+  \begin{quote}
+    \vb{IF} \vb{IF} \nt{guard$_1$} \vb{THEN} \nt{true} \vb{ELSE} \nt{guard$_2$}
+    \vb{FI} \vb{THEN} \nt{expression$_1$} \dots
+  \end{quote}
+
+Sequential guards can be composed without bracketing. \vb{ANDIF} and \vb{ORIF}
+bind to the right. 
+
+\end{example}
+     
+
+\subsection{Extended Expressions}
+\label{ExtendedExpression}
+
+\paragraph{}
+
+In order to allow a further structuring of expressions, it is possible
+to name the values of subexpressions and to use these names in other
+expressions. (This is particularly useful for ``common
+subexpressions''.) In this way, we obtain {\em extended expressions}
+that comprise \vb{LET} and \vb{WHERE} clauses. The general notation
+is:
+\begin{quote}
+  \nt{expression}  \vb{WHERE}  \nt{declarations} \\
+  \vb{LET}  \nt{declarations}  \vb{IN}  \nt{expression}
+\end{quote}
+
+\paragraph{}
+
+Here, the \nt{declarations} are sets of equations, the left-hand sides
+of which are (tuples of) names of {\em let-bound variables}. Thus, we
+have either of the two forms for a declaration:
+\begin{quote}
+  \nt{name} == \nt{expression} \\
+  (\nt{name$_1$},\ldots,\nt{name$_n$}) == \nt{expression}
+\end{quote}
+Instead of \nt{name} a \nt{wildcard} can be used as a placeholder to denote
+unused values. The order in which these equations are written down is of no
+relevance, but cyclic dependencies are not allowed; in other words, it
+must be possible to put the declarations in a sequential order. (This
+is the compiler's job.)
+
+\paragraph{}
+
+The scope of let-bound variables is the largest expression with which
+the \vb{LET} or \vb{WHERE} clause can be combined in a syntactically
+meaningful way. For instance, in \vb{f(y)(y) WHERE} \vb{y==\ldots}, the
+scope does not only extend to the final \vb{(y)}, but (at least) to
+the whole term \vb{f(y)(y)}. By contrast, in \vb{f(y, y WHERE
+y==\ldots}), the scope only extends to the latter \vb{y}. In addition,
+the scope of a let-bound variable extends over the whole list of
+declarations to which it belongs. The declared names inherit their
+functionalities from their corresponding right-hand sides.
+
+The semantics of \vb{LET} and \vb{WHERE} clauses is {\em strict},
+i.e., the equations are evaluated before the associated expression is
+evaluated.
+\begin{examples}
+    In the translated equality test in section
+    \ref{TranslatedEqExample}, we have a typical use of \vb{LET}
+    clauses.
+    
+    Local declarations are often used to name the individual
+    components of a function with several results:
+\begin{verbatim}
+    WHERE (quotient,rest) == x divmod y
+\end{verbatim}
+According to the scoping rules, the same name may, for example, appear
+in both branches of a conditional:
+\begin{verbatim}
+    IF ... THEN LET xnew == f(xold) IN h(xnew,xold)
+           ELSE LET xnew == g(xold) IN k(xnew,xold) FI
+\end{verbatim}
+\end{examples}
+
+\chapter{Parameterization}
+\label{parameterization}
+
+Sequences of natural numbers are not much different from sequences of
+characters (= words) or even sequences of sequences of characters (=
+sentences). This fact is expressed --- as it usually is in mathematics
+or informatics --- by a proper parameterization.
+
+\section{Parameterized Structures}
+\label{ParameterizedStructures}
+
+Below, we define the structure of sequences via a suitably chosen
+parameter, which in this case is a sort. However, we need not restrict
+this parameterization facility to sorts only. For instance, bounded
+sequences have an appropriate constant as their parameter, and ordered
+sequences are based on a suitable order relation on the element sort. 
+The parameters are declared in the signature and can be used in the
+body of the structure. Thus, the scope within which the parameters are
+visible is the whole structure.
+
+\begin{examples}
+    The structure \vb{Seq} represents a classical example of
+    parameterization. Here, \vb{data} is the parameter, and it is
+    declared to be a sort. Hence, it can be used in the structure body
+    like any other sort.
+\begin{verbatim}
+    SIGNATURE Seq[data]
+    -- Parameters
+    SORT data
+    -- Imports
+    IMPORT  Nat  ONLY nat
+    -- free type
+    TYPE seq == <>
+                ::(ft:data, rt:seq)
+    -- additional operations
+    FUN ++ : seq**seq->seq                 -- concatenation
+    FUN #  : seq->nat                      -- length
+    -- etc.
+
+    IMPLEMENTATION Seq[data]
+    -- additional import
+    IMPORT  Nat  COMPLETELY
+    -- data definition
+    DATA seq == <>
+                ::(ft:data, rt:seq)
+    -- concatenation
+    DEF <> ++ t2      == t2
+    DEF (c::t1) ++ t2 == c::(t1++t2)
+    -- length
+    DEF #(<>)   == 0
+    DEF #(_ :: t) == succ(#(t))
+    -- etc.
+\end{verbatim}
+
+A structure for bounded sequences could be given in the form
+\begin{quote}
+    \vb{SIGNATURE BoundedSeq [data,bound]} \\
+    \vb{SORT data} \\
+    \vb{FUN bound:nat} \\
+    \vb{-- rest of signature part}
+\end{quote}
+
+Again, \vb{data} can be used in the body like any normal sort, and
+\vb{bound} can be used like any other constant. Note, however, that
+the sort \vb{nat} must be known in the structure by means of an
+import, or it must be a parameter! (Using here a sort that is declared
+in the structure itself would clearly lead to a vicious circle.)
+
+A structure for ordered sequences could be given in the form
+\begin{quote}
+  \vb{SIGNATURE OrderedSeq [data,<]} \\
+  \vb{SORT data} \\
+  \vb{FUN < :data**data->bool} \\
+  \vb{ -- rest of signature part}
+\end{quote}
+
+As before, \vb{data} can be used like a normal sort in the body, and
+\vb{<} can be used like a normal operation. Note that a parameter
+which is a sort may be used to express the functionalities of other
+parameters.
+\end{examples}
+
+The rules for signatures, implementations and free types also apply to
+parameterized structures.
+
+\section{Instantiation}
+
+If a structure is parameterized, then all its constituents become {\em
+generic}. Every sort and operation now stands for a whole family of
+carrier sets, values and functions, respectively.
+
+If we import a parameterized structure, we have to provide sorts and
+operations for the parameters. In case of overloaded imports, e.g.,
+\vb{Seq[nat]} and \vb{Seq[real]}, we have to use additional facilities
+to make the names unequivocal (see section \ref{NameScope}).
+
+\begin{example}
+We may now define the sort \vb{text} from \vb{Text} using the
+structure \vb{Seq}.
+\begin{quote}
+    \vb{IMPORT  Seq[char]  COMPLETELY} \\
+            \vdots \\
+    \vb{DATA text == text(text:seq, len:nat)}
+\end{quote}
+\end{example}
+
+In the implementation part of a structure, it is also possible to
+import a parameterized structure {\em uninstantiated}. This can be
+viewed as an import of the structure with all necessary
+instantiations.
+
+\chapter{Names and Scopes}
+\label{NameScope}
+
+In an {\sc Opal} program, there are many objects such as sorts,
+operations and parameters that must be referred to in the program
+text. Hence, all these objects have {\em names}. The use of each name
+is restricted to certain parts of the program text, called the scope
+of the name.
+
+The naming facilities in {\sc Opal} are very flexible. This is
+practically unavoidable in connection with parameterization, but it is
+also convenient in other cases where overloading of identifiers is
+desirable. The classical example here is a function like addition on
+integers and real numbers.
+
+\section{Names}
+
+Names in {\sc Opal} do not only consist of an identifier, but also of
+an {\em origin} and a {\em kind}. For every name application, its
+origin and/or kind can be given in addition to the identifier in order
+to describe the name exactly. This is optional if the missing
+information can be deduced from the context.
+
+\subsection{Origin}
+
+The origin of an object is the identifier of the structure in which it
+is declared.
+
+\begin{example}
+    Suppose that there are two structures \vb{DirGraph} and
+    \vb{UndirGraph} for directed and undirected graphs, respectively. 
+    Both sorts are called {\em graph}. To write a structure that uses
+    both kinds of graphs, we have to import both structures:
+\begin{verbatim}
+    IMPORT  DirGraph    ONLY graph
+    IMPORT  UndirGraph  ONLY graph
+\end{verbatim}
+But we now encounter the problem of how to refer unequivocally to the
+sort of directed graphs. Hence, we may write \vb{graph'DirGraph} (to
+be read as: ``graph from DirGraph'') to refer to the sort \vb{graph}
+of the structure \vb{DirGraph}.
+\end{example}
+
+Note that, in the case of transitive import, the origin is the
+structure in which the object is originally declared.
+
+\begin{example}
+The structure \vb{Text} re-exports the sort \vb{nat'Nat}. Thus, we can write
+\begin{verbatim}
+    IMPORT Text ONLY nat
+\end{verbatim}
+But the origin of nat remains the structure \vb{Nat}.
+\end{example}
+
+\subsection{Kind}
+
+Since overloading is also allowed in the internal signature of a
+structure, the origin is not always sufficient to distinguish two
+objects. The {\em kind} of an object consists of its {\em class}
+(i.e., whether it is a sort or an operation) and --- in case of an
+operation --- its {\em functionality}.
+
+\begin{example}
+    Suppose that, in a structure \vb{Rat} for rational numbers, the
+    sort as well as two conversion functions are all called \vb{rat};
+    their identifiers are therefore overloaded:
+\begin{verbatim}
+    SIGNATURE Rat
+    IMPORT  Nat  ONLY nat
+    IMPORT  Int  ONLY int
+    SORT rat
+    FUN rat:nat->rat
+    FUN rat:int->rat
+\end{verbatim}
+To use one of these identifiers unambiguously, it is generally
+necessary to explicitly denote its kind. Thus, one has to write
+\vb{rat:SORT}, \vb{rat:nat->rat} and \vb{rat:int->rat} in order to
+distinguish them from each other.
+
+Note: If the kind can be deduced from the context, it can be omitted. 
+For instance, it is sufficient to write \vb{rat(-(1))}.
+\end{example}
+
+Fortunately, the typing mechanism of {\sc Opal} is powerful enough to
+deduce the kinds in the majority of situations. Hence, the programs
+are not usually burdened with too many explicit denotations of origins
+and kinds. As a matter of fact, such annotations are the programmer's
+last resource on the few occasions where some ambiguity remains with
+respect to overloaded identifiers.
+
+\subsection{Instantiation}
+
+So far, we have looked at simple names. In case of parameterized
+structures, we have to distinguish between objects from different
+instantiations of a structure. Thus, the origin divides into the {\em
+origin identifier} and the (origin) {\em instantiation}. Either of
+these two parts can be omitted, if it is deducible from the context.
+
+\begin{example}
+    If we import both \vb{Seq[int]} and \vb{Seq[real]}, we have to
+    distinguish between the two instantiations of the sort \vb{seq} by
+    using their origins:
+\begin{verbatim}
+    IMPORT  Seq[int]   ONLY seq
+            Seq[real]  ONLY seq
+    FUN intsToReals: seq'Seq[int]->seq'Seq[real]
+\end{verbatim}
+If the origin identifier can be deduced from the context, we may leave
+it out:
+\begin{quote}
+\vb{FUN intsToReals: seq[int]->seq[real]}
+\end{quote}
+\end{example}
+
+\subsection{Overload Resolution}
+\label{OverloadResolution}
+
+In general, an object must be identified unequivocally. This is done
+by using the explicitly written parts of the name together with the
+information deduced from the context. If this ``maximal'' information
+still matches several visible names, we have a context error.
+
+There is one exception to this rule: Where an overloaded identifier is
+imported, all its matching variations are imported. (If this is to be
+prohibited, one has to qualify the desired variant by appropriate
+annotations.)
+
+\begin{example}
+    Suppose that the structure Seq defines four overloaded
+    versions of the function \vb{++}, namely, concatenation of two
+    sequences, of sequence and element, of element and sequence, and,
+    finally, of two elements. If we wish to import only one of them,
+    we may write
+\begin{verbatim}
+    IMPORT  Seq  ONLY  ++ :seq**seq->seq
+\end{verbatim}
+\end{example}
+
+\section{Scopes}
+
+The scope of a name depends on the place of its declaration. In some
+cases, the scope can be extended and there may be {\em holes} in the
+scope.
+
+\subsection{Global Names in a Structure}
+
+\paragraph{}
+
+The sorts and operations in the signature are {\em global names}. 
+(Note that this includes the imported sorts and operations as well.)
+\begin{itemize}
+  \item For the global names that are introduced in the {\em
+    signature} part of a structure, the scope is the signature part and
+    the implementation part.
+  \item For the global names that are additionally introduced in the
+    {\em implementation} part, the scope is only the implementation part.
+\end{itemize}
+There may be {\em holes} in the scope caused by local names (see
+section \ref{LocalName} below).
+
+\paragraph{}
+
+Global names may be declared several times; the repeated declarations
+introduce only one global name. (For instance, a repetition of the
+signature part in the implementation part would be legal; in practice,
+repeated declarations may occur through imports.)
+
+\subsection{Local Names}
+\label{LocalName}
+
+\paragraph{}
+
+Pattern variables, lambda- and let-bound variables are {\em local
+names}. Local names consist of their identifiers and their kind only;
+there is no origin. The scope of a pattern variable is the function
+definition in which it is declared (see section \ref{operation}); the
+scope of a lambda- or let-bound variable is the whole expression in
+which it is declared (see sections \ref{LambdaAbstraction} and
+\ref{ExtendedExpression}).
+\begin{example}
+\begin{verbatim}
+    FUN quickSort:seq[nat]->seq[nat]
+    DEF quickSort(s) == 
+      IF s <>? THEN <>
+      IF s ::? THEN
+         LET compare == ft(s)
+             smaller == filter(\\x.x<compare)(rt(s))
+             equal   == filter(\\y.y=compare)(s)
+             larger  == filter(\\z.z>compare)(rt(s))
+         IN quickSort(smaller)++(equal++quickSort(larger))
+      FI
+\end{verbatim}
+The pattern variable \vb{s} can be used in the whole expression,
+whereas the let-bound variables \vb{compare}, \vb{smaller}, \vb{equal}
+and \vb{larger} can only be used inside the extended expression, and
+the lambda-bound variables \vb{x}, \vb{y} and \vb{z} only in the
+corresponding lambda abstraction.
+\end{example}
+
+\paragraph{}
+
+Local names may cause holes in the scopes of global names. This
+happens where the local name has the same identifier as a global
+operation. In other words, there is no overloading between global and
+local names, except for sorts; their identifier may coincide with a
+local name.
+\begin{example}
+    In the following definition, the function \vb{length} cannot be
+    used in the definition of \vb{volume} because of its argument \vb{length}.
+\begin{verbatim}
+    FUN length: object->real
+    FUN volume: real**real**real->real
+    DEF volume(length,width,height) == length*width*height
+\end{verbatim}
+\end{example}
+
+\paragraph{}
+
+For programming convenience, the definition of local names with the
+same identifier in overlapping scopes is forbidden.
+\begin{examples}
+    In the following implementation, the let-bound variable \vb{z} must be
+    different from the pattern variables:
+\begin{verbatim}
+    DEF f(x,y) == x*(IF y<0 THEN z WHERE z==y*y ELSE y FI)
+\end{verbatim}
+    However, the definition of two identical local names in
+    non-overlapping (local) scopes is permitted: 
+\begin{verbatim}
+    DEF f(x) == IF x<0  THEN res WHERE res==x*neg(x)
+                IF x>=0 THEN res WHERE res==x*x
+                FI
+\end{verbatim}
+    In the case of pattern-based definitions, there may be identical
+    pattern variables in different equations:
+\begin{verbatim}
+    DEF <> ++s == s
+    DEF s++ <> == s
+    DEF (ft::rt)++s == ft::(rt++s)
+\end{verbatim}
+\end{examples}
+
+\chapter{Programming in {\sc Opal}}
+
+This section describes some of the questions arising when running an
+{\sc Opal} program.
+
+\section{What is an {\sc Opal} Program?}
+
+An {\sc Opal} {\em program} consists of a {\em top-level structure}
+and the structures that are (transitively) imported by it. The import
+relation must be acyclic. For all structures constituting a program, a
+signature and an implementation part must exist. The top-level
+structure must export (at least) one special constant operation, the
+{\em top-level command} (see section \ref{IO}).
+
+An {\sc Opal} program can be compiled and linked together with a small
+runtime library to produce a self-contained, executable program. 
+During the linking phase, the user is requested to specify the
+top-level command that is to be interpreted when the program is
+executed. This top-level command is interpreted in the runtime
+environment, which usually leads to a complete sequence of
+input/output actions.
+
+\section{Input/Output}
+\label{IO}
+
+{\sc Opal} realizes input/output by {\em commands\/} of the sort \verb"com".
+Typical -commends are requests such as ``read the next input'' and ``write this
+afterwards''.  Whenever a command is executed by the runtime system, it returns
+an answer of the sort \vb{ans}.  Both sorts are defined in the structure
+\vb{Com}.  Obviously, executing a program is a (complex) request to the runtime
+system.  Therefore, the sort of the top-level command of an {\sc Opal} program
+must be of sort \vb{com}.
+
+The synchronization of commands and answers can be achieved through
+the introduction of continuations. A {\em continuation} simply
+encapsulates the synchronization between the user and the operating
+system. Commands can be built up by using the function \vb{;} provided
+by the structure \vb{ComCompose}. They have two ``parts'': a simple
+command which the runtime system will interpret, and a continuation
+function that accepts the operating system answer and yields a new
+command. The runtime system will call this function after it has
+processed the request, and will pass as arguments the result of the
+request. Since the result of the continuation is a new command, the
+operating system will again interpret it, and so on.
+
+This interface to I/O is monadic in the sense of
+\cite{Peyton93,Wadler92}. Computations are distinguished from values in that
+coomputations have parametrized type {\tt com}. Computations which just
+return values are constructed by the (injection) function {\tt
+yield}. Different computations are composed using the function {\tt ;} and
+these functions observe the laws defining monads. To our knowledge {\sc
+Opal} is the first programming language with an implemented monadic
+interface to I/O, since it was completed in this form in 1990.
+
+\subsection{A Simple Program}
+
+Our first program is an {\sc Opal} program that echoes the user`s
+input until an empty line is entered. The structure
+\vb{MyFirstProgram} is the top-level structure with \vb{echo} as the
+top-level command:
+\begin{verbatim}
+    SIGNATURE MyFirstProgram
+    IMPORT  Void          ONLY void
+            Com[void]     ONLY com
+    FUN echo: com[void]                           -- top-level command
+
+    IMPLEMENTATION MyFirstProgram
+    IMPORT  Void          ONLY void nil
+            Nat           ONLY nat 0            
+            Char          ONLY char newline
+            String        ONLY string empty?
+            Com           ONLY com ans exit okay fail
+            ComCompose    ONLY ;
+            Stream        ONLY input stdIn readLine
+                               output stdOut write
+    DEF echo == readLine(stdIn) ; processline                   -- (1)
+    FUN processline: ans[string]->com[void]
+    DEF processline(okay(s)) ==
+        IF s empty? THEN exit(0)                                -- (2)
+        ELSE write(stdOut,s) ; (write(stdOut,newline) ;         -- (3)
+                       (readLine(stdIn) ; processline)) FI      -- (4)
+    DEF processline(fail(_)) ==
+        write(stdOut,"Cannot read user input")                  -- (5)
+\end{verbatim}
+
+The following aspects deserve mention:
+
+Firstly, the \vb{;} in line(3) is the standard case for a
+``write output'' command that is followed by some other command
+ignoring the value returned by the runtime system. Here, \vb{;} has
+the functionality
+\begin{verbatim}
+    com[void]**com[void]->com[void]
+\end{verbatim}
+
+Secondly, the \vb{;} in line (1) with the functionality
+\begin{verbatim}
+    com[string]**(ans[string]->com[void])->com[void]
+\end{verbatim}
+is a typical way of building up a ``read input'' command followed by a
+function that processes its result. If \vb{readLine:input->com[string]} is
+successfully evaluated, the operating system returns the variant \vb{okay}
+of the sort \vb{ans[string]} that is fed up into the continuation
+function \vb{processline}. In case an error results, the \vb{fail}
+variant is returned.
+
+Thirdly, line (2) and (5) are simple commands: the program will
+terminate.
+
+\subsection{State-Preserving Beyond Input/Output Boundaries}
+
+In general, commands may consist of input/output actions involving
+arbitrary complex data structures. State-preserving beyond
+input/output boundaries is realized by partial instantiation of
+functions that must still have the functionality
+\vb{ans[\ldots]->com[\ldots]} as their result functionality.
+
+Our second program calculates the average of a sequence of numbers.  Here, the
+first parameter group of the function \vb{average} is used to transfer the count
+and sum of the already processed input. To shorten the presentation, we ignore
+structure boundaries and import clauses and do not give the implementations of
+\vb{readNat} and \vb{writeNat} (they are not part of the library).
+\begin{verbatim}
+    FUN prog2: com[void]                       -- top-level command
+    DEF prog2 == (writeLine(stdOut,1stLn) ;
+                  writeLine(stdOut,2ndLn)) ;
+                 (prompt ; average(0,0))
+        WHERE 1stLn=="Average: Please type a sequence of numbers"
+              2ndLn=="         0 stops input and prints the result:"
+    FUN prompt: com[nat]
+    DEF prompt == write(stdOut,"> "!) ; readNat(stdIn)
+    FUN average: nat**nat->ans[nat]->com[void]
+    DEF average(count,sum)(okay(n)) ==         -- process correct input
+        IF n=0 THEN write(stdOut,"= ") ;
+                    (writeNat(stdOut,sum/count) ;
+                     write(stdOut,newline))
+               ELSE prompt ; average(count+1,sum+n) FI
+    DEF average(count,sum)(fail(_)) ==         -- ignore errors
+        prompt ; average(count,sum)
+\end{verbatim}
+
+\subsection{Not Inherently Sequential Input/Output}
+
+With our fully referentially transparent commands, we are even able to
+cope with the organization of input that is not inherently sequential.
+
+Suppose we wish to write a function \vb{readLisp} that should
+substitute each atom of a lisp-like tree by a number that is to be
+interactively entered by the user. We define a command that preserves
+the shape of the given lisp-like structure in the following way (note
+that \vb{o} is the function composition function, and that \vb{\&} is a
+variant of \vb{;} that calls the continuation function only on success
+with the returned data):
+\begin{verbatim}
+    DATA lisp == atom(valOf:nat)
+                 cons(car:lisp, cdr:lisp)
+    FUN readLisp: input**lisp->com[lisp]
+    DEF readLisp(in,atom(x)) ==
+        readNat(in) & (yield o           -- build a command that yields
+                        (okay o          -- the answer consisting of
+                           atom))        -- an atom embedding
+                                         -- the result of readNat
+    DEF readLisp(in,lisp(l1,l2)) ==
+        readLisp(in,l1) &                -- call readLisp of car
+        (\\newl1.readLisp(in,l2) &       -- then call readLisp of cdr
+           (\\newL2.yield(okay(cons(newl1,newl2)))
+                                         -- then yield the new cons
+\end{verbatim}
+
+\section{The Library}
+
+With the exception of \vb{bool'BOOL} and \vb{denotation'DENOTATION},
+{\sc Opal} has no sorts built into the language. Consequently, every
+data type that is to be used in a program has first to be defined by
+means of a suitable structure. It obviously makes no sense, though, to
+let every programmer start again from scratch. So there are some basic
+structures available in the programming environment of the {\sc Opal}
+compiler.
+
+It should be noted, however, that these structures are not different
+from any other structure. In particular, most of them are written in
+{\sc Opal}. There are also some structures, though, that are
+substituted by hand-written ones, having the same semantics as an {\sc
+Opal} implementation, but more efficient in terms of storage and/or
+time. (The {\sc Opal} user is not aware of the kind of structure he
+uses.) 
+
+The structure \vb{Seq}, for example, contains at least those functions
+that are presented in section \ref{ParameterizedStructures}. A
+detailed description of the library is given in "Bibliotheca Opalica - A
+Document on Structured Use and Abuse", which is available in the
+distribution of the {\sc Opal} system. 
+
+\begin{appendix}
+
+\chapter{{\sc Opal} Syntax}
+\label{OpalSyntax}
+
+The formal definition of the syntax is given in EBNF. For each grammar
+rule, the corresponding context conditions and attributes are
+specified informally. The context conditions are preceded by
+`\copyright', and the attributes by `\cs'. Syntactic transformations are
+preceded by \Da. The context conditions are additionally
+supplied with an underlined short name reflecting the corresponding
+error. Some conditions that are considered by the identification
+function are double-underlined.  For convenience's sake the grammar
+rules are presented in semantic sections, each beginning with a short
+description. Furthermore, they are formulated with a view to providing
+good readability for humans rather than facilitating parsing.
+
+The metasymbols of EBNF are set as \ms{[}, \ms{]}, \ms{(}, \ms{)},
+\ms{$|$}, \ms{$\|$}, \ms{$^+$} and \ms{$^*$}; nonterminals are set as
+exemplified by \nt{SignaturePart} and terminals as \tm{IMPORT}.
+
+The other extensions to normal BNF have the following meanings (see
+\cite{Waite84}): \[
+\begin{array}{ll}
+    Abbreviation & Meaning \\
+    \\ X \ms{::=} \alpha \ms{(} \beta \ms{)} \gamma & X \ms{::=}
+    \alpha Y \gamma \\ & Y \ms{::=} \beta \\
+    \\ X \ms{::=} \alpha \ms{[} \beta \ms{]} \gamma & X \ms{::=}
+    \alpha \gamma \ms{$|$} \alpha \ms{(} \beta \ms{)} \gamma \\
+    \\ X \ms{::=} \alpha u\ms{$^+$} \gamma & X \ms{::=} \alpha Y
+    \gamma \\ & Y \ms{::=} u \ms{$|$} Y u \\
+    \\ X \ms{::=} \alpha u\ms{$^*$} \gamma & X \ms{::=} \alpha \ms{[}
+    u\ms{$^+$} \ms{]} \gamma \\
+    \\ X \ms{::=} \alpha \ms{$\|$} t & X \ms{::=} \alpha \ms{(} t
+    \alpha \ms{)}\ms{$^*$}
+\end{array}
+\]
+
+Here, $\alpha$, $\beta$ and $\gamma$ are arbitrary right-hand sides of
+rules, $Y$ is a new nonterminal, $u$ is either a single symbol or a
+parenthesized right-hand side, and $t$ is a terminal symbol.
+
+\section{Definitions and general context conditions}
+
+{\em Names} are used to refer to objects in a structure. To distinguish
+overloaded objects, names have two components besides the {\em identifier}: the
+origin and the kind. The {\em origin} reflects the (instance of a) structure in
+which the name is declared; the {\em origin identifier} is the name of this
+structure, the {\em instantiation} is a list of names (called {\em instance
+  names\/}) refering to the formal or actual parameters of the structure. The
+{\em kind} of a name distinguishes sorts and operations, and for operations it
+reflects the operation's functionality based on the names of the used sorts.
+
+There are two kinds of names, depending on their scope. {\em Global names} refer
+to sorts and operations of a structure.  A global name can be given {\em
+  attributes} indicating that it is the {\em n$^{\mbox{th}}$ parameter\/} of a
+structure, it is a {\em free constructor\/} and its n$^{\mbox{th}}$ instance
+name must be {\em known\/}. {\em Local names\/} refer to pattern variables,
+lambda-bound and let-bound variables, all of which are operations; they consist
+only of an identifier and a kind. There are three general context conditions for
+names:
+\begin{concon}
+  \item \dul{local name as actual parameter}: The instantiation of a name must
+    be a list of global names.
+  \item \dul{compound object}: The functionality of an operation's
+    name may not be a Cartesian product.
+  \item \ul{local sort}: A local name may not be a sort.
+\end{concon}
+A {\em signature} is a set of names. The {\em exported signature} of a
+structure contains the names that can be imported by other structures.  The
+{\em global signature} of a structure (or its signature or implementation
+part) consists of the global names of the structure (or its parts). It is
+divided into two disjoint sets: the {\em internal signature} contains the
+names that are {\em declared\/} by an explicit declaration; the {\em
+  external signature} contains the {\em imported\/} names.  The same global
+name can be declared (or imported) twice.
+
+A global name must be complete in order to be used. A global name is {\em
+  complete} if all the names in its constituent parts are elements of the global
+signature. For this, it is sufficient to demand that a name of the global
+signature is semicomplete (and this is necessary for uninstantiated imports). A
+global name is {\em semicomplete} if all names in its constituent parts are
+elements of the global signature or un{\em known\/} instance names. There are
+two general context conditions for the names of the global signature:
+\begin{concon}
+  \item \ul{incomplete name}: All names of the global signature must
+    be semicomplete.
+  \item \ul{recursive name}: No name of the global signature may
+    contain itself unless it is a parameter.
+\end{concon}
+Function definitions and their parts have a {\em local signature},
+which is the set of global and local names that can be used in them. 
+Each global name of the global signature is contained in a local
+signature if it is a sort, or there is no local name with the same
+identifier in this local signature. A local name is contained in a
+local signature if it is contained in the local signature of the
+surrounding construct, or it is explicitly {\em added} to the local
+signature. There are two general context conditions for local
+signatures:
+\begin{concon}
+  \item \dul{overloaded local name}: There may not be two local
+    names with the same identifier in a local signature.
+  \item \dul{duplicate local name}: A local name may not be added
+    twice to a signature.
+\end{concon}
+A {\em substitution} with respect to a list of {\em formal} names, and a list of
+{\em actual\/} names of the same length, is a function that yields for a name
+the original name with all occurrences of the formal names replaced by the
+corresponding actual names. If a substitution replaces the n$^{\mbox{th}}$
+instance name of the original name, the n$^{\mbox{th}}$ instance name of the
+yielded name must be {\em known\/}. In case of a {\em free\/} substitution, the
+n$^{\mbox{th}}$ instance name must not necessarily be known.
+
+A substitution is {\em proper} if both lists have the same length and the
+substitution of the kind of each formal name yields the kind of the
+corresponding actual name. A substitution of a signature is the set of
+substitutions of all its elements.
+
+In the syntax, the denotation of a name may omit parts of it. Such a
+denotation is called a {\em partial name}. A partial name {\em matches} a
+name if all its given parts match. If parts of an origin are given, the
+partial name does not match any local name. The {\em matching set\/} of a
+partial name is the set of matching names in the global or local signature
+under consideration.
+
+A {\em selection} is a function which maps every partial name (except
+those listed in selected imports) to an element of its matching set,
+called the {\em selected name}. A selection is {\em more specific}
+than another if they only differ at points where the first yields a
+global name and the other a local name. An {\em identification} is a
+selection, where all double-underlined context conditions are
+fulfilled and there is no more specific selection that considers these
+conditions.  The selected name for an identification is called the
+{\em identified name}. There are two major context conditions:
+\begin{concon}
+  \item \ul{undefined identification}: An identification must exist,
+    i.e., there is a function from partial names to names so that all
+    double-underlined context conditions are fulfilled for the
+    identified names.
+  \item \ul{ambiguous identification}: The identification must be
+    unique, i.e., there is a most specific function from partial names to
+    names so that all double-underlined context conditions are fulfilled.
+\end{concon}
+
+An {\em application analysis\/} is a function which takes a sequence of
+expressions and assigns each operator its arguments called {\em identified
+arguments\/}. An argument is an {\em identified argument\/} iff it is type
+correct regarding the functionality of the operator. If the analysis can find an
+unambiguous and type correct application structure for all expressions of the
+sequence it delivers the deduced structure with one operator as {\em top
+operator\/} of the structure. If the analyzed structure is ambiguous the analysis
+tries to build an unambiguous application considering right-associciativity for
+the operator. An error is yielded if no umambiguous application regarding the
+types and the right-associative rule can be deduced. 
+
+Each name of the internal signature (except the parameters) can be
+implemented. An {\em implementation} of a name is a syntactical part
+of the program text such as a data type definition or a set of
+function definitions. There are two general context conditions:
+\begin{concon}
+  \item \dul{parameter implementation}: There may not be an
+    implementation of a parameter.
+  \item \ul{duplicate implementation}: There may not be more than one
+    implementation of a name.
+\end{concon}
+
+\section{Structures}
+
+A program is a collection of structures. A structure consists of a
+signature part and an implementation part. The former is the export
+interface of the structure and can be compiled separately from the
+latter.
+
+\begin{concon}
+  \item \ul{duplicate structure name}: Every structure in a program
+    must have a unique identifier.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+  \nt{SignaturePart} & \ms{::=} & \tm{SIGNATURE} \nt{Ident} \ms{[}
+    \tm{[} \nt{Name} \ms{$\|$} \tm{,} \tm{]} \ms{]} \\
+        & &  \ms{(} \nt{Signature} \ms{$|$} \nt{FreeType} \ms{)}\ms{$^*$}
+  \end{tabular}
+\end{synrule}
+
+\begin{concon}
+  \item[\cs] The global signature of the signature part consists of
+    all names that are declared or imported in the signature part.
+  \item[\cs] The n$^{\rm th}$ identified name of the optional \nt{Name} list is the
+    n$^{\rm th}$ parameter.
+  \item \ul{duplicate parameter}: The identified names must be
+    different.
+  \item \dul{imported parameter}: The identified names must be
+    elements of the internal signature.
+  \item \dul{invisible parameter kind}: The kind of the identified
+    names may not contain names of the internal signature unless they
+    are parameters themselves.
+  \item[\cs] The actual origin of the structure consists of \nt{Ident} as
+    origin identifier, and the list of identified names as
+    instantiation.
+  \item[\cs] The exported signature of the structure is the signature
+    of the signature part without the parameters.
+  \item \ul{empty export}: The exported signature may not contain only names
+  with the origin \tm{BOOL} or \tm{DENOTATION}.
+  \item \ul{possible name clash}: The internal signature of the
+    signature part may not contain two names for which there are actual
+    parameters, so that their substitutions with respect to the formal and
+    actual parameters yield the same name.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+    \nt{ImplementationPart}   &  \ms{::=} & \tm{IMPLEMENTATION} \nt{Ident}
+      \ms{[} \tm{[} \nt{Name} \ms{$\|$} \tm{,} \tm{]} \ms{]} \\
+     & &  \ms{(} \nt{Signature} \ms{$|$} \nt{FreeType} \\
+     & & \ms{$|$} \nt{DataDefinition} \ms{$|$} \nt{FunDefinition} \ms{)}\ms{$^*$}
+  \end{tabular}
+\end{synrule}
+\begin{concon}
+  \item \ul{no signature part}: There must be a signature part with
+    \nt{Ident} as structure identifier.
+  \item[\cs] The global signature of the implementation part consists of the
+    global signature of the corresponding signature part (with all free
+    constructor attributes reset) together with all names that are declared or
+    imported in the implementation part.
+  \item \dul{different parameter list}: If a \nt{Name} list is given, the
+    n$^{\rm th}$ identified name must be the n$^{\rm th}$ parameter, and all
+    parameters must be given.
+\end{concon}
+
+\section{Signature}
+\label{signature}
+
+The signature provides sorts and operations of the internal and
+external signature. Repeated declarations and imports are possible.
+
+\begin{synrule}
+  \nt{Signature} \ms{::=} \tm{SORT} \nt{Ident}\ms{$^+$} \ms{$|$}
+    \tm{FUN} \ms{(} \nt{Ident}\ms{$^+$} \tm{:} \nt{Functionality} \ms{)}
+    \ms{$^+$} \ms{$|$} \nt{Import} \ms{$|$} \nt{Law}
+\end{synrule}
+\begin{concon}
+  \item[\cs] In case of a \tm{SORT} declaration, for each \nt{Ident} a
+    name with the given \nt{Ident} as identifier, the actual origin as
+    origin, and \tm{SORT} as its kind is declared to be element of the
+    internal signature.
+  \item[\cs] In case of a \tm{FUN} declaration, for each \nt{Ident} a
+    name with the given \nt{Ident} as identifier, the actual origin as
+    origin, and the given functionality as its operation's kind is
+    declared to be element of the internal signature.
+\end{concon}
+
+\begin{synrule}
+  \nt{Import} \ms{::=} \tm{IMPORT} \ms{(} \nt{Ident} \ms{[} \tm{[}
+    \nt{Name} \ms{$\|$} \tm{,} \tm{]} \ms{]} \nt{Selection} \ms{)}\ms{$^+$}
+\end{synrule}
+\begin{concon}
+  \item[\cs] The structures \tm{BOOL} and \tm{DENOTATION} are always
+    imported completely.
+  \item \ul{unknown structure}: \nt{Ident} must be the identifier of
+    a structure in the program.
+  \item \ul{cyclic import}: The structures must be in an acyclic
+    import relation. (In particular, \nt{Ident} may not be the
+    identifier of the actual structure.)
+  \item \ul{uninstantiated import in signature part}: If an import
+    of a parameterized structure occurs in a signature part, a \nt{Name}
+    list must be given.
+  \item[\cs] The identified names of the optional \nt{Name} list are
+    called actual parameters.
+  \item \dul{improperly instantiated import}: If a \nt{Name} list is
+    given, the substitution with respect to the formal and actual
+    parameter lists must be proper.
+  \item[\cs] If a \nt{Name} list is given, all names of the structure's exported
+    signature are substituted with respect to the formal and actual parameters.
+    The substituted names constitute the import's signature. If no list is
+    given, the union of all proper free substitutions of the names of the
+    structure's export signature is the import's signature.
+\end{concon}
+
+\label{selection}
+\begin{synrule}
+    \nt{Selection} \ms{::=} \tm{ONLY} \nt{Name}\ms{$^+$}
+      \ms{$|$} \tm{COMPLETELY}
+\end{synrule}
+\begin{concon}
+%  \item \ul{complete import in signature part}: In a signature part,
+%    only \tm{ONLY} imports may be used.
+  \item[\cs] In case of an \tm{ONLY} import, for each \nt{Name} all
+    matching names of the import's signature are imported.
+  \item \dul{empty import}: In an \tm{ONLY} import, each \nt{Name}
+    must match at least one name of the import's signature.
+  \item \ul{instantiation in selection}: If \nt{Name} matches one
+    substitution of an exported name in an uninstantiated import, it
+    must match all its other proper substitutions, too.
+  \item[\cs] In case of a \tm{COMPLETELY} import, all names of the
+    import's signature are imported.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+    \nt{Functionality} &\ms{::=}& \nt{ProductFct} \ms{$|$} \nt{FunctionFct}\\
+    \nt{ProductFct}   &\ms{::=}& \nt{SimpleFct} \ms{$\|$} \tm{**} \ms{$|$}
+      \tm{(} \nt{ProductFct} \tm{)}\\
+    \nt{FunctionFct} &\ms{::=}& \nt{ProductFct} \tm{->} \nt{Functionality}
+      \ms{$|$} \tm{(} \tm{)} \tm{->} \nt{Functionality}\\
+    \nt{SimpleFct} &\ms{::=}& \nt{Name} \ms{$|$} \tm{(}
+      \nt{FunctionFct} \tm{)} \ms{$|$} \tm{(} \nt{SimpleFct} \tm{)}
+  \end{tabular}
+\end{synrule}
+\begin{concon}
+  \item \dul{operation as sort}: The identified name must be a sort.
+\end{concon}
+
+\section{Free Types and Data Definitions}
+
+Sorts are implemented by data definitions and can be specified by free types.
+
+\begin{synrule}
+  \nt{FreeType} \ms{::=} \tm{TYPE} \nt{Name} \tm{==} \nt{Variant}\ms{$^+$}
+\end{synrule}
+\begin{concon}
+  \item[\cs] The name consisting of the identifier of the partial name
+    \nt{Name}, the actual origin, and \tm{SORT} as its kind is declared
+    to be element of the internal signature.
+  \item \dul{improperly named free type}: \nt{Name} must match the
+    declared name.
+  \item \dul{parameter as free type}: \nt{Name} may not be a
+    parameter.
+  \item \ul{duplicate free type}: There may not be more than one
+    \nt{FreeType} for the declared name.
+  \item[\cs] All constructors that are declared in the \nt{Variant} list
+    are free constructors.
+  \item \ul{duplicate free constructor/discriminator}: All constructors and
+    discriminators that are declared in the \nt{Variant} list must be
+    different.
+  \item \ul{parameter as free constructor/discriminator/selector}: No
+    constructor, discriminator or selector may be a parameter.
+\end{concon}
+
+\begin{synrule}
+    \nt{DataDefinition} \ms{::=} \tm{DATA} \nt{Name} \tm{==} \nt{Variant}\ms{$^+$}
+\end{synrule}
+\begin{concon}
+  \item[\cs] The name consisting of the identifier of the partial name
+    \nt{Name}, the actual origin, and \tm{SORT} as its kind is declared
+    to be element of the internal signature.
+  \item[\cs] \nt{DataDefinition} is an implementation of the declared
+    name and of all selectors of the \nt{Variant} list.
+  \item[\cs] \dul{improperly named data definition}: \nt{Name} must
+    match the declared name.
+  \item[\cs] If there is no free type for the declared name, all
+    constructors that are declared in the \nt{Variant} list are said to be
+    free constructors.
+\end{concon}
+
+\begin{synrule}
+  \nt{Variant} \ms{::=} \nt{Name} \ms{[} \nt{Components} \ms{]}
+\end{synrule}
+\begin{concon}
+  \item[\cs] The name consisting of the identifier of the partial name
+    \nt{Name}, the actual origin, and the ``constructor functionality''
+    as its kind is declared to be an element of the internal signature. 
+    If \nt{Components} are given, the constructor functionality is the
+    function functionality with the functionality of \nt{Components} as
+    its domain and the implemented (or specified) sort as its co-domain,
+    otherwise the constructor functionality is the implemented sort. The
+    declared name is called constructor.
+  \item \dul{improperly named constructor}: \nt{Name} must match the
+    constructor.
+  \item[\cs] The name consisting of the identifier of the partial name
+    \nt{Name} with an appended question mark, the actual origin, and the
+    ``discriminator functionality'' as its kind is declared to be an
+    element of the internal signature. The discriminator functionality
+    is the function functionality with the implemented (or specified)
+    sort as its domain and the predefined sort \tm{bool} as its
+    co-domain. The declared name is called discriminator.
+  \item[\cs] \nt{Variant} is an implementation of the constructor and of
+    the discriminator, if it is part of a \nt{SortImplementation}.
+\end{concon}
+
+\begin{synrule}
+  \nt{Components}       \ms{::=} \tm{(} \ms{(} \nt{Name} \tm{:}
+    \nt{Functionality} \ms{)} \ms{$\|$} \tm{,} \tm{)}
+\end{synrule}
+\begin{concon}
+  \item[\cs] For each \nt{Name}, the name consisting of the identifier
+    of the partial name \nt{Name}, the actual origin, and its ``selector
+    functionality'' as its kind is declared to be an element of the
+    internal signature. The selector functionality is the function
+    functionality with the implemented (or specified) sort as its domain
+    and the given functionality as its co-domain. The declared name is
+    called selector.
+  \item \dul{improperly named selector}: \nt{Name} must match the
+    declared name.
+  \item \ul{duplicate selector definition}: All selectors must be
+    different.
+  \item \ul{tupled component}: No \nt{Functionality} may be a
+    Cartesian product.
+  \item[\cs] The functionality of \nt{Components} is the Cartesian product of
+    all functionalities.
+\end{concon}
+
+\section{Function Definitions}
+
+Operations are implemented by a set of function definitions. The
+left-hand side of a function definition determines the definition
+target. There are three different kinds of expressions on the
+left-hand side that are similar but differ in details: complete
+left-hand sides, patterns and pattern constructors. {\em Complete
+left-hand sides} are expressions that contain the definition target,
+which is applied to {\em patterns}. A pattern is a {\em pattern
+constructor} applied to patterns or a pattern variable, or a pattern
+constructor. To shorten the syntax description, they are only
+distinguished by the additional attribute {\em expression kind}.
+
+\begin{concon}
+  \item[\cs] The set of \nt{FunImplementation} with the same definition
+    target is an implementation of the definition target.
+\end{concon}
+
+\begin{synrule}
+  \nt{FunDefinition} \ms{::=} \tm{DEF} \nt{TopLeftHandSide} \tm{==} \nt{Expression}
+\end{synrule}
+\begin{concon}
+  \item[\cs] \nt{LeftHandSide} is a complete left-hand side.
+  \item[\cs] The pattern variables of \nt{LeftHandSide} are added to
+    the local signature of the \nt{Fun\-Def\-i\-ni\-tion}.
+  \item \dul{wrongly typed implementation}: The functionality of
+    \nt{LeftHandSide} must equal \nt{Ex\-press\-ion}.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+  \nt{TopLeftHandSide} & \ms{::=} & \nt{SimpleLhs} \ms{$|$} \nt{LhsTopInfix} \\
+  \nt{SimpleLhs}    & \ms{::=} & \nt{LhsName} \ms{$|$} \nt{LhsTuple} \ms{$|$}
+  \nt{LhsApply} \ms{$|$} \nt{Wildcard} 
+  \end{tabular}
+\end{synrule}
+
+\begin{concon}
+  \item[\cs] If \nt{SimpleLhs} is a \nt{Wildcard} then \nt{SimpleLhs} is a
+  pattern. 
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+  \nt{LhsTopInfix}        & \ms{:= } & 
+                       \nt{SimpleLhs LhsName} \ms{[} \nt{SimpleLhs} \ms{]}
+                       \ms{$|$} \tm{(} \tm{)} \nt{LhsName} 
+  \end{tabular}
+\end{synrule}
+\begin{concon}
+  \item \ul{higher-order infix pattern constructor}: \nt{LhsTopInfix}
+    may not be a higher-order pattern constructor.
+  \item[\cs] Both \nt{SimpleLhs} are patterns. \nt{LhsName} is a
+    pattern constructor if \nt{LhsTopInfix} is a pattern, and it is
+    complete if \nt{LhsTopInfix} is complete.
+  \item \dul{wrongly typed lhs infix}: The functionality of
+    \nt{LhsName} must be a function functionality with the (flattened)
+    Cartesian product of the functionalities of the given \nt{SimpleLhs}
+    (or the empty Cartesian product) as its domain.
+  \item[\cs] The functionality of \nt{LhsTopInfix} is the co-domain of the
+    functionality of \nt{LhsName}.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+  \nt{LeftHandSide} & \ms{::=} & \nt{SimpleLhs} \ms{$|$} \nt{LhsInfix}\\
+  \nt{LhsInfix}   &  \ms{::=} & \nt{SimpleLhs LhsName} \\
+           & & \ms{$|$} \nt{SimpleLhs} \ms{(} \nt{LhsName SimplLhs} \ms{)$^+$} \\
+              & & \ms{$|$} \tm{(} \tm{)} \nt{LhsName} 
+  \end{tabular}
+\end{synrule}
+\begin{concon}
+  \item \ul{higher-order infix pattern constructor}: \nt{LhsInfix}
+    may not be a higher-order pattern constructor.
+  \item[\cs] All \nt{SimpleLhs} are patterns. \nt{LhsName} is a
+    pattern constructor if \nt{LhsInfix} is a pattern, and it is
+    complete if \nt{LhsInfix} is complete.
+  \item[\cs] All \nt{LhsName} must be the same complete name. 
+  \item[\cs] The binding of \nt{LhsName} is right-associative. 
+  \item \dul{wrongly typed lhs infix}: The functionality of
+    \nt{LhsName} must be a function functionality with the (flattened)
+    Cartesian product of the functionalities of the given \nt{SimpleLhs}
+    (or the empty Cartesian product) as its domain.
+  \item[\cs] The functionality of \nt{LhsInfix} is the co-domain of the
+    functionality of \nt{LhsName}.
+\end{concon}
+
+\begin{synrule}
+  \nt{LhsTuple} \ms{::=} \tm{(} \ms{(} \ms{[} \nt{LocalName} \tm{AS} \ms{]}
+   \nt{LeftHandSide} \ms{)} \ms{$\|$} \tm{,} \tm{)} \\ \contsynrule \ms{[} \tm{:}
+    \nt{Functionality} \ms{]}
+\end{synrule}
+\begin{concon}
+  \item[\cs] Each \nt{LeftHandSide} inherits its expression kind from
+    \nt{LhsTuple}.
+  \item \ul{improper tuple}: If \nt{LhsTuple} is not a pattern, it
+    must not contain more than one \nt{LeftHandSide}.
+  \item \ul{improper pattern synonym}: If \nt{LocalName} is given,
+    \nt{LeftHandSide} must be a pattern.
+  \item[\cs] The identified names for every \nt{LocalName} are pattern
+    variables.
+  \item \dul{wrongly typed pattern synonym}: The functionality of a
+    pattern variable and the functionality of the corresponding
+    \nt{LeftHandSide} must be equal.
+  \item[\cs] The functionality of \nt{LhsTuple} is the (flattened)
+    Cartesian product of the functionalities of all \nt{LeftHandSides}.
+  \item \dul{wrong typing of lhs tuple}: The functionality of
+    \nt{LhsTuple} must equal a given \nt{Functionality}.
+\end{concon}
+
+\begin{synrule}
+  \nt{LhsApply} \ms{::=} \nt{SimpleLhs} \ms{(} \nt{LhsTuple} \ms{$|$}
+    \tm{(} \tm{)} \ms{)}
+\end{synrule}
+\begin{concon}
+  \item \dul{higher-order pattern constructor}: \nt{LhsApply} may
+    not be a higher-order pattern constructor.
+  \item[\cs] \nt{LhsTuple} is a pattern. \nt{SimpleLhs} is a pattern
+    constructor if \nt{LhsApply} is a pattern, and it is complete if
+    \nt{LhsApply} is complete.
+  \item \dul{wrongly typed lhs apply}: The functionality of
+    \nt{SimpleLhs} must be a function functionality with the
+    functionality of the given \nt{LhsTuple} (or the empty Cartesian
+    product) as its domain.
+  \item[\cs] The functionality of \nt{LhsApply} is the co-domain of the
+    functionality of \nt{SimpleLhs}.
+\end{concon}
+
+\begin{synrule}
+  \nt{LhsName} \ms{::=} \nt{Name}
+\end{synrule}
+
+The context conditions and attributes for \nt{LhsName} differ for
+complete expressions, patterns and pattern constructors. They are
+therefore listed separately.
+
+If \nt{LhsName} is a complete left-hand side:
+\begin{concon}
+  \item[\cs] The identified name is the definition target.
+  \item \dul{improperly named function}: The identified name must be
+    an element of the internal signature.
+  \item \dul{sort defined by function definition}: The identified
+    name must be an operation.
+  \item[\cs] The functionality of \nt{LhsName} is the functionality of
+    the identified name.
+\end{concon}
+If \nt{LhsName} is a pattern constructor:
+\begin{concon}
+  \item \dul{non-constructor used as constructor}: The identified
+    name must be a free constructor.
+  \item[\cs] The functionality of \nt{LhsName} is the functionality of
+    the identified name.
+\end{concon}
+If \nt{LhsName} is a pattern, there are two possibilities:
+\begin{concon}
+  \item[\cs] If the identified name is a local name, it is a pattern
+    variable.
+  \item \dul{non-constant constructor used as pattern}: If the identified
+    name is a global name, it must be a free constructor with a sort as its
+    functionality.
+  \item[\cs] The functionality of \nt{LhsName} is the functionality of
+    the identified name.
+\end{concon}
+
+\section{Expressions}
+
+Expressions are used to define the right-hand side of function definitions.
+
+\begin{synrule}
+  \begin{tabular}{lll}
+  \nt{Expression} & \ms{::=} & \nt{SimpleExpression} \ms{$|$} \nt{Infix} \ms{$|$}
+    \nt{Abstraction} \\ 
+    & & \ms{$|$} \nt{Cases} \ms{$|$} \nt{Let} \ms{$|$} \nt{Where}\\
+  \nt{SimpleExpression} & \ms{::=} & \nt{ValueDenotation} \ms{$|$} \nt{Tuple}
+    \ms{$|$} \nt{Application} \\
+  \nt{ValueDenotation} & \ms{::=} & \nt{Name} \ms{$|$} \nt{Denotation} \ms{$|$}
+  \nt{SectionPattern}
+  \end{tabular}
+\end{synrule}
+\begin{concon}
+  \item \dul{sort as operation}: The identified name must be an
+    operation.
+  \item[\cs]      The functionality of \nt{Name} is the functionality of
+    the identified name, the functionality of \nt{Denotation} is the
+    predefined sort \tm{denotation}. The functionality of
+    \nt{ValueDenotation} is the functionality of the given alternative.
+\end{concon}
+
+\begin{synrule}
+  \nt{Tuple}    \ms{::=} \tm{(} \nt{Expression} \ms{$\|$} \tm{,} \tm{)} \ms{[} \tm{:} \nt{Functionality} ]
+\end{synrule}
+\begin{concon}
+  \item[\cs] The functionality of \nt{Tuple} is the (flattened)
+    Cartesian product of the functionalities of all \nt{Expressions}.
+  \item \dul{wrong typing of tuple}: The functionality of \nt{Tuple}
+    and a given \nt{Functionality} must be equal.
+\end{concon}
+
+\begin{synrule}
+  \nt{Application}      \ms{::=}        \nt{SimpleExpression} \ms{(} \nt{Tuple} \ms{$|$} \tm{(} \tm{)} )
+\end{synrule}
+\begin{concon}
+  \item \dul{wrongly typed application}: The functionality of
+    \nt{Simple\-Ex\-press\-ion} must be a function with the
+    functionality of the given \nt{Tuple} (or the empty Cartesian
+    product) as its domain.
+  \item[\Da] If \nt{Tuple} contains \nt{SectionPattern} then \nt{Application} is
+   transformed as follows:
+   \begin{center}
+        \nt{SimpleExpression} \vb{(} $e_1,e_2,\dots, e_n$ \vb{)} $\wedge$ 
+        $\exists e_i \stackrel{\ast}{\rightarrow}$ \nt{SectionPattern} \\
+        \Da \\
+        $\forall e_j \dots e_k \stackrel{\ast}{\rightarrow}$ \nt{SectionPattern}
+        $\wedge$ $ne_j \dots ne_k$ are new variables $\wedge$ \\
+        \verb"\\" $ne_j,\dots,ne_k$ . \nt{SimpleExpression} 
+        \vb{(} $e_1,e_2,\dots, ne_j, \dots, ne_k, \dots ,e_n$ \vb{)} 
+   \end{center}
+  \item[\cs] The functionality of non-terminal \nt{Application} is the
+    co-domain of the functionality of \nt{SimpleExpression}.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+  \nt{Infix} & \ms{::=} & \nt{SimpleExpression Name} \\
+ & & \ms{$|$} \nt{SimpleExpression} \ms{(} \nt{Name SimpleExpression} \ms{)$^+$} \\
+ & & \tm{(} \tm{)} \nt{Name}
+  \end{tabular}
+\end{synrule}
+\begin{concon}
+  \item \dul{sort as infix operation}: All identified names must be
+    an operation.
+  \item[\cs] All identified names must be the same name. 
+  \item \dul{wrongly typed infix}: The functionality of the
+    identified name must be a function functionality with the
+    (flattened) Cartesian product of the functionalities of the given
+    \nt{SimpleExpression} (or the empty Cartesian product) as its
+    domain.
+  \item[\cs] The functionality of \nt{Infix} is the co-domain of the
+    functionality of the identified {\em top operator\/}. 
+\end{concon}
+
+\begin{synrule}
+  \nt{Abstraction} \ms{::=}  \tm{\bs\bs} \ms{[} \nt{LocalName} \ms{$\|$} \tm{,} \ms{]}
+    \tm{.} \nt{Expression}
+\end{synrule}
+Since \nt{Abstraction} has a higher priority than \tm{WHERE}
+expressions, \nt{Expression} cannot be a \tm{WHERE} expression.
+\begin{concon}
+  \item[\cs] The identified names for every \nt{LocalName} are lambda-bound
+    variables.
+  \item[\cs] The lambda-bound variables are added to the local
+    signature of \nt{Abstraction}.
+  \item[\cs] The functionality of \nt{Abstraction} is a function
+    functionality with the Cartesian product of the functionalities of the
+    lambda-bound variables as its domain and the functionality of
+    \nt{Expression} as its co-domain.
+\end{concon}
+
+\begin{synrule}
+    \nt{Cases}  \ms{::=}        \nt{Guard}\ms{$^+$} \ms{$\|$} \tm{OTHERWISE}
+      \ms{[} \tm{ELSE} \nt{Expression} \ms{]} \tm{FI} \ms{[} \tm{:} \nt{Functionality} ]
+\end{synrule}
+\begin{concon}
+  \item \dul{incompatible guards}: The functionalities of each
+    \nt{Guard} must be equal.
+  \item[\cs] The functionality of \nt{Cases} is the functionality of
+    the first \nt{Guard}.
+  \item \dul{incompatible else}: The functionality of \nt{Cases} and
+    the functionality of a given \nt{Expression} must be equal.
+  \item \dul{wrong typing of cases}: The functionality of \nt{Cases}
+    and a given \nt{Functionality} must be equal.
+\end{concon}
+
+\begin{synrule}
+  \nt{Guard} \ms{::=} \tm{IF} \nt{Expression} \ms{$\|$} \ms{(} \tm{ANDIF}
+  \ms{$|$} \tm{ORIF} \ms{)} \tm{THEN} \nt{Expression}
+\end{synrule}
+\begin{concon}
+  \item[\Da] \rule{0pt}{1pt}
+    \begin{center}
+        \nt{Expression$_1$} \tm{ANDIF} \nt{Expresion$_2$} \\
+        \Da \\
+        \tm{IF} \nt{Expression$_1$} \tm{THEN} \nt{Expression$_2$} \tm{ELSE}
+        \vb{false} \tm{FI}
+    \end{center}
+    and 
+    \begin{center}
+        \nt{Expression$_1$} \tm{ORIF} \nt{Expresion$_2$} \\
+        \Da \\
+        \tm{IF} \nt{Expression$_1$} \tm{THEN} \vb{true} \tm{ELSE} 
+        \nt{Expression$_2$} \tm{FI}
+    \end{center}
+
+  \item[\cs] \tm{ANDIF} and \tm{ORIF} are right-associative. 
+  \item[\cs] The functionality of \nt{Guard} is the functionality of
+    the second expression.
+  \item \dul{wrongly typed condition}: The functionality of the first
+    expression must be the predefined sort \tm{bool}.
+\end{concon}
+
+\begin{synrule}
+  \nt{Let} \ms{::=} \tm{LET} \nt{Equation}\ms{$^+$} \tm{IN} \nt{Expression}
+\end{synrule}
+
+Owing to the binding rules of \tm{WHERE} expressions, only the last
+\nt{Equation} may have a \tm{WHERE} expression as its right-hand side. 
+Since \tm{LET} has a higher priority than \tm{WHERE}, \nt{Expression}
+cannot be a \tm{WHERE} expression.
+\begin{concon}
+  \item[\cs] The let-bound variables of the \nt{Equation} list are
+    added to the local signature of \nt{Let}.
+  \item \ul{recursive let}: There must exist an order of all
+    \nt{Equation\/}s, so that every \nt{Equation} in which a let-bound variable
+    is used on its right-hand side is preceded by the \nt{Equation} in
+    which this variable is used on the left-hand side.
+  \item[\cs] The functionality of \nt{Let} is the functionality of
+    \nt{Expression}.
+\end{concon}
+
+\begin{synrule}
+  \nt{Where} \ms{::=} \nt{Expression} \tm{WHERE} \nt{Equation}\ms{$^+$}
+\end{synrule}
+
+All the following equations bind to the \tm{WHERE} expression.
+\begin{concon}
+  \item[\cs] The let-bound variables of the \nt{Equation} list are
+    added to the local signature of \nt{Where}.
+  \item \ul{recursive where}: There must exist an order of all
+    \nt{Equation\/}s, so that every \nt{Equation} in which a let-bound
+    variable is used on its right-hand side is preceded by the \nt{Equation}
+    in which this variable is used on the left-hand side.
+  \item[\cs] The functionality of \nt{Where} is the functionality of
+    \nt{Expression}.
+\end{concon}
+
+\begin{synrule}
+  \nt{Equation} \ms{::=} \ms{(}\nt{LocalName} \ms{$|$} \tm{(} \nt{LocalName}
+    \ms{$\|$} \tm{,} \tm{)} \ms{)} \tm{==} \nt{Expression}
+\end{synrule}
+\begin{concon}
+  \item[\cs] The identified names for every \nt{LocalName} are
+    let-bound variables.
+  \item \dul{wrongly typed equation}: The Cartesian product of the
+    functionalities of the let-bound variables and the functionality of
+    \nt{Expression} must be equal.
+\end{concon}
+
+\subsection{Bracketing of Infix-Expressions}
+\label{bracketing}
+
+The \opal{} compiler analyzes mixfix expressions in the context checking
+phase. The compiler uses all available  
+information for this task. However, there are situations, where there remain
+ambiguities, for example in parsing arithmetic expression.
+
+Let \(a \oplus b \otimes c\) the infix expression to be analyzed, and
+suppose that both possible bracketings, \((a \oplus b) \otimes c\) and 
+\(a \oplus (b \otimes c)\) are type correct.
+
+The \opal{} compiler maintains two relations on functions, $\cal L$ and $\cal
+R$. If $(\oplus, \otimes) \in {\cal L}$, the first possibility is chosen,
+if $(\oplus, \otimes) \in {\cal R}$, the second possibility is chosen. 
+If $(\oplus, \otimes) \not \in ({\cal L \cup R})$, and both functions are
+equal, right bracketing is chosen as default.
+
+Defining bracketings for other infix expressions is not yet part of the
+language, but may be defined with pragmas.
+Function pairs are inserted into $\cal L$ or $\cal R$ by means of the
+following pragmas:
+
+
+\begin{synrule}
+\tm{/\$} \tm{BRACKET} \tm{LEFT} \ms{[} \nt{Name} \ms{]} \ms{[} \nt{Name}
+\ms{]}  \tm{\$/}
+\end{synrule}
+\begin{synrule}
+\tm{/\$} \tm{BRACKET} \tm{RIGHT} \ms{[} \nt{Name} \ms{]} \ms{[} \nt{Name}
+\ms{]}  \tm{\$/}
+\end{synrule}
+
+\begin{concon}
+  \item [\cs] $\cal L$ and $\cal R$ are extended to their transitive
+    closure. 
+  \item \ul{$\cal L$ and $\cal R$ must remain disjoint.}
+\end{concon}
+
+Bracketings are a superset of priority and left-/right-associativity
+declarations as found in other languages:
+
+\begin{tabular}{lcl}
+``$*$ has higher priority than $+$'' & $\Leftrightarrow$ &
+\vb{/\$ BRACKET LEFT [ * ] [ + ] \$/} \\
+& & \vb{/\$ BRACKET RIGHT [ +] [ * ]} \\[1ex]
+
+``$-$  associates to the left'' & $\Leftrightarrow$ & 
+\vb{/\$ BRACKET LEFT [ - ] [ - ] \$/}
+\end{tabular}
+
+
+
+\section{Algebraic Properties}
+\label{propertylanguage}
+
+Local names refer to pattern variables, lambda- and let-bound variables as
+well as to {\em quantor-bound variables\/}.
+
+Laws and their parts have a {\em local signature\/} like that of function
+definitions.
+
+\subsection{Laws}
+
+Laws yield the possibility to write properties of data types and functions.
+They occur only in property parts.
+
+\begin{synrule}
+  \begin{tabular}{lll}
+\nt{Property} & \cce\ & \nt{FunDefinition} \alt\ \nt{DataDefinition} \alt\ \nt{FreeType} \alt\ \nt{Law} \\
+\nt{Law} & \cce\ & \tm{LAW} \opt{ \nt{Ident} \tm{==} } \nt{Formula}
+  \end{tabular}
+\end{synrule}
+
+\begin{concon}
+  \cosi{duplicate law} \nt{Ident} must be unique inside the corresponding
+  property part.
+\end{concon}
+
+\subsection{Formulas}
+
+Formulas are used to define laws.
+
+\begin{synrule}
+  \nt{Formula} \cce\ \nt{AtomicFormula} \alt\ \nt{PropositionalFormula} \alt\ 
+  \nt{QuantifiedFormula} \\ \nt{AtomicFormula} \cce\ \nt{Definedness} \alt\ 
+  \nt{Equality} \alt\ \nt{Inequality} \alt\ \tm( \nt{Formula} \tm) \\ 
+  \nt{Definedness} \cce\ \tm{DFD} \nt{Expression} \\ \nt{Equality} \cce\ 
+  \nt{Expression} \opt{ \tm{===} \nt{Expression} } \\ \nt{Inequality} \cce\ 
+  \nt{Expression} \tm{<<=} \nt{Expression}
+\end{synrule}
+
+\begin{concon}
+  \codo{wrongly typed equality} The functionality of both \nt{Expression}s
+  in an \nt{Equality} or \nt{Inequality} must be equal. If only one
+  \nt{Expression} is given, its functionality must be the predefined sort
+  \tm{bool}.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+\nt{PropositionalFormula} & \cce\ & \nt{Negation} \alt\ \nt{Conjunction} \\
+                     & & \alt\ \nt{Disjunction} \alt\
+\nt{Implication} \alt\ \nt{Equivalence} \\
+\nt{Negation} & \cce\ & \tm{NOT} \nt{Formula} \\
+\nt{Conjunction} & \cce\ & \nt{Formula} \tm{AND} \nt{Formula} \\
+\nt{Disjunction} & \cce\ & \nt{Formula} \tm{OR} \nt{Formula} \\
+\nt{Implication} & \cce\ & \nt{Formula} \tm{==>} \nt{Formula} \\
+\nt{Equivalence} & \cce\ & \nt{Formula} \tm{<=>} \nt{Formula}
+  \end{tabular}
+\end{synrule}
+
+The rules for \nt{PropositionalFormula} are ordered in descending priority and
+right-associatity is assumed for equal formulas. 
+Since \nt{QuantifiedFormula} has an even less priority the first formula of
+\nt{Conjunction}, \nt{Disjunction}, \nt{Implication} and \nt{Equivalence}
+cannot contain an unbracketed \nt{QuantifiedFormula}.
+
+\begin{synrule}
+  \nt{QuantifiedFormula} \cce\ \bra{ \tm{ALL} \alt\ \tm{EX} } \nt{LocalName}
+  \plu\ \tm.  \nt{Formula}
+\end{synrule}
+
+\begin{concon}
+\item The identified names for every \nt{LocalName} are quantor-bound
+  variables. They are added to the local signature of
+  \nt{QuantifiedFormula}.
+\end{concon}
+
+
+\section{Partial Names}
+
+Partial names are the syntactical means for refering to names of the
+signature under consideration.
+
+\begin{synrule}
+  \nt{Name} \ms{\ms{::=}} \nt{Ident} \ms{[} \tm{'} \nt{Ident} \ms{]} \ms{[} \tm{[} \nt{Name} \ms{$\|$} \tm{,} \tm{]} \ms{]} \ms{[} \nt{Kind} ]
+  %@@@ is the bracketing correct
+\end{synrule}
+\begin{concon}
+  \item[\cs] \nt{Name} is a partial name with the first \nt{Ident} as
+    identifier and, if given, the second \nt{Ident} as origin identifier,
+    the list of identified names as instantiation, and \nt{Kind} as kind.
+\end{concon}
+
+\begin{synrule}
+  \begin{tabular}{lll}
+    \nt{Kind}  & \ms{::=} & \tm{:} \tm{SORT} \ms{$|$} \tm{:} \nt{Functionality}\\
+    \nt{LocalName} & \ms{::=} & \ms{(} \nt{Ident} \ms{$|$} \nt{Wildcard} \ms{)} 
+                   \ms{[} \tm{:} \nt{Functionality} \ms{]} 
+  \end{tabular}
+\end{synrule}
+\begin{concon}
+  \item[\cs] \nt{LocalName} is a partial name with \nt{Ident} as identifier and,
+  if given, \nt{Functionality} as kind. 
+\end{concon}
+
+\begin{synrule}
+  \nt{Wildcard} \ms{::=} \tm{\_}
+\end{synrule}
+\begin{concon}
+  \item[\cs] Wildcard is a fresh local name. 
+\end{concon}
+
+\begin{synrule}
+  \nt{SectionPattern} \ms{::=} \tm{\_}
+\end{synrule}
+\begin{concon}
+  \item[\cs] SectionPattern is a fresh local name. 
+\end{concon}
+
+\begin{synrule}
+  \nt{Ident} \ms{::=} \nt{Ide} \ms{[} \nt{Pragma} \ms{]}
+\end{synrule}
+\section{Lexical Rules}
+
+The syntax description treats the program text as a sequence of {\em
+lexemes}, i.e., keywords and separators (denoted by their character
+representation), identifiers, denotations and pragmas.  Comments and
+layout are ignored. If there is no way to partition a program text
+into a lexeme sequence, then there is a lexical error. The description
+of the lexeme sequence itself treats the program text as a sequence of
+{\em symbols}, which are ultimately defined on the basis of
+characters.  The different kinds of lexemes and symbols are described
+as sets of symbol sequences (or character sequences). Therefore, the
+usual set operations (union, set difference) are used together with
+sequencing operations (concatenation, repetition). Sets are built from
+elements by enclosing the collection of elements (without any
+separating comma) in curled brackets.
+
+\subsection*{Lexemes}
+
+The lexemes are defined on the basis of symbols, sometimes denoted by
+their character representation. There are seven kinds of lexemes:
+keywords, identifiers, denotations, separators, comments, pragmas and
+layout.
+\begin{tabbing}
+  \hspace*{3cm} \= == \= \{ \= \kill
+
+  \nt{Lexeme} \> = \> \nt{Keyword} $\cup$ \nt{Ide} $\cup$ \nt{Denotation}
+                      $\cup$ \nt{Separator} $\cup$ \\
+              \>   \> \nt{Comment} $\cup$ \nt{Pragma} $\cup$ \nt{Layout} \\
+  \nt{Keyword} \> = \> \{ \vb{ALL AND ANDIF AS COMPLETELY DATA DEF DFD ELSE
+    EX FI } \\
+               \>   \> \> \vb{FUN IF IMPLEMENTATION IMPORT IN LAW LET NOT
+                 ONLY} \\
+               \>   \> \> \vb{OR ORIF OTHERWISE SIGNATURE SORT THEN TYPE WHERE } \\
+               \>   \> \> \vb{ ** -> . : == \_ === <<= ==> <=> \char'134\char'134}~\} \\
+  \nt{Ide}     \> = \> ( \nt{Alphanum} $\cup$ \nt{Graphic} ) \bs\ (
+                       \nt{Keyword} $\cup$ \{ \vb{--  /* */  /\$ \$/}
+\} ) \\
+  \nt{Denotation} \> = \> \nt{String} \\
+  \nt{Separator}  \> = \> \nt{Delimiter} \\
+  \nt{Comment}    \> = \> \vb{--} (\nt{Symbol} \bs \{ nl \} )\ms{$^*$} nl
+$\cup$ \\
+                \> \> \vb{/*} ( \nt{Symbol} \bs\ \{ \vb{-- /* */}\} $\cup$ \\
+              \>   \> \nt{Comment} ) \vb{*/} \\
+  \nt{Pragma} \> = \> \vb{/\$} ( \nt{Lexeme} \bs \nt{Pragma} )* \vb{\$/} \\
+  \nt{Layout} \> = \> \nt{Blank}\ms{$^+$}
+\end{tabbing}
+
+\label{dot-as-keyword}
+Note that keywords are reserved words, they cannot be used as identifiers,
+except for the keyword \vb{.} (single dot), which is only recognized after
+one of the keywords \vb{\bs\bs\ ALL EX}. Note also that there are two kinds
+of comments: a {\em line comment} starts with the symbol \vb{--} and skips
+all symbols (and therefore all characters) until the next newline; a {\em
+  nested comment} is enclosed within the symbols \vb{/*} and \vb{*/} and may
+again contain comments. Line comments have a higher priority than nested
+comments, i.e., the nested comment symbols \vb{/*} and \vb{*/} inside a line
+comment are ignored.
+
+\subsection*{Symbols}
+
+There are six kinds of symbols: alphanumeric and graphic symbols,
+delimiters and blanks, strings and wrong symbols. Note that wrong
+symbols can occur in correct programs inside comments.
+\begin{tabbing}
+\hspace*{3cm} \= == \= \{ \= \kill
+
+\nt{Symbol}       \> = \> \nt{Alphanum} $\cup$ \nt{Graphic} $\cup$
+                          \nt{Delimiter} $\cup$ \nt{Blank} $\cup$
+                          \nt{String} $\cup$ \nt{Wrong} \\
+\nt{Alphanum} \> = \> \ms{(} \nt{Letgit} $\cup$ \vb{\_} \ms{)} \ms{$^+$} 
+                      \vb{?}\ms{$^*$}\ms{(} \vb{\_} \ms{(} \nt{Alphanum} $\cup$
+                      \nt{Graphic} \ms{))$^\ast$} \\
+\nt{Graphic}  \> = \> \nt{Special}\ms{$^+$} \ms{(} \vb{\_} \ms{(} \nt{Alphanum}
+                 $\cup$ \nt{Graphic} \ms{))$^\ast$} \\
+\nt{Delimiter}\> = \> \nt{Extra} \bs\ \{ \vb{"} \} \\
+\nt{Blank}    \> = \> \nt{White} \\
+\nt{String}   \> = \> \vb{"} ( \nt{Char} \bs\ ( \nt{Other} $\cup$ \{ \vb{"
+  tab nl} \} ) $\cup$ \vb{""} $\cup$ \nt{Escape} )\ms{$^*$} \vb{"} \\
+\nt{Wrong}    \> = \> \nt{Other} $\cup$ \\
+              \>   \> \vb{"} ( \nt{Char} \bs\ ( \nt{Other} $\cup$ \{ \vb{" tab nl} \} ) $\cup$ \vb{""} )\ms{$^*$}
+\end{tabbing}
+
+Strings are enclosed in quotes and may contain double quotes;
+tabulators, newlines, and non-printable characters cannot be
+used in strings, so a string can never extend over more than one line.
+
+\label{escape}
+The following escape sequences are recognized within strings and replaced by
+one character.
+
+\begin{tabular}{lrll}
+\nt{Escape} &= \{ & \vb{\bs a} & (alarm) \\
+& & \vb{\bs b} & (backspace) \\
+& & \vb{\bs f} & (formfeed) \\
+& & \vb{\bs r} & (carriage return) \\
+& & \vb{\bs t} & (tabulator) \\
+& & \vb{\bs v} & (vertical tab) \\
+& & \vb{\bs \bs} & (single backslash) \\
+& & \vb{\bs ?} & (questionmark) \\
+& & \verb!\'! & (single quote) \\
+& & \verb!\"! & (double quote) \\
+& & \vb{\bs} \nt{oct} \ms{[} \nt{oct} \ms{[} \nt{oct} \ms{]} \ms{]} \\
+& & \vb{\bs x} \nt{hex} \plu \\
+  hex & = & \multicolumn{2}{l}{\{ \vb{0 1 2 3 4 5 6 7 8 9 a b c d e f A B C D E F} \}} \\
+  oct & = & \multicolumn{2}{l}{\{ \vb{0 1 2 3 4 5 6 7} \}} \\
+
+\end{tabular}
+
+\begin{concon}
+\item \ul{number too large} The octal or hexadecimal number may not exceed
+  255.
+\end{concon}
+
+Wrong symbols are ``incorrect strings'' or non-printable and non-ASCII
+characters.  The partitioning of a program text into a symbol sequence
+p must obey the condition longest match: for all l,r$\in$\nt{Symbol}*
+and u,v$\in$\nt{Symbol} with p=luvr, the following implications must
+hold (v$_1$ denotes the first character of v):
+\begin{tabbing}
+\hspace*{6cm} \= == \= \{ \= \kill
+
+u$\in$\nt{Letgit}\ms{$^+$}                  \> v$_1 \not\in$  ( \nt{Letgit} $\cup$ \{ \vb{?} \} ) \\
+u$\in$\nt{Letgit}\ms{$^+$} \vb{?}\ms{$^+$}          \> v$_1 \neq$ \vb{?} \\
+u$\in$\nt{Graphic}                  \> v$_1 \not\in$ \nt{Special} \\
+u$\in$\nt{String}               \> v$_1 \neq$ \vb{"} \\
+u$\in$ \nt{Wrong} \bs \nt{Other}\> v$_1 \not\in$ \nt{Other} $\cup$ \{ \vb{tab nl} \}
+\end{tabbing}
+
+\subsection*{Unicode Escapes}
+\label{unicode}
+
+The scanner recognizes unicode escapes.
+
+\begin{synrule}
+\nt{UnicodeEsc} =  \tm{\bs} \tm{u}\plu \nt{hex} \nt{hex} \nt{hex} \nt{hex} 
+\end{synrule}
+
+The unicode escape is replaced by the unicode character with the code number
+represented by the four following hexadecimal digits.
+
+Note that unicode escapes are processed before the proper scanner starts.
+
+\begin{concon}
+  \item \ul{The last ``\texttt{u}'' must be followed by at least four
+    hexadecimal digits. }
+  \item \ul{Character codes above 255 are not supported.}
+\end{concon}
+
+
+\subsection*{Characters}
+\label{latin1}
+
+The {\sc Opal} character set comprises all printable Latin-1 (ISO-8859-1)
+characters as well as space, tabulator, and newline. Other characters can
+only be 
+used in comments. The character set divides into five classes:
+
+\def\X{\phantom{\{}&}
+\begin{tabular}{lcll}
+\nt{Char} & = & \X{\nt{Letgit} $\cup$ \nt{Special} $\cup$ \nt{Extra} $\cup$ \nt{Blank} $\cup$ \nt{Other}} \\
+\nt{Letgit} & = &  \{ & \vb{A B C D E F G H I J K L M N O P Q R S T U V W X Y Z}\\
+            &   &  \X  \vb{a b c d e f g h i j k l m n o p q r s t u v w x y z}\\ 
+            &   &  \X \texttt{\ss{} \`a \'a \^a \~a \"a \aa{} \ae{} \c{C} \`e \'e \^e \"e \`\i\ \'\i\ \^\i\ \"\i\ eth \~n \`o \'o \^o \~o \"o \o}\\
+            &   &  \X\texttt{\`u \'u \^u \"u \'y thorn \"y \`A \'A \^A \~A \"A \AA\ \AE\ \c{C} \`E \'E \^E \"E \`I \'I \^I \"I Eth} \\
+            &   &  \X\texttt{\~N \`O \'O \^O \~O \"O \O\ \`U \'U \^U \"U \'Y Thorn} \\
+            &   & \X \vb{0 1 2 3 4 5 6 7 8 9} \} \\
+%\nt{Special}& = & \{ \vb{! \# \$ \% \& * + - . / : ; < = > ? @ \ \^ \_ ` \{}
+%                  \verb:| \} ~: \} \\
+\nt{Special}& = & \{ & \vb{! \# \$ \% \& * + - . / : ; < = > ? @ 
+                        \char'134\ \char'176\ \char'174\ \^\ \_ `}  \} \\
+            &   & \X \texttt{ !` cent \pounds{} currency yen brokenbar \S \"{\ }\ \copyright{} $^{\mbox{\underline{a}}}$ $\ll$ $\neg$} \\
+            &   & \X \texttt{softHyphen registered \={\ }  $^{\circ}$ $\pm$ $^2$ $^3$ \'{\ } $\mu$ \P{} $\cdot{}$   \c{\ } $^1$ $^{\mbox{\underline{o}}}$ $\gg$  }  \\
+            &   & \X \texttt{ $\frac{1}{4}$ $\frac{1}{2}$ $\frac{3}{4}$ ?` $\times$ $\div$ } \\  
+\nt{Extra}      & = & \{ & \vb{" ( ) , ' [ ]} \} \\
+\nt{White}      & = & \{ & space  tab  nl noBreakspace\}  \\
+\nt{Other}  & = & \X {all non-printable  characters}
+\end{tabular}
+
+
+
+%\chapter{The {\sc Opal} Compilation System}
+%
+%The {\sc Opal} compilation system is available by terms of free licence via
+%anonymous ftp from {\tt ftp@cs.tu-berlin.de}. It resides in directory {\tt
+%pub/local/uebb/ocs}.
+%
+% DEMNAECHST ETWAS MEHR INFORMATIONEN ZU OCS !!!
+
+\chapter{Changes}
+
+This chapter lists changes since the 4$^{th}$ edition.
+
+\begin{itemize}
+\item Laws are allowed in signature and implementation parts. (See
+  Section~\ref{signature}.)  Property parts are no longer needed.
+\item \tm{COMPLETELY} import allowed in signature parts. (See
+  Section~\ref{selection}.) 
+\item Bracketing rules for infix expressions have been added. (See
+  Section~\ref{bracketing}.) 
+\item A single dot is recognized as keyword only after one of the keywords 
+      \vb{\bs\bs\ ALL EX}. In particular, \tm{.} is a valid name for a
+      function. (See Section~\ref{dot-as-keyword}.)
+\item Escape characters within denotation constants are defined. (See
+  Section~\ref{escape}.) 
+\item Unicode escapes are recognized. (See Section~\ref{unicode}).
+\item The character set has been extended to Latin-1 (ISO-8859-1). (See
+  Section~\ref{latin1}.) 
+\end{itemize}
+
+\chapter{Acknowledgement}
+
+The language {\sc Opal} has been designed by Gottfried Egger, Andreas Fett,
+Carola Gerke, Wolfgang Grieskamp, Michael Jatzeck, Peter Pepper, and Wolfram
+Schulte.
+
+Our colleagues and many students have contributed by critically assessing many
+aspects of the design and implementation, by teaching {\sc Opal}, and last not
+least by giving their invaluable feedback as users of {\sc Opal}.
+
+
+
+
+\end{appendix}
+
+
+\begin{thebibliography}{99}
+  \bibitem{Bauer85} Bauer, F.L. et al.:
+    {\em ``The Munich Project CIP''},
+    Volume I: The Wide Spectrum Language CIP-L;
+    Springer, Lecture Notes in Computer Science 183, 1985
+  \bibitem{Bird88} Bird, R., Wadler, P.:
+    {\em ``Introduction to Functional Programming.''};
+    Prentice-Hall, 1988
+  \bibitem{Diller88} Diller, A.:
+    {\em ``Compiling Functional Languages.''};
+    John Wiley, 1988
+  \bibitem{Ehrig85} Ehrig, H., Mahr, B.:
+    {\em ``Fundamentals of Algebraic Specifications 1.''};
+    Springer Verlag, 1985
+  \bibitem{Field88} Field, A.J., Harrison, P.G.:
+    {\em ``Functional Programming.''};
+    Addison-Wesley, 1988
+  \bibitem{Henderson80} Henderson, P.:
+    {\em ``Functional Programming: Application and Implementation.''};
+    Prentice-Hall, 1980
+  \bibitem{Hensen90} Henson, M.C:
+    {\em ``Elements of Functional Languages.''};
+    Blackwell Scientific Publications, 1987
+  \bibitem{Hudak90} Hudak, P. et al.:
+    {\em ``Haskell.''}
+    Yale University Internal Report, 1990
+  \bibitem{Milner88} Milner, R., Tofte, M., Harper, R.:
+    {\em ``The Definition of Standard ML.''};
+    MIT Press, 1990
+  \bibitem{Perry88} Perry, N.:
+    {\em ``Hope+. Dept. of Computing''};
+    Imperial College London Internal Report
+    IC/FPR/LANG  /2.5.1/7, 1988
+  \bibitem{Perry87} Perry,  N.:
+    {\em ``Hope+C, A Continuation extension for Hope+''};
+    Dept. of Computing Imperial College London
+    Internal Report IC/FPR/LANG/2.5.1/21, 1987
+  \bibitem{Peyton87} Peyton Jones, S.L.:
+    {\em ``The Implementation of Functional Programming Languages''};
+    Prentice-Hall, 1987
+  \bibitem{Peyton93} Peyton Jones, S.L., Wadler, P.:
+    {\em ``Imperative functional programming''};
+    in: Proceedings of 20th Symposium on Principles of Programming
+        Languages, 1993
+  \bibitem{Reade89} Reade, C.:
+    {\em ``Elements of Functional Programming''};
+    Addison-Wesley, 1989
+  \bibitem{Sanella87} Sanella, D., Tarlecki, A.:
+    {\em ``On Observational Equivalence''\/}; 
+    in: Journal of Comp. and Sys.\ Science, n$^o$ 34, 1987
+  \bibitem{Wadler92} Wadler, P.:
+    {\em ``The essence of functional programming''};
+    in: Proceedings 19th Symposium on Principles of Programming
+        Languages, 1992
+  \bibitem{Waite84} Waite, W.\ M., Goos, G.:
+    {\em ``Compiler Construction\/}; Springer Verlag, 1984
+\end{thebibliography}
+
+\end{document}
+
+

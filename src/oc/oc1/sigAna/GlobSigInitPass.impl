@@ -1,0 +1,127 @@
+-- LAST EDIT: Wed Aug  7 11:32:07 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     initialization phases
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+
+IMPLEMENTATION GlobSigInitPass
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  
+        DeclLookup      COMPLETELY
+        GlobSig4SigAna  COMPLETELY
+        GlobSigToText   ONLY ` -- : globSig -> () -> denotation
+        ImpDecl4SigAna  COMPLETELY
+        ImpExpEntry     ONLY instAppl:SORT 
+        InterOpalModifier       COMPLETELY
+        Maps4SigAna     COMPLETELY
+        Objects         COMPLETELY
+        StructPrep      COMPLETELY
+        StructLookup    COMPLETELY
+        StructPrepConvert       ONLY convertSign
+        -- absy, etc.
+        InterOpal       COMPLETELY
+        PartName        ONLY partName:SORT 
+        Pos             ONLY pos
+        Rep             COMPLETELY
+        Struct          COMPLETELY
+        -- lib
+        DEBUG           COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Quadruple       COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          ONLY *
+        SeqMapEnv       ONLY *
+        SeqReduce       COMPLETELY
+        SeqCompare      COMPLETELY
+        SeqZip          COMPLETELY
+        Triple          COMPLETELY
+
+-- ---------------------------------------------------------------------------
+FUN globSigInitPass1 : repTab ** globSig ** option[interOpal]
+                        ** seq[pair[rep:SORT,pos:SORT]]
+                       -> globSig 
+        -- Pass1- Aufbau der vollstaendigen RepTab, dabei Merken aller 
+        --        Strukturnamen
+        --      - Erzeugen einer leeren Lookup-Tabelle
+        --      - Eintragen aller Strukturen in die Strukturtabelle,
+        --        mit Hilfe der LookupTable
+        --      - turbo der Strukturtabelle
+DEF globSigInitPass1(RT2, gS, Own, idePos) == 
+        LET 
+            gS1 == initAdmInfo(gS, RT2 #)
+        -- Eintragen der Strukturen aus dem Signaturteil
+            gS2 ==  IF avail?(Own) THEN (h2(RT2) \ gS1)(transStructs(cont(Own)))
+                    ELSE gS1 FI
+            gS3 == (addPreImport \ gS2) (idePos)
+        -- turbo der Strukturtabelle
+        IN gS3
+
+        FUN h2 : repTab -> struct'InterOpal ** globSig -> globSig
+        DEF h2(RT)(S, gS) == 
+                addPreOwnSignImport(gS, struct(no(origin(S))), 
+                                getRep(RT, symbol(S)))
+
+
+-- ---------------------------------------------------------------------------
+
+
+FUN globSigInitPass2 : repTab ** globSig 
+                     ** seq[pair[interOpal:SORT, seq[pair[import,bool:SORT]]]]
+                 -> globSig ** seq[pair[pair[interOpal, seq[pair[import,bool]]],
+                      pair[strDecTab,seq[instAppl]]]]
+        -- Pass2 (ohne eigene Signatur)
+        --      - Aufbau der Umcodiertabellen anhand der LookupTable
+        --      - Anlegen der Instanzentabellen
+        --      - turbo der Instanzentabellen
+DEF globSigInitPass2(RT, gS, signImportSSP) == 
+        *(\\G,P. LET (NewG, Tab) == preInsertStruct(RT)(G, P)
+                 IN (NewG, P & Tab), gS, signImportSSP)
+
+
+FUN globSigInitPass3 :  repTab ** globSig 
+                        ** seq[pair[pair[interOpal, seq[pair[import,bool]]],
+                           pair[strDecTab,seq[instAppl]]]]
+                        -> globSig
+        -- Pass3- Eintragen der ImpDecls (mit turbo)
+        --      - Nachtragen der Instanzentabellen
+DEF globSigInitPass3(RT, gS, codeTabImpApplSsignImportSSP) ==
+        1st(\ (\\P, G. convertSign(toQuad(P), G), 
+                   gS & RT, codeTabImpApplSsignImportSSP))
+
+        FUN toQuad : pair[pair[interOpal, seq[pair[import,bool]]],
+                           pair[strDecTab,seq[instAppl]]]
+                     -> quad[strDecTab,seq[instAppl],interOpal:SORT,bool:SORT]
+        DEF toQuad((Inter & Imps) & (Tab & Appls)) == 
+                          &(Tab, Appls, Inter, exist?(2nd, Imps))
+
+FUN declsComplete? : bool
+DEF declsComplete? == FIELD?[globSig]("-zdeclsComplete")
+
+FUN globSigInitPass4 :  globSig ** seq[pair[partName, decl:SORT]] ** 
+                seq[pair[pair[interOpal, seq[pair[import,bool]]],
+                           pair[strDecTab,seq[instAppl]]]]
+                        -> globSig
+        -- Pass4- Erzeugen der Tabellen fuer die partiellen Namen unter
+        --        Benutzung einer ersten (statischen) Abschaetzung 
+DEF globSigInitPass4(gS, pNdeclS, importSSPcodeTabImpApplS) == finGS
+        WHERE
+        -- Aufbau der part.Sortenappl. und eines Teils der part. Inst.appl.
+        gS1a == (declsStaticLookup \ gS)(pNdeclS)
+        gS1 == PRINT(declsComplete?,`(gS1a), gS1a)
+        -- Aufbau aller expliziten part. Inst.Appls und der onlyMaps
+        finGS == \ (\\P, G. importsStaticLookup(toTriple(P), G), 
+                 gS1, importSSPcodeTabImpApplS)
+
+        FUN toTriple : pair[pair[interOpal, seq[pair[import,bool]]],
+                           pair[strDecTab,seq[instAppl]]]
+                -> triple[seq[pair[import,bool:SORT]],strDecTab,seq[instAppl]]
+        DEF toTriple((_ & Imps) & (Tab & Appls)) == &(Imps, Tab, Appls)
+

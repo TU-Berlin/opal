@@ -1,0 +1,1029 @@
+IMPLEMENTATION ScanDocumentation
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/scanOpal/ScanDocumentation.impl,v 1.1.1.1 1998-06-16 16:00:39 wg Exp $
+
+IMPORT 
+  Nat           COMPLETELY       Char           COMPLETELY CharConv ONLY `
+  String        COMPLETELY       Denotation     COMPLETELY
+  StringIndex   COMPLETELY       Option         COMPLETELY
+  StringFilter  COMPLETELY
+  Seq           COMPLETELY       Pair           COMPLETELY
+  Set           COMPLETELY
+
+IMPORT 
+  CharClass             COMPLETELY       ScanRegularOpal COMPLETELY
+  SpecialString         COMPLETELY       Config          COMPLETELY
+  Pos                   COMPLETELY       ConfigFun       COMPLETELY
+  Token                 COMPLETELY       MyString        COMPLETELY
+       StringConv ONLY `
+
+-- %$Distinguish the Two Types of Documentation$
+-- %--------------------------------------------
+
+/* % The type @c{docuType} enables the programmer 
+to distinguish between two possible kinds of documentations internally and 
+reduces the implementation overhead drastically. */ 
+DATA docuType == lineCommentDocu
+                 nestedCommentDocu
+
+
+/* %-
+-- %$Handling Line Comment Documentations$ 
+-- %--------------------------------------
+
+FUN possibleLineCommentOrDocu :
+      string ** string ** pos ** pos ** config -> token ** string ** pos
+
+/* %If the second character of the examined lexem is a @c{-}, the chance for a
+line-comment or line-documentary is still present and has to be checked in
+@c{possibleLineCommentOrDocuNext}. Otherwise we encounter an identifier and as
+a consequence have to resume with the scanning process for identifiers. */
+DEF possibleLineCommentOrDocu(src AS c::rtSrc, lexem, start, act, config) ==
+  IF minus?(c) THEN
+    possibleLineCommentOrDocuNext(rtSrc, lexem +% c, start, upd(act, c), config)
+  ELSE
+    ideStart(src, lexem, start, act)  
+    -- pass the full source to the idenitifier processing!
+  FI
+
+/* %The following error-condition should never be encountered as
+context-correct input is assumed! */
+DEF possibleLineCommentOrDocu(<>, _, _, act, _) ==
+  makeScanError("unexpected end of file at ", act)
+
+
+FUN possibleLineCommentOrDocuNext :
+      string ** string ** pos ** pos ** config -> token ** string ** pos 
+
+/* %If a space character is read after @c{--} then we can be sure to read a
+line-comment or line-documentation lexem. Otherwise we resume with the scanning
+of an identifier! */ 
+DEF possibleLineCommentOrDocuNext( src AS c::rtSrc, lexem, start, act, config ) ==
+  IF space?(c) THEN
+    lineCommentOrDocu(rtSrc, lexem +% c, start, act, config)
+  ELSE
+    ideStart(src, lexem, start, act)  
+    -- pass the full source to the idenitifier processing!
+  FI
+
+-- %A line-comment start (@c{--}) cannot be ended by an @eof token! 
+DEF possibleLineCommentOrDocuNext( <>, _, _, act, _ ) == 
+  makeScanError("unexpected end of file at ", act)
+
+
+FUN lineCommentOrDocu :
+      string ** string ** pos ** pos ** config -> token ** string ** pos 
+/* %If a @c{%}-symbol follows immediately after the @c{space}-symbol a
+line-documentary starts and is handled in @c{documentationStart} (with
+@c{lineCommentDocu} indication!). Otherwise we encounter an ordinary @OPAL
+line-comment. */ 
+DEF lineCommentOrDocu( src AS c::rtSrc, lexem, start, act, config ) ==
+  IF percent?(c) THEN
+    documentationStart(rtSrc, <>, start, upd(act, c), lineCommentDocu, config)
+                              -- no lexem !           -- indicate line-
+  ELSE                                                -- documentation
+    lineComment(src, lexem, start, act)
+  FI
+
+/* %We face a valid line-comment if the source ends, although 
+a terminating @newline has not been scanned. This
+is a flaw in the documentation of the @OPAL language report but we adopt the
+real implementation of the @OPAL compiler ! */
+DEF lineCommentOrDocu( <>, lexem, start, act, _ ) == 
+  (lineComment(lexem, start), <>, act) 
+
+*/
+
+
+-- %$Comment or Pragma or Documentation ?$ 
+-- %--------------------------------------
+
+FUN possibleCommentOrPragmaOrDocu :
+      string ** string ** pos ** pos ** config ** string ** string ** string ->
+      token ** string ** pos 
+
+/* %As an initial @c{/} has to be read (this is the @precondition for a call to
+this  function!) and the file ends, we scanned a valid identifier. This is
+@emph{not} a lexicalic error! */
+DEF possibleCommentOrPragmaOrDocu( <>, lexem, start, act, _, _, _, _) ==
+  ideStart(<>, lexem, start, act)  
+
+/* %The characters @c{*} and @c{$} distinguish between the option of a nested
+@OPAL comment or a nested documentation and the start of an @OPAL pragma. If
+neither of these two characters are encountered we currently scan an
+identifier!. */ 
+DEF possibleCommentOrPragmaOrDocu( src AS c::rtSrc, lexem, start,
+                                   act, config, lcStart, cStart, cEnd ) ==
+  IF star?(c) THEN
+    possibleCommentOrDocu(rtSrc, lexem +% c, start, upd(act, c),
+                          config, lcStart, cStart, cEnd)
+  IF dollar?(c) THEN
+    possiblePragma(rtSrc, lexem +% c, start, upd(act, c))
+  ELSE
+    ideStart(src, lexem, start, act)  
+    -- pass the full source to the idenitifier processing!
+  FI
+
+FUN possiblePragma :
+      string ** string ** pos ** pos -> token ** string ** pos
+
+/* %The initial @c{/$} has to be followed by a space in order to be handled as
+a pragma initation. If the @c{space} is not the next character we currently
+scan an identifier. */ 
+DEF possiblePragma( src AS c:: _, lexem, start, act ) ==
+  IF space?(c) THEN
+     pragma(src, lexem, act, act)
+  ELSE
+    ideStart(src, lexem, start, act)  
+    -- pass the full source to the idenitifier processing!
+  FI
+
+/* %A non-closed pragma-specification induces a lexicalic error: */
+DEF possiblePragma( <>, _, _, act ) ==
+  makeScanError("unexpected end of file at ", act)
+
+
+FUN possibleCommentOrDocu : 
+      string ** string ** pos ** pos ** config ** string ** string ** string ->
+      token ** string ** pos
+/* %A lexem @c{/*} followed by an @eof is a lexical error! (The @OPAL-report is
+not absolutely on this topic as also the recognition of an identifier might be
+correct!) */ 
+DEF possibleCommentOrDocu( <>, _, _, act, _, _, _, _ ) == 
+  makeScanError("unexpected end of file at ", act)
+/* %If after the initial @c{/*} a @c{space} is encountered we can be sure to
+scan a nested @OPAL-comment. But we have to test if a nested-documentation can
+be detected! A missing @c{space} enforces to precede with the handling of an
+identifier based on the already read characters. */
+DEF possibleCommentOrDocu( src AS c:: rtSrc, lexem, start, act,
+                           config, lcStart, cStart, cEnd ) ==
+  IF space?(c) THEN
+    firstWhitespaceInCommentOrDocu(rtSrc, lexem +% c, act,
+                                   upd(act, c), config, lcStart, cStart, cEnd)
+  ELSE
+    ideStart(src, lexem, start, act)  
+    -- pass the full source to the idenitifier processing!
+  FI
+
+
+FUN firstWhitespaceInCommentOrDocu :
+      string ** string ** pos ** pos ** config ** string ** string ** string ->
+      token ** string ** pos
+
+/* %A lexem @c{/*} followed by a @c{space} and an @eof is a lexical error! */
+DEF firstWhitespaceInCommentOrDocu( <>, _, _, act, _, _, _, _ ) == 
+  makeScanError("unexpected end of file at ", act)
+/* %With a @c{%}-character we handle the currently read lexem-start as an
+initiation of a nested DOSFOP-documentary. The initial content of the token is
+dismissed and the we continue with the extraction of the documentation
+contents. 
+
+Otherwise a "good old" @OPAL-nested-comment is scanned. */ 
+DEF firstWhitespaceInCommentOrDocu( src AS c::rtSrc, lexem, start,
+                                    act, config, lcStart, cStart, cEnd )==
+  IF percent?(c) THEN         
+    documentationStart(
+      rtSrc, 
+      <>, 
+      upd(act, c), 
+      upd(act, c), 
+      nestedCommentDocu, 
+      config,
+      cEnd
+    ) 
+  ELSE   -- keep whitespace in comment
+    comment(src, lexem, start, upd(act, c), lcStart, cStart, cEnd)
+  FI
+
+
+-- %$Handle Documentation$ 
+-- %----------------------
+-- %$$Handle Start$
+-- %---------------
+
+-- %If we call the function
+FUN documentationStart :
+      string ** string ** pos ** pos ** docuType ** config ** string -> 
+        token ** string ** pos 
+/* %we have to be sure to scan a documentation. The further scanning process
+decides what type of documentation we have detected. But in the case of @eof we
+are scanning an erroneous file and so: */
+DEF documentationStart( <>, _, _, act, _, _, _ ) ==
+   makeScanError(
+     "unexpected end of documentation after documentation started at ",
+     act
+   )
+/* %The character after the @c{%} character decides, what kind of documentation
+we have to deal with next. The following table summarizes the decision process:
+@table @code
+@item $
+A documentation-sectioning command starts. The depth of the sectioning command
+is decided later on.
+@item [
+We encounter a list of strings referencing some property definitions.
+@item -
+The text of the documentary is to be ignored. There is not building up of an
+lexem in the function @c{documentationIgnore}!
+@item @{
+The specification of a @emph{level-indicator} has to be scanned next.
+@item Otherwise
+A simple textual documentation has to be scanned. Initial whitespace is
+stripped. 
+@end table */
+DEF documentationStart( src AS c::rtSrc, lexem, start, act,
+                        docuType, config, commentEnd ) ==
+  LET 
+    nextPos == upd(act, c)  -- often needed 
+  IN
+    IF dollar?(c) THEN
+      documentationSectioningStart(rtSrc,<>,nextPos,nextPos,
+                                   subPart,docuType, commentEnd)
+    IF bracketopen?(c) THEN
+      documentationPropNames(rtSrc, <>, nextPos, nextPos, docuType, commentEnd)
+    IF minus?(c) THEN
+      documentationIgnore(rtSrc, nextPos, nextPos, docuType, commentEnd)
+    IF setopen?(c) THEN
+      documentationLevel(rtSrc, <>, act, nextPos, docuType, config, commentEnd)
+    ELSE
+      documentation(drop(space?, src), lexem, start,
+                    upd(act, take(space?, src)), 
+                    docuType, nil, config, commentEnd)
+    FI
+
+
+-- %$$Handle Simple Documentation$
+-- %------------------------------
+
+/* %All parameters have the same semantics as in all the other scanning states,
+except the parameter @c{levelIdOpt} of type @c{option[string]}. It contains a
+---probably @nil--- representation of a level-indicator usable for selective
+documentation visualization. This parameter is used when the
+documentation-token is finally constructed. */ 
+FUN documentation :
+      string ** string ** pos ** pos ** docuType **
+      option[string] ** config ** string -> 
+      token ** string ** pos 
+
+/* %A not properly closed documentation is a lexical error! */
+DEF documentation( <>, lexem, start, act, docuType , levelIdOpt, _, _) == 
+  IF nestedCommentDocu?(docuType) THEN
+    makeScanError("unexpected end of documentation at ", act, start)
+  ELSE
+    (documentation(lexem, start, levelIdOpt), <>, act)
+  FI
+
+/* %As this function is used for handling line-documentations as well as
+nested-documentations we have to handle these two cases separately. The
+termination of a documentation depends on these two cases and is handled in the
+first two guards of the @IF-expression. The third case does the
+Texinfo-command-checking as well as a possibly needed macro extension. 
+
+Reading any other characters simply prolongs the alreadily read documentation
+text. */ 
+IMPORT DEBUG COMPLETELY
+
+DEF documentation( src AS c::rtSrc, lexem, start, act, docuType,
+                   levelIdOpt, config, commentEnd0 ) ==
+  LET commentEnd1 == PRINT(false, \\ . "SRC:\n" ++ `(src) ++ "\nENDSRC\n", commentEnd0)
+      commentEnd == PRINT(false, \\ .IF avail?(commentEnd0 <?| src) THEN "docomment end" ELSE "docomment cont" FI, commentEnd1)
+  IN
+  IF nestedCommentDocu?(docuType) /* and avail?(commentEnd <?| src) */ THEN
+    LET commentEnd? == commentEnd <?| src 
+    IN
+    IF avail?(commentEnd?) THEN
+      (documentation(lexem, start, levelIdOpt),
+       cont(commentEnd?),
+       upd(act, commentEnd))
+    ELSE
+      IF at?(c) THEN
+        documentationCheck(rtSrc, lexem, start, act, docuType, c%,
+                           levelIdOpt, config, commentEnd)
+      ELSE
+        documentation(
+                      rtSrc, 
+                      lexem +% c, 
+                      start, 
+                      upd(act, c), 
+                      docuType, 
+                      levelIdOpt,
+                      config,
+                      commentEnd
+                     )
+      FI
+    FI
+  IF newline?(c) and lineCommentDocu?(docuType) THEN
+    (documentation(lexem, start, levelIdOpt), rtSrc, upd(act, c))
+  IF at?(c) THEN
+    documentationCheck(rtSrc, lexem, start, act, docuType, c%,
+                       levelIdOpt, config, commentEnd)
+  ELSE
+    documentation(
+      rtSrc, 
+      lexem +% c, 
+      start, 
+      upd(act, c), 
+      docuType, 
+      levelIdOpt,
+      config,
+      commentEnd
+    )
+  FI
+
+
+-- %$$$Handle Level$
+-- %----------------
+
+-- %As the scanning of a documentation-level with the function
+FUN documentationLevel :
+      string ** string ** pos ** pos ** docuType ** config ** string -> 
+        token ** string ** pos 
+/* %occurs before any other documentation-content is scanned, we use the
+lexem-parameter 
+for storing the representation of the level indicator. Nevertheless an @eof
+is not allowed in a level specification and leeds to a lexical error: */
+DEF documentationLevel( <>, _, _, act, _, _, _ ) ==
+  makeScanError("unexpected end while reading documentation levelId at ", act)
+/* %A @c{letgit}- or @c{special}-character (except @c{@}}) induces a
+continuation of level-string reading whereas a @c{@}} terminates it. Other
+characters (especially whitespace) are not allowed in a level specification! */
+DEF documentationLevel( c:: rtSrc, lexem, start, act,
+                       docuType, config, commentEnd ) ==
+  IF setclose?(c) THEN
+    documentation(
+      drop(space?, rtSrc), 
+      <>, 
+      upd(act, c), 
+      upd(act, c), 
+      docuType, 
+      avail(lexem), 
+      config,
+      commentEnd
+    )
+  ELSE
+    IF letgit?(c) or special?(c) THEN
+      documentationLevel(
+        rtSrc, 
+        lexem +% c, 
+        start, 
+        upd(act, c), 
+        docuType, 
+        config,
+        commentEnd
+      )
+    ELSE
+      makeScanWarning("unexpected symbol '" ++ (c`) ++ 
+                      "' discarded in documentation level at ", rtSrc, act)
+    FI
+  FI
+
+
+/* %-
+-- %$$$Handle End$
+-- %-----------------------------------
+
+-- %@Precondition for a context-correct call to the function:
+FUN documentationPossibleEnd :
+      string ** string ** pos ** pos ** option[string] ** config -> 
+        token ** string ** pos 
+/* %is that we have alreadily scanned a documentation that was ended by a @c{*}
+character. In this case a @c{/} terminates the documentation an we can
+construct the @c{documentation}-token. If another character is encountered the
+scanning of the documentation is continued. 
+
+Realize that @c{**/} is not a valid ending of a documentation so we need not
+consider subsequent occurences of stars! */
+DEF documentationPossibleEnd
+      ( c::rtSrc, lexem, start, act, levelIdOpt, config ) ==
+  IF slash?(c) THEN
+    (documentation(front(lexem), start, levelIdOpt), rtSrc, upd(act, c))
+  ELSE
+    documentation(
+      rtSrc, 
+      lexem+%c, 
+      start, 
+      upd(act,c),
+      nestedCommentDocu, 
+      levelIdOpt, 
+      config
+    )
+  FI
+/* %A lexical error is generated for the same reasons as stated above. */
+DEF documentationPossibleEnd( <>, _, _, act, _, _ ) == 
+  makeScanError("unexpected end of documentation(2) at ", act, start)
+*/
+
+-- %$$Handle Property Referencing$
+-- %------------------------------
+
+FUN documentationPropNames :
+      string ** string ** pos ** pos ** docuType ** string ->
+      token ** string ** pos 
+
+DEF documentationPropNames( <>, _, _, act, _, _ ) == 
+  makeScanError(
+     "unexpected end of documentation while reading property names at ",
+     act
+  )
+/* %The lexical structure of property-refererencing is currently not checked
+exactly. We only detect a @c{]} character as the termination of the referencing
+@string. All other characters are included in the reference. @b{This has to be
+extended!} */ 
+DEF documentationPropNames( c::rtSrc, lexem, start, act,
+                            docuType, commentEnd ) ==
+  IF bracketclose?(c) THEN
+    whiteAfterPropNamesEnd(rtSrc, lexem, start, upd(act, c),
+                           docuType, commentEnd)
+  ELSE
+    documentationPropNames(rtSrc, lexem +% c, start, upd(act, c),
+                           docuType, commentEnd)
+  FI
+
+/* %We allow as much layout characters a preferred by the user between the
+@c{]} character and the closing @c{*/} for nested documentations. So we simply
+have to skip it! */ 
+FUN whiteAfterPropNamesEnd  :
+      string ** string ** pos ** pos ** docuType ** string ->
+      token ** string ** pos
+
+DEF whiteAfterPropNamesEnd
+      (  src AS c::rtSrc, lexem, start, act, nestedCommentDocu, commentEnd ) ==
+  IF space?(c) THEN
+    whiteAfterPropNamesEnd(rtSrc, lexem, start, upd(act, c),
+                           nestedCommentDocu, commentEnd)
+  IF avail?(commentEnd <?| src) THEN
+    (docuProps(lexem, start), cont(commentEnd <?| src), upd(act, commentEnd))
+  ELSE
+    makeScanWarning(
+      "unexpected symbol '" ++ (c`) ++ 
+          "' discarded in property reference at ", 
+      rtSrc,
+      act
+    )
+  FI
+
+/* %The same statement as above holds for property-references that are
+specified on the basis of line-documentaries except that a @newline terminates
+the property-referencing documentation: */
+DEF whiteAfterPropNamesEnd(  c::rtSrc, lexem, start, act,
+                           lineCommentDocu, commentEnd ) ==
+  IF newline?(c) THEN
+    (docuProps(lexem, start), rtSrc, upd(act, c))
+  ELSE
+    IF space?(c) THEN
+       whiteAfterPropNamesEnd(
+         rtSrc,
+         lexem,
+         start,
+         upd(act, c),
+         lineCommentDocu,
+         commentEnd
+       )
+    ELSE
+    makeScanWarning(
+      "unexpected symbol '" ++ (c`) ++ 
+          "' discarded in property reference at ", 
+      rtSrc,
+      act
+    )
+    FI
+  FI
+
+/* %If the source file ends during the scanning process we face a lexicalic
+error, as the nested-documentation has not been closed. */
+DEF whiteAfterPropNamesEnd(  <>, _, _, act, _, _ ) ==
+  makeScanError(
+    "unexpected end of documentation in end of property names at ",
+    act
+  )
+
+   
+/* %-
+/* %For nested-documentaries used for property-referencing we have to handle a
+terminating @c{/}. This is done with the following implementation: */
+FUN documentationPropNamesEnd :
+      string ** string ** pos ** pos -> token ** string ** pos
+
+/* %If no @c{/} is encountered we simple fall back to the skipping of
+layout. @b{This is not clean assuming the lexicalic definition and has to be
+changed!} */
+DEF documentationPropNamesEnd( c::rtSrc, lexem, start, act ) ==
+  IF slash?(c) THEN
+    (docuProps(lexem, start), rtSrc, upd(act, c))
+  ELSE 
+    documentationPropNamesEnd(rtSrc, lexem, start, upd(act, c))
+  FI
+
+/* %If the source file ends during the scanning process we face a lexicalic
+error, as the nested-documentation has not be closed. */
+DEF documentationPropNamesEnd( <>, _, _, act ) == 
+  makeScanError(
+    "unexpected end of documentation in end of property names at ",
+    act
+  )
+
+*/
+
+-- %$$Handle Sectioning$
+-- %--------------------
+
+-- %If we call the function
+FUN documentationSectioningStart :
+      string ** string ** pos ** pos ** splitLevel ** docuType ** string -> 
+        token ** string ** pos
+/* %the following @precondition has to be valid: A correct start of a
+sectioning documentary has been read (in line- or
+nested-documentary-style!). The first @c{$} character has already been read.
+
+Any furtherly read @c{$} characters induce an increase of depth of the
+specified sectioning headline. This is done via recursive calls to the function
+@c{incr} operating on the current split-level: */
+DEF documentationSectioningStart
+       ( src AS c::rtSrc, _, start, act, split, docuType, commentEnd ) ==
+  IF dollar?(c) THEN
+    documentationSectioningStart(
+      rtSrc, 
+      <>, 
+      start, 
+      upd(act, c), 
+      incr(split), 
+      docuType,
+      commentEnd
+    )
+  ELSE
+    documentationSectioning(src, <>, start, act, split, docuType, commentEnd)
+  FI
+
+/* %We face a non-properly terminated documentary. For nested documentaries a
+terminating token has to be specified whereas line-documentaries require a
+@newline-termination. */
+DEF documentationSectioningStart( <>, _, _, act, _ , _, _ ) == 
+  makeScanError("unexpected end of documentation in sectioning start at ", act)
+
+
+/* %After the determination of subsectioning depth we have to read the contents
+of the headline by applying : */
+FUN documentationSectioning :
+      string ** string ** pos ** pos ** splitLevel ** docuType ** string -> 
+        token ** string ** pos
+/* %A @c{$}-character indicates the end of the sectioning headline, not
+depending on the type of documentation. The scanning of termination of the
+sectioning-documentary is done in @c{documentationSectioningEnd}. The contents
+of the headline are checked for lexicalical correctness. */
+DEF documentationSectioning( c::rtSrc, lexem, start, act, split,
+                             docuType, commentEnd ) ==
+  IF dollar?(c) THEN
+    documentationSectioningEnd(rtSrc, lexem, start, act, split,
+                               docuType, commentEnd)
+  ELSE
+    IF sectioningChar?(c) THEN
+      documentationSectioning(rtSrc, lexem +% c, start, act, split,
+                              docuType, commentEnd)
+    ELSE
+      makeScanWarning(
+        "unexpected symbol `" ++ (c`) ++ 
+              "' discarded in sectioning at ", 
+        rtSrc,
+        act)
+    FI
+  FI
+
+/* %We face a non properly terminated documentary. For nested documentaries a
+terminating token has to be specified whereas line-documentaries require a
+@newline-termination. */ 
+DEF documentationSectioning( <>, _, _, act, _ , _, _ ) == 
+  makeScanError("unexpected end of documentation in sectioning at ", act)
+
+
+
+-- %The implementation of
+FUN documentationSectioningEnd :
+      string ** string ** pos ** pos ** splitLevel ** docuType** string -> 
+        token ** string ** pos
+/* %handles the two different documentary-types by applying
+pattern-matching. The first variant checks the termination of nested
+sectioning-documentaries. The current implementation ignores all
+charcters specified after the headline-termination character
+@c{$}. Other  characters between the headline-text termination (@c{$}) and the
+documentary-termination are not allowed and induce a lexicalic error.  
+
+A @c{*} followed by a @c{/} terminates the sectioning command and induces the
+construction of a @c{docuFileSplit}-token containing the text of the specified
+headline and the subsectioning-depth specified at the beginning of the
+sectioning command. */ 
+DEF documentationSectioningEnd
+      ( src AS c1::rtSrc, lexem, start, act, split,
+        nestedCommentDocu, commentEnd ) ==
+  IF avail?(commentEnd <?| src) THEN
+    LET rtSrc2 == cont(commentEnd <?| src)
+        nextPos2 == upd(act, commentEnd)
+    IN
+      (docuFileSplit(lexem, start, split), rtSrc2, nextPos2)
+  ELSE
+    documentationSectioningEnd(
+      rtSrc, 
+      lexem, 
+      start,
+      act,
+      split,
+      nestedCommentDocu,
+      commentEnd
+    )
+  FI
+
+/* %The implementation for sectioning-documentaries based on the line-comment
+documentation works in a similar manner except that the termination character
+is a single @newline.  All characters after the headline termination (@c{$})
+are simply ignored. */
+DEF documentationSectioningEnd
+       ( c::rtSrc, lexem, start, act, split, lineCommentDocu, commentEnd ) ==
+  IF newline?(c) THEN
+    (docuFileSplit(lexem, start, split), rtSrc, upd(act, c))
+  ELSE
+    documentationSectioningEnd(
+      rtSrc,
+      lexem,
+      start, 
+      upd(act, c), 
+      split,
+      lineCommentDocu,
+      commentEnd
+    )
+  FI
+
+/* %We face a non properly terminated documentary. For nested documentaries a
+terminating token has to be specified whereas line-documentaries require a
+@newline-termination. */ 
+DEF documentationSectioningEnd( <>, _, _, act, _, _, _ ) ==
+ makeScanError("unexpected end of documentation in sectioning end at ", act)
+
+
+
+-- %$$Handling Ignored Documentation$
+-- %---------------------------------
+
+-- %The @precondition for a successive call to the function
+FUN documentationIgnore :
+      string ** pos ** pos ** docuType ** string -> token ** string ** pos
+/* %is that a @c{%-} has been read as the ignore-indication at the beginning of
+a  documentary-specification. This function realizes the ignoring and only
+detects the documentation-termination character(s) depending on the type of the
+specified documentation. For a nested ignore-documentation a terminating
+subsequent @c{*} and @c{/} have to be scanned. This is done in the following
+variant in connection with the function @c{documentationIgnorePossibleEnd}
+defined below : */ 
+DEF documentationIgnore( src AS c::rtSrc, start, act,
+                         nestedCommentDocu, commentEnd ) ==
+  IF avail?(commentEnd <?| src) THEN
+    -- %this is a hack!
+    (layout(<>, initial), cont(commentEnd <?| src), upd(act, commentEnd))
+  ELSE
+    documentationIgnore(rtSrc, start, upd(act, c),
+                        nestedCommentDocu, commentEnd)
+  FI
+
+/* %As some token has to be returned by the function we construct a
+@c{layout}-token with an empty content. This is not clean but works fine. We
+cannot return a @c{documentation}-token with empty content as the translation
+process starts the handling of a documentation by constructing a
+display-environment (lines in info, space and font switching in @TeX{}). As the
+documentary should be ignored completely, we have to return a token-type that
+does not induce any special translation processing except the output of its
+contents. This is what a @c{layout}-token can achieve: */
+DEF documentationIgnore( c::rtSrc, start, act, lineCommentDocu, commentEnd ) ==
+  IF newline?(c) THEN
+    (layout(<>,initial), rtSrc, upd(act, c))  
+  ELSE
+    documentationIgnore(rtSrc, start, upd(act, c), lineCommentDocu, commentEnd)
+  FI
+
+/* %We face a non properly terminated documentary. For nested documentaries a
+terminating token has to be specified whereas line-documentaries require a
+@newline-termination. */ 
+DEF documentationIgnore( <>, _, act, _, _ ) == 
+  makeScanError("unexpected end of documentation in ignore documentation at ",act)
+
+/* %-
+-- %The function
+FUN documentationIgnorePossibleEnd :
+      string ** pos ** pos -> token ** string ** pos 
+/* %tries to catch a terminating @c{/} after the recognition of a @c{*} in the
+calling function (here @c{documentationIgnore}). As described above a
+@c{keyword}-token with empty content is returned: */
+DEF documentationIgnorePossibleEnd( c::rtSrc, start, act ) ==
+  IF slash?(c) THEN
+    (keyword(<>,initial), rtSrc, upd(act, c)) -- this is a hack!!
+  ELSE
+    documentationIgnore(rtSrc, start, act, nestedCommentDocu)
+  FI
+
+/* %We face a non properly terminated documentary. For nested documentaries a
+terminating token has to be specified whereas line-documentaries require a
+@newline-termination. */ 
+DEF documentationIgnorePossibleEnd( <>, _, act ) == 
+  makeScanError(
+    "unexpected end of documentation in ignore documentation at ",
+    act
+  )
+
+*/
+
+-- %$Handling of Texinfo Commands and Macros$
+-- %-----------------------------------------
+
+/* %We use the following function to check the correctness of a scanned
+Texinfo-command or user-defined macro. Its internal realization is depicted by
+an automaton visualized below. The initial-state (start) symbolizes the reading
+of characters in the function @c{documentary}.
+
+@graphic{/home/uebb/kd/ocs/src/dosfop/tools/dosfop/parsingAndScanning/scanOpal/pict/checkautomaton.eps}
+ */
+FUN documentationCheck : 
+      string ** string ** pos ** pos ** 
+        docuType ** string ** option[string] ** config ** string ->
+          token ** string ** pos
+
+DEF documentationCheck( 
+      c::rtSrc, lexem, start, act, docuType, commandStart,
+      levelIdOpt, config, commentEnd) ==
+/* %@c{(commandStart +% c)} is a @c{@@} mark followed by a single character. If
+this command is member of the @c{texinfoSpecialCommands} the scanning of the
+documentation proceeds. Otherwise the next guard has to be checked. */
+  IF (commandStart +% c) in texinfoSpecialCommands THEN
+      documentation(
+        rtSrc, 
+        lexem++fullCommand, 
+        start, 
+        upd(act, fullCommand), 
+        docuType, 
+        levelIdOpt, 
+        config,
+        commentEnd
+      )
+    WHERE
+      fullCommand == commandStart+%c
+/* %We face a Texinfo-command or user-defined-macro. This has to be check and
+possibly substituted: */
+  IF letter?(c) THEN
+    documentationCheckCommand(
+      rtSrc,
+      lexem,
+      start, 
+      act, 
+      docuType, 
+      commandStart +% c, 
+      levelIdOpt,
+      config,
+      commentEnd
+    )
+  ELSE
+/* %The two @c{@@}-continuation checked above are the only valid continuations!
+*/ 
+    makeScanWarning(
+      "unknown DOSFOP Texinfo command `" ++ 
+        (commandStart`) ++ (c`) ++ "' ignored at ",
+       rtSrc, 
+       upd(act, commandStart +% c)
+    )
+  FI
+
+/* %The following error-condition should never be encountered as
+context-correct input is assumed! */
+DEF documentationCheck(<>, _, _, act, docuType,
+                       _, _, _, _) ==
+  IF nestedCommentDocu?(docuType) THEN
+    makeScanError(
+                  "unexpected end of documentation in documentation check at ",
+                  act
+                 )
+  ELSE
+    makeScanWarning("unexpected @ at end of documentation check at ", <>, act)
+  FI
+    
+
+/* %The implementation of an automaton-part that reads letters of commands and
+stops if the actual character is not letter is presented here. In this case the
+check resp. the replacement of a macro is done in
+@c{documentationCheckCommandEnd}. The @c{lexem} parameter is used for storing
+the representation of the command. */ 
+FUN documentationCheckCommand : 
+      string ** string ** pos ** pos ** 
+        docuType ** string ** option[string] ** config ** string ->
+          token ** string ** pos
+
+DEF documentationCheckCommand
+      ( src AS c::rtSrc, lexem, start, act, 
+        docuType, commandStart, levelIdOpt, config, commentEnd ) ==
+  IF letter?(c) THEN
+    documentationCheckCommand(
+      rtSrc, 
+      lexem, 
+      start, 
+      act, 
+      docuType, 
+      commandStart+%c, 
+      levelIdOpt,
+      config,
+      commentEnd
+    )
+  ELSE
+    documentationCheckCommandEnd(
+      src,
+      lexem,
+      start,
+      act,
+      docuType,
+      commandStart,
+      levelIdOpt,
+      config,
+      commentEnd
+    )
+  FI
+
+/* %The following error-condition should never be encountered as
+context-correct input is assumed! */
+DEF documentationCheckCommand
+      ( src AS <>, lexem, start, act, 
+        docuType, commandStart, levelIdOpt, config, commentEnd ) ==
+  IF nestedCommentDocu?(docuType) THEN      
+    makeScanError(
+      "unexpected end of documentation in documentationCheckCommand at ",
+      act
+    )
+  ELSE
+    documentationCheckCommandEnd(<>, lexem, start, act, docuType,
+                                 commandStart, levelIdOpt, config,
+                                 commentEnd)
+  FI
+
+-- %The function
+FUN documentationCheckCommandEnd : 
+      string ** string ** pos ** pos ** 
+        docuType ** string ** option[string] ** config ** string ->
+          token ** string ** pos
+/* %checks if the command is a macro definition, then this definition
+is used, if the command is forbidden, which generates an error. Other
+commands are appended to the documentation */
+
+
+DEF documentationCheckCommandEnd
+      ( src AS c::rtSrc, lexem, start, act, 
+        docuType, command, levelIdOpt, config, commentEnd) ==
+    IF command in macroNames(config) THEN
+      -- macro-definition found
+      LET
+        macroDef == getMacroDef(config, command)
+      IN
+        IF setopen?(c) and withParam?(macroDef) THEN
+          LET
+            (paramOpt, length) == unpair(getParam(rtSrc))
+          IN
+            IF avail?(paramOpt) THEN
+                documentation(
+                  delete(rtSrc, 0, length),
+                    -- erase the textual representation of the parameter
+                  lexem ++ subst,
+                    -- append parameterized and substitution
+                  start,
+                  upd(act, subst),
+                    -- update position w.r.t. the full substitution
+                  docuType,
+                  levelIdOpt,
+                  config,
+                  commentEnd
+                )
+              WHERE
+                subst == preParamSubstitution(macroDef) ++
+                           cont(paramOpt)++
+                             postParamSubstitution(macroDef)
+            ELSE
+              makeScanWarning(
+                "Error in Parameter of macro " ++
+                   (command`) ++ ", macro call deleted at ", 
+                delete(rtSrc, 0, length),
+                upd(act, command)
+              )
+            FI
+        IF ~(letter?(c)) and ~(setopen?(c)) and noParam?(macroDef) THEN  
+            -- substitution without parameters    
+            documentation(
+              src,
+              lexem ++ subst,
+              start,
+              upd(act, subst),  -- update the position w.r.t. the full subst
+              docuType,
+              levelIdOpt,
+              config,
+              commentEnd
+            )            
+          WHERE
+            subst == substitution(macroDef)
+        ELSE
+          makeScanWarning(
+            "Non-matching definition and application of macro " ++
+                (command`) ++ ", macro ignored at ",
+            src,
+            upd(act, command)
+          )
+        FI
+    ELSE
+      IF command in forbiddenTexinfoCommands THEN
+         makeScanWarning(
+           "Texinfo command " ++ (command`) ++ 
+                " not allowed and ignored at", 
+           src, 
+           act
+         )
+      ELSE
+        documentation(
+          src, 
+          lexem++command, -- simply append the valid command to the 
+                          -- alreadily read documentation-lexem
+          start, 
+          upd(act,command), 
+          docuType, 
+          levelIdOpt, 
+          config,
+          commentEnd
+        )
+      FI
+    FI
+
+
+/* %At end of file, we do not process the macro. This is inconsistent, but
+    macros are now obsolete, because they are now part of the Texinfo
+    language. */
+DEF documentationCheckCommandEnd
+      ( src AS <>, lexem, start, act, 
+        docuType, command, levelIdOpt, config, commentEnd) ==
+        documentation(
+          src, 
+          lexem++command, -- simply append the valid command to the 
+                          -- alreadily read documentation-lexem
+          start, 
+          upd(act,command), 
+          docuType, 
+          levelIdOpt, 
+          config,
+          commentEnd
+        )
+
+/* %If the given @c{s} of type @string contains a @c{@\}}-ended front of
+characters the function */
+FUN getParam : string -> pair[option[string],nat]
+/* %returns a pair constructed by an available option containing 
+the string till the @c{@\}}-symbol and the number of characters read from
+the beginning of the parameter. If the
+string ends before a @c{@\}} has been read the optional first element of the
+pair is @nil. An escape-mechanism
+is provided by preceeding a @c{@\}} in a parameter with a @c{\\}-character so
+that @c{@\}} are allowed as part of the parameter specification. */
+DEF getParam( s ) == getParamIntern(s, <>, 0)
+
+FUN getParamIntern : string ** string ** nat -> pair[option[string],nat] 
+DEF getParamIntern( <>, _, _ ) == &(nil, 0)
+/* %The @c{paramStart} is used as an accumulator for alreadily read parameter
+characters. */
+DEF getParamIntern( c::rest, paramStart, len ) ==
+  IF backslash?(c) THEN
+    IF ~(<>?(rest)) THEN
+       getParamIntern(rt(rest), paramStart +% ft(rest), len+2 )
+    ELSE
+      &(nil, len)
+    FI
+  IF setclose?(c) THEN
+    &(avail(paramStart), len)
+  ELSE
+    getParamIntern(rest, paramStart +% c, len+1)
+  FI
+
+
+-- %$Output of Scanning Errors and Warnings$
+-- %---------------------------
+
+/* %These functions provide a convenient measure for returning error and
+warning tokens in scanner-state functions. Moreover a unique preamble for
+the whole module is defined. 
+
+From errors a recovery is not possible. Hence, in the case of an error, we
+return an empty 
+rest-source and an invalid position (@c{initial}) as this position is never
+been looked at again. */ 
+FUN makeScanError : denotation ** pos -> token ** string ** pos
+DEF makeScanError( reason, p ) ==
+  ( error(preamble ++ " error: " ++ reason ++ !(p) ++ "\n"), <>, initial )
+
+FUN makeScanError : denotation ** pos ** pos -> token ** string ** pos
+DEF makeScanError( reason, p, p2 ) ==
+  ( error(preamble ++ " error: " ++ reason ++ !(p) ++
+          ", started at " ++ !(p2) ++ "\n"), <>, initial )
+
+FUN makeScanWarning : denotation ** string ** pos -> token ** string ** pos
+DEF makeScanWarning( reason, restSrc, p ) ==
+  ( warning("<!> " ++ reason ++ !(p) ++ "\n"), restSrc, p )
+
+FUN preamble : denotation
+DEF preamble == "DOSFOP OPAL Scanning"
+
+
+
+
+

@@ -1,0 +1,67 @@
+IMPLEMENTATION TransType
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransType.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String     COMPLETELY       Seq        COMPLETELY
+  ComCompose COMPLETELY       Nat        COMPLETELY
+  Stream     COMPLETELY       Void	 COMPLETELY
+  Com        COMPLETELY       Char COMPLETELY
+  ComAction COMPLETELY
+
+IMPORT 
+  Token  COMPLETELY
+
+
+DATA outputElem == code         ( cont : seq[token] )
+                   documentation( cont : string )
+                   texinfo      ( cont : string )
+                   ensureLineBreak( cont: outputElem )
+ 
+
+FUN write : output ** seq[outputElem] -> com[void]
+
+DEF write( _, <> ) == yield(okay(nil))
+
+/* %At first the contents of the three different output-element types are
+    extracted for the first sequence element @c{ftOutputElem}.
+The result @c{firstPart} is then written to the @c{output}-stream.
+A recursive call to @c{write} handles the rest of the output-element
+sequence. */ 
+DEF write( outputFile, elems) == write(false, outputFile, elems)
+
+FUN write: bool ** output ** seq[outputElem] -> com[void]
+DEF write( newline?, outputFile, ftOutputElem :: rtOutputElems ) ==
+  LET (newNL?, res) == asString(newline?, ftOutputElem)
+  IN
+  write(outputFile, res) &
+  write(newNL?, outputFile, rtOutputElems)
+DEF write(_, _, <>) == done
+
+FUN asString: bool ** outputElem -> bool ** string
+DEF asString(newline?, code(<>)) == (newline?, <>)
+DEF asString(newline?, code(c)) == 
+  IF cont(last(c)) <>? THEN asString(newline?, code(front(c)))
+  ELSE
+    (last(cont(last(c))) = ("\n"!) , token2String(c))
+  FI
+DEF asString(newline?, documentation(<>)) == (newline?, <>)
+DEF asString(_, documentation(c)) == (last(c) = ("\n"!), c)
+DEF asString(newline?, texinfo(<>)) == (newline?, <>)
+DEF asString(_, texinfo(c)) == (last(c) = ("\n"!), c)
+DEF asString(newline?, ensureLineBreak(c)) ==
+  LET (newNL?, res) == asString(true, c)
+  IN
+  (newNL?, (IF newline? THEN <> ELSE ("\n"!) FI) ++ res)
+
+
+
+
+
+
+
+
+
+
+
+
+

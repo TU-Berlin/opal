@@ -1,0 +1,75 @@
+
+IMPLEMENTATION AnFun
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:36 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat	ONLY nat 0
+	Seq	ONLY seq ++ <> %
+	SeqMap  ONLY *
+
+IMPORT	Format	COMPLETELY
+	
+IMPORT	Ide		ONLY ide origin:SORT
+	TypeAn	  	ONLY typeAn none?
+	TypeAnFun 	ONLY format:typeAn->format
+	SourceAn	ONLY sourceAn none?
+	SourceAnFun	ONLY format:sourceAn->format
+	OptimAn		ONLY optimAn none?
+	OptimAnFun	ONLY format:optimAn->format
+	TransAn		ONLY transAn none?
+	TransAnFun	ONLY format:transAn->format
+	PragmaAn	ONLY pragmaAn none?
+	PragmaAnFun	ONLY format:pragmaAn->format
+	An		ONLY type source optim trans pragma
+	Ac		COMPLETELY
+
+
+-- ===========================================================================
+
+DEF mapAn(fd,fe)(e:exp) ==
+    LET a1 == fe(an(e))
+    IN
+    IF error?(e) THEN error(a1)
+    IF ide?(e)   THEN ide(a1,ide(e))
+    IF deno?(e)  THEN deno(a1,repr(e))
+    IF apply?(e) THEN apply(a1,mapAn(fd,fe)(fun(e)),
+			       (mapAn(fd,fe)):exp->exp * args(e))
+    IF case?(e)  THEN case(a1,mapAn(fd,fe)(discr(e)),
+			      mapAnMatch(fd,fe)*matches(e),
+			      mapAn(fd,fe)(default(e)))
+    IF lambda?(e)THEN lambda(a1,(mapAn(fd,fe)):dec->dec * vars(e),
+			        mapAn(fd,fe)(scope(e)))
+    IF block?(e) THEN block(a1,(mapAn(fd,fe)):dec->dec * binds(e),
+			       mapAn(fd,fe)(scope(e)))
+    FI
+
+  FUN mapAnMatch : (an->an) ** (an->an) -> match -> match
+  DEF mapAnMatch(fd,fe)(m) ==
+    match(cons(m),(mapAn(fd,fe)):dec->dec * vars(m),mapAn(fd,fe)(scope(m)))
+
+DEF mapAn(fd,fe)(d:dec) ==
+    LET a1 == fd(an(d))
+    IN
+    IF variable?(d) THEN variable(a1,ide(d))
+    IF hidden?(d)   THEN hidden(a1,ide(d),mode(d))
+    IF binding?(d)  THEN binding(a1,ide(d),mode(d),mapAn(fd,fe)(def(d)))
+    IF constructor?(d) THEN constructor(a1,ide(d),mode(d),order(d))
+    FI
+
+-- ===========================================================================
+
+DEF format(type?,source?,optim?,trans?,pragma?)(a) == 
+    blk(0, optional(type? and ~(none?(type(a))),format(type(a)))
+	++(optional(source? and ~(none?(source(a))),format(source(a)))
+	++(optional(optim? and ~(none?(optim(a))),format(optim(a)))
+	++(optional(trans? and ~(none?(trans(a))),format(trans(a)))
+	++(optional(pragma? and ~(none?(pragma(a))),format(pragma(a)))
+	  )))))
+
+FUN optional : bool ** format -> seq[format:SORT]
+DEF optional(on?,f) ==
+    IF on? THEN %(brk(0),str("["),f,str("]")) ELSE <>[format:SORT] FI
+

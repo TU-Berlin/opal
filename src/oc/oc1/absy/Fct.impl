@@ -1,0 +1,107 @@
+-- %-  LAST EDIT: Thu Sep 17 16:47:49 1992 by Michael Jatzeck (trabi!michel) 
+
+IMPLEMENTATION Fct
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:39 $ ($Revision: 1.1.1.1 $)
+
+-- %- Autor:       mija
+-- %- Projekt:     OPAL1-Compiler (Frontend)
+
+IMPORT  Nat             ONLY = 0 < > 10000
+        NatConv         ONLY `
+        Denotation              COMPLETELY
+        Lexem           ONLY lexem ` openBr closeBr arrow product
+        SeqMap[fct,fct] ONLY *
+        SeqReduce[fct,denotation] ONLY /
+        SeqCompare[fct] ONLY eq? cmp rel <?
+        Seq[fct]        ONLY # :: <> ++
+       SeqConv COMPLETELY
+
+
+-- %- ------------------------------------------------------------------------
+-- %$Relationen$
+
+DEF  =(F)(f1,f2) ==
+        LET eq == =(F) IN
+        (IF (f1 funct?)  and (f2 funct?) THEN 
+          (arg(f1) eq arg(f2)) and (res(f1) eq res(f2))
+        IF (f1 cart?)   and (f2 cart?)   THEN eq?(eq)(elems(f1),elems(f2))
+        IF (f1 sort?)   and (f2 sort?)   THEN object(f1) F  object(f2)
+        IF (f1 nonCartVar?) and (f2 nonCartVar?) THEN id(f1) = id(f2)
+        IF (f1 var?) and (f2 var?) THEN id(f1) = id(f2)
+        ELSE false
+        FI)
+
+DEF  < (<<)(f1,f2) ==
+        IF f1 sort? THEN
+          IF f2 sort? THEN object(f1) << object(f2)
+          ELSE true FI
+        IF f1 cart? THEN
+          IF f2 sort? THEN false
+          IF f2 cart? THEN 
+            LET (s1,s2) == (elems(f1),elems(f2)) IN
+            IF #(s1) < #(s2) THEN true ELSE <?(cmp(<(<<))(s1,s2)) FI
+          ELSE true FI
+        IF f1 funct? THEN
+          IF f2 sort? THEN false
+          IF f2 cart? THEN false
+          IF f2 funct? THEN
+            IF < (<<)(arg(f1),arg(f2)) THEN true
+            IF < (<<)(arg(f2),arg(f1)) THEN false
+            ELSE < (<<)(res(f1),res(f2)) FI
+          ELSE false FI
+        IF f1 nonCartVar? THEN
+          IF f2 var? THEN true
+          IF f2 nonCartVar? THEN id(f1) < id(f2)
+          ELSE false FI
+        IF f1 var? THEN false
+        FI
+
+-- %- ------------------------------------------------------------------------
+-- %$Umwandlungsfunktionen von und zu Texten$
+
+FUN  `  : (obj -> denotation) -> fct -> denotation
+        -- Textkonversion
+
+DEF `(``) == `(``,false)
+
+FUN flatCart : fct -> fct
+DEF flatCart(X) == X
+DEF flatCart(funct(A,R)) == funct(flatCart(A), flatCart(R))
+DEF flatCart(cart(<>)) == cart(<>)
+DEF flatCart(cart(cart(FS) :: R)) == cart((flatCart * FS) ++ 
+                elems(flatCart(cart(R))))
+DEF flatCart(cart(F :: R)) == cart(flatCart(F) :: elems(flatCart(cart(R))))
+
+ -- %Textkonversion  without unnecessary parenthesis
+FUN  `  : (obj -> denotation) ** bool -> fct -> denotation
+
+
+DEF `(``,_)(sort(O))    == ``(O)
+DEF `(_,_)(cart(<>))     == "()"
+DEF `(``,paren?)(cart(FS)) == 
+  (IF paren? THEN "(" ELSE "" FI) ++
+  `("", `(product:lexem) , "")(`(``, true))(FS) ++
+  (IF paren? THEN ")" ELSE "" FI) 
+
+DEF `(``,paren?)(funct(A, R)) == 
+  (IF paren? THEN "(" ELSE "" FI) ++
+  `(``, A funct?)(A) ++ `(arrow:lexem) ++ `(``,false)(R) ++
+  (IF paren? THEN ")" ELSE "" FI) 
+
+
+DEF `(_,_)(nonCartVar(I)) == "nonCartVar(" ++ `(I) ++ ")"
+DEF `(_,_)(var(I))       == "var(" ++ `(I) ++ ")"
+DEF `(_,_)(noFct)        == "no Fct"
+
+DATA fct ==     sort( object : obj )            -- Sorte
+                cart( elems : seq[fct] )        -- kartesisches Produkt
+                funct( arg : fct, res : fct )   -- Funktionsfunktionalitaet
+                nonCartVar( id : nat )          -- Sorten/Funktionsvariablen
+                var( id : nat )                 -- beliebige Fct.(Variable)
+                noFct
+
+DEF anyFct == var(10000)

@@ -1,0 +1,96 @@
+/* %
+Strongly connected components.
+
+Generalized adaption of the implementation used by OCS
+            itself. Algorithm is based on Cormen, Leiserson and
+            Rivest: Introduction to Algorithms.
+*/
+IMPLEMENTATION MaxStrongComp
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:10 $ ($Revision: 1.1.1.1 $)
+-- @(#) $Id: MaxStrongComp.impl,v 1.1.1.1 1998-06-16 16:00:10 wg Exp $
+
+IMPORT
+  Option              COMPLETELY
+  Seq                 ONLY seq <> :: ft rt
+  SeqOfSeq            ONLY flat
+  SeqReduce           ONLY \
+  Set                 ONLY set {} in incl
+  SetReduce           ONLY /
+  Map                 ONLY map {} def ! !? dom
+
+
+DATA env ==
+  env(
+    visited: set[data,<],
+    forests: seq[seq[data]]
+  )
+
+
+DEF msc(G) ==
+  LET
+    Env0 == env({}, <>)
+    Env1 == (dfs(G), Env0) / dom(G)
+    Env2 == (dfs(invert(G)), Env0) \ flat(forests(Env1))
+  IN
+    forests(Env2)
+
+
+
+FUN dfs: map[data,<,set[data,<]] -> data ** env -> env
+
+DEF dfs(G)(D,Env AS env(V,F)) ==
+   IF D in V THEN Env
+             ELSE dfsVisit(G)(D, env(V, <> :: F))
+   FI
+
+
+FUN dfsVisit: map[data,<,set[data,<]] -> data ** env -> env
+
+DEF dfsVisit(G)(D,Env AS env(V,F AS FF::RF)) ==
+  IF D in V THEN
+    Env
+  ELSE
+    LET
+      Adj? == G !? D
+    IN
+      IF Adj? avail? THEN
+        LET
+          Env1 == env(D incl V, F)
+          Env2 == (dfsVisit(G), Env1) / cont(Adj?)
+        IN
+          env(visited(Env2), (D::ft(forests(Env2)))::rt(forests(Env2)))
+      IF Adj? nil? THEN
+        env(D incl V, (D::FF)::RF)
+      FI
+  FI
+
+
+
+FUN invert: map[data,<,set[data,<]] -> map[data,<,set[data,<]]
+
+DEF invert(G) ==
+  (inv(G), {}) / dom(G)
+
+
+FUN inv: map[data,<,set[data,<]]
+         -> data ** map[data,<,set[data,<]] -> map[data,<,set[data,<]]
+
+DEF inv(G)(D,IG) ==
+  (inv(D), IG) / (G ! D)
+
+
+FUN inv: data -> data ** map[data,<,set[data,<]] -> map[data,<,set[data,<]]
+
+DEF inv(Src)(Dst,IG) ==
+  LET
+    Adj? == IG !? Dst
+  IN
+    IF Adj? avail? THEN
+      (Dst, Src incl cont(Adj?)) def IG
+    IF Adj? nil? THEN
+      (Dst, Src incl {}) def IG
+    FI

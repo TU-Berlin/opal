@@ -1,0 +1,709 @@
+-- LAST EDIT: Mon Aug 12 15:57:02 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     
+-- Changes:     af, Jun 21 1993: added handling of variable names in function
+--                               eqBaseA (used by eqInstName) to fix bug oc1.34
+-- ============================================================================
+
+IMPLEMENTATION AnalyzedGlobSigH
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  AbsyFun2        ONLY    * / = com
+        Ac              ONLY    dec unit:SORT
+        Attributes      ONLY    attr isUsed4Generated isUsed4Op
+        BoolConv        ONLY    `
+        Compose         ONLY    o
+        DEBUG           ONLY    FIELD? PRINT
+        Decl4SigAna     ONLY    updAttr
+        DeclEntry       COMPLETELY
+        Denotation      ONLY    ++
+        Error           ONLY    + err:SORT
+        Fct             ONLY    ` fct anyFct =
+        GlobSig         COMPLETELY
+        ImpDecl4SigAna  COMPLETELY
+        ImpExpEntry     COMPLETELY
+        Lexem           ONLY    ` lexem sort
+        Name            COMPLETELY
+        Name4SigAna     COMPLETELY
+        Nat             COMPLETELY -- ONLY      0 1 2 = > nat pred succ
+        NatConv         ONLY `
+        Objects         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        PartNameEntry   COMPLETELY
+        Pragma          ONLY    pragma
+        Quadruple       COMPLETELY
+        Rep             ONLY    lexem rep
+        Seq             COMPLETELY
+        SeqCompare      ONLY    eq?
+        SeqConv         ONLY    `
+        SeqFilter       ONLY    |
+        SeqIndex        ONLY    !
+        SeqMap          ONLY    *
+        SeqMapEnv       ONLY    *
+        SeqReduce       ONLY    \
+        SeqZip          ONLY    zip
+        Table           ONLY    ! table
+        Triple          COMPLETELY
+        TypeAn          ONLY    typeDec
+
+-- ----------------------------------------------------------------------------
+
+FUN ```` : name -> () -> denotation
+DEF ````(name)() == "origInst: " ++  `'Name(name)
+
+
+FUN instance? : bool
+DEF instance? == FIELD?[bool:SORT]("-zinstance")
+
+
+        FUN instance : globSig ** name ** seq[name:SORT] -> name -> name
+         -- Ersetzten von formParam und Einsetzen von Instanzen in extName
+        DEF instance(gS,upName,Inst)(name) ==
+                PRINT(instance?, `````(upName,name,finName), finName)
+                WHERE finName ==
+                (IF name formParam? ANDIF struct(name) = struct(upName) 
+                                THEN Inst ! pred(no(name))  
+                IF name var? THEN name
+                IF name intName? THEN name
+                IF name extName? THEN 
+                  IF (struct(name) = struct(upName)) and
+                        (inst(name) = unparam'Objects)  THEN 
+                    -- Instanz uebernehmen (z.B. seq von <> : seq)
+                    IF upName extName? THEN
+                      extName(struct(name),impDecl(name),inst(upName))
+                    IF upName nameSet? THEN
+                      nameSet(struct(name), impDecl(name), Inst)
+                    FI
+                  OTHERWISE
+                  IF notParametrized?(gS, struct(name)) THEN name
+                  IF (inst(name) = unparam'Objects) THEN name
+                  OTHERWISE
+                  IF identUninst?(gS,name) THEN name
+                  IF genericTransitives?(gS,name)  THEN 
+                    -- Es muss die richtige Instanz gefunden werden.
+                    IF upName extName? THEN
+                      IF genericTransitive?(gS,struct(name),newInst) 
+                         or genericTransitives?(gS,struct(name),newInst) THEN
+                        -- die Instanz ist generisch
+                        nameSet(struct(name),impDecl(name),instS)
+                      ELSE
+                        instance(gS,upName,Inst)
+                        (extName(struct(name),impDecl(name),newInst))
+                      FI
+                      WHERE
+                        newInst == findInstance(gS, instS, name) 
+                    IF upName nameSet? THEN
+                      -- Name generisch importiert, die Instanz bleibt.
+                      nameSet(struct(name),impDecl(name),instS)
+                    FI
+                    WHERE Pattern == getInst(gS,name)
+                          instS == instance(gS,upName,Inst) * Pattern
+                  IF identInst?(gS,name) THEN
+                    IF eq?(='Name)(realInst(gS)*getInst(gS,name),newInstS) THEN
+                        name
+                    /*  extName(struct(name),impDecl(name), newInst)
+                      WHERE newInst == findEqInst(gS,struct(name),newInstS) */
+                    ELSE -- generisch
+                      nameSet(struct(name),impDecl(name),newInstS)
+                    FI
+                    WHERE
+                    newInstS == instance(gS,upName,Inst) * getInst(gS,name)
+                  ELSE instance(gS,upName,Inst)(realInst(gS,name))
+                  FI
+                ELSE name
+                FI)
+
+    FUN findInstance: globSig ** seq[name] ** name -> inst
+    -- PRE: instS ist die vorinstantiierte Sequenz von Namen eines
+    --      genericTransitives - Patterns, das wiederum zur Instanz von name
+    --      gehoert.
+    DEF findInstance(gS, instS, name) ==
+      LET instCandS == realInst2(instTab) * getInsts(gS,name)
+          instTab == insts(no(struct(name)) ! structures(gS))
+      IN
+      -- PRE instCandS ist mindestens einelementig
+      IF rt(instCandS) <>? THEN ft(instCandS) -- alles eindeutig
+      ELSE -- es muss einer aus der Menge gefunden werden ...
+        ft(eqInst(gS,instS,struct(name)) | instCandS )
+      FI
+  
+        FUN eqInst : globSig ** seq[name:SORT] ** struct -> inst -> bool
+        DEF eqInst(gS,instS1,struct)(inst) ==
+                LET Result1 == PRINT(FIELD?[bool]("-zfindInstance") and Result, 
+                        \\ . "zfoundInst: " ++ `(`)(instS1) ++
+                                " struct: " ++ `(no(struct)) ++ 
+                                " inst: " ++ `(no(inst)),
+                        Result)
+                Result ==
+                IF genericTransitive?(gS,struct,inst) THEN true
+                ELSE eq?(=(gS))(instS1,getInst(gS,struct,inst)) FI
+                IN Result1
+
+FUN ````` : name ** name ** name -> () -> denotation
+DEF `````(upName,name,finName)() ==
+                "upName: " ++  `'Name(upName) ++ ",   name: " ++
+                `'Name(name) ++ "  -> finName: " ++ `'Name(finName)
+
+  FUN eqInstName? : bool
+  DEF eqInstName? == FIELD?[bool:SORT]("-zeqInstName")
+  
+  FUN eqInstNamePrint : name ** name ** bool -> denotation
+  DEF eqInstNamePrint(n1,n2,erg) ==
+    "eqInstName: " ++ `(n1) ++ " = " ++ `(n2) ++
+    " -> " ++ `'BoolConv(erg)
+
+FUN eqInstName : globSig -> name ** name -> bool
+-- Namensvergleich mit besonderem Vergleich der Instanzen
+DEF eqInstName(gS)(name1,name2) ==
+        LET erg == name1 = name2 IN
+        IF PRINT(eqInstName?, \\ .eqInstNamePrint(name1,name2,erg),erg) THEN true
+        OTHERWISE
+        IF name1 eqBaseA name2 THEN
+          -- die Instanzen unterscheiden sich, beides extNames
+          eqInst'AnalyzedGlobSigH(gS,struct(name1),inst(name1),inst(name2))
+        ELSE false FI
+
+FUN eqInst : globSig ** struct ** inst ** inst -> bool
+DEF eqInst(gS,struct,inst1,inst2) ==
+        LET instTab == insts(no(struct) ! structures(gS))
+            inst11 == realInst2(instTab)(inst1)
+            inst21 == realInst2(instTab)(inst2)
+        IN
+        IF inst11 = inst21 THEN true
+        ELSE
+          IF identInst?(gS,struct,inst11) and identInst?(gS,struct,inst21) THEN
+            eq?(eqInstName(gS))(getInst(gS,struct,inst11),
+                                getInst(gS,struct,inst21))
+          IF genericTransitives?(gS, struct, inst11) THEN
+            LET instCandS == getInsts(gS, struct,inst11) IN
+            IF rt(instCandS) <>? THEN 
+                eqInst'AnalyzedGlobSigH(gS,struct,ft(instCandS),inst21)
+            ELSE false FI
+          IF genericTransitives?(gS, struct, inst21) THEN
+            LET instCandS == getInsts(gS, struct,inst21) IN
+            IF rt(instCandS) <>? THEN 
+                eqInst'AnalyzedGlobSigH(gS,struct,inst11,ft(instCandS))
+            ELSE false FI
+          ELSE false FI
+        FI
+
+FUN blub0 : name ** seq[name] -> () -> denotation
+DEF blub0(n,inst)() ==  `'Name(n) ++ `'SeqConv("[",",","]")(`'Name)(inst)
+
+FUN textOut? : bool
+DEF textOut? == FIELD?[bool:SORT](("-ztextOut"))
+
+
+FUN `` : globSig ** nat ** seq[name:SORT] ** name -> name -> denotation
+DEF ``(gS,depth,Inst,upName)(name0:name) == 
+        LET name == 
+          PRINT(textOut?, blub0(name0,Inst),name0) IN
+        IF name var? THEN `'Name(name)
+        IF name local? THEN `'Name(name)
+        IF name formParam? THEN `'Name(name)
+        ELSE ideT ++(origT ++(instT ++ fctT))
+          WHERE
+          depthN == IF short? THEN 0 ELSE pred(depth) FI
+          short? == depth = 0
+          (ideT, origT, instT, fctT) ==
+            IF name intName? THEN 
+              (lexem(ide(declE)),
+               (IF short? THEN "" ELSE "'" ++ lexem(structIde(gS)) FI),
+               (""),
+               (IF short? THEN "" 
+                ELSE ":" ++
+                  (IF declE sort? THEN `(sort:lexem)
+                   ELSE `(``(gS,depthN,Inst,upName))
+                            (fct'AnalyzedGlobSigH(gS,name))
+                   FI)
+                FI))
+              WHERE declE == no(realDecl(gS, decl(name))) ! decls(gS)
+            IF name extName? ANDIF ~(0?(no(impDecl(name)))) THEN
+              (lexem(ide(impDeclE)),
+               (IF short? THEN "" 
+                ELSE "'" ++ lexem(ide(structIde(structE))) FI),
+               (IF notParametrized?(gS, struct(name)) THEN ""
+                ELSE `'SeqConv("[",",","]")(`(gS,(depthN)))(newInst)
+                FI),
+               (IF short? THEN "" 
+                ELSE ":" ++
+                  (IF impDeclE sort? THEN `(sort:lexem)
+                   ELSE `(``(gS,(depthN),Inst,upName))
+                            (fct'AnalyzedGlobSigH(gS,name))
+                   FI)
+                FI))
+              WHERE 
+              structE == no(struct(name)) ! structures(gS)
+              impDeclE == no(impDecl(name)) ! impDecls(structE)
+              newInst == IF upName intName? THEN newInst0
+                         ELSE instance(gS,upName,Inst) * newInst0 FI
+              newInst0 == 
+                (IF notParametrized?(gS, struct(name)) THEN <>
+                OTHERWISE
+                IF inst(name) = unparam THEN 
+                  getFormParamImpDecls(gS, struct(name))
+                IF identUninst?(gS, name) THEN
+                  getFormParamImpDecls(gS, struct(name))                
+                ELSE getInst(gS, realInst(gS, extName(struct(name),
+                                impDecl(name),
+                        checkoutGenericTransitives(gS,realInst(gS,name)))))
+                FI)
+            IF name extName? ANDIF 0?(no(impDecl(name))) THEN
+              ("dummy",
+               (IF short? THEN "" 
+                ELSE "'" ++ lexem(ide(structIde(structE))) FI),
+               (IF notParametrized?(gS, struct(name)) THEN ""
+                ELSE `'SeqConv("[",",","]")(`(gS,(depthN)))(newInst)
+                FI),
+                "")
+              WHERE 
+              structE == no(struct(name)) ! structures(gS)
+              newInst == IF upName intName? THEN newInst0
+                         ELSE instance(gS,upName,Inst) * newInst0 FI
+              newInst0 == 
+                (IF notParametrized?(gS, struct(name)) THEN <>
+                OTHERWISE
+                IF inst(name) = unparam THEN 
+                  getFormParamImpDecls(gS, struct(name))
+                IF identUninst?(gS, name) THEN
+                  getFormParamImpDecls(gS, struct(name))                
+                ELSE getInst(gS, realInst(gS, extName(struct(name),
+                                impDecl(name),
+                        checkoutGenericTransitives(gS,realInst(gS,name)))))
+                FI)
+            IF name nameSet? ANDIF ~(0?(no(impDecl(name)))) THEN
+              (lexem(ide(impDeclE)),
+               (IF short? THEN "" 
+                ELSE "'" ++ lexem(ide(structIde(structE))) FI),
+               (`("[",",","]")(`(gS,(depthN)))(newInst)),
+               (IF short? THEN "" 
+                ELSE ":" ++
+                  (IF impDeclE sort? THEN `(sort:lexem)
+                   ELSE `(``(gS,(depthN),Inst,upName))
+                            (fct'AnalyzedGlobSigH(gS,name))
+                   FI)
+                FI))
+              WHERE 
+              structE == no(struct(name)) ! structures(gS)
+              impDeclE == no(impDecl(name)) ! impDecls(structE)
+              newInst == IF upName intName? THEN newInst0
+                         ELSE instance(gS,upName,Inst) * newInst0 FI
+              newInst0 == insts(name) 
+            IF name nameSet? ANDIF 0?(no(impDecl(name))) THEN
+              ("dummy",
+               (IF short? THEN "" 
+                ELSE "'" ++ lexem(ide(structIde(structE))) FI),
+               (`("[",",","]")(`(gS,(depthN)))(newInst)),
+                "")
+              WHERE 
+              structE == no(struct(name)) ! structures(gS)
+              newInst == IF upName intName? THEN newInst0
+                         ELSE instance(gS,upName,Inst) * newInst0 FI
+              newInst0 == insts(name) 
+            ELSE
+              (`'Name(name), "??", "??", "??")
+            FI
+        FI
+
+  FUN checkoutGenericTransitives : globSig ** name -> inst
+  DEF checkoutGenericTransitives(gS, name) ==
+    IF genericTransitives?(gS,name) THEN
+      LET instCandS == getInsts(gS,name) IN
+        inst(realInst(gS,extName(struct(name),impDecl(name),ft(instCandS))))
+      -- undefiniert fuer mehrdeutige genericTransitives
+   ELSE inst(name) FI
+
+-- ----------------------------------------------------------------------------
+
+FUN checkNameSet : globSig -> nat ** name -> nat ** name
+  -- Umwandeln von Namen mit generischen Instanzen
+DEF checkNameSet(gS)(no, name0) ==
+        LET Field? == FIELD?[bool]("-zcheckNameSet")
+            name1 == realInst(gS, name0)
+            name2 == PRINT(Field?, \\ . "checkNameSetIn: " ++ `(name1), name1)
+            name == PRINT(Field?, \\ . " = " ++ `(gS, 1)(name2), name2)
+            NewName1 == PRINT(Field?, \\ . "checkNameSetOut: " ++ `(NewName0), 
+                        NewName0)
+            NewName == PRINT(Field?, \\ . " = " ++ `(gS, 1)(NewName1), NewName1)
+        (LastNo, NewName0) ==
+        IF name extName? THEN
+          IF notParametrized?(gS, struct(name)) THEN (no, name)
+          ELSE 
+            IF identInst?(gS, name) THEN 
+                LET Insts == getInst(gS, name)
+                    (NewNo, NewInsts) == * (checkNameSet(gS), no, Insts)
+                IN IF eq?(='Name)(realInst(gS)*Insts,NewInsts) THEN (no, name)
+                   ELSE (NewNo, nameSet(struct(name), impDecl(name), NewInsts))
+                   FI
+            IF identUninst?(gS, name) THEN
+              (newNo,nameSet(struct(name), impDecl(name), inst))
+              WHERE 
+              (newNo, inst) == *'SeqMapEnv(toVar, no, getFormParams(gS, struct(name)))
+            IF genericTransitive?(gS, name) THEN
+              -- ist nur noch da, wenn die "andere" Instanz generisch ist.
+              (finNo, nameSet(struct(name),impDecl(name), finInst))
+              WHERE 
+              -- dummy-Namen zusammenbauen, um ...
+              oName == extName(oStruct,impDecl(0),oInst)
+              (oStruct, oInst) == getOtherInst(gS,struct(name),inst(name))
+              -- die neue Instanz berechnene zu lassen (finOName nameSet?)
+              (no1, oNameSet) == checkNameSet(gS)(no,oName)
+              -- jetzt die eigentlichen Parameter instanziieren
+              (finNo, finInst) == *(checkNameSet(gS), no1, 
+                instGenTrans(gS,insts(oNameSet),oStruct,oInst)  
+                         * getInst(gS,name))
+            IF genericTransitives?(gS, name) THEN
+               LET NewNames == expandGenericTransitives(gS)(name)
+                   (no1, Checked) == *(checkNameSet(gS), no, NewNames)
+               IN 
+                  IF #(Checked) = 1 THEN (no1, ft(Checked))
+                  ELSE LET (newNo, inst) == *'SeqMapEnv(toVar, no1,
+                                   getFormParams(gS, struct(name)))
+                       IN (newNo,nameSet(struct(name), impDecl(name), inst))
+                  FI     
+            FI
+          FI
+        IF name nameSet? THEN 
+           LET (finNo, finInst) == *(checkNameSet(gS), no, insts(name))
+           IN (finNo, nameSet(struct(name), impDecl(name), finInst))
+        ELSE (no,name)
+        FI
+        IN (LastNo, NewName)
+        
+        FUN toVar : nat ** option[fct[name:SORT]] -> nat ** name
+        DEF toVar(no,para) == (succ(no), var(no))
+
+FUN instGenTrans : globSig ** seq[name] ** struct ** inst
+                        -> name -> name
+DEF instGenTrans(gS,nameS,oStruct,oInst)(name AS formParam(S,ID,No)) ==
+    IF S = oStruct THEN nameS ! pred(No) ELSE name FI
+DEF instGenTrans(gS,nameS,oStruct,oInst)(name) == name
+
+DEF instGenTrans(gS,nameS,oStruct,oInst)
+                (name AS extName(struct,impDecl,inst)) ==
+    IF (struct = oStruct) THEN 
+        IF (inst = oInst) ORIF (inst = unparam) THEN
+              nameSet(oStruct, impDecl, nameS)
+        ELSE name FI
+    ELSE name FI
+
+FUN traceCheckInst? : bool
+DEF traceCheckInst? == FIELD?[bool]("-ztraceCheckInst")
+
+FUN checkInst : globSig ** seq[name:SORT] 
+                -> seq[name:SORT] ** seq[seq[name:SORT]] -> seq[seq[name:SORT]]
+ -- PRE inst ::? and nameS ::?
+ -- Match der angegebenen Instanz ueberpruefen
+DEF checkInst(gS, inst)(nameS, nameSS) ==
+        LET cand == ft(nameS) IN
+        IF cand intName? THEN nameSS
+        OTHERWISE
+        IF notParametrized?(gS, struct(cand)) THEN nameSS
+        IF #(inst) = #(getFormParams(gS,struct(cand))) THEN
+          LET
+          TCI == \\label, N. PRINT(traceCheckInst?, \\ . label ++ ": " ++ ``(gS, N)(), N)
+          identUninsts == TCI("iU", checkIdentUninst?(gS) | nameS)
+          genericTransitives == TCI("gT", checkGenericTransitive?(gS,inst)| nameS)
+          identInsts == TCI("iI", checkIdentInst?(gS,inst) | nameS)
+          nameS1 == (identUninsts ++ (genericTransitives ++ identInsts))
+          finNameS == TCI("fN", checkContext(gS,inst) | nameS1)
+          IN finNameS :: nameSS
+        ELSE nameSS FI
+
+FUN checkIdentUninst? : globSig -> name -> bool
+DEF checkIdentUninst?(gS)(name) == identUninst?(gS,name)
+
+FUN checkFormParam : struct ** seq[name:SORT] -> name -> name
+DEF checkFormParam(oStruct, nameS)(name) ==
+        IF name formParam? THEN IF struct(name) = oStruct 
+                THEN nameS ! pred(no(name)) ELSE name FI 
+        ELSE name FI
+
+FUN checkGenericTransitive? : globSig ** seq[name:SORT] -> name -> bool
+DEF checkGenericTransitive?(gS,insts)(name) == 
+        IF genericTransitive?(gS,name) THEN 
+          LET (oStruct, oInst) == getOtherInst(gS, struct(name), inst(name)) IN
+          IF uninst?(gS, oStruct, oInst) THEN
+          eq?(eqNameOrFormParam(oStruct))(insts, getInst(gS, name))
+          ELSE LET oInsts == getInst(gS, extName(oStruct, impDecl(0), oInst)) IN
+                eq?(eqNameOrFormParam(oStruct))(insts, 
+                        checkFormParam(oStruct, oInsts) * getInst(gS, name))
+          FI
+        ELSE false FI
+
+        FUN eqNameOrFormParam : struct -> name ** name -> bool
+        DEF eqNameOrFormParam(oStruct)(n1,n2) ==
+                IF n2 formParam? ANDIF struct(n2) = oStruct THEN true
+                ELSE n1 = n2 FI
+
+FUN checkContext : globSig ** seq[name:SORT] -> name -> bool
+DEF checkContext(gS,inst)(name) == 
+            ~(exist?(noMatch(gS,inst),
+                zip(&[option[fct[name:SORT]],name:SORT])(context,inst)))
+            WHERE context == getFormParams(gS,struct(name))
+
+
+FUN noMatch : globSig ** seq[name:SORT] 
+                -> pair[option[fct[name:SORT]],name:SORT] -> bool
+  -- liefert true, wenn Parameter und Instanz nicht matchen
+DEF noMatch(gS, cand)(p) == 
+        LET (instEleCtxt, instEle) == (1st(p),2nd(p)) 
+        IN
+        IF instEleCtxt nil? THEN sort?(gS,instEle) ~
+        ELSE 
+          IF sort?(gS,instEle) THEN true 
+          ELSE
+            IF cont(instEleCtxt) anyFct? THEN false
+            ELSE
+              ~(='AbsyFun2(====(gS,cand))
+                (cont(instEleCtxt),fct'AnalyzedGlobSigH(gS,instEle)))
+            FI
+          FI
+        FI
+
+        FUN ==== : globSig ** seq[name:SORT] -> name ** name -> bool
+        DEF ====(gS,inst)(n1,n2) == =(gS)(finN1,n2)
+          WHERE finN1 == IF n1 formParam? THEN inst ! pred(no(n1)) ELSE n1 FI
+
+        FUN anyFct? : fct[name] -> bool
+        DEF anyFct?(f) == ='Fct(\\x,y. true)(anyFct[name], f)
+
+
+FUN checkIdentInst? : globSig ** seq[name:SORT] -> name -> bool
+DEF checkIdentInst?(gS,inst)(name) == 
+        IF identInst?(gS,name) THEN eq?(=====(gS))(inst, getInst(gS, name))
+        ELSE false FI
+
+        FUN ===== : globSig -> name ** name -> bool
+        DEF =====(gS)(name1,name2) == realInst(gS,name1)=realInst(gS,name2)
+
+
+FUN = : globSig -> name ** name -> bool
+-- PRE alle extName aus param. Structs haben identInsts
+DEF =(gS)(n10,n20) ==
+        LET (n1,n2) == (realInst(gS,n10), realInst(gS,n20)) IN
+        IF n1 formParam? THEN true
+        IF n2 formParam? THEN true
+        IF n1 var? THEN true
+        IF n2 var? THEN true
+        IF n1 = n2 THEN true
+        OTHERWISE
+        IF n1 eqBaseA n2 THEN 
+          IF (n1 extName?) and (n2 extName?) THEN
+            eqInst'ImpDecl4SigAna(gS,struct(n1),inst(n1),inst(n2))
+          IF (n1 nameSet?) and (n2 nameSet?) THEN 
+            eq?(=(gS))(insts(n1),insts(n2))
+          IF (n1 nameSet?) and (n2 extName?) THEN 
+            IF inst(n2) = unparam'Objects THEN false
+            ELSE eq?(=(gS))(insts(n1),getInst(gS,realInst(gS,n2))) FI
+          IF (n1 extName?) and (n2 nameSet?) THEN 
+            IF inst(n1) = unparam'Objects THEN false
+            ELSE eq?(=(gS))(getInst(gS,realInst(gS,n1)),insts(n2)) FI
+          ELSE false FI
+        ELSE false FI
+          
+DEF `(gS,n)(name) == ``(gS,n,Inst,name)(name)
+        WHERE 
+        Inst == IF name intName? THEN <>
+                IF name extName? THEN
+                  IF notParametrized?(gS, struct(name)) THEN <>[name:SORT]
+                  OTHERWISE
+                  IF inst(name) = unparam'Objects THEN 
+                    getFormParamImpDecls(gS, struct(name))
+                  IF identUninst?(gS, name) THEN 
+                    getFormParamImpDecls(gS, struct(name))
+                  ELSE getInst(gS, realInst(gS, name))
+                  FI
+                IF name formParam? THEN
+                    getFormParamImpDecls(gS, struct(name))
+                IF name nameSet? THEN insts(name)
+                ELSE <>[name:SORT]
+                FI
+
+
+FUN `` : globSig ** seq[name:SORT] -> () -> denotation
+DEF ``(gS, nameS)() == 
+        "Lookup out: " ++ `("{",",","}")(`(gS,1))(nameS)
+
+
+
+FUN ``` : denotation ** rep ** option[rep:SORT] ** seq[name:SORT] ** option[fct[name:SORT]] 
+        -> () ->denotation
+DEF ```(pref,ide,origO,inst,fctO)() ==
+        "Lookup in(" ++ pref ++ "): " ++ lexem(ide) ++ 
+                origT ++ instT ++ fctT
+        WHERE
+        origT == IF origO nil? THEN "" ELSE "'" ++ lexem(cont(origO)) FI
+        instT == IF inst <>? THEN "" ELSE `("[",",","]")(`'Name)(inst) FI
+        fctT == IF fctO nil? THEN ""
+                ELSE ":" ++ `(`'Name)(cont(fctO)) FI
+
+
+
+        --FUN EN : struct ** inst -> impDecl -> name
+        DEF EN(struct,inst)(impDecl) == extName(struct,impDecl,inst)
+        --FUN NS : struct ** seq[name:SORT] -> impDecl -> name
+        DEF NS(struct, insts)(impDecl) == nameSet(struct,impDecl,insts)
+
+
+FUN setAttr : (attr -> attr) **(attr->bool) -> name**globSig-> globSig
+-- Externe Namen sind voll instantiiert
+DEF setAttr(F,T)(name0,gS) == 
+    IF (name0 intName?) or (name0 extName?) THEN
+      LET name == realInst(gS, name0)
+          gS0 == 
+          IF sort?(gS,name) THEN gS
+          ELSE (setAttr(F,T) / gS)(*(realInst(gS))(fct'Name4SigAna(gS,name))) FI
+      IN
+        IF name intName? THEN updAttr'Decl4SigAna(gS0,name,F)
+        IF name extName? THEN updAttr'ImpDecl4SigAna(gS1,name,F)
+                  WHERE gS1 ==
+                    IF inst(name) = unparam'Objects THEN gS0
+                    ELSE (setAttr(F,T) \ gS0)(getInst(gS0,name)) FI
+        FI
+    ELSE gS
+    FI
+
+
+FUN FInternalName: (name**nat->option[typeDec]**seq[dec]**nat)**
+                   (name->option[dec])
+                        -> nat**declE**triple[seq[typeDec],seq[dec],nat]
+                                -> triple[seq[typeDec],seq[dec],nat]
+
+DEF FInternalName(FSort,FOp)(n,declE,t) ==
+  LET (prevTypeDecs,prevDecs,oldNo) == (1st(t),2nd(t),3rd(t))
+      name == intName(decl(n)) IN
+  IF declE sort? THEN
+    LET (optTypeDec,newDecs,newNo) == FSort(name,oldNo)
+        newTypeDecs == IF optTypeDec nil? THEN prevTypeDecs
+                       IF optTypeDec avail? THEN cont(optTypeDec)::prevTypeDecs
+                       FI
+    IN &(newTypeDecs,newDecs++prevDecs,newNo)
+  IF (declE op?) or (declE opCons?) THEN
+    LET optDec == FOp(name)
+        newDecs == IF optDec nil? THEN prevDecs
+                   IF optDec avail? THEN cont(optDec)::prevDecs
+                   FI
+    IN &(prevTypeDecs,newDecs,oldNo)
+  IF declE double? THEN t                       -- ueberfluessig?
+  FI
+
+DEF FInternalName(FSort,FOp:name->option[dec]**err)(n,declE,t) ==
+  LET (prevTypeDecs,prevDecs,oldErr,oldNo) == (1st(t),2nd(t),3rd(t),4th(t))
+      name == intName(decl(n)) IN
+  IF declE sort? THEN
+    LET (optTypeDec,newDecs,newErr,newNo) == FSort(name,oldNo)
+        newTypeDecs == IF optTypeDec nil? THEN prevTypeDecs
+                       IF optTypeDec avail? THEN cont(optTypeDec)::prevTypeDecs
+                       FI
+    IN &(newTypeDecs,newDecs++prevDecs,oldErr+newErr,newNo)
+  IF (declE op?) or (declE opCons?) THEN
+    LET (optDec,newErr) == FOp(name)
+        newDecs == IF optDec nil? THEN prevDecs
+                   IF optDec avail? THEN cont(optDec)::prevDecs
+                   FI
+    IN &(prevTypeDecs,newDecs,oldErr+newErr,oldNo)
+  IF declE double? THEN t                       -- ueberfluessig?
+  FI
+
+FUN FStructure: (struct->unit) -> nat**structE**seq[unit] -> seq[unit]
+
+DEF FStructure(F)(n,structE,s) ==
+  IF n > 2 THEN F(struct(n))::s ELSE s FI
+
+FUN FExternalName: struct**(name->typeDec)**(name**fct[name:SORT]->dec)
+                        -> nat**impDeclE**pair[seq[typeDec],seq[dec]]
+                                -> pair[seq[typeDec],seq[dec]]
+
+DEF FExternalName(struct,FSort,FOp)(n,impDeclE,p) ==
+  LET (prevTypeDecs,prevDecs) == (1st(p),2nd(p))
+      name == extName(struct,impDecl(n),unparam'Objects)
+        -- ist unparam ok, wenn man nicht auf Instanzen oder Fct zugreift???
+  IN   IF impDeclE sort? THEN &(FSort(name)::prevTypeDecs,prevDecs)
+       ELSE &(prevTypeDecs,FOp(name,fct(impDeclE))::prevDecs) FI
+
+  FUN implFct? : bool
+  DEF implFct? == FIELD?[bool:SORT]("-zimplFct")
+  
+  FUN preFct: name -> denotation
+  DEF preFct(name) == "fct`AnalyzedGlobSig name = " ++ `'Name(name)
+  FUN postFct: fct[name] -> denotation
+  DEF postFct(fct) == "fct`AnalyzedGlobSig ->fct = " ++ `'Fct(`'Name)(fct)
+  
+  DEF fct(gS,name0) == PRINT(implFct?, \\ .postFct(finFct), finFct)
+        WHERE 
+        name == PRINT(implFct?, \\ .preFct(name0), name0)
+          finFct == *(realInst(gS))(FCT)
+        FCT ==
+        (LET Fct == fct'Name4SigAna(gS,name) IN
+        IF name intName? THEN Fct
+        IF name extName? THEN
+          IF inst(name) = unparam'Objects THEN Fct
+          IF identUninst?(gS,name) THEN Fct
+          ELSE *(instance(gS,name,getInst(gS,name)))(Fct) 
+          FI
+        IF name nameSet? THEN *(instance(gS,name,insts(name)))(Fct)
+        FI)
+
+FUN origInst? : bool
+DEF origInst? == FIELD?[bool:SORT]("-zorigInst")
+
+  FUN preOrigInst: name -> denotation
+  DEF preOrigInst(name) == 
+        "origInst`AnalyzedGlobSig name = " ++ `'Name(name)
+  FUN postOrigInst: seq[name] -> denotation
+  DEF postOrigInst(nameS) == 
+        "origInst`AnalyzedGlobSig ->seq = " ++ `'SeqConv(`'Name)(nameS)
+  
+  DEF origInstH(gS, name0) == 
+        PRINT(origInst?, \\ .postOrigInst(finNameS), finNameS)
+        WHERE
+        finNameS == realInst(gS) * nameS 
+        name == PRINT(origInst?, \\ .preOrigInst(name0), name0)
+        nameS ==
+        (IF name intName? THEN actStructParamsH(gS)
+        IF name formParam? THEN getFormParamImpDecls(gS, struct(name))
+        OTHERWISE
+        IF notParametrized?(gS, struct(name)) THEN <>[name:SORT]
+        ELSE 
+          IF name nameSet? THEN insts(name)
+          OTHERWISE
+          IF inst(name) = unparam'Objects ORIF identUninst?(gS,name) THEN
+            PRINT(origInst?, ````(name),
+                        getFormParamImpDecls(gS,struct(name)))
+          OTHERWISE
+          IF genericTransitives?(gS, name) THEN
+                LET Insts == getInsts(gS,struct(name),inst(name))
+                IN      IF #(Insts) = 1 THEN origInstH(gS, 
+                                extName(struct(name),impDecl(name),ft(Insts)))
+                        ELSE getInst(gS, name)
+                        FI
+          IF genericTransitive?(gS, name) THEN
+              -- ist nur noch da, wenn die "andere" Instanz generisch ist.
+              finInst
+              WHERE 
+              -- dummy-Namen zusammenbauen, um ...
+              oName == extName(oStruct,impDecl(0),oInst)
+              (oStruct, oInst) == getOtherInst(gS,struct(name),inst(name))
+              -- die neue Instanz berechnene zu lassen (finOName nameSet?)
+              oNameInsts == origInstH(gS, oName)
+              -- jetzt die eigentlichen Parameter instanziieren
+              finInst == instGenTrans(gS,oNameInsts,oStruct,oInst)      
+                         * getInst(gS,name)
+          ELSE getInst(gS,realInst(gS,name))
+          FI
+        FI)
+
+DEF actStructParamsH(gS) == mapF * formParams(gS)
+        WHERE 
+        mapF == (intName o 1st[decl:SORT,pragma:SORT]) 
+                 o fPof:formParam-> pair[decl:SORT,pragma:SORT]
+
+

@@ -1,0 +1,372 @@
+/* %-
+-- LAST EDIT: Sat Sep 11 16:16:48 1993 by Andreas Fett (kassandra!fetti) 
+-- ============================================================================
+-- Autor:       af
+-- Projekt:     OPAL1-Compiler
+-- Changes:     af, Jun 23 1993: adapted to new absy
+--              af, Aug  3 1993: adapted to new impl variant
+--                               incorporated -zetaEnrichment
+--                               added writing of patterns into globSig
+--              af, Sep 11 1993: not implemented warnings only in implementation
+--                               part
+-- ============================================================================
+*/
+
+IMPLEMENTATION PatternAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:45 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             COMPLETELY
+        Denotation      ONLY ++
+        String          COMPLETELY
+        StringConv      ONLY `
+        BTUnion         ONLY union string
+        StringFormat    ONLY format
+        Void            ONLY void
+        Pair            COMPLETELY
+        Seq             COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+
+        Options         ONLY options impl? pchecker? cop?
+        Verbose         COMPLETELY
+        Pos             ONLY pos `
+        Error           COMPLETELY
+
+        Rep             ONLY rep nilRep coded? proofscript |= theory = ` coded??
+
+        Fct[name]       COMPLETELY
+        Impl[name]      COMPLETELY
+        Patterns[name]  COMPLETELY
+
+        AnalyzedGlobSig ONLY globSig name local fct pos:globSig**name->pos rep op?
+                             locSig {} % +
+                             impl:globSig**name->impl defImpl
+                                impl:SORT none parameter data canonical def                                                       anaDef
+                             treatInternalName
+                             isExported useOp
+                             level minimal standard
+                                ` : globSig**level-> name->denotation
+                             ` -- : globSig->()->denotation
+
+        BindingAnalysis  ONLY generateBindings
+        MatchingAnalysis ONLY generateMatchingCases
+
+        DEBUG           ONLY FIELD? PRINT
+       Objects ONLY decl no sortPN instPN impDecl struct inst
+       GlobSig4SigAna ONLY treatDeclS
+       GlobSig ONLY decls
+       Option ONLY nil? avail?
+       DeclEntry ONLY spc impl attr declE op? pos fct opCons? test selS
+       Name ONLY intName
+       Table ONLY table !
+       GlobSigImpl ONLY ` parameter?
+       Attributes ONLY ` isExported attr:SORT
+       Set[nat,<] ONLY set incl + in {}
+       Set ONLY in
+       SetConv ONLY asSet
+       TableFun2 ONLY /
+       BoolConv ONLY `
+
+-- ----------------------------------------------------------------------------
+
+FUN pattAna: options -> globSig -> com[globSig]
+
+DEF pattAna(opts)(sig) ==
+  verb(opts,subphase,"analyzing patterns ...") & (\\ _ .
+  treatInternalName(analyzePatterns(opts))(sig) & (\\sig2.
+  checkSpecs(opts)(sig2) & (\\ sig3.
+  yield(okay(printGsFinal(sig3)))
+  )))
+
+FUN analyzePatterns: options -> name**globSig -> com[globSig]
+
+DEF analyzePatterns(opts)(name,sig) ==
+  verb(opts,definition,`(sig,minimal)(name) ++ " ...") &
+  (\\ _ .LET nextSig == markExport(name,sig)
+         IN analyzeImpl(opts)(name,nextSig,impl(nextSig,name)))  
+
+FUN analyzeImpl: options -> name**globSig**impl -> com[globSig]
+
+/* %Keine Implementierung -> Warnung ausgeben.
+    Aber bitte nicht für die ohne Wissen des Benutzers hinzugefügten
+    Objekte. (kd) */
+DEF analyzeImpl(opts)(name,sig,none) ==
+  LET warn == err(warning,
+                  "%s is not implemented",
+                  !(`(sig,standard)(name)),pos(sig,name))
+      done == succeed(true)
+  IN
+  ( IF opts impl? THEN 
+      IF rep(sig, name) = theory THEN done
+      IF coded??(rep(sig, name)) THEN done
+      OTHERWISE
+      IF ~(op?(sig, name)) THEN errors(opts, warn)
+      ELSE
+        LET f == PRINT(FIELD?[bool]("-zpcheckerFct"),
+                       \\ . "pcheckerFct of " ++ `(sig, standard)(name),
+                            fct(sig, name))
+        IN
+        IF pcheckerFct?(sig)(f) THEN done
+        ELSE errors(opts,warn)
+        FI
+      FI
+    ELSE
+      done
+    FI
+  ) &
+  yield(okay(sig))
+
+DEF analyzeImpl(opts)(name,sig,parameter) == yield(okay(sig))
+
+DEF analyzeImpl(opts)(name,sig,data(impl)) == yield(okay(sig))
+
+DEF analyzeImpl(opts)(name,sig,canonical(pos)) == yield(okay(sig))
+
+DEF analyzeImpl(opts)(name,sig,def(eqs,lsig,firstLocal)) ==
+  LET newPos == pos(ft(eqs))
+      (nextEqs,addLsig,nextLocal,complete,filledUp) ==
+                balanceEqs(opts)
+                          (eq(val(name,newPos),none(newPos),newPos)::eqs,
+                           fct(sig,name),firstLocal)
+      (newLhs,oldEqs) == (left(ft(nextEqs)),rt(nextEqs))
+      newRhss == generateBindings(newLhs,oldEqs,sig)
+      (newRhs,patts,newSig,matchingWarnings) ==
+                generateMatchingCases(name,newLhs,eqs,newRhss,sig)
+      newImpl == anaDef(oldEqs,lsig+addLsig,nextLocal,
+                        patts,eq(newLhs,newRhs,newPos))
+      rankWarns == IF etaEnrichment?(opts) THEN ok
+                   ELSE rankWarnings(name,sig,complete,filledUp)
+                   FI
+  IN errors(opts,rankWarns+matchingWarnings) &
+     (\\ _ .yield(okay(defImpl(newSig,name,newImpl))))
+
+-- ----------------------------------------------------------------------------
+
+FUN rankWarnings: name**globSig**seq[pos]**seq[pos] -> err
+
+DEF rankWarnings(target,sig,complete :: other,<>) == ok
+
+DEF rankWarnings(target,sig,complete :: other,generated :: filledUp) ==
+  ((\\eqPos,warns.warns+rankWarning(target,sig,complete,eqPos)) \ ok)(filledUp)
+
+FUN rankWarning: name**globSig**pos**pos -> err
+
+DEF rankWarning(target,sig,complete,filledUp) ==
+  err(warning,
+      `(format("definition of %s at %s has smaller rank than definition at %s",
+             %(string(!(`(sig,standard)(target))),
+               string(!(filledUp`)),
+               string(!(complete`))))),
+      filledUp)
+
+-- ----------------------------------------------------------------------------
+
+FUN markExport: name**globSig -> globSig
+
+DEF markExport(name,sig) ==
+  IF isExported(sig,name) THEN useOp(sig,name) ELSE sig FI
+
+-- ----------------------------------------------------------------------------
+
+FUN etaEnrichment?: options ->  bool
+DEF etaEnrichment?(opts) == cop?("etaEnrichment", opts)
+-- FIELD?[bool]("-zetaEnrichment")
+
+-- ----------------------------------------------------------------------------
+
+FUN printGsFinal?: bool
+DEF printGsFinal? == FIELD?[bool]("-zprintGsFinal")
+
+FUN printGsFinal: globSig -> globSig
+DEF printGsFinal(sig) == PRINT(printGsFinal?, `(sig),sig)
+
+-- ----------------------------------------------------------------------------
+-- fills up equations with additional argument tuples
+--   so that all left-hand sides have the same number of applies
+-- yield positions of complete and filled up equations
+
+FUN balanceEqs: options ->
+                 seq[eq]**fct**nat -> seq[eq]**locSig**nat**seq[pos]**seq[pos]
+
+DEF balanceEqs(opts)(eqs,fct,firstLocal) ==
+  LET noApplies == IF etaEnrichment?(opts) THEN countFunct(fct)
+                   ELSE (max \ 0)(countApplies*(left*eqs))
+                   FI
+  IN balanceEqs(eqs,fct,noApplies,firstLocal)
+
+FUN countApplies: expr -> nat
+
+DEF countApplies(val(name,pos)) == 0
+DEF countApplies(apply(fun,arg,pos)) == countApplies(fun)+1
+
+FUN countFunct: fct -> nat
+
+DEF countFunct(funct(_,res)) == countFunct(res)+1
+DEF countFunct(_)            == 0
+
+FUN balanceEqs: seq[eq]**fct**nat**nat
+                -> seq[eq]**locSig**nat**seq[pos]**seq[pos]
+
+DEF balanceEqs(<>,fct,no,firstLocal) == (<>,{},firstLocal,<>,<>)
+
+DEF balanceEqs(eq1::eqR,fct,no,firstLocal) ==
+  LET (bEq1,lsig1,nextLocal,complete1,filledUp1) ==
+                                        balanceEq(eq1,fct,no,firstLocal)
+      (bEqR,lsigR,freeLocal,completeR,filledUpR) ==
+                                        balanceEqs(eqR,fct,no,nextLocal)
+  IN (bEq1::bEqR,lsig1+lsigR,freeLocal,
+      complete1++completeR,filledUp1++filledUpR)
+
+FUN balanceEq: eq**fct**nat**nat -> eq**locSig**nat**seq[pos]**seq[pos]
+
+DEF balanceEq(oldEq AS eq(lhs,rhs,pos),fct,wantedApplies,firstLocal) ==
+  LET (presentFct,missingApplies) == analyzeLhs(lhs,fct,wantedApplies)
+  IN IF missingApplies = 0 THEN (oldEq,{},firstLocal,pos%,<>)
+     ELSE
+       LET (newLhs,newRhs,addLsig,freeLocal) ==
+                addApplies(lhs,rhs,pos,presentFct,missingApplies,firstLocal)
+       IN (eq(newLhs,newRhs,pos),addLsig,freeLocal,<>,pos%)
+     FI
+
+FUN analyzeLhs: expr**fct**nat -> fct**nat
+
+DEF analyzeLhs(val(name,pos),fct,wanted) == (fct,wanted)
+DEF analyzeLhs(apply(fun,arg,pos),fct,wanted) ==
+  LET (funFct,funMissing) == analyzeLhs(fun,fct,wanted)
+  IN (res(funFct),funMissing-1)
+
+FUN addApplies: expr**expr**pos**fct**nat**nat -> expr**expr**locSig**nat
+
+DEF addApplies(lhs,rhs,pos,fct,0,firstLocal) == (lhs,rhs,{},firstLocal)
+
+DEF addApplies(lhs,rhs,pos,funct(arg,res),succ(n),firstLocal) ==
+  LET (args,lsig1,nextLocal) == newLocals(pos,arg,firstLocal)
+      (newLhs,newRhs,lsigR,freeLocal) ==
+        addApplies(apply(lhs,args,pos),apply(rhs,args,pos),pos,res,n,nextLocal)
+  IN (newLhs,newRhs,lsig1+lsigR,freeLocal)
+
+FUN newLocals: pos**fct**nat -> expr**locSig**nat
+
+DEF newLocals(pos,cart(elems),firstLocal) ==
+  LET (exprs,lsig,freeLocal) == newLocalSeq(pos,elems,firstLocal)
+  IN (tuple(exprs,pos),lsig,freeLocal)
+
+DEF newLocals(pos,fct,firstLocal) ==
+  (val(local(firstLocal),pos),%(firstLocal,nilRep,fct),succ(firstLocal))
+
+FUN newLocalSeq: pos**seq[fct]**nat -> seq[expr]**locSig**nat
+
+DEF newLocalSeq(pos,<>,firstLocal) == (<>,{},firstLocal)
+
+DEF newLocalSeq(pos,f1::fR,firstLocal) ==
+  LET (e1,lsig1) == (val(local(firstLocal),pos),%(firstLocal,nilRep,f1))
+      (eR,lsigR,freeLocal) == newLocalSeq(pos,fR,succ(firstLocal))
+  IN (e1::eR,lsig1+lsigR,freeLocal)
+
+-- %$Specifications$
+
+FUN checkSpecs: options -> globSig -> com[globSig]
+DEF checkSpecs(options)(gS) == 
+  IF pchecker? THEN
+    treatDeclS(evalSpec(options, genOps(gS)), gS, true) & (\\ pr.
+    succeed(1st(pr))
+    )
+  ELSE
+    succeed(gS)
+  FI
+
+
+FUN evalSpec: options ** set[nat, <] ->
+               globSig ** decl -> com[pair[globSig, bool]]
+DEF evalSpec(options, genOps)(gS, d) ==
+  LET dE == no(d)!decls(gS)
+  IN
+  IF op?(dE) THEN
+    IF noSpec?(gS, d, dE, genOps) THEN
+      errors(options,err(warning, "specification missing for %d",
+                                  `(gS, standard)(intName(d)), 
+                                  pos(dE))) &
+      succeed(gS & true)
+    ELSE
+      succeed(gS & true)
+    FI
+  ELSE
+    succeed(gS & true)
+  FI
+
+/* %Liefert true, wenn Operation (op) keine Spezifikation hat. Eigentlich
+    ganz leicht, man braucht ja nur die spc-Komponente betrachten.
+    Aber wenn die nil ist, beginnen die Probleme erst:
+@itemize
+@item
+Parameter brauchen keine Spezifikation.
+@item
+Selektoren und Diskriminatoren auch nicht.
+@item
+Funktionen, die aus der Signatur kopiert wurden, auch nicht.
+@item
+Die generierten Operationen f"ur Beweise auch nicht.
+@end itemize
+
+(zur Erinnerung: false = "keine Fehlermeldung wg. fehlender Spezifikation")
+(kd)
+*/
+
+FUN noSpec?: globSig ** decl ** declE ** set[nat, <] -> bool
+DEF noSpec?(gS, d, dE, genOps) == 
+  IF avail?(spc(dE)) THEN false
+  IF parameter?(impl(dE)) THEN false
+  IF no(d) in genOps THEN false
+  IF isExported(attr(dE)) THEN false
+  OTHERWISE
+  IF funct?(fct(dE)) or sort?(fct(dE)) THEN
+    ~(pcheckerFct?(gS)(fct(dE)))
+  ELSE
+    false
+  FI
+      
+/* %von -zpchecker generierte Funktionalität.
+    Entweder Resultatssorte LAW%... oder Konstante proofscript. (kd) */
+FUN pcheckerFct? : globSig -> fct -> bool
+DEF pcheckerFct?(gS)(F) ==
+  IF funct?(F) THEN
+    IF sort?(res(F)) THEN
+      LET 
+        n == object(res(F))
+      IN
+      PRINT(FIELD?[bool]("-zpcheckerFct"),
+           \\ .  "LAW%... >" ++ `(rep(gS, n)) ++ "< " ++
+                 `(coded??(rep(gS, n))),
+                 coded??(rep(gS, n))) -- coded? <=> LAW%...
+    ELSE
+      PRINT(FIELD?[bool]("-zpcheckerFct"), "funct/res no sort", false)
+    FI
+  IF sort?(F) THEN
+    LET 
+      n == object(F)
+    IN
+    PRINT(FIELD?[bool]("-zpcheckerFct"), \\ . "Sort proofscript? " ++
+          `(rep(gS, n) = proofscript), rep(gS, n) = proofscript)
+  ELSE
+     PRINT(FIELD?[bool]("-zpcheckerFct"), "fct not funct not sort",false)
+  FI
+
+FUN genOps: globSig -> set[nat, <]
+DEF genOps(gS) ==
+  LET 
+    collect == \\ xx : nat, dd: declE, ss: set[nat, <] .
+               IF opCons?(dd) THEN 
+                 incl(no(test(dd)), ss) + asSet(no * selS(dd))
+               ELSE
+                 ss
+               FI
+  IN
+  (collect / {})(decls(gS))
+  

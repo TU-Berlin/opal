@@ -1,0 +1,189 @@
+#!/bin/sh
+
+# you must 'setenv OCS /usr/ocs' to call sendbug directly
+if [ -z "$OCS" ]
+then 
+  echo "environment OCS must be set"
+  exit
+fi
+
+if [ -z "$OCSOM" ] 
+then
+  OCSOM=$OCS/lib/om
+  export OCSOM
+fi
+
+
+. $OCSOM/specs/ShSpecs.basic
+
+if [ -z "`${ECHO} -n`" ]
+then
+  ppre=-n
+  ppost=
+else
+  ppre=
+  ppost="""\c"""
+fi
+
+MAIL=mail
+UUENCODE=uuencode
+mailaddr="opal-bugs"
+
+tmpfile=/tmp/bugreport_$$
+tmpsys=/tmp/bugsys_$$
+
+${ECHO} ""
+${ECHO} "This script simplifies the report and analysis of OCS bugs."
+${ECHO} ""
+${ECHO} "In the sequel, you will be asked several questions. If you"
+${ECHO} "wish to include the sources which raised the problem, you"
+${ECHO} "will be in particular asked for the"
+${ECHO} "system which contains the sources."
+${ECHO} ""
+${ECHO} ""
+${ECHO} $ppre "Do You wish to continue? (y/n) " $ppost
+read answer
+if [ ! $answer = y ] 
+then
+  ${ECHO} "Bye ..."
+  exit
+fi
+${ECHO} ""
+
+version="`cat $OCS/VERSION`"
+os="`$OCSOM/etc/os`"
+category="undef"
+while [ $category = undef ]
+do
+  ${ECHO} "What do You suggest the bug is related to?"
+  ${ECHO} "Categories are:"
+  ${ECHO} " 1 = syntax analysis"
+  ${ECHO} " 2 = context analysis"
+  ${ECHO} " 3 = code generation"
+  ${ECHO} " 4 = standard library"
+  ${ECHO} " 5 = maintenance system, environment"
+  ${ECHO} " 6 = other"
+  ${ECHO} $ppre "Your choice?  " $ppost
+  read answer
+  case $answer in
+    1)
+      category="syntax-analysis"
+      ;;
+    2)
+      category="context-analysis"
+      ;;
+    3)
+      category="code-generation"
+      ;;
+    4)
+      category="standard-library"
+      ;;
+    5)
+      category="maintenance-system"
+      ;;
+    6)
+      category="other"
+      ;;
+    *)
+      category="other" 
+      ;;
+  esac
+done
+
+system=undef
+while [ $system = undef ]
+do
+  ${ECHO}
+  ${ECHO} "Where is the system located which raises the problem? "
+  ${ECHO} $ppre "(<cr> no system, . current directory) " $ppost
+  read answer
+  if [ -n "$answer" ]
+  then
+    system="$answer"
+    ${ECHO} "You can now either include:"
+    ${ECHO} " 1 = system build by ocs with SysDefs-file or with the -top or -sub option"
+    ${ECHO} " 2 = arbitrary set of files specified by sh(1) pattern"
+    ${ECHO} " 3 = no system"
+    ${ECHO} "in this bugreport. But note, that any non-standard subsystems"
+    ${ECHO} "your system is based can not be included."
+    ${ECHO} $ppre "Your choice? " $ppost
+    read answer
+    case $answer in
+      1)
+	${ECHO} "How do you build the system? " 
+	${ECHO} "Please enter the ocs command WITHOUT specifying the target"
+	${ECHO} "(for example \`ocs -top Main main -o2 -v3', but NOT"
+	${ECHO} "\`ocs -top Main main -o1 -v3   clean')"
+	${ECHO} $ppre "The ocs command: " $ppost
+	read ocscom
+	if [ -n "$ocscom" ]
+	then
+	( cd $system
+	  ${ECHO} "Packing system ..."
+	  $ocscom NODENAME=BUG$$ pack || \
+		"Cannot build system with this command"; system=undef; exit
+	)
+	else
+	  system=undef
+	fi
+	;;
+      2)
+        ${ECHO} $ppre "Files to be included: "	$ppost
+	read pattern
+	if [ -n "$pattern" ]
+	then
+	( cd $system
+	  ${ECHO} "Packing files ..."
+	  $TAR cf - $pattern | $COMPRESS > BUG$$.tar.gz
+	  ocscom=""
+	)
+	else
+	  system=undef
+	fi
+	;;
+      3)
+	system=none
+	;;
+      *)
+	;;
+    esac
+  else
+    system=none
+  fi
+done
+	
+      
+header="bug $category `$OCSOM/etc/user_at` $version $OSARCH `${DATE}`"
+
+${ECHO} "$header" >$tmpfile
+${ECHO} "" >>$tmpfile
+${ECHO} "Your comments?" >>$tmpfile
+if [ $system != none ]
+then
+  ${ECHO} "" >>$tmpfile
+  ${ECHO} "" >>$tmpfile
+  ${ECHO} "" >>$tmpfile
+  ${ECHO} "------------------------------------------ " >>$tmpfile
+  if [ -n "$ocscom" ]
+  then
+    ${ECHO} "ocs command: $ocscom" >>$tmpfile
+  fi
+  ${ECHO} "Encoding system for mail transfer ..." 
+  echo $pack
+  $UUENCODE $system/BUG$$.tar.gz bugsources.tar.gz >>$tmpfile
+  $RM -rf $system/BUG$$.tar.gz
+fi
+${ECHO} -n "Enter comments, flames, etc. ... (hit any key to invoke $EDITOR) "
+read answer
+$EDITOR $tmpfile
+${ECHO} $ppre "Send bugreport to $mailaddr? (y/n) " $ppost
+read answer
+if [ "$answer" = y ]
+then
+  $MAIL -s "$header" $mailaddr <$tmpfile
+  $RM -f $tmpfile
+else
+  $CP $tmpfile $HOME/Canceled.ocs.bugreport
+  ${ECHO} "Your bugreport has been saved in '~/Canceled.ocs.bugreport'."
+fi
+

@@ -1,0 +1,447 @@
+-- LAST EDIT: Tue Aug  3 23:55:56 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:       af
+-- Projekt:     OPAL1-Compiler
+-- Changes:     af, Jun 17 1993: added typing for avoiding bug oc1.34
+--              af, Jun 21 1993: removed unnecessary typing
+-- ============================================================================
+
+IMPLEMENTATION DefinitionTranslation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:47 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             COMPLETELY
+        Denotation      COMPLETELY
+        String          ONLY string ! : denotation->string
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Triple          COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqZip          COMPLETELY
+        Map             COMPLETELY
+        MapReduce       COMPLETELY
+        MapMap          COMPLETELY
+
+        Pos             ONLY pos
+        Error           ONLY err ok errKind hint
+
+        SourceAn        ONLY sourceAn symbol:denotation->sourceAn
+                             errorKind optional never
+        TypeAn          COMPLETELY
+        An              COMPLETELY
+        Ide             ONLY ide local global
+                             origin:SORT target
+        Builtin         ONLY bool true false
+        Ac              COMPLETELY
+
+        Rep             ONLY rep ` codedP?? lexem coded??
+
+        Fct[name]       ONLY fct sort
+        Impl[name]      COMPLETELY
+
+        AnalyzedGlobSig ONLY globSig name rep fct ltName pos:globSig**name->pos
+                             impl:globSig**name->impl impl:SORT
+                                none? parameter?:impl->bool canonical?
+                                anaDef? locals freeLocal newEq pos:impl->pos
+                                data? impl:impl->sortImpl
+                             locSig locSigComplete
+                             isUsedByUser isUsedForAc isUnusedFreeConstructor
+                             isExported
+                             ` :globSig**level->name->denotation level minimal
+
+        ParameterTranslation    ONLY info:SORT noParameters sortParamIdes
+                                        opParamDecs opParamTypes opParams?
+        NameTranslation         ONLY internalIde
+        FctTranslation          ONLY type:globSig**info->fct->type
+        ExprTranslation         ONLY exp posAn notImplementedError
+                                        undefinedSelectionError
+
+        DEBUG            ONLY FIELD? PRINT
+       Options ONLY pchecker?
+
+
+FUN forceUsage? : bool
+DEF forceUsage? == FIELD?[bool]("-zforceUsedForAc")
+
+FUN isUsedOrForcedForAc : globSig ** name -> bool
+DEF isUsedOrForcedForAc(GS, N) ==
+    forceUsage? or isUsedForAc(GS, N)
+
+
+
+-- ----------------------------------------------------------------------------
+
+FUN dec: options -> globSig**info -> name -> option[dec]**err
+
+DEF dec(opts)(sig,info)(name) ==
+  LET im == impl(sig,name)
+      optDec == IF isUsedOrForcedForAc(sig,name) THEN
+                  IF im none? THEN
+                    LET a == an(sig,info,name,type(sig,info)(fct(sig,name)))
+                    IN
+                    IF pchecker?(opts) and codedP??(rep(sig, name)) THEN
+                      PRINT(FIELD?[bool]("-ztraceDT"), \\ .
+                            "dec: " ++ lexem(rep(sig, name)), nil) -- % Proof, not to be implemented
+                    ELSE
+                      avail(binding(a,internalIde(sig)(name),
+                                    decMode(sig,name),
+                                    notImplementedError(sig,info, name)))
+                    FI
+                  IF im parameter? THEN nil
+                  IF im canonical? THEN nil
+                  IF im anaDef? THEN
+                    avail(dec(sig,info,locSigComplete(locals(im)),
+                              freeLocal(im))
+                             (newEq(im)))
+                  FI
+                ELSE nil
+                FI
+      unusedHint == IF isUsedByUser(sig,name) THEN
+                      IF (im canonical?)
+                         and isUnusedFreeConstructor(sig,name) THEN
+                        err(hint,"never constructed variant %s",
+                            `(sig,minimal)(name),pos(im))
+                      ELSE ok
+                      FI
+                    IF pchecker?(opts) and codedP??(rep(sig, name)) THEN ok
+                    ELSE err(hint,"unused operation %s",
+                             `(sig,minimal)(name),pos(sig,name))
+                    FI
+  IN (optDec,unusedHint)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN dec: globSig**info**locSig**nat -> eq -> dec
+
+DEF dec(sig,info,lsig,free)(eq(apply(fun,val(arg,vp),ap),right,p)) ==
+  dec(sig,info,lsig,free)(eq(fun,lambda(arg%,right,ap),p))
+
+DEF dec(sig,info,lsig,free)(eq(apply(fun,tuple(elems,tp),ap),right,p)) ==
+  dec(sig,info,lsig,free)(eq(fun,lambda(object*elems,right,ap),p))
+
+DEF dec(sig,info,lsig,free)(eq(val(target,tp),right,p)) ==
+  LET rightETF == exp(sig,info,target,lsig,free)(right)
+      (rightExp,rightType) == (1st(rightETF),2nd(rightETF))
+      thisExp == optLambda(posAn(tp),opParamDecs(info),rightExp)
+  IN binding(an(sig,info,target,rightType),internalIde(sig)(target),
+             decMode(sig,target),thisExp)
+
+-- ----------------------------------------------------------------------------
+
+FUN typeDecNops: options -> globSig**info -> name**nat
+                 -> option[typeDec]**seq[dec]**err**nat
+
+DEF typeDecNops(opts)(sig,info)(name,free) ==
+  LET im == impl(sig,name)
+      (optTypeDec,opDecs,unused) ==
+        IF isUsedOrForcedForAc(sig,name) THEN
+          IF im none? THEN (avail(binding(internalIde(sig)(name),
+                                          optGen(sortParamIdes(info),some))),
+                            <>,free)
+          IF im parameter? THEN (nil,<>,free)
+          IF im data? THEN
+            LET (typeDec,thisOpDecs,thisUnused) ==
+                                        typeDecNops(sig,info,free)(impl(im))
+            IN (avail(typeDec),thisOpDecs,thisUnused)
+          FI
+        ELSE (nil,<>,free)
+        FI
+      unusedHint == IF isUsedByUser(sig,name) THEN ok
+                    IF pchecker?(opts) and coded??(rep(sig, name)) THEN ok
+                    ELSE err(hint,"unused sort %s",
+                             `(sig,minimal)(name),pos(sig,name))
+                    FI
+  IN (optTypeDec,opDecs,unusedHint,unused)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN typeDecNops: globSig**info**nat -> sortImpl -> typeDec**seq[dec]**nat
+
+DEF typeDecNops(sig,info,freeGlobal)
+               (sortImpl(target,
+                         variant(cons,test,comp(sel,fct,cp) :: <>,vp) :: <>,
+                         sp)) ==
+  LET implType == type(sig,info)(sort(target))
+      embeddedType == type(sig,info)(fct)
+      firstLocal == succ(noParameters(info))
+      localIde == local(firstLocal)
+      sAn == posAn(sp)
+      vAn == posAn(vp)
+      cAn == posAn(cp)
+      typeDec == binding(internalIde(sig)(target),
+                         optGen(sortParamIdes(info),embeddedType))
+      consDec == IF isUsedOrForcedForAc(sig,cons) THEN
+                   binding(an(sig,info,cons,fun(embeddedType%,implType)),
+                           internalIde(sig)(cons),
+                           decMode(sig,cons),
+                           canonicalExp(info,localIde,embeddedType,vAn)
+                                       (ide(vAn,localIde)))%
+                 ELSE <>
+                 FI
+      testDec == IF isUsedOrForcedForAc(sig,test) THEN
+                   binding(an(sig,info,test,fun(implType%,ide(bool))),
+                           internalIde(sig)(test),
+                           decMode(sig,test),
+                           canonicalExp(info,localIde,implType,vAn)
+                                       (ide(vAn,true)))%
+                 ELSE <>
+                 FI
+      selDec == IF isUsedOrForcedForAc(sig,sel) THEN
+                  binding(an(sig,info,sel,fun(implType%,embeddedType)),
+                          internalIde(sig)(sel),
+                          decMode(sig,sel),
+                          canonicalExp(info,localIde,implType,sAn)
+                                      (ide(cAn,localIde)))%
+                ELSE <>
+                FI
+  IN (typeDec,testDec++(consDec++selDec),freeGlobal)
+
+DEF typeDecNops(sig,info,freeGlobal)
+               (sortImpl(target,
+                         (v AS variant(cons,test,comps,vp)) :: <>,
+                         sp)) ==
+  LET implType == type(sig,info)(sort(target))
+      firstLocal == succ(noParameters(info))
+      discrIde == local(firstLocal)
+      (prod,canonicalDecs,unusedGlobal) ==
+        singleVariant(sig,info,implType,freeGlobal,
+                      discrIde,succ(firstLocal),sp)
+                     (v)
+      typeDec == binding(internalIde(sig)(target),
+                         optGen(sortParamIdes(info),prod))
+  IN (typeDec,canonicalDecs,unusedGlobal)
+
+DEF typeDecNops(sig,info,freeGlobal)(sortImpl(target,vs,p)) ==
+  LET implType == type(sig,info)(sort(target))
+      firstLocal == succ(noParameters(info))
+      discrIde == local(firstLocal)
+      (prods,consTestDecs,unusedGlobal,selMap) ==
+        variants(sig,info,implType,freeGlobal,discrIde,succ(firstLocal))(vs)
+      selDecs == ((\\sel,mNt,decs.
+                     LET (matches,compType) == (1st(mNt),2nd(mNt))
+                         errKind == IF #(matches) = #(vs) THEN never
+                                    ELSE optional
+                                    FI
+                     IN IF isUsedOrForcedForAc(sig,sel) THEN
+                          binding(an(sig,info,sel,fun(implType%,compType)),
+                                 internalIde(sig)(sel),
+                                 decMode(sig,sel),
+                                 canonicalCase(info,discrIde,implType,posAn(p))
+                                              (matches,
+                                               undefinedSelectionError
+                                                 (sig,sel,p,compType,errKind)))
+                          :: decs
+                        ELSE decs
+                        FI)
+                  / <>)(selMap)
+      typeDec == binding(internalIde(sig)(target),
+                         optGen(sortParamIdes(info),sum(prods)))
+  IN (typeDec,consTestDecs++selDecs,unusedGlobal)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN variants: globSig**info**type**nat**ide**nat
+              -> seq[variant]
+              -> seq[type]**seq[dec]**nat
+                 **map[name,ltName,pair[seq[match],type]]
+
+DEF variants(sig,info,implType,freeGlobal,discrIde,freeLocal)(<>) ==
+  (<>,<>,freeGlobal,{})
+
+DEF variants(sig,info,implType,freeGlobal,discrIde,freeLocal)(v1::vR) ==
+  LET (prod1,decs1,nextGlobal,selMap1) ==
+        variant(sig,info,implType,freeGlobal,discrIde,freeLocal)(v1)
+      (prodR,decsR,unusedGlobal,selMapR) ==
+        variants(sig,info,implType,nextGlobal,discrIde,freeLocal)(vR)
+      selMap == ((\\name,mNt,map.
+                    LET (match,type) == (1st(mNt),2nd(mNt))
+                    IN IF name def? map THEN
+                         (name,(match::1st(map!name))&type) def map
+                    ELSE (name,(match%)&type) def map
+                    FI) / selMapR)(selMap1)
+  IN (prod1::prodR,decs1++decsR,unusedGlobal,selMap)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN variant: globSig**info**type**nat**ide**nat
+             -> variant -> type**seq[dec]**nat**map[name,ltName,pair[match,type]]
+
+DEF variant(sig,info,implType,freeGlobal,discrIde,freeLocal)
+           (variant(cons,test,comps,p)) ==
+  LET pan == posAn(p)
+      (sels,selAns,compIdes,compTypes) == components(sig,info,freeLocal)(comps)
+      compDecs == zip(\\i,t.variable(none set typing(t),i))(compIdes,compTypes)
+      selMap == buildSelMap(consIde,compDecs)(sels,selAns,compIdes,compTypes)
+      (prodType,consDecs,consIde,unusedGlobal) ==
+        constructorDecs(sig,info,freeGlobal,cons,compTypes,implType,pan)
+  IN IF isUsedOrForcedForAc(sig,test) THEN
+       LET testExp == canonicalCase(info,discrIde,implType,pan)
+                                   (match(consIde,compDecs,ide(pan,true))%,
+                                    ide(pan,false))                  
+           testDec == binding(an(sig,info,test,fun(implType%,ide(bool))),
+                              internalIde(sig)(test),decMode(sig,test),testExp)
+       IN (prodType,testDec::consDecs,unusedGlobal,selMap)
+     ELSE (prodType,consDecs,unusedGlobal,selMap)
+     FI
+
+FUN buildSelMap: ide**seq[dec]
+                 -> seq[name]**seq[an]**seq[ide]**seq[type]
+                 -> map[name,ltName,pair[match,type]]
+
+DEF buildSelMap(consIde,compDecs)(<>,<>,<>,<>) == {}
+
+DEF buildSelMap(consIde,compDecs)(n1::nR,a1::aR,i1::iR,t1::tR) ==
+  (n1,match(consIde,compDecs,ide(a1,i1))&t1)
+    def buildSelMap(consIde,compDecs)(nR,aR,iR,tR)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN singleVariant: globSig**info**type**nat**ide**nat**pos
+                   -> variant -> type**seq[dec]**nat
+
+DEF singleVariant(sig,info,implType,freeGlobal,discrIde,freeLocal,sp)
+                 (variant(cons,test,comps,p)) ==
+  LET pan == posAn(p)
+      (sels,selAns,compIdes,compTypes) == components(sig,info,freeLocal)(comps)
+      compDecs == zip(\\i,t.variable(none set typing(t),i))(compIdes,compTypes)
+      selDecs == buildSelDecs(sig,info,implType,discrIde,sp,consIde,compDecs)
+                             (sels,selAns,compIdes,compTypes)
+      (prodType,consDecs,consIde,unusedGlobal) ==
+        constructorDecs(sig,info,freeGlobal,cons,compTypes,implType,pan)
+  IN IF isUsedOrForcedForAc(sig,test) THEN
+       LET testExp == canonicalExp(info,discrIde,implType,pan)(ide(pan,true))
+           testDec == binding(an(sig,info,test,fun(implType%,ide(bool))),
+                              internalIde(sig)(test),decMode(sig,test),testExp)
+       IN (prodType,(testDec::consDecs)++selDecs,unusedGlobal)
+     ELSE (prodType,consDecs++selDecs,unusedGlobal)
+     FI
+
+FUN buildSelDecs: globSig**info**type**ide**pos**ide**seq[dec]
+                  -> seq[name]**seq[an]**seq[ide]**seq[type] -> seq[dec]
+
+DEF buildSelDecs(sig,info,implType,discrIde,sp,consIde,compDecs)
+                (<>,<>,<>,<>) == <>
+
+DEF buildSelDecs(sig,info,implType,discrIde,sp,consIde,compDecs)
+                (n1::nR,a1::aR,i1::iR,t1::tR) ==
+  IF isUsedOrForcedForAc(sig,n1) THEN
+    binding(an(sig,info,n1,fun(implType%,t1)),
+            internalIde(sig)(n1),decMode(sig,n1),
+            canonicalCase(info,discrIde,implType,posAn(sp))
+                         (match(consIde,compDecs,ide(a1,i1))%,
+                                undefinedSelectionError
+                                  (sig,n1,sp,t1,never)))
+    :: buildSelDecs(sig,info,implType,discrIde,sp,consIde,compDecs)
+                   (nR,aR,iR,tR)
+  ELSE buildSelDecs(sig,info,implType,discrIde,sp,consIde,compDecs)
+                   (nR,aR,iR,tR)
+  FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN canonicalCase: info**ide**type**an -> seq[match]**exp -> exp
+
+DEF canonicalCase(info,discrIde,discrType,posAn)(matches,default) ==
+  canonicalExp(info,discrIde,discrType,posAn)
+              (case(posAn,ide(posAn,discrIde),matches,default))
+
+FUN canonicalExp: info**ide**type**an -> exp -> exp
+
+DEF canonicalExp(info,discrIde,discrType,posAn)(exp) ==
+  optLambda(posAn,opParamDecs(info),
+            lambda(posAn,variable(none set typing(discrType),discrIde)%,exp))
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN constructorDecs: globSig**info**nat**name**seq[type]**type**an
+              -> type**seq[dec]**ide**nat
+
+DEF constructorDecs(sig,info,freeGlobal,cons,compTypes,implType,posAn) ==
+  LET consType == optFun(compTypes,implType)
+  IN IF opParams?(info) THEN
+       IF isUsedOrForcedForAc(sig,cons) THEN
+         LET baseIde == global(freeGlobal,target)
+             baseDec == constructor(anWithoutOpParams(sig,info,cons,consType),
+                                    baseIde,decMode(sig,cons),compTypes#)
+             consDec == binding(an(sig,info,cons,consType),
+                                internalIde(sig)(cons),
+                                decMode(sig,cons),
+                                optLambda(posAn,opParamDecs(info),
+                                          ide(posAn,baseIde)))
+         IN (prod(baseIde,compTypes),baseDec::(consDec%),baseIde,
+             succ(freeGlobal))
+       ELSE
+         LET baseIde == internalIde(sig)(cons)
+             baseDec == constructor(anWithoutOpParams(sig,info,cons,consType),
+                                    baseIde,decMode(sig,cons),compTypes#)
+         IN (prod(baseIde,compTypes),baseDec%,baseIde,freeGlobal)
+       FI
+     ELSE LET consIde == internalIde(sig)(cons)
+              consDec == constructor(an(sig,info,cons,consType),
+                                     consIde,decMode(sig,cons),compTypes#)
+          IN (prod(consIde,compTypes),consDec%,consIde,freeGlobal)
+     FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN components: globSig**info**nat
+                -> seq[comp] -> seq[name]**seq[an]**seq[ide]**seq[type]
+
+DEF components(sig,info,free)(<>) == (<>,<>,<>,<>)
+
+DEF components(sig,info,free)(c1::cR) ==
+  LET (n1,a1,i1,t1) == component(sig,info,free)(c1)
+      (nR,aR,iR,tR) == components(sig,info,succ(free))(cR)
+  IN (n1::nR,a1::aR,i1::iR,t1::tR)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN component: globSig**info**nat -> comp -> name**an**ide**type
+
+DEF component(sig,info,free)(comp(sel,fct,p)) ==
+  (sel,posAn(p),local(free),type(sig,info)(fct))
+
+-- ----------------------------------------------------------------------------
+
+FUN decMode : globSig ** name -> mode
+DEF decMode(sig,name) ==
+  IF isExported(sig,name) THEN external ELSE internal FI
+
+-- ----------------------------------------------------------------------------
+
+FUN an: globSig**info**name**type -> an
+
+DEF an(sig,info,target,baseType) ==
+  LET sourceAn == symbol(rep(sig,target)`)
+      typeAn == typing(optGen(sortParamIdes(info),
+                              optFun(opParamTypes(info),baseType)))
+  IN (none set sourceAn) set typeAn
+
+FUN anWithoutOpParams: globSig**info**name**type -> an
+
+DEF anWithoutOpParams(sig,info,target,baseType) ==
+  LET sourceAn == symbol(rep(sig,target)`)
+      typeAn == typing(optGen(sortParamIdes(info),baseType))
+  IN (none set sourceAn) set typeAn
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN optLambda: an**seq[dec]**exp -> exp
+
+DEF optLambda(an,<>,exp) == exp
+DEF optLambda            == lambda
+
+FUN optFun: seq[type]**type -> type
+
+DEF optFun(<>,type) == type
+DEF optFun          == fun
+
+FUN optGen: seq[ide]**type -> type
+
+DEF optGen(<>,type) == type
+DEF optGen          == gen

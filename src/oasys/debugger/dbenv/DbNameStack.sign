@@ -1,0 +1,91 @@
+/* %
+ Der Interpreter verwendet zur Kodierung der Bindungen lokaler Variablen
+einen sogenannten @emph{BindingStack}, der aus Effizienzgründen durch einen in
+Chunks zerlegten Stack von Normalformen implementiert ist. Wird eine Variable im
+Interpreter appliziert, so wird dies durch den Offset in den BindingStack
+beschrieben, der für jede Applikationsstelle eindeutig definiert ist. (Nur
+deshalb funktioniert diese effiziente Kodierung.)
+
+Bei der Übersetztung eines InterOpal-Ausdruckes in die Darstellung für den
+Interpreter, muß dieser BindingStack ,,simuliert'' werden, damit der eindeutige
+Offset @code{bindOffset} berechnet werden kann. Für diese Simulation wird nun
+der sog. NameStack verwendet, der sich vom BindingStack nur dadurch
+unterscheidet, daß anstelle der Bindungen die Namen selbst in den Stack
+geschrieben werden. Der Offset läßt sich demnach an jeder Applikationsstelle
+ermitteln, indem der Name der Variablen im NameStack identifiziert wird. Der
+Offset zu diesem Namen entspricht beim Interpreter dem Offset der Normalform.
+
+Zum Zwecke der Berechnung der Funktionalität wird für Variablen zusätzlich auch
+die Funkionalität mit abgelegt.
+ */
+
+SIGNATURE DbNameStack
+
+IMPORT
+	Seq[objectName]	ONLY	seq
+	Seq[seq[objectName]]	
+			ONLY	seq
+IMPORT	RepoAbsy	ONLY	objectName:SORT
+	Nat		ONLY	nat
+	Expression	ONLY	bindOffset:SORT
+	Fmt		ONLY	fmt:SORT
+	RepoInternData	ONLY	repo:SORT
+
+SORT nameStack
+
+-- %$Einfügen und Abfragen von Namen$
+-- %---------------------------------
+
+/* %
+ @code{<>} ist der leere Stack.
+
+@code{pushItem} erweitert den Stack um eine leere Sequenz von Namen, d.h. es
+wird ein neues, leeres StackItem auf den Stack gelegt. Alle folgenden
+@code{push}-Operationen gehen in diesen Stack.
+
+@code{push} legt einen Namen im NameStack ab. Der Name wird im obersten
+StackItem (@code{,top'}) an das @emph{Ende} der bisherigen Namensliste dieses
+Items angehängt.
+ */
+FUN <> : nameStack
+FUN pushItem:		nameStack		-> nameStack
+FUN popItem:		nameStack		-> nameStack
+FUN push:		nameStack ** objectName	-> nameStack
+
+/* %
+ @code{actBindOffset(NameStack)} liefert den aktuellen BindOffset des
+NameStacks. Dieser hat immer die Item-Nummer Null (da es sich immer um das
+Toplevel-Item handelt). Die Position innerhalb des Items wird durch die Anzahl
+der bereits in das Top-Item ge@code{push}ten Namen bestimmt.
+ */
+FUN actBindOffset :	nameStack		-> bindOffset
+
+/* %
+ @code{NameStack ! Name} ermittelt den BindOffset des angegebenen Namens.
+ */
+FUN ! :			nameStack ** objectName -> bindOffset
+
+/* %
+ @code{NS2 - NS1} ermittelt die Differenz der Anzahl der Variablen der
+beiden Toplevel-Items. Dabei muß dieses Item bei @code{NS2} mindestens soviele
+Variablen enthalten wie bei @code{NS1}.
+
+Es werden tatsächlich nur die Toplevel-Items verglichen. Stimmen die unteren
+Items nicht überein, ist dies irrelevant.
+ */
+FUN - :			nameStack ** nameStack	-> nat
+
+/* %
+ @code{asSeqSeq} transformiert den NameStack in eine Sequenz von Sequenzen von
+Namen.
+ */
+FUN asSeqSeq :		nameStack		-> seq[seq[objectName]]
+
+/* %
+ @code{print} ist eine Pretty-Printing-Funktion für NameStack.
+ */
+FUN fmtNameStack:	nameStack	-> fmt
+
+
+
+

@@ -1,0 +1,352 @@
+
+IMPLEMENTATION WinInternal
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	NatConv		ONLY `
+	IntConv		COMPLETELY
+	Real		COMPLETELY
+	RealConv	COMPLETELY
+	Void		COMPLETELY
+	Option		COMPLETELY
+	Denotation	COMPLETELY
+	String		COMPLETELY
+	StringConv	ONLY `
+	StringScan	COMPLETELY
+	BTUnion		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	Set		COMPLETELY
+	SetReduce	COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComCheck	ONLY |
+	ComSeqReduce	COMPLETELY
+	ComAction	COMPLETELY
+	ComService	COMPLETELY
+	ComAgent	COMPLETELY
+	ComState	COMPLETELY
+	ComStateWith	COMPLETELY
+	ComSeqAction	COMPLETELY
+
+IMPORT	WinTclTk	COMPLETELY
+
+
+
+-- %$Windows$ ==============================================================
+
+DATA window == 
+        window (root        : widget)
+
+DEF window(Master, Class) ==
+    widget(Master)						& (\\ Root .
+    extDefine(callback(Root), rootOnly(Root, freeWidget(Root)))	& (\\ _ .
+    (IF Class |= "" THEN
+	act("toplevel %s -class %s" <- Root + Class)
+     ELSE
+	act("toplevel %s" <- Root)
+     FI
+    )								& (\\ _ .
+    act("bind %s <Destroy> {+ %s %%W; break}" <- 
+    			Root + callback(Root)) 			& (\\ _ .
+    succeed(window(Root))
+    ))))
+
+
+DEF registerDispose(window(Root), Act) ==
+    extDefine(callback(Root), rootOnly(Root, Act))
+
+FUN rootOnly : widget ** com[void] -> seq[string] -> com[void]
+DEF rootOnly(Root, Act)(Args) ==
+    -- In Tk 4.0, destroy events are propagated to the toplevel.
+    -- Prevent processing of such propagated destroys
+    IF ft(Args) = asTk(Root) THEN
+	Act
+    ELSE done FI
+
+
+-- %$Views$ ==============================================================
+
+
+DATA view ==
+        basic(  displayCom : window ** widget -> com[void],
+                config     : config
+        )
+        compound(
+                op         : composeOp,
+                views      : seq[view]
+        )
+        modified(
+                pack       : set[packOp, <],
+                view       : view
+        )
+
+DATA composeOp == 
+        horizontal      ( pack   : set[packOp, <] )
+        vertical        ( pack   : set[packOp, <] )
+        hierarchical
+
+DEF horizontal(Pack1) = horizontal(Pack2) == Pack1 = Pack2
+DEF vertical(Pack1) = vertical(Pack2) == Pack1 = Pack2
+DEF hierarchical = hierarchical == true
+DEF (Op1 : composeOp) = Op2 == false
+
+
+DATA packOp ==
+	packOp		( repr	 : denotation )
+
+DEF expand	== packOp("-expand 1 ")
+DEF fillX	== packOp("-fill x ")
+DEF fillY	== packOp("-fill y ")
+DEF side_left	== packOp("-side left ")
+DEF side_right	== packOp("-side right ")
+DEF side_top	== packOp("-side top ")
+DEF side_bottom	== packOp("-side bottom ")
+DEF anchor_n	== packOp("-anchor n ")
+DEF anchor_ne	== packOp("-anchor ne ")
+DEF anchor_e	== packOp("-anchor e ")
+DEF anchor_se	== packOp("-anchor se ")
+DEF anchor_s	== packOp("-anchor s ")
+DEF anchor_sw	== packOp("-anchor sw ")
+DEF anchor_w	== packOp("-anchor w ")
+DEF anchor_nw	== packOp("-anchor nw ")
+DEF anchor_center == packOp("-anchor center ")
+
+DEF packOp(Repr1) = packOp(Repr2) == Repr1 = Repr2
+DEF packOp(Repr1) < packOp(Repr2) == Repr1 < Repr2
+
+
+
+DEF basic(Com) == basic(Com, config(<>'Seq))
+
+
+DEF displayView(Win, Wid, View) == displayView(Win, Wid, View, true)
+
+DEF displayView(Win, Wid, basic(DisplayCom, Config), Pack?) ==
+    DisplayCom(Win, Wid)				& (\\ _ .
+    act("bind %s <Destroy> {+ %s; break}" 
+    				<- Wid + callback(Wid)) & (\\ _ .
+    forceApply(Win, Wid, widget, Config)		& (\\ _ .
+    succeed(false)
+    )))
+
+DEF displayView(Win, Wid, modified(Pack, View), Pack?) ==
+    displayView(Win, Wid, View)				& (\\ Expand .
+    IF {}?(Pack) or ~(Pack?) THEN
+	succeed(Expand)
+    ELSE
+	act("pack configure %s %s" <- Wid
+				 + packAsTk(Pack)) 	& (\\ _ .
+	succeed(Expand or expand in Pack)
+	)
+    FI
+    )
+
+    FUN packAsTk : set[packOp,<] -> denotation
+    DEF packAsTk(Pack) ==
+	IF fillX in Pack and fillY in Pack THEN
+	    "-fill both " ++ packAsTk(excl(fillX, excl(fillY, Pack)))
+	ELSE
+	    (\\Op, R. repr(Op) ++ R, "") / Pack
+	FI
+
+
+DEF displayView(Win, Wid, compound(horizontal(Pack), Views), Pack?) ==
+    invisibleFrame(Win, Wid, Pack?)			& (\\ _ .
+    (displayChildren(Win, Wid, TkPack, modify(Pack) * Views) 
+    	WHERE TkPack == !("-in ") ++ asTk(Wid) ++ !(" -side left")) 
+    							& (\\ Expand.
+    IF Expand and Pack? THEN
+	act("pack configure %s -expand 1" <- Wid)	& 
+	succeed(true)
+    ELSE
+	succeed(false)
+    FI
+    ))
+
+DEF displayView(Win, Wid, compound(vertical(Pack), Views), Pack?) ==
+    invisibleFrame(Win, Wid, Pack?)			& (\\ _ .
+    (displayChildren(Win, Wid, TkPack, modify(Pack) * Views) 
+    	WHERE TkPack == !("-in ") ++ asTk(Wid) ++ !(" -side top")) 
+    							& (\\ Expand.
+    IF Expand and Pack? THEN
+	act("pack configure %s -expand 1" <- Wid)	& 
+	succeed(true)
+    ELSE
+	succeed(false)
+    FI
+    ))
+
+DEF displayView(Win, Wid, compound(hierarchical, Parent :: Children), Pack?) ==
+    displayView(Win, Wid, Parent, Pack?)		& (\\ _ .
+    (displayChildren(Win, Wid, TkPack, Children)	
+    	WHERE TkPack == !("-in ") ++ asTk(Wid) )	&
+    succeed(false)
+    )
+
+FUN modify : set[packOp,<] -> view -> view
+DEF modify(Pack)(modified(Pack1, View)) == modified(Pack + Pack1, View)
+DEF modify(Pack)(View) == modified(Pack, View)
+
+
+DEF displayChildren(Win, Wid, Pack, <>) == 
+    succeed(false)
+
+DEF displayChildren(Win, Parent, Pack, Child :: Children) == 
+    widget(Parent)					& (\\ Wid .
+    define(callback(Wid), freeWidget(Wid))		& (\\ _ .
+    displayView(Win, Wid, Child, true)			& (\\ Expand .
+    act("pack configure %s %s" <- Wid + Pack)		& (\\ _ .
+    displayChildren(Win, Parent, Pack, Children)	& (\\ ExpandRest .
+    succeed(Expand or ExpandRest)
+    )))))
+
+
+FUN invisibleFrame : window ** widget ** bool -> com[void]
+DEF invisibleFrame(Win, Wid, Pack?) ==
+    act("frame %s -borderwidth 0 -highlightthickness 0" 
+    		<- Wid) 				& (\\ _ .
+    act("bind %s <Destroy> {+ %s; break}" 
+    				<- Wid + callback(Wid))	& (\\ _ .
+    IF Pack? THEN 
+	act("pack configure %s -fill both" <- Wid)
+    ELSE done FI
+    ))
+
+DEF registerDispose(Win, Wid, Act) ==
+    extDefine(callback(Wid), Act)
+
+
+-- %$View Configurations$ =======================================================
+
+DATA config 	== config(opts: seq[configCom])
+DATA configCom 	== com(com: window ** widget ** modifier -> com[void])
+DATA tag	== tag(name : denotation)  
+DATA modifier	== widget
+		   canvas(tag: tag)
+		   text(tag: tag)
+		   menu(item: nat)
+		   other(prefix: string)
+
+
+DEF config(Den:denotation) == 
+    config(%(com(\\ Win, Wid, Mod . doConfig(Win, Wid, Mod, Den))))
+
+DEF config(Scr:script) == 
+    config(%(com(\\ Win, Wid, Mod . doConfig(Win, Wid, Mod, Scr))))
+
+DEF config(Com) ==
+    config(%(com(Com)))
+
+DEF configWidget(Com) ==
+    config(%(com(\\ Win, Wid, Mod .
+	IF widget?(Mod) THEN
+	    Com(Win, Wid)
+	ELSE done FI
+    )))
+
+DEF configCanvas(Com) ==
+    config(%(com(\\ Win, Wid, Mod .
+	IF canvas?(Mod) THEN
+	    Com(Win, Wid, tag(Mod))
+	ELSE done FI
+    )))
+
+DEF configText(Com) ==
+    config(%(com(\\ Win, Wid, Mod .
+	IF text?(Mod) THEN
+	    Com(Win, Wid, tag(Mod))
+	ELSE done FI
+    )))
+
+DEF configMenu(Com) ==
+    config(%(com(\\ Win, Wid, Mod .
+	IF menu?(Mod) THEN
+	    Com(Win, Wid, item(Mod))
+	ELSE done FI
+    )))
+
+DEF configOther(Com) ==
+    config(%(com(\\ Win, Wid, Mod .
+	IF other?(Mod) THEN
+	    Com(Win, Wid, prefix(Mod))
+	ELSE done FI
+    )))
+
+DEF apply(Win, Wid, Mod, config(Opts)) == 
+    (\\Opt . com(Opt)(Win, Wid, Mod)) @& Opts
+
+DEF forceApply(Win, Wid, Mod, config(Opts)) == 
+    (\\Opt . com(Opt)(Win, Wid, Mod); done) @& Opts
+
+
+DEF doConfig(Win, Wid, Mod, Scr) ==
+    IF widget?(Mod) THEN
+	act("%s config %s" <- Wid + format(Scr))
+    IF canvas?(Mod) THEN
+	act("%s itemconfig %s %s" <- Wid + name(tag(Mod)) + format(Scr))
+    IF text?(Mod) THEN
+	act("%s tag config %s %s" <- Wid + name(tag(Mod)) + format(Scr))
+    IF menu?(Mod) THEN
+	act("%s entryconfig %n %s" <- Wid + item((Mod)) + format(Scr))
+    IF other?(Mod) THEN
+	act("%s %s %s" <- Wid + prefix(Mod) + format(Scr))
+    FI
+
+DEF doConfig(Win, Wid, Mod, Den) ==
+    IF widget?(Mod) THEN
+	act("%s config %s" <- Wid + Den)
+    IF canvas?(Mod) THEN
+	act("%s itemconfig %s %s" <- Wid + name(tag(Mod)) + Den)
+    IF text?(Mod) THEN
+	act("%s tag config %s %s" <- Wid + name(tag(Mod)) + Den)
+    IF menu?(Mod) THEN
+	act("%s entryconfig %n %s" <- Wid + item((Mod)) + Den)
+    IF other?(Mod) THEN
+	act("%s %s %s" <- Wid + prefix(Mod) + Den)
+    FI
+
+
+-- %$Window Configurations$ =======================================================
+
+DATA wconfig 	== wconfig(opts: seq[wconfigCom])
+DATA wconfigCom	== com(com: window -> com[void])
+
+-- FUN wconfig 	: (window -> com[void]) -> wconfig
+DEF wconfig(Fun) == wconfig(%(com(Fun)))
+
+-- FUN apply	: window ** wconfig -> com[window]
+-- FUN forceApply : window ** wconfig -> com[window]
+
+
+DEF apply(Win, wconfig(Coms)) == 
+    (\\Com . com(Com)(Win)) @& Coms
+
+DEF forceApply(Win, wconfig(Coms)) == 
+    (\\Com. com(Com)(Win); done) @& Coms
+
+
+-- %$Coordinate Conversion$ ==================================================
+
+DEF asPixel(R) == `(asInt(R / pixelSize))
+DEF asMM(Str)  == convReal(Str) * pixelSize
+
+
+FUN pixelSize : real
+DEF pixelSize ==
+    EXEC(
+        eval("winfo fpixels . 1m")
+                & (\\ Str.
+        LET Scan == scan("%r", Str)
+        IN
+        IF ::?(Scan) THEN
+            succeed(1/real(ft(Scan)))
+        ELSE
+            yield(fail("Cannot determine pixelsize of screen"))
+        FI
+        )
+    )

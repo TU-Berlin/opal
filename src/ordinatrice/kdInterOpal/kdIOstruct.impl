@@ -1,0 +1,52 @@
+IMPLEMENTATION kdIOstruct
+
+IMPORT InterOpal COMPLETELY
+	Map ONLY map ! {}? def !? find? 
+	Nat ONLY nat 0
+	Seq ONLY seq # +% <> <>?
+	Denotation ONLY =
+	Option ONLY option avail nil nil? cont avail?
+	OptionMap ONLY *
+	Pair COMPLETELY
+
+DEF `(IO)(orig) == symbol(structs(IO)!orig)
+DEF ##(IO)(orig) == LET s == structs(IO)!orig
+		   IN IF insts(s) {}? THEN 0 ELSE #(insts(s)!formal) FI
+
+DEF updInsts(IO, orig, newinsts) ==
+	LET old == structs(IO)!orig
+	    new == struct(pos(old), origin(old), symbol(old), 
+			  newinsts, onlys(old), objs(old), props(old), pragmas(old))
+	IN interOpal(part(IO), def(orig, new, structs(IO)))
+
+DEF updObjs(IO, orig, newobjs) ==
+	LET old == structs(IO)!orig
+	    new == struct(pos(old), origin(old), symbol(old), 
+			  insts(old), onlys(old), newobjs, props(old),pragmas(old))
+	IN interOpal(part(IO), def(orig, new, structs(IO)))
+
+DEF addOnly(IO, orig, in, na) ==
+	LET old == structs(IO)!orig
+	    oldonlys == onlys(old)
+	    oldinstOPT == oldonlys!?in
+	    oldinst == IF oldinstOPT nil? THEN <> ELSE cont(oldinstOPT) FI
+	    newonlys == def(in, oldinst +% na, oldonlys)
+	    new == struct(pos(old), origin(old), symbol(old), 
+			  insts(old), newonlys, objs(old), props(old),pragmas(old))
+	IN interOpal(part(IO), def(orig, new, structs(IO)))
+
+DEF addObj(IO, orig, id, ob) ==
+	LET old == structs(IO)!orig
+	    oldobjs == objs(old)
+	    newobjs == def(id, ob, oldobjs)
+	IN updObjs(IO, orig, newobjs)
+
+DEF addStruct(IO, str) ==
+	interOpal(part(IO), def(origin(str), str, structs(IO)))
+
+DEF getstruct(IO, strname)  ==
+	2nd * find?(\\ _, str.symbol(str) = strname, structs(IO))
+
+DEF parameterized?(struct(_,_,_,i,_,_,_,_)) ==
+	~((i {}?) or (LET osn == i !? none IN
+		      IF osn avail? THEN cont(osn) <>? ELSE false FI))

@@ -1,0 +1,236 @@
+IMPLEMENTATION kdIOConv
+
+  IMPORT InterOpal COMPLETELY
+	 Map ONLY map ! undef <+ {} def extend dom
+	 MapReduce ONLY /
+	 Option COMPLETELY
+	 Seq ONLY seq :: <> % ::?
+	 SeqMap ONLY *
+	 SeqReduce ONLY /
+	 SeqConv ONLY `
+	 Set ONLY set
+	 SetReduce ONLY /
+	 String ONLY string ! ++ :: <> +%
+	 StringFormat ONLY format
+	 BTUnion COMPLETELY
+	 Char ONLY char blank newline
+	 PrintableChar ONLY colon dblquote
+
+	 kdIOname ONLY ` `` `_p
+	 kdIOstruct ONLY parameterized?
+
+
+DEF asSrc(IO AS interOpal(part, structs)) ==
+	LET m == structs!main 
+	    header0 == asSrc(part) +-+ !(symbol(m)) 
+	    header == IF m parameterized? THEN header0 
+						+-+ asSrc(IO)(formal,insts(m))
+		      ELSE header0 FI
+	    imports == (\\str,sq. asImportSrc(IO)(str) :: sq, <>) 
+			/ undef(main,structs)
+	    obs == (\\ob, sq. asSrc(IO)(ob) :: sq, <>) / objs(m)
+	    pros == (\\pr, sq. asSrc(IO)(pr) :: sq, <>) / props(m)
+        IN header +/+
+	   ((+/+, <>) / imports) +/+ 
+	   ((+/+, <>) / obs) +/+
+	   ((+/+, <>) / pros)
+
+
+
+FUN asSrc: part -> string
+DEF asSrc(signature) == "SIGNATURE"!
+DEF asSrc(extProperties) == "EXTERNAL PROPERTIES"!
+DEF asSrc(implementation) == "IMPLEMENTATION"!
+DEF asSrc(intProperties) == "INTERNAL PROPERTIES"!
+
+
+FUN asSrc: interOpal -> inst ** map[inst,<,seq[name]] -> string
+DEF asSrc(IO)(in,ma) ==  
+	IF in none? THEN <> ELSE !(`("[", ",", "]")(`(IO))(ma!in)) FI
+
+FUN asImportSrc: interOpal -> struct -> string
+DEF asImportSrc(IO)(str) ==
+	LET m == def(none, <>, undef(formal, insts(str)))
+	    txts == 
+	    ((\\ in,sq. (((("IMPORT"!) +-+ symbol(str) ++ asSrc(IO)(in,m))
+			+-+ ("ONLY"!)) ++ 
+			((\\n, tx. tx +-+ `(IO)(n), <>) / onlys(str)!in)) :: sq
+             ), <>) / dom(m)
+        IN (+/+, <>) / txts
+
+-- FUN asSrc: interOpal -> object -> string
+DEF asSrc(IO)(object(_, _, sym, k, im, _, _)) ==
+	IF k sort? THEN (("SORT"!) +-+ sym) +/+ asSrc(IO)(sym, im)
+	IF k fct? THEN (((("FUN"!) +-+ sym) +-+ (":" +-+ asSrc(`_p(IO),IO)(fct(k))))
+			+/+ asSrc(IO)(sym, im))
+        FI
+
+FUN asSrcFun: (name -> denotation) ** interOpal -> object -> string
+DEF asSrcFun(#,IO)(object(_, _, sym, k, im, _, _)) ==
+	IF k sort? THEN (("SORT"!) +-+ sym) +/+ asSrc(IO)(sym, im)
+	IF k fct? THEN (((("FUN"!) +-+ sym) +-+ (":" +-+ asSrc(#,IO)(fct(k)))))
+        FI
+
+
+FUN asSrc: interOpal -> property -> string
+DEF asSrc(IO)(freeType(_,_,so,vars,_)) ==
+	("TYPE" +-+ `(IO)(so)) +-+ (!("==") +/+ (+/+, <>) / asSrc(IO) * vars)
+DEF asSrc(IO)(law(_,_,sym,form, _)) ==
+	(("LAW" +-+ (IF sym nil? THEN "" ELSE cont(sym) FI)) +-+ "== ")
+		++ asSrc(IO)(form)
+
+FUN asSrc: interOpal -> denotation ** impl -> string
+DEF asSrc(_)(_,missing) == "-- missing"!
+DEF asSrc(_)(_,imported) == "-- imported"!
+DEF asSrc(_)(_,parameter(_,_)) == "-- parameter"!
+DEF asSrc(IO)(_,induced(_,na)) == "-- induced by DATA" +-+ `(IO)(na)
+DEF asSrc(IO)(sym,data(vars)) == 
+	(("DATA" +-+ sym) +-+ "==") +-+ (+/+, <>) / (asSrc(IO) * vars)
+DEF asSrc(IO)(_,def(eqs)) == (+/+, <>) / ((\\s. "DEF" +-+ s) * asSrc(IO) * eqs)
+
+
+FUN asSrc: interOpal -> fct -> string
+DEF asSrc(IO)(f) == asSrc(`(IO), IO)(f)
+
+FUN asSrc:(name -> denotation) ** interOpal -> fct -> string
+DEF asSrc(#,IO)(sort(na)) == !(na#)
+DEF asSrc(#,IO)(cart(<>)) == !("<>")
+DEF asSrc(#,IO)(cart(elems)) == `("", " ** ", "")(asSrcX(#,IO))(elems)
+DEF asSrc(#,IO)(funct(dom AS cart(_),cod)) ==
+	format("%s -> %s", string * %(asSrcX(#,IO)(dom), asSrc(#,IO)(cod)))
+DEF asSrc(#,IO)(funct(dom AS sort(_),cod)) ==
+	format("%s -> %s", string * %(asSrcX(#,IO)(dom), asSrc(#,IO)(cod)))
+DEF asSrc(#,IO)(funct(dom,cod)) == 
+	format("%s -> %s", string * %(asSrcX(#,IO)(dom), asSrc(#,IO)(cod)))
+
+/* % @code{asSrcX} klammert -> - Funktionalitaeten */
+FUN asSrcX: (name -> denotation) ** interOpal -> fct -> string
+DEF asSrcX(#,IO)(sort(na)) == !(na#)
+DEF asSrcX(#,OP)(cart(<>)) == !("()")
+DEF asSrcX(#,IO)(cart(elems)) == `("", " ** ", "")(asSrcX(#,IO))(elems)
+DEF asSrcX(#,IO)(funct(dom AS cart(_),cod)) ==
+	format("(%s -> %s)", string * %(asSrcX(#,IO)(dom), asSrc(#,IO)(cod)))
+DEF asSrcX(#,IO)(funct(dom AS sort(_),cod)) ==
+	format("(%s -> %s)", string * %(asSrcX(#,IO)(dom), asSrc(#,IO)(cod)))
+DEF asSrcX(#,IO)(funct(dom,cod)) == 
+	format("(%s -> %s)", string * %(asSrcX(#,IO)(dom),asSrc(#,IO)(cod)))
+
+FUN asSrc: interOpal -> variant -> string
+DEF asSrc(IO)(variant(_,c,_,cmps)) ==
+	!(`(IO)(c)) ++ 
+	(IF cmps ::? THEN `("(",",",")")(asSrc(IO))(cmps) ELSE <> FI)
+
+FUN asSrc: interOpal -> comp -> string
+DEF asSrc(IO)(comp(_,s)) == 
+	!(`(IO)(s)) ++ colon :: 
+	asSrc(``(IO), IO)
+       	     (codom(fct(kind(objs(structs(IO)!origin(s))!ident(s)))))
+
+FUN asSrc: interOpal -> formula -> string
+DEF asSrc(IO)(frm) == asSrc(IO)(frm:formula, {})
+
+FUN asSrc: interOpal -> formula ** map[ident,<,var] -> string
+DEF asSrc(IO)(dfd(_,ex), m) == format("DFD(%s)", string * %(asSrc(IO)(ex, m)))
+DEF asSrc(IO)(approx(_,l,r), m) == 
+	format("(%s) <<= (%s)", string * %(asSrc(IO)(l,m),asSrc(IO)(r,m)))
+DEF asSrc(IO)(cong(_,l,r),m) ==
+	format("(%s) === (%s)", string * %(asSrc(IO)(l,m),asSrc(IO)(r,m)))
+DEF asSrc(IO)(neg(_,form),m) == "NOT" +-+ asSrc(IO)(form,m)
+DEF asSrc(IO)(conj(_,l,r),m) ==
+	format("(%s) AND (%s)", string * %(asSrc(IO)(l,m),asSrc(IO)(r,m)))
+DEF asSrc(IO)(disj(_,l,r),m) ==
+	format("(%s) OR (%s)", string * %(asSrc(IO)(l,m),asSrc(IO)(r,m)))
+DEF asSrc(IO)(impl(_,l,r),m) ==
+	format("(%s) ==> (%s)", string * %(asSrc(IO)(l,m),asSrc(IO)(r,m)))
+DEF asSrc(IO)(equiv(_,l,r),m) ==
+	format("(%s) <=> (%s)", string * %(asSrc(IO)(l,m),asSrc(IO)(r,m)))
+DEF asSrc(IO)(forall(_,vs,rn),m) ==
+	LET newmap == extend({}, ident * vs, vs)
+	IN format("ALL %s . %s", string * %((+-+, <>) / asSrc * vs, 
+		 	asSrc(IO)(rn, m <+ newmap)))
+DEF asSrc(IO)(exist(_,vs,rn),m) ==
+	LET newmap == extend({}, ident * vs, vs)
+	IN format("EX %s . %s", string * %((+-+, <>) / asSrc * vs, 
+		 	asSrc(IO)(rn, m <+ newmap)))
+
+
+FUN asSrc: interOpal -> eqn -> string
+DEF asSrc(IO)(eqn(_,l,_,r)) == 
+	asSrc(IO)(l) +-+ ("==" +-+ asSrc(IO)(r, varsOf(l)))
+
+FUN asSrc: interOpal -> eqn ** map[ident,<,var] -> string
+DEF asSrc(IO)(eqn(_,l,_,r),m) ==
+	asSrc(IO)(l) +-+ ("==" +-+ asSrc(IO)(r, m))
+
+FUN asSrc: interOpal -> pattern -> string
+DEF asSrc(_)(any(_)) == "_"!
+DEF asSrc(IO)(name(_,na)) == !(`(IO)(na))	-- lt. Doku nur globale Namen
+DEF asSrc(_)(var(_,v)) == asSrc(v)
+DEF asSrc(IO)(as(_,v,pt)) == asSrc(v) +-+ ("AS" +-+ asSrc(IO)(pt))
+DEF asSrc(IO)(apply(_,f,tuple(_,<>))) == asSrc(IO)(f)
+DEF asSrc(IO)(apply(_,f,a)) == asSrc(IO)(f) ++ asSrc(IO)(a)
+DEF asSrc(IO)(tuple(_,els)) == `("(",",",")")(asSrc(IO))(els)
+
+FUN varsOf: pattern -> map[ident,<,var]
+DEF varsOf(any(_)) == {}
+DEF varsOf(name(_,_)) == {}
+DEF varsOf(var(_,v)) == def(ident(v), v, {})
+DEF varsOf(as(_,v,pt)) == def(ident(v), v, varsOf(pt))
+DEF varsOf(apply(_,f,a)) == varsOf(f) <+ varsOf(a)
+DEF varsOf(tuple(_,els)) == (<+, {}) / varsOf * els
+
+FUN varsOf: eqn -> map[ident,<,var]
+DEF varsOf(eqn(_,l,_,_)) == varsOf(l)
+
+FUN asSrc: interOpal -> expr ** map[ident,<,var] -> string
+DEF asSrc(IO)(name(_,n),m) == 
+	IF origin(n) local? THEN asSrc(m!ident(n)) ELSE !(`(IO)(n)) FI
+DEF asSrc(_)(den(_,r),_) == dblquote :: (!(r) +% dblquote)
+DEF asSrc(IO)(tuple(_, els), m) == `("(",",",")")(asSrc(IO)(_,m))(els)
+DEF asSrc(IO)(apply(_,f:expr, T AS tuple(_,_)),m) == 
+	asSrc(IO)(f,m) ++ asSrc(IO)(T,m)
+DEF asSrc(IO)(apply(_,f:expr, arg),m) == 
+	asSrc(IO)(f,m) ++ ("("!) ++ asSrc(IO)(arg,m) ++ (")"!)
+DEF asSrc(IO)(cases(_,gds, nil),m) ==
+	((+/+, <>) / asSrc(IO)(_,m) * gds) +/+ !("FI")
+DEF asSrc(IO)(cases(_,gds, avail(ex)),m) ==
+	((+/+, <>) / asSrc(IO)(_,m) * gds) ++ 
+	(!("ELSE") +/+ asSrc(IO)(ex, m) +/+ !("FI"))
+DEF asSrc(IO)(lambda(_,vs,bd),m) == 
+	LET newmap == extend(m, ident * vs, vs)
+	    body == asSrc(IO)(bd, m <+ newmap)
+        IN
+	format("\\\\ %s . %s", string * %(`("", ",", "")(asSrc)(vs), body))
+DEF asSrc(IO)(block(_,eqs,bd),m) ==
+	LET newmap == m <+ (<+, {}) / varsOf * eqs
+	IN
+	format("LET %s\nIN %s", string * %(
+		(+/+, <>) / asSrc(IO)(_,newmap) * eqs,
+		asSrc(IO)(bd,newmap)))
+
+FUN asSrc: interOpal -> guard ** map[ident,<,var] -> string
+DEF asSrc(IO)(guard(_,i,t),m) ==
+	format("IF %s THEN %s", string * %(asSrc(IO)(i,m), asSrc(IO)(t,m)))
+
+FUN asSrc: var -> string
+DEF asSrc(var(_,_,sym,_)) == sym!
+
+
+FUN asSrc: interOpal -> kind -> string
+DEF asSrc(_)(sort) == "SORT"!
+DEF asSrc(IO)(fct(f)) == asSrc(IO)(f)
+
+/* % Hilfsfunktionen auf Strings */
+FUN +-+ : string ** string -> string
+DEF s1 +-+ s2 == s1 ++ (blank :: s2)
+
+FUN +-+ : denotation ** string -> string   
+DEF d +-+ s == (d!) +-+ s:string
+
+FUN +-+ : string ** denotation -> string	
+DEF s +-+ d == s:string +-+ (d!)
+
+FUN +-+ : denotation ** denotation -> string	DEF d1 +-+ d2 == (d1!)+-+ (d2!)
+
+FUN +/+ : string ** string -> string
+DEF s1 +/+ s2 == s1 ++ (newline :: s2)

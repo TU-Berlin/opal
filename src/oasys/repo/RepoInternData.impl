@@ -1,0 +1,361 @@
+IMPLEMENTATION RepoInternData
+
+IMPORT	Nat		COMPLETELY
+	IdTab		COMPLETELY
+	Fmt		COMPLETELY
+	FmtBasicTypes	COMPLETELY
+	FmtSet		COMPLETELY
+	FmtSeq		COMPLETELY
+	FmtMap		COMPLETELY
+	IdTab		COMPLETELY
+	IdMap		COMPLETELY
+	IdSet		COMPLETELY
+	Seq		ONLY <>
+	Set		ONLY {}
+	Map		ONLY {}
+
+IMPORT	RepoAn		COMPLETELY
+	RepoName	COMPLETELY
+	RepoAbsy	COMPLETELY
+	RepoSource	COMPLETELY
+	RepoAdmin	COMPLETELY
+       Pair COMPLETELY
+       SeqFilter ONLY |
+       Id ONLY fmtId
+
+-- %$Implementation of Auxiliary Functions$
+
+DEF unitInfo(Name)(R) ==
+    unitInfos(R) ! internId(Name)
+
+DEF setUnitInfo(Name, Info)(R) ==
+    R :=_unitInfos def(internId(Name), Info, unitInfos(R))
+
+
+DEF updateUnitInfo(Name, Fun)(R) ==
+    R :=_unitInfos upd(internId(Name), Fun, unitInfos(R))
+
+DEF updateUnitInfo(Name, Fun)(R) ==
+    -- we dont have the functions in IdMap (and Map ...) to do this
+    -- preserving uniqueness :-(
+    LET (Ids:seq[id], Info) == Fun(unitInfo(Name)(R))
+    IN
+    (Ids, R :=_unitInfos def(internId(Name), Info, unitInfos(R)))
+
+DEF updateUnitInfo(Name, Fun)(R) ==
+    -- we dont have the functions in IdMap (and Map ...) to do this
+    -- preserving uniqueness :-(
+    LET (Id:id, Info) == Fun(unitInfo(Name)(R))
+    IN
+    (Id, R :=_unitInfos def(internId(Name), Info, unitInfos(R)))
+
+
+
+DEF emptyRepo ==
+    repo(none, <>, {}, {})
+
+
+DEF emptyUnit(Sym, An, SFile, AFile, OFile) ==
+    LET (_, InitialInst) == new(\\ _ . unitInstance(none, <>), {})
+    IN
+    unitInfo(Sym, An, outdated, {},
+		{}, InitialInst, {}, <>,{},
+		{}, {}, {}, {}, 0, 0,
+		SFile, AFile, OFile)
+
+
+DEF fmtRepo(repo(An, Folders, Codes, Infos)) ==
+    lit("------------- Annotation ------------- "); 
+	brk; fmtAn(An); brk; brk;
+    lit("------------- Folders ------------- "); 
+	brk; fmtSeq(fmtFolder)(Folders); brk; brk;
+    lit("------------- Unit Codes ------------- "); 
+	brk; fmtMap(fmtDenotation,fmtNat)(Codes); brk; brk;
+    lit("------------- Unit Infos ------------- "); 
+	brk; fmtIdtab(fmtUnitInfo)(Infos); brk; brk
+
+
+-- %$Inserted from Signature$
+
+/* % 
+@ignore
+*/
+
+-- %$Repository$ ==========================================================
+
+DATA repo ==
+	repo		(an		: an,
+			 folders	: seq[folder],
+			 unitCodes	: map[denotation,<,nat],
+			 unitInfos	: idtab[unitInfo])
+
+     FUN :=_an		: repo ** an			-> repo
+     FUN :=_folders	: repo ** seq[folder]		-> repo
+     FUN :=_unitCodes	: repo ** map[denotation,<,nat] -> repo
+     FUN :=_unitInfos	: repo ** idtab[unitInfo]	-> repo
+
+
+FUN emptyRepo : repo
+
+
+
+-- %$Units$ =================================================================
+
+DATA unitInfo ==
+	removed
+	unitInfo	(symbol			: denotation,
+			 an			: an,
+			 state			: unitState,
+			 flags			: set[unitFlag,<],
+			 imports		: idmap[unitImport],
+			 instances		: idtab[unitInstance],
+			 items			: idtab[item],
+			 itemOrder		: seq[nat],
+			 itemImports		: set[denotation,<],
+			 pragmas		: idtab[pragma],
+			 properties		: idtab[property],
+			 objects		: idtab[object],
+			 localSigns		: idtab[unitLocalSign],
+			 absyVersion		: nat,
+			 objectVersion		: nat,
+			 sourceFile		: repoFile,
+			 absyFile		: repoFile,
+			 objectFile		: repoFile)
+
+     FUN :=_symbol	: unitInfo ** denotation	-> unitInfo
+     FUN :=_an		: unitInfo ** an		-> unitInfo
+     FUN :=_state	: unitInfo ** unitState		-> unitInfo
+     FUN :=_flags	: unitInfo ** set[unitFlag,<]	-> unitInfo
+     FUN :=_imports	: unitInfo ** idmap[unitImport] -> unitInfo
+     FUN :=_instances	: unitInfo ** idtab[unitInstance]
+							-> unitInfo
+     FUN :=_items	: unitInfo ** idtab[item]	-> unitInfo
+     FUN :=_itemOrder	: unitInfo ** seq[nat]		-> unitInfo
+     FUN :=_itemImports : unitInfo ** set[denotation,<] -> unitInfo
+     FUN :=_pragmas	: unitInfo ** idtab[pragma]	-> unitInfo
+     FUN :=_properties	: unitInfo ** idtab[property]	-> unitInfo
+     FUN :=_objects	: unitInfo ** idtab[object]	-> unitInfo
+     FUN :=_localSigns	: unitInfo ** idtab[unitLocalSign] -> unitInfo
+     FUN :=_sourceFile	: unitInfo ** repoFile		-> unitInfo
+     FUN :=_absyFile	: unitInfo ** repoFile		-> unitInfo
+     FUN :=_objectFile	: unitInfo ** repoFile		-> unitInfo
+   
+     FUN fmtUnitInfo	: unitInfo			-> fmt
+
+FUN emptyUnit		: denotation ** an   
+				** repoFile ** repoFile
+				** repoFile		-> unitInfo
+
+DATA unitState ==
+	outdated checked compiled
+
+     FUN < =		: unitState ** unitState	-> bool
+     FUN fmtUnitState	: unitState			-> fmt
+
+DATA unitFlag ==
+	flushed library sourced released interpreted absy fullAbsy
+
+     FUN < =		: unitFlag ** unitFlag		-> bool
+     FUN fmtUnitFlag	: unitFlag			-> fmt
+
+DATA unitInstance ==
+	unitInstance	(an			: an,
+			 objects		: seq[objectName])
+	removed
+
+     FUN :=_an		: unitInstance ** an		-> unitInstance
+     FUN :=_objects	: unitInstance ** seq[objectName] -> unitInstance
+     FUN fmtUnitInstance : unitInstance			-> fmt
+
+DATA unitImport ==
+	unitImport	(an			: an,
+			 objectIds		: idset)
+
+     FUN :=_an		: unitImport ** an		-> unitImport
+     FUN :=_objectIds	: unitImport ** idset		-> unitImport
+     FUN fmtUnitImport	: unitImport			-> fmt
+
+DATA unitLocalSign ==
+	unitLocalSign	(an			: an,
+			 objects		: idtab[object])
+	removed
+
+     FUN :=_an		: unitLocalSign ** an		   -> unitLocalSign
+     FUN :=_objects	: unitLocalSign ** idtab[object]   -> unitLocalSign
+     FUN fmtUnitLocalSign : unitLocalSign		   -> fmt
+
+
+/* %
+@end ignore
+*/
+
+
+-- %$Generated by Ordinatrice$
+
+/* % 
+@ignore
+*/
+
+-- this is output of ordinatrice verte for free type unitFlag
+FUN < : unitFlag ** unitFlag -> bool
+FUN = : unitFlag ** unitFlag -> bool
+FUN ord : unitFlag -> nat
+DEF ord(flushed) == 0
+DEF ord(library) == 1
+DEF ord(sourced) == 2
+DEF ord(released) == 3
+DEF ord(interpreted) == 4
+DEF ord(fullAbsy) == 5
+
+DEF F1 < F2 == ord(F1) < ord(F2)
+DEF F1 = F2 == ord(F1) = ord(F2)
+
+FUN fmtUnitFlag : unitFlag -> fmt
+DEF fmtUnitFlag(flushed) == ;(;(beg(2),lit("flushed")),end)
+DEF fmtUnitFlag(library) == ;(;(beg(2),lit("library")),end)
+DEF fmtUnitFlag(sourced) == ;(;(beg(2),lit("sourced")),end)
+DEF fmtUnitFlag(released) == ;(;(beg(2),lit("released")),end)
+DEF fmtUnitFlag(interpreted) == ;(;(beg(2),lit("interpreted")),end)
+DEF fmtUnitFlag(fullAbsy) == ;(;(beg(2),lit("fullAbsy")),end)
+
+
+
+-- this is output of ordinatrice verte for free type unitImport
+
+
+DEF :=_objectIds(unitImport(1,_),new) == unitImport(1,new)
+
+FUN :=_an : unitImport ** an -> unitImport
+DEF :=_an(unitImport(_,2),new) == unitImport(new,2)
+
+DEF fmtUnitImport(unitImport(v0,v1)) == ;(;(beg(2),lit("unitImport")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtIdset(v1))),lit(")"))),end))
+
+
+
+-- this is output of ordinatrice verte for free type unitLocalSign
+
+
+DEF :=_objects(unitLocalSign(1,_),new) == unitLocalSign(1,new)
+
+DEF :=_an(unitLocalSign(_,2),new) == unitLocalSign(new,2)
+
+DEF fmtUnitLocalSign(unitLocalSign(v0,v1)) == ;(;(beg(2),lit("unitLocalSign")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtIdtab(fmtObject)(v1))),lit(")"))),end))
+DEF fmtUnitLocalSign(removed) == ;(;(beg(2),lit("removed")),end)
+
+
+
+-- this is output of ordinatrice verte for free type unitInstance
+
+
+DEF :=_objects(unitInstance(1,_),new) == unitInstance(1,new)
+
+DEF :=_an(unitInstance(_,2),new) == unitInstance(new,2)
+
+DEF fmtUnitInstance(unitInstance(v0,v1)) == ;(;(beg(2),lit("unitInstance")),;(;(lit("("),;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtObjectName)(v1))),lit(")"))),end))
+DEF fmtUnitInstance(removed) == ;(;(beg(2),lit("removed")),end)
+
+
+
+-- this is output of ordinatrice verte for free type unitInfo
+
+
+DEF :=_objectFile(unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,_),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,new)
+
+DEF :=_absyFile(unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,_,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,new,18)
+
+DEF :=_sourceFile(unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,_,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,new,17,18)
+
+DEF :=_objectVersion(unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,_,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,14,new,16,17,18)
+
+DEF :=_absyVersion(unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,_,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,13,new,15,16,17,18)
+
+DEF :=_localSigns(unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,_,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,11,12,new,14,15,16,17,18)
+
+DEF :=_objects(unitInfo(1,2,3,4,5,6,7,8,9,10,11,_,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,11,new,13,14,15,16,17,18)
+
+DEF :=_properties(unitInfo(1,2,3,4,5,6,7,8,9,10,_,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,10,new,12,13,14,15,16,17,18)
+
+DEF :=_pragmas(unitInfo(1,2,3,4,5,6,7,8,9,_,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,9,new,11,12,13,14,15,16,17,18)
+
+DEF :=_itemImports(unitInfo(1,2,3,4,5,6,7,8,_,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,8,new,10,11,12,13,14,15,16,17,18)
+
+DEF :=_itemOrder(unitInfo(1,2,3,4,5,6,7,_,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,7,new,9,10,11,12,13,14,15,16,17,18)
+
+DEF :=_items(unitInfo(1,2,3,4,5,6,_,8,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,6,new,8,9,10,11,12,13,14,15,16,17,18)
+
+DEF :=_instances(unitInfo(1,2,3,4,5,_,7,8,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,5,new,7,8,9,10,11,12,13,14,15,16,17,18)
+
+DEF :=_imports(unitInfo(1,2,3,4,_,6,7,8,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,4,new,6,7,8,9,10,11,12,13,14,15,16,17,18)
+
+DEF :=_flags(unitInfo(1,2,3,_,5,6,7,8,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,3,new,5,6,7,8,9,10,11,12,13,14,15,16,17,18)
+
+DEF :=_state(unitInfo(1,2,_,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,2,new,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18)
+
+DEF :=_an(unitInfo(1,_,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(1,new,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18)
+
+DEF :=_symbol(unitInfo(_,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18),new) == unitInfo(new,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18)
+
+DEF fmtUnitInfo(removed) == ;(;(beg(2),lit("removed")),end)
+DEF fmtUnitInfo(unitInfo(v0,v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11,v12,v13,v14,v15,v16,v17)) == ;(;(beg(2),lit("unitInfo")),;(;(lit("("),;(;(;(;(;(;(;(;(;(;(;(;(;(;(;(;(;(;(fmtDenotation(v0),;(lit(", "),fmtAn(v1))),;(lit(", "),fmtUnitState(v2))),;(lit(", "),fmtSet(fmtUnitFlag)(v3))),;(lit(", "),fmtIdmap(fmtUnitImport)(v4))),;(lit(", "),fmtIdtab(fmtUnitInstance)(v5))),;(lit(", "),fmtIdtab(fmtItem)(v6))),;(lit(", "),fmtSeq(fmtNat)(v7))),;(lit(", "),fmtSet(fmtDenotation)(v8))),;(lit(", "),fmtIdtab(fmtPragma)(v9))),;(lit(", "),fmtIdtabS(fmtProperty)(v10))),;(lit(", "),fmtIdtab(fmtObject)(v11))),;(lit(", "),fmtIdtab(fmtUnitLocalSign)(v12))),;(lit(", "),fmtNat(v13))),;(lit(", "),fmtNat(v14))),;(lit(", "),fmtRepoFile(v15))),;(lit(", "),fmtRepoFile(v16))),;(lit(", "),fmtRepoFile(v17))),lit(")"))),end))
+
+
+/* %had to change fmtIdtab to fmtIdtabS. Difference is that removed
+   items are not printed but ignored. This is essential, because some
+   idtabs have large holes. */
+FUN fmtIdtabS: (property -> fmt) -> idtab[property] -> fmt
+DEF fmtIdtabS(fP)(idt) ==
+    LET realProps == (\\p. ~(removed?(2nd(p)))) | asSeq(idt)
+        pairFmt == \\p. fmtId(1st(p));(lit(" = ");fmtProperty(2nd(p)))
+    IN fmtSeq(pairFmt)(realProps)
+    
+
+-- this is output of ordinatrice verte for free type unitState
+DEF <(outdated,outdated) == false
+DEF <(outdated,checked) == true
+DEF <(outdated,compiled) == true
+DEF <(checked,outdated) == false
+DEF <(checked,checked) == false
+DEF <(checked,compiled) == true
+DEF <(compiled,outdated) == false
+DEF <(compiled,checked) == false
+DEF <(compiled,compiled) == false
+
+DEF =(outdated,outdated) == true
+DEF =(outdated,checked) == false
+DEF =(outdated,compiled) == false
+DEF =(checked,outdated) == false
+DEF =(checked,checked) == true
+DEF =(checked,compiled) == false
+DEF =(compiled,outdated) == false
+DEF =(compiled,checked) == false
+DEF =(compiled,compiled) == true
+
+
+DEF fmtUnitState(outdated) == ;(;(beg(2),lit("outdated")),end)
+DEF fmtUnitState(checked) == ;(;(beg(2),lit("checked")),end)
+DEF fmtUnitState(compiled) == ;(;(beg(2),lit("compiled")),end)
+
+
+
+-- this is output of ordinatrice verte for free type repo
+
+
+DEF :=_unitInfos(repo(1,2,3,_),new) == repo(1,2,3,new)
+
+DEF :=_unitCodes(repo(1,2,_,4),new) == repo(1,2,new,4)
+
+DEF :=_folders(repo(1,_,3,4),new) == repo(1,new,3,4)
+
+DEF :=_an(repo(_,2,3,4),new) == repo(new,2,3,4)
+
+DEF fmtRepo(repo(v0,v1,v2,v3)) == ;(;(beg(2),lit("repo")),;(;(lit("("),;(;(;(;(fmtAn(v0),;(lit(", "),fmtSeq(fmtFolder)(v1))),;(lit(", "),fmtMap(fmtDenotation,fmtNat)(v2))),;(lit(", "),fmtIdtab(fmtUnitInfo)(v3))),lit(")"))),end))
+
+
+
+
+
+
+/* %
+@end ignore
+*/
+

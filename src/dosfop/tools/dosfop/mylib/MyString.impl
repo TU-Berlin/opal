@@ -1,0 +1,142 @@
+IMPLEMENTATION MyString
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/mylib/MyString.impl,v 1.1.1.1 1998-06-16 16:00:36 wg Exp $
+
+IMPORT String 		COMPLETELY
+       StringConv 	COMPLETELY
+       Char   		COMPLETELY
+       Seq    		COMPLETELY
+       StringMap COMPLETELY
+       PrintableChar COMPLETELY
+       Nat ONLY 0 succ
+       CharClass COMPLETELY
+       Option COMPLETELY
+       OptionMap COMPLETELY
+       CharConv COMPLETELY
+
+DEF nl == newline%
+
+DEF sp == blank%
+
+DEF line(den) == !(den) ++ nl
+
+DEF conc(a,b) == a++b
+DEF conc(a,b,c) == a++conc(b,c)
+DEF conc(a,b,c,d) == a++conc(b,c,d)
+DEF conc(a,b,c,d,e) == a++conc(b,c,d,e)
+DEF conc(a,b,c,d,e,f) == a++conc(b,c,d,e,f)
+DEF conc(a,b,c,d,e,f,g) == a++conc(b,c,d,e,f,g)
+DEF conc(a,b,c,d,e,f,g,h) == a++conc(b,c,d,e,f,g,h)
+DEF conc(a,b,c,d,e,f,g,h,i) == a++conc(b,c,d,e,f,g,h,i)
+DEF conc(a,b,c,d,e,f,g,h,i,j) == a++conc(b,c,d,e,f,g,h,i,j)
+
+
+FUN list2StringSeq : string ** char -> seq[string]
+
+DEF list2StringSeq( <> , _  ) == <>
+DEF list2StringSeq( str, separator ) ==
+  list2StringSeqIntern( str, separator, <> )
+
+/* %This internal function is used for administrating a so called @emph{accumulator}
+(@c{accu}) for collecting the characters that belong to a common substring. A new common
+substring is started at the beginning of the original string and after every
+splitting-character: */ 
+FUN list2StringSeqIntern : string ** char ** string -> seq[string]
+DEF list2StringSeqIntern( <>, _, accu ) ==  accu%
+DEF list2StringSeqIntern( ftStr::rtStr, separator, accu ) ==
+  IF ftStr = separator THEN
+    accu :: list2StringSeqIntern(rtStr, separator, <>)
+  ELSE
+     list2StringSeqIntern(rtStr, separator, accu +% ftStr)
+  FI
+
+
+DEF asFilename(s) == asFNchar * s
+
+FUN asFNchar: char -> char
+DEF asFNchar(ch) ==
+  IF ch = blank or ch = * or ch = ? or ch = $ or
+     ch = \ or ch = / or ch = ~ THEN underscore
+  ELSE ch
+  FI
+
+
+DEF 0 x _ == <>
+DEF succ(n) x S == S ++ n x S
+
+DEF optionalSpace(str) == IF special?(last(str)) THEN " "! ELSE <> FI
+
+
+/* %Check, whether @code{s1} is prefix of @code{s2}.
+    If so, return the rest of @code{s2}, else return nil. Takes @OPAL
+    conventions into account. Does not macth the empty string as prefix. */
+FUN <?| : string ** string -> option[string]
+
+DEF <> <?| s == nil
+DEF (_ :: _) <?| <> == nil
+DEF (c1 :: <>) <?| (c2 :: <>) == IF c1 = c2 THEN avail(<>) ELSE nil FI
+DEF (c1 :: <>) <?| (c2a :: c2b :: s) ==
+  IF c1 = c2a and
+     ((((special?(c2a) and ~(special?(c2b))) or
+        (letgit?(c2a) and ~(letgit?(c2b)))) and
+       ~(underline?(c2b))) or
+      (~(special?(c1)) and ~(letgit?(c1)))) THEN
+     avail(c2b :: s)
+   ELSE
+     nil
+   FI
+
+DEF (c1 :: s1) <?| (c2 :: s2) ==
+  IF c1 = c2 THEN s1 <?| s2 ELSE nil FI
+
+/* %As above, but do not take @OPAL conventions into account and
+    do match the empty string as prefix. */
+FUN <??| : string ** string -> option[string]
+/*
+DEF <> <??| s == avail(s)
+DEF (_ :: _ ) <??| <> == nil
+DEF (c1 :: s1) <??| (c2 :: s2) ==
+  IF c1 = c2 THEN s1 <??| s2 ELSE nil FI
+*/
+DEF s1 <??| s2 ==
+  IF <>?(s1) THEN avail(s2)
+  OTHERWISE
+  IF <>?(s2) THEN nil
+  OTHERWISE
+  IF ft(s1) = ft(s2) THEN rt(s1) <??| rt(s2)
+  ELSE nil
+  FI
+
+/* %Mirror for @code{<??|}: match a suffix and return the non-suffix part. 
+  Note: the second string is the suffix candidate! */
+FUN |??> : string ** string -> option[string]
+DEF str |??> cand == revert * (revert(cand) <??| revert(str))
+
+/* %@ignore
+Copied from current version of BIBLIOTHECA OPALICA, to ensure backwards
+compatibility with 2.1-e */
+
+DEF +/+(ch)(s1, s2) == s1 ++ ch :: s2
+DEF +/+(_ : char)(s, <>) == s
+DEF +/+(_ : char)(<>, s) == s
+DEF +/+(_ : char)(<>, <>) == <>
+
+DEF +/+(d)(s1, s2) == s1 ++ (d!) ++ s2
+DEF +/+(_ : denotation)(s, <>) == s
+DEF +/+(_ : denotation)(<>, s) == s
+DEF +/+(_ : denotation)(<>, <>) == <>
+
+DEF +/+(s)(s1, s2) == s1 ++ s ++ s2
+DEF +/+(_ : string)(s, <>) == s
+DEF +/+(_ : string)(<>, s) == s
+DEF +/+(_ : string)(<>, <>) == <>
+
+IMPORT StringFilter ONLY split drop
+       Compose ONLY o
+DEF split(p, s) ==
+    LET (s1, rest) == split(~ o p, s)
+    IN
+    IF rest <>? THEN %(s1)
+    IF rest ::? THEN s1 :: split'MyString(p, drop(p, rest))
+    FI
+
+-- %@end ignore

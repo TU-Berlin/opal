@@ -1,0 +1,96 @@
+IMPLEMENTATION RepoPropertyAccess
+
+IMPORT	Set			COMPLETELY
+	SetReduce		COMPLETELY
+	Seq			COMPLETELY
+	SeqMap			COMPLETELY
+	SeqReduce		COMPLETELY
+	Option			COMPLETELY
+	OptionMap   		COMPLETELY
+	Id			COMPLETELY
+	IdTab			COMPLETELY
+	IdTabReduce		COMPLETELY
+	Denotation		ONLY =
+
+IMPORT	RepoInternData		COMPLETELY
+	RepoAbsy		COMPLETELY
+	RepoAn			COMPLETELY
+	RepoName		COMPLETELY
+	RepoObjectAccess	COMPLETELY
+
+DEF properties(U0)(R) ==
+    LET U == baseName(U0)
+    IN
+    (\\Id, Prop, Set. 
+    	IF removed?(Prop) THEN Set
+			  ELSE incl(propertyName(no(Id), U0), Set) FI,
+     {}) / properties(unitInfo(U)(R))
+
+DEF properties(O)(R) ==
+    properties(object(O)(R))
+
+DEF property(I)(R) ==
+    properties(unitInfo(unit(I))(R)) ! id(no(I))
+
+DEF newProperties(U, Propertys)(R) ==
+    LET (Ids1, R1) == 
+	    updateUnitInfo(U, \\ Info .
+		LET (Ids, PropertyTab) == multiNew(#(Propertys),
+					      \\ _ . Propertys, 
+					      properties(Info))
+		IN
+		(Ids, Info :=_properties PropertyTab)
+	    )(R)
+    IN
+    ((\\ Id. propertyName(no(Id), U)) * Ids1, R1)
+
+DEF updateProperty(propertyName(No, U), Fun)(R) ==
+    updateUnitInfo(U, \\ Info .
+	Info :=_properties upd(id(No), Fun, properties(Info))
+    )(R)
+
+DEF removeProperty(propertyName(No, U))(R) ==
+    updateUnitInfo(U, \\ Info .
+	Info :=_properties def(id(No), removed, properties(Info))
+    )(R)
+
+DEF assocProperty(P, Os)(R) ==
+    (\\ O, Ri .
+	updateObject(O, \\ Ob . Ob :=_properties incl(P, properties(Ob)))(Ri),
+     R) / Os
+
+
+DEF lookup(U, Sym)(R) ==
+    (\\ Id, Prop, Set.
+    	IF law?(Prop) ANDIF avail?(symbol(Prop))
+		      ANDIF Sym = cont(symbol(Prop)) THEN
+	    incl(propertyName(no(Id), U), Set)
+	ELSE Set FI,
+    {}) / properties(unitInfo(baseName(U))(R))
+
+
+
+-- %$Free Type Properties$ ==================================================
+
+
+DEF freeType?(O)(R) ==
+    find?(\\P. freeType?(property(P)(R)), properties(O)(R))
+
+DEF constructors(P)(R) ==
+    LET Prop == property(P)(R)
+    IN
+    IF freeType?(Prop) THEN
+	(\\V, S. incl(constructor(V), S), {}) / variants(Prop)
+    ELSE {} FI
+
+DEF test(P, O)(R) ==
+    cont(test * find?(\\V. constructor(V) = O, 
+		      variants(property(P)(R))))
+
+DEF selectors(P, O)(R) ==
+    cont((\\V. selector * components(V)) 
+    		* find?(\\V. constructor(V) = O, 
+	       		variants(property(P)(R))))
+
+
+

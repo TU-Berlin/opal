@@ -1,0 +1,111 @@
+SIGNATURE RUNTIMEENV[env,repr]
+
+SORT env repr
+
+IMPORT	RUNTIME			ONLY	obj
+	Seq[obj]		ONLY	seq
+	Nat			ONLY	nat
+	Com[obj]		ONLY	ans:SORT
+	Com[nat]		ONLY	ans:SORT
+	Pair[ans[obj],env]	ONLY	pair:SORT
+	Pair[ans[nat],env]	ONLY	pair:SORT
+	Com[pair[ans[obj],env]]	ONLY	com:SORT
+	Com[pair[ans[nat],env]]	ONLY	com:SORT
+
+
+
+-- %$Dynamic construction and application of closure-objects$
+-- %---------------------------------------------------------
+
+/* %
+ The term @code{closure(Rank,Repr,Eval)} is a so called closure-object with
+rank @code{Rank}, a representation @code{Repr} and @code{Eval} as the
+evaluation function which is evaluated, if all arguments w.r.t. @code{Rank} are
+applied to this closure-object (see @code{apply} below).
+
+The rank of a closure must be greater then zero.
+
+The result of @code{closure} is a data object representing a function
+which can be used as an argument to apply described below. This function
+can be also exported to contexts where it is called by compiled code, 
+PROVIDED that this compiled code is called directly or indirectly
+by the apply function below, which setups the environment for the
+eval method. Their is an implicite state in the game here, for the
+sake of efficiency. 
+*/ 
+
+
+FUN closure: nat**repr** (repr**seq[obj]**env->seq[obj]**env)->obj
+
+/* %
+ @t{apply(ClosObj,Dim,Args,Env,Handler)}applies the arguments @t{Args} to the
+closure-object @t{ClosObj}. Let @t{R} be the rank of the closure-object and
+@t{N} the (whole) number of arguments applied to @t{ClosObj} up to now
+(incl. @t{Args}). @t{apply} behaves as follows:
+
+@itemize @bullet
+@item @t{N < R:} a new closure is created and returned
+@item @t{N = R:} the closure is evaluated; the result is interpreted as
+	a @t{Dim}-tuple of objects
+@item @t{N > R:} the closure is evaluated (with @t{R}
+	arguments); the remaining arguments are applied to the resulting
+	closure-object (recursivly with @code{apply})
+@end itemize 
+
+@code{Handler} describes the method hwo to treat runtime errors during
+the execution of functions which are @emph{not} constructed by 
+@code{closure} defined above. If @code{Handler} is not @code{default},
+then the according function is activated on a runtime error. This
+function must never terminate.
+ */
+
+FUN apply: obj ** nat ** seq[obj] ** env ** handler -> seq[obj] ** env
+
+TYPE handler ==
+    default
+    special( func : env ** denotation -> env )
+
+
+/* % 
+  @code{exec(Obj,E)} executes the given object as a command
+(@code{com[data]}). @code{exec} succeeds even if the execution
+of @code{Obj} fails.
+*/
+
+FUN exec: obj ** env ** handler -> com[pair[ans[obj],env]]
+
+/* %
+  @code{topExec(Obj,E)} executes the given object similar
+  as to a top-level command. The most recent handler for a
+  top-level command installed by a library structure will be used.
+*/
+
+FUN topExec: obj ** env ** handler -> com[pair[ans[nat],env]]
+
+
+-- %$Contents-extraction of closure-objects$
+-- %----------------------------------------
+
+/* %
+ Each closure-object represents a pair of function description and a list of
+arguments (which may be closure-objects too). @code{contents} extracts this
+information.
+
+There is a difference between @code{coded} functions and @code{dyn}amically
+constructed ones: The representation of coded functions is just the symbolic
+name whereas dynamic objects (constructed with @code{closure}) are represented
+by there representation (the value of @code{Repr} applied to @code{closure}).
+ */
+FUN contents: obj -> funRepr  ** seq[obj]
+
+TYPE funRepr ==
+	coded(	symbol:	denotation
+	)
+	dyn(	rep:	repr
+	)
+
+/* %
+ @code{rank(Obj)} represents the rank of the closure-object @code{Obj}. If
+@code{Obj} is not a closure-object a runtime failure may happen.
+ */
+FUN rank: obj -> nat

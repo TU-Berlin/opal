@@ -1,0 +1,301 @@
+--  LAST EDIT: Thu Jun  3 19:22:51 1993 by Carola Gerke (kassandra!carola) 
+
+IMPLEMENTATION PForm
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT  -- pars
+        PName           ONLY pName  pIde
+        PExpr           ONLY pExpr pTuple pREq
+        PCommon         COMPLETELY
+        Token           ONLY token terminal lexem pos ` =  printTS
+        Terminal        COMPLETELY
+        PErr            COMPLETELY
+        BaseParser      COMPLETELY
+        PTypes          COMPLETELY
+        ZOpts           COMPLETELY
+        ModBase         COMPLETELY
+        ModExpr         COMPLETELY
+        ModMix          COMPLETELY
+        ModName         COMPLETELY
+        ModForm         COMPLETELY
+IMPORT  -- reps
+        Rep             ONLY ` lexem
+IMPORT  -- absy
+        Struct          COMPLETELY
+        Absy            COMPLETELY
+IMPORT  -- admin
+        Verbose         COMPLETELY
+        Pos             ONLY pos firstPos
+        Error           ONLY err ok errKind + error
+        Options         COMPLETELY
+IMPORT  -- lib
+        Nat             ONLY nat
+        Denotation      COMPLETELY
+        Seq    COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+        Set[terminal,<] COMPLETELY
+        DEBUG           ONLY PRINT FIELD?
+       PartName COMPLETELY
+       Impl COMPLETELY
+       Option ONLY avail nil
+
+-- %- -------------------------------------------------------------------------
+
+-- %$Outermost Calling Interface$
+FUN pFormula pAtomForm pQuantForm pAndForm pOrForm pImplyForm pEqvForm
+    pBrForm pNotForm : parser
+
+-- % @code{Formula ::= EqvForm}
+DEF pFormula   == parser(\\Arg. \\ . pEqvForm @ Arg)
+
+
+-- %$Propositional Formulae$
+-- %@code{EqvForm ::= ImplyForm [ '<=>' (EqvForm | Formula) ]}
+DEF pEqvForm   == parser(\\Arg. \\ . 
+   pForm(pImplyForm,(isA(eqv)<&>(pEqvForm<|>pFormula))(modEqv),eqv) @ Arg)
+
+-- %@code{ImplyForm ::= OrForm [ '==>' (ImplyForm | Formula) ]}
+DEF pImplyForm == parser(\\Arg. \\ . 
+    pForm(pOrForm,(isA(implies)<&>(pImplyForm<|>pFormula))(modImply),implies) 
+    @ Arg)
+
+-- %@code{OrForm ::= AndForm [ 'OR' (OrForm | Formula) ]}
+DEF pOrForm    == parser(\\Arg. \\ . 
+    pForm(pAndForm,(isA(or) <&> (pOrForm <|> pFormula))(modOr),or) @ Arg)
+
+-- %@code{AndForm ::= NotForm [ 'AND' (AndForm | Formula) ]}
+DEF pAndForm   == parser(\\Arg. \\ . 
+   pForm(pNotForm,(isA(and)<&>(pAndForm <|> pFormula))(modAnd),and) @ Arg)
+
+-- %@code{NotForm ::=  ('NOT' (NotForm | Formula)) | QuantForm | AtomForm}
+DEF pNotForm == parser(\\Arg. \\ . 
+    LET Pars  == IF not = ft(Arg)
+                 THEN (isA(not) <&> (pNotForm <|> pFormula))(modNeg)
+                 ELSE (pQuantForm <|> pAtomForm)  FI
+    IN Pars @ Arg)
+
+/* %Auxiliary function @code{pForm(Left, Right, Op)} parses
+    @code{Left [ 'Op' Right]} */
+FUN pForm : parser ** parser ** terminal -> parser
+DEF pForm (LP,RP,Term) == parser(\\Arg. \\ . 
+    LET Left  == LP @ Arg
+    IN IF Term = ft(tokS(Left)) THEN modify(Left,RP @ tokS(Left),modProp)
+       ELSE Left 
+       FI)
+
+-- %Atomic Formula
+DEF pAtomForm == parser(\\Arg. \\ . 
+    LET AtomA == ((pExprF <&?> ((isA(equal) <&> pExprF)(modEqu) <|>
+                                (isA(ineq)  <&> pExprF)(modIneq)))
+                  (modEqual)
+                 ) @ Arg
+    IN IF AtomA pFail? 
+       THEN (IF openBr = ft(Arg) THEN pBrForm
+             IF dfd = ft(Arg)    THEN (isA(dfd) <&> pExprF)(modDfd)
+             ELSE fail(ok)
+             FI) @ Arg
+       ELSE IF err(AtomA) ok? THEN AtomA
+            ELSE IF openBr = ft(Arg) THEN pBrForm @ Arg
+                 ELSE AtomA
+            FI   FI
+       FI)
+
+DEF pBrForm  == (isA(openBr) <&.> pFormula) <.&> isA(closeBr)
+
+
+FUN pExprF: parser
+DEF pExprF == 
+    LET Mix? == IF mix? THEN mkMix 
+                IF (rassoc? or lassoc?) or infix? THEN mkRhsAssoc 
+                ELSE mkRhsNoMix FI
+    IN
+    pExpr(Mix?)(pSet)
+
+-- %Quantified Formula
+DEF pQuantForm == parser(\\Arg. \\ . 
+    LET Pars == ((((pName+)(modPNSeq)) <.&> isA(dot)) <&> pFormula)(modQuant)
+    IN IF all = ft(Arg)  THEN ((isA(all) <&> Pars)(modAllQuant)) @ Arg
+       IF ex = ft(Arg)   THEN ((isA(ex) <&> Pars)(modExQuant)) @ Arg
+       ELSE fail(ok) @ Arg
+       FI)
+
+-- %- ---------------------------------------------------------------------
+/* %Terminals which may follow an expression used in formula:
+    @code{),<<=,  ===, AND, OR< ==> <=> POST PRE} */ 
+-- %- --------------------------------------------------------------------
+FUN pSet : set[terminal,<]
+DEF pSet == 
+ incl(closeBr,
+ incl(ineq,
+ incl(equal,
+ incl(and,
+ incl(or,
+ incl(implies,
+ incl(post,
+ incl(pre,
+      eqv%))))))))
+
+             
+FUN pProofBody pProofHead: parser
+-- %$Proofs$
+DEF pProof == pProofBody <|> pProofHead
+
+
+/* %@code{(pName <&> (isA(equation)) <&.> pExpr(Mix?))(modProofBody)}
+  waere schoener, aber Fehlerpropagierung ist mangelhaft */
+DEF pProofBody == 
+   LET  Mix?  == IF mix? THEN mkMix
+                 IF (rassoc? or lassoc?) or infix? THEN mkRhsAssoc
+                 ELSE mkRhsNoMix
+                 FI
+   IN
+   parser(\\ Arg. \\ .
+   LET Res1 == pName @ Arg
+   IN
+   IF pFail?(Res1) THEN Res1
+   ELSE
+     LET Res2 == isA(equation) @ tokS(Res1)
+     IN
+     IF pFail?(Res2) THEN Res2
+     ELSE
+       LET Res3 == pExpr(Mix?) @ tokS(Res2)
+       IN
+       IF pRes?(Res3) THEN
+         pRes(err(Res1) + err(Res2) + err(Res3),
+              rep(modProofBody)(absy(Res1), absy(Res3)),
+              tokS(Res3)
+             )
+       IF pFail?(Res3) THEN
+         pFail(err(Res1) + err(Res2) + err(Res3),
+               rep(modProofBody)(absy(Res1), absy(Res3)),
+               tokS(Res3)
+              )
+       FI
+     FI
+   FI
+   )
+
+
+FUN modProofBody: modifier
+DEF modProofBody == 
+  mod(\\ name, script.
+  IF Name?(name) and Expr?(script) THEN
+    ProofBody(proofBody(pName(name), e(script), pos(pName(name))))
+  ELSE
+    PRINT(true, \\ . "modProofBody:\n" ++
+          `(name) ++ "\n" ++ `(script), noAbsy)
+--    noAbsy
+  FI
+  )
+    
+DEF pProofHead ==
+  LET pLawName == -- pName
+      -- ?? Endlosschleife 
+      parser(\\ Arg. \\ . modify(pName @ Arg, mkKindLaw))
+  IN
+  ((((pIde <.&> isA(colon)) <&>
+     (*(pLawName)(%(turnstile)))(modPNSeq))
+    (modProofHead1) <.&> isA(turnstile)) <&>
+    (pLawName))
+  (modProofHead2)
+
+FUN modProofHead1 modProofHead2: modifier
+DEF modProofHead1 ==
+  mod(\\ pname, prems.
+  IF Name?(pname) and NameSeq?(prems) THEN
+    ProofHead(proofHead(ide(pName(pname)), nSeq(prems), noName,
+                        pos(pName(pname))))
+  IF Name?(pname) and noAbsy?(prems) THEN
+    ProofHead(proofHead(ide(pName(pname)), <>, noName,
+                        pos(pName(pname))))
+  ELSE
+--    PRINT(true, \\ . "modProofHead1:\n" ++
+--          `(pname) ++ "\n" ++ `(prems), noAbsy)
+    noAbsy
+  FI
+  )
+
+DEF modProofHead2 ==
+  mod(\\pH, concl.
+  IF ProofHead?(pH) and Name?(concl) THEN
+    ProofHead(proofHead(ide(ph(pH)), prems(ph(pH)), pName(concl), pos(ph(pH))))
+  ELSE
+--    PRINT(true, \\ . "modProofHead2:\n" ++
+--          `(pH) ++ "\n" ++ `(concl), noAbsy)
+    noAbsy
+  FI
+)
+
+-- %Spezifikation:  SPC eq PRE formula POST formula
+DEF pSpec ==
+  parser(\\ Arg. \\ .
+    LET Res1a == (isA(spc) <&.>  pREq(stdMix)) @ Arg
+        Res1 == PRINT(FIELD?[bool]("-zpSpec"), \\ . `(Res1a), Res1a)
+    IN
+    IF pFail?(Res1) THEN Res1
+    ELSE
+      LET Res2a == ((isA(pre) <&.> pFormula) <|> nil) @ tokS(Res1)
+        Res2 == PRINT(FIELD?[bool]("-zpSpec"), \\ . `(Res2a), Res2a)
+      IN
+      LET Res3a == (isA(post) <&.> pFormula) @ tokS(Res2)
+          Res3 == PRINT(FIELD?[bool]("-zpSpec"), \\ . `(Res3a), Res3a)
+          nErr == err(Res1) + err(Res2) + err(Res3) + nErr4
+          nTokS == tokS(Res3)
+          (nAbsy, nErr4) == mkSpec(absy(Res1), absy(Res2), absy(Res3))
+      IN
+      (IF pRes?(Res3) THEN pRes ELSE pFail FI)(nErr, nAbsy, nTokS)
+    FI
+  )
+
+FUN mkSpec: absy ** absy ** absy -> absy ** err
+DEF mkSpec(EqSeq(eq :: R), Formula(pre), Formula(post)) ==
+  (Spc(spc(eq, avail(pre), post, pos(eq))),
+   (IF R <>? THEN ok
+   ELSE err(error, "only one equation in specification", pos(ft(R)))
+   FI) +
+   (IF checkLhs(left(eq)) THEN ok
+    ELSE err(error, "improper lhs of spc", pos(left(eq)))
+    FI)
+  )
+DEF mkSpec(EqSeq(eq :: R), noAbsy, Formula(post)) ==
+  (Spc(spc(eq, nil, post, pos(eq))),
+   (IF R <>? THEN ok
+   ELSE err(error, "only one equation in specification", pos(ft(R)))
+   FI) +
+   (IF checkLhs(left(eq)) THEN ok
+    ELSE err(error, "improper lhs of spc", pos(left(eq)))
+    FI)
+  )
+DEF mkSpec(A1, A2, A3) ==
+  LET A == PRINT(true, "Eq is :" ++ `(A1) ++ ":\n" ++
+                       "Pre is:" ++ `(A2) ++ ":\n" ++
+                       "Post is:" ++ `(A3) ++ ":",
+                       noAbsy)
+  IN
+  (A, err(error, "cannot construct specification", firstPos))
+
+/* %erlaubte Syntax für linke Seite einer Spec: val, oder apply, wobei
+    funct auch ok sein muss, arg muss ein tupel von vals sein. */
+FUN checkLhs: expr[partName] -> bool
+DEF checkLhs(val(_,_)) == true
+DEF checkLhs(apply(f, a, _)) == 
+  IF tuple?(a) THEN forall?(val?, elems(a)) and checkLhs(f)
+  ELSE false
+  FI
+DEF checkLhs(typed(e, _, _)) == checkLhs(e)
+DEF checkLhs(_) == false
+
+
+
+FUN stdMix : modifier
+DEF stdMix == IF mix? THEN mkMix 
+              IF (rassoc? or lassoc?) or infix? THEN mkRhsAssoc 
+              ELSE mkRhsNoMix FI

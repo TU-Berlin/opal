@@ -1,0 +1,163 @@
+IMPLEMENTATION OasysCmdtable
+
+IMPORT  Compose         COMPLETELY
+        Nat             COMPLETELY
+        Denotation      COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Char            COMPLETELY
+        String          COMPLETELY
+        StringConv      COMPLETELY
+        StringIndex     COMPLETELY
+        StringFormat    COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqFold         COMPLETELY
+        Set             COMPLETELY
+        SetConv         COMPLETELY
+        Cmdtable        COMPLETELY
+        Argspec         COMPLETELY
+        ArgspecBasic    COMPLETELY
+        ArgspecOp       COMPLETELY
+        ArgspecCompose  COMPLETELY
+        DenoExtensions  COMPLETELY
+        Com             COMPLETELY
+        ComState        COMPLETELY
+        ComCompose      COMPLETELY
+
+
+FUN helpName      : stateId[denotation]
+FUN discardPrefix : stateId[denotation]
+FUN table         : stateId[cmdtable[denotation]]
+
+DEF helpName    == EXEC(stateId("oasys-help"))
+DEF discardPrefix == EXEC(stateId("oasys-intern"))
+DEF table       == EXEC(stateId(cmd(lit("oasys-help"), "")))
+                                -- use a dummy command for initialization
+                                -- with the oasys-help prefix, it will
+                                -- be removed later on
+
+DEF register(Cmds) ==
+    get(helpName)                               & (\\ HelpName.
+    get(discardPrefix)                          & (\\ DiscardPrefix .
+    with(table, \\ Curr . 
+        LET Old == (\\ C . prefix(argspec(C)) |= HelpName)
+                        | explode(Curr)
+            New == explode(Cmds) ++ Old
+        IN
+        makeHelp(HelpName, DiscardPrefix, New) ++ (++ / New)
+    )
+    ))                                          
+
+DEF oasysTable ==
+    get(table)
+
+DEF configHelp(HelpName, DiscardPrefix) == 
+    with(helpName, \\ _ . HelpName)             & (\\ _ .
+    with(discardPrefix, \\ _ . DiscardPrefix)   & (\\ _ .
+    with(table, \\ Curr .
+        LET Old == (\\ C . prefix(argspec(C)) |= HelpName)
+                        | explode(Curr)
+        IN
+        makeHelp(HelpName, DiscardPrefix, Old) ++ (++ / Old)
+    )
+    ))                                          
+
+DEF unregister(Prefix) == 
+    get(helpName)                               & (\\ HelpName.
+    get(discardPrefix)                          & (\\ DiscardPrefix .
+    with(table, \\ Curr .
+        LET Old == (\\ C . prefix(argspec(C)) |= HelpName and
+                           prefix(argspec(C)) |= Prefix)
+                        | explode(Curr)
+        IN
+        makeHelp(HelpName, DiscardPrefix, Old) ++ (++ / Old)
+    )
+    ))  
+
+
+FUN makeHelp : denotation ** denotation 
+                ** seq[cmdtable[denotation]] -> cmdtable[denotation]
+DEF makeHelp(HelpName, DiscardPrefix, Cmds) ==
+    LET Prefixes0 == HelpName :: ((prefix o argspec) * Cmds) 
+        Prefixes  == IF #(DiscardPrefix) > 0 THEN
+                        (\\P. ~(DiscardPrefix <| P)) | Prefixes0
+                     ELSE Prefixes0 FI
+    IN
+    cmd(lit(HelpName) o 
+        ( (lit("all") o ?(var("TOPIC",cmdCompleter(Prefixes0))) & 2nd
+                        @ help(true))
+        | (?(var("TOPIC",cmdCompleter(Prefixes)))
+                        @ help(false))
+        ) & 2nd,
+        "Help on commands."
+    )
+        
+  
+FUN cmdCompleter : seq[denotation] -> denotation -> com[set[denotation,<]]
+DEF cmdCompleter(CmdNames)(Arg) ==
+    succeed(asSet((Arg <| _ ) | CmdNames))
+
+
+FUN help : bool -> option[denotation] -> com[denotation]
+DEF help(All)(avail(Topic)) == 
+    oasysTable                                          & (\\ Tab.
+    LET Cmds == explode(Tab)
+    IN
+    LET Cands == (\\Cmd. prefix(argspec(Cmd)) <| Topic) | Cmds
+    IN IF ::?(Cands) 
+         THEN succeed(
+                join( 
+                  (\\Cmd. "usage: "++usage(argspec(Cmd))++"\n"
+                                   ++help(Cmd)) * Cands,
+                  "\n\n"
+                )
+              )
+         ELSE break("unknown topic")
+       FI
+    )
+DEF help(All)(nil) == 
+    oasysTable                                          & (\\ Tab.
+    get(discardPrefix)                                  & (\\ Discard.
+    LET Cmds == 
+            IF ~(All) and #(Discard) > 0 THEN
+                (\\C. ~(Discard <| prefix(argspec(C)))) | explode(Tab)
+            ELSE explode(Tab) FI
+    IN
+    succeed(join(shorthelp * Cmds,"\n"))
+    ))
+
+        FUN shorthelp: cmdtable[denotation] -> denotation
+        DEF shorthelp(Cmd) ==
+            LET OptCR == (_ = !("\n")) pos !(help(Cmd))
+                ShortHlp == IF OptCR avail?
+                               THEN slice(help(Cmd),0,pred(cont(OptCR)))
+                               ELSE help(Cmd)
+                            FI
+            IN `(formatS("%-10s - %s" <- prefix(argspec(Cmd)) & ShortHlp))
+
+
+
+FUN completer : denotation ** denotation ** nat ** nat -> com[seq[denotation]]
+DEF completer(Word,Line,Start,End) ==
+    LET FtArgs == IF Start = 0
+                    THEN <>
+                    ELSE split(slice(Line, 0, Start-1), space?)
+                  FI
+        Args == FtArgs +% Word
+    IN
+    get(discardPrefix)                                  & (\\ DiscardPrefix .
+    get(table)                                          & (\\ Table .
+    complete(argspec(Table), Args)                      & (\\ Set .
+    LET Cands == 
+            IF Start = 0 and #(DiscardPrefix) > 0 THEN
+                (\\P. ~(DiscardPrefix <| P)) | asSeq(Set)
+            ELSE asSeq(Set) FI
+    IN 
+    IF ::?(Cands) THEN
+        succeed(Cands)
+    ELSE
+        succeed(%(Word))
+    FI
+    )))

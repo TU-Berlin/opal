@@ -1,0 +1,136 @@
+IMPLEMENTATION TransMenu
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransMenu.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String      	COMPLETELY       Nat		COMPLETELY
+  Seq         	COMPLETELY       Char		COMPLETELY
+  SeqMap	COMPLETELY
+
+IMPORT
+  MyString  	COMPLETELY       SourceTab 	COMPLETELY
+  Config	COMPLETELY       Language	COMPLETELY
+
+  SubsystemType[usrSourceInfo] 	ONLY subsystem sources 
+  SubsystemType[libSourceInfo] 	ONLY subsystem sources 
+
+DATA menuEntry == menuEntry( nodeName : string, nodeNameComment : string )
+
+-- %$Build Internal Representation$
+-- %-------------------------------
+
+DEF strings2MenuEntries( <> ) == <>
+DEF strings2MenuEntries( strings ) ==
+  strings2MenuEntries(strings, \\x.x , <>)
+
+DEF strings2MenuEntries( <> , _ : string ) == <>
+DEF strings2MenuEntries( strings, postName:string ) ==
+  strings2MenuEntries(strings, postName, <>)
+
+DEF strings2MenuEntries( strings, f: string -> string ) ==
+    strings2MenuEntries(strings, f, <>)
+
+DEF strings2MenuEntries( strings, postName, comment ) ==
+    strings2MenuEntries (strings, \\s. s ++ postName, comment)
+
+FUN strings2MenuEntries: seq[string] ** (string -> string) ** string
+                                                   -> seq[menuEntry]
+DEF strings2MenuEntries(strings, f, comment) ==
+    (\\s. menuEntry(s, comment)) * f * strings
+
+-- %$Conversion of Subsystems$
+-- %--------------------------
+
+/* %We implement a homomorphism on the structure of the subsystem source table.
+During traversal the appropriate references ---concatenated to the complete
+subsystem menu--- are collected.
+
+An internal @c{level} counter is administered in order to insert appropriate
+space for indentation to indicate the particular subsystem abstraction level. */
+DEF subsystems2MenuEntries:seq[subsystem[usrSourceInfo]]**config->seq[menuEntry]
+                          ( subs, config ) ==
+  subsystems2MenuEntriesIntern(subs, 0, config)
+
+DEF subsystems2MenuEntries:seq[subsystem[libSourceInfo]]**config->seq[menuEntry]
+                          ( subs, config ) ==
+  subsystems2MenuEntriesIntern(subs, 0, config)
+
+FUN subsystems2MenuEntriesIntern : 
+      seq[subsystem[usrSourceInfo]] ** nat ** config -> seq[menuEntry]
+
+DEF subsystems2MenuEntriesIntern :
+      seq[subsystem[usrSourceInfo]] ** nat ** config -> seq[menuEntry]
+                          ( <>, _, _ ) == <>
+DEF subsystems2MenuEntriesIntern :
+      seq[subsystem[usrSourceInfo]] ** nat ** config -> seq[menuEntry]
+      ( subsystem(sysName, _, usrSourceInfos, subSubsystems) ::
+          restSubsystems,
+        level,
+        config ) ==
+
+-- %Reference the current subsystem overview node:
+  (menuEntry(
+     init(level, blank) ++ USER_SUBSYSTEM(sysName),
+     <>
+   ) ::
+-- %Reference to the structures of the current subsystem:
+     strings2MenuEntries(
+      (\\n. init(level+2, blank) ++ n) * name * usrSourceInfos,
+      Overview
+     )
+  ) ++
+-- %Consider sub-subsystems of current subsystem and increase indentation:
+    subsystems2MenuEntriesIntern(subSubsystems, level+2, config) ++
+-- %Consider remaining subsystems of the same abstraction level:
+      subsystems2MenuEntriesIntern(restSubsystems, level, config)
+
+/* %The implementation for library-subsystems is analogous: */
+FUN subsystems2MenuEntriesIntern : 
+      seq[subsystem[libSourceInfo]] ** nat ** config -> seq[menuEntry]
+
+DEF subsystems2MenuEntriesIntern : 
+      seq[subsystem[libSourceInfo]] ** nat ** config -> seq[menuEntry]
+                          ( <>, _, _ ) == <>
+DEF subsystems2MenuEntriesIntern :
+      seq[subsystem[libSourceInfo]] ** nat ** config -> seq[menuEntry]
+     ( subsystem(sysName, _, libSourceInfos, subSubsystems) ::
+         restSubsystems,
+       level,
+       config ) ==
+
+  (menuEntry(
+     init(level, blank) ++ LIBRARY_SUBSYSTEM(sysName),
+     <>
+   ) ::
+     strings2MenuEntries(
+       (\\n. init(level+2, blank) ++ n) * name * libSourceInfos,
+       " Sign"!
+     )
+  ) ++
+    subsystems2MenuEntriesIntern(subSubsystems, level+2, config) ++
+      subsystems2MenuEntriesIntern(restSubsystems, level, config)
+
+
+-- %$Build Texinfo Strings$
+-- %-----------------------
+
+DEF buildMenu( <> ) == <>
+DEF buildMenu( entries ) ==
+  conc(
+    line("@menu"),
+    buildMenuEntries(entries),
+    line("@end menu"),
+    nl
+  ) 
+
+DEF buildMenuEntries( <> ) == <>
+DEF buildMenuEntries( ftEntry :: rtEntries ) ==
+  conc(
+    "* "!, nodeName(ftEntry), ":: "!, nodeNameComment(ftEntry), nl
+  ) ++
+  buildMenuEntries(rtEntries)
+
+
+
+
+
+

@@ -1,0 +1,125 @@
+IMPLEMENTATION ArgspecCompose
+
+
+IMPORT	Argspec		COMPLETELY
+	Triple		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComPairCompose	COMPLETELY
+	ComTripleCompose COMPLETELY
+	Pair		COMPLETELY
+	Triple		COMPLETELY
+	Option		COMPLETELY
+	Denotation	COMPLETELY
+	Seq		COMPLETELY
+	Set		COMPLETELY
+	ArgspecIntern	COMPLETELY
+
+DEF argspec(P1,C1,Cx1,E1,U1,Pr1,B1?) o argspec(P2,C2,Cx2,E2,U2,_,B2?) ==
+    argspec(
+	P1 o P2,
+	IF E1
+	  THEN C1 o C2
+	  ELSE C1 
+	FI,
+	o(E1)(Cx1,Cx2),
+	E1 and E2,
+	ensureBraces(B1?)(U1) ++ " " ++ ensureBraces(B2?)(U2),
+	Pr1,		-- prefix of the first argspec
+	true
+    )
+
+FUN ensureBraces : bool -> denotation -> denotation
+DEF ensureBraces(true)(D) == D			-- true: there are braces
+DEF ensureBraces(false)(D) == "( "++D++" )"	-- false: there are no braces
+
+FUN o : (seq[denotation] -> 
+		com[triple[data1,seq[denotation],denotation]]) ** 
+	(seq[denotation] -> 
+		com[triple[data2,seq[denotation],denotation]]) -> 
+	(seq[denotation] -> 
+		com[triple[pair[data1,data2],seq[denotation],denotation]])
+DEF (P1 o P2)(Args) ==
+    P1(Args)				& (\\D1,Rt1,Err1.
+    P2(Rt1)				& (\\D2,Rt2,Err2.
+    succeed(&((D1 & D2),Rt2, Err1 ++ Err2))))
+
+-- % @code{o}-completer:
+FUN o : (denotation -> com[set[denotation,<]]) **
+	(denotation -> com[set[denotation,<]]) ->
+	(denotation -> com[set[denotation,<]]) 
+DEF (C1 o C2)(D) == C1(D) & (\\Set1. C2(D) & (\\Set2.succeed(Set1+Set2)))
+
+
+-- % @code{o}-cxtfinder:
+FUN o : bool ->
+	(seq[denotation] -> com[pair[cxt,seq[denotation]]])
+		**
+	(seq[denotation] -> com[pair[cxt,seq[denotation]]])
+		->
+	(seq[denotation] -> com[pair[cxt,seq[denotation]]])
+DEF o(Epsilon?)(C1,C2)(Args) ==
+    C1(Args)				&'ComPairCompose (\\Res,Rt.
+    IF Res done?
+      THEN C2(Rt)
+    IF Res stop?
+      THEN IF Epsilon?
+	     THEN C2(Args)		& (\\Res1,Rt1.
+		  IF Res1 stop?
+		    THEN succeed(stop(completer(Res) o completer(Res1)) &
+				 Rt1)
+		    ELSE succeed(Res & Rt)
+		  FI			)
+	     ELSE succeed(Res & Rt)
+	   FI
+      ELSE succeed(Res & Args)
+    FI					)
+
+-- -------------------------
+DEF argspec(P,C,Cx,E,U,Pr,B?) @ Cmd == argspec(P @ Cmd,C,Cx,E,U,Pr,B?)
+
+FUN @ : (seq[denotation] -> 
+		com[triple[data1,seq[denotation],denotation]]) ** 
+	(data1 -> com[data2]) ->
+	(seq[denotation] -> 
+		com[triple[data2,seq[denotation],denotation]])
+DEF (P @ Cmd)(Args) ==
+    P(Args)				; (\\Ans.
+    IF Ans okay?
+      THEN yield(Ans)			& (\\D1,Rt,Err.
+	IF Rt <>?
+	  THEN Cmd(D1)			& (\\D2.
+	       succeed(&(D2,<>,Err))	)
+	  ELSE break("Syntax error. Possible reasons are:\n"++
+		     Err)
+	FI				)
+      ELSE break(err(Ans)) -- yield the error message
+    FI					)
+
+-- -------------------------
+DEF P @ Cmd == P @ (\\ _ . Cmd)
+
+-- -------------------------
+DEF argspec(P,C,Cx,E,U,Pr,B?) & Cmd == argspec(P & Cmd,C,Cx,E,U,Pr,B?)
+
+FUN & : (seq[denotation] -> 
+		com[triple[data1,seq[denotation],denotation]]) ** 
+	(data1 -> com[data2]) ->
+	(seq[denotation] -> 
+		com[triple[data2,seq[denotation],denotation]])
+DEF (P & Cmd)(Args) ==
+    P(Args)				& (\\D1,Rt,Err.
+    Cmd(D1)				& (\\D2.
+    succeed(&(D2,Rt,Err))		))
+
+
+-- -------------------------
+FUN & : argspec[data1] ** (data1 ->	data2 ) -> argspec[data2]
+DEF argspec(P,C,Cx,E,U,Pr,B?) & Fct == 
+    argspec(
+	(\\Args.
+	     P(Args)			& (\\D1,Rt,Err.
+	     succeed(&(Fct(D1),Rt,Err)))
+	),C,Cx,E,U,Pr,B?
+    )
+

@@ -1,0 +1,133 @@
+IMPLEMENTATION Trans
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/Trans.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String   COMPLETELY   Com             COMPLETELY
+  Seq      COMPLETELY   ComCompose      COMPLETELY
+  SeqSort  COMPLETELY   Stream          COMPLETELY
+  SeqOfSeq COMPLETELY   Void            COMPLETELY
+  SeqMap   COMPLETELY   Option          COMPLETELY
+
+IMPORT 
+  SourceTab     COMPLETELY       TransUsrSources        COMPLETELY
+  SourceTabFun  COMPLETELY       TransAdmin             COMPLETELY
+  TopSort       COMPLETELY       TransLib               COMPLETELY
+  Config        COMPLETELY       TransHelp              COMPLETELY
+  ConfigFun     COMPLETELY       TransPointers          COMPLETELY
+  TransType     COMPLETELY
+
+-- %$Compose the Four Main Parts of the Texinfo-File$
+-- %------------------------------------------------
+/* %The complete Texinfo intermediate representation consists of @emph{four
+main parts} that are concatenated in order to compose a syntactically correct
+sentence of the Texinfo language:
+@table @asis
+@item The Top-Node
+This part contains adminstrative information for the whole file and provides a
+survey on the contents of the @OPAL-project documentation. Its generation
+occurs in @c{buildTopNode}.
+@item The User-Implemented Files
+This part encompasses user-implemented structures that are located at the
+project's top-level as well as user-implemented structures in subsystems. The
+current settings of the @c{config}-database determine the extent of module
+inclusion. The  translation is realized in @c{buildAllUsrNodes}.
+@item Library-Files
+The library is not included completely into each project documentation but is 
+reduced to the structures that are applied by user-implemented modules. This
+reduces the amount of space needed for full project presentation to an adequate
+extent. If the inclusion of library information is specified in the
+configuration-database, the translation process is split in two parts:
+@enumerate
+@item First of all a library-introduction section is generated which can
+contain an informal introduction into the use or the structure of the
+Bibliotheca Opalica. @item Secondly the reduced library subsystems of the
+Bibliotheca Opalica (s.a.) are transformed into Texinfo intermediate
+representation. 
+@end enumerate
+@item Indices
+The intermediate representation specifies separate nodes that will contain 
+at maximum the four types
+of indices that are supported by the DOSFOP documentation system. The required
+Texinfo text is produced in @c{buildIndices}.
+@end table */
+
+DEF translateProject( usrInfos, libInfos, config ) ==
+  (writeLine(stdErr, "sorting user structures ...") &
+   yield(okay(
+           topologicalSort(sources(usrInfos), config)
+         )
+    )
+  ) &
+  (\\sortedUsrFileLevels.
+
+-- %Open the output-stream w.r.t. the configuration-database:
+
+     (writeLine(stdErr, "opening output file ...") &
+      outputStreamCreate(config)
+  ) &
+  (\\outputFile.
+     buildTopNode(
+       sortedUsrFileLevels,
+       libInfos,
+       usrInfos,
+       config,
+       outputFile
+     ) & 
+  (\\ _ . 
+     buildAllUsrNodes(
+       flat(sortedUsrFileLevels),
+       usrInfos,
+       config,
+       outputFile
+     ) & 
+  (\\ _ . 
+     (IF libraryInclude?(config) THEN
+        buildLibIntroNode(
+          usrInfos,
+          libInfos,
+          last(flat(sortedUsrFileLevels)),
+          config,
+          outputFile
+        ) 
+      ELSE
+        yield(okay(nil))
+      FI)  & 
+  (\\ _ . 
+     (IF libraryInclude?(config) THEN
+       buildAllLibSubsystems(
+         libSubsystems(libInfos),
+         libIntro,
+         libIntro,
+         nodeAfterLibs(config),
+         section,
+         config,
+         outputFile
+       ) 
+      ELSE
+        yield(okay(nil))
+      FI) & 
+  (\\ _ .
+     buildIndices(
+       usrInfos,
+       libInfos,
+       lastSourcesNode(sortedUsrFileLevels, usrInfos, libInfos, config),
+       config,
+       outputFile
+     )
+  ) &
+  (\\ _ .
+      buildBottomPart(outputFile) &
+  (\\ _ .
+      close(outputFile)
+  ) -- \\ _
+  ) -- \\ _
+  ) -- \\ _
+  ) -- \\ _
+  ) -- \\ _
+  ) -- \\ outputFile
+  ) -- \\ sortedUsrFileLevels
+
+
+
+
+

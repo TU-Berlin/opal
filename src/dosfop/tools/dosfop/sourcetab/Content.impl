@@ -1,0 +1,109 @@
+IMPLEMENTATION Content
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/sourcetab/Content.impl,v 1.1.1.1 1998-06-16 16:00:40 wg Exp $
+
+IMPORT
+  String	COMPLETELY       SeqMap		COMPLETELY
+  Seq		COMPLETELY       Option		COMPLETELY
+  SeqFilter	COMPLETELY
+
+IMPORT Token	COMPLETELY
+
+DATA content == content(
+                  survey  : option[string],
+                  initial : seq[token],
+                  parts   : seq[part]      
+                )
+
+DEF empty == content(nil, <>, <>)
+
+DATA part == part(
+               headline   : string,
+               splitLevel : splitLevel,
+               cont       : seq[token]
+             )
+
+
+-- %$Split Token to Content Structure$
+-- %---------------------------------- 
+/* %Token-splitting for non-signature modules: */
+FUN token2Content : seq[token] -> content
+DEF token2Content( <> ) == content(nil, <>, <>)
+/* %@c{skipLayout} removes initial layout-tokens of the module. The remaining tokens
+are passed to internal processing: */
+DEF token2Content( token ) == token2ContentIntern(skipLayout(token))
+ 
+FUN token2ContentIntern : seq[token] -> content
+/* %An empty token-sequence induces an empty content-structure: */
+DEF token2ContentIntern( <> ) == content(nil, <>, <>)
+
+/* %@c{allToken} starts with an initial @c{docuFileSplit}-token. The @c{initial}-part
+of the @c{content}-structure remains empty and the whole token sequence can be 
+process directy by @c{token2Parts}. */
+DEF token2ContentIntern( allToken AS docuFileSplit(_, _, _) :: _ ) ==
+  content( nil, <>, token2Parts(allToken) )
+
+/* %We search for a @c{docuFileSplit}-token in @c{otherTokens}. The token-sequence
+till its detection is stored in the @c{initial} part of the content-structure. The
+@c{restToken}s are either the start of subsectioning of the module or contain the
+empty sequence. Both cases are handled properly in @c{token2Parts}. */
+DEF token2ContentIntern( otherTokens ) ==
+  LET
+    (initialPart, restToken) == split(\\x. ~(docuFileSplit?(x)), otherTokens)
+  IN
+    content(nil, initialPart, token2Parts(restToken))
+     
+
+-- %The function
+FUN token2Parts : seq[token] -> seq[part]
+/* %transforms the token-sequence into a part-sequence by considering 
+@c{docuFileSplit}-tokens as breakpoints for the individual part-structures.
+ 
+@Precondition: The given token-sequence has to start with a 
+@c{docuFileSplit}-token! */
+
+
+DEF token2Parts( docuFileSplit(headline, _, splitLevel) :: rest ) ==
+  LET
+    (partContent, restPartToken) == split(\\x. ~(docuFileSplit?(x)), rest)
+  IN
+    part(headline, splitLevel, partContent) :: token2Parts(restPartToken) 
+
+/* %In case no mpre subsections can be divided @emph{or!} no subsectioning
+is specified for the considered module, the pattern of the following 
+implementation-variant matches: */
+DEF token2Parts( <> ) == <>
+
+
+-- %$Split Signature-Token to Content Structure$
+-- %-------------------------------------------- 
+/* %The special @c{content}-construction for token-sequences derived
+from the scanning of signatures is implemented in this section. The only
+difference to the preceding @c{token2Content}-implementation is the special
+handling of an initial documentary as a general structure introduction. */
+FUN token2SignContent : seq[token] -> content
+DEF token2SignContent( <>    ) == content(nil, <>, <>) 
+DEF token2SignContent( token ) == token2SignContentIntern(skipLayout(token)) 
+
+FUN token2SignContentIntern : seq[token] -> content
+DEF token2SignContentIntern( <> ) == content(nil, <>, <>)
+DEF token2SignContentIntern( allToken AS  
+                               documentation(survey, _, _) :: restToken ) ==
+  LET
+    (initialPart, restPartToken) == split(\\x. ~(docuFileSplit?(x)), restToken)
+  IN
+    content(avail(survey), initialPart, token2Parts(restPartToken))
+
+DEF token2SignContentIntern( otherToken ) == token2Content(otherToken)
+
+
+-- %$Extract Part Names from Content Structure$
+-- %-------------------------------------------
+/* %A simple homomorphism on the @c{content}-structure extracting the
+headlines from each single @c{part}-representation: */
+FUN content2PartNames : content -> seq[string]
+DEF content2PartNames( content(_, _, parts) ) == part2PartName * parts
+
+FUN part2PartName : part -> string
+DEF part2PartName( part(headline, _, _) ) == headline	
+
+	

@@ -1,0 +1,99 @@
+-- LAST EDIT: Wed Jun 30 17:03:32 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION TypeIndepFormAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Error		ONLY err:SORT + ok
+
+	PartName	ONLY partName:SORT
+	Impl[partName]	COMPLETELY
+
+	RepSet		ONLY repSet {} +
+
+	TypeIndepExprAnalysis COMPLETELY
+
+-- ----------------------------------------------------------------------------
+
+FUN rearrange: formula -> formula**repSet**repSet**err
+
+DEF rearrange(dfd(e,p)) ==
+  LET (E,_,boundVars,usedReps,errors) == rearrange(e,{})
+  IN (dfd(E,p),boundVars,usedReps,errors)
+
+DEF rearrange(equal(l,r,p)) ==
+  LET (L,_,boundVarsL,usedRepsL,errorsL) == rearrange(l,{})
+      (R,_,boundVarsR,usedRepsR,errorsR) == rearrange(r,{})
+  IN (equal(L,R,p),
+      boundVarsL+boundVarsR,
+      usedRepsL+usedRepsR,
+      errorsL+errorsR)
+
+DEF rearrange(ineq(l,r,p)) ==
+  LET (L,_,boundVarsL,usedRepsL,errorsL) == rearrange(l,{})
+      (R,_,boundVarsR,usedRepsR,errorsR) == rearrange(r,{})
+  IN (ineq(L,R,p),
+      boundVarsL+boundVarsR,
+      usedRepsL+usedRepsR,
+      errorsL+errorsR)
+
+DEF rearrange(neg(f,p)) ==
+  LET (F,boundVars,usedReps,errors) == rearrange(f)
+  IN (neg(F,p),boundVars,usedReps,errors)
+
+DEF rearrange(and(l,r,p)) ==
+  LET (L,boundVarsL,usedRepsL,errorsL) == rearrange(l)
+      (R,boundVarsR,usedRepsR,errorsR) == rearrange(r)
+  IN (and(L,R,p),
+      boundVarsL+boundVarsR,
+      usedRepsL+usedRepsR,
+      errorsL+errorsR)
+
+DEF rearrange(or(l,r,p)) ==
+  LET (L,boundVarsL,usedRepsL,errorsL) == rearrange(l)
+      (R,boundVarsR,usedRepsR,errorsR) == rearrange(r)
+  IN (or(L,R,p),
+      boundVarsL+boundVarsR,
+      usedRepsL+usedRepsR,
+      errorsL+errorsR)
+
+DEF rearrange(imply(l,r,p)) ==
+  LET (L,boundVarsL,usedRepsL,errorsL) == rearrange(l)
+      (R,boundVarsR,usedRepsR,errorsR) == rearrange(r)
+  IN (imply(L,R,p),
+      boundVarsL+boundVarsR,
+      usedRepsL+usedRepsR,
+      errorsL+errorsR)
+
+DEF rearrange(eqv(l,r,p)) ==
+  LET (L,boundVarsL,usedRepsL,errorsL) == rearrange(l)
+      (R,boundVarsR,usedRepsR,errorsR) == rearrange(r)
+  IN (eqv(L,R,p),
+      boundVarsL+boundVarsR,
+      usedRepsL+usedRepsR,
+      errorsL+errorsR)
+
+DEF rearrange(all(pnames,body,pos)) ==
+  LET (newBody,boundVarsBody,usedRepsBody,errorsBody) == rearrange(body)
+      (boundVars,scopeErrors) == addLocalsToSignature(pnames,boundVarsBody)
+  IN (all(pnames,newBody,pos),
+      boundVars,
+      usedRepsBody,
+      (errorsBody+scopeErrors)+checkUsed(pnames,usedRepsBody))
+
+DEF rearrange(ex(pnames,body,pos)) ==
+  LET (newBody,boundVarsBody,usedRepsBody,errorsBody) == rearrange(body)
+      (boundVars,scopeErrors) == addLocalsToSignature(pnames,boundVarsBody)
+  IN (ex(pnames,newBody,pos),
+      boundVars,
+      usedRepsBody,
+      (errorsBody+scopeErrors)+checkUsed(pnames,usedRepsBody))
+
+DEF rearrange(F AS informal(txt, pos)) == (F, {}, {}, ok)

@@ -1,0 +1,138 @@
+
+IMPLEMENTATION WinSelector
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Compose			COMPLETELY
+	Void			COMPLETELY
+	String			COMPLETELY
+	NatConv			COMPLETELY
+	Denotation		COMPLETELY
+	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	ComAction		COMPLETELY
+	ComAgent		COMPLETELY
+	ComService		COMPLETELY
+	ComChoice		COMPLETELY
+
+IMPORT	WinTclTk		COMPLETELY
+	WinInternal		COMPLETELY
+	WinConfig		COMPLETELY
+	WinButton		COMPLETELY
+
+
+-- %$Selector Gate$ =========================================================
+
+DATA selector	== selector( get  : sap[void, data],
+			     set  : sap[void, data], 
+			     sync : sap[pred, data]    )
+
+DATA pred	== abs(rep: data -> bool)
+
+
+DEF selector(Init) ==
+    sap & (\\ Get. sap & (\\ Set . sap & (\\ Sync . 
+    LET Sel == selector(Get, Set, Sync)
+    IN
+    agent(selectorAgent(Sel, Init)) & succeed(Sel)
+    )))
+
+
+DEF Sel set X ==
+    set(Sel) => (\\ _ . succeed(X)) & done
+
+DEF Sel get ==
+    get(Sel) @ nil
+
+DEF Sel await Pred  ==
+    sync(Sel) @ abs(Pred)
+
+
+
+FUN selectorAgent : selector ** data -> com[void]
+
+DEF selectorAgent(Sel, State) ==
+    (get(Sel) => (\\ _ .  succeed(State))	& (\\ _ .
+    	selectorAgent(Sel, State)
+    	)
+    )
+  + (set(Sel) @ nil				& (\\ NewState .
+    	selectorAgent(Sel, NewState)
+    	)
+    )
+  + ((sync(Sel), \\Pred. rep(Pred)(State)) 
+  	=> (\\ _ .  succeed(State)) 		& (\\ _ .
+	selectorAgent(Sel, State)
+	)
+    )
+
+
+-- %$Synchronization Configurations$ ========================================
+
+
+DEF sync(Sel, Pred, OnConfig, OffConfig) == 
+    config(\\Win, Wid, Mod.
+	get(Sel)				& (\\ State .
+	agent(syncAgent(
+	      Win, Wid, Mod, Sel, Pred, Pred(State),
+	      OnConfig, OffConfig))		& (\\ Agent .
+	registerDispose(Win, Wid, kill(Agent))
+	))
+    )
+
+DEF enable(Sel, Pred) == sync(Sel, Pred, state(normal), state(disabled))
+
+FUN syncAgent : window ** widget ** modifier
+		** selector ** (data -> bool) ** bool
+		** config ** config 			-> com[void]
+
+DEF syncAgent(Win, Wid, Mod, Sel, Pred, true, OnConfig, OffConfig) ==
+    forceApply(Win, Wid, Mod, OnConfig)		& (\\ _ .
+    await(Sel, \\ X. ~(Pred(X)))			& (\\ _ .
+    syncAgent(Win, Wid, Mod, Sel, Pred, false, OnConfig, OffConfig)
+    ))
+
+DEF syncAgent(Win, Wid, Mod, Sel, Pred, false, OnConfig, OffConfig) ==
+    forceApply(Win, Wid, Mod, OffConfig)	& (\\ _ .
+    await(Sel, \\ X. Pred(X))			& (\\ _ .
+    syncAgent(Win, Wid, Mod, Sel, Pred, true, OnConfig, OffConfig)
+    ))
+
+
+-- %$Select Configuration$ =================================================
+
+DEF select(Sel, Pred, OnFun, OffFun) == 
+    bind(get(Sel) & (\\ State .
+	 IF Pred(State) THEN Sel set OffFun(State)
+		        ELSE Sel set OnFun(State) FI
+	 )
+    ) ++
+    sync(Sel, Pred, select, deselect)
+
+FUN select deselect : config
+DEF select == 
+    config(\\Win, Wid, Mod. 
+	IF widget?(Mod) THEN
+	    act("%s select" <- Wid)
+	IF menu?(Mod) THEN
+	    act("set %s_%n 1" <- Wid + item(Mod))
+	ELSE
+	    done
+	FI
+    )
+DEF deselect == 
+    config(\\Win, Wid, Mod. 
+	IF widget?(Mod) THEN
+	    act("%s deselect" <- Wid)
+	IF menu?(Mod) THEN
+	    act("set %s_%n 0" <- Wid + item(Mod))
+	ELSE
+	    done
+	FI
+    )
+	
+
+DEF select(Sel, Pred, Val) == select(Sel, Pred, \\ _ . Val, \\ X . X)

@@ -1,0 +1,100 @@
+/* %Prioritätenverwaltung. Typen und Funktionen, um zu entscheiden bzw. zu 
+verwalten, wie ein Ausdruck der Form @code{a ++ b ** c} geklammert werden
+soll, wenn beide Möglichkeiten typkorrekt sind.
+
+Der hier gewählte Ansatz ist, für jedes Paar von Funktionen einen
+Tabelleneintrag zu verwlaten, der angibt, ob links oder rechts
+geklammert werden soll. Prioritäten und Assoziativitäten müssen dann so
+ausgedrückt werden:
+
+"* bindet stärker als +" <=> @code{left(*, +)} und @code{right(+, *)}
+"- ist linksassoziativ" <=> @code{left(+, +)}
+"++ ist rechtsassoziativ" <=> @code{right(++, ++)}
+
+Für Parsen des Ausdrucks @code{3 + 5 - 7} als @code{(3 + 5) - 7} kann
+angegeben werden: @code{left{+, -}}.
+*/
+
+SIGNATURE PrioTab
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT GlobSig ONLY globSig prioTab prio rule
+       Name ONLY name
+       Pos ONLY pos
+       Error ONLY err:SORT
+       Seq[name] ONLY seq
+       Seq[pos] ONLY seq
+       Pair[name, name] ONLY pair
+       Seq[pair[name, name]] ONLY seq
+
+-- %$Prioritäten$
+
+-- TYPE prio == left right both
+
+
+-- %$Gründe$
+
+/*
+TYPE rule == none -- keine Priorität festgestellt
+             assumed(what: prio)
+             direct(what: prio, where: pos)
+             closure(what: prio, where:seq[pos]) -- #(where) > 1
+*/
+
+-- %Kompatibilität
+FUN assumedLAssoc? 
+    assumedRAssoc? : rule -> bool
+
+FUN assumedLAssoc assumedRAssoc : rule
+
+
+-- %$Prioritätentabelle$
+-- SORT prioTab
+
+FUN ` : globSig -> prioTab -> denotation
+
+/* %Leere Tabelle - zur Abwechslung mal 'ne neue Syntax */
+-- FUN {-} : prioTab
+
+/* %@code{(n1, n2) insertLeft (pT, pos)} füge Paar (n1, n2) als
+    linkspriorisiertes Paar in die Tabelle ein;
+    Rückgabe ist neue Tabelle und Fehlermeldung. Transitiver Abschluß 
+    muß selbst gebildet werden (s.u. @code{tClosure}). */  
+
+FUN insertLeft:  globSig -> name ** name ** prioTab ** pos -> prioTab ** err
+FUN insertRight: globSig -> name ** name ** prioTab ** pos -> prioTab ** err
+
+-- %wie oben, aber alle Paare aus S1 x S2
+FUN insertLeft: globSig ->
+                 seq[name] ** seq[name] ** prioTab ** pos -> prioTab ** err
+FUN insertRight: globSig ->
+                  seq[name] ** seq[name] ** prioTab ** pos -> prioTab ** err
+
+/* %Bilde transitiven Abschluß, liefere ggf. Fehlermenge bei Konflikten
+    zurück */
+FUN tClosure: globSig ** pos -> prioTab -> prioTab ** err
+
+/* %Abfrage auf Prioritäten. Falls kein Eintrag in der Tabelle vorhanden,
+    werden die Flags -zlassoc und -zrassoc ausgewertet. */
+FUN left?  : globSig -> name ** name ** prioTab -> bool ** rule
+FUN right? : globSig -> name ** name ** prioTab -> bool ** rule
+
+FUN prio : globSig -> name ** name ** prioTab -> prio ** rule
+
+-- %$Funktionen testen$
+
+/* %@code{conflict?(sig)(++, **)} gdw. a, b, c, existieren, so daß
+sowohl @code{a ++ (b ** c)} als auch
+@code{(a ++ b) ** c} typkorrekt sind. Beachte, daß OPAL beliebige Aufteilung
+der Argumenttupel einer Funktion erlaubt. 
+
+*/
+FUN conflict? : globSig -> name ** name -> bool
+
+/* %liefere alle Paare, auf die conflict? zutrifft und die nicht in der
+    prioTab der GlobSig definiert sind. */
+FUN conflicts: globSig -> seq[name] ** seq[name] -> seq[pair[name, name]]

@@ -1,0 +1,180 @@
+IMPLEMENTATION ContextFctIndex
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/context/ContextFctIndex.impl,v 1.1.1.1 1998-06-16 16:00:34 wg Exp $
+
+IMPORT Seq		COMPLETELY
+       SeqMap   COMPLETELY
+       SeqOfSeq COMPLETELY
+       SeqReduce COMPLETELY
+       String		COMPLETELY
+       Map		COMPLETELY
+       InterOpal	COMPLETELY
+       Set COMPLETELY
+       SetConv COMPLETELY
+       SetOfSet COMPLETELY
+       SetMap COMPLETELY
+
+IMPORT Config		COMPLETELY
+       ConfigFun	COMPLETELY
+       InterOpalFun	COMPLETELY
+       ContextIndex COMPLETELY
+       MyString     COMPLETELY
+       SpecialString COMPLETELY
+
+FUN updateFctMap : 
+      object ** interOpal ** map[nat,<,seq[indexEntry]] ** config ->
+        map[nat,<,seq[indexEntry]]
+
+/* %If the generation of a functionality index is specified in the
+    @c{config}uration
+database, a new entry is constructed, considering the proper @c{verboseLevel}
+demanded by the @c{config}-database. There might be more than one function
+declaration in one line, so the @c{newFctMapEntry} has probably to be appended
+to a non-empty entry-sequence for the current source code line. This is done in
+@c{updSeq}. As @OPAL allows multiple function declarations, we have to consider
+a sequence of declaration positions for an object. Each extracted position is used
+as a reference point in the generated functionality index. */
+DEF updateFctMap( actObj, completeInterOpal, actIdxMap, config) ==
+  IF functionalityIndexGeneral?(config) THEN
+    LET
+      verboseLevel ==  IF functionalityIndex?(config)           THEN v1
+                       IF functionalityIndexMediumInst?(config) THEN v2 
+                       IF functionalityIndexNoInst?(config)     THEN v3
+                       FI
+     functionality == kind2String(kind(actObj),
+                                  verboseLevel,
+                                  completeInterOpal)
+      domains == domain2string(kind(actObj), verboseLevel, completeInterOpal)
+      codoms == codomain2string(kind(actObj), verboseLevel, completeInterOpal)
+      iType == IF sort?(kind(actObj)) THEN "@stindex" ELSE "@findex" FI
+      entry == IF sort?(kind(actObj)) THEN
+                 indexEntry(iType, mkSTIndex(symbol(actObj)))
+               ELSE
+                 indexEntry(iType, mkFIndex(symbol(actObj), functionality))
+               FI
+      domainEntries == (\\ dm. indexEntry("@dmindex",
+                                          mkDMIndex(symbol(actObj),
+                                                    functionality, dm)
+                                         )) * domains
+      codomEntries == (\\ cd. indexEntry("@cdindex",
+                                          mkCDIndex(symbol(actObj),
+                                                    functionality, cd)
+                                         )) * codoms
+      newIdxMapEntries == entry :: (domainEntries ++ codomEntries)
+    IN 
+      updSeq(
+        getFctPosSeq(actObj, completeInterOpal),  -- do only consider 
+        newIdxMapEntries,                           -- valid positions!
+        actIdxMap
+      )
+  ELSE
+    {}
+  FI
+
+
+-- %For all declaration positions of one identifier the function
+FUN updSeq : 
+      seq[pos] ** seq[indexEntry] ** map[nat,<,seq[indexEntry]] -> 
+        map[nat,<,seq[indexEntry]]
+/* %enters the constructed @c{newContextEntry} into the @c{fctActContext}-map. A 
+recursive call to @c{updSeq} enters the rest positions (@c{rtPosSeq}) into the 
+functionality index map. */
+DEF updSeq( pos(_,row,_) :: rtPosSeq, newIndexEntries, actIndex ) ==
+  IF def?(row, actIndex) THEN
+    upd(
+      row, 
+      \\x. newIndexEntries ++ x,
+      updSeq(rtPosSeq, newIndexEntries, actIndex)
+    )
+
+  ELSE
+    def(
+      row,
+      newIndexEntries,
+      updSeq(rtPosSeq, newIndexEntries, actIndex)
+    )    
+  FI
+/* %If no positions are given there is nothing to be entered in the map! */  
+DEF updSeq( <>, _, actIndex ) == actIndex
+DEF updSeq( _ ::  rtPosSeq, newIndexEntries, actIndex ) ==
+  updSeq(rtPosSeq, newIndexEntries, actIndex)
+
+-- %The function
+FUN getFctPosSeq : object ** interOpal -> seq[pos] 
+/* %returns a sequence of all usable declaration-positions of @c{actObj} that can
+be extracted from the current @c{completeInterOpal} database. Only positions
+that belong to the current structure module are considered valid! */
+DEF getFctPosSeq( actObj, completeInterOpal ) ==
+  LET
+    partToSearch? == IF signature?(part(completeInterOpal)) THEN
+                       signature?
+                     IF implementation?(part(completeInterOpal)) THEN
+                       implementation?
+                     FI
+  IN
+    extractValidPosSeq(pos(actObj), partToSearch?)
+
+/* %Convert all parts of a domain to strings */
+FUN domain2string: kind ** verboseLevel ** interOpal -> seq[string]
+DEF domain2string(fct(funct(dom, _)), v, IO) == 
+    asSeq(allParts2string(dom, v, IO))
+DEF domain2string(_, _, _) == <>
+
+/* %Convert all parts of a codomain to strings. */
+FUN codomain2string: kind ** verboseLevel ** interOpal -> seq[string]
+DEF codomain2string(fct(sort(s)), v, IO) == %(fct2String(sort(s), v, IO))
+DEF codomain2string(fct(cart(els)),v,IO) == %(fct2String(cart(els),v,IO))
+DEF codomain2string(fct(funct(_ ,cod)), v, IO) == 
+    asSeq(allParts2string(cod, v, IO))
+DEF codomain2string(_, _, _) == <>
+
+/* %Convert all parts of a functionality to a seq[string]. */
+FUN allParts2string: fct ** verboseLevel ** interOpal -> set[string,<]
+DEF allParts2string(sort(s), v, IO) == %(fct2String(sort(s), v, IO))
+DEF allParts2string(cart(els), v, IO) ==
+--    fct2String(cart(els), v, IO) ::
+    (+, {}) / ((\\x. allParts2string(x, v, IO)) * els)
+DEF allParts2string(funct(dom,cod), v, IO) ==
+--    fct2String(funct(dom,cod), v, IO) ::
+    (allParts2string(dom, v, IO) + allParts2string(cod, v, IO))
+
+
+-- %$Construct Textuel Entries for Index$
+FUN mkSTIndex: denotation -> string
+DEF mkSTIndex( sortName ) == escTexinfo(!(sortName))
+
+FUN mkFIndex: denotation ** string -> string
+DEF mkFIndex( funName, functionality ) ==
+  conc(
+       escTexinfo(
+                  conc(
+                       funName!,
+                       optionalSpace(funName!),
+                       ": "!
+                      )
+                 ),
+       encloseFct(escTexinfo(functionality))
+      )
+
+FUN mkDMIndex: denotation ** string ** string -> string
+DEF mkDMIndex == mkXXIndex
+
+FUN mkCDIndex: denotation ** string ** string -> string
+DEF mkCDIndex == mkXXIndex
+
+FUN mkXXIndex: denotation ** string ** string -> string
+DEF mkXXIndex( funName, functionality, sortBy ) ==
+  conc(
+       escTexinfo(
+                  conc(
+                       sortBy,
+                       " : "!,
+                       funName!,
+                       optionalSpace(funName!),
+                       ": "!
+                      )
+                 ),
+       encloseFct(escTexinfo(functionality))
+      )
+
+
+

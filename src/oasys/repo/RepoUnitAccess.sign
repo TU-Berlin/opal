@@ -1,0 +1,337 @@
+/* % This structure provides access functions related to units. */
+
+SIGNATURE RepoUnitAccess
+
+
+IMPORT	Nat			ONLY nat
+	Denotation		ONLY <
+	Set[unitName, <]	ONLY set
+	Set[objectName, <]	ONLY set
+	Set[denotation, <]	ONLY set
+	Seq[objectName]		ONLY seq
+	Seq[set[unitName,<]]	ONLY seq
+	Option[unitName]	ONLY option
+	Com[repo]		ONLY com:SORT
+   
+IMPORT	Repo			ONLY repo:SORT
+	RepoAn			ONLY an:SORT
+	RepoName		ONLY unitName:SORT 
+					< : unitName ** unitName -> bool
+				     part:SORT
+				     objectName:SORT
+					< : objectName ** objectName -> bool
+	RepoAdmin		ONLY repoFile:SORT
+
+
+-- %$Units of a Repository$ ================================================
+
+/* % The set of units of a repository is retrieved by the function below: */
+
+FUN units	: repo				-> set[unitName,<]
+
+
+/* % A unit with a given name is retrieved by the function below: */
+
+FUN lookup?	: denotation ** part		-> repo -> option[unitName]
+
+/* % For a set of symbolic names and a part, the function below gives
+the set of associated unit names. If a unit isn't found, it is not
+included in the result set: */
+
+FUN lookup	: set[denotation,<] ** part	-> repo -> set[unitName,<]
+
+
+-- %$Unit Creation and Annotation$ ========================================
+
+/* % @code{enterUnit(Sym, Part)(R)} adds a unit to the repository. If
+the unit already exists it will be returned.  */
+
+FUN enterUnit	: denotation ** part		-> repo -> unitName ** repo
+
+/* % @code{removeUnit(Name)} removes a unit from the repository.
+@code{resetUnit} kills all information about a unit beside of the
+symbol and the annotation, such that it is in a state of a newly
+created unit: */
+
+FUN removeUnit	: unitName			-> repo -> repo
+FUN resetUnit	: unitName			-> repo -> repo
+
+
+/* % The symbol and annotation of unit is accessed by the function
+below: */
+
+FUN symbol	: unitName		 -> repo -> denotation
+FUN an		: unitName		 -> repo -> an
+FUN updateAn	: unitName ** (an -> an) -> repo -> repo
+
+
+
+-- %$Unit State$ ==========================================================
+
+/* % The units of the repository have a state, which describes whether
+they are @emph{checked} and @emph{compiled}. If a unit is not checked,
+query operations other then regarding to source items may yield
+inconsistent data structures. If a unit is not compiled, the query for
+an object file may yield a file which is not consistent with other
+object files. If a unit is compiled, it is always also checked: */
+
+FUN checked
+    notChecked	:			   repo -> set[unitName,<]
+    -- checked(R) === units(R) - notChecked(R)
+FUN compiled 
+    notCompiled :			   repo -> set[unitName,<]
+    -- compiled(R) === units(R) - notCompiled(R)
+
+FUN checked?	: unitName		-> repo -> bool
+FUN compiled?	: unitName		-> repo -> bool
+
+
+/* % The compiled-state and check-stated of units may be reset by the
+functions below. These functions also transitively reset the state of
+all units which are importers of the given unit (in case of
+@code{resetChecked}), or which are implementation-importers of a
+released unit (in case of @code{resetCompiled}): */
+
+FUN resetChecked  : unitName		 -> repo -> repo
+FUN resetCompiled : unitName		 -> repo -> repo
+
+/* % You cannot directly estasblish the checked or compiled state;
+use the commands from @code{RepoMaintain} (@code{reloadUnit}) to do so. */
+
+/* %
+@sp 1
+The number of checks and compilations of a unit, that is, how often
+the checked or the compiled state of a unit has been established, defines a 
+version numbering scheme for the information related to checking
+(the abstract syntax) and to compiling (the object code). This version
+numbers are retrieved by the functions below: */
+
+FUN checkVersion   : unitName		  -> repo -> nat
+FUN compileVersion : unitName		  -> repo -> nat
+
+
+
+-- %$Unit Flags$ ==========================================================
+
+/* % Units have a set of flags, which are automatically set by
+the maintenance functions:
+
+@itemize @bullet
+
+@item A unit may belong to a @emph{library}, in which case it is
+considered to be ``frozen''. The signature parts of library units are
+always checked, and the implementation parts checked and compiled; the
+reset functions above don't have any effect.
+
+@item A unit may be @emph{sourced}, meaning that information about its
+source is stored in the repository. In case a unit is sourced, it is
+@emph{flushed} iff the source file is uptodate w.r.t. the 
+items stored in the repository.
+
+@item A unit may be @code{released}, meaning that user units
+may depend compile implementation using information from the
+implementation of the released unit.
+
+@item A unit may be @code{interpreted}, meaning that no compilation
+should takes place on it.
+
+@item If the abstract syntax even of the implementations of a unit
+is loaded in the repository, the flag @code{fullAbsy} is set.
+
+@end itemize
+*/
+
+
+FUN library?	: unitName		-> repo -> bool
+FUN sourced?	: unitName		-> repo -> bool
+FUN flushed?	: unitName		-> repo -> bool
+FUN released?	: unitName		-> repo -> bool
+FUN interpreted?: unitName		-> repo -> bool
+FUN fullAbsy?	: unitName		-> repo -> bool
+
+
+/* % The interpreted and released flags may be controlled by 
+the user: */
+
+FUN setReleased		: unitName ** bool	-> repo -> repo
+FUN setInterpreted	: unitName ** bool	-> repo -> repo
+
+
+-- %$Unit Files$ ===========================================================
+
+/* % A unit has associated three files: a source file, an abstract
+syntax file, and on object file. The path to the versioned object
+file is retrieved with @code{objectFileVersion}. */
+
+FUN sourceFile	: unitName		-> repo -> repoFile
+FUN absyFile	: unitName		-> repo -> repoFile
+FUN objectFile	: unitName		-> repo -> repoFile
+
+
+/* % To bring the information about the files of a unit up-to-date
+w.r.t. the file system, the commands below are used (see also 
+@code{checkRepoFile'RepoAdmin)}: */
+
+FUN checkSourceFile : unitName		-> repo -> com[repo]
+FUN checkAbsyFile   : unitName		-> repo -> com[repo]
+FUN checkObjectFile : unitName		-> repo -> com[repo]
+
+
+-- %$Unit Instances$ ========================================================
+
+/* % A derived version of a unit is created by an instantiation of the
+formal parameters. @code{enterInstance} enters such an instantiation,
+returning the derived unit name. If the instantiation already exists
+its name will be just retrieved. If the instantiation of a unit
+transitively instantiates other units which are imported by the given
+unit, then these transitive instances will be silently inserted into the 
+repository as well, such that the function @code{lookupInstance} below will 
+find them:
+ */
+
+FUN enterInstance : unitName ** seq[objectName]	  -> repo -> unitName ** repo
+
+
+/* % @code{lookupInstance} lookups an instantiation in the repository: */
+
+FUN lookupInstance : unitName ** seq[objectName]  -> repo -> option[unitName]
+
+
+/* % @code{removeInst} removes an instantiation: */
+
+FUN removeInstance : unitName			   -> repo -> repo
+
+
+/* % @code{instances(UnitName)} delivers the set of units derived
+by instantiation from the given basic unit: */
+
+FUN instances	: unitName		-> repo -> set[unitName,<]
+
+
+/* % @code{actuals(UnitName)} delivers the sequence of objects
+building the instantiation of @code{UnitName}. For a basic name, the
+formal parameters are returned (empty list if no formal parameters) */
+
+FUN actuals	 : unitName		-> repo -> seq[objectName]
+
+
+/* % @code{formals(UnitName} gives the formal parameter list, and
+is just a shortcut for @code{actuals(baseName(UnitName))}. */
+
+FUN formals	: unitName		 -> repo -> seq[objectName]
+
+
+/* % @code{updateFormals} sets the formal parameters of a unit: */
+
+FUN updateFormals  : unitName ** (seq[objectName] -> seq[objectName]) 
+					 -> repo -> repo
+
+
+-- %$Unit Imports$ ==========================================================
+
+/* % @code{enterImport} enters an import of an object in the context
+of a unit. @code{enterImportCompletely} enters the import of all
+objects from the given (derived) unit. */
+
+FUN enterImport : unitName ** objectName	   -> repo -> repo
+FUN enterImportCompletely : unitName ** unitName   -> repo -> repo
+
+
+/* % @code{removeImport} removes an import of unit: */
+
+FUN removeImport : unitName ** objectName	   -> repo -> repo
+FUN removeImportCompletely : unitName ** unitName  -> repo -> repo
+
+
+/* % @code{importAn} returns the annotation associated with an
+imported unit (with instantiation), @code{setImportAn} updates it: */
+
+FUN importAn		: unitName ** unitName	-> repo -> an
+FUN updateImportAn	: unitName ** unitName	** (an -> an) -> repo -> repo
+
+
+/* % @code{importedUnits(UnitName)} delivers the set of units
+(with instantiation) imported by @code{UnitName}. The variant with the
+second unit name gives only those imported unit whichs are derived from
+a unit which is @code{~}-congruent: */
+
+FUN importedUnits	: unitName		-> repo -> set[unitName,<]
+FUN importedUnits	: unitName ** unitName	-> repo -> set[unitName,<]
+
+
+/* % @code{importedObjects(UnitName)} delivers the set of
+imported objects of @code{UnitName}. The variant with the second unit
+name gives only those imported from exactly this unit (with
+instantiation). */
+
+FUN importedObjects    : unitName		-> repo -> set[objectName,<]
+FUN importedObjects    : unitName ** unitName	-> repo -> set[objectName,<]
+
+
+-- %$Unit Relations$ ======================================================
+
+/* % @code{related(Mode, Op)(UnitName)} yields the set of basic units
+related to @code{UnitName} according to @code{Op} and @code{Mode}. 
+@code{Mode} specifies if the direct relation or the transitive closure of
+the relation should be build. @code{Op} is defined as follows:
+
+@itemize @bullet
+
+@item @code{imports} gives the imported basic units. If @code{UnitName} 
+is an implementation, its signature part is accounted as an import.
+
+@item @code{importers} is the reversed relation of @code{import}, and
+gives the basic units which import @code{UnitName}.  If
+@code{UnitName} is a signature, its implementation part is accounted
+as an importer.
+
+@item @code{implImports} is the set of implementation units which
+are used to realize @code{UnitName}. If unit name is a signature,
+then it will be treated identical to the  implementation of this
+signature.
+
+@item @code{implImporters} is the reversed relation of @code{implImports},
+and delivers all units which use @code{UnitName} (or its implementation
+part, if @code{UnitName} is a signature) for their implementation.
+
+@end itemize
+
+For example, @code{related(transitive, importers)(U)} gives the set
+of units which would become unchecked if @code{U} is modified.
+@code{relation(transitive, implImporters)(U)} gives the set
+of implementation units which are required to be compiled in
+order to execute @code{U}.
+*/
+
+
+TYPE relOp     == imports importers implImports implImporters
+TYPE relMode   == direct transitive 
+
+FUN related : relMode ** relOp -> unitName -> repo -> set[unitName,<]
+
+
+/* % @code{related(Mode, Op, Pred)} restricts the relation
+described by @code{Op} to units which fullfill @code{Pred}. 
+Note that with mode @code{transitive}, the transitive closure
+is build @code{after} the restriction, so that 
+@code{related(transitive, Op, Pred)(U)(R)} isn't equivalent to
+@code{Pred | related(transitive, Op)(U)(R)}: */
+
+FUN related : relMode ** relOp ** (unitName -> bool) 
+				-> unitName -> repo -> set[unitName,<]
+
+/* % The functions below take instead of a single unit a set of
+units, and are equivalent to the union of the results for each
+single unit: */
+
+FUN related : relMode ** relOp -> set[unitName,<] -> repo -> set[unitName,<]
+FUN related : relMode ** relOp ** (unitName -> bool) 
+				-> set[unitName,<] -> repo -> set[unitName,<]
+
+/* % @code{topSort(Op, P)(Us)} returns a toplogical sorting of the
+units @code{Us} according to the relation described by @code{Op} and
+@code{P}: */
+
+FUN topSort : relOp -> set[unitName,<] -> repo -> seq[set[unitName,<]]
+FUN topSort : relOp ** (unitName -> bool) -> set[unitName,<] -> repo 
+					  -> seq[set[unitName,<]]

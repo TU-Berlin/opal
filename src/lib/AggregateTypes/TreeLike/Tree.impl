@@ -1,0 +1,193 @@
+IMPLEMENTATION Tree
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:09 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Seq ONLY seq <> ++ # %
+       SeqMap ONLY *
+       SeqOfSeq ONLY flat
+       Nat ONLY nat 0 succ max + 1 2
+       Compose ONLY o
+       Option ONLY option nil avail avail?
+       ABORT COMPLETELY
+
+-- %$The Data Type of Trees$
+DATA tree == nil
+             node(val: data, left: tree, right: tree)
+
+
+-- %$Constructing a Tree from Datas$
+FUN % 	: data -> tree
+DEF % == node(_, nil, nil)	
+
+-- %$constructing a tree from a function$
+FUN iter : (data -> option[data] ** option[data]) ** option[data] -> tree
+DEF iter(_, nil) == nil
+DEF iter(f, avail(d)) == LET (l,r) == f(d) IN node(d, iter(f,l), iter(f,r))
+
+-- %$working on a tree$
+
+FUN :=_val : tree ** data -> tree
+DEF :=_val(node(_,2,3),new) == node(new,2,3)
+DEF :=_val(nil, _) == ABORT(":=_val'Tree: applied to empty tree")
+
+FUN :=_left : tree ** tree -> tree
+DEF :=_left(node(1,_,3),new) == node(1,new,3)
+DEF :=_left(nil, _) == ABORT(":=_left'Tree: applied to empty tree")
+
+FUN :=_right : tree ** tree -> tree
+DEF :=_right(node(1,2,_),new) == node(1,2,new)
+DEF :=_right(nil, _) == ABORT(":=_right'Tree: applied to empty tree")
+
+
+
+FUN swap: tree -> tree
+DEF swap(nil) == nil
+DEF swap(node(d, t1, t2)) == node(d, t2, t1)
+
+FUN reflect: tree -> tree
+DEF reflect(nil) == nil
+DEF reflect(node(d, t1, t2)) ==
+            node(d, reflect(t2), reflect(t1))
+
+FUN lrotate: tree -> tree
+DEF lrotate(node(x, A, node(y, B, C))) == node(y, node(x, A, B), C)
+DEF lrotate(_) == ABORT("lrotate'Tree: right child is empty")
+
+FUN rrotate: tree -> tree
+DEF rrotate(node(y, node(x, A, B), C)) == node(x, A, node(y, B, C))
+DEF rrotate(_) == ABORT("rrotate'Tree: left child is empty")
+
+
+/* %- ich fand die Operationen mal spannend, aber jetzt nicht mehr.
+@code{lrotate} moves the node values like this: left child ->
+parent -> right child -> left child. @code{rrotate} moves the values the
+other way round: right child <- left child <- parent <- right child.
+If one child is an outer leaf, the values of the parent and the other
+child are exchanged. If the tree is a leaf or empty, nothing
+happens.
+FUN lrotate: tree -> tree
+DEF lrotate(node(d1, node(d2, t1, t2), node(d3, t3, t4))) ==
+        node(d3, node(d1, t1, t2), node(d2, t3, t4))
+DEF lrotate(node(d1, nil, node(d3, t3, t4))) ==
+        node(d3, nil, node(d1, t3, t4))
+DEF lrotate(node(d1, node(d2, t1, t2), nil)) ==
+        node(d2, node(d1, t1, t2), nil)
+DEF lrotate(t AS node(_, nil, nil)) == t
+DEF lrotate(nil) == nil
+
+
+FUN rrotate: tree -> tree
+DEF rrotate(node(d1, node(d2, t1, t2), node(d3, t3, t4))) ==
+        node(d2, node(d3, t1, t2), node(d1, t3, t4))
+DEF rrotate(node(d1, nil, node(d3, t3, t4))) ==
+        node(d3, nil, node(d1, t3, t4))
+DEF rrotate(node(d1, node(d2, t1, t2), nil)) ==
+        node(d2, node(d1, t1, t2), nil)
+DEF rrotate(t AS node(_, nil, nil)) == t
+DEF rrotate(nil) == nil
+*/
+
+
+
+-- %$Accessing Datas in a Tree$
+FUN leftmost rightmost     : tree -> data   
+DEF leftmost(t) == 
+            IF left(t) nil? THEN val(t) ELSE leftmost(left(t)) FI
+DEF leftmost(nil) == ABORT("leftmost'Tree: applied to empty tree")
+
+DEF rightmost(t) == 
+            IF right(t) nil? THEN val(t) ELSE rightmost(right(t)) FI
+DEF rightmost(nil) == ABORT("rightmost'Tree: applied to empty tree")
+
+
+FUN children grandchildren : tree -> seq[data]
+DEF children == level(1, _)
+DEF grandchildren == level(2, _)
+
+FUN level: nat ** tree -> seq[data]
+DEF level(_, nil) == <>
+DEF level(0, node(v, _, _)) == %(v)
+DEF level(succ(i), node(_, l, r)) == level(i, l) ++ level(i, r)
+    
+FUN front: tree -> seq[data]
+DEF front(nil) == <>
+DEF front(t AS node(d, l, r)) ==
+    IF leaf?(t) THEN %(d) ELSE front(l) ++ front(r) FI
+
+-- information about a tree
+FUN # 	: tree -> nat	
+DEF #(nil) == 0
+DEF #(node(_, t1, t2)) == succ(#(t1) + #(t2))
+
+FUN depth: tree -> nat
+DEF depth(nil) == ABORT("depth'Tree: no depth for empty tree")
+DEF depth(node(_, nil, nil)) == 0
+DEF depth(node(_, t1 AS node(_,_,_), nil)) == succ(depth(t1))
+DEF depth(node(_, nil, t2 AS node(_,_,_))) == succ(depth(t2))
+DEF depth(node(_, t1, t2)) == succ(max(depth(t1), depth(t2)))
+
+FUN width: tree -> nat
+DEF width(t) == #(front(t))
+
+FUN leaf? : tree -> bool
+DEF leaf?(nil) == false
+DEF leaf?(node(_, left, right)) == (left nil?) and (right nil?)
+
+FUN exist?	: (data -> bool) ** tree -> bool
+DEF exist?(P,t) == avail?(find?(P,t))
+
+FUN find?	: (data -> bool) ** tree -> option[data]
+DEF find?(_, nil) == nil
+DEF find?(P, node(d, left, right)) ==
+                      IF P(d) THEN avail(d)
+                      IF find?(P, left) avail? THEN find?(P, left)
+                      IF find?(P, right) avail? THEN find?(P, right)
+                      ELSE
+                        nil
+                      FI
+
+FUN forall?	: (data -> bool) ** tree -> bool
+DEF forall?(P,t) == ~(exist?(~ o P,t))
+
+-- %$Comparing trees$
+FUN < : (data ** data -> bool) -> tree ** tree -> bool
+DEF <(<_data)(nil,nil) == false
+DEF <(_)(nil,node(_,_,_)) == true
+DEF <(_)(node(_,_,_),nil) == false
+DEF <(<_data)(node(a,b,c),node(A,B,C)) == IF <_data(a,A) THEN true
+IF <_data(A,a) THEN false
+ELSE
+IF <(<_data)(b,B) THEN true
+IF <(<_data)(B,b) THEN false
+ELSE
+IF <(<_data)(c,C) THEN true
+IF <(<_data)(C,c) THEN false
+ELSE
+false
+FI
+FI
+FI
+
+FUN = : (data ** data -> bool) -> tree ** tree -> bool
+DEF =(=_data)(nil,nil) == true
+DEF =(_)(nil,node(_,_,_)) == false
+DEF =(_)(node(_,_,_),nil) == false
+DEF =(=_data)(node(a,b,c),node(A,B,C)) == IF =_data(a,A) THEN IF =(=_data)(b,B) THEN IF =(=_data)(c,C) THEN true
+ELSE
+false
+FI
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+-- auxiliaries
+-- FUN val: tree -> seq[data]
+-- DEF val(nil) == <>
+-- DEF val(node(d, _, _)) == %(d)
+

@@ -1,0 +1,111 @@
+-- LAST EDIT: Tue May 18 19:07:11 1993 by OPAL compiler (athene!opal) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION FctTranslation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:47 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		ONLY nat 0
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqFilter	ONLY |
+
+	TypeAn		ONLY type:SORT ide:ide->type fun
+				spec:type**seq[type]->type
+	Ide		ONLY ide:SORT
+	Builtin		ONLY tuple
+
+	Fct[name]	COMPLETELY
+
+	AnalyzedGlobSig	ONLY globSig name internal? external? sort?
+				parameter?:globSig**name->bool
+
+				origInst:globSig**name->seq[name]
+
+	ParameterTranslation	ONLY info:SORT sortParamTypes
+	NameTranslation		ONLY ide
+       DEBUG ONLY PRINT string
+       ABORT ONLY ABORT
+
+-- ----------------------------------------------------------------------------
+
+FUN nullType: type
+
+DEF nullType == ide(tuple(0))
+
+-- ----------------------------------------------------------------------------
+
+FUN type: globSig**info -> fct -> type
+
+DEF type(sig,info)(sort(name)) == type(sig,info)(name)
+
+DEF type(sig,info)(funct(cart(<>),cart(ress))) ==
+  LET argType  == nullType
+      resTypes == type(sig,info)*ress
+  IN fun(argType%,tuple(resTypes))
+
+DEF type(sig,info)(funct(cart(args),cart(ress))) ==
+  LET argTypes == type(sig,info)*args 
+      resTypes == type(sig,info)*ress
+  IN fun(argTypes,tuple(resTypes))
+
+DEF type(sig,info)(funct(cart(<>),res)) ==
+  LET argType  == nullType
+      resType  == type(sig,info)(res)
+  IN fun(argType%,resType)
+
+DEF type(sig,info)(funct(cart(args),res)) ==
+  LET argTypes == type(sig,info)*args 
+      resType  == type(sig,info)(res)
+  IN fun(argTypes,resType)
+
+DEF type(sig,info)(funct(arg,cart(ress))) ==
+  LET argType  == type(sig,info)(arg)
+      resTypes == type(sig,info)*ress
+  IN fun(argType%,tuple(resTypes))
+
+DEF type(sig,info)(funct(arg,res)) ==
+  LET argType  == type(sig,info)(arg)
+      resType  == type(sig,info)(res)
+  IN fun(argType%,resType)
+
+-- kann nur von anyType kommen
+DEF type(sig, info)(var(_)) == nullType
+DEF type(sig, info)(nonCartVar(_)) == ABORT("type'FctTranslation: nonCartVar")
+DEF type(sig, info)(cart(_)) == ABORT("type'FctTranslation: cart")
+DEF type(sig, info)(noFct) == ABORT("type'FctTranslation: noFct")
+
+-- ----------------------------------------------------------------------------
+
+FUN tuple: seq[type] -> type
+-- sequence may not contain exactly one element
+
+DEF tuple(types) == optSpec(ide(tuple(types#)),types)
+
+-- ----------------------------------------------------------------------------
+
+FUN type: globSig**info -> name -> type
+
+DEF type(sig,info)(name) ==
+  LET baseType == ide(ide(sig)(name))
+  IN IF (sig,name) parameter? THEN baseType
+     OTHERWISE
+     IF name internal? THEN optSpec(baseType,sortParamTypes(info))
+     IF name external? THEN
+       optSpec(baseType,
+               type(sig,info)*((\\n.sort?(sig,n))| origInst(sig,name)))
+     FI
+
+-- ----------------------------------------------------------------------------
+
+FUN optSpec: type**seq[type] -> type
+
+DEF optSpec(base,<>) == base
+DEF optSpec          == spec

@@ -1,0 +1,181 @@
+IMPLEMENTATION OptBrowser
+-- ============================================================================
+-- Autor:	ralfi
+-- Projekt:	OPAL1-Compiler
+-- Zweck:       Optionen fuer den Browser und Funktionen zu deren Verwaltung
+-- Version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/browser/browserLib/OptBrowser.impl,v 1.1.1.1 1998-06-16 15:59:55 wg Exp $
+-- ============================================================================
+
+IMPORT	Char		ONLY	char
+	NatConv		ONLY	` : nat -> denotation
+	Lib		ONLY	nl
+	Nat		ONLY	nat
+	Option		ONLY	avail nil option
+	Pair		ONLY	& pair
+	PrintableChar	ONLY	dot
+	Seq		ONLY	:: ::? <> <>? exist? ft rt seq
+	SeqFilter	ONLY	|
+	SeqReduce	ONLY	/
+	SeqMap		ONLY	*
+	String		ONLY	! : denotation -> string % ++ = string
+
+DATA arguments	==	abs(rep: seq[argument])
+			error
+
+DATA filetyp	==	sign
+			impl
+			intp
+			extp
+			error
+
+FUN nil : arguments
+DEF nil == abs(<>)
+
+FUN :: : argument ** arguments -> arguments
+DEF ::(A,As) == IF As error? THEN error
+		ELSE abs(A::rep(As)) FI
+
+FUN ! : arguments -> string
+DEF Args ! ==
+	IF Args error? THEN "ERROR"!
+	IF Args abs? THEN (("parsing ok"!)++nl)++
+		(/(\\S1,S2.((S1!)++(nl))++S2,""!)(Args rep))
+	FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+-- Optionen:
+
+FUN v1? : arguments -> bool
+DEF Args v1? == (lookForOption(Args)("v3"!))or
+		((lookForOption(Args)("v2"!))or(lookForOption(Args)("v1"!)))
+
+FUN v2? : arguments -> bool
+DEF Args v2? == ((lookForOption(Args)("v2"!))or(lookForOption(Args)("v3"!)))
+
+FUN v3? : arguments -> bool
+DEF Args v3? == lookForOption(Args)("v3"!)
+
+FUN allpos? : arguments -> bool
+DEF Args allpos? == lookForOption(Args)("allpos"!)
+
+FUN ca? : arguments -> bool
+DEF Args ca? == lookForOption(Args)("ca"!)
+
+FUN dumpObj? : arguments -> bool
+DEF Args dumpObj? == lookForOption(Args)("dumpObj"!)
+
+FUN nameNotPos? : arguments -> bool
+-- Suche nach textuellen Namen 
+DEF Args nameNotPos? == lookForOption(Args)("nameNotPos"!)
+
+FUN showType? : arguments -> bool
+-- Ausgabe was fuer ein Object das entspechende ist
+DEF Args showType? == lookForOption(Args)("showType"!)
+
+FUN chkUniqueImportInst? : arguments -> bool
+-- Es wird die Eindeutigkeit von Importinstanzen geprueft
+-- gegebenfalls wird die Herkunft annotiert
+DEF Args chkUniqueImportInst? == lookForOption(Args)("chkUniqueImportInst"!)
+
+FUN lookForOption : arguments -> string -> bool
+DEF lookForOption (Args)(Txt) ==
+	IF Args error? THEN false
+	IF Args abs? THEN (\\S.Txt=S) exist? (txt*(option? | (Args rep)))
+	FI
+
+FUN getPos : arguments -> nat ** nat ** nat ** nat
+-- PRE alle Positionen muessen in arguments vorhanden sein 
+DEF getPos(Args) == 
+  LET	SeqArg	== Args rep
+	RB	== pos((rowWordBeg?|SeqArg)ft)
+	CB	== pos((colWordBeg?|SeqArg)ft)
+	RE	== pos((rowWordEnd?|SeqArg)ft)
+	CE	== pos((colWordEnd?|SeqArg)ft)
+  IN (RB,CB,RE,CE)
+
+FUN getFiletyp : arguments -> filetyp
+DEF getFiletyp(Args) ==
+  LET	SeqFn	== filename?|(Args rep)
+  IN	IF SeqFn <>? THEN error
+	OTHERWISE
+	IF (SeqFn rt) ::? THEN error
+	ELSE ext(SeqFn ft)
+	FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+
+DATA argument	==	command(txt: string, nr: nat)
+			option(txt: string)
+			name(txt: string)
+			level(txt: string)
+			filename(path:string, base: string, ext: filetyp)
+			rowCursor(pos: nat)
+			colCursor(pos: nat)
+			rowWordBeg(pos: nat)
+			colWordBeg(pos: nat)
+			rowWordEnd(pos: nat)
+			colWordEnd(pos: nat)
+FUN ! : filetyp -> string
+DEF FT ! ==	IF FT sign?	THEN signExt
+		IF FT impl?	THEN implExt
+		IF FT extp?	THEN extpExt
+		IF FT intp?	THEN intpExt
+		IF FT error?	THEN "error"!
+		FI
+
+FUN ! : argument -> string
+DEF Arg ! ==
+	IF Arg command? THEN ("Command:"!) ++ (Arg txt)
+	IF Arg filename? THEN ("IO-Name:"!) ++ mkIOName(Arg)
+	IF Arg option? THEN ("Option:"!) ++ (Arg txt)
+	IF Arg name? THEN ("Name:"!) ++ (Arg txt)
+	IF Arg level? THEN ("Level:"!) ++ (Arg txt)
+	ELSE 	(IF Arg	rowCursor? THEN "rowCursor: "!
+		IF Arg	colCursor? THEN "colCursor: "!
+		IF Arg	rowWordBeg? THEN "rowWordBeg: "!
+		IF Arg	colWordBeg? THEN "colWordBeg: "!
+		IF Arg	rowWordEnd? THEN "rowWordEnd: "!
+		IF Arg	colWordEnd? THEN "colWordEnd: "!
+		FI) ++ ((pos(Arg)`)!)
+	FI
+
+FUN filename : arguments -> option[string]
+DEF filename(Args) ==
+  LET	FNs	== (filename? | (Args rep))
+  IN	IF FNs <>? THEN nil -- error
+	OTHERWISE
+	IF rt(FNs) ::? THEN nil -- error
+	ELSE avail(mkIOName(ft(FNs))) -- ok
+	FI
+
+FUN command : arguments -> option[pair[string,nat]]
+DEF command(Args) ==
+  LET	FNs	== (command? | (Args rep))
+  IN	IF FNs <>? THEN nil -- error
+	OTHERWISE
+	IF rt(FNs) ::? THEN nil -- error
+	ELSE avail(&(txt(ft(FNs)),nr(ft(FNs)))) -- ok
+	FI
+
+FUN name : arguments -> (argument -> bool) -> option[string]
+DEF name(Args)(Test?) ==
+  LET	FNs	== (Test? | (Args rep))
+  IN	IF FNs <>? THEN nil -- error
+	OTHERWISE
+	IF rt(FNs) ::? THEN nil -- error
+	ELSE avail(txt(ft(FNs))) -- ok
+	FI
+
+FUN mkIOName : argument -> string
+DEF mkIOName(filename(Path,Base,error)) == "mkIOName: FT-error"!
+DEF mkIOName(filename(Path,Base,FT)) ==
+	((Path++ioDir)++Base) ++ (((dot%)++(FT!))++((dot%)++ioExt))
+DEF mkIOName(_) == "mkIOName: use-error"!
+
+-- FUN ioDir ioExt signExt implExt intpExt extpExt: string
+DEF ioDir == "OCS/"!
+DEF ioExt == "inter"!
+DEF intpExt == "intp"!
+DEF extpExt == "extp"!
+DEF implExt == "impl"!
+DEF signExt == "sign"!

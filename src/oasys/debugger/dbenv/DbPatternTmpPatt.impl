@@ -1,0 +1,70 @@
+IMPLEMENTATION DbPatternTmpPatt
+
+IMPORT
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqOfSeq	COMPLETELY
+	SeqExtensions	COMPLETELY
+	Nat		COMPLETELY
+	ABORT		COMPLETELY
+IMPORT	-- repo
+	RepoAbsy	COMPLETELY
+	RepoName	COMPLETELY
+
+-- % without toplevel name:
+DEF expr2tmpPattWithoutTop(Expr) == 
+    tmpPatt(expr2tmpPattWithoutTop1(Expr))
+
+  FUN expr2tmpPattWithoutTop1 : expr'RepoAbsy -> seq[tmpPattItem]
+  DEF expr2tmpPattWithoutTop1(name(_,_)) == <>
+  DEF expr2tmpPattWithoutTop1(apply(_,F,A)) ==
+      expr2tmpPattWithoutTop1(F) ++ expr2tmpPatt1(A)
+  DEF expr2tmpPattWithoutTop1(_) == 
+      ABORT("expr2tmpPattWithoutTop'PatternAna: wrong kind of pattern")
+
+-- % common conversion to temporary pattern:
+DEF expr2tmpPatt(Expr) == tmpPatt(expr2tmpPatt1(Expr))
+
+  FUN expr2tmpPatt1 : expr'RepoAbsy -> seq[tmpPattItem]
+  DEF expr2tmpPatt1(any(_))    == %(any)
+
+  -- % globale Namen sind immer Konstruktoren
+  DEF expr2tmpPatt1(name(_,N AS globalObjectName(_,_))) == 
+      %(constr(N,tmpPatt(<>)))
+  -- % lokale Namen sind immer Variablen
+  DEF expr2tmpPatt1(name(_,N AS localObjectName(_,_))) == %(var(N))
+  DEF expr2tmpPatt1(as(_,V,P)) == %(as(V,theuniq(expr2tmpPatt1(P))))
+  DEF expr2tmpPatt1(apply(_,name(_,C),A)) == %(constr(C,expr2tmpPatt(A)))
+  -- % Sonderbehandlung des leeren Tupels als anonymes Datum:
+  DEF expr2tmpPatt1(tuple(_,<>)) == %(any)
+  DEF expr2tmpPatt1(tuple(_,E)) == flat(expr2tmpPatt1 * E)
+
+
+
+-- % conversion of names to temporary patterns:
+DEF names2tmpPatt(Names) == tmpPatt(var * Names)
+
+
+/* %
+ Die Dimension eines (temporären) Patterns entspricht der Anzahl der Elemente
+in diesem Pattern.
+ */
+DEF dim(tmpPatt(Patts)) == #(Patts)
+
+
+-- %definition of temporary patterns:
+
+DATA tmpPatt == tmpPatt(patts: seq[tmpPattItem])
+
+DATA tmpPattItem ==
+	any
+	var(	name:	objectName
+	)
+	constr(	constr:	objectName,
+		args:	tmpPatt
+	)
+	as(	name:	objectName,
+		patt:	tmpPattItem
+	)
+
+

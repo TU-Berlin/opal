@@ -1,0 +1,119 @@
+-- LAST EDIT: Wed Aug 30 12:40:52 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     intermediate representation of partNames for signature analysis
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+IMPLEMENTATION PartNameEntry
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Objects			COMPLETELY
+	Name			ONLY < > `
+	-- absy/token
+	Fct			ONLY fct ` 
+	Rep			ONLY < lexem
+	PartName		ONLY <
+	-- lib
+	Option			COMPLETELY
+	SeqCompare		COMPLETELY
+	Nat			ONLY < > 0
+	Pair			COMPLETELY
+	Compose 		ONLY o
+	NatConv			ONLY `
+	OptionConv 		ONLY `
+	PairConv		ONLY `
+	SeqConv			ONLY ` string
+	Denotation 		ONLY ++
+	SeqZip			ONLY zip
+	Name			ONLY `
+
+-- ---------------------------------------------------------------------------
+
+DATA sortPNE == sortPNE(syntax : partName, pN  : pN )
+DATA instPNE ==	
+    deepInstPNE(pos : pos, syntax : seq[partName], 
+		context : seq[option[fct[name]]], deepInsts : seq[pN])
+    flatInstPNE(pos : pos,context : seq[option[fct[name]]],
+		flatInsts : seq[seq[flatPnEle]] )
+DATA onlyPNE == onlyPNE( pN : pN, errInfo:errInfo )
+
+DATA instCand == &(cands : seq[name], instAn : instPN)
+
+DATA pN ==
+    deepPN(errInfo : errInfo, cands : seq[instCand],
+	   fct : option[fct[sortPN]] )
+    flatPN(errInfo : errInfo, flatPN : seq[flatPnEle] )
+
+DATA flatPnEle == 
+    flatPnEle(name : name,inst : instPN,fct : option[fct[sortPN]],
+	      errInfo : errInfo)
+
+DATA errInfo == errInfo( ide:rep, pos:pos )
+
+-- ---------------------------------------------------------------------------
+-- Updates
+
+DEF upd(pN)(sPN)  == sortPNE(syntax(sPN), pN)
+DEF upd(pNS)(iPN) == deepInstPNE(pos(iPN), syntax(iPN), context(iPN), pNS)
+DEF upd(pNS)(iPN) == flatInstPNE(pos(iPN), context(iPN), pNS)
+DEF upd(pN)(oPN)  == onlyPNE(pN, errInfo(oPN))
+
+-- ---------------------------------------------------------------------------
+-- Ungleichheiten
+
+DEF s1 < s2 == syntax(s1) < syntax(s2)
+
+DEF i1 << i2 == <?(cmp(< :partName**partName->bool)(syntax(i1),syntax(i2)))
+
+
+-- ---------------------------------------------------------------------------
+-- Dumps
+
+FUN ` : sortPNE -> denotation
+DEF `(sortPN:sortPNE) == `(pN(sortPN))
+
+FUN ` : instPNE -> denotation
+DEF `(instPN:instPNE) == 
+        IF instPN deepInstPNE? THEN
+         ("deepInstPN:") ++ 
+         `'SeqConv("[",",","]")(`'PairConv(`'OptionConv(`'Fct(`'Name)) ,
+                         (` :pN -> denotation)))
+           (zip(&[option[fct[name:SORT]:SORT],pN:SORT])
+                (context(instPN),deepInsts(instPN)))
+        IF instPN flatInstPNE? THEN
+         ("flatInstPN:") ++ 
+         `'SeqConv("{",",","}")(!!!!)(flatInsts(instPN))
+         WHERE !!!! == `'SeqConv("[",",","]")(` : flatPnEle -> denotation)
+        FI
+
+FUN ` : flatPnEle -> denotation
+DEF `(flatPN:flatPnEle) == 
+        `'Name(name(flatPN))++","++ `'NatConv(no(inst(flatPN))) ++"," ++ 
+                `'OptionConv(`'Fct(`'NatConv o no ))(fct(flatPN))
+
+FUN ` : instCand -> denotation
+DEF `(Names & InstPN) == "(" ++ `'SeqConv(`'Name)(Names) ++ "," ++
+                         `'NatConv(no(InstPN)) ++ ")"
+
+FUN ` : pN -> denotation
+DEF `(pN:pN) == 
+        IF pN deepPN? THEN
+          lexem(ide(errInfo(pN))) ++ "," ++ (possT ++ fctT)
+          WHERE
+          possT == `'SeqConv("{",",","}")(`)(cands(pN))
+          fctT == "," ++ `'OptionConv(`'Fct(`'NatConv o no ))(fct(pN))
+        IF pN flatPN? THEN
+--          `'SeqConv("{",",","}")(`'OptionConv(`'Fct(flatPN(pN))))
+          `'SeqConv("{",",","}")(`)(flatPN(pN))
+        FI
+
+FUN ` : onlyPNE -> denotation
+DEF ` (onlyPNE:onlyPNE) == `(pN(onlyPNE))

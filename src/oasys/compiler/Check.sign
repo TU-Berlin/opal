@@ -1,0 +1,134 @@
+/* % This structure provides operations for contex checking 
+and incrementally updating. */
+
+SIGNATURE Check
+
+IMPORT  Com[repo]                       ONLY com:SORT
+        Pair[updateResult,repo]         ONLY pair:SORT
+        Com[pair[updateResult,repo]]    ONLY com:SORT
+        Pair[checkExprResult,repo]      ONLY pair:SORT
+        Com[pair[checkExprResult,repo]] ONLY com:SORT
+        Seq[update]                     ONLY seq:SORT
+        Set[unitName,<]                 ONLY set:SORT
+        Set[objectName,<]               ONLY set:SORT
+
+IMPORT  RepoInternData          ONLY repo:SORT
+        RepoName                ONLY unitName:SORT
+                                        < : unitName ** unitName -> bool
+                                     objectName:SORT
+                                        < : objectName ** objectName-> bool
+                                     itemName:SORT 
+        RepoSource              ONLY item:SORT
+        RepoDiag                ONLY diag:SORT
+        RepoAbsy                ONLY expr:SORT
+
+
+-- %$Checking Units$ ================================================
+
+/* % The command @code{checkUnits(Units)(R)} tries to establish the
+checked-state for the given @code{Units} and all their transitive
+signature imports. The command @code{checkUnitsForExec(Units)(R)}
+additionally checks any implementations transitively required to
+execute code from the given @code{Units}. Both commands do nothing for
+a unit the checking state is already established for. Diagnostics
+and new absy events may be generated:  */
+
+FUN checkUnits          : set[unitName,<]       -> repo -> com[repo]
+FUN checkUnitsForExec   : set[unitName,<]       -> repo -> com[repo]
+
+/* % @code{guessCheckUnits} resp. @code{gessCheckUnitsForExec} returns
+the set of units which would be checked on a call to
+@code{checkUnits}, if everthing goes well:
+*/
+
+FUN guessCheckUnits        : set[unitName,<]    -> repo -> set[unitName,<]
+FUN guessCheckUnitsForExec : set[unitName,<]    -> repo -> set[unitName,<]
+
+
+-- %$Checking Expressions$ ============================================
+
+/* % @code{checkExpr(Unit, AddObjs, Text)} context-checks the given text
+as a closed expression in the context of @code{Unit}, which will be checked
+if necessary previously. @code{AddObjs} is a set of objects which should be
+made available in the expression additionally to the context of @code{Unit}.
+*/
+
+TYPE checkExprResult ==
+        failure         (diag   : diag)
+        success         (diag   : diag,
+                         expr   : expr)
+
+FUN checkExpr : unitName ** set[objectName,<] ** denotation 
+                        -> repo -> com[pair[checkExprResult, repo]]
+
+/* %Alternative: give also additional units, which
+    are imported completely. */
+
+FUN checkExpr : unitName ** set[objectName,<] ** set[unitName,<] ** denotation 
+                        -> repo -> com[pair[checkExprResult, repo]]
+
+-- %$Incremental Update of Units$ =========================================
+
+/* % The command @code{updateUnit(U, Updates)(R)} performs a
+sequence of incremental updates on the unit @code{U}, trying to
+preserve the checking-state of the unit. @code{U} and all its
+signature imports must have the checked-state, otherwise the command
+fails. */
+
+TYPE update ==
+        addItem         (item           : item)
+        replaceItem     (name           : itemName,
+                         item           : item)
+        removeItem      (name           : itemName)
+        
+TYPE updateResult ==
+        updateResult    (diag           : diag,
+                                        -- ok if no error
+                         effects        : updateEffects
+                        )
+
+TYPE updateEffects ==
+        localEffects    (newImports     : set[objectName,<],
+                         removedImports : set[objectName,<],
+                         newObjects     : set[objectName,<],
+                         removedObjects : set[objectName,<],
+                         newImpls       : set[objectName,<],
+                         removedImpls   : set[objectName,<])
+        globalEffects   (uncheckedUnits : set[unitName,<])
+
+
+FUN updateUnit  : unitName ** seq[update] -> repo 
+                                          -> com[pair[updateResult,repo]]
+
+/* % The sequence of updates describes which items should be added,
+replaced or removed from the unit. The updates can appear in an
+arbitrary order; however, first the removals will be performed and
+then the addings and replacements.
+
+The @code{updateEffects} type describes the effects caused by the
+incremental update (beside of the fact that items had been added,
+removed or changed):
+
+@itemize @bullet
+
+@item @code{localEffects} specifies that the effects of the update
+could have been localized to certain objects in the unit. A local
+effect is the adding of a new object (by import or declaration) the
+base name of which doesn't appear up to now in the unit [overloading
+-- relax?], or the removal of a object which is never applied. The
+adding, removal or update of a function definition can be always
+localized.
+
+@item @code{globalEffects} specifies that an incremental update has
+not been possible, and that the checking state of the given number of
+units had to be reset. A global effect is e.g. the adding of a new
+object (by import or declaration) the base name of which already
+appears in the unit, the removal of an object which is applied
+somewhere, or the change of an objects declaration. A global effect
+in a signature resets the checking state of all units importing this
+signature.
+
+@end itemize
+
+[more to come]
+*/

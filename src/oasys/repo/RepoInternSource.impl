@@ -1,0 +1,511 @@
+IMPLEMENTATION RepoInternSource
+
+IMPORT	Nat		COMPLETELY
+	Char		COMPLETELY
+	CharConv	COMPLETELY
+	PrintableChar	COMPLETELY
+	Denotation	COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqFilter	COMPLETELY
+	Set		COMPLETELY
+	File		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComSeqReduce	COMPLETELY
+	Void		COMPLETELY
+	Pair		COMPLETELY
+	IdTab		COMPLETELY
+
+IMPORT	RepoSource	COMPLETELY
+	RepoAn		ONLY an:SORT none:an
+	RepoAdmin	COMPLETELY
+	RepoUnitAccess	COMPLETELY
+	RepoSourceAccess	COMPLETELY
+	RepoInternData	COMPLETELY
+	RepoEvent	COMPLETELY
+	RepoComAbort	COMPLETELY
+
+		
+-- %$Parsing Source$ ========================================================
+
+/* % The problem with parsing is to distinguish outer, top-level
+comments which should appear as a single item from inner comments which 
+are attached to another item.  In order to solve this problem, we use
+a two-phase parsing. First, the source is splitted into a sequence 
+of items. For a source such as@footnote{There are problems with
+DOSFOP nested comments, hence we do not use the actual comment
+tokens.}
+
+@example
+  << outer comment >>		
+  FUN f: a -> b
+  << outer comment >>
+  DEF f(x) == 
+      << inner comment >>
+      x + 1
+  << outer comment >>
+  FUN g: a -> b
+  << outer comment >>
+@end example
+
+splitting yields the sequence 
+
+@example
+   comment fun comment def comment unknown comment fun comment
+@end example
+
+The important point is the @code{unknown} item for @code{x+1}: 
+whenever we exit scanning a comment, the stuff following the
+comment is treated as a single unknown item. In the second phase, we 
+merge any items inbetween a regular item and the last @code{unknown} 
+item before the next regular item to the previous regular item.
+*/
+
+DEF parseItems(Source) ==
+    LET (Items, Imports) == splitSource(Source)
+    IN
+    (mergeItems(Items), Imports)
+
+DEF parseImports(Source) ==
+    splitSourceForImports(Source)
+
+-- %$$Splitting$
+
+DATA splitState ==
+	splitState	(source		: denotation,
+			 curr		: nat,
+			 currPos	: pos,
+			 start		: nat,
+			 items		: seq[item],
+			 imports	: set[denotation,<])
+
+
+FUN splitSource	 : string -> seq[item] ** set[denotation,<]
+DEF splitSource(Source) ==
+    LET S == splitState(`(Source), 0, pos(1, 1), 0,
+			%(item(none :=_region region(pos(1,1),pos(1,1)), 
+						     unknown, "")),
+			{})
+	S1 == splitItems(S)
+    IN
+    (revert(items(S1)), imports(S1))
+
+FUN splitSourceForImports : string -> set[denotation,<]
+DEF splitSourceForImports(Source) ==
+    LET S == splitState(`(Source), 0, pos(1, 1), 0, <>, {})
+    IN
+    imports(splitItemsForImports(S))
+
+
+FUN splitItems	 	 : splitState		 -> splitState 
+FUN splitItemsForImports : splitState		 -> splitState 
+
+DEF splitItems(S) ==
+    IF curr(S) >= #(source(S)) THEN
+	closeItem(S)
+    ELSE
+	IF newline?(S) THEN
+	    splitItems(nextLine(S))
+	IF lineComment?(S) THEN 
+	    splitItems(skipLineComment(S))
+	IF blockCommentOpen?(S) THEN
+	    splitComment(nextItem(S, 2, unknown), 1)
+	IF deno?(S) THEN
+	    splitItems(skipDeno(nextChar(S)))
+	IF "FUN" <| S THEN
+	    splitItems(nextItem(S, 3, fun))
+	IF "SORT" <| S THEN
+	    splitItems(nextItem(S, 4, sort))
+	IF "TYPE" <| S THEN
+	    splitItems(nextItem(S, 4, type))
+	IF "DATA" <| S THEN
+	    splitItems(nextItem(S, 4, data))
+	IF "LAW" <| S THEN
+	    splitItems(nextItem(S, 3, law))
+	IF "DEF" <| S THEN
+	    splitItems(nextItem(S, 3, def))
+	IF "IMPORT" <| S THEN
+	    splitItems(nextItem(S, 6, import))
+	IF "SIGNATURE" <| S THEN
+	    splitItems(nextItem(S, 6, signature))
+	IF "IMPLEMENTATION" <| S THEN
+	    splitItems(nextItem(S, 14, implementation))
+	IF "ON" ++ "LY" <| S THEN
+	    splitItems(nextChar(addImport(S), 4))
+	IF "COM" ++ "PLETELY" <| S THEN
+	    splitItems(nextChar(addImport(S), 10))
+	ELSE
+	    splitItems(nextChar(S))
+	FI
+    FI
+
+DEF splitItemsForImports(S) ==
+    IF curr(S) >= #(source(S)) THEN
+    	S
+    ELSE
+	IF lineComment?(S) THEN 
+	    splitItemsForImports(skipLineComment(S))
+	IF blockCommentOpen?(S) THEN
+	    splitItemsForImports(skipComment(nextChar(S, 2), 1))
+	IF "ON" ++ "LY" <| S THEN
+	    splitItemsForImports(nextChar(addImport(S), 4))
+	IF "COM" ++ "PLETELY" <| S THEN
+	    splitItemsForImports(nextChar(addImport(S), 10))
+	ELSE
+	    splitItemsForImports(nextChar(S))
+	FI
+    FI
+    	
+
+FUN splitComment 	 : splitState ** nat	 -> splitState 
+DEF splitComment(S, Nest) ==
+    IF curr(S) >= #(source(S)) THEN
+	-- thats a lexical error, but we ignore it
+	closeItem(S)
+    ELSE
+	IF blockCommentOpen?(S) THEN
+	    splitComment(nextChar(S, 2), succ(Nest))
+	IF blockCommentClose?(S) THEN
+	    IF Nest > 1 THEN
+		splitComment(nextChar(S, 2), pred(Nest))
+	    ELSE
+		-- continue splitting an "unknown" item
+		splitItems(nextAfterCommentItem(S, unknown))
+	    FI
+	ELSE
+	    splitComment(nextChar(S), Nest)
+	FI
+    FI
+
+
+
+FUN newline? lineComment? blockCommentOpen? blockCommentClose? 
+    deno? denoEscape?  : splitState -> bool
+
+FUN <| : denotation ** splitState -> bool
+
+FUN prefix? : splitState ** denotation ** (char -> bool) -> bool
+
+DEF newline?(S) ==
+    source(S) ! curr(S) = newline
+
+DEF lineComment?(S) ==
+    prefix?(S, "--", \\ Ch. ~(Ch in specialSet))
+
+DEF blockCommentOpen?(S) ==
+    prefix?(S, "/*", \\ Ch. ~(Ch in specialSet))
+
+DEF blockCommentClose?(S) ==
+    prefix?(S, "*/", \\ Ch. ~(Ch in specialSet))
+
+DEF deno?(S) ==
+    prefix?(S, """", \\ _ . true)
+
+DEF denoEscape?(S) ==
+    prefix?(S, """""", \\ _ . true)
+
+DEF Key <| S ==
+    prefix?(S, Key, \\ Ch. ~(letgit?(Ch) or Ch = ?))
+
+DEF prefix?(S, Key, NextPred) ==
+    -- ASSERT #(Key) > 0 and curr(S) < #(source(S))
+    -- fast test if first character matches
+    IF Key ! 0 = source(S) ! curr(S) THEN
+	prefix?(source(S), succ(curr(S)), Key, 1, NextPred)
+    ELSE false FI
+
+    /$ unfold [prefix? : splitState ** denotation ** (char -> bool) 
+				    -> bool] $/ 
+
+    FUN prefix? : denotation ** nat ** denotation ** nat ** (char -> bool) 
+							 -> bool
+    DEF prefix?(Source, I, Key, J, NextPred) ==
+	IF J < #(Key) THEN
+	    IF I < #(Source) ANDIF Key ! J = Source ! I THEN
+		prefix?(Source, succ(I), Key, succ(J), NextPred)
+	    ELSE false FI
+	OTHERWISE
+	IF I < #(Source) THEN
+	    NextPred(Source ! I)
+	ELSE true FI
+
+	    
+
+FUN nextChar nextLine skipLineComment skipDeno closeItem 
+					: splitState -> splitState
+FUN skipComment : splitState ** nat -> splitState
+FUN nextAfterCommentItem : splitState ** itemKind -> splitState
+FUN nextChar : splitState ** nat -> splitState
+FUN nextItem : splitState ** nat ** itemKind -> splitState
+
+	    
+DEF nextChar(splitState(Source, Curr, pos(Line, Col), Start, Items, Imports)) 
+								==
+    splitState(Source, succ(Curr), pos(Line, succ(Col)), Start, Items, Imports)
+
+DEF nextChar(splitState(Source, Curr, pos(Line, Col), 
+			Start, Items, Imports), N) ==
+    splitState(Source, Curr + N, pos(Line, Col + N), Start, Items, Imports)
+
+DEF nextLine(splitState(Source, Curr, pos(Line, Col), 
+			Start, Items, Imports)) ==
+    splitState(Source, succ(Curr), pos(succ(Line), 1), Start, Items, Imports)
+
+DEF skipLineComment(splitState(Source, Curr, pos(Line, Col), 
+			       Start, Items, Imports)) ==
+    LET Curr1 == skip(Source, Curr)
+    IN 
+    splitState(Source, Curr1, pos(succ(Line), 1), Start, Items, Imports)
+
+    FUN skip : denotation ** nat -> nat
+    DEF skip(Source, Curr) ==
+	IF Curr < #(Source) THEN
+	    IF Source ! Curr = newline THEN
+		succ(Curr)
+	    ELSE skip(Source, succ(Curr)) FI
+	ELSE Curr FI
+
+DEF skipComment(S, Nest) ==
+    IF curr(S) >= #(source(S)) THEN
+    	S
+    ELSE
+	IF blockCommentOpen?(S) THEN
+	    skipComment(nextChar(S, 2), succ(Nest))
+	IF blockCommentClose?(S) THEN
+	    IF Nest > 1 THEN
+		skipComment(nextChar(S, 2), pred(Nest))
+	    ELSE
+		nextChar(S, 2)
+	    FI
+	ELSE
+	    skipComment(nextChar(S), Nest)
+	FI
+    FI
+
+DEF skipDeno(S) ==
+    IF denoEscape?(S) THEN skipDeno(nextChar(nextChar(S)))
+    OTHERWISE 
+    IF deno?(S) THEN nextChar(S)
+		ELSE skipDeno(nextChar(S)) FI
+
+
+DEF closeItem(splitState(Source, Curr, Pos, 
+			 Start, Item :: Items, Imports)) ==
+    IF Curr = Start THEN
+	-- through away empty item
+	splitState(Source, Curr, Pos, Start, Items, Imports)
+    ELSE
+       LET Region == region(start(region(an(Item))), Pos)
+	   Text	  == !(slice(Source, Start, Curr - 1))
+       IN
+       splitState(Source, Curr, Pos, Curr, 
+			item(an(Item) :=_region Region,
+			     kind(Item),
+			     Text) :: Items, Imports) 
+    FI
+
+DEF nextItem(splitState(Source, Curr, pos(Line, Col), 
+			Start, Items, Imports), N, Kind) ==
+    -- put any whitespace left of Curr until the beginning of the line
+    -- in next item
+    LET (CurrBack, ColBack) == skipToBol(Source, Curr, Col)
+    IN
+    nextItem1(closeItem(splitState(Source, CurrBack, pos(Line, ColBack),
+				   Start, Items, Imports)),
+	      Curr, Col, N, Kind)
+
+    FUN nextItem1 : splitState ** nat ** nat ** nat ** itemKind -> splitState
+    DEF nextItem1(splitState(Source, Curr, pos(Line, Col), 
+			 Start, Items, Imports), ActCurr, ActCol, N, Kind) ==
+    LET NewItem == item(none :=_region region(pos(Line,Col),
+					      pos(Line,Col)), 
+			Kind, "")
+    IN
+    splitState(Source, ActCurr + N, pos(Line, ActCol + N), Start, 
+	       NewItem :: Items, Imports)
+
+    FUN skipToBol : denotation ** nat ** nat -> nat ** nat
+    DEF skipToBol(Source, Curr, Col) ==
+	IF Col > 1 ANDIF space?(Source ! pred(Curr)) THEN
+	    skipToBol(Source, pred(Curr), pred(Col))
+	ELSE (Curr, Col) FI
+	
+      
+DEF nextAfterCommentItem(splitState(Source, Curr, pos(Line, Col), 
+			Start, Items, Imports), kind) ==
+    -- in difference to normal items, the */ we are looking at
+    -- belongs to the current item
+    LET S1 == closeItem(splitState(Source, Curr+2, pos(Line, Col+2),
+			Start, Items, Imports))
+    IN
+    nextItem1(S1, Curr+2, Col+2, 0, kind)
+
+
+
+FUN addImport : splitState -> splitState
+
+DEF addImport(S AS splitState(Source, Curr, Pos, 
+			      Start, Items, Imports)) ==
+    -- looking at COMPLETELY or ONLY; extract the structure name left
+    -- of us
+    IF Curr > 0 ANDIF #(findImport(Source, pred(Curr))) > 0 THEN
+	splitState(Source, Curr, Pos, Start, Items, 
+		   incl(findImport(Source, pred(Curr)), Imports))
+    ELSE
+	S
+    FI
+
+FUN findImport : denotation ** nat -> denotation
+
+DEF findImport(Source, Curr) ==
+    IF Curr > 0 THEN
+	IF space?(Source ! Curr) THEN
+	    findImport(Source, pred(Curr))
+	IF Source ! Curr = rsqbrace THEN
+	    -- skip instantiation
+	    skipInst(Source, pred(Curr), 1)
+	ELSE
+	    findImport1(Source, pred(Curr), Curr)
+	FI
+    ELSE slice(Source, 0, 0) FI
+
+    FUN skipInst : denotation ** nat ** nat -> denotation
+    FUN findImport1 : denotation ** nat ** nat -> denotation
+
+    DEF skipInst(Source, Curr, Nest) ==
+	-- known bug: comments in instantiations containing [ or ] ...
+	IF Curr > 0 THEN
+	    IF Source ! Curr = rsqbrace THEN
+		skipInst(Source, pred(Curr), succ(Nest))
+	    IF Source ! Curr = lsqbrace THEN
+		IF Nest > 1 THEN
+		    skipInst(Source, pred(Curr), pred(Nest))
+		ELSE
+		    findImport(Source, pred(Curr))
+		FI
+	    ELSE
+		skipInst(Source, pred(Curr), Nest)
+	    FI
+	ELSE findImport(Source, Curr) FI
+
+    DEF findImport1(Source, Left, Right) ==
+	-- known bug: using space as separator ...
+	IF Left > 0 ANDIF ~(space?(Source ! Left)) THEN
+	    findImport1(Source, pred(Left), Right)
+	OTHERWISE 
+	IF Left >= Right THEN
+	    ""
+	ELSE slice(Source, Left+1, Right) FI
+
+		
+/* From @code{oc1/parser/Scanner.impl}: */
+
+FUN specialSet : set[char,<]
+DEF specialSet == 
+	incl(\ ,incl(!,incl(#,incl($,incl(%,incl(&,incl(*,incl(+,incl(-,
+	incl(/,incl(;,incl(<,incl(=,incl(>,incl(?,incl(@, incl(^,
+	incl(underscore,
+	incl(lsngquote,incl({,incl(|,incl( } ,incl(~,incl(dot,(colon %)
+	))))))))))))))))))))))))
+	
+-- %$$Merging$
+
+FUN mergeItems mergeItems1 : seq[item] -> seq[item]
+
+DEF mergeItems(Items) ==
+    -- merge any leading stuff into one single comment
+    LET (Pre, Rest) == split(\\I. comment?(kind(I)) or unknown?(kind(I)),
+			     Items)
+    IN
+    merge(Pre) ++ mergeItems1(Rest)
+
+DEF mergeItems1(Items) ==
+    -- ::?(Items) => kind of ft is not a comment or unknown
+    IF ::?(Items) THEN
+	-- split any stuff until next regular item
+	LET (Body, Rest) == split(\\I . comment?(kind(I)) or unknown?(kind(I)),
+				  rt(Items))
+	IN
+	-- treat trailing comment items of Body as a top-level comment
+	LET (Comment, Body1) == split(\\I . comment?(kind(I)),
+				      revert(Body))
+	IN
+	merge(ft(Items) :: revert(Body1)) ++ merge(revert(Comment))
+					  ++ mergeItems1(Rest)
+    ELSE <> FI
+
+FUN merge : seq[item] -> seq[item]
+
+DEF merge(<>) == <>
+DEF merge(Item :: Items) ==
+    LET Region == (\\I, R . R + region(an(I)), region(an(Item))) \ Items
+	Text   == (\\I, T. T ++ text(I), text(Item)) \ Items
+    IN
+    %(item(none :=_region Region,
+	   IF unknown?(kind(Item)) THEN comment
+				   ELSE kind(Item) FI,
+	   Text))
+
+
+-- %$Loading and Flushing Unit Source$ =======================================
+
+
+DEF loadUnitSource(Name)(R) ==
+  checkIO(
+    checkSourceFile(Name)(R)				& (\\ R1 .
+    (IF existent?(sourceFile(Name)(R1)) THEN
+	open(path(sourceFile(Name)(R1)), "r")		    & (\\ Descr .
+	read(Descr, max:nat)				    & (\\ Text .
+	close(Descr)					    & (\\ _ .
+	IF sourced?(Name)(R) THEN
+	    LET (Items, Imports) == parseItems(Text)
+	    IN
+	    succeed(Items & Imports)
+	ELSE 
+	    LET Imports == parseImports(Text)
+	    IN
+	    succeed(<> & Imports) 
+	FI
+	)))
+     ELSE
+	succeed(<> & {})
+     FI)						& (\\ Res .
+     LET R2 == updateUnitInfo(Name,
+		   \\ Info . Info :=_items {}
+				  :=_itemOrder <>
+				  :=_itemImports 2nd(Res)
+				  :=_flags incl(flushed,
+						flags(Info))
+	       )(R1)
+	 (_, R3) == newItems(Name, 1st(Res))(R2)
+     IN
+     event(newSource(Name))(R3)
+     ))
+ )
+
+
+DEF flushUnitSource(Name)(R) ==
+    IF ~(sourced?(Name)(R)) or flushed?(Name)(R) THEN
+	succeed(R)
+    ELSE
+	LET Items == (\\ItemName . item(ItemName)(R)) 
+				* itemOrder(Name)(R)
+	IN
+	open(path(sourceFile(Name)(R)), "w")		    & (\\ Descr .
+	(\\ Item, _ . write(Descr, text(Item)),
+	 nil) /& Items					    & (\\ _ .
+	close(Descr)					    & (\\ _ .
+	checkSourceFile(Name)(R)			    & (\\ R1 .
+	succeed(
+	    updateUnitInfo(Name, \\ Info .
+		Info :=_flags incl(flushed, flags(Info))
+	    )(R1)
+	)
+	))))
+    FI
+
+

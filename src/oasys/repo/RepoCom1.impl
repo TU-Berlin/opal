@@ -1,0 +1,62 @@
+IMPLEMENTATION RepoCom1
+
+IMPORT	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	Pair		COMPLETELY
+	RepoCom		COMPLETELY
+
+FUN with : repo ** com[data] -> com[pair[data,repo]]
+DEF with(Repo,Cmd) ==
+      setRepository(Repo)	& (
+      Cmd			& (\\Data.
+      getAndClearRepository	& (\\Repo1.
+      succeed(Data & Repo1)	)))
+
+-- query
+FUN query : (repo -> data) -> com[data]
+DEF query(F) ==
+    getAndClearRepository	& (\\Repo.
+    succeed(F(Repo))		& (\\Data.
+     -- reset repo to global state
+    setRepository(Repo)		&
+    succeed(Data)		))
+
+FUN query? : (repo -> ans[data]) -> com[data]
+DEF query?(AnsF) ==
+    getRepository		& (\\Repo.
+    (IF AnsF(Repo) okay?
+      THEN succeed(AnsF(Repo) data)
+      ELSE break(AnsF(Repo) error)
+    FI)				& (\\Data.
+    setRepository(Repo)		&
+    succeed(Data)		))
+
+FUN query : (repo -> com[data]) -> com[data]
+DEF query(Cmd) ==
+    getRepository		& (\\Repo.
+    Cmd(Repo)			& (\\Data.
+    succeed(Data)		))
+
+-- query and update
+FUN queryUpd : (repo -> data ** repo) -> com[data]
+DEF queryUpd(F) ==
+    getAndClearRepository		& (\\Repo.
+    succeed(&(F(Repo)))		     & (\\DataAndRepo.
+     -- reset repo to global state
+    setRepository(DataAndRepo 2nd)	&
+    succeed(DataAndRepo 1st)		))
+
+FUN queryUpd : (repo -> com[pair[data,repo]]) -> com[data]
+DEF queryUpd(Cmd) ==
+    getAndClearRepository		& (\\Repo.
+    Cmd(Repo)				; (\\DataAndRepo?.
+    IF okay?(DataAndRepo?) THEN
+        -- reset repo to global state
+        setRepository(data(DataAndRepo?) 2nd)	&
+	succeed(data(DataAndRepo?) 1st)
+    ELSE
+    	-- restore old repository
+	setRepository(Repo)			&
+	break(error(DataAndRepo?))
+    FI
+    ))

@@ -1,0 +1,523 @@
+
+IMPLEMENTATION OptimPath
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: optimization of evaluation path
+-- project: acc
+-- author:  wg
+
+IMPORT  Nat             ONLY nat
+        DENOTATION      ONLY denotation
+        Seq             COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+        Option          COMPLETELY
+        Compose         ONLY o
+	Option		COMPLETELY
+
+IMPORT  Ide             COMPLETELY
+        Ac              COMPLETELY
+	AcFun		ONLY neverReached?
+        An	        ONLY an none set:an**typeAn->an source:an->sourceAn
+        TypeAn          ONLY type:SORT typeAn typing:type->typeAn
+	SourceAn	ONLY sourceAn error? kind errorKind never?
+        IdeMap          ONLY ideMap {} def ! <+ def? !? 
+        IdeSet          ONLY ideSet {} {}? incl excl in + - * explode | *-
+			     implode <=
+	PreparedOptions ONLY liftMFE?
+	Error		ONLY ok
+
+IMPORT  IdeOrd          ONLY ideOrd {} arc point topSort extract format uppers
+        EqnSys          ONLY eqnSys equated? rhs an deps
+
+
+-- debugging
+
+IMPORT	Nat ONLY 0
+	Format COMPLETELY
+	FormatFun1 COMPLETELY
+	FormatDebug COMPLETELY
+	DEBUG ONLY FIELD?
+
+FUN format: ideSet -> format
+DEF format(is) == list(str("{"),str(","),str("}"),format)(explode(is))
+
+
+-- -------------------------------------------------------------------------
+
+FUN lazyLet? : bool
+DEF lazyLet? == FIELD?[bool]("-zoLazyLet")
+
+FUN liftImpliedStrict? : bool
+DEF liftImpliedStrict? == true
+
+
+-- -------------------------------------------------------------------------
+
+FUN optimPath : popts ** unit ** dec ** eqnSys ** exp -> dec ** err
+DEF optimPath(o,U,d,S,e) ==
+    (binding(an(d),ide(d),mode(d),r),ok)
+	WHERE r == generatePath(S,atrs(T),ord(T),e)
+	      T == analyzePath( inh(o,U,S,{},ide(d),{}),
+				thr({},{},{},{},{}), e)
+	
+-- -------------------------------------------------------------------------
+
+DATA inh ==
+    inh	   (popts: popts,	-- prepared options
+	    unit: unit,		-- target unit
+	    sys: eqnSys,	-- equation system
+	    bound: ideSet,	-- bounded variables 
+	    target: ide,	-- ide of function being analyzed
+	    forced: ideSet	-- eqns strictly forced by context
+	    )
+
+FUN updBound : inh ** ideSet -> inh
+DEF inh(p,u,s,_,t,f) updBound b == inh(p,u,s,b,t,f)
+
+FUN updForced : inh ** ideSet -> inh
+DEF inh(p,u,s,b,t,_) updForced f == inh(p,u,s,b,t,f)
+
+
+DATA thr == 
+    thr    (visited: ideSet,	-- equations already visited.
+	    atrs: ideMap[atr],	-- attribute mapping of visted equations
+	    deps: ideSet,	-- all strict dependencies of currently
+				-- visiting equation
+	    free: ideSet,	-- all involved free ides of currently
+				-- visting equation
+	    ord: ideOrd		-- topological ordering of dependencies
+				-- (if strict or not)
+	   )
+
+FUN updVisited : thr ** ideSet -> thr
+DEF thr(_,a,d,f,o) updVisited v == thr(v,a,d,f,o)
+
+FUN updDeps : thr ** ideSet -> thr
+DEF thr(v,a,_,f,o) updDeps d == thr(v,a,d,f,o)
+
+FUN updAtrs : thr ** ideMap[atr] -> thr
+DEF thr(v,_,d,f,o) updAtrs a == thr(v,a,d,f,o)
+
+FUN updFree : thr ** ideSet -> thr
+DEF thr(v,a,d,_,o) updFree f == thr(v,a,d,f,o)
+
+FUN updOrd  : thr ** ideOrd -> thr
+DEF thr(v,a,d,f,_) updOrd o == thr(v,a,d,f,o)
+
+
+DATA atr ==
+    atr	   (deps:  ideSet,
+	    free:  ideSet)	-- same as in thr, but calculation finished
+
+-- --------------------------------------------------------------------------
+FUN analyzePath  : inh ** thr ** exp -> thr
+    /* analyze evaluation path.
+    */
+FUN analyzeSubPath  : inh ** thr ** ide ** exp -> thr
+    /* analyze evaluation sub path.
+    */
+FUN analyzeIndir : inh ** thr ** ide -> thr
+    /* analyze indirect dependencies.
+    */
+FUN analyzeRhs   : inh ** ide -> exp ** thr -> thr
+    /* analyze rhs of equated local ide.
+    */
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+DEF analyzePath(I,T,ide(_,id AS local(_))) ==
+    IF equated?(sys(I),id) THEN
+        LET T1 == analyzeIndir(I,T,id)
+	IN
+	T1 updDeps incl(id,deps(T1))
+    ELSE
+	(T updDeps {}) updFree incl(id,{})
+    FI
+	
+DEF analyzePath(I,T,e) ==
+    (T updDeps {}) updFree {}
+    
+DEF analyzeSubPath(I,T,lhs,ide(_,id AS local(_))) == 
+    IF equated?(sys(I),id) THEN
+        LET T1 == analyzeIndir(I,T,id)
+	IN
+	(T1 updDeps incl(id,deps(T1)))
+	    updOrd  arc(lhs)(id,ord(T1))
+    ELSE
+	(T updDeps {}) updFree incl(id,{})
+    FI
+	
+DEF analyzeSubPath(I,T,lhs,e) ==
+    (T updDeps {}) updFree {}
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+DEF analyzeIndir(I,T,id AS local(_)) ==
+    IF id in visited(T) THEN
+        -- already visited; retrieve deps and free from attribute 
+        (T updDeps deps(atrs(T)!id)) updFree free(atrs(T)!id)
+    ELSE
+	-- calculate closure of semantically forced
+	-- (as introduced by LET) dependencies of equation
+	-- and store in context
+	LET (T1,forcedClos) == 
+		analyzeForced(I,T updVisited incl(id,visited(T)),
+				  	explode(deps(sys(I),id)))
+	    I1		    == 
+		IF lazyLet? THEN I ELSE I updForced (forced(I) + forcedClos) FI
+	IN
+	-- calculate closure of syntactically forced dependencies,
+	-- store as attribute, and return 
+        LET T2 == ((T1  updDeps {})
+		        updFree {})
+			updOrd  point(id,ord(T1))
+	    T3 == analyzeRhs(I1,id)(rhs(sys(I1),id),T2)
+	    T4 == T3 updAtrs def(id,atr(deps(T3),free(T3)),atrs(T3))
+	IN
+	T4
+    FI
+
+
+  FUN analyzeForced : inh ** thr ** seq[ide] -> thr ** ideSet
+  DEF analyzeForced(I,T,id::ids) ==
+    LET (T1,forcedClos) == analyzeForced(I,T,ids)
+    IN
+    IF equated?(sys(I),id) THEN
+	LET T2 == analyzeIndir(I,T1,id) 
+	IN
+	(T2,forcedClos + incl(id,deps(T2)))
+    ELSE (T1,forcedClos) FI
+  DEF analyzeForced(I,T,<>) == (T,{})
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+DEF analyzeRhs(I,lhs)(e,T) == 
+    -- deno, error, ide(_,global(...))
+    T
+
+-- -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   - 
+DEF analyzeRhs(I,lhs)(ide(_,id AS local(_)),T) ==
+    IF equated?(sys(I),id) THEN
+        LET currdeps == deps(T)
+	    currfree == free(T)
+	    T1	 == analyzeIndir(I,T,id)
+	    T2	 == ((T1 updDeps incl(id,currdeps + deps(T1))) 
+			 updFree (currfree + free(T1)))
+			 updOrd  (arc(lhs)(id,ord(T1)))
+	IN
+	T2
+    ELSE
+	T updFree incl(id,free(T))
+    FI
+
+-- -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   - 
+DEF analyzeRhs(I,lhs)(apply(_,f,as),T) ==
+    (analyzeRhs(I,lhs) / T1)(as)
+      WHERE T1 == analyzeRhs(I,lhs)(f,T)
+
+-- -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   - 
+DEF analyzeRhs(I,lhs)(case(_,ds,ms,df),T) ==
+    LET T1 == analyzeRhs(I,lhs)(ds,T)
+	(T2,strictEqns,freeEqns,allEqns) == analyzeCase(I,T1,lhs,ms,df)
+	lift == forceNoTargetLift(I,T2,
+		   IF avail?(strictEqns) THEN cont(strictEqns) + freeEqns
+				         ELSE freeEqns FI
+		)
+	T3 == T2 updDeps (deps(T1) + lift)
+    IN
+    T3
+
+
+  FUN analyzeCase : inh ** thr ** ide ** seq[match] ** exp 
+			-> thr ** option[ideSet] ** ideSet ** ideSet
+  DEF analyzeCase(I,T,lhs,<>,df) ==
+    IF neverReached?(popts(I),df) THEN
+	(T,nil,{},{})
+    ELSE
+        LET currfree == free(T)
+	    T1 == analyzeSubPath(I,T,lhs,df)
+	    strictEqns == deps(T1)
+	    forcedEqns == deps(T1) * forced(I)
+	    freeEqns == IF liftMFE?(popts(I)) THEN
+			    forcedEqns + (liftCand?(I,T1,bound(I)) | deps(T1))
+			ELSE forcedEqns FI
+	    T2 == T1 updFree (currfree + free(T1))
+	IN
+	(T2,avail(strictEqns),freeEqns,strictEqns)
+    FI
+
+  DEF analyzeCase(I,T,lhs,match(c,vs,s)::ms,df) ==
+    LET (T1,strictEqns,freeEqns,allEqns) == analyzeCase(I,T,lhs,ms,df)
+    IN
+    IF neverReached?(popts(I),s) THEN
+	(T1,strictEqns,freeEqns,allEqns)
+    ELSE
+	LET matchbound == ((\\v,r. incl(ide(v),r)) / {})(vs)
+	    newbound   == bound(I) + matchbound
+	    currfree   == free(T1)
+   	    T2	       == analyzeSubPath(I updBound newbound,T1,lhs,s)
+	    newStrictEqns == liftCand?(I,T2,matchbound) | 
+		       				(deps(T2) * strictEqns)
+	    newForcedEqns == deps(T2) * forced(I)
+	    newFreeEqns == 
+	      IF liftMFE?(popts(I)) THEN
+		  (newForcedEqns + freeEqns)
+			+ (liftCand?(I,T2,newbound) | deps(T2)) 
+	      ELSE newForcedEqns + freeEqns FI
+	    T3  == T2 updFree (currfree + (free(T2) - matchbound))
+	IN
+	(T3,avail(newStrictEqns),newFreeEqns,allEqns + deps(T2))
+    FI
+
+  FUN * : ideSet ** option[ideSet] -> ideSet
+  DEF s * nil == s
+  DEF s * avail(s1) == s * s1
+
+  FUN liftCand? : inh ** thr ** ideSet -> ide -> bool
+  DEF liftCand?(I,T,bound)(id) ==
+    -- cand is regarded as liftable if there is no intersection
+    -- of its free vars with bound
+    {}?(bound * free(atrs(T)!id))
+
+	
+  FUN forceNoTargetLift : inh ** thr ** ideSet -> ideSet
+  DEF forceNoTargetLift(I,T,lift) ==
+    -- we do not want to lift applications of the target function,
+    -- since this destroys some sources for recursion elimination.
+    -- but oh god, this is expensive ...
+    LET targetApplies == targetApply?(I) | lift
+    IN
+    IF {}?(targetApplies) THEN
+	lift
+    ELSE
+	LET closureOfTargetApplies == 
+	     ( (\\id,c. uppers(ord(T),id) + c) / {})(explode(targetApplies))
+        IN
+        lift - closureOfTargetApplies
+    FI
+
+
+  FUN targetApply? : inh -> ide -> bool
+  DEF targetApply?(I)(id) ==
+    -- should account rank, but doesn't currently
+    IF apply?(e) THEN ide(fun(e)) = target(I) ELSE false FI
+      WHERE e == rhs(sys(I),id)
+
+
+
+-- -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   - 
+DEF analyzeRhs(I,lhs)(lambda(_,vs,s),T) ==
+    LET lambound == ((\\v,r. incl(ide(v),r)) / {})(vs)
+        newbound == IF liftMFE?(popts(I)) THEN
+			lambound
+			-- vars bounded in outer lambdas 
+			-- are treated as "constants", and expressions
+			-- depending only on them are lifted out.
+			-- ("hyper-strict" semantics)
+		    ELSE
+			bound(I) + lambound
+			-- this prevents lifting of subexpressions
+			-- independent of the lambda-bound vars.
+			-- ("omega-completed" semantics)
+		    FI
+	T1	 == analyzeSubPath(I updBound newbound,T,lhs,s)
+	liftMFE	 == IF liftMFE?(popts(I)) THEN
+			liftCand?(I,T1,newbound) | deps(T1)
+		    ELSE {} FI
+	lift     == liftMFE + (deps(T1) * forced(I))
+	T2	 == (T1 updDeps lift) updFree (free(T1) - lambound)
+    IN
+    T2
+
+    
+-- -------------------------------------------------------------------------
+-- Rebuild expression from equation system, attribute mapping, and ordering
+
+FUN generatePath : eqnSys ** ideMap[atr] ** ideOrd ** exp -> exp
+
+FUN generatePath : eqnSys ** ideMap[atr] ** seq[ideSet] ** exp -> exp
+
+FUN generateSequ : eqnSys ** ideMap[atr] ** seq[ideSet] 
+					      ** seq[ideSet] ** exp -> exp
+
+FUN generateRhs  : eqnSys ** ideMap[atr] ** seq[ideSet] ** exp -> exp
+
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+DEF generatePath(S,atrs,ord,e)  == 
+    generatePath(S,atrs,topSort(ord),e)
+
+DEF generatePath(S,atrs,ord,e AS ide(_,id)) == 
+    IF local?(id) THEN
+	IF equated?(S,id) THEN
+	    LET todo  	          == incl(id,deps(atrs!id))
+		(topord,subord0)  == splitTodo(S,atrs,ord,todo)
+		subord		  ==
+			IF dumpGenPath? THEN
+			    dumpGenPath(id,todo,topord,subord0)
+			ELSE subord0 FI
+	    IN
+	    generateSequ(S,atrs,subord,topord,e)
+	ELSE e FI
+    ELSE e FI
+
+DEF generatePath(S,atrs,ord:seq[ideSet],e) == 
+    e
+
+  FUN splitTodo : eqnSys ** ideMap[atr] ** seq[ideSet] ** ideSet 
+						-> seq[ideSet] ** seq[ideSet]
+  DEF splitTodo(Sys,atrs,ids :: seq,todo) ==
+    LET (top,sub,rest) == ids *- todo
+	lift	       == analyzeImpliedStrict(Sys,atrs,sub,top)
+	(ltop,lsub)    == (top + lift,sub - lift) 	
+        (tops,subs)    == IF {}?(rest) THEN (<>,seq)
+				       ELSE splitTodo(Sys,atrs,seq,rest) FI
+	finaltops      == IF {}?(ltop) THEN tops ELSE ltop::tops FI
+	finalsubs      == IF {}?(lsub) THEN subs ELSE lsub::subs FI
+    IN
+    (finaltops,finalsubs)
+  DEF splitTodo(_,_,<>,_) == (<>,<>)
+
+-- debugging
+
+FUN dumpGenPath? : bool
+DEF dumpGenPath? == FIELD?[bool]("-zdumpGenPath")
+
+FUN dumpGenPath : ide ** ideSet ** seq[ideSet] ** seq[ideSet] -> seq[ideSet]
+DEF dumpGenPath(id,todo,topord,subord) ==
+    LET formatOrd 	== list(str("<"),str(","),str(">"),format)
+	sub1            == PRINT(true,\\x.blk(0,%(str("path: "),format(x))),
+				 id,subord)
+	sub2		== PRINT(true,format,todo,sub1)
+	sub3		== PRINT(true,formatOrd,topord,sub2)
+	sub4		== PRINT(true,formatOrd,sub3,sub3)
+    IN
+    sub4
+
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+DEF generateSequ(S,atrs,ord,ids :: seq,res) ==
+    LET bs == (\\id. binding(an(S,id),id,local,
+         		     generateRhs(S,atrs,ord,rhs(S,id)))) 
+                 * explode(ids)
+	s  == generateSequ(S,atrs,ord,seq,res)
+    IN
+    block(none,bs,s)
+
+DEF generateSequ(S,atrs,ord,ids :: <>,res) ==
+    LET (ids1,s) ==
+    	   IF ide(res) in ids THEN
+	       -- propagate equation for res into scope
+	       (excl(ide(res),ids),
+		generateRhs(S,atrs,ord,rhs(S,ide(res)))
+	       )
+	   ELSE (ids,res) FI
+         bs == (\\id. binding(an(S,id),id,local,
+         		     generateRhs(S,atrs,ord,rhs(S,id)))) 
+                 			* explode(ids1)
+    IN
+    IF bs <>? THEN s ELSE block(none,bs,s) FI
+
+DEF generateSequ(S,atrs,ord,<>,res) == res
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+DEF generateRhs(S,atrs,ord,e) ==
+    -- error, deno, ide, apply
+    e
+
+DEF generateRhs(S,atrs,ord,case(a,ds,ms,df)) ==
+    LET newms == (\\m. match(cons(m),vars(m),
+			     generatePath(S,atrs,ord,scope(m)))) * ms
+	newdf == generatePath(S,atrs,ord,df)
+    IN
+    case(a,ds,newms,newdf)
+
+DEF generateRhs(S,atrs,ord,lambda(a,vs,s)) ==
+    LET news == generatePath(S,atrs,ord,s)
+    IN
+    lambda(a,vs,news)
+
+
+-- --------------------------------------------------------------------------
+
+FUN analyzeImpliedStrict: eqnSys ** ideMap[atr] ** ideSet ** ideSet -> ideSet
+DEF analyzeImpliedStrict(Sys,atrs,NonStrictDeps,StrictDeps) ==
+    /* Having a set of strict dependencies, we calculate from a
+       set of non-strict dependencies which ones can
+       be savely evaluated, since the undefindness of a none-strict
+       dependency implies the undefindness of a strict one.
+    */
+    LET Dscs == (sampleDiscrimination(Sys) / {})(explode(StrictDeps))
+    IN
+    (inclImpliedStrict(Sys,Dscs) / {})(explode(NonStrictDeps))
+
+
+  FUN sampleDiscrimination: eqnSys -> ide ** ideMap[ideSet]
+				   -> ideMap[ideSet]
+  DEF sampleDiscrimination(Sys)(Id,Dscs) ==
+    /* We sample that Id represents a partial case statement 
+       discriminating over some variants. 
+    */
+    LET Rhs == rhs(Sys,Id)
+    IN
+    IF case?(Rhs) ANDIF error?(default(Rhs)) THEN
+	LET Variants == ( (\\Match,ConsSet. incl(cons(Match),ConsSet))
+			 			/ {} )(matches(Rhs))
+	    Last?    == Dscs!?ide(discr(Rhs))
+	IN
+	IF avail?(Last?) THEN
+	    def(ide(discr(Rhs)),cont(Last?) * Variants,Dscs)
+	ELSE
+	    def(ide(discr(Rhs)),Variants,Dscs)
+	FI
+    ELSE
+	Dscs
+    FI
+
+  FUN inclImpliedStrict : eqnSys ** ideMap[ideSet]
+				-> ide ** ideSet -> ideSet
+  DEF inclImpliedStrict(Sys,Dscs)(Id,Deps) ==
+    /* We include Id as implied strict dependency, if it discriminates
+       some object in Dscs, if it is "selection or test like", that is the scope
+       of the matches depend on nothing but on global or by the
+       match bound ides, and its undefindness implies the undefindness
+       of a discrimination in Dscs. Last one is valid if it is
+       either total or if it is partial and discriminates over
+       a superrange of the variantes stored in Dscs.
+    */
+    LET Rhs     == rhs(Sys,Id)
+	SelLike == \\Bound,Exp. 
+			  IF ide?(Exp) THEN 
+			      IF local?(ide(Exp)) THEN
+				  ide(Exp) in Bound
+			      ELSE true FI
+			  ELSE false FI
+    IN
+    IF case?(Rhs) THEN
+	LET StrictVariants? == Dscs!?ide(discr(Rhs))
+	IN
+	IF avail?(StrictVariants?) 
+		ANDIF SelLike({},default(Rhs)) or error?(default(Rhs))
+	    	ANDIF forall?(\\Match.
+				  LET Bound == implode(ide * vars(Match))
+				  IN
+				  SelLike(Bound,scope(Match)),
+			       matches(Rhs))	THEN
+	    IF error?(default(Rhs)) THEN
+	        LET Variants == 
+			( (\\Match,ConsSet. incl(cons(Match),ConsSet))
+			 / {} )(matches(Rhs))
+
+	        IN
+	        IF cont(StrictVariants?) <= Variants THEN
+	            incl(Id,Deps)
+		ELSE Deps FI
+	    ELSE
+		-- incl(Id,Deps)
+		Deps
+	    FI
+        ELSE Deps FI
+    ELSE Deps FI
+	

@@ -1,0 +1,315 @@
+SIGNATURE ChannelData
+
+IMPORT  ProcessCtrl             ONLY    process:SORT
+        Seq[define]             ONLY    seq
+        Seq[declare]            ONLY    seq
+        Seq[sortInfo]           ONLY    seq
+        Seq[objectId]           ONLY    seq
+        Seq[reducedName]        ONLY    seq
+        Seq[assocPrintFun]      ONLY    seq
+        Seq[bindOffset]         ONLY    seq
+        Seq[seq[bindOffset]]    ONLY    seq
+        Seq[nat]                ONLY    seq
+        Array[nat]              ONLY    array
+        Map[evalId,<,evalState] ONLY    map
+        Option[seq[sortInfo]]   ONLY    option
+        Fmt                     ONLY    fmt:SORT
+        Nat                     ONLY    nat
+        Void                    ONLY    void
+        
+        Expression              ONLY    expr:SORT objectId:SORT
+                                        name:SORT tpos:SORT 
+                                        fct:SORT name:SORT
+                                        kind:SORT sortInfo:SORT
+                                        bindOffset:SORT
+                                        evalId:SORT < : evalId ** evalId -> bool
+
+-- %$Kommunikationsprinzip zwischen Debugger und Client$ ====================
+/* %
+ Der Debugger übermittelt Daten an den Opal-Clienten in Form von
+@code{task}. Diese Daten werden vom Client analysiert und veranlassen ihn zur
+Ausführung bestimmter Aktionen wie z.B. der Auswertung eines Ausdrucks. Der
+Client beantwortet die Tasks mit @code{answers}.
+
+Tasks können verschachtelt ausgewertet werden, d.h. insbesondere während der
+Auswertung von @code{eval} oder @code{exec} führt ein neuer Task zu einer
+Unterbrechung in der weitere Tasks behandelt werden können.
+ */
+
+-- %$$Das Protokoll$ =======================================================
+
+/* %
+ @code{register:} fordert den Clienten auf, Daten wie die @code{pid} etc. zu
+übermitteln.
+@smallexample
+        register        => register
+@end smallexample
+
+ @code{sync:} wird verwendet, um die beiden Prozesse (wieder) zu
+synchronisieren. Dazu sendet der Debugger-Prozeß einen @code{sync}-Task mit
+eindeutiger Nummer, der dann vom Client einfach zurückgesendet wird. Der
+Debugger verzögert dabei solange, bis die @code{sync}-Answer mit gleicher Id
+empfangen wurde.
+
+@code{eval:} Auswertung eines Ausdrucks durch den Interpreter.
+@smallexample
+        eval            => broken* (result | aborted)
+@end smallexample
+
+@code{exec:} Ausführung eines Commands durch den Interpreter. Im Normalfall
+liefert @code{exec} ein Resultat oder ein @code{fail}, falls die resultierende
+Answer des Commands @code{fail?} war.
+@smallexample
+        exec            => broken* (result | fail | aborted)
+@end smallexample
+
+@code{declare:} Funktionen, Sorten oder formale Parameter werden deklariert.
+@smallexample
+        declare         => ready
+@end smallexample
+
+@code{define:} Funktionen werden definiert. Diese müssen vorher deklariert sein
+(sonst @code{error}).  Wichtig: Da @code{define} Interpretationen auslöst (die
+außer für Konstanten aber nur triviale Closure-Konstruktionen sind) kann es
+passieren, daß @code{define} auf einen Breakpoint läuft! Das Verhalten ist dann
+analog zu @code{eval}.
+@smallexample
+        define          => broken* (result | aborted | error)
+@end smallexample
+
+@code{breakPoint:} setzt einen Breakpoint für eine Funktion (ggf. mit guard).
+@smallexample
+        breakPoint      => ready
+@end smallexample
+
+@code{assocPrintFuns:} Sorten werden ihre Print-Funktionen zugeordnet.
+@smallexample
+        assocPrintFuns  => ready
+@end smallexample
+
+@code{break:} Unterbrechung der aktuellen Interpretation (sofern vorhanden).
+@smallexample
+        break           => 
+@end smallexample
+
+@code{continue:} setzt die letzte unterbrochene Evaluation fort.
+@smallexample
+        continue        => 
+@end smallexample
+
+@code{singleStep:} setzt die letzte unterbrochene Evaluation um @code{n}
+Schritte fort und unterbricht erneut.
+@smallexample
+        singleStep      => 
+@end smallexample
+
+@code{evalStates:} liefert eine Abbildung aller Auswertungen uf ihre Zustände
+(@code{broken}, @code{aborted} oder @code{result}).
+@smallexample
+        evalStates      => evalStates
+@end smallexample
+
+@code{bt:} liefert den Stack-Trace der letzten unterbrochenen Auswertung. Ist
+keine unterbrochene Auswertung vorhanden, wird ein Fehler zurückgegeben.
+@smallexample
+        bt              => (bt | error)
+@end smallexample
+
+@code{select:} Informationen zum Stack der letzten unterbrochenen Auswertung
+an der Position @code{no}. Die Funktion liefert @code{error}, falls die Nummer
+nicht im Stack liegt oder keine Auswertung unterbrochen wurde.
+@smallexample
+        select          => (selection | error)
+@end smallexample
+
+@code{debug} bewirkt dump des Environments des Clienten nach @code{stdErr}.
+@smallexample
+        debug           => ready
+@end smallexample
+
+@code{iprint} Ausgabe des angegebenen Objektes der Closure der angegebenen
+evalId mit der gegebene Funktionalität. Rückgabe ist die textuelle
+Darstellung.
+@smallexample
+        iprint          => iprint
+@end smallexample
+*/
+
+-- %$Daten vom Debugger zum Client$ ========================================
+
+TYPE task ==
+        register
+        sync(           id:             nat)
+        eval(           id:             evalId,
+                        expr:           expr,
+                        fct:            fct)
+        exec(           id:             evalId,
+                        expr:           expr,
+                        fct:            fct) 
+        declare(        decls:          seq[declare])
+        define(         defins:         seq[define])
+        breakPoint(     bp:             breakPoint)
+        assocPrintFuns( prints:         seq[assocPrintFun])
+        break
+        continue
+        singleStep(     no:             nat)
+        evalStates
+        bt
+        select(         no:             nat)
+        debug
+        exit
+        iprint(         id:             evalId,
+                        tpos:           seq[nat],
+                        fct:            fct)
+
+        FUN fmtTask : task -> fmt
+
+-- %$$Deklarationen$ .....................................
+/* %
+ Für Funktionen werden die formale Parameterliste (als Sequenz von Object-Ids),
+der symbolische Name der Struktur und die InterOpal-Id der Funktion innerhalb
+dieser Struktur angegeben. Zu Sorten wird nur die formale Parameterliste
+angegeben.
+ */
+TYPE declare ==
+        function(
+                id:             objectId,
+                para:           seq[objectId],  -- formal parameters only
+                struct:         denotation,
+                ident:          nat
+        )
+        sort(   id:             objectId,
+                para:           seq[objectId]
+        )
+        formal( id:             objectId
+        )
+
+-- %$$Definitionen$ .....................................
+/* %
+ Bei der Definition einer Funktion mit der Id @code{id} werden interpretierte
+und kodierte Definitionen unterschieden:
+
+@emph{Interpretierte} Definitionen enthalten neben der definierenden Expression
+der Funktion den Rang @code{rank} und die Dimension @code{dim} einer
+Applikation der Funktion mit @code{rank} Argumenten: Hat
+@code{f:s->(s**s->s**s)} beispielsweise den Rang 0, so ist die Dimension 1; Bei
+Rang 1 ist die Dimension ebenfalls 1; bei Rang 3 ist die Dimension 2.
+
+@emph{Kodierte} Definitionen werden nur durch ein Array beschrieben, das sich
+aus der Funktionalität der Funktion ergibt: Es enthält an jedem Index
+@code{rank} die zugehörige Dimension @code{dim} der mit @code{rank} Argumenten
+applizierten Funktion (siehe oben). (Alle weiteren Informationen, die zum
+dynamischen Linken benötigt werden, wurden bereits bei der Deklaration der
+Funktion angegeben.)
+ */
+TYPE define ==
+        interpreted(
+                id:     objectId,
+                rank:   nat,
+                dim:    nat,
+                expr:   expr
+        )
+        coded(
+                id:             objectId,
+                dims:           array[nat]
+        )
+
+
+-- %$$Breakpoints$ .......................................
+/* %
+ @code{bp} enthält nur die Id der Funktion. Der Rang der Funktion wird durch
+den Breakpoint nicht verändert. Sobald die Reduktion der Funktion beginnt,
+läuft die Interpretation auf ein @code{break'Monitor}.  Breakpoints für
+Funktionen mit dem Rang Null sind nicht erlaubt und liefern einen Fehler an den
+Debugger-Prozeß.
+
+@code{guardedBp} erhält zusätzlich einen @code{guard}. Der Guard hat immer die
+Funktionalität @code{...->bool}. @code{rank} ist der Rang der Funktion (eta
+enriched). Die Dimension @code{dim} ist die Dimension der Funktion bei
+Applikation mit @code{rank} Argumenten.
+ */
+TYPE breakPoint ==
+        bp(             id:             objectId)
+        guardedBp(      id:             objectId,
+                        guard:          expr,
+                        rank:           nat,
+                        dim:            nat)
+
+-- %$$Print-Funktionen$ ...............................
+/* %
+ Der Interpreter benötigt zu jeder Sorte eine Funktion, die ein Datum zu der
+Sorte in ein @code{fmt} transformiert. Diese Funktion kann über eine Menge von
+Print-Funktionen anderer Sorten ``parametrisiert'' sein. Ist
+@code{paraSorts=nil}, so hat die Print-Funktion die Funktionalität
+@code{data->fmt}. Für @code{paraSorts=<S1,..,Sn>} hat die Print-Funktion die
+Funktionalität @code{(S1->fmt)**...**(Sn->fmt)->data->fmt}. @code{outKind} gibt
+an, ob die Print-Funktion ein @code{fmt} oder eine @code{denotation} liefert.
+ */
+TYPE assocPrintFun ==
+        assocPrintFun(
+                sortInfo:       sortInfo, -- basic name only
+                printId:        objectId,
+                paraSorts:      option[seq[sortInfo]]
+                                        -- sorts only (may be formal)
+        )
+FUN fmtAssocPrintFun : assocPrintFun -> fmt
+
+-- %$Daten vom Client zum Debugger$ ========================================
+/* % 
+ @code{ready} ist die Standard-Antwort des Clienten
+(informationslos). @code{clientInfo} ist die Antwort auf den Task
+@code{register}. @code{broken} liefert die Position der unterbrochenen
+Auswertung. @code{aborted} liefert neben der Position des Abbruchs auch die
+Ursache, die zum Abbruch führte.
+
+@code{bt} (back trace) liefert die Liste aller Reduktionen der letzten
+unterbrochenen (oder abgebrochenen) Auswertung, die auf dem Stack liegen. Ist
+keine Auswertung unterbrochen. @code{localEnv} bestimmt den lokalen Kontext
+einer bestimmten Position innerhalb des @code{bt}-Stacks.
+ */
+TYPE answer ==
+        ready
+        sync(           id:             nat)
+        error(          msg:            denotation)
+        register(       pid:            process)
+        result(         id:             evalId,
+                        result:         denotation) -- FIXME: should be format
+        fail(           id:             evalId,
+                        error:          denotation)
+        broken(         id:             evalId)
+        aborted(        id:             evalId,
+                        reason:         denotation)
+        evalStates(     evalStates:     map[evalId,<,evalState])
+        bt(             stack:          seq[reducedName])
+        selection(      selection:      selection)
+        iprint(         result:         denotation)
+
+        FUN fmtAnswer : answer -> fmt
+
+-- %$$Eval-State$ ................................................
+TYPE evalState == ready broken aborted unknown
+
+-- %$$Lokale Selektion des Environments$ ............................
+TYPE selection == 
+        selection(      name:           reducedName,
+                        pos:            tpos,
+                        bindOffsets:    seq[seq[bindOffset]])
+        FUN fmtSelection : selection -> fmt
+
+-- %$$Name einer Reduktion$ ......................................
+/* %
+ @code{reducedName} bezeichnet den Namen einer Funktion auf dem Stack, in deren
+Reduktion sich der Client noch befindet. Es wird zwischen @code{interpreted}
+und @code{coded} unterschieden, je nachdem, ob die benannte Funktion kodiert
+oder interpretiert ausgewertet wird. Spezielle Reduktionen wie
+Lambda-Applikationen können nicht analysiert werden und tauchen nur als
+@code{escaped} auf. Die Reduktion des Toplevel-Terms wird durch @code{toplevel}
+hier mit verwaltet.
+ */
+TYPE reducedName ==
+        name(           name:           name,
+                        kind:           kind)
+        toplevel
+        escaped
+        FUN fmtReducedName: reducedName -> fmt
+

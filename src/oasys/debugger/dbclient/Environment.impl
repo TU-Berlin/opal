@@ -1,0 +1,640 @@
+IMPLEMENTATION Environment
+
+IMPORT  Nat                     COMPLETELY
+        NatConv                 COMPLETELY
+        Com                     COMPLETELY
+        ComCompose              COMPLETELY
+        ComSeqReduce            COMPLETELY
+        Seq                     COMPLETELY
+        SeqIndex                COMPLETELY
+        SeqMap                  COMPLETELY
+        SeqFilter               COMPLETELY
+        SeqReduce               COMPLETELY
+        Set                     COMPLETELY
+        Map                     COMPLETELY
+        Void                    COMPLETELY
+        Array                   COMPLETELY
+        ArrayReduce             COMPLETELY
+        Option                  COMPLETELY
+        OptionMap               COMPLETELY
+        Pair                    COMPLETELY
+        Fmt                     COMPLETELY
+        FmtSeq                  COMPLETELY
+        FmtArray                COMPLETELY
+        FmtOption               COMPLETELY
+        FmtBasicTypes           COMPLETELY
+        Denotation              COMPLETELY
+        RUNTIME                 COMPLETELY
+        RUNTIMEENV[environment,expr]
+                                COMPLETELY
+        ABORT                   COMPLETELY
+        DEBUG                   COMPLETELY
+IMPORT
+        SeqExtensions           COMPLETELY
+IMPORT
+        ChannelData             COMPLETELY
+        Expression              COMPLETELY
+        QuickStack[bindItem,empty]
+                                COMPLETELY
+        
+-- %$Defintion des Environments$ =========================================
+
+DATA environment ==
+        env(    objectTab:      array[object],
+                bindStack:      stack[bindItem,empty],
+                eval:           environment ** expr -> environment ** seq[obj],
+                print:          environment ** seq[obj] ** fct -> 
+                                        environment ** fmt,
+                iprint:         environment ** obj ** seq[nat] ** fct ->
+                                  environment ** fmt,
+                channel:        channel,
+                evalIds:        seq[evalId],
+                resultStack:    array[option[obj]],
+                singlerStepCnt: nat
+        )
+
+        FUN resultStackFrameSize : nat
+        DEF resultStackFrameSize == 128
+
+DEF init(Eval,Print,IPrint, Channel) == 
+        env(empty,<>,Eval,Print,IPrint,
+        Channel,<>,init(resultStackFrameSize,nil),0)
+
+        FUN :=_objectTab: environment ** (array[object] -> array[object])
+                        -> environment
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_objectTab Upd == 
+            env(Upd(v1),v2,v3,v4,v4a,v5,v6,v7,v8)
+
+        FUN :=_bindStack: environment ** 
+                        (stack -> stack)
+                        -> environment
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_bindStack Upd == 
+            env(v1,Upd(v2),v3,v4,v4a,v5,v6,v7,v8)
+        FUN :=_resultStack: environment ** 
+                        (array[option[obj]] -> array[option[obj]])
+                        -> environment
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_resultStack Upd == 
+            env(v1,v2,v3,v4,v4a,v5,v6,Upd(v7),v8)
+
+        FUN :=_singlerStepCnt: environment ** (nat -> nat)
+                        -> environment
+        DEF env(v1,v2,v3,v4,v4a,v5,v6,v7,v8) :=_singlerStepCnt Upd == 
+            env(v1,v2,v3,v4,v4a,v5,v6,v7,Upd(v8))
+
+        FUN ! : environment ** objectId -> object
+        DEF E ! Id == objectTab(E) ! no(Id)
+
+DEF pushEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8),Id) ==
+        env(v1,v2,v3,v4,v4a,v5,Id::v6,v7,v8)
+DEF popEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8)) == env(v1,v2,v3,v4,v4a,v5,rt(v6),v7,v8)
+DEF topEvalId(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8)) == ft(v6)
+DEF noEvalIds?(env(v1,v2,v3,v4,v4a,v5,v6,v7,v8)) == <>?(v6)
+
+DEF setCounter(E,N) == E :=_singlerStepCnt (\\ _ . N)
+DEF unsetCounter(E) == E :=_singlerStepCnt (\\ _ . 0)
+DEF decCounter(E) == 
+    LET N == singlerStepCnt(E)
+    IN IF N = 0
+         THEN (E,false)
+       IF N = 1
+         THEN (E :=_singlerStepCnt pred,true)
+         ELSE (E :=_singlerStepCnt pred,false)
+       FI
+
+DEF E ! evalId(Id) == cont(resultStack(E) ! Id)
+DEF (E,evalId(Id)) := Obj == 
+      E :=_resultStack (\\RS. upd(Id,avail(Obj),ensure(RS,Id)))
+DEF rm(E,evalId(Id)) == E :=_resultStack ((_,Id) := nil)
+DEF getResults(E) == 
+        ((\\Id,OptObj,Set.
+                IF avail?(OptObj)
+                  THEN evalId(Id) incl Set
+                  ELSE Set
+                FI
+         ),{}) \ resultStack(E)
+
+        FUN ensure : array[option[obj]] ** nat -> array[option[obj]]
+        DEF ensure(A,N) ==
+            IF N < #(A)
+              THEN A
+              ELSE extend(A,max(N - #(A),resultStackFrameSize),nil)
+            FI
+-- %$Objekte$ ==================================================
+
+DATA object ==
+        funct(  para:           seq[objectId],  -- formal parameter only
+                rank:           nat,
+                dim:            nat,
+                defs:           seq[xobj],
+                struct:         denotation,
+                ident:          nat,
+                dynLinked?:     bool
+        )
+        sort(   para:           seq[objectId],
+                printInfo:      option[printInfo]
+        )
+        formal( insts:          seq[objectId])
+        undef
+
+DATA xobj == xobj( obj: obj, kind: kind)
+
+        FUN :=_defs : object ** seq[xobj] -> object
+        DEF funct(v1,v2,v3,_,v5,v6,v7) :=_defs Objs ==
+            funct(v1,v2,v3,Objs,v5,v6,v7)
+
+        FUN :=_object : environment ** objectId ** object -> environment
+        DEF (E,Id) :=_object Obj:object == 
+                E :=_objectTab upd(no(Id),Obj,_)
+
+        FUN :=_object : environment ** objectId **
+                         (object -> object) -> environment
+        DEF (E,Id) :=_object Upd:object -> object ==
+                E :=_objectTab upd(no(Id),Upd,_)
+
+
+DATA printInfo == 
+        printInfo(
+                printFun:       objectId,
+                outputSort:     outputSort,
+                paraSorts:      option[seq[sortInfo]]
+        )
+
+DEF funct?(E,Id)        == funct?(E ! Id)
+DEF sort?(E,Id)         == sort?(E ! Id)
+DEF formal?(E,Id)       == formal?(E ! Id)
+DEF para(E,Id)          == para(E ! Id)
+DEF printInfo(E,Id)     == printInfo(E ! Id)
+DEF rank(E,Id)          == rank(E ! Id)
+DEF dim(E,Id)           == dim(E ! Id)
+DEF def(E,Id)           ==
+    LET Obj == E ! Id
+    IN IF defs(Obj) <>?
+         THEN nil
+         ELSE avail(obj(ft(defs(Obj))))
+       FI
+
+DEF kind(E,Id)          ==
+    LET Obj == E ! Id
+    IN IF defs(Obj) <>?
+         THEN nil
+         ELSE avail(kind(ft(defs(Obj))))
+       FI
+
+DEF #(E,Id)             == #(defs(E ! Id))
+
+-- %$$$$Implementierung von declare$ ........................................
+
+DEF declare(Env,Decls) == succeed(Env :=_objectTab declare(_,Decls))
+/* %
+ Die folgende Funktion reserviert Einträge in der Tabelle und ruft
+anschließend @code{declareOne} für die einzelnen Deklarationen nach.
+ */
+
+FUN declare : array[object]** seq[declare] -> array[object]
+DEF declare(Tab,Decls) == 
+    LET -- maximale Id der zu deklarierenden Objekte:
+        MaxIdInDecls == ((\\D,M.max(no(id(D)),M)),0) \ Decls  + 1
+        -- maximale bisherige Id:
+        MaxIdNow     == #(Tab)
+        -- vergrößern, falls notwendig
+        Tab1         == IF MaxIdInDecls > MaxIdNow
+                          THEN Tab extend (MaxIdInDecls - MaxIdNow,undef)
+                          ELSE Tab
+                        FI
+    IN -- Akualisierung der Objekte
+        (declareOne,Tab1) \ Decls
+
+
+        -- deklariert ein Objekt der Tabelle:
+        FUN declareOne : declare ** array[object] -> array[object]
+        DEF declareOne(Decl,Tab) == upd(no(id(Decl)),asObject(Decl),Tab)
+
+        FUN asObject : declare -> object
+        DEF asObject(function(_,Para,Struct,Ident)) ==
+            funct(Para,0,0,<>,Struct,Ident,false)
+        DEF asObject(sort(_,Para)) == sort(Para,nil)
+        DEF asObject(formal(_))    == formal(<>)
+
+
+-- %$$$$Implementierung von define$ ........................................
+
+DEF define(E,Defs)   == (defineOne,E) /& Defs
+
+FUN defineOne : define ** environment           -> com[environment]
+-- % Definition basiert auf einem Term:
+DEF defineOne(interpreted(Id,Rank,Dim,Expr),E) ==
+    LET (E1,Objs) == eval(E)(E,Expr)
+        Obj       == theuniq(Objs)
+    IN doDefine(E1,Id,Obj,Rank,Dim,interpreted)
+
+-- % Definition basiert auf kodierter Funktion:
+DEF defineOne(coded(Id,Dims),E) ==
+    LET O == E ! Id
+        XObj? == find?(\\XO. coded?(kind(XO)), defs(O))
+    IN 
+    (IF avail?(XObj?) THEN
+        succeed(avail(obj(cont(XObj?))))
+    ELSE
+        link(struct(O))                 & (\\ _ .
+        lookup(struct(O),ident(O))      ; (\\ Res? .
+        IF okay?(Res?) THEN
+            succeed(avail(data(Res?)))
+        ELSE succeed(nil) FI
+        ))
+    FI)                                         & (\\Obj?.
+    IF nil?(Obj?) THEN
+        -- if linking was successful but object cannot be found,
+        -- we assume that this is a function
+        -- which has been `optimized away' by
+        -- the compiler, since it will never be called
+        -- FIXME: let this definition produce a regular abort
+        -- if the function is called; requires to insert here
+        -- something else then _|_.
+        doDefine(E,Id,_|_, IF #(Dims) = 1 THEN 0 ELSE 1 FI,1,coded)
+    ELSE
+        LET Rank == 
+                IF #(Dims) = 1
+                  THEN /* % @BIL Es wurde genau eine Möglichkeit für 
+                          @code{dim} angegeben. Demnach ist das Datum
+                          eine Konstante 'const:data'. Der Rang ist Null.
+                          @EIL */
+                       0
+                  ELSE /* % @BIL Der Rang ergibt sich aus dem
+                          Closure-Object selbst. @EIL */
+                       rank(cont(Obj?))
+                FI
+            Dim  == Dims ! Rank
+        IN doDefine(E,Id,cont(Obj?),Rank,Dim,coded)     
+    FI
+    )
+
+FUN doDefine : 
+        environment ** objectId ** obj ** nat ** nat ** kind -> com[environment]
+DEF doDefine(E,Id,Obj,Rank,Dim,Kind) ==
+    LET O         == E ! Id
+        XObj      == xobj(Obj,Kind)
+        NewObject == funct(para(O),Rank,Dim,XObj::defs(O),
+                           struct(O),ident(O),dynLinked?(O) or coded?(Kind))
+        E1        == (E,Id) :=_object NewObject
+    IN IF dynLinked?(O) 
+         THEN -- Das Objekt war bereits dyn. gelinkt. Die Def. muß
+              -- nun aktualisiert werden:
+              redefine(struct(O),ident(O),Obj)          & (\\ _ .
+              succeed(E1)                               )
+         ELSE succeed(E1)
+       FI
+
+
+-- %$$$$Implementierung von breakPoint$ .............................
+DEF breakPoint(E,bp(Id)) ==
+    LET O       == E ! Id
+        OptDef  == def(E,Id)
+    IN IF OptDef avail?
+        THEN IF rank(O) > 0
+               THEN defineOne(
+                       interpreted(Id,rank(O),dim(O),
+                                   bp(breakPoint,Id,
+                                      cont(OptDef),rank(O),dim(O))),
+                       E)
+               ELSE break("not applicable for rank zero")
+             FI
+        ELSE break("not applicable: function is undefined")
+       FI
+
+DEF breakPoint(E,guardedBp(Id,Guard,Rank,Dim)) ==
+    LET OptDef  == def(E,Id)
+    IN IF OptDef avail?
+        THEN IF Rank > 0
+               THEN defineOne(
+                       interpreted(Id,Rank,Dim,
+                                   guardedBp(breakPoint, Id,
+                                             cont(OptDef),Rank,Dim,Guard)),
+                              E)
+               ELSE break("not applicable for rank zero")
+             FI
+        ELSE break("not applicable: function is undefined")
+       FI
+
+-- %$$$$olddef$ ..................................................
+DEF olddef(E,Id) ==
+    LET O       == E ! Id
+        Defs    == defs(O)
+    IN IF Defs <>?
+         THEN succeed(E)
+         ELSE succeed(O :=_defs rt(Defs))               & (\\NewObject.
+              succeed((E,Id) :=_object NewObject)       & (\\E1.
+              IF O dynLinked?
+                THEN redefine(struct(O),ident(O),
+                              obj(ft(rt(Defs))))     & (\\ _ .
+                     succeed(E1)                     )
+                ELSE succeed(E1)
+              FI                                        ))
+       FI
+
+-- %$$$$assocPrintFuns$ ................................................
+
+DEF assocPrintFuns(E,Prints) == 
+    succeed(E :=_objectTab ((assocPrintOne,_) / Prints))
+
+FUN assocPrintOne : assocPrintFun ** array[object] -> array[object]
+DEF assocPrintOne(assocPrintFun(SInfo,PId,ParaSortInfos),Tab) ==
+    LET SId     == objectId(name(SInfo))
+        O       == Tab ! no(SId)
+        PInfo   == printInfo(PId,outputSort(SInfo),ParaSortInfos)
+        O1      == sort(para(O),avail(PInfo))
+    IN upd(no(SId),O1,Tab)
+
+-- %$$$$Instanziierungen$ ........................................
+
+DEF instance(E,Formal,Inst) ==
+    (E,Formal) :=_object (\\Obj. formal(Inst::insts(Obj)))
+
+DEF rmInstance(E,Formal) ==
+    (E,Formal) :=_object (\\Obj. formal(rt(insts(Obj))))
+
+DEF getInstance(E,Formal) == ft(insts(E ! Formal))
+
+
+-- %$BindItems$ ==================================================
+
+DATA bindItem ==
+        objs(             objs: array[obj])
+        applyPos(         pos:  tpos)
+        enterCoded(       name: name)
+        enterInterpreted( name: name)
+        broken(           id:   evalId,
+                          pos:  tpos)
+        aborted(          id:   evalId,
+                          pos:  tpos)
+        empty           -- used as default item
+
+DEF enter(N,interpreted)== enterInterpreted(N)
+DEF enter(N,coded)      == enterCoded(N)
+DEF enter?(BI)          == enterCoded?(BI) or enterInterpreted?(BI)
+DEF kind(enterInterpreted(_)) == interpreted
+DEF kind(enterCoded(_))       == coded
+DEF kind(_ :bindItem)                 == 
+    ABORT("kind'Environment: undefined selection")
+
+DEF E ! N               == bindStack(E) ! N
+DEF E ! bindOffset(N,M) == getObj(bindStack(E),N,M)
+
+        FUN getObj : stack ** nat ** nat -> obj
+        DEF getObj(<>,_,_)                      == 
+            ABORT("getObj'Environment: requested object not found")
+        DEF getObj(objs(Objs)   :: _,0,M)               == Objs ! M
+        DEF getObj(objs(_)   :: Rt,succ(N),M)   == getObj(Rt,N,M)
+        DEF getObj(_         :: Rt,N,M)         == getObj(Rt,N,M)
+
+DEF (E,bindOffset(N,M)) := Obj == E :=_bindStack setObj(_,N,M,Obj)
+
+        FUN setObj : stack ** nat ** nat ** obj -> stack
+        DEF setObj(<>,_,_,_)                    == 
+            ABORT("setObj'Environment: requested position not found")
+        DEF setObj(objs(Objs) :: Rt,0,M,Obj)    == 
+                objs((Objs,M) := Obj) :: Rt
+        DEF setObj((Ft AS objs(_)) :: Rt,succ(N),M,Obj) == 
+                Ft :: setObj(Rt,N,M,Obj)
+        -- results dürfen bei @code{setObj} niemals durchlaufen werden.
+        DEF setObj(Ft :: Rt,N,M,Obj) == Ft :: setObj(Rt,N,M,Obj)
+
+DEF push(E,BI)  == E :=_bindStack (BI :: _)
+DEF pop(E)      == E :=_bindStack rt
+
+DEF empty?(E)   == <>?(bindStack(E))
+
+-- %$$$$brokenEval?$ ..................................................
+/* %
+ @code{brokenEval} prüft, ob oben auf dem BindingStack ein @code{broken}-Datum
+liegt.
+ */
+DEF brokenEval?(E) == brokenEval?(bindStack(E))
+
+FUN brokenEval? : stack -> bool
+DEF brokenEval?(S) ==
+    IF ::?(S) ANDIF broken?(ft(S)) THEN true ELSE false FI
+
+
+-- %$$$$evalStates$ ..................................................
+/* %
+ @code{evalStates} sucht alle Resultate im Result-Stack und alle unterbrochenen
+Auswertungen im BindinStack raus.
+ */
+DEF evalStates(E) ==
+    results(resultStack(E)) <+ evalState(bindStack(E),{})
+
+-- % Alle Resultate im ResultStack sind @code{ready}:
+FUN results: array[option[obj]] -> map[evalId,<,evalState]
+DEF results(Results) ==
+        ((\\Idx,OptObj,M.
+                IF avail?(OptObj)
+                  THEN (evalId(Idx),ready) def M
+                  ELSE M
+                FI
+         ),{}) / Results
+
+/* %
+ Alle Auswertungen, die noch im BindingStack liegen sind @code{broken} oder
+@code{aborted}. Auswertungen die unter einem @code{aborted} liegen, werden
+ignoriert.
+ */
+FUN evalState : 
+        stack ** map[evalId,<,evalState] -> map[evalId,<,evalState]
+DEF evalState(<>,M) == M
+DEF evalState(broken(Id,_)::Rt,M)  == evalState(Rt,(Id,broken) def M)
+DEF evalState(aborted(Id,_):: _,M) == (Id,aborted) def M -- ignore the rest
+DEF evalState(_ :: Rt,M)           == evalState(Rt,M)
+
+-- %$$$$back trace$ ..................................................
+
+        FUN traceBt? : bool
+        DEF traceBt? == FIELD?[bool]("-ztraceBt")
+
+DEF bt?(E) == revert * bt?(bindStack(E))
+
+FUN bt? : stack -> option[seq[reducedName]]
+DEF bt?(<>)              == nil
+DEF bt?(broken(_,_) :: Rt) == avail(bt1(false,Rt,<>))
+DEF bt?(aborted(_,_):: Rt) == avail(bt1(false,Rt,<>))
+DEF bt?(F         :: _ ) == ABORT("bt?'Environment: unexpected bindItem `"++
+                                pretty(fmtBindItem(F))++"'")
+
+FUN bt1 : bool ** stack ** seq[reducedName] -> seq[reducedName]
+-- % Erster Fall: keine offene Auswertung.
+DEF bt1(false,<>,RNames)        == toplevel::RNames
+DEF bt1(false,Ft::Rt,RNames)    ==
+    IF aborted?(Ft) or broken?(Ft)
+      THEN toplevel::RNames
+    IF applyPos?(Ft)
+      THEN bt1(true,Rt,RNames)
+    IF enterCoded?(Ft)
+      THEN bt1(false,Rt,name(name(Ft),kind(Ft))::RNames)
+    IF enterInterpreted?(Ft) ANDIF ~(objectId(name(Ft)) = unknown)
+      THEN IF RNames <>?
+                    THEN bt1(false,Rt,name(name(Ft),kind(Ft))::RNames)
+                    ELSE ABORT("bt'Environment: interpreted function "++
+                           "was not left by 'applyPos'")
+                  FI
+    IF enterInterpreted?(Ft) ANDIF objectId(name(Ft)) = unknown
+      THEN bt1(false,Rt,escaped::RNames)
+      ELSE -- ignore this item otherwise
+           bt1(false,Rt,RNames)
+    FI
+-- % Zweiter Fall: offene Auswertung.
+DEF bt1(true,<>,RNames)         == toplevel::RNames
+DEF bt1(true,Ft::Rt,RNames)     ==
+    IF aborted?(Ft) or broken?(Ft)
+      THEN toplevel::RNames
+    IF applyPos?(Ft)
+      THEN bt1(false,Ft::Rt,escaped::RNames) -- release unknown reduction
+    IF enterCoded?(Ft)
+      THEN bt1(false,Ft::Rt,escaped::RNames)
+    IF enterInterpreted?(Ft) ANDIF ~(objectId(name(Ft)) = unknown)
+      THEN bt1(false,Rt,name(name(Ft),kind(Ft))::RNames)
+    IF enterInterpreted?(Ft) ANDIF objectId(name(Ft)) = unknown
+      THEN bt1(false,Rt,escaped::RNames)
+      ELSE -- ignore this item otherwise
+           bt1(true,Rt,RNames)
+    FI
+
+-- %$$$$select$ ..................................................
+
+DEF select?(E,N) == mkSelection * select?(bindStack(E),N)
+
+-- %$$$$getLocalEnv$ ..................................................
+
+FUN select? : stack ** nat -> option[pair[seq[bindItem],nat]]
+DEF select?(<>,_)                == nil
+DEF select?(Ft::Rt,N) ==
+    IF broken?(Ft) or aborted?(Ft)
+      THEN select1?(false,Rt,
+                %(applyPos(pos(Ft))),succ(N),0) -- increment N for select1 !!
+      ELSE ABORT("bt?'Environment: unexpected bindItem `"++
+                 pretty(fmtBindItem(Ft))++"'")
+    FI
+
+FUN select1? : bool ** stack ** seq[bindItem] ** nat ** nat -> 
+                                                option[pair[seq[bindItem],nat]]
+-- % Erster Fall: keine offene Auswertung.
+DEF select1?(false,_,Top,0,P)        == avail(Top & P)
+DEF select1?(false,<>,_,succ(_),_)   == nil -- number is larger than stack
+DEF select1?(false,Ft::Rt,Top,succ(N),Pos) ==
+    IF aborted?(Ft) or broken?(Ft)
+      THEN nil -- number is larger than stack
+    IF applyPos?(Ft)
+      THEN select1?(true,Rt,Ft:: <>,succ(N),Pos) -- forget Top 
+    IF enterCoded?(Ft)
+      THEN select1?(false,Rt,Ft:: <>,N,Pos) -- forget Top
+    IF enterInterpreted?(Ft) 
+      THEN select1?(false,Rt,Ft::Top,N,Pos)
+    IF objs?(Ft)
+      THEN select1?(false,Rt,Ft::Top,succ(N),succ(Pos))
+      ELSE select1?(false,Rt,Ft::Top,succ(N),Pos)
+    FI
+-- % Zweiter Fall: offene Auswertung.
+DEF select1?(true,_,Top,0,Pos)      == avail(Top & Pos)
+DEF select1?(true,<>,_,succ(_),_) == nil -- number is larger than stack
+DEF select1?(true,Ft::Rt,Top,succ(N),Pos) ==
+    IF aborted?(Ft) or broken?(Ft)
+      THEN nil -- must not reach this position
+    IF applyPos?(Ft)
+      THEN select1?(false,Ft::Rt,Top,N,Pos) -- release unknwon reduction
+    IF enterCoded?(Ft)
+      THEN select1?(false,Ft::Rt,Top,N,Pos)
+    IF enterInterpreted?(Ft)
+      THEN select1?(false,Rt,Ft::Top,N,Pos)
+    IF objs?(Ft)
+      THEN select1?(true,Rt,Ft::Top,succ(N),succ(Pos))
+      ELSE select1?(true,Rt,Ft::Top,succ(N),Pos)
+    FI
+
+-- %$$$$mkSelection$ .....................................................
+
+FUN mkSelection : pair[seq[bindItem],nat] -> selection
+DEF mkSelection(<> & _) == selection(escaped,unknown,<>)
+DEF mkSelection(Ft::Items & Pos) ==
+    IF enter?(Ft)
+      THEN LET Tpos == IF Items <>? ORIF ~(applyPos?(last(Items)))
+                         THEN unknown
+                         ELSE pos(last(Items))
+                       FI
+               Binds == 1st(
+                         ((\\Item,S_&_P. 
+                          IF objs?(Item)
+                            THEN LET (S,P) == unpair(S_&_P)
+                                 IN bindings(objs(Item),pred(P))::S & pred(P)
+                            ELSE S_&_P -- do nothing
+                          FI
+                          ),<> & Pos) \ Items
+                         )
+           IN 
+           IF objectId(name(Ft)) = unknown THEN
+              selection(escaped, Tpos, Binds)
+           ELSE
+              selection(name(name(Ft),kind(Ft)),Tpos,Binds)
+           FI
+      ELSE 
+        selection(escaped, unknown, <>)
+      -- ABORT("mkSelection'Environment: need 'enter'-item on top")
+    FI
+
+        FUN bindings : array[obj] ** nat -> seq[bindOffset]
+        DEF bindings(Arr,ItemPos) ==
+                ((\\Idx,_,S.bindOffset(ItemPos,Idx)::S) ,<>) / Arr
+
+-- %$$$$getLastReducedName$ ..................................................
+/* 
+DEF getLastReducedName(E) == getLastReducedName(bindStack(E))
+
+FUN getLastReducedName : stack -> reducedName
+DEF getLastReducedName(<>) == toplevel
+DEF getLastReducedName(Ft::Rt) ==
+    IF applyPos?(Ft)
+      THEN escaped
+    IF enter?(Ft)
+      THEN name(name(Ft),kind(Ft))
+    IF aborted?(Ft) or broken?(Ft)
+      THEN toplevel
+      ELSE getLastReducedName(Rt)
+    FI
+*/
+-- %$Formatierung$ ======================================================
+
+FUN fmtEnvironment : environment -> fmt
+DEF fmtEnvironment(env(OTab,BST,_,_,_,_,_,_,_)) ==
+    block(1,lit("env(");
+       (((\\Idx,Obj,Fmt.
+        Fmt ; brk ; 
+        block(1,lit(Idx`) ; lit(" |---> ") ; fmtObject(Obj))
+       ), none) \ OTab)
+    );brk;
+    fmtStack(\\I.fmtBindItem(I);brk)(BST)
+
+FUN fmtObj : obj -> fmt
+DEF fmtObj(_) == lit("OBJ")
+
+FUN fmtBool : bool -> fmt
+DEF fmtBool(true) == lit("true")
+DEF fmtBool(false) == lit("false")
+
+FUN fmtBindItem : bindItem -> fmt
+FUN fmtObject : object -> fmt
+
+-- %$$$$formats generated by ordinatrice$ ..............................
+FUN fmtPrintInfo : printInfo -> fmt
+DEF fmtPrintInfo(printInfo(v0,v1,v2)) == ;(;(beg(2),lit("printInfo")),;(;(lit("("),;(;(;(fmtObjectId(v0),;(lit(", "),fmtOutputSort(v1))),;(lit(", "),fmtOption(fmtSeq(fmtSortInfo))(v2))),lit(")"))),end))
+FUN fmtBindItem : bindItem -> fmt
+DEF fmtBindItem(objs(v0)) == ;(;(beg(2),lit("objs")),;(;(lit("("),;(fmtArray(fmtObj)(v0),lit(")"))),end))
+DEF fmtBindItem(applyPos(v0)) == ;(;(beg(2),lit("applyPos")),;(;(lit("("),;(fmtTpos(v0),lit(")"))),end))
+DEF fmtBindItem(enterCoded(v0)) == ;(;(beg(2),lit("enterCoded")),;(;(lit("("),;(fmtName(v0),lit(")"))),end))
+DEF fmtBindItem(enterInterpreted(v0)) == ;(;(beg(2),lit("enterInterpreted")),;(;(lit("("),;(fmtName(v0),lit(")"))),end))
+DEF fmtBindItem(broken(v0,v1)) == ;(;(beg(2),lit("broken")),;(;(lit("("),;(;(fmtEvalId(v0),;(lit(", "),fmtTpos(v1))),lit(")"))),end))
+DEF fmtBindItem(aborted(v0,v1)) == ;(;(beg(2),lit("aborted")),;(;(lit("("),;(;(fmtEvalId(v0),;(lit(", "),fmtTpos(v1))),lit(")"))),end))
+DEF fmtBindItem(empty) == ;(;(beg(2),lit("empty")),end)
+FUN fmtXobj : xobj -> fmt
+DEF fmtXobj(xobj(v0,v1)) == ;(;(beg(2),lit("xobj")),;(;(lit("("),;(;(fmtObj(v0),;(lit(", "),fmtKind(v1))),lit(")"))),end))
+FUN fmtObject : object -> fmt
+DEF fmtObject(funct(v0,v1,v2,v3,v4,v5,v6)) == ;(;(beg(2),lit("funct")),;(;(lit("("),;(;(;(;(;(;(;(fmtSeq(fmtObjectId)(v0),;(lit(", "),fmtNat(v1))),;(lit(", "),fmtNat(v2))),;(lit(", "),fmtSeq(fmtXobj)(v3))),;(lit(", "),fmtDenotation(v4))),;(lit(", "),fmtNat(v5))),;(lit(", "),fmtBool(v6))),lit(")"))),end))
+DEF fmtObject(sort(v0,v1)) == ;(;(beg(2),lit("sort")),;(;(lit("("),;(;(fmtSeq(fmtObjectId)(v0),;(lit(", "),fmtOption(fmtPrintInfo)(v1))),lit(")"))),end))
+DEF fmtObject(formal(v0)) == ;(;(beg(2),lit("formal")),;(;(lit("("),;(fmtSeq(fmtObjectId)(v0),lit(")"))),end))
+DEF fmtObject(undef) == ;(;(beg(2),lit("undef")),end)

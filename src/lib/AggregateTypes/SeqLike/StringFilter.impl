@@ -1,0 +1,59 @@
+IMPLEMENTATION StringFilter
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:00 $ ($Revision: 1.1.1.1 $)
+-- functions for removing elements of a string by a predicate on char
+
+IMPORT String ONLY string :: <>  <>? ::? rt ft %
+       Seq ONLY seq <> % ::  rt ft
+       Compose ONLY o
+
+-- note: +% is to be avoided, since it takes O(n) time and allocates a new
+-- chunk every time (so no accumulation!)
+
+DEF _ | <> == <>
+DEF p | (ft :: rt) == IF p(ft) THEN ft :: (p | rt) ELSE (p | rt) FI
+
+DEF partition(_, <>) == (<>, <>)
+DEF partition(p, ft :: rt) == LET (ps, nonps) == partition(p, rt)
+                              IN 
+                              IF p(ft) THEN (ft :: ps, nonps)
+                              ELSE (ps, ft :: nonps)
+                              FI
+
+DEF take(_, <>) == <>
+DEF take(p, ft :: rt) == IF p(ft) THEN ft :: take(p, rt)
+                         ELSE <>
+                         FI
+
+DEF drop(_, <>) == <>
+DEF drop(p, F AS ft :: rt) == IF p(ft) THEN drop(p, rt)
+                              ELSE F
+                              FI
+
+DEF split(_, <>) == (<>, <>)
+DEF split(p, F AS ft :: rt) == IF p(ft) THEN 
+                                 LET (taken, dropped) == split(p, rt)
+                                 IN
+                                 (ft :: taken, dropped)
+                               ELSE
+                                 (<>, F)
+                               FI
+
+DEF split(p, s) ==
+    LET (s1, rest) == split(~ o p, s)
+    IN
+    IF rest <>? THEN %(s1)
+    IF rest ::? THEN s1 :: split(p, rt(rest))
+    FI
+
+DEF components(_)(<>) == <>
+DEF components(_)(S AS (_ :: <>)) == %(S)
+DEF components(~)(a :: B AS (b :: Rest)) ==
+  LET R == components(~)(B)
+  IN
+  IF a ~ b THEN (a :: ft(R)) :: rt(R)
+  ELSE %(a) :: R
+  FI

@@ -1,0 +1,169 @@
+IMPLEMENTATION TopSort
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/sourcetab/TopSort.impl,v 1.1.1.1 1998-06-16 16:00:40 wg Exp $
+
+IMPORT
+  Seq 		COMPLETELY       Set 		COMPLETELY
+  SeqMap 	COMPLETELY       SetFilter 	COMPLETELY
+  SeqFilter 	COMPLETELY       SetConv 	COMPLETELY
+  SeqConv 	COMPLETELY       Option		COMPLETELY
+  SeqSort 	COMPLETELY       String 	COMPLETELY
+                             Char       COMPLETELY
+                             Nat        COMPLETELY
+                             StringMap  COMPLETELY
+                             SeqFilter  COMPLETELY
+
+IMPORT 
+  SourceTab 	COMPLETELY       ConfigFun	COMPLETELY
+  SpecialString COMPLETELY       ConfigTest	COMPLETELY
+  Config	COMPLETELY
+
+
+FUN topologicalSort : seq[usrSourceInfo] ** config -> seq[seq[string]]
+
+-- %Nothing can be sorted if no structure-information is given:
+DEF topologicalSort( <>, _ ) == <>
+
+/* %Initially the candidates for the first sorting level are extracted from the
+non-empty structure-information sequence and passed to an internal processing
+function: */
+DEF topologicalSort( usrSourceInfos, config ) ==
+  IF sortStructuresTopDown?(config) THEN
+    topologicalSortIntern(usrSourceInfos, asSet(name * usrSourceInfos), config)
+  IF sortStructuresBottomUp?(config) THEN
+    revert(topologicalSortIntern(usrSourceInfos, 
+                                 asSet(name * usrSourceInfos), 
+                                 config)
+          )
+  IF sortStructuresAlphabetically?(config) THEN
+    splitInAlphaRows(msort(compare)(name * usrSourceInfos))
+  IF sortStructuresUserDefined?(config) THEN
+    splitInRows(name * usrSourceInfos)
+  ELSE 
+    splitInRows(name * usrSourceInfos)
+  FI
+
+FUN topologicalSort : seq[usrSourceInfo] ** config ** string -> 
+                                                    seq[seq[string]]
+DEF topologicalSort( usrSourceInfos, config, searchName ) ==
+  IF sortStructuresTopDownSub?(config, searchName) THEN
+    topologicalSortIntern(usrSourceInfos, asSet(name * usrSourceInfos), config)
+  IF sortStructuresBottomUpSub?(config, searchName) THEN
+    revert(topologicalSortIntern(usrSourceInfos, 
+                                 asSet(name * usrSourceInfos), 
+                                 config)
+          )
+  IF sortStructuresAlphabeticallySub?(config, searchName) THEN
+    splitInAlphaRows(msort(compare)(name * usrSourceInfos))
+  IF sortStructuresUserDefinedSub?(config, searchName) THEN
+    splitInRows(name * usrSourceInfos)
+  ELSE 
+    splitInRows(name * usrSourceInfos)
+  FI
+
+/* %At first the independent structures are filtered from the candidates. The
+names of the independent structures are lexically sorted and comprehended to
+one sorting level. */
+FUN topologicalSortIntern : seq[usrSourceInfo] ** set[string,<] ** config ->
+                              seq[seq[string]]
+
+DEF topologicalSortIntern( usrSourceInfos, candidates, config ) ==
+  IF {}?(candidates) THEN
+    <>
+  ELSE
+    LET
+      independentStructures ==
+        isIndependent?(usrSourceInfos, candidates, config) | candidates
+    IN
+      topologicalSortIntern(
+        usrSourceInfos,
+        candidates - independentStructures,
+        config
+      ) +%
+        msort(compare)(asSeq(independentStructures))
+  FI
+
+/* %A candidate is independent iff none of the @c{referenceStructureNames} are
+imported. Initially the @c{referenceStructureNames} are built by all structure
+names of the current abstraction level. By succesive construction of sorting
+levels the number of @c{referenceStructureNames} decreases and is finally
+empty. */ 
+FUN isIndependent? : seq[usrSourceInfo] ** set[string,<] ** config ->
+                       string ->
+                         bool
+DEF isIndependent?( usrSourceInfos, referenceStructureNames, config ) 
+                    ( candidate ) ==
+  LET
+    candidateImports == allUsrImports(
+                          cont(find?(
+                                 (\\x.(name(x) = candidate)),
+                                 usrSourceInfos
+                               )
+                          ),
+                          config
+                        )
+  IN
+    (candidateImports * referenceStructureNames) = {}
+    -- no refences structures in import list ?
+
+/* %The extent of import consideration depends on the user's
+specification. First of all libraries are not considered in general as only the
+import-interrelation of user-defined structures is to be considered. In case
+imports of property parts can be extracted from the given
+@c{usrSourceInfo}-structure these are included, too. */ 
+FUN allUsrImports : usrSourceInfo ** config -> set[string,<]
+DEF allUsrImports( usrSourceInfo(name, sign, impl), config ) ==
+    asSet(
+          (\\x. ~(isLibrary?(config)(x))) |
+          (signAndImplImports ++ extpAndIntpImports)
+         )
+  WHERE 
+    signAndImplImports == imports(sign) ++ imports(impl)
+    extpAndIntpImports == (IF avail?(extProp(sign)) THEN
+                            imports(cont(extProp(sign)))
+                          ELSE 
+                            <>
+                          FI) ++
+                          (IF avail?(intProp(impl)) THEN
+                            imports(cont(intProp(impl)))
+                          ELSE 
+                            <>
+                          FI)
+
+DEF allUsrImports( usrForeignInfo(name, file), config ) ==
+  asSet( (\\x. ~(isLibrary?(config)(x)))| imports(file) )
+
+
+
+/* % These functions split a sequence of strings into a sequence of sequences
+of strings (rows). */
+
+/* %generate a maximum of 16 rows, if more than 16 rows are generated, two rows
+are merged */
+FUN splitInRows: seq[string] -> seq[seq[string]]
+DEF splitInRows( <> ) == <>
+DEF splitInRows( names ) == mergeRows(% * names)
+
+FUN mergeRows: seq[seq[string]] -> seq[seq[string]]
+DEF mergeRows( rows ) ==
+    IF #(rows) > 16 THEN mergeRows(merge(rows)) ELSE rows FI
+
+FUN merge: seq[seq[string]] -> seq[seq[string]] 
+DEF merge( <> ) == <>
+DEF merge( ROWS AS _ :: <> ) == ROWS
+DEF merge(row1 :: row2 :: rest ) == row1 ++ row2 :: merge(rest)
+
+
+-- %Split at each change of initial letter
+FUN splitInAlphaRows: seq[string] -> seq[seq[string]]
+DEF splitInAlphaRows( <> ) == <>
+DEF splitInAlphaRows( names ) ==
+    LET initial == lower(ft(ft(names)))
+        (first, rest) == split(\\str. lower(ft(str)) = initial, names)
+    IN first :: splitInAlphaRows(rest)
+
+-- %Compare two strings: first convert to lower case
+FUN compare: string ** string -> bool
+DEF compare(s1, s2) == IF lower * s1 < lower * s2 THEN true
+                       IF lower * s1 > lower * s2 THEN false
+                       ELSE s1 < s2
+                       FI

@@ -1,0 +1,123 @@
+-- LAST EDIT: Tue May 18 19:07:21 1993 by OPAL compiler (athene!opal) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION ImportTranslation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:47 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqFilter	ONLY |
+	SeqZip		COMPLETELY
+	Compose		COMPLETELY
+	Denotation	ONLY =
+
+	DEBUG		COMPLETELY
+
+	NatMap		ONLY natMap {} extend
+
+	SourceAn	ONLY sourceAn symbol:denotation->sourceAn
+	TypeAn		COMPLETELY
+	An		COMPLETELY
+	Ide		COMPLETELY
+	Ac		COMPLETELY
+
+	Rep		ONLY rep ` BOOL DENOTATION ABORT
+	Fct[name]	ONLY fct
+
+	AnalyzedGlobSig	ONLY globSig name struct
+			     treatImportedStructs
+			     treatExternalNames:globSig**struct
+			                        ->(name->typeDec)
+			                          **(name**fct->dec)
+			                        ->seq[typeDec]**seq[dec]
+				rep ide no:globSig**struct->nat formParamKinds
+
+	ParameterTranslation	ONLY info sortInfo restrictedInfo
+					sortParamIdes opParamTypes
+	NameTranslation		ONLY externalIde parameterIde
+	FctTranslation		ONLY type:globSig**info->fct->type
+	DefinitionTranslation	ONLY optGen optFun
+
+-- ----------------------------------------------------------------------------
+
+FUN importUnits: globSig -> seq[unit]
+
+DEF importUnits(sig) == 
+	noBuiltinUnit | treatImportedStructs(sig)(importUnit(sig)) 
+
+    FUN noBuiltinUnit : unit -> bool
+    DEF noBuiltinUnit(U) ==
+	~(symbol(U) = `(BOOL) or
+	  symbol(U) = `(DENOTATION) or
+	  symbol(U) = `(ABORT) or
+	  symbol(U) = "INLINE")
+
+
+-- ----------------------------------------------------------------------------
+
+FUN importUnit: globSig -> struct -> unit
+
+DEF importUnit(sig)(struct) ==
+  LET info == importedParameterInfo(sig,struct)
+      (types,ops) == treatExternalNames(sig,struct)
+                                       (typeDec(sig,info),opDec(sig,info))
+      typeIndices == (# o ide) * types
+      opIndices == (# o ide) * ops
+  IN unit(none set typeDecs(extend({},typeIndices,types)),
+          ide(sig,struct)`,
+          ASSERT(no(sig,struct)|=(target#),
+                 \\ ."imported struct no = target no",
+                 origin(no(sig,struct))),
+          {},
+          extend({},opIndices,ops))
+
+-- ----------------------------------------------------------------------------
+
+FUN typeDec: globSig**info -> name -> typeDec
+
+DEF typeDec(sig,info)(name) ==
+  binding(externalIde(sig)(name),
+          optGen(sortParamIdes(info),some))
+
+-- ----------------------------------------------------------------------------
+
+FUN opDec: globSig**info -> name**fct -> dec
+
+DEF opDec(sig,info)(name,fct) ==
+  LET baseType == type(sig,info)(fct)
+      symbolAn == symbol(rep(sig,name)`)
+      typeAn ==typing(optGen(sortParamIdes(info),
+                              optFun(opParamTypes(info),baseType)))
+  IN hidden((none set symbolAn) set typeAn,externalIde(sig)(name),external)
+
+-- ----------------------------------------------------------------------------
+
+FUN importedParameterInfo: globSig**struct -> info
+
+DEF importedParameterInfo(sig,struct) ==
+  LET formParams == formParamKinds(sig,struct)
+      (sortIdes,no) == (1st(HUDEL),2nd(HUDEL))
+      HUDEL == ((\\optFct,sNn.
+               LET (sorts,n) == (1st(sNn),2nd(sNn))
+               IN (IF optFct nil? THEN sorts +% parameterIde(n)
+                   IF optFct avail? THEN sorts
+                   FI) & succ(n)) / (<> & 0))(formParams)
+      sortTypes == ide*sortIdes
+      dummyInfo == sortInfo(no,sortIdes,sortTypes)
+      ops == ((\\optFct,prevOps.
+                 IF optFct nil? THEN prevOps
+                 IF optFct avail? THEN
+                   prevOps +% type(sig,dummyInfo)(cont(optFct))
+                 FI) / <>)(formParams)
+  IN restrictedInfo(no,sortIdes,sortTypes,ops)

@@ -1,0 +1,168 @@
+SIGNATURE FileSystem
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:18 $ ($Revision: 1.1.1.1 $)
+-- access to the file system 
+
+IMPORT
+  Void                ONLY void: SORT
+  Nat                 ONLY nat: SORT
+  String              ONLY string: SORT
+  Com[void]           ONLY com: SORT
+  Com[denotation]     ONLY com: SORT
+  Com[seq[denotation]]
+                      ONLY com: SORT
+  Com[string]         ONLY com: SORT
+  Com[filestat]       ONLY com: SORT
+  Seq[denotation]     ONLY seq: SORT
+  Time                ONLY time: SORT
+  UserAndGroup        ONLY userid: SORT groupid: SORT
+
+SORT inode
+FUN < = : inode ** inode -> bool
+          -- the system's inode representation and orderings
+
+SORT device
+FUN < = : device ** device -> bool
+          -- the system's device representation and orderings
+
+TYPE filetype == regular       -- regular file
+                 directory     -- directory
+                 charSpecial   -- character special file
+                 blockSpecial  -- block special file
+                 fifo          -- fifo (named pipe) special file
+                 -- not necessarily POSIX; ignored if not supported
+                 socket        -- UNIX domain socket special file
+                 symLink       -- symbolic link
+                 -- file systems may support other non-POSIX file types
+                 unknown       -- some strange local file type
+FUN < = : filetype ** filetype -> bool
+          -- orderings
+
+TYPE permission == setUIdOnExec  -- set user ID on execution
+                   setGIdOnExec  -- set group ID on execution
+                   stickyBit     -- non-POSIX; ignored if not supported
+                   ownerRead     -- owner may read
+                   ownerWrite    --           write
+                   ownerExec     --           execute
+                   groupRead     -- group may read
+                   groupWrite    --           write
+                   groupExec     --           execute
+                   worldRead     -- world may read
+                   worldWrite    --           write
+                   worldExec     --           execute
+SORT filemode
+FUN < =   : filemode ** filemode -> bool
+            -- orderings
+FUN {}    : filemode
+            -- empty file mode ("no permission bits set")
+FUN none? : filemode -> bool
+            -- true if none of the above permissions is set
+            -- NOTE that none?(FM)==true =/> FM=={} due to portability
+FUN %     : permission -> filemode
+            -- singleton; make filemode from single permission
+FUN + -   : filemode ** permission -> filemode
+            -- add/delete permission to/from mode
+FUN +     : permission ** permission -> filemode
+            -- for convenient infix notation; {} + P1 + P2 ... == P1 + P2 ...
+FUN + - * : filemode ** filemode -> filemode
+            -- union/difference/intersection of filemodes
+FUN in    : permission ** filemode -> bool
+            -- test for membership
+
+SORT filestat
+FUN type   : filestat -> filetype      -- file type
+    mode   : filestat -> filemode      -- access permissions
+    inode  : filestat -> inode         -- INode number of file
+    device : filestat -> device        -- device containing the file
+    nlinks : filestat -> nat           -- number of links; MAY OVERFLOW
+    owner  : filestat -> userid        -- owner of file
+    group  : filestat -> groupid       -- group of file
+    size   : filestat -> nat           -- size in bytes; MAY OVERFLOW
+    atime  : filestat -> time          -- time of last access
+    ctime  : filestat -> time          -- time of last change of status
+    mtime  : filestat -> time          -- time of last data modification
+FUN < = : filestat ** filestat -> bool
+          -- orderings based on inode and device ordering; the tuple
+          -- (inode,device) identifies a physical file uniquely
+          -- NOTE that physical files may have more than one name, see link
+
+-- FILE STATUS --
+
+FUN stat     : denotation -> com[filestat]
+               -- get status of file
+               -- see POSIX stat()
+
+-- GENERAL OPERATIONS --
+
+FUN link     : denotation ** denotation -> com[void]
+               -- give existing file an additional name
+               -- see POSIX link()
+FUN unlink   : denotation -> com[void]
+               -- remove file
+               -- see POSIX unlink()
+FUN rename   : denotation ** denotation -> com[void]
+               -- rename file; RENAME ACROSS FILE SYSTEMS MAY FAIL
+               -- see POSIX rename()
+FUN touch    : denotation -> com[void]
+               -- set file access and modification time to current time
+               -- NOTE that this function will not create the file
+               -- see POSIX utime()
+FUN utime    : denotation ** time ** time -> com[void]
+               -- set file access and modification time
+               -- see POSIX utime()
+
+-- ACCESS PERMISSIONS --
+
+FUN chmod    : denotation ** filemode -> com[void]
+               -- change file permissions
+               -- see POSIX chmod()
+FUN chown    : denotation ** userid -> com[void]
+               -- change file owner; USUALLY NOT ALLOWED FOR ORDINARY USERS
+               -- see POSIX chown()
+FUN chgrp    : denotation ** groupid -> com[void]
+               -- change file group
+               -- see POSIX chown()
+
+-- DIRECTORY OPERATIONS --
+
+FUN mkDir    : denotation ** filemode -> com[void]
+               -- create a directory
+               -- see POSIX mkdir()
+FUN rmDir    : denotation -> com[void]
+               -- remove a directory
+               -- see POSIX rmdir()
+FUN readDir  : denotation -> com[seq[denotation]]
+               -- return all directory entries
+               -- MAY OR MAY NOT RETURN ENTRIES FOR . AND ..
+               -- see POSIX readdir()
+
+-- SYMBOLIC LINKS --
+
+FUN symLink  : denotation ** denotation -> com[void]
+               -- give existing file a soft additional name
+               -- see POSIX symlink()
+FUN readLink : denotation -> com[denotation]
+               -- get a symbolic link's reference
+               -- see POSIX readlink()
+
+-- NAMED PIPES (FIFOS) --
+
+FUN mkFifo   : denotation ** filemode -> com[void]
+               -- create FIFO special file (named pipe)
+               -- see POSIX mkfifo()
+
+-- OTHER --
+
+FUN tmpName  : com[denotation]
+                -- return valid unique filename; MAY RUN OUT OF NEW FILENAMES
+                -- see POSIX tmpnam()
+
+
+-- old fashioned
+
+FUN delete  : string -> com[void]            -- same as unlink
+FUN rename  : string ** string -> com[void]  -- see above
+FUN tmpName : com[string]                    -- see above

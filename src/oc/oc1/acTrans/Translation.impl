@@ -1,0 +1,143 @@
+-- LAST EDIT: Tue May 18 19:08:12 1993 by OPAL compiler (athene!opal) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION Translation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:47 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Option		ONLY option
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqZip		COMPLETELY
+	SeqFilter	ONLY partition
+	Compose		COMPLETELY
+	String		ONLY string
+
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+--	ComEnv		ONLY localTime
+
+	DEBUG		ONLY PRINT
+
+	Error		ONLY err:SORT errors
+	Options		ONLY options myAnaFile cop?
+	Verbose		COMPLETELY
+
+	NatMap		ONLY natMap {} extend
+
+	TypeAn		COMPLETELY
+	SourceAn	ONLY sourceAn version
+	PragmaAn	ONLY pragma:SORT pragmaAn pragmas
+	An		ONLY an none:an set:an**typeAn->an set:an**sourceAn->an
+					set:an**pragmaAn->an
+	Ide		ONLY origin:SORT target ide:SORT local
+			     # : ide -> nat # : origin -> nat
+	Ac		COMPLETELY
+	AcDump		ONLY dump
+	AcIO		ONLY writeUnit
+
+	Rep		ONLY rep `
+
+	Fct[name]	ONLY fct
+	GlobPragma[name] ONLY globPragma
+
+	AnalyzedGlobSig	ONLY globSig name sort? op? fct
+			     actStructIde actStructParams
+			     treatInternalNames freeInternal
+			     pragmas:globSig->seq[globPragma]
+
+	ParameterTranslation	ONLY info sortInfo fullInfo
+	FctTranslation		ONLY type:globSig**info->fct->type
+	ImportTranslation	ONLY importUnits
+	DefinitionTranslation	ONLY typeDecNops dec
+	NameTranslation		ONLY ide
+	PragmaTranslation	ONLY pragma
+
+-- ----------------------------------------------------------------------------
+
+FUN trans: options -> globSig -> com[void]
+
+DEF trans(opts)(sig) ==
+  unit(opts)(sig) &
+  (\\ac.LET ac2 == PRINT(cop?(printAcOption,opts),dump(ac),ac)
+        IN writeUnit(opts,myAnaFile(opts))(ac2))
+
+-- ----------------------------------------------------------------------------
+
+FUN printAcOption: denotation
+
+DEF printAcOption == "printAc"
+
+-- ----------------------------------------------------------------------------
+
+FUN localTime : com[denotation]
+DEF localTime == yield(okay(""))
+
+FUN unit: options -> globSig -> com[unit]
+
+DEF unit(opts)(sig) ==
+  localTime & (\\date.
+  importUnits(opts)(sig) &
+  (\\units.
+    internals(opts)(sig) &
+    (\\sortsNops.
+       LET (sorts,ops) == (1st(sortsNops),2nd(sortsNops))
+           sortIndices == (# o ide) * sorts
+           opIndices == (# o ide) * ops
+           unitIndices == (# o origin) * units
+	   prgms == pragma(sig,actualParameterInfo(sig),_) * pragmas(sig)
+	   an == ((none set typeDecs(extend({},sortIndices,sorts)))
+		        set version(date))
+			set pragmas(prgms)
+
+       IN yield(okay(unit(an,
+                          actStructIde(sig)`,
+                          target,
+                          extend({},unitIndices,units),
+                          extend({},opIndices,ops))))))
+  )
+
+FUN importUnits: options -> globSig -> com[seq[unit]]
+
+DEF importUnits(opts)(sig) ==
+  verb(opts,subphase,"translating imports ...");
+  (\\a.yield(okay(importUnits(sig))))
+
+-- ----------------------------------------------------------------------------
+
+FUN internals: options -> globSig -> com[pair[seq[typeDec],seq[dec]]]
+
+DEF internals(opts)(sig) ==
+  verb(opts,subphase,"translating internal names ...");
+  (\\a.LET info == actualParameterInfo(sig)
+           (sorts,ops,hints) == treatInternalNames(sig)
+                                   (typeDecNops(opts)(sig,info),dec(opts)(sig,info))
+                                   (freeInternal(sig))
+       IN errors(opts,hints);
+          (\\b.yield(okay(&(sorts,ops)))))
+
+FUN actualParameterInfo: globSig -> info
+
+DEF actualParameterInfo(sig) ==
+  LET actParams == actStructParams(sig)
+      (sortParams,opParams) == partition(sort?(sig,_),actParams)
+      sortIdes == ide(sig)*sortParams
+      opIdes == ide(sig)*opParams
+      sortTypes == ide*sortIdes
+      dummyInfo == sortInfo(actParams#,sortIdes,sortTypes)
+      opTypes == ((\\name,prevOps.
+                 IF sort?(sig,name) THEN prevOps
+                 IF op?(sig,name) THEN
+                   type(sig,dummyInfo)(fct(sig,name)) :: prevOps
+                 FI) / <>)(actParams)
+      opDecs == zip(\\i,t.variable(none set typing(t),i))(opIdes,opTypes)
+  IN fullInfo(actParams#,sortIdes,sortTypes,opIdes,opTypes,opDecs)

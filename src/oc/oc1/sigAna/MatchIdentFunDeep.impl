@@ -1,0 +1,383 @@
+-- LAST EDIT: Wed Aug 14 10:38:21 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     remove non-matching candidates in 'deep partial names'
+-- Zweck:	Loeschen der nicht mehr passenden Identifizierungsfunktionen
+--		fuer partielle Namen in der 'tiefen' Repraesentation
+-- Changes:	af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+IMPLEMENTATION MatchIdentFunDeep
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	AbsyFun2	ONLY	= * combine
+	Compose		ONLY	o
+	DEBUG		ONLY	FIELD? PRINT
+	Denotation	ONLY	++
+	Fct		ONLY	fct
+	GlobSig		ONLY	globSig structures
+	GlobSigToText	ONLY	`
+	ImpDecl4SigAna	COMPLETELY
+	ImpExpEntry	COMPLETELY
+	MySeqFun1	ONLY	- union
+	MySeqFun2	ONLY	cmp in notDisjoint
+	MySeqFun3	ONLY	/
+	Name		COMPLETELY
+	Name4SigAna	COMPLETELY
+	Nat		ONLY	= nat pred
+	NatMap		ONLY	! def def? natMap {}
+	Objects		COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	PartNameEntry	COMPLETELY
+	Seq		COMPLETELY
+	SeqCompare	ONLY	eq?
+	SeqFilter	ONLY	|
+	SeqIndex	ONLY	!
+	SeqMap		ONLY	*
+	SeqMapEnv	ONLY	*
+	SeqOfSeq	ONLY	flat
+	SeqReduce	ONLY	/
+	SeqZip		ONLY	zip
+	String		ONLY	string
+	Table		ONLY	! !? table
+
+-- ---------------------------------------------------------------------------
+
+FUN matchIdentFunBySortPnDeep : globSig ** sortPN -> globSig ** bool
+	-- Testen aller Kandidaten einer partiellen Sortenapplikation
+	-- Es muss, falls vorhanden, geprueft werden, ob die Instanzen der
+	-- Namen in der Kanditatenmenge mit den partiell applizierten
+	-- Instanzen paarweise eine Schnittmenge bilden.
+DEF matchIdentFunBySortPnDeep(gS,sortPN) == 
+	(updPN(1st(gSnotChanged), sortPN, finPN), 2nd(gSnotChanged)) 
+	WHERE
+	(gSnotChanged, finPN) == matchPNCandDeep(mainStruct, unparam) 
+                       (gS & true, getPN(gS,sortPN))
+
+-- ---------------------------------------------------------------------------
+
+FUN matchIdentFunByInstPnDeep : globSig ** instPN -> globSig ** bool
+	-- Testen aller Kandidaten einer partiellen Instanzenapplikation
+	-- Jeder partielle Name wird fuer sich getestet.
+DEF matchIdentFunByInstPnDeep(gS, instPN) ==
+	(updCands(finGS, instPN, finCands), notChanged)
+	WHERE
+	(finGSNotChanged, finCands) == 
+	   *'SeqMapEnv(matchPNCandDeep(mainStruct, unparam), 
+                          (gS & true), getCands(gS, instPN))
+	finGS == 1st(finGSNotChanged)
+	notChanged == 2nd(finGSNotChanged)
+
+
+-- ---------------------------------------------------------------------------
+
+FUN matchIdentFunByOnlyPnDeep : globSig ** struct'Objects ** inst ** onlyPNE 
+		-> globSig ** bool ** onlyPNE
+	-- Testen aller Kandidaten einer partiellen Onlyapplikation
+	-- Die statischen Attribute sind getestet, d.h. insbesondere enthalten
+	-- die Kandidatenmengen nur solche aus dem expliziten oder den 
+	-- transitiven Importmengen.
+DEF matchIdentFunByOnlyPnDeep(gS, iStruct, Inst, oPN) == 
+	(finGS, 2nd(fingSnotChanged), finOPN)
+	WHERE 
+	(fingSnotChanged, finPN) == 
+              matchPNCandDeep(iStruct, Inst)(gS & true, pN(oPN))
+	finOPN == onlyPNE(finPN, errInfo(oPN))
+	gS1 == 1st(fingSnotChanged)
+	finGS == (onlyUnApplied / gS1)(excludedNames)
+	excludedNames == -(='Name)(flat(cands * getCands(pN(oPN))), 
+				   flat(cands * getCands(finPN)))
+FUN matchPNCandDeep : pair[globSig,bool] ** pN -> pair[globSig,bool] ** pN
+DEF matchPNCandDeep(gSnotChanged, pN) == 
+    matchPNCandDeep(mainStruct, unparam)(gSnotChanged, pN)
+-- ---------------------------------------------------------------------------
+
+FUN matchPNCandDeep : struct'Objects ** inst -> 
+    pair[globSig,bool] ** pN -> pair[globSig,bool] ** pN
+  -- Abpruefen der Kandidatenmenge eines partiellen Namens mit ev. Reduzieren
+  -- Die statischen Attribute sind schon ueberprueft. Es werden nur die 
+  -- dynamischen Opal0-Attribute getestet.
+DEF matchPNCandDeep(IStruct, Inst)(gSnotChanged, pN) == 
+  -- pN ist aus IStruct und Inst importiert
+    LET 
+	(fingSnotChanged, finCands) == 
+	  (matchPNinstCand(IStruct, Inst, pN) / (gSnotChanged, <>[instCand]))
+		(getCands(pN))
+        finPNa == updCands(pN, finCands)
+        finPN == PRINT(FIELD?[string]("-zprintGsMatchPNCandDeep"),
+                `(1st(fingSnotChanged),pN),finPNa)
+    IN             
+    (fingSnotChanged, finPN)
+
+        FUN ` :globSig ** pN -> () -> denotation
+        DEF `(gS, pN)() == `(pN) ++ "\n" ++ `(gS)()
+
+FUN matchPNinstCand : struct'Objects ** inst ** pN ->
+                     pair[globSig,bool] ** instCand ** seq[instCand]
+		       -> pair[globSig,bool]** seq[instCand]
+  -- Testen der einzelnen Namen gegen die applizierte Instanz.
+DEF matchPNinstCand(IStruct, Inst, pN)
+    (gS & NotChanged, nameS & instPN, nameInstPNS) ==
+	IF finNameS <>? THEN -- keine Kandidaten mehr: instPN loeschen
+	  ((delInstPN(instPN, gS) & false), nameInstPNS)
+	ELSE 	-- Ev. einige, aber nicht alle Kandidaten geloescht
+	  (gS & notChanged, (finNameS & instPN) :: nameInstPNS)
+	  WHERE notChanged == NotChanged and #(finNameS) = #(nameS)
+	FI
+	WHERE
+	finNameS == eqPnInstFct(IStruct, Inst, gS, pN, instPN) | nameS
+
+-- ---------------------------------------------------------------------------
+
+FUN eqPnInstFct : struct'Objects ** inst ** globSig ** pN ** instPN 
+                -> name -> bool
+	-- Test, ob die Instanz/Fct eines Namens mit einer partiellen matched.
+DEF eqPnInstFct(IStruct, Inst, gS, pN, instPN)(name) ==
+	IF myhidden?(gS, name) THEN false
+	ELSE equalInst and equalFct
+	WHERE
+	equalInst ==
+	  IF instPN noInstPN? THEN true		-- keine Instanz annotiert
+	  OTHERWISE
+	  IF explInst?(gS, name) THEN 		-- instantiiert importiert
+	    eqInstPN(gS,instPN, getInstPN(gS,name))
+	  IF explUninst?(gS, name) ORIF identUninst?(gS, name) THEN true
+                                                -- uninstantiiert importiert
+	  IF transitive?(gS, name) THEN         -- fester transitiver Import
+	    eqInst(gS,instPN, getInst(gS, name))
+	  IF genericTransitive?(gS, name) THEN	-- generischer trans. Import
+	    eqGenericInst(gS,instPN, struct(name))(inst(name))
+	  IF genericTransitives?(gS, name) THEN
+	    exist?(eqGenericInst(gS,instPN, struct(name)),getInsts(gS,name))
+	  FI
+	equalFct ==
+	  IF pN pNOp? THEN	-- Testen der annotierten Fct
+            exist?(\\F.
+	    =(eqFctSortName(gS))(getPNFct(pN),F),
+            combine(\\N.N, instFct(IStruct, Inst, gS, name)))
+	  ELSE true FI
+        FI
+
+
+	FUN eqFctSortName : globSig -> sortPN ** name -> bool
+	DEF eqFctSortName(gS)(sPN, name) == 
+		IF name sortPartName? THEN eqSortPN(gS, sPN, sortPN(name)) 
+		ELSE
+		  exist?((in(eqFctSortName(gS),name)) o cands ,
+			 getCands(getPN(gS,sPN)))
+		FI 
+
+	FUN eqFctSortName : globSig -> name ** name -> bool
+	  -- ein weiteres schoene Gleichheit auf Namen
+	DEF eqFctSortName(gS)(n1,n2) ==
+	  IF n1 = n2 THEN true
+          OTHERWISE
+--          IF formParam?(n1) or formParam?(n2) THEN true  
+--   	  OTHERWISE
+	  IF n1 eqBaseA n2 THEN
+	    IF (n1 extName?) and (n2 extName?) THEN
+	      IF inst(n1) = inst(n2) THEN true
+	      IF inst(n1) = unparam THEN false
+	      IF inst(n2) = unparam THEN false
+	      OTHERWISE
+	      IF uninst?(gS,struct(n1),inst(n1)) THEN true
+	      IF uninst?(gS,struct(n2),inst(n2)) THEN true
+              ELSE eqInst(gS,struct(n1),inst(n1),inst(n2)) FI
+	    ELSE false FI
+	  ELSE false FI
+
+
+-- ---------------------------------------------------------------------------
+-- Vergleich von Applikationen (Kandidatenmengen)
+
+FUN eqGenericInst : globSig ** instPN ** struct'Objects -> inst -> bool
+  -- Test, ob der instPN mit der Sequenz der Namen, in denen auch noch
+  -- uninstantiierte Variablen vorkommen koennen, matcht.
+DEF eqGenericInst(gS, instPN, struct)(inst) ==
+	LET (oStruct, oInst) == getOtherInst(gS,struct,inst) 
+	    InstS == getInst(gS,struct,inst)
+	    Cands == getCands(gS, instPN)
+	IN
+	IF uninst?(gS, oStruct, oInst) THEN 
+		testUninst(gS,oStruct,{})(zip(&)(InstS, Cands))  
+	ELSE
+	  cmp(inCandSet(gS,oStruct,pNS))(InstS, getCands(gS, instPN))
+	  WHERE pNS == getOtherInstPNS(gS,struct,inst)
+	FI
+
+FUN testUninst : globSig ** struct'Objects ** natMap[pN] -> 
+seq[pair[name,pN]] -> bool
+DEF testUninst(_, _, _)(<>)==true
+DEF testUninst(GlobSig,oStruct,Map)(&(Name,PN)::Rt)==
+	IF formParam?(Name) ANDIF oStruct=struct(Name) THEN
+		IF def?(no(Name), Map) THEN eqPN(GlobSig)(PN, Map!no(Name))
+			and testUninst(GlobSig,oStruct,
+				def(no(Name), 
+				 intersect(GlobSig)(PN, Map!no(Name)), Map))
+				(Rt)
+		ELSE testUninst(GlobSig,oStruct,
+			def(no(Name),PN,Map))(Rt)
+		FI
+	ELSE inCandSet(GlobSig)(Name,PN) and testUninst(GlobSig,oStruct,Map)(Rt)
+	FI 
+
+FUN intersect : globSig -> pN ** pN ->pN 
+DEF intersect(Gs)(PN1, PN2) == updCands(PN1, 
+		union(\\x,_ . x,eqPnByInst(Gs))
+		(getCands(PN1),getCands(PN2)))
+	
+FUN eqInst : globSig ** instPN ** seq[name:SORT] -> bool
+DEF eqInst(gS,instPN, inst) ==
+	cmp(inCandSet(gS))(inst, getCands(gS,instPN))
+
+FUN inCandSet : globSig ** struct'Objects ** seq[pN:SORT] -> name ** pN -> bool
+  -- der Name ist aus einer generisch transitiven Instanz
+DEF inCandSet(gS,oStruct,pNS)(name,pN) ==
+	  IF name extName? THEN inCandSet(gS)(name, pN)
+	  IF name formParam? ANDIF struct(name)=oStruct 
+			THEN eqPN(gS)(pNS!pred(no(name)), pN)
+	  ELSE false
+	  FI
+
+
+FUN inCandSet : globSig -> name ** pN -> bool
+DEF inCandSet(gS)(name,pN:pN) == exist?(inCandSet(gS, name),getCands(pN))
+
+FUN inCandSet : globSig ** name -> instCand -> bool
+ -- der Name muss in der Kandidatenliste sein 
+DEF inCandSet(gS, name)(nameS & _) ==
+	exist?(matchName(gS)(name,_), nameS)
+
+        FUN matchName : globSig -> name ** name -> bool
+          -- zu beachten ist, dass ein Test auf direkte Gleichheit =`Name
+          -- nicht ausreicht, da eine genericTransitives Instanz ihre
+          -- abgeleiteten genericTransitive Instanzen enthaelt und damit erste
+          -- in diesem Sinne auch die zweite repraesentiert.
+          -- Ich habe dies nicht in irgendeine der vielen allgemein verwendeten
+          -- Gleichheiten von Namen eingebaut, um Seiteneffekte zu vermeiden.
+          -- mija 15.8.93
+          -- Verbesserung auf die korrekte Behandlung von Namen aus unpara-
+          -- metrisierten Strukturen
+        DEF matchName (gS)(n1, n2) == 
+          IF parametrized?(gS, n1)~ THEN n1 = n2
+          IF parametrized?(gS, n2)~ THEN n1 = n2
+	  OTHERWISE
+	  IF intName?(n1) THEN false	
+	  IF intName?(n2) THEN false	
+	  OTHERWISE
+	  IF inst(n1) = unparam THEN false
+	  IF inst(n2) = unparam THEN false
+          OTHERWISE
+	  IF uninst?(gS,struct(n1),inst(n1)) THEN false
+	  IF uninst?(gS,struct(n2),inst(n2)) THEN false
+/*          OTHERWISE
+          IF genericTransitive?(gS,n1) THEN false
+          IF genericTransitive?(gS,n2) THEN false
+*/          OTHERWISE
+          IF genericTransitives?(gS,n1) THEN
+            exist?(matchName(gS)(_,n2),expandGenericTransitives(gS)(n1))
+          IF genericTransitives?(gS,n2) THEN
+            exist?(matchName(gS)(n1,_),expandGenericTransitives(gS)(n2))
+          ELSE n1 = n2 FI
+
+FUN eqInstPN : globSig ** instPN ** instPN -> bool
+  -- Es wird davon ausgegegangen, dass die statischen Attribute passen.
+DEF eqInstPN(gS, iPN1, iPN2) ==
+	IF iPN1 = iPN2 THEN true	-- wenn es dieselben sind
+	ELSE eq?(eqPN(gS))(getCands(gS,iPN1), getCands(gS,iPN2)) FI
+
+
+FUN eqPN : globSig -> pN ** pN -> bool
+DEF eqPN(Gs)(pN1, pN2) == 
+	notDisjoint(eqPnByInst(Gs))(getCands(pN1), getCands(pN2))
+
+FUN eqPnByInst : globSig -> instCand ** instCand -> bool
+DEF eqPnByInst(Gs)(nameS1 & _, nameS2 & _) ==
+	notDisjoint(matchName(Gs))(nameS1,nameS2)
+
+-- -------------------------------------------------------------------
+FUN eqSortPN : globSig ** sortPN ** sortPN -> bool
+DEF eqSortPN(gS, sPN1, sPN2) ==
+	IF sPN1 = sPN2 THEN true	-- wenn es dieselben sind
+	ELSE eqFctPN(gS)(getPN(gS,sPN1), getPN(gS,sPN2)) FI
+
+FUN eqFctPN : globSig -> pN ** pN -> bool
+DEF eqFctPN(Gs)(pN1, pN2) == 
+	notDisjoint(eqFctPnByInst(Gs))(getCands(pN1), getCands(pN2))
+
+
+FUN eqFctPnByInst : globSig -> instCand ** instCand -> bool
+DEF eqFctPnByInst(Gs)(nameS1 & _, nameS2 & _) ==
+	notDisjoint(eqFctSortName(Gs))(nameS1,nameS2)
+
+-- -------------------------------------------------------------------
+FUN myhidden? : globSig ** name -> bool
+DEF myhidden?(gS,name) == 
+	IF name extName? THEN
+	  LET iDO == (no(impDecl(name)) !? 
+		     impDecls(no(struct(name)) ! structures(gS)))
+	  IN 
+	  IF iDO nil? THEN true
+	  ELSE LET iD == cont(iDO) IN
+	    (IF ~(notParametrized?(gS,struct(name))) THEN -- parametrisiert
+	      IF (inst(name)=unparam'Objects) THEN true
+	      ELSE
+		IF genericTransitives?(gS,name) THEN
+		  notDisjoint(=)(Insts, otherInsts(instE))~
+		  WHERE instE == no(inst(name)) ! instTab
+		ELSE ~(exist?((\\Inst. inst(name) = Inst), Insts)) FI
+		WHERE instTab == insts(no(struct(name)) ! structures(gS))
+	      FI
+	    ELSE Insts <>? FI
+	    WHERE Insts == instOf * (applied? | instS(iD)))
+	  FI
+	IF name intName? THEN false
+	IF name formParam? THEN ~(struct(name) = mainStruct)
+	FI
+
+-- -------------------------------------------------------------------
+FUN instFct : struct'Objects ** inst ** globSig ** name -> fct[seq[name]]
+DEF instFct(IStruct, Inst, gS, name) ==
+        LET Fct == fct(gS, name) IN
+           * (\\Name. IF extName?(Name) THEN 
+                         IF name extName? 
+                         ANDIF struct(name) = struct(Name) THEN 
+                            extName(struct(Name), impDecl(Name), inst(name))%
+                         IF struct(Name) = IStruct THEN   
+                            extName(struct(Name), impDecl(Name), Inst)%
+                         ELSE Name% FI
+                      IF formParam?(Name) ANDIF ~(Inst = unparam)
+                      ANDIF struct(Name) = IStruct THEN
+                            IF transitive?(gS, IStruct, Inst) ORIF
+                               identInst?(gS, IStruct, Inst) THEN
+                               %(getInst(gS, IStruct, Inst) ! pred(no(Name)))
+                            IF explInst?(gS, IStruct, Inst) THEN
+                               LET InstPN == getInstPN(gS, IStruct, Inst)
+                               Cand == getCands(gS, InstPN) ! pred(no(Name))
+                               IN getNames(Cand)
+                            ELSE Name% FI
+                      IF formParam?(Name) 
+                      ANDIF name extName? 
+                      ANDIF struct(Name) = struct(name) THEN 
+                            IF transitive?(gS, name) ORIF
+                               identInst?(gS, name) THEN
+                               %(getInst(gS, name) ! pred(no(Name)))
+                            IF explInst?(gS, name) THEN
+                               LET InstPN == getInstPN(gS, name)
+                               Cand == getCands(gS, InstPN) ! pred(no(Name))
+                               IN getNames(Cand)
+                            ELSE Name% FI
+                      ELSE Name% FI) (Fct)
+
+
+FUN getNames : pN -> seq[name]
+DEF getNames(pN) == flat(cands * getCands(pN))

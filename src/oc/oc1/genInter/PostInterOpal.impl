@@ -1,0 +1,76 @@
+IMPLEMENTATION PostInterOpal
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+
+IMPORT MapReduce ONLY /
+       Error ONLY ok err errKind errors + hint warning error
+       AGSig ONLY getExternalNames
+       ComAction ONLY done
+       Map ONLY map
+       Name ONLY name < extName
+       Seq ONLY seq :: ft rt <>
+       Pos ONLY pos firstPos
+       String ONLY string
+       SetByBST[name, <] ONLY set in
+       SetByBSTConv[name, <] ONLY asSet
+       Denotation ONLY +/+ =
+       Rep ONLY ` rep < : rep ** rep -> bool
+       GlobPragma[name] ONLY lexem? globPragma prag lexem identify pns pragS ide
+       Char ONLY char
+       GlobSig ONLY impPragmas
+       ComCompose ONLY &
+       SeqFilter ONLY |
+       SeqMap ONLY *
+       Com ONLY com
+       SeqReduce ONLY /
+       ABORT ONLY ABORT
+       Nat ONLY 0 nat
+       Objects ONLY inst struct impDecl
+
+/* %Alle importierten Pragmas auf Msgs überprüfen, ggf. Fehler erzeugen und
+    diese alle ausgeben. */ 
+DEF postInterOpal(Opts)(Sig) == 
+  errors(Opts, (checkMsg(Opts, Sig), ok) / impPragmas(Sig)) & done
+
+/* %Alle Pragmas überprüfen auf HINT oder WARNING, falls der Name auch
+    importiert wurde, dann jeweils pasenden Fehler erzeugen */
+FUN checkMsg: options ** globSig -> rep ** seq[globPragma] ** err -> err 
+DEF checkMsg(_Opts, Sig)(_strRep, Ps, oldErrors) ==
+  LET hints == imported?(Sig, extNames) | checkPragma("HINT") | Ps
+      warnings == imported?(Sig, extNames) | checkPragma("WARNING") | Ps
+      errors == imported?(Sig, extNames) | checkPragma("ERROR") | Ps
+      extNames == asSet(equalInst * getExternalNames(Sig))
+      hintErrors == (+, ok) / mkDiag(hint) * hints
+      warnErrors == (+, ok) / mkDiag(warning) * warnings
+      errorErrors == (+, ok) / mkDiag(error) * errors
+  IN
+    hintErrors + warnErrors + errorErrors + oldErrors
+
+/* % true wenn Pragma als erstes das angegebene Wort und als zweites
+     genau einen Namen enthält */
+FUN checkPragma: denotation -> globPragma -> bool
+DEF checkPragma(_)(prag(<>)) == false
+DEF checkPragma(txt)(prag(lexem(i, _) :: identify(_ :: <>) :: _)) ==
+  `(i) = txt 
+DEF checkPragma(_)(_else) == false
+
+/* %Nicht mehr so intelligent, wie zuerst gedacht. True, falls der
+    Name des Pragmas appliziert wird */
+FUN imported? : globSig ** set[name, <] -> globPragma -> bool
+DEF imported?(_Sig, extNames)(P) ==
+  LET o == ft(pns(ft(rt(pragS(P)))))  -- muss gehen, wenn checkPragma ok ist
+  IN
+  equalInst(o) in extNames
+
+/* %aus dem Pragma eine passende Fehlermeldung machen. */
+FUN mkDiag: errKind -> globPragma -> err
+DEF mkDiag(eK)(prag(_ :: _ :: pragS)) ==  
+  err(eK, (+/+(" "), "") / (` * ide * lexem? | pragS), firstPos)
+DEF mkDiag(_)(_else) == ABORT("mkDiag'PostInterOpal: falsches Pragma!")
+
+/* %Vereinheitlicht die Instanz auf Null. Hack. */
+FUN equalInst: name -> name
+DEF equalInst(extName(str,iD,_)) == extName(str,iD,inst(0))

@@ -1,0 +1,473 @@
+
+
+IMPLEMENTATION WinConfig
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq		COMPLETELY
+	SeqMap		ONLY *
+	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	Char		COMPLETELY
+	CharConv	COMPLETELY
+	Int		COMPLETELY
+	IntConv		COMPLETELY
+	Real		COMPLETELY
+	RealConv	COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	StringScan	COMPLETELY
+	StringFormat	COMPLETELY
+	BTUnion		COMPLETELY
+	Seq		COMPLETELY
+	Denotation	ONLY ++
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+
+IMPORT	WinInternal	COMPLETELY
+	WinTclTk	COMPLETELY
+	WinAppl		ONLY screenResolution
+
+
+-- $Configurations in General$ ==============================================
+
+DEF {}				   == config(<>'Seq)
+DEF config(Coms1) ++ config(Coms2) == config(Coms1 ++ Coms2)
+
+
+DEF basic(Display, config(Coms)) with config(NewComs) == 
+    basic(Display, config(Coms ++ NewComs))
+
+DEF compound(Op, Views) with Config ==
+    compound(Op, (_ with Config) * Views)
+
+DEF modified(Pack, View) with Config ==
+    modified(Pack, View with Config)
+
+
+
+-- $Texts$ ==================================================================
+
+DEF text(Deno : denotation) == 
+    config("-text {%s}" <- Deno)
+
+DEF text(Str : string) == 
+    config("-text {%s}" <- Str)
+
+DEF text(Pattern, BTSeq) == text(format(Pattern, BTSeq))
+
+-- %$Reliefs$ ======================================================
+
+DATA relief == relief(name: denotation)
+
+DEF flat	== relief("flat")
+DEF raised	== relief("raised")
+DEF sunken	== relief("sunken")
+DEF ridge	== relief("ridge")
+DEF groove	== relief("groove")
+
+
+-- %$$Relief Configuration$ 
+
+DEF relief(relief(Name)) == 
+    config("-relief {%s}" <- Name)
+
+DEF flat == relief(flat)
+DEF raised == relief(raised)
+DEF sunken == relief(sunken)
+DEF ridge == relief(ridge)
+DEF groove == relief(groove)
+
+
+-- %$Anchors$ ======================================================
+
+DATA anchor == anchor(name: denotation)
+
+DEF north	== anchor("n")
+DEF east	== anchor("e")
+DEF south	== anchor("s")
+DEF west	== anchor("w")
+DEF center	== anchor("center")
+
+DEF anchor(A1)-anchor(A2) == anchor(A1 ++ A2)
+
+-- %$$Anchor Configuration$ 
+
+DEF anchor(anchor(Name)) == 
+    config("-anchor {%s}" <- Name)
+
+
+-- %$Colors$ =============================================================
+
+DATA color == color(name: denotation)
+
+DEF white	== color("white")		--
+DEF black	== color("black")		--
+
+DEF grey	== color("grey")			-- 
+DEF lightgrey	== color("lightgrey")		--
+DEF darkgrey	== color("darkslategrey")	--
+
+DEF red		== color("red")			--
+DEF lightred	== color("lightcoral")		--
+DEF darkred	== color("darkred")		--
+
+DEF orange	== color("orange")		-- 
+DEF lightorange	== color("peachpuff")		--
+DEF darkorange	== color("darkorange")		--
+
+DEF blue	== color("blue")			-- 
+DEF lightblue	== color("aquamarine")		--
+DEF darkblue	== color("navyblue")		--
+
+DEF azure	== color("azure")		-- 
+DEF lightazure	== color("lightazure")		--
+DEF darkazure	== color("darkazure")		--
+
+DEF turquoise	== color("turquoise")		-- 
+DEF lightturquoise== color("paleturquoise")	--
+DEF darkturquoise == color("darkturquoise")	--
+
+DEF green	== color("green")		-- 
+DEF lightgreen	== color("lightseagreen")	--
+DEF darkgreen	== color("darkseagreen")		--
+
+DEF forestgreen	== color("forestgreen")		--
+
+DEF pink	== color("pink")			-- 
+DEF lightpink	== color("lightpink")		--
+DEF darkpink	== color("deeppink")		--
+
+DEF ivory	== color("ivory")		-- 
+DEF violet	== color("violet")		-- 
+DEF magenta	== color("magenta")		--
+DEF purple	== color("purple")		-- 
+DEF thistle	== color("thistle")		-- 
+DEF burlywood	== color("burlywood")		--
+DEF orchid	== color("orchid")		--
+
+
+DEF rgb(Red,Green,Blue) ==
+    rgb((!(Red:denotation)):real, !(Green), !(Blue))
+DEF rgb(Red,Green,Blue) ==
+    LET Scale == \\X. asNat(X * !("65535"))
+    IN
+    color("#" ++ `(asHex(Scale(Red), 4)) ++ `(asHex(Scale(Green), 4))
+	      ++ `(asHex(Scale(Blue), 4)))
+
+    FUN asHex : nat ** nat -> string
+    DEF asHex(N, I) == 
+        IF I = 0 THEN <>
+        ELSE
+            LET D == (N % 16):nat
+                C == IF D < 10 THEN asChar(asNat((!("0")):char) + D)
+                               ELSE asChar(asNat((!("A")):char) + (D - 10)) FI
+            IN
+            asHex(N / 16, pred(I)) +% C
+        FI
+
+
+/* asHex on the base of naturals:
+
+    FUN asHex: nat -> denotation
+    DEF asHex(N) ==
+	    -- we calculate N percent of hex:`fff' 
+	    -- we take 41 as approximation of 1% of `fff' = 1% of 4096
+	    LET Value == N * 41 IN
+	    IF Value >= !("4096") THEN "fff" ELSE
+	    LET
+	    3rd == Value % 16
+	    2nd == (Value/16) % 16
+	    1st == (Value/256)
+	    IN
+	    hexDigit(1st)++hexDigit(2nd)++hexDigit(3rd)
+	    FI
+
+    FUN hexDigit: nat -> denotation	-- as hexadecimal digit
+    DEF hexDigit(D) ==
+	    IF D < 10 THEN asChar(asNat((!("0")):char) + D)
+		      ELSE asChar(asNat((!("a")):char) + (D - 10))
+	    FI
+*/
+	
+
+
+
+
+-- %$$Color Configuration$ 
+
+DEF background(color(Name)) == 
+    config("-background {%s}" <- Name)
+
+DEF bg == background
+
+DEF activeBackground(color(Name)) == 
+    config("-activebackground {%s}" <- Name)
+
+DEF selectBackground(color(Name)) == 
+    config("-selectbackground {%s}" <- Name)
+
+DEF insertBackground(color(Name)) == 
+    config("-insertbackground {%s}" <- Name)
+
+DEF cursorBackground(color(Name)) == 
+    config("-cursorbackground {%s}" <- Name)
+
+DEF foreground(color(Name)) == 
+    config("-foreground {%s}" <- Name)
+
+DEF fg == foreground
+
+DEF activeForeground(color(Name)) == 
+    config("-activeforeground {%s}" <- Name)
+
+DEF selectForeground(color(Name)) == 
+    config("-selectforeground {%s}" <- Name)
+
+DEF disabledForeground(color(Name)) == 
+    config("-disabledforeground {%s}" <- Name)
+
+DEF selector(color(Name)) == 
+    config("-selectorcolor {%s}" <- Name)
+
+
+-- %$Fonts$ =================================================================
+
+DATA font == font(name: denotation)
+
+DEF fixed == font("fixed")
+DEF variable == font("variable")
+
+
+DEF font(font(Name)) == 
+    config("-font {%s}" <- Name)
+
+
+
+
+-- %$Geometry$ ==============================================================
+
+DATA point      == @ (xc: real, yc: real)
+DATA size       == x  (width: real, height: real)
+
+
+DEF R px == R * screenResolution
+DEF D px == !(D) px 
+DEF WD x HD == !(WD) x !(HD)
+DEF XD @ YD == !(XD) @ !(YD)
+
+
+-- %$$Size Configuration$ 
+
+DEF width(S) == 
+    config("-width %s" <- asPixel(S))
+
+DEF height(S) == 
+    config("-height %s" <- asPixel(S))
+
+DEF size(x(XS, YS)) == size(XS, YS)
+
+DEF size(XS, YS) == 
+    config(("-width %s -height %s" <- asPixel(XS)) + asPixel(YS))
+
+
+DEF unitWidth(S) == 
+    config("-width %n" <- S)
+
+DEF unitHeight(S) == 
+    config("-height %n" <- S)
+
+DEF unitSize(x(XS, YS)) == unitSize(asNat(XS), asNat(YS))
+
+DEF unitSize(XS, YS) == 
+    config(("-width %n -height %n" <- XS) + YS)
+
+
+DEF fixedSize ==
+    configWidget(\\Win, Wid. act("pack propagate %s off" <- Wid))
+
+
+-- %$$Padding Configuration$ 
+
+DEF padX(S) == 
+    configWidget(\\Win, Wid. act("pack configure %s -padx %s" <- Wid + asPixel(S)))
+
+DEF padY(S) == 
+    configWidget(\\Win, Wid. act("pack configure %s -pady %s" <- Wid + asPixel(S)))
+
+DEF pad(x(XS, YS)) == pad(XS, YS)
+
+DEF pad(XS, YS) == 
+    configWidget(\\Win, Wid. act(("pack configure %s -padx %s -pady %s" 
+    				<- Wid + asPixel(XS)) + asPixel(YS)))
+
+DEF ipadX(S) == 
+    configWidget(\\Win, Wid. act("pack configure %s -ipadx %s" <- Wid + asPixel(S)))
+
+DEF ipadY(S) == 
+    configWidget(\\Win, Wid. act("pack configure %s -ipady %s" <- Wid + asPixel(S)))
+
+DEF ipad(x(XS, YS)) == pad(XS, YS)
+
+DEF ipad(XS, YS) == 
+    configWidget(\\Win, Wid. act(("pack configure %s -ipadx %s -ipady %s" 
+    				<- Wid + asPixel(XS)) + asPixel(YS)))
+
+
+-- %$$Border Width Configuration$ 
+
+DEF borderWidth(S) == 
+    config("-borderwidth %s" <- asPixel(S))
+
+DEF bw == borderWidth
+
+DEF activeBorderWidth(S) == 
+    config("-activeborderwidth %s" <- asPixel(S))
+
+DEF insertBorderWidth(S) == 
+    config("-insertborderwidth %s" <- asPixel(S))
+
+DEF selectBorderWidth(S) == 
+    config("-selectborderwidth %s" <- asPixel(S))
+
+DEF cursorBorderWidth(S) == 
+    config("-cursorborderwidth %s" <- asPixel(S))
+
+
+-- %$$Cursor Width Configuration$ 
+
+DEF cursorWidth(S) == 
+    config("-cursorwidth %s" <- asPixel(S))
+
+
+-- %$$Positioning$ 
+
+DEF position(Xc, Yc) ==
+    configWidget(\\Win, Wid. act("place %s -x %s -y %s" 
+    				<- Wid + asPixel(Xc) + asPixel(Yc)))
+
+DEF position(Xc @ Yc) == position(Xc, Yc)
+
+DEF relPosition(Xc, Yc) ==
+    configWidget(\\Win, Wid. act("place %s -relx %s -rely %s" 
+    				<- Wid + `(Xc) + `(Yc)))
+
+
+DEF relPosition(@(Xc, Yc)) == relPosition(Xc, Yc)
+
+
+-- %$Bitmaps$ ===============================================================
+
+DATA bitmap == bitmap(name: denotation)
+
+DEF error	== 	bitmap("error")
+DEF gray50 	== 	bitmap("gray50")
+DEF gray25 	== 	bitmap("gray25")
+DEF hourglass 	==	bitmap("hourglass")
+DEF info	== 	bitmap("info")
+DEF questhead 	==	bitmap("questhead")
+DEF question 	== 	bitmap("question")
+DEF warning 	== 	bitmap("warning")
+DEF none 	== 	bitmap("")
+
+DEF file(Name)  == 	bitmap("@" ++ Name)
+
+-- %$$Bitmap Configuration$ 
+
+DEF bitmap(bitmap(Name)) == 
+    config("-bitmap {%s}" <- Name)
+
+DEF bgstipple(bitmap(Name)) == 
+    config("-bgstipple {%s}" <- Name)
+
+DEF fgstipple(bitmap(Name)) == 
+    config("-fgstipple {%s}" <- Name)
+
+
+
+
+-- %$Cursors$ ================================================================
+
+DATA cursor == cursor(name: denotation)
+
+-- FUN arrow ... watch : cursor
+DEF arrow	== cursor("arrow")
+DEF boat	== cursor("boat")
+DEF circle	== cursor("circle")
+DEF clock	== cursor("clock")
+DEF diamondCross== cursor("diamond_cross")
+DEF dot		== cursor("dot")
+DEF drapedBox	== cursor("draped_box")
+DEF exchange	== cursor("exchange")
+DEF fleur	== cursor("fleur")
+DEF gobbler 	== cursor("gobbler ")
+DEF gumby	== cursor("gumby")
+DEF hand1	== cursor("hand1")
+DEF hand2	== cursor("hand2")
+DEF pencil	== cursor("pencil")
+DEF plus	== cursor("plus")
+DEF spraycan	== cursor("spraycan")
+DEF target	== cursor("target")
+DEF tcross	== cursor("tcross")
+DEF watch	== cursor("watch")
+
+DEF file(Image, Mask) == cursor("@" ++ Image ++ " " ++ Mask)
+
+
+-- %$$Cursor Configuration$ 
+
+DEF cursor(cursor(Name)) == 
+    config("-cursor {%s}" <- Name)
+
+DEF cursor(cursor(Name), color(FG), color(BG)) == 
+    config("-cursor {%s %s %s}" <- Name + FG + BG)
+
+
+-- %$State: Exp $ ==================================================================
+
+DATA state == normal active disabled
+
+DEF state(normal) == 
+    config("-state normal")
+
+DEF state(active) ==
+    config("-state active")
+
+DEF state(disabled) == 
+    config("-state disabled")
+
+DEF normal == state(normal)
+DEF active == state(active)
+DEF disabled == state(disabled)
+
+
+-- %$Export Selection$ =======================================================
+
+DEF exportSelection == 
+    config("-exportselection")
+
+
+-- %$Gridding$ ==============================================================
+
+DEF setGrid == 
+    config("-setgrid")
+
+
+-- %$Orientation$ ===========================================================
+
+DATA orient == horizontal vertical
+
+DEF orient(horizontal) == 
+    config("-orient horizontal")
+
+DEF orient(vertical) == 
+    config("-orient vertical")
+
+
+DEF horizontal == orient(horizontal)
+DEF vertical == orient(vertical)
+
+

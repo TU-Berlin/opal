@@ -1,0 +1,125 @@
+-- LAST EDIT: Tue Jul 30 13:51:46 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Autor:	mija	(modified by wg)
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION Error
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:35 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq			COMPLETELY
+	SeqConv			ONLY `
+	SeqFilter		COMPLETELY
+	SeqSort			ONLY merge
+	String			COMPLETELY
+	StringConv		ONLY `
+	Char			ONLY	char 
+	BTUnion			ONLY	union string denotation
+	StringFormat		ONLY	format 
+	Pos			ONLY	<= `
+	Nat			COMPLETELY
+	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	Compose			COMPLETELY
+	ComSeqReduce		COMPLETELY
+	OcStream		ONLY	stdErr writeLine output
+	Void			COMPLETELY
+	Options			COMPLETELY
+
+IMPORT	ComState		COMPLETELY
+
+
+DATA err == err(diags: seq[diag], errCnt: nat, warnCnt: nat, hintCnt: nat)
+
+DATA diag == diag(kind: errKind, pos: pos, msg: string)
+
+DATA errKind == error warning hint
+
+-- Testfunktionen
+
+DEF e ok?      == errCnt(e) 0?
+DEF e warning? == warnCnt(e) 0?
+DEF e hint?    == hintCnt(e) 0?
+
+
+-- Konstruktionsfunktionen
+
+DEF ok == err(<>,0,0,0)
+DEF err(error,msg,pos)	 == err(%(diag(error,pos,msg!)),1,0,0)
+DEF err(warning,msg,pos)   == err(%(diag(warning,pos,msg!)),0,1,0)
+DEF err(hint,msg,pos)	== err(%(diag(hint,pos,msg!)),0,0,1)
+
+DEF err(kind,msg,i:string,pos) == err(kind,format(msg,%(string(i)))`,pos)
+DEF err(kind,msg,i:string,j:string,pos) 
+	== err(kind,format(msg,%(string(i),string(j)))`,pos)
+
+DEF err(kind,msg,i:denotation,pos) == 
+	err(kind,format(msg,%(denotation(i)))`,pos)
+DEF err(kind,msg,i:denotation,j:denotation,pos) 
+	== err(kind,format(msg,%(denotation(i),denotation(j)))`,pos)
+
+DEF err(ds1,ec1,wc1,hc1) + err(ds2,ec2,wc2,hc2) ==
+   err(merge(\\d1,d2. pos(d1) <= pos(d2))(ds1,ds2),
+       ec1+ec2,wc1+wc2,hc1+hc2)
+
+-- sonstige Funktionen
+
+FUN errors : options ** err -> com[bool]
+DEF errors(options,Err AS err(ds,ec,wc,hc)) ==
+    LET W == warnLevel(options)
+	H? == hc > 0 
+	Intern? == cop?("internDiag", options)
+	VisibleDiags == IF W = 0 THEN
+			    IF Intern? THEN <> ELSE (error? o kind) | ds FI
+			IF W = 1 ANDIF H? THEN (~ o (hint? o kind)) | ds
+			ELSE ds FI
+    IN
+    ((writeDiag(options, stdErr), nil) /& VisibleDiags) & (\\ _ .
+    IF Intern? THEN
+	addInternDiag(Err)		& (\\ _ .
+        (writeDiag(options,file(options)), nil) /& ds  & (\\ _ .
+	yield(okay(ec 0?))
+	))
+    ELSE	
+        (writeDiag(options,file(options)), nil) /& ds  & (\\ _ .
+        yield(okay(ec 0?))
+        )
+    FI
+    )
+
+FUN writeDiag : options ** output -> diag ** void -> com[void]
+
+DEF writeDiag(opts, Out)(D, _) ==
+    writeLine(opts, Out, asString(D))
+
+FUN asString : errKind -> string
+DEF asString(error) == "ERROR: " !
+DEF asString(warning) == "WARNING: " !
+DEF asString(hint) == "HINT: " !
+
+FUN asString : diag -> string
+DEF asString(diag(tag,pos,msg)) == !(`(pos)) ++ asString(tag) ++ msg
+
+FUN asString : err -> string
+DEF asString(Err) == `("","\n","\n")(asString)(diags(Err))
+
+
+-- intern diagnostics
+
+FUN internDiags : stateId[err]
+
+DEF internDiags == EXEC(stateId(ok))
+
+FUN addInternDiag : err -> com[void]
+DEF addInternDiag(Err) ==
+    internDiags => (\\ Old. Old + Err)
+
+DEF getAndClearInternDiag ==
+    ?(internDiags)		& (\\ Err .
+    internDiags => (\\ _ . ok)	& (\\ _ .
+    succeed(diags(Err))
+    ))

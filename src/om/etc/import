@@ -1,0 +1,37 @@
+#!/bin/sh
+if [ $# -le 1 ]; then 
+  echo usage: "$0 [ -i <intention> ] <file> ..."; 
+  exit 1;
+fi;
+if [ $1 = "-i" ]; then
+  intent="$1 $2"; shift 2;
+else 
+  intent="";
+fi;
+
+for f in $* ; do
+  if [ -n "`vl -q -locked $f`" ]; 
+  then 
+    echo "already locked $f";
+  else
+    sed -e 's/$Id.*$/$Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/etc/import,v 1.1.1.1 1998-06-16 15:59:54 wg Exp $/g' $f >$f.tmp;
+    mv $f $f.imported.orig;
+    if [ -n "`vbind $f`" ];
+    then
+      retrv -q -xpoff $f;
+      if [ -z "`diff $f $f.tmp`" ] ;
+      then
+        echo "$f unchanged ... removing";
+        rm -f $f $f.tmp;
+      else
+        rm -f $f;
+        echo "$f changed ... locking";
+        retrv -q -lock $intent $f;
+        mv $f.tmp $f;
+      fi; 
+    else
+      echo "$f new";
+      mv $f.tmp $f;
+    fi;
+  fi;
+done;

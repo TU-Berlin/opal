@@ -1,0 +1,549 @@
+% LAST EDIT: Wed Sep  4 18:09:06 1996 by Peter Pepper (basti!pepper) 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% An auxiliary LaTeX2e style for TeXing programs
+%
+% by P. Pepper
+%
+% (Note: This package is almost completely written in TeX!)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% This style allows to  s c a n  LaTeX input  
+% and to extract identifiers and graphemes, which can then be
+% -- output in special layouts or
+% -- used as fancy macros.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{scanner}[1996/08/15 TU Berlin program package (v 0.2)]
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                  %
+% Options
+%
+% (none available)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Load other packages
+%
+% (none needed)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%     +-------------------------------------------------------+
+%     | Interface: The following macros may be                |
+%     |            used in texts                              |
+%     |                                                       |
+%     |            \ActivateMathScan                          |
+%     |            \EnableMathScan                            |
+%     |            \DisableMathScan                           |
+%     |                                                       |
+%     |            \EnableLisp                                |
+%     |            \DisableLisp                               |
+%     |                                                       |
+%     +-------------------------------------------------------+
+%                                                             %
+%     (the definitions are given at the end of this file)     %
+%                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                             %
+%     +-------------------------------------------------------+
+%     | Interface: The following macros may be                |
+%     |            used in texts                              |
+%     |            in the following forms                     |
+%     |                                                       |
+%     |            \SetCommand{name}{def}                     |
+%     |            \SetSymbol{name}{def}                      |
+%     |            \SetAmsSymbol{name}{amsdef}{otherdef}      |
+%     |            \UnSetSymbol{name}                         |
+%     |                                                       |
+%     +-------------------------------------------------------+
+%                                                             %
+%     (the definitions are given at the end of this file)     %
+%                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                             %
+%     +-------------------------------------------------------+
+%     | Interface: The following macros may be                |
+%     |            redefined in texts or by other styles      |
+%     |                                                       |
+%     |            \Grapheme                                  |
+%     |            \Digit       \DigitFont                    |
+%     |            \Identifier  \IdentifierFont               |
+%     |                                                       |
+%     +-------------------------------------------------------+
+%                                                             %
+\def\Grapheme#1{#1}%                % default                 %
+\def\@IdeFnt{tt}%            % default                 %
+\def\@MthIde{\csname math\@IdeFnt\endcsname}%          %
+\def\@TxtIde{\csname text\@IdeFnt\endcsname}%          %
+\def\Identifier#1{\ifmmode\@MthIde{#1}\else\@TxtIde{#1}\fi}%  %
+\def\@DigFnt{tt}%                 % default                 %
+\def\@MthDgt{\csname math\@DigFnt\endcsname}%               %
+\def\@TxtDgt{\csname text\@DigFnt\endcsname}%               %
+\def\Digit#1{\ifmmode\@MthDgt{#1}\else\@TxtDgt{#1}\fi}%       %
+\def\IdentifierFont#1{\def\@IdeFnt{#1}}%
+\def\DigitFont#1{\def\@DigFnt{#1}}%
+%                                                             %
+%     +-------------------------------------------------------+
+%     | Interface: The following macros may be                |
+%     |            redefined by other styles                  |
+%     |                                                       |
+%     |            \@Cmnt                                     |  
+%     |            \@EndLine                                  |
+%     |            \@EmptyLine                                |
+%     |                                                       |
+%     +-------------------------------------------------------+
+%                                                             %
+\def\@Cmnt#1{#1}%                   % default                 %
+\def\@EndLine{\par}%                % default                 %
+\def\@EmptyLine{\relax}%            % default                 %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                             %
+%     +-------------------------------------------------------+
+%     | Interface: The following macros can be                |
+%     |            redefined in derived styles                |
+%     |            e.g. in a form like:                       |
+%     |                                                       |
+%     |            \let\-=\@CmntSymb                          |
+%     |            \let\%=\@TeXCmnt                           |
+%     |                                                       |
+%     +-------------------------------------------------------+
+%                                                             %
+\def\@TeXCmnt{\@ScanTeXCmnt}%  % default                      %
+\def\@CmntSymb{\@ScanCmnt}%    % (just some unique def.)      %
+\let\Cmnt=\@CmntSymb           % default                      %
+\let\TeXCmnt=\@TeXCmnt         % default                      %
+%                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Variables, Boolean switches, auxiliary macros:
+%% ---------------------------------------------
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\newtoks\@ta\newtoks\@tb%                               %
+%                                                       %
+\newif\if@LineIsEmpty%                                  %
+%%%%%%%%%%%%%%%%%                                       %
+\newif\if@Digit%                                        %
+\def\is@Digit#1{%                                       %
+\ifnum`#1<"30\relax\@Digitfalse%                        %
+\else\ifnum"39<`#1\relax\@Digitfalse%                   %
+\else\@Digittrue%                                       %
+\fi\fi%                                                 %
+}%                                                      %
+%%%%%%%%%%%%%%%%%                                       %
+%                                                       %
+\def\@EndScan{\relax}%                                  %
+\let\@Other=<%                                          %
+\let\@Letter=A%                                         %
+%\def\@Blank{ }%                                         %
+%{\obeyspaces\global\let =\@Blank}%                      %
+{\catcode`\_=12\global\let\@UScore=_}%                  %
+{\catcode`\^=12\global\let\@Hat=^}%                     %
+%%%%%%%%%%%%%%%%%                                       %
+%                                                       %
+\def\@OpenBrace{(}%                                     %
+\def\@CloseBrace{)}%                                    %
+\def\@Comma{,}%                                         %
+{%                                                      %
+\catcode`\(=\active%                                    %
+\catcode`\)=\active%                                    %
+\catcode`\,=\active%                                    %
+\gdef\@ActivateSpecSymbs{%                              %
+\catcode`\(=\active\let(=\@OpenBrace%                   %
+\catcode`\)=\active\let)=\@CloseBrace%                  %
+\catcode`\,=\active\let,=\@Comma%                       %
+}%                                                      %
+}%                                                      %
+%                                                       %
+\def\@List{}%                                           %
+\def\@Word{}%                                           %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% The main macro: "\@Scan"
+%% --------------
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\def\@Scan{%          % scan one line                   %
+\let\@InnerSpace=\relax%    % default                   %
+\let\@LeadSpace=\relax%     % default                   %
+\@LineIsEmptytrue%                                      %
+\xdef\@List{}%                                          %
+%\obeyspaces%                                            %
+\@ScanA}%                                               %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% The main loop macro: "\@ScanA"
+% -------------------
+%                      Contains the decisions about lexeme classes
+%
+%                      The scanner puts all lexemes onto \@List. 
+%                      This list is put out at the end of the line. 
+%                      (This is necessary in order to keep parameter
+%                      passing for TeX macros working.)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\long\def\@ScanA{\futurelet\@Next\@DecideA}%            %
+%                                                       %
+\long\def\@DecideA{%    % main cases                    %
+\ifcat\noexpand\@Next\@Letter\let\@Cont=\@ScanLetter%   %
+%\else\ifx\@Next\@Blank\let\@Cont=\@ScanSpace%           %
+\else\ifcat\noexpand\@Next\@Other\let\@Cont=\@ScanOther%%    
+\else\let\@Cont=\@DecideB%                              %
+\fi\fi%                                                 %
+%\fi%                                              %
+\@Cont}%                                                %
+%                                                       %
+\long\def\@DecideB{%    % special items                 %
+\ifx\@Next\par\let\@Cont=\@ScanEoL%                     %
+\else\ifx\@Next\@TeXCmnt\let\@Cont=\@ScanTeXCmnt%       %
+\else\ifx\@Next\@CmntSymb\let\@Cont=\@ScanCmnt%         %
+\else\ifcat\noexpand\@Next\bgroup\let\@Cont=\@ScanGroup%%
+\else\ifcat\noexpand\@Next$\let\@Cont=\@ScanDollar% %$  %
+\else\ifx\@Next\@EndScan\let\@Cont=\@Exec%              %
+\else\ifx\@Next\end\let\@Cont=\@Exec%                   %
+\else\ifx\@Next\)\let\@Cont=\@Exec%                     %
+\else\ifcat\noexpand\@Next\space\let\@Cont=\@SkipSpace%
+\else\relax\@LineIsEmptyfalse\let\@Cont=\@PassThrough%  %
+\fi\fi\fi\fi\fi\fi\fi\fi%                               %
+\fi%
+\@Cont}%                                                %
+%                                                       %
+\def\@SkipSpace#1{\@ScanA#1}%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Termination
+%  
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\def\@Exec{\@List}%                                     %
+%                                                       %
+%%%%% End of line %%%%%%%%%%%%%%%%%                     %
+\long\def\@ScanEoL#1{%                                  %
+\if@LineIsEmpty\relax\def\@Cont{\@EmptyLine\@Scan}%           %
+\else\def\@Cont{\@List\@EndLine\@Scan}%                 %
+\fi%                                                    %
+\@Cont}%                                                %
+%                                                       %
+%%%%% TeX comment (ignore rest of line) %%%%            %
+{\catcode`\^^M=\active\long\gdef\@ScanTeXCmnt#1^^M{\@ScanA}}%
+%                                                       %
+%%%%% Program comment %%%%%%%%%%%%%%%%%                 %
+{\catcode`\^^M=\active%                                 %
+\long\gdef\@ScanCmnt#1#2^^M{%                           %
+\@ScanCmntA{\EnableMathScan#2\DisableMathScan}%         %
+\par}%                                                  %
+}%                                                      %
+%                                                       %
+\def\@ScanCmntA#1{%                                     %
+\if@LineIsEmpty\relax%                                  %
+\def\@Cont{\@PassThrough{\hbox{~}\@Cmnt{#1}}}%          %
+\else\def\@Cont{\@PassThrough{\@Cmnt{#1}}}%             %
+\fi%                                                    %
+\@LineIsEmptyfalse%                                     %
+\@Cont}%                                                %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros for the various lexeme classes
+%  
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+%%%%% Space %%%%%%%%%%%%%%%%%                           %
+%\def\@ScanSpace#1{\@ScanA}%                             %
+%                                                       %
+%%%%% {...}-group %%%%%%%%%%%%%%%%%                     %
+\def\@ScanGroup#1{%                                     %
+\@ta={\@Scan#1\@EndScan}%                               %
+\@tb=\expandafter{\@List}%                              %
+\xdef\@List{\the\@tb{\the\@ta}}%                        %
+\@LineIsEmptyfalse%                                     %
+\@ScanA}%                                               %
+%                                                       %
+%%%%% Dollar %%%%%%%%%%%%%%%%                           %
+\def\@ScanDollar#1{%                                    %
+\@LineIsEmptyfalse%                                     %
+\@PassThrough{#1}%           %(see \@@ScanMath)         %
+}%                                                      %
+%%%%% Lexemes that are simply passed on %%%%%%%%%%%%%   %
+\def\@PassThrough#1{%                                   %
+\@ta={#1}%                                              %
+\@tb=\expandafter{\@List}%                              %
+\xdef\@List{\the\@tb\the\@ta}%                          %
+\@ScanA}%                                               %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Scanning a word (i.e. a sequence of letters)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\def\@ScanLetter#1{%                                    %
+\@LineIsEmptyfalse%                                     %
+\xdef\@Word{#1}%                                        %
+\@ScanWord}%                                            %
+%                                                       %
+\long\def\@ScanWord{\futurelet\@Next\@DecideWord}%      %
+%                                                       %
+\def\@DecideWord{%                                      %
+\ifcat\noexpand\@Next\@Letter\let\@Cont=\@ContinueWord% %
+\else\if\noexpand\@Next-\let\@Cont=\@DashInWord%        %
+%\else\ifx\@Next\@Blank\let\@Cont=\@BlankAfterWord%         %
+\else\ifcat\noexpand\@Next\space\let\@Cont=\@SpaceAfterWord%
+\else\let\@Cont=\@FinishWord%                           %
+\fi\fi\fi%                                              %
+%\fi%
+\@Cont}%                                                %
+%                                                       %
+\def\@ContinueWord#1{%                                  %
+\@tb=\expandafter{\@Word}%                              %
+\xdef\@Word{\the\@tb#1}%                                %
+\@ScanWord}                                             %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@DashInWordNo{\@FinishWord}%    (see \DisableLisp) %
+\def\@DashInWordYes#1{\@FinishWord\@LispDash}%          %
+\def\@LispDash{\hbox{\Identifier{-}}}%                  %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@SpaceAfterWord#1{%
+\ifcat\noexpand#1\@Letter\let\@Cont=\@SpaceInWordYes%
+\else\let\@Cont=\@SpaceInWordNo%                        %
+\fi%                                                 %
+\@Cont#1}%                                                %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+%\def\@BlankAfterWord#1{\futurelet\@Next\@SkipSpaces}%   %
+%\def\@SkipSpaces{%                                      %
+%\ifx\@Next\@Blank\let\@Cont=\@SpaceAfterWord%           %
+%\else\ifcat\noexpand\@Next\@Letter\let\@Cont=\@SpaceInWordYes%
+%\else\let\@Cont=\@SpaceInWordNo%                        %
+%\fi\fi%                                                 %
+%\@Cont}%                                                %
+%                                                       %
+\def\@SpaceInWordNo{\@FinishWord\@SetLeadSpace}%        %
+\def\@SpaceInWordYes{\@FinishWord\@InnerSpace\@KillLeadSpace}%
+%                                                       %
+\def\@KillLeadSpace{\gdef\@LeadSpace{\relax\gdef\@LeadSpace{~}}}%      
+\def\@SetLeadSpace{\gdef\@LeadSpace{~}}%                %
+\def\@TrailSpace{\gdef\@DlydSpace{~\gdef\@DlydSpace{\relax}}}%
+\gdef\@DlydSpace{\relax}%       %default                %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@FinishWord{%                                      %
+\@ta=\expandafter{\expandafter\@Symbol\expandafter{\@Word}}%
+\@tb=\expandafter{\@List\@DlydSpace}%                   %
+\xdef\@List{\the\@tb\the\@ta}%                          %
+\xdef\@Word{}%                                          %
+\@ScanA}%                                               %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@Symbol#1{%                                        %
+\expandafter\ifx\csname!@#1\endcsname\relax%            %
+\def\@Cont{\Identifier{#1}\let\@InnerSpace=~}%          %
+\else%                                                  %
+\def\@Cont{\csname!@#1\endcsname\let\@InnerSpace=\relax}%  
+\fi%                                                    %
+\@Cont}%                                                %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Scanning a Grapheme (i.e. a sequence of graphemes)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\def\@ScanOther#1{%                                     %
+\@LineIsEmptyfalse%                                     %
+\xdef\@Word{}%                                          %
+\if#1\@Hat\relax\let\@Cont=\@ScanHat%                   %
+\else\if#1\@UScore\relax\let\@Cont=\@ScanUScore%        %
+\else\is@Digit#1\if@Digit\relax\let\@Cont=\@ScanDigit%  %
+\else\if#1/\relax\let\@Cont=\@ScanSlash%                %
+\else%                                                  %
+\if#1(\relax\let\@Cont=\@ScanSpecial%                   %
+\else\if#1)\relax\let\@Cont=\@ScanSpecial%              %
+\else\if#1,\relax\let\@Cont=\@ScanSpecial%              %
+\else\let\@Cont=\@ScanGrapheme%                         %
+\fi\fi\fi\fi%                                           %
+\fi\fi\fi%                                             %
+\@Cont#1}%                                              %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@ScanSpecial#1{\@PassThrough{\@DlydSpace\@SetLeadSpace#1}}%%
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@ScanSlash#1{\@LookForBackslash}%                  %
+%                                                       %
+\def\@LookForBackslash{\futurelet\@Next\@LkFrBkSlsh}%   %
+\def\@LkFrBkSlsh{%                                      %
+\ifx\@Next\ \let\@Cont=\@SlshBckslsh%                   %
+\else\let\@Cont=\@SlshNoBckslsh%                        %
+\fi%                                                    %
+\@Cont%                                                 %
+}%                                                      %
+\def\@SlshBckslsh#1{%                                   %
+\@PassThrough{\@SlashBackslash}%                        %
+}%                                                      %
+\def\@SlshNoBckslsh#1{%                                 %
+%\@PassThrough{\@Slash}%                                 %
+\@ScanGrapheme/#1%                                      %
+}%                                                      %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@ScanHat#1{%                                       %
+\def\@HUSymb{\@ScanGrapheme#1}%                         %
+\def\@HUMacro{\@PassThrough{\sp}}%                      %
+\@HUContinue%                                           %
+}%                                                      %
+\def\@ScanUScore#1{%                                    %
+\def\@HUSymb{\@ScanGrapheme#1}%                         %
+\def\@HUMacro{\@PassThrough{\sb}}%                      %
+\@HUContinue%                                           %
+}%                                                      %
+\def\@HUContinue{\futurelet\@Next\@HUContA}%            %
+\def\@HUContA{%                                         %
+\ifcat\noexpand\@Next\bgroup\let\@Cont=\@HUMacro%       %
+\else\ifcat\noexpand\@Next\@Other\let\@Cont=\@HUOther%  %
+\else\let\@Cont=\@HUSymb%                               %
+\fi\fi%                                                 %
+\@Cont}                                                 %
+\def\@HUOther#1{%                                       %
+\is@Digit#1\if@Digit\relax\let\@Cont=\@HUMacro%         %
+\else\relax\let\@Cont=\@HUSymb%                         %
+\fi%                                                    %
+\@Cont#1%                                               %
+}                                                       %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@ScanGrapheme#1{%                                  %
+\xdef\@Word{#1}%                                        %
+\@ScanGrphm%                                            %
+}%                                                      %
+\long\def\@ScanGrphm{\futurelet\@Next\@DecideGrapheme}% %
+%                                                       %
+\def\@DecideGrapheme{%                                  %
+\ifcat\noexpand\@Next\@Other\let\@Cont=\@ContinueGrapheme%
+\else\let\@Cont=\@FinishGrph%                           %
+\fi%                                                    %
+\@Cont}%                                                %
+%                                                       %
+\def\@ContinueGrapheme#1{%                              %
+\if#1(\relax\let\@Cont=\@FinishGrph%                    %
+\else\if#1)\relax\let\@Cont=\@FinishGrph%               %
+\else\if#1,\relax\let\@Cont=\@FinishGrph%               %
+\else\is@Digit#1\if@Digit\relax\let\@Cont=\@FinishGrph% %
+\else\relax\let\@Cont=\@ContGrapheme%                   %
+\fi\fi\fi\fi%                                           %
+\@Cont#1}%                                              %
+%                                                       %
+\def\@ContGrapheme#1{%                                  %
+\@tb=\expandafter{\@Word}%                              %
+\xdef\@Word{\the\@tb#1}%                                %
+\@ScanGrphm}%                                           %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+\def\@FinishGrph{%                                      %
+\@ta=\expandafter{%                                     %
+\expandafter\@Grapheme\expandafter{\@Word}\@SetLeadSpace}%
+\@tb=\expandafter{\@List\@DlydSpace}%                   %
+\xdef\@List{\the\@tb\the\@ta}%                          %
+\xdef\@Word{}%                                          %
+\@ScanA}%                                               %
+%                                                       %
+%%%%%%%%%%%%%%%%%                                       %
+%                                                       %
+\def\@Grapheme#1{%                                      %
+\expandafter\ifx\csname!@#1\endcsname\relax\def\@Cont{\Grapheme{#1}}%
+\else\def\@Cont{\csname!@#1\endcsname}%                 %
+\fi%                                                    %
+\@Cont}%                                                %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Scanning a digit
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\def\@ScanDigit#1{\@PassThrough{\@DlydSpace\Digit{#1}\@SetLeadSpace}}%
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Defining fancy macros: 
+%% ---------------------
+%%
+%%              \SetCommand 
+%%              \SetSymbol 
+%%              \SetAmsSymbol 
+%%              \SetMacro
+%%              \UnSetSymbol
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\def\SetCommand#1#2{%                                   %
+\expandafter\def\csname!@#1\endcsname{#2}%              %
+}%                                                      %
+\def\SetSymbol#1#2{%                                    %
+\expandafter\def\csname!@#1\endcsname{%                 %
+\ifmmode\def\@Cont{#2}\else\def\@Cont{#1}\fi\@Cont}%    %
+}%                                                      %
+\newif\if@AmsSymb                                       %
+\def\SetAmsSymbol#1#2#3{%                               %
+\if@AmsSymb%                                            %
+\expandafter\def\csname!@#1\endcsname{\ifmmode#2\else#1\fi}%
+\else%                                                  %
+\expandafter\def\csname!@#1\endcsname{\ifmmode#3\else#1\fi}%
+\fi%                                                    %
+}%                                                      %
+\def\UnSetSymbol#1{\expandafter\let\csname!@#1\endcsname=\relax}% doesn't work!
+%                                                       %
+\def\Special@Macros{\relax}%                            % 
+%                                                       %
+\def\SetMacro#1#2{%                                     %
+\@ta=\expandafter{\Special@Macros}%                     %
+\@tb={\def#1{#2}}%                                      %
+\global\edef\Special@Macros{\the\@ta \the\@tb}%         %
+}%                                                      %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  Lisp-style identifiers
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                       %
+\def\DisableLisp{\let\@DashInWord=\@DashInWordNo}%      %
+\def\EnableLisp{\let\@DashInWord=\@DashInWordYes}%      %
+\DisableLisp%        % default                          %
+%                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  Using the scanner in math mode
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                             %
+\def\ActivateMathScan{\everymath{\ScanMath}\EnableMathScan}%  %
+%                                                             %
+\def\EnableMathScan{\let\ScanMath=\@@ScanMath}%               %
+\def\DisableMathScan{\let\ScanMath=\relax}%                   %
+\DisableMathScan%         % default                           %
+%                                                             %
+\def\@@ScanMath{\let\@ScanDollar=\@TerminateOnDollar\@Scan}%  %
+\def\@TerminateOnDollar#1{\@Exec#1}%                          %
+%                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% End of file "scanner.sty"
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

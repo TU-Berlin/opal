@@ -1,0 +1,67 @@
+IMPLEMENTATION Stream
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:18 $ ($Revision: 1.1.1.1 $)
+-- basic commands for stream input/output
+
+IMPORT 	Void 		ONLY nil            
+	Com		ONLY com ans:SORT yield okay succeed
+	ComCompose	ONLY &
+	Seq		ONLY seq <> :: revert
+
+IMPORT	File		COMPLETELY
+       ComAction ONLY done
+       ComSeqMap ONLY *&
+
+DATA input   == abs(rep: file)
+DATA output  == abs(rep: file)
+
+DEF stdIn    == abs(stdIn)
+DEF stdOut   == abs(stdOut)
+DEF stdErr   == abs(stdErr)
+
+DEF open(s)  == open(s,"r") & (\\f. yield(okay(abs(f))))
+DEF close(i:input) == close(rep(i))
+
+DEF look(i)  == read(rep(i)) & (\\Ch.unread(rep(i),Ch) & yield(okay(Ch)))
+-- DEF read(i)  == read(rep(i)):com[char]
+DEF read(i)  == read(rep(i))
+DEF read(i,n:nat)  == read(rep(i),n)
+DEF read(i,P:char->bool) == read(rep(i),P)
+DEF readLine(i) == readLine(rep(i))
+DEF readLines(i) ==
+    readLines(rep(i),<>)
+    FUN readLines : file ** seq[string] -> com[seq[string]]
+    DEF readLines(f,sofar) ==
+	eof?(f) 		& (\\ yes? .
+	IF yes? THEN
+	    yield(okay(revert(sofar)))
+	ELSE
+	    readLine(f)			& (\\ line .
+	    readLines(f,line::sofar)
+	    )
+	FI
+	)
+DEF load(fn) == open(fn) & (\\f.
+                readLines(f) & (\\res.
+                close(f) & (\\ _ .
+                succeed(res))))
+
+DEF eos?(i) == eof?(rep(i))
+
+DEF create(s) == open(s,"w") & (\\f. yield(okay(abs(f))))
+DEF append(s) == open(s,"a") & (\\f. yield(okay(abs(f))))
+DEF close(o:output) == close(rep(o))
+
+DEF write(o,x:char) == write(rep(o),x)
+DEF write(o,x:denotation) == write(rep(o),x)
+DEF write(o,x:string) == write(rep(o),x)
+DEF writeLine(o,x:denotation) == writeLine(rep(o),x)
+DEF writeLine(o,x:string) == writeLine(rep(o),x)
+
+DEF writeLines(o, lines) == ((\\x. writeLine(o, x)) *& lines) & done
+DEF store(fn, lines) == create(fn) & (\\ f.
+                        writeLines(f, lines) & (\\ _ .
+                        close(f)))

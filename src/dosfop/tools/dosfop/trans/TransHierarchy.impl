@@ -1,0 +1,306 @@
+IMPLEMENTATION TransHierarchy
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransHierarchy.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+   Nat         	COMPLETELY       String       	COMPLETELY
+   Seq         	COMPLETELY       NatConv      	COMPLETELY
+   SeqMap      	COMPLETELY       Pair		COMPLETELY
+   SeqReduce   	COMPLETELY
+
+IMPORT
+  MyString      COMPLETELY       Language	COMPLETELY
+  SubsystemType	COMPLETELY
+       StringConv ONLY `
+       Denotation COMPLETELY
+
+-- %$Hierarchy Visualization Main Routine$ 
+-- %--------------------------------------
+/* %  
+@tex
+Visualization of the main dimensions used for the construction of
+the Module-Level-Hierarchy:
+@end tex
+
+@graphic{/home/uebb/kd/ocs/src/dosfop/tools/dosfop/doku_postscript/levelvisu.ps} 
+
+*/
+FUN constructHierarchyVisualization: 
+    seq[seq[string]] ** config ** optSetting -> string
+
+DEF constructHierarchyVisualization( <>, _ , _ ) == <>
+/* %In case of non-empty @c{levels} a graphic-context for the hierarchy-visualization
+is constructed and the building of hierachy levels is intiated by a call
+to @c{levels2Boxes}. */
+DEF constructHierarchyVisualization( levels, config, sorting ) ==
+  LET
+    maxLevLength == maxLevelLength(levels)
+    xDist == xMax / (IF maxLevLength=1 THEN 1 ELSE maxLevLength-1 FI)
+    numbLevels == #(levels)
+    yDist == yMax / (IF numbLevels=1 THEN 1 ELSE numbLevels-1 FI)
+  IN
+    conc(
+-- %Start a new page
+      line("\n@page"),
+-- %Exclude HTML
+      line("\n@ifclear html"),
+-- %Start tex environment for Texinfo
+      line("@tex"),                  
+      moduleHierarchyVisuHeadline(sorting)(config),
+-- %Start graphic-context for PSTricks
+      line("\\psset{xunit=1pt,yunit=1pt}"),
+      conc(
+        "\\pspicture(0,0)("!, 
+        !((xMax+xIndentInitial)`), ","!, 
+        !(yMax`), ")"!, nl
+      ),
+
+      levels2Boxes(levels, xDist, yDist, 0),
+
+      line("\\endpspicture"),
+-- %End graphic-context for PSTricks
+      line("@end tex"),
+-- %End tex environment for Texinfo
+      line("@end ifclear")
+-- %End exclusion of html
+    ) ++ 
+-- %Version for HTML
+    conc(
+      line("\n@ifset html"),
+      line("@ifhtml\n<HR>\n@end ifhtml"),
+      line("@heading " ++ (Module_Hierarchy_Visualization`)),
+      levels2HTML(revert(levels)),
+      line("\n@ifhtml\n<HR>\n@end ifhtml"),
+      line("@end ifset")
+    )
+
+
+FUN levels2Boxes : seq[seq[string]] ** nat ** nat ** nat -> string
+
+DEF levels2Boxes( <>, _, _, _) == <>
+DEF levels2Boxes( ftLevel :: rtLevel, xDist, yDist, levelCount ) ==
+  LET
+    xIndentation == (xMax - ( (#(ftLevel)-1) * xDist)) / 2
+  IN
+    constructHorizontalBoxes(
+      ftLevel,
+      xDist,
+      levelCount*yDist,
+      0,
+      xIndentation + xIndentInitial
+    ) ++
+    levels2Boxes(rtLevel, xDist, yDist, levelCount+1)
+
+
+FUN levels2HTML : seq[seq[string]] -> string
+DEF levels2HTML(levels) ==
+  LET oneLevel == \\lv. !("@center ") ++ (+/+'MyString(" "), <>) / (struct2HTML * lv)
+      hrule == "\n@ifhtml\n<HR width=50%>\n@end ifhtml\n"
+  IN
+    (+/+'MyString(hrule), <>) / (oneLevel * levels)
+
+
+
+FUN struct2HTML: string -> string
+DEF struct2HTML(str) == !("@ref{") ++ Overview(str) ++ !("}")
+
+
+FUN constructHorizontalBoxes : seq[string] ** nat ** nat ** nat ** nat ->
+                                 string
+
+DEF constructHorizontalBoxes( <>, _, _, _, _ ) == <>
+DEF constructHorizontalBoxes( ftStrings :: rtStrings,
+                              xDist, yCoord, boxNumber, xIndentation) ==
+
+-- %Specify one box with x-y referencing its center:
+  constructBox(xIndentation+(boxNumber*xDist), yCoord, ftStrings, false) ++
+
+-- %Secify rest boxes for current level:
+  constructHorizontalBoxes(
+    rtStrings,
+    xDist, 
+    yCoord,
+    boxNumber+1,
+    xIndentation
+  )
+
+/* %A single named shadow box is specified w.r.t. the given parameters denoting
+its x/y-position in the context of the previously defined coordinate system.
+The @string-parameter contains the string surrounded by the shadowed
+lines of the box. The @c{x}/@c{y}-coordinates can
+reference the @emph{bottom-left}-point of the shadowbox or its center depending on the
+truth-value of @c{bottomLeftReference?}.
+
+The same string is used to specify a name of a reference that can be
+used in connection with the line-facilities provided by PSTricks. 
+*/
+FUN constructBox : nat ** nat ** string ** bool -> string
+
+DEF constructBox( x, y, text, bottomLeftReference? ) ==
+  LET
+    refPoint ==
+      IF bottomLeftReference? THEN
+        "[bl]"!
+      ELSE
+        <>
+      FI
+  IN
+    conc(
+      "\\rput"!, refPoint, 
+      ("("!) ++ !(x`) ++ (","!) ++ !(y`) ++ (")"!),
+      "{\\rnode{"!,             -- specify reference name for box
+      text,
+      !("}{\\psshadowbox{"),       -- specify graphical representation
+      text, !("}}}"), nl
+  )
+
+-- %$Visualization of the Subsystem Hierarchy$
+-- %------------------------------------------
+FUN subsystemVisu : seq[subsystem[usrSourceInfo]] ** config -> string
+
+DEF subsystemVisu( <>, _ ) == <>
+DEF subsystemVisu( subsystems, config ) ==
+  conc(
+-- %Start tex environment for Texinfo
+    line("@tex"),
+    subsystemVisuHeadline(config),
+-- %Start graphic-context for PSTricks
+    line("\\psset{xunit=1pt,yunit=1pt}"),
+    conc("\\pspicture(0,0)("!, !(xMax`), ","!, !(yMax`),")"!, nl ),
+
+    subsystems2Boxes(subsystems) ++
+
+-- %Start graphic-context for PSTricks
+    line("\\endpspicture"),
+    line("@end tex")    
+-- %Start tex environment for Texinfo
+  ) ++
+-- %Version for html
+  conc(
+     line("\n@ifset html"),
+      line("@ifhtml\n<HR>\n@end ifhtml"),
+      line("@heading " ++ (Subsystem_Hierarchy_Visualization`)),
+      subsystems2HTML(subsystems),
+      line("\n@ifhtml\n<HR>\n@end ifhtml"),
+      line("@end ifset")
+    )
+      
+
+FUN subsystems2HTML : seq[subsystem[usrSourceInfo]] -> string
+DEF subsystems2HTML(levels) ==
+/*  LET oneLevel == \\lv. !("@center ") ++ (+/+(" "), <>) /
+                (subsystem2HTML * name * lv)
+     hrule == "\n@ifhtml\n<HR width=50%>\n@end ifhtml\n"
+  IN */
+  !("\n@display\n") ++
+  (++, <>) / subsystem2HTML(0) * levels ++
+  !("@end display\n")
+
+
+
+FUN subsystem2HTML: nat -> subsystem[usrSourceInfo] -> string
+DEF subsystem2HTML(indent)(sub) == 
+  (indent x !(" ")) ++
+  !("@ref{") ++ USER_SUBSYSTEM(name(sub)) ++ !("}\n") ++
+  (++, <>) / subsystem2HTML(indent + 4) * subsystems(sub)
+
+
+/* %The following function implements the box-specification for the
+subsystem abstraction levels: */
+FUN subsystems2Boxes : seq[subsystem[usrSourceInfo]] -> string 
+DEF subsystems2Boxes( subsystems ) ==
+  LET
+    (str, _) == subsystems2BoxesIntern(subsystems,  &(xIndentInitial, yMax))
+  IN
+    str
+
+FUN subsystems2BoxesIntern : 
+      seq[subsystem[usrSourceInfo]] ** pair[nat,nat] -> string ** nat
+
+DEF subsystems2BoxesIntern( <>, &(_, ypos) ) == (<>, ypos)
+DEF subsystems2BoxesIntern( actSubsystem :: rtSubsystems, &(xpos, ypos)) ==
+    (constructBox(xpos, ypos, name(actSubsystem), true) ++
+       subSubsystemBoxes ++
+         restSubsystemBoxes,
+     lastYPos
+    )
+  WHERE
+    (subSubsystemBoxes, newYPos) ==
+       LET nextYPos == IF ypos > ygap THEN
+                         ypos - ygap
+                       ELSE
+                         0
+                       FI
+       IN
+         subsystems2BoxesIntern(
+           subsystems(actSubsystem),
+           &(
+             xpos+xIndent,       -- subsubsystem -> increase indentation
+             nextYPos            -- next line
+            )
+         )
+ 
+    (restSubsystemBoxes, lastYPos) ==
+       subsystems2BoxesIntern(
+         rtSubsystems,
+         &(
+           xpos,             -- same subsystem level -> no deeper indentation
+           newYPos           -- next line
+         )
+       )
+
+
+-- %$Visualization Headlines$ 
+-- %-------------------------
+/* %The headline for both visualizations are specified here.
+It is specified in plain @TeX{}.
+*/
+FUN subsystemVisuHeadline : config -> string
+DEF subsystemVisuHeadline( config ) ==
+  conc(
+    line("\\font\\headline = cmr10 scaled \\magstep 4"),
+    "\\centerline{\\bf\\headline "!, 
+    Subsystem_Hierarchy_Visualization, 
+    "}"!, nl,
+    line("\\vskip 50pt")
+      )
+
+FUN moduleHierarchyVisuHeadline : optSetting -> config -> string
+DEF moduleHierarchyVisuHeadline( sorting )( config ) ==
+  conc(
+    line("\\font\\headline = cmr10 scaled \\magstep 4"),
+    "\\centerline{\\bf\\headline "!,
+    Module_Hierarchy_Visualization,
+    "}"!, nl,
+    line("\\vskip 50pt")
+      )
+
+-- %$Dimensions for Visualization$ 
+-- %------------------------------
+
+-- %The maximal @b{horizontal} extension of the graphic measured in pixels:
+FUN xMax : nat
+DEF xMax == "400"!
+
+-- %The maximal @b{vertical} extension of the graphic measured in pixels:
+FUN yMax : nat
+DEF yMax == "500"!
+
+FUN ygap xIndent xIndentInitial: nat
+
+-- %Distance between two rows of subsystem-boxes (in pixels):
+DEF ygap           == "30"!
+
+-- %Indentation for lower-level subsystem-boxes (in pixels):
+DEF xIndent        == "60"!
+
+-- %Skipping of whitespace for each line in subsystem visualisation:
+DEF xIndentInitial == "40"!
+
+-- %$Convenience Function for Level Calculation$
+-- %--------------------------------------------
+
+/* %@code{maxLevelLength} delivers the maximum length of all levels given
+as parameter. */
+FUN maxLevelLength : seq[seq[string]] -> nat
+
+DEF maxLevelLength( levels ) == (max / 0)(# * levels)

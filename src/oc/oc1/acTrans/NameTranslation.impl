@@ -1,0 +1,100 @@
+-- LAST EDIT: Tue May 18 19:07:48 1993 by OPAL compiler (athene!opal) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION NameTranslation
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:47 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat	COMPLETELY
+
+	Denotation	ONLY =
+
+	Ide	ONLY ide:SORT local global
+		     origin:SORT origin:nat->origin target
+
+	AnalyzedGlobSig	ONLY globSig name local? no:globSig**name->nat
+				global? internal? external?
+				parameter?:globSig**name->bool paramNo
+				no:name->nat origIdeNo
+				rep:globSig**name->rep
+				origIde:globSig**name->rep
+
+	Map[rep,<,ide] ONLY map {} def ! 
+
+	Rep	ONLY rep = < ` BOOL bool true false true? false? 
+				  band bor bnot beq bneq
+			     DENOTATION denotation tl <|
+			     ABORT
+
+	Builtin ONLY bool true false true? false? and or ~ = |=
+		     denotation tl <| 
+		     ABORT INLINE
+
+
+-- ----------------------------------------------------------------------------
+
+FUN nullIde: ide
+
+DEF nullIde == local(0)
+
+FUN ide: globSig -> name -> ide
+
+DEF ide(sig)(name) ==
+  IF name local? THEN local(no(name))
+  IF name global? THEN
+    IF (sig,name)parameter? THEN parameterIde(paramNo(sig,name))
+    OTHERWISE
+    IF name internal? THEN internalIde(sig)(name)
+    IF name external? THEN externalIde(sig)(name)
+    FI
+  FI
+
+FUN parameterIde: nat -> ide
+
+DEF parameterIde(no) == local(succ(no))
+
+FUN internalIde: globSig -> name -> ide
+
+DEF internalIde(sig)(name) == global(no(sig,name),target)
+
+FUN externalIde: globSig -> name -> ide
+
+DEF externalIde(sig)(name) ==
+  IF origIde(sig,name) = BOOL THEN
+    predefBoolMap ! rep(sig,name)
+  IF origIde(sig,name) = DENOTATION THEN
+    predefDenotationMap ! rep(sig,name)
+  IF origIde(sig,name) = ABORT THEN
+    ABORT
+  IF `(origIde(sig,name)) = "INLINE" THEN
+    INLINE
+  ELSE
+    global(no(sig,name),origin(origIdeNo(sig,name)))
+  FI
+
+FUN predefBoolMap predefDenotationMap : map[rep,<,ide]
+
+DEF predefBoolMap ==
+    def(bool,bool,
+    def(true,true,
+    def(false,false,
+    def(true?,true?,
+    def(false?,false?,
+    def(band,and,
+    def(bor,or,
+    def(bnot,~,
+    def(beq,=,
+    def(bneq,|=, 
+	{} ))))))))))
+
+DEF predefDenotationMap ==
+    def(denotation,denotation,
+    def(tl,tl,
+    def(<|,<|,
+	{} )))

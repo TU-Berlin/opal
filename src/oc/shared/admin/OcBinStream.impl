@@ -1,0 +1,97 @@
+-- LAST EDIT: Tue May 18 18:29:47 1993 by OPAL compiler (athene!opal) 
+-- ============================================================================
+-- Autor:	af/wg/cm
+-- Projekt:	OPAL1-Compiler
+-- ============================================================================
+
+IMPLEMENTATION OcBinStream [data]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:35 $ ($Revision: 1.1.1.1 $)
+
+SORT data
+
+IMPORT 	Void 		ONLY void nil
+	Char		COMPLETELY
+       	String 		COMPLETELY
+	Denotation	COMPLETELY
+	Options		ONLY options cop?
+	Option		COMPLETELY
+	Com	 	COMPLETELY
+	ComCompose	COMPLETELY
+	Stream		ONLY 	output stdErr write writeLine
+	BinStream	COMPLETELY
+
+IMPORT	OcExit		ONLY ioError
+	OcStream	ONLY input output open tryOpen create close
+
+
+/* MISSING: adaption to openBin / createBin */
+
+FUN write: options**denotation**denotation**data -> com[void]
+
+DEF write(options,fn,tag,data) ==
+  create(options,fn) &
+  (\\output.write(output,tag,data) ;
+            (\\a.IF a okay? THEN close(options,output)
+                 IF a fail? THEN (writeErr(fn,error(a)) ;
+                                  close(options,output)) ;
+                                  yield(fail(ioError))
+                 FI))
+
+FUN read: options**denotation**denotation -> com[data]
+
+DEF read(options,fn,tag) ==
+  open(options,fn) &
+  (\\input.read(input,tag) ;
+           (\\a.IF a okay? THEN close(options,input) &
+                                yield(a)
+                IF a fail? THEN (writeErr(fn,error(a)) ;
+                                 close(options,input)) ;
+                                 yield(fail(ioError))
+                FI))
+
+FUN optread: options**denotation**denotation -> com[option[data]]
+
+DEF optread(options,fn,tag) ==
+  tryOpen(options,fn) &
+  (\\optIn.IF optIn nil? THEN yield(okay(nil))
+           IF optIn avail? THEN
+             LET input == cont(optIn)
+             IN read(input,tag) ;
+                (\\a.IF a okay? THEN close(options,input) ;
+                                     yield(okay(avail(data(a))))
+                     IF a fail? THEN (writeErr(fn,error(a)) ;
+                                      close(options,input)) ;
+                                      yield(fail(ioError))
+                     FI)
+           FI)
+
+-- ---------------------------------------------------------------------------
+
+FUN writeErr: denotation**denotation -> com[void]
+
+DEF writeErr(fn,msg) ==
+  writeLine(stdErr,"I/O error: " ++ fn ++ ": " ++ msg) 
+
+-- cm ------------------- optional write ---------------------------------------
+
+FUN checkDiffObject : denotation
+DEF checkDiffObject == "checkDiffObject"
+
+FUN optwrite: (data ** data -> bool) ->
+	options**denotation**denotation**data -> com[void]
+
+DEF optwrite(eqData)(options, fn, tag, data) ==
+    IF cop?(checkDiffObject, options) THEN 
+      optread(options, fn, tag) & (\\Ans.
+        IF Ans nil? THEN write(options, fn, tag, data)
+        IF Ans avail? THEN 
+	    IF eqData(data, cont(Ans)) THEN yield(okay(nil))
+            ELSE write(options, fn, tag, data)
+	    FI
+        FI)
+    ELSE write(options, fn, tag, data)
+    FI

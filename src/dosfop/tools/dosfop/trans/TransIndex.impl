@@ -1,0 +1,62 @@
+IMPLEMENTATION TransIndex
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransIndex.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String        COMPLETELY       SeqFilter      COMPLETELY
+  Map           COMPLETELY       SeqMap         COMPLETELY
+  Seq           COMPLETELY       SeqReduce      COMPLETELY
+  SeqOfSeq      COMPLETELY
+  Nat           COMPLETELY
+  MapFilter     COMPLETELY
+
+IMPORT
+  Token         COMPLETELY       SpecialString  COMPLETELY
+  TransType     COMPLETELY       Context        COMPLETELY
+  MyString      COMPLETELY       Pos            COMPLETELY
+                                 CharClass      COMPLETELY
+  DEBUG ONLY PRINT
+  NatConv ONLY `
+       StringConv ONLY `
+       Denotation ONLY ++ 
+
+FUN debugIndex? : bool DEF debugIndex? == false
+
+/* %In order to specify the index entries as close to the referenced
+object as possible, the @c{tokenSeq} is split in single lines. If any
+indexing data is stored in the respective maps, the indexing entry is
+prepended directly in front of the code-line where the referenced
+object is located.  The complete @c{tokenSeq} is handled by recursive
+calls to @c{includeIndexEntries} with a reduced sequence of
+code-tokens. */
+
+DEF includeIndexEntries( code(tokenSeq), indexMap ) ==
+  LET
+    actLine == PRINT(debugIndex?, \\ . `(line(pos(ft(tokenSeq)))) ++ `(token2String(actLineTokenSeq)), line(pos(ft(tokenSeq))))
+    (actLineTokenSeq, restTokenSeq) == splitActLine(tokenSeq)
+  IN
+    LET
+      contextOutputElems ==
+         IF def?(actLine, indexMap) THEN
+           indexEntries2OutputElems(indexMap ! actLine)
+         ELSE
+           <>
+         FI 
+    IN
+      (contextOutputElems +% code(actLineTokenSeq)) ++
+        includeIndexEntries( code(restTokenSeq), undef(actLine, indexMap))
+/* %undef is hack to prevent indices being inserted several times. Proper
+    action would be to have a closer look at the generated tokens. */
+
+
+-- %Otherwise just transform the output-element to a single-element sequence:
+
+DEF includeIndexEntries( otherElems, _ ) == otherElems%
+DEF includeIndexEntries( code(<>), _ ) == <>
+
+/* %The following function takes indexing information and transforms it into
+an appropriate index entry that can be translated by the Texinfo-formatter. */
+
+FUN indexEntries2OutputElems : seq[indexEntry] -> seq[outputElem]
+DEF indexEntries2OutputElems( indexEntries ) ==
+  ensureLineBreak(documentation(<>)) ::
+  (\\ entry. texinfo(asString(entry))) * indexEntries

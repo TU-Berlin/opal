@@ -1,0 +1,466 @@
+IMPLEMENTATION TransNode
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransNode.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String        COMPLETELY       Set     COMPLETELY
+  Seq           COMPLETELY       SetConv COMPLETELY
+  SeqReduce     COMPLETELY       Map     COMPLETELY
+  SeqMap        COMPLETELY       Char    COMPLETELY
+  SeqFilter     COMPLETELY
+
+IMPORT
+  Token         COMPLETELY       TransApplTab   COMPLETELY
+  MyString      COMPLETELY       TransHelp      COMPLETELY
+  Context       COMPLETELY       ConfigFun      COMPLETELY
+  TransType     COMPLETELY       Content        COMPLETELY
+  TransIndex    COMPLETELY       Language       COMPLETELY
+
+IMPORT DEBUG ONLY PRINT
+       MapConv ONLY `
+       NatConv ONLY `
+       SeqConv ONLY `
+       ContextIndex ONLY asString
+       StringConv COMPLETELY
+
+FUN debugIndex? : bool
+DEF debugIndex? == false
+
+DATA environment == env( 
+                      nodeName : string,
+                      nextNode : string,
+                      prevNode : string,
+                      upNode   : string,
+                      partType : partType,
+                      partName : string
+                    )
+
+
+-- %$Building a Texinfo Node from a given Environment$ 
+-- %--------------------------------------------------
+
+FUN buildHeader : environment -> outputElem
+
+DEF buildHeader( env(name, next, prev, up, partType, partName) ) ==
+  texinfo(
+    conc("@node "!, name, ", "!, next, ", "!, prev, ", "!, up, nl) ++
+    conc(partType2TexinfoString(partType), partName, nl)
+  )
+
+DEF buildHeaderO( env(name, next, prev, up, partType, partName) ) ==
+  texinfo(
+    conc(nl, "@ifclear dfSingleNode"!, nl) ++
+    conc("@node "!, name, ", "!, next, ", "!, prev, ", "!, up, nl) ++
+    conc("@end ifclear"!, nl) ++ 
+    conc(partType2TexinfoString(partType), partName, nl)
+  )
+
+DEF buildHeader( partType, partName ) ==
+  texinfo(
+    conc(partType2TexinfoString(partType), partName, nl)
+  )
+
+-- %$Building the Texinfo Structure of a Module$ 
+-- %--------------------------------------------
+/* %According to the @c{content} parameter, the function @c{buildBody} translates
+the sequence of source-code token into their texinfo representation. The @c{initial}-part of the
+contents-structure is translated firstly. In @c{buildStructuredPart} source code that
+is placed in user-defined subsections is tranformed into its Texinfo representation. The
+recognition of an empty initial-part or empty subdivisions in parts is handled in the
+respective functions. */
+FUN buildBody : content ** context **
+                  string ** string ** partType ** string **
+                    config -> 
+                      seq[outputElem]
+
+DEF buildBody( 
+      content(_, initial, parts),
+      context,
+      nextNodeEnv,
+      prevNodeEnv,
+      envPartType,
+      actModuleName,
+      config 
+    ) ==
+  buildUnstructuredPart( initial, context, actModuleName, config ) ++
+    buildStructuredPart( 
+      parts,
+      <>,
+      context,
+      nextNodeEnv,
+      prevNodeEnv,
+      envPartType,
+      actModuleName,
+      config 
+    )
+
+
+/* %The context is integrated for the sequence of @c{token} of an unstructured part.
+After building the context enriched source-code output the specification of 
+application tables (or used-function-tables) is appended if it is specified
+in the configuration database for the @c{actModuleName}. */
+FUN buildUnstructuredPart : 
+      seq[token] ** context ** string ** config -> seq[outputElem]
+
+DEF buildUnstructuredPart( <>, _, _, _ ) == <> 
+DEF buildUnstructuredPart
+      ( unstructuredTokenSeq, context, actModuleName, config ) ==
+    buildBodyBlock(
+      newUnstructuredTokenSeq,
+      indexMap(context),
+      propContextMap(context),
+      actModuleName,
+      config
+    )  ++
+      buildAllApplTables(newUnstructuredTokenSeq, applContextMap(context), config)
+  WHERE
+    newUnstructuredTokenSeq ==
+      IF dropEmptyLines?(config, actModuleName) THEN
+        eraseLayout(unstructuredTokenSeq)
+      ELSE
+        unstructuredTokenSeq
+      FI
+
+
+/* %If the user specified a subdivision of the module source-code the following 
+implementation handles the production of the required node administration. The hypertext
+node-environment consisting of @c{subPartNamesAlreadyBuilt}, @c{nextNodeEnv}, and
+@c{prevNodeEnv} provides the environment to construct a Texinfo @c{node} specification
+for every user-defined sub-@c{part}. @c{nextNodeEnv} contains the name of the
+node that succeeds the last sub-part, whereas @c{prevNodeEnv} denotes the name of
+the node that preceeds the first sub-part node. The @string-sequence 
+@c{subPartNamesAlreadyBuilt} gathers the names of the sub-part nodes that are already
+translated to Texinfo. 
+
+The token-sequence of each sub-part is
+translated by the function @c{buildUnstructuredPart} described above. */
+
+FUN buildStructuredPart : seq[part] ** seq[string] ** context **
+                            string ** string ** partType **
+                              string ** config -> 
+                                seq[outputElem]
+DEF buildStructuredPart( 
+      part(actHeadline, splitLevel, actContent) :: rtParts,
+      subPartNamesAlreadyBuilt,
+      context,
+      nextNodeEnv,
+      prevNodeEnv,
+      envPartType,
+      actModuleName,
+      config 
+    ) ==
+  LET
+    nameSuffix == conc(" ("!, Part_of_(prevNodeEnv), ")"!)
+    nodeName   == actHeadline ++ nameSuffix
+    nextNode   == IF <>?(rtParts) THEN
+                    nextNodeEnv        
+                  ELSE
+                    headline(ft(rtParts)) ++ nameSuffix
+                  FI
+    prevNode   == IF <>?(subPartNamesAlreadyBuilt) THEN
+                    prevNodeEnv
+                  ELSE
+                    last(subPartNamesAlreadyBuilt) ++ nameSuffix
+                  FI
+    upNode     == prevNodeEnv
+    partName   == actHeadline
+    actPartType == adjustDepth(envPartType, splitLevel)
+
+  IN
+    %(
+      buildHeaderO(
+        env(nodeName, nextNode, prevNode, upNode, actPartType, partName)
+      )
+    )
+    ++
+    buildUnstructuredPart(actContent, context, actModuleName, config) 
+    ++
+    buildStructuredPart(
+      rtParts,
+      subPartNamesAlreadyBuilt +% actHeadline,
+      context,
+      nextNodeEnv,
+      prevNodeEnv,
+      envPartType,
+      actModuleName,
+      config
+    )
+
+/* %If no sub-parts are to be translated anymore, the translation of structured
+sub-parts terminates: */
+DEF buildStructuredPart( <>, _, _, _, _, _, _, _ ) == <>
+
+
+-- %$Translating Undivided Source Code$
+-- %-----------------------------------
+
+FUN buildBodyBlock : 
+  seq[token] **
+    map[nat,<,seq[indexEntry]] **
+      map[string,<,propContextEntry] ** string ** config -> seq[outputElem]
+
+/* %For an empty token sequence no @c{outputElem}ents can be generated: */
+DEF buildBodyBlock( <>, _, _, _, _ ) == <>
+
+/* %A property-reference-token (@c{docuProps}) is detected. The reference is 
+translated by @c{buildProps} and the token translation continues. */
+DEF buildBodyBlock( 
+      (ftToken AS docuProps(_, _)) :: rtToken,
+      indexMap,
+      propContMap,
+      actModuleName,
+      config 
+    ) ==
+  buildProps(ftToken, propContMap) ++
+  buildBodyBlock(
+    rtToken,
+    indexMap,
+    propContMap,
+    actModuleName,
+    config
+  )
+
+/* %A documentation-token is encountered. If the @c{level} of the current
+@c{documentation} passes the @c{isSelectedLevel?}-test for the module
+@c{actModuleName}, the documentation token is translated by @c{buildDocu}. */
+DEF buildBodyBlock( 
+      (ftToken AS documentation(docText, _, level)):: rtToken,
+      indexMap,
+      propContMap,
+      actModuleName,
+      config 
+    ) ==
+  IF isSelectedLevel?(config, level, actModuleName) THEN
+      %(docuPrefix(level),documentation(docText),docuSuffix(level)) ++ 
+      buildBodyBlock(
+        rtToken,
+        indexMap,
+        propContMap,
+        actModuleName,
+        config
+      )
+  ELSE
+    buildBodyBlock(
+      rtToken,
+      indexMap,
+      propContMap,
+      actModuleName,
+      config
+    )
+  FI
+
+/* %If the first token of @c{tokenSeq} is neither a @c{docuProps} nor a 
+@c{documentation} token the following variant matches. We assume that only token
+that represent source-code are encountered in this defining equation. The
+@c{tokenSeq} is read by @c{buildCode} until a terminating 
+non-code-token is read or the @c{tokenSeq}uence ends. */ 
+DEF buildBodyBlock
+  ( tokenSeq, indexMap, propContMap, actModuleName, config ) ==
+  LET
+    (translation, newRestToken) == 
+       buildCode(tokenSeq, indexMap, actModuleName, config)
+  IN
+    translation ++ 
+      buildBodyBlock(
+        newRestToken,
+        indexMap,
+        propContMap,
+        actModuleName,
+        config
+      )
+
+
+-- %$Building a Coherent Piece of Code$ 
+-- %-----------------------------------
+
+FUN buildCode : 
+  seq[token] ** map[nat,<,seq[indexEntry]] ** string ** config ->
+      seq[outputElem] ** seq[token]
+
+/* %The @c{tokenSeq} is transformed into @c{outputElem}ents that represent code
+until a token is read that does not represent source-code. @c{codeToken} that 
+only contain layout are not considered for output if the @c{dropEmptyLines?}-option
+is valid for the @c{actModule} and the given @c{config}-database. 
+For any non-empty @c{codeToken}
+sequence index information is included. */
+DEF buildCode( tokenSeq, indexMap0, actModuleName, config ) ==
+  LET
+    (codeToken, restToken) ==
+          buildCodeBlock(tokenSeq, <>, actModuleName, config)
+    indexMap == PRINT(debugIndex?, \\ . `(`,`(X))(indexMap0), indexMap0)
+    X == \\ie. `(asString(ie))
+  IN
+    
+    IF dropEmptyLines?(config, actModuleName) ANDIF 
+         forall?(layout?, codeToken) THEN
+      ( <>, restToken )
+    ELSE
+      LET
+        codeToken1 == IF dropEmptyLines?(config, actModuleName) THEN
+                        drop(nlLayout?, codeToken)
+                      ELSE
+                        codeToken
+                      FI
+        enhancedTranslation ==
+          includeIndexEntries(code(codeToken1), indexMap)
+      IN
+      IF dropEmptyLines?(config, actModuleName) THEN
+          -- put extra newlines instead of erased ones
+          ( (texinfo( line("@BEGINOPAL{}") ) 
+            ::
+            enhancedTranslation)
+            +%
+            texinfo(
+--              nl ++               -- very important newline character! 
+              line("@ENDOPAL{}") 
+            ),
+            restToken
+          )
+      ELSE
+          ( (texinfo( line("@BEGINOPAL{}")) 
+            ::
+            enhancedTranslation)
+            +%
+            texinfo(
+--              nl ++                    -- very important newline character! 
+              line("@ENDOPAL{}")
+            ),
+            restToken
+          )
+      FI
+    FI
+
+
+/* %Builds a sequence of a single @code{outputElem} of type @code{code} or 
+ an empty sequence if the examined @code{tokenSeq} is empty.
+ Reads the @code{tokenSeq} until it is empty or a documentation-token
+ is encountered. The second element of the result tuple contains the 
+ token sequence that has already been read by the 
+ function @code{buildCodeBlock()}. Initially, the second
+ argument of the function has to be an empty token sequence. 
+
+ Newline-@c{token} surrounding the terminal @c{alreadyRead} are erased if
+ the function @c{dropEmptyLines?} evaluates to @true for the @c{actModuleName}. */
+
+FUN buildCodeBlock : seq[token] ** seq[token] ** string ** config -> 
+                       seq[token] ** seq[token]
+
+DEF buildCodeBlock( <>, alreadyRead, actModuleName, config ) == 
+  IF dropEmptyLines?(config, actModuleName) THEN
+    (eraseLayoutNewlines(alreadyRead), <>)
+  ELSE
+    (alreadyRead, <>)
+  FI
+
+DEF buildCodeBlock( tokenSeqToRead AS ftTokenSeq::rtTokenSeq,
+                    alreadyRead,
+                    actModuleName,
+                    config ) ==
+  IF codeEnd?(ftTokenSeq) THEN
+    IF dropEmptyLines?(config, actModuleName) THEN
+      (eraseLayoutNewlines(alreadyRead), tokenSeqToRead)
+    ELSE
+      (alreadyRead, tokenSeqToRead)
+    FI
+  ELSE
+    buildCodeBlock(
+      rtTokenSeq, 
+      alreadyRead +% ftTokenSeq, 
+      actModuleName, 
+      config
+    )
+  FI
+
+
+-- %$Translating Property-References$
+-- %---------------------------------
+/* %The translation of properties into the @TeX{} markup language
+has already been done during the construction of context for each individual
+module. The context table contains all the compiled information. The following
+function translates a source-code reference into a output-element sequence: */
+
+FUN buildProps : token ** map[string,<,propContextEntry] -> seq[outputElem]
+DEF buildProps( token, propContextMap ) ==
+  LET
+    propNames        == list2StringSeq(cont(token), ","!)
+    definedPropNames == implode(propNames) * dom(propContextMap)
+  IN
+    IF ~({}?(definedPropNames)) THEN
+      %(
+        docuPrefix,
+        documentation(
+          buildPropsString(explode(definedPropNames), propContextMap)
+        ),
+        docuSuffix
+      )
+    ELSE
+      <>
+    FI
+    
+
+FUN buildPropsString : seq[string] ** map[string,<,propContextEntry] -> string
+DEF buildPropsString( propNames, propContMap ) ==
+  (++ / <>)
+    (
+      (\\actPropName.
+        LET
+          propContext == propContMap ! actPropName 
+        IN
+          conc(
+            conc(
+              line("@tex"),
+              "$$"!, TeXedProp(propContext), "$$"!, nl,
+              line("@end tex")
+             ),
+          conc(
+            line("@ifinfo"),
+            infoProp(propContext), nl,
+            line("@end ifinfo")
+          ),
+          conc(
+            line("@ifset html"),
+            "@math{"!, infoProp(propContext), "}"!, nl,
+            line("@end ifset")
+            )
+        )
+      ) * propNames
+    )
+
+-- %$Handling the Chapter-Structuring$
+-- %----------------------------------
+/* %The @c{splitLevel} defined locally in the documented module has to be
+    adjusted to the current section depth, e.g. a sub-sectioning command in
+    a top-level @OPAL structure induces a different Texinfo sectioning
+    command than a sub-sub-sectioning of in an @OPAL module of a
+    user-defined subsystem. The adjustment is accomplished by the following
+    implementation: */
+
+FUN adjustDepth : partType ** splitLevel -> partType
+
+DEF chapter adjustDepth subPart          == section
+DEF chapter adjustDepth subsubPart       == subsection
+DEF chapter adjustDepth subsubsubPart    == subsubsection
+DEF chapter adjustDepth subsubsubsubPart == subsubsection
+
+DEF section adjustDepth subPart          == subsection
+DEF section adjustDepth subsubPart       == subsubsection
+DEF section adjustDepth subsubsubPart    == subsubsection
+DEF section adjustDepth subsubsubsubPart == subsubsection
+
+DEF subsection adjustDepth subPart       == subsubsection
+DEF subsection adjustDepth _             == subsubsection
+
+DEF subsubsection adjustDepth _          == subsubsection
+DEF subsubheading adjustDepth _          == subsubsection
+
+
+
+
+-- %$Misc$
+
+FUN nlLayout?: token -> bool
+DEF nlLayout?(tk) ==
+  IF layout?(tk) THEN
+    cont(tk) = nl 
+  ELSE
+    false
+  FI

@@ -1,0 +1,193 @@
+#!/usr/local/bin/wish -f
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/subsystemConfig_tcl,v 1.1.1.1 1998-06-16 16:00:31 wg Exp $
+
+# Parameter: Name of Subsystem
+
+option readfile $env(DOSFOP)/defaults/options.data
+
+source $env(DOSFOP)/tcl/global.tcl
+source $env(DOSFOP)/tcl/error.tcl
+source $env(DOSFOP)/tcl/regexprs.tcl
+source $env(DOSFOP)/tcl/output.tcl
+source $env(DOSFOP)/tcl/filehelp.tcl
+source $env(DOSFOP)/tcl/configWidgets.tcl
+source $env(DOSFOP)/tcl/help.tcl
+
+stateMsgInit
+stateMsg "Initializing"
+
+####################
+# global constants #
+####################
+
+set subsystem_options {name \
+                       location \
+                       survey \
+                       properties_include only_interfaces \
+                       import_references used_function_tables \
+                       hierarchy_visu sort_structures \
+		       new_pages levels drop_empty_lines}
+
+set subsystemConfigFile  "DOSFOP/$argv.subsystems.config"
+set subsystemName         [underline2space $argv]
+
+set helpSupportedWidgets {.name .location_entry .survey_button \
+                          .properties_include_config .properties_include_setting \
+                          .only_interfaces_config .only_interfaces_setting \
+                          .hierarchy_visu_config .hierarchy_visu_setting \
+			  .sort_structures_config .sort_structures_setting \
+                          .import_references_config .import_references_setting \
+                          .used_function_tables_config .used_function_tables_setting \
+                          .new_pages_config .new_pages_setting \
+                          .drop_empty_lines_config .drop_empty_lines_setting \
+                          .levels_config .mbar.help .mbar.file}
+
+######################################################################################
+# MAIN ###############################################################################
+######################################################################################
+    
+################################################
+# reading the actual configuration for subsystem
+################################################
+
+if {[file exists $subsystemConfigFile]} then {
+  readSettings $subsystemConfigFile $subsystem_options
+} else {
+  puts "Internal Error : File $subsystemConfigFile not found !"
+  puts "This should never happen!!"
+  beep
+  exit
+}
+
+########################################
+# reading context settings for structure
+########################################
+
+stateMsg "Constructing Configuration File"
+
+constructConfigFile .
+
+stateMsg "Get Settings for subsystem $subsystemName"
+
+set contextSettings [exec $env(DOSFOP)/bin/getsetting $subsystemName ./ subs]
+extractContextSettings $contextSettings $subsystem_options
+
+stateMsgExit
+
+###########################################
+# here setting-mainpulations can take place
+###########################################
+# windows are placed here
+
+#################
+# widget headline
+#################
+
+wm title . "Subsystem Configurator" 
+
+frame .all
+
+###################
+# mandatory options
+###################
+
+frame .mandatory 
+pack [locationWidget setting  "Location of the Subsystem : " ] \
+     -in .mandatory -side top -expand 1 -fill x -padx 2m -pady 2m
+
+############
+# inclusions
+############
+
+frame .inclusions
+pack [propertiesIncludeWidget setting 1] \
+     [onlyInterfacesWidget setting 1]    \
+     -in .inclusions -side top -expand 1 -fill x
+
+###############
+# other options
+###############
+
+frame .others 
+pack [hierarchyVisuWidget setting 1] \
+     [sortStructuresWidget setting 1] \
+     [importReferencesWidget setting 1] \
+     [usedFunctionTablesWidget setting 1] \
+     [newPagesWidget setting 1] \
+     [dropEmptyLinesWidget setting 1] \
+     -in .others -side top -expand 1 -fill x
+
+set fileMenu [makeStandardMenu $helpSupportedWidgets]
+
+$fileMenu add command -label "Save Settings And Exit" \
+                      -command checkSaveAndExit \
+                      -accelerator "  Ctrl+x"
+$fileMenu add command -label "Save Settings" \
+                      -command checkAndSave \
+                      -accelerator "  Ctrl+s"
+$fileMenu add separator
+$fileMenu add command -label "Discard Changes and Exit" \
+                      -command exitSubsystemConfig \
+                      -accelerator "  Ctrl+c"
+
+bind all <Control-x> {checkSaveAndExit}
+bind all <Control-s> {checkAndSave}
+bind all <Control-c> {exitSubsystemConfig}
+
+pack .mbar -side top -fill x
+
+pack [nameWidget "Subsystem " $subsystemName] \
+     .mandatory \
+     [surveyWidget setting] \
+     [levelsWidget setting 1] \
+     .inclusions \
+     .others \
+     -in .all -side top -fill x -padx 2m -pady 2m
+
+pack .all
+
+
+proc checkSaveAndExit {} {
+  global subsystemConfigFile
+  global subsystem_option_ordering
+  global setting
+  global dir
+
+  ### check lexical structure of location
+  set setting(location) [string trim $setting(location)]
+  if {[check $setting(location) $dir] != 1} then {
+    errorWidget "Syntax error in location name name!"
+    return
+  }
+
+  saveConfig $subsystemConfigFile $subsystem_option_ordering
+  exitSubsystemConfig
+}
+
+proc checkAndSave {} {
+  global subsystemConfigFile
+  global subsystem_option_ordering
+  global setting
+  global dir
+
+  ### check lexical structure of location
+  set setting(location) [string trim $setting(location)]
+  if {[check $setting(location) $dir] != 1} then {
+    errorWidget "Syntax error in location name name!"
+    return
+  }
+
+  saveConfig $subsystemConfigFile $subsystem_option_ordering
+}
+
+proc exitSubsystemConfig {} {
+  catch {send browse_tcl {enable {.subsystemConfig .subsystemRename .subsystemDelete}}}
+
+  cancelConfig
+}
+
+
+
+
+
+

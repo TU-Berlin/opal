@@ -1,0 +1,328 @@
+
+IMPLEMENTATION TypeAnFun
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:36 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Ide		COMPLETELY
+			Format ONLY format
+	TypeAn		COMPLETELY
+			Store ONLY store
+	An		ONLY an type
+	Ac		COMPLETELY
+	Builtin		ONLY denotation:ide
+
+
+IMPORT	IdeMap		ONLY ideMap {} extend undef def? !
+	NatMap		ONLY natMap ! codom
+	NatMapReduce    ONLY /
+	Format		COMPLETELY
+	FormatFun1 	COMPLETELY
+
+IMPORT	Seq		COMPLETELY
+	SeqReduce	ONLY /
+	SeqMap		ONLY * 
+	Nat		COMPLETELY
+	Compose		COMPLETELY
+	Pair		ONLY pair 2nd
+	Option		COMPLETELY
+
+
+-- ---------------------------------------------------------------------------
+-- Formatting
+
+DEF format(t:type) ==
+    LET ft == (format):type->format
+    IN
+    IF some?(t) THEN
+	str("SOME")
+    IF ide?(t) THEN
+	format(ide(t))
+    IF fun?(t) THEN
+	blk(2,%(list(str("("),str(","),str(")"),ft)(args(t)),
+	       brk(0),str("->"),ft(res(t))))
+    IF tup?(t) THEN
+	blk(2,%(list(str("<"),str(","),str(">"),ft)(comps(t))))
+    IF prod?(t) THEN
+	blk(2,%(str("<"),format(cons(t)),
+		list(str("|"),str(","),str(">"),ft)(comps(t))))
+    IF sum?(t) THEN
+	blk(2,%(list(str("{"),str(","),str("}"),ft)(members(t))))
+    IF spec?(t) THEN
+	blk(2,%(ft(gen(t)),list(str("("),str(","),str(")"),ft)(subs(t))))
+    IF gen?(t) THEN
+	blk(2,%(list(str("%"),str(","),str("."),format:ide->format)
+                    (vars(t)),ft(scope(t))))
+    FI
+
+
+DEF format(a:typeAn) ==
+    IF typing?(a) THEN
+	blk(2,%(brk(0),format(type(a))))
+    IF spec?(a) THEN
+	blk(2,%(brk(0),list(str("("),str(","),str(")"),
+					(format):type->format)(subs(a))))
+    IF typeDecs?(a) THEN
+	blk(2,%(brk(0),
+		 list(str(""),nl,str(""),(format):typeDec->format)
+		     (ds)))
+	WHERE ds == codom(decs(a))
+    ELSE
+	str("")
+    FI
+
+DEF format(d:typeDec) ==
+    IF hidden?(d) THEN 
+   	blk(2,%(format(ide(d)),str(" = hidden")))
+    IF binding?(d) THEN
+	blk(2,%(format(ide(d)),str(" ="),brk(1),format(def(d))))
+    IF foreign?(d) THEN
+	blk(2,%(format(ide(d)),str(" = foreign")))
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+-- Retrieve type declaration
+
+DEF typeDec(U,i) ==
+    LET a == IF origin(i) = target THEN type(an(U))
+                                   ELSE type(an(uses(U) ! #(origin(i)))) FI
+    IN
+    IF typeDecs?(a) THEN
+	/*
+	LET td? == decs(a) !? #(i)
+	IN
+	IF avail?(td?) THEN cont(td?) ELSE hidden(i) FI
+	*/
+	decs(a) ! #(i)
+    ELSE
+        -- no type info: like hidden
+        hidden(i)
+    FI
+
+DEF typeDecs(p?,U) ==
+    LET ta == type(an(U))
+    IN
+    IF typeDecs?(ta) THEN
+	/(getWhen(p?), <>, decs(ta))
+    ELSE <>[typeDec:SORT] FI
+
+DEF importedTypeDecs(p?,U) ==
+    /(getImportedWhen(p?), <>, uses(U))
+
+    FUN getImportedWhen : (typeDec -> bool) -> unit ** seq[typeDec:SORT]
+					    -> seq[typeDec:SORT]
+    DEF getImportedWhen(p?)(U,ds) ==
+	LET ta == type(an(U))
+	IN
+	IF typeDecs?(ta) THEN
+	    /(getWhen(p?), ds, decs(ta))
+	ELSE ds FI
+
+    FUN getWhen : (typeDec -> bool) -> typeDec ** seq[typeDec:SORT]
+				    -> seq[typeDec:SORT]
+    DEF getWhen(p?)(d,ds) ==
+	IF p?(d) THEN d::ds ELSE ds FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+-- Examinine typing of declaration
+
+-- FUN typeOfDec : dec -> type
+DEF typeOfDec(d) ==
+    IF typing?(type(an(d))) THEN type(type(an(d))) ELSE some'TypeAn FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+-- Examinine typing of expression
+
+/* PROBLEMS
+- name clash in reduce (free variables!). This is currently ok since 
+  we have only Hindley-Milner polymorphism: no nested generalizations.
+- the whole thing has to be rewritten for general polymorphism
+*/
+
+-- FUN typeOfExp : (ide -> type) ** (ide -> typeDec) -> exp -> type
+DEF typeOfExp(V,T)(e) ==
+    IF typing?(type(an(e))) THEN
+	-- explicite typing overwrites 
+	type(type(an(e)))
+    ELSE
+	LET t ==
+    		IF e apply?   THEN typeOfApply(V,T)(e)
+    		IF e case?    THEN typeOfCase(V,T)(e)
+    		IF e block?   THEN typeOfBlock(V,T)(e)
+    		IF e lambda?  THEN typeOfLambda(V,T)(e)
+    		IF e ide?     THEN typeOfIde(V,T)(e) 
+    		IF e deno?    THEN typeOfDeno(V,T)(e)
+    		IF e error?   THEN typeOfError(V,T)(e) FI
+	IN
+	IF spec?(type(an(e))) THEN
+	    -- specialization of a type scheme
+	    spec(t,subs(type(an(e))))
+	ELSE
+	    t
+	FI
+    FI
+
+FUN typeOfApply typeOfCase typeOfBlock 
+    typeOfLambda typeOfIde typeOfDeno typeOfError
+	: (ide -> type) ** (ide -> typeDec) -> exp -> type
+
+DEF typeOfApply(V,T)(e) == 
+    LET t == reduce(T)(typeOfExp(V,T)(fun(e))) IN
+    IF t fun? THEN
+	typeOfRes(args(t),res(t),#(args(e)))
+    ELSE
+	-- we do not handle unification of polymorphic mappings 
+	-- against the argument types.
+	some'TypeAn
+    FI
+    FUN typeOfRes : seq[type:SORT] ** type ** nat -> type
+    DEF typeOfRes(ts,r,n) ==
+	IF #(ts) >= n THEN
+	    LET ts1 == drop(n,ts) IN
+	    IF ts1 <>? THEN r ELSE fun(ts1,r) FI
+	OTHERWISE
+	IF fun?(r) THEN
+	    typeOfRes(args(r),res(r),n - #(ts))
+	ELSE
+	    -- type error (too many arguments)
+	    some'TypeAn
+	FI
+
+		
+DEF typeOfCase(V,T)(e) == LET ms==matches(e) d==default(e) IN
+    IF <>?(ms) THEN
+        typeOfExp(V,T)(d)
+    ELSE
+	typeOfExp(V,T)(scope(ft(ms)))
+    FI
+
+DEF typeOfBlock(V,T)(e) == 
+    typeOfExp(refine(V,binds(e)),T)(scope(e))
+
+DEF typeOfLambda(V,T)(e) ==
+    -- changed for the demand driven eval method generation:
+    -- from the lambda expression we cannot reconstruct currying
+    -- attributes. Hence we have to assume that the function is maximal
+    -- curried.
+    LET TypeOfScope == typeOfExp(refine(V,vars(e)),T)(scope(e))
+    IN
+    ( (\\ Var,Codom. fun(%(typeOfDec(Var)),Codom)) / TypeOfScope ) (vars(e))
+    -- OLD: fun(typeOfDec * vars(e),typeOfExp(refine(V,vars(e)),T)(scope(e)))
+
+DEF typeOfIde(V,_)(e) ==
+    V(ide(e))    
+
+DEF typeOfError(_,_)(_) ==
+    -- should be annotated
+    some'TypeAn
+    
+DEF typeOfDeno(_,_)(_) ==
+    ide(denotation:ide)
+
+
+FUN refine: (ide -> type) ** seq[dec:SORT] -> ide -> type
+DEF refine(V,ds)(i) ==
+    IF ds <>? THEN V(i)
+    ELSE 
+	IF ide(ft(ds))=i THEN
+	    LET a == type(an(ft(ds))) 
+	    IN
+	    IF typing?(a) THEN type(a) ELSE some FI
+	ELSE
+	    refine(V,rt(ds))(i)
+	FI
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+-- Normalization of types
+
+-- FUN reduce : (ide -> typeDec) -> type -> type
+DEF reduce(T)(t) == 
+    IF spec?(t) THEN
+	LET g == unfold(T)(gen(t)) 
+	IN
+	IF gen?(g) THEN
+	    reduce(T)(substitute({}[type:SORT],vars(g),subs(t),scope(g)))
+	ELSE
+	   some'TypeAn	-- type error!
+	FI
+    ELSE
+	t
+    FI
+
+FUN substitute : ideMap[type:SORT] ** seq[ide:SORT] ** seq[type:SORT] ** type
+					-> type
+DEF substitute(sb,vs,as,sc) == 
+    IF 0?(#(as)) THEN subs(sb)(sc)
+    OTHERWISE
+    IF #(vs) > #(as) THEN
+	gen(drop(#(as),vs),subs(extend(sb,take(#(as),vs),as))(sc))
+    OTHERWISE
+    IF gen?(sc) THEN
+	substitute(extend(sb,vs,take(#(vs),as)),vars(sc),drop(#(vs),as),
+		   scope(sc))
+    ELSE
+	-- type error (too many arguments) ignored
+	subs(extend(sb,vs,take(#(vs),as)))(sc)
+    FI
+
+FUN subs : ideMap[type] -> type -> type
+DEF subs(S)(t) ==
+    IF t gen? THEN
+	-- undefine rebinded variables 
+	subs((undef / S)(vars(t)))(scope(t))
+    IF t spec? THEN
+	spec(subs(S)(gen(t)),subs(S) * subs(t))
+    IF t fun? THEN
+	fun(subs(S) * args(t),subs(S)(res(t)))
+    IF t sum? THEN
+	sum(subs(S) * members(t))
+    IF t tup? THEN
+	tup(subs(S) * comps(t))
+    IF t prod? THEN
+	prod(cons(t),subs(S) * comps(t))
+    IF t ide? THEN
+       IF ide(t) def? S THEN S!ide(t) ELSE t FI
+    ELSE
+	t
+    FI
+
+-- FUN unfold : (ide -> typeDec) -> type -> type
+DEF unfold(T)(t) ==
+    IF t ide? THEN
+	IF ide(t) global? THEN
+	    LET td == T(ide(t)) 
+	    IN
+	    IF td binding? THEN unfold(T)(def(td))
+			   ELSE t FI
+	ELSE t FI
+    ELSE t FI
+
+-- FUN structure : (ide -> typeDec) -> type -> type
+DEF structure(T)(t) ==
+    IF spec?(t) THEN structure(T)(reduce(T)(t))
+    IF gen?(t)  THEN structure(T)(scope(t))
+    IF ide?(t)  THEN
+	IF global?(ide(t)) THEN
+	    LET td == T(ide(t))
+	    IN
+	    IF binding?(td) THEN structure(T)(def(td))
+			    ELSE t FI
+	ELSE t FI
+    IF tup?(t) THEN
+	IF #(comps(t)) = 1 THEN
+	    ft(comps(t))
+	ELSE t FI
+     ELSE t FI
+
+DEF typeDecAss(U)(i) == typeDec(U,i)
+	
+-- ------------------------------------------------------------------------
+
+DEF order(t) ==
+    IF fun?(t) THEN #(args(t)) + order(res(t)) 
+    IF gen?(t) THEN order(scope(t))
+    	       ELSE 0 FI
+

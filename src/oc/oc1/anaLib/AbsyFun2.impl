@@ -1,0 +1,99 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     higher order functions for Fct and Impl
+-- Changes:	af, Jun 23 1993: added patterns for noFct
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION  AbsyFun2[from, to]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Impl		COMPLETELY
+	Fct		COMPLETELY
+
+IMPORT	Seq		COMPLETELY
+	SeqMap		ONLY *
+	SeqReduce	ONLY /
+	MySeqFun1	COMPLETELY
+	MySeqFun2	COMPLETELY
+	MySeqFun3	COMPLETELY
+	Compose		COMPLETELY
+	Nat		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+
+
+-- ---------------------------------------------------------------------------
+-- Fct
+
+FUN * : (from -> to) -> fct[from] -> fct[to]
+  -- Mapping der Fct
+DEF  *(F)(sort(object))   == sort(F(object))
+DEF  *(F)(cart(elems))    == cart((*(F)) * elems)
+DEF  *(F)(funct(arg,res)) == funct(*(F)(arg), *(F)(res))
+DEF  *(F)(nonCartVar(id)) == nonCartVar(id)
+DEF  *(F)(var(id)) 	  == var(id)
+DEF  *(F)(noFct)	  == noFct
+
+-- ---------------------------------------------------------------------------
+
+FUN / : (from ** to -> to) ** to -> fct[from] -> to
+DEF /(F,0)(sort(object))   == F(object,0)
+DEF /(F,0)(cart(elems))    == ((\\fct,00.(F/00)(fct)) / 0)(elems)
+DEF /(F,0)(funct(arg,res)) == (F / (F/0)(arg))(res)
+DEF /(F,0)(nonCartVar(id)) == 0
+DEF /(F,0)(var(id))        == 0
+DEF /(F,0)(noFct)	   == 0
+
+FUN / : (to ** from -> com[to]) ** to -> fct[from] -> com[to]
+DEF /(F,0)(sort(object))   == F(0,object)
+DEF /(F,0)(cart(elems))    == ((\\to,fct.(F / to)(fct)) / 0)(elems)
+DEF /(F,0)(funct(arg,res)) == (F / 0)(arg) ; (\\ans.(F / data(ans))(res))
+DEF /(F,0)(nonCartVar(id)) == yield(okay(0))
+DEF /(F,0)(var(id))        == yield(okay(0))
+DEF /(F,0)(noFct)	   == yield(okay(0))
+
+-- ---------------------------------------------------------------------------
+
+FUN = : (from ** to -> bool) -> fct[from] ** fct[to] -> bool
+  -- Vergleich zweier Funktionalitaeten
+DEF =(F)(sort(object1),sort(object2))       == object1 F object2
+DEF =(F)(cart(elems1),cart(elems2))         == cmp(=(F))(elems1,elems2)
+DEF =(F)(funct(arg1,res1),funct(arg2,res2)) == 
+    IF =(F)(arg1, arg2) THEN =(F)(res1, res2) ELSE false FI
+DEF =(F)(nonCartVar(id1),nonCartVar(id2))   == id1 = id2
+DEF =(F)(var(id1),var(id2)) 		    == id1 = id2
+DEF =(F)(noFct,noFct)			    == true
+DEF =(F)(f1, f2) 			    == false
+
+-- ---------------------------------------------------------------------------
+
+FUN combine : (from -> to) ** fct[seq[from]] -> seq[fct[to]]
+  -- Bilden der Sequenz aller Kombinationen von Fct mit 1-elementigen Blaettern
+DEF combine(F, sort(object))   == (sort o F) * object
+DEF combine(F, cart(elems))    == cart * combine((\\fct.combine(F,fct))*elems)
+DEF combine(F, funct(arg,res)) == combine(funct, argS, resS)
+    WHERE (argS, resS) == (combine(F,arg), combine(F,res))
+DEF combine(F, nonCartVar(id)) == %(nonCartVar(id))
+DEF combine(F, var(id))        == %(var(id))
+DEF combine(F, noFct)	       == %(noFct)
+
+-- ---------------------------------------------------------------------------
+-- sortImpl
+
+FUN * : (from -> to) -> sortImpl[from] -> sortImpl[to]
+DEF *(F)(sortImpl(obj,variantS,pos)) == sortImpl(F(obj),*(F) * variantS, pos)
+
+FUN * : (from -> to) -> variant[from] -> variant[to]
+DEF *(F)(variant(cons,test,compS,pos)) == 
+    variant(F(cons), F(test), *(F) * compS, pos)
+
+FUN * : (from -> to) -> comp[from] -> comp[to]
+DEF *(F)(comp(sel,fct,pos)) == comp(F(sel), *(F)(fct), pos)
+
+

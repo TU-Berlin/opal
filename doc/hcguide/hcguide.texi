@@ -1,0 +1,2536 @@
+\input texinfo @c -*-texinfo-*-
+@c %**start of header
+@setfilename hcguide.info
+@settitle Hancoder's Guide to OCS Version 2
+@c $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/doc/hcguide/hcguide.texi,v 1.1.1.1 1998-06-16 15:59:30 wg Exp $ 
+
+@syncodeindex vr fn
+@syncodeindex tp fn
+@synindex cp fn
+
+@c %**end of header
+@paragraphindent asis
+@iftex
+@c @afourpaper
+@end iftex
+@finalout
+@ifinfo
+This file contains documentation about handcoding in OCS Version 2
+
+Copyright 1994 by The OPAL Group
+
+@end ifinfo
+@titlepage
+@title Handcoder's Guide to OCS Version 2
+@subtitle A (DRAFT) manual for the brave
+
+@author The OPAL Group     
+@author written by Wolfgang Grieskamp and Mario Suedholt
+
+@page
+
+Copyright @copyright{} 1994 by The OPAL Group
+@end titlepage
+
+@ifinfo
+@node Top, Introduction, (dir), (dir)
+@top Handcoder's Guide
+
+@menu
+* Introduction::                
+* Handcoded Structures::        
+* Naming::                      
+* Data::                        
+* Functions::                   
+* Builtin::                     
+* Library::                     
+* Embedding::                   
+* Upgrading::                   
+* Index::                       
+
+ --- The Detailed Node Listing ---
+
+Introduction
+
+* Why Handcoding::              
+* Languages::                   
+* Warning::                     
+
+Handcoded Structures
+
+* Source Parts::                
+* Look and Feel::               
+* Derived Parts::               
+* Maintenance::                 
+* Accessing Plain Structures::  
+
+Naming Conventions
+
+* Transliteration::             
+* Basenames::                   
+
+Data Objects and Memory Management
+
+* Primitives::                  
+* Structured::                  
+* Reference Counting::          
+* Data Type Conventions::       
+* Auxiliary Memory::            
+
+Primitive Objects
+
+* Unsigned Primitives::         
+* Signed Primitives::           
+* Pointer Primitives::          
+
+Structured Objects
+
+* Declaring ::                  
+* Allocating::                  
+
+Declaring Structured Data
+
+* Small Objects::               
+* Big Objects::                 
+
+Garbage Collection and Reference Counting
+
+* Arbitrary RC::                
+* Structured RC::               
+* Selective Update::            
+* Borrowing::                   
+* Simulating Storage Classes::  
+
+Functions
+
+* Ranks::                       
+* Direct Entries::              
+* Macro Entries::               
+* Closure Objects::             
+* Constants::                   
+
+Closure Objects
+
+* Closure Contents::            
+* Closure RC::                  
+
+Builtin data types
+
+* Booleans::                    
+* Denotations::                 
+
+The @sc{Opal} Library
+
+* Basic Types::                 
+* Aggregate Types::             
+* System::                      
+
+Operating System
+
+* Commands::                    
+* Constructing Commands::       
+* Example Processes::          
+
+Upgrading Handcoded Structures
+
+* Interfacing to Opal::         
+* Transliteration of Identifiers::  
+* Macro Naming::                
+* Object Declaration::          
+* Memory Allocation::           
+@end menu
+
+@end ifinfo
+
+@comment ********************************************************************
+@node Introduction, Handcoded Structures, Top, Top
+@comment  node-name,  next,  previous,  up
+@chapter Introduction
+
+@noindent
+This manual describes how to add @dfn{handcoded structures} to the
+@sc{Opal} Compilation System Version 2. 
+
+@menu
+* Why Handcoding::              
+* Languages::                   
+* Warning::                     
+@end menu
+
+@comment ===================================================================
+@node Why Handcoding, Languages, Introduction, Introduction
+@comment  node-name,  next,  previous,  up
+@section What's the use of Handcoding
+
+@noindent
+@sc{Opal} is a @dfn{scheme} language, by which we understand that it
+doesn't provide a priori more than the essential builtin data types of
+booleans and textual denotations. Consequently,
+ the @sc{Opal} compiler must support a way to add handcoded structures
+to the compilation system without loosing efficiency compared to as data
+types defined by these structures are built into the language.
+
+There is a second --- even more important --- reason which is independent of
+@sc{Opal} being a scheme language. In most cases software is not constructed
+from scratch, but is embedded in and does embed existing software: the
+operating system, the user interface, the data base manager and so on. This
+calls for a well defined @dfn{interlanguage working} interface. @sc{Opal}
+programs must have the possibility to access existing software and must
+themselves be accessible from other software. Nowadays C is the de facto
+standard for system programming; hence, it is desirable that @sc{Opal}
+programs can corporate with C software and vice versa.
+
+@comment ===================================================================
+@node Languages, Warning, Why Handcoding, Introduction
+@comment  node-name,  next,  previous,  up
+@section Target and Foreign Language
+
+@noindent
+The @sc{Opal} compilation system Version 2 uses @sc{Ansi C} as its target
+language. The decision to use C has been driven by the demand to produce
+highly platform-independent code, while preserving some access to machine
+oriented features like pointer calculations. Although this approach is not
+totally satisfactory, since for example the generated C code is
+(redundantely) parsed and context-checked by the C compiler, we expect that
+it will survive some time.
+@cindex target language
+
+So we are in the happy situation that the target language --- to be used
+for handcoding --- and the foreign language --- to be used to connect to
+existing software --- fall together. Nevertheless, the handcoding scheme
+documented in this manual is well prepared for future changes of the
+target language.  Only those features crucial for effiency of handcoded
+low-level data types will change if the target language changes; those
+are grouped mainly around the inlining of function definitions via the C
+macro-preprocessor. Handcoded structures which avoid these features will
+probably port to future versions of @sc{ocs}.
+
+@comment ===================================================================
+@node Warning,  , Languages, Introduction
+@comment  node-name,  next,  previous,  up
+@section Warning
+
+@noindent
+Before you plan to handcode an @sc{Opal} structure be aware that this is a
+job for the brave. You should be familiar with writing @sc{C} programs as
+well as with writing @sc{Opal} programs. You should have some idea of how
+functional languages are compiled. On the level of handcoding the (weak)
+type discipline of @sc{C} is completely broken; this is necessary to model
+the richer type system of @sc{Opal}.  Face that you have a lot to do with
+tedious and tricky low-level memory management -- stuff the compiler
+normally handles automatically for you.  Be aware that debugging handcoded
+structures, in particular if they are concerned with more complex data
+objects, is a boring task. The usual crash you have to expect occures in
+some of the memory management functions of the runtime system, since a
+dangling pointer has been accessed, which has been introduced in completely
+different part of the program.
+@cindex type discipline
+
+@comment ********************************************************************
+@node Handcoded Structures, Naming, Introduction, Top
+@comment  node-name,  next,  previous,  up
+@chapter Handcoded Structures
+
+@noindent
+A handcoded structure consists of four source parts, each kept in a separate
+file. The signature and implementation parts are ordinary @sc{Opal}
+documents. Additionally, there are a handcoded interface and a handcoded
+implementation part, both written in C. The handcoded source parts are
+combined internally with the C interface and implementation parts derived
+from the @sc{Opal} sources.
+@cindex handcoded structure
+@cindex structure, handcoded
+@cindex handcoded structure, signature part
+@cindex handcoded structure, implementation part
+
+@menu
+* Source Parts::                
+* Look and Feel::               
+* Derived Parts::               
+* Maintenance::                 
+* Accessing Plain Structures::  
+@end menu
+
+@comment ===================================================================
+@node Source Parts, Look and Feel, Handcoded Structures, Handcoded Structures
+@comment  node-name,  next,  previous,  up
+@section Source Parts of Handcoded Structures
+
+@cindex handcoded structure, source files
+
+@noindent
+The four source parts of a handcoded structure are:
+
+@table @var
+@item Struct@code{.sign}
+This is the @sc{Opal} signature part of a handcoded structure. It is in no
+way different from ordinary @sc{Opal} signatures.
+
+
+@item Struct@code{.impl}
+This file contains the @sc{Opal} implementation part of a handcoded structure.
+There is no fundamental difference to ordinary implementations, except:
+
+@itemize @bullet
+@item The global pragma @code{/$ handcoded
+$/} apperars somewhere in the file. @footnote{This is not essential in the
+current version of @sc{ocs}; incidently, the compiler will not issue a
+warning if it is lacking. It might, however, become necessary in future
+versions}.
+
+@item
+Functions which shall be handcoded are not implemented here. Be aware that
+there is no notion of a function being @emph{partially} implemented; in
+particular, leaving out cases in pattern based function definition leads to
+an implemented function which is undefined in some cases but can not be
+handcoded.
+
+@item 
+Sorts which shall be handcoded are not implemented here either. However,
+pseudo implementations may be given in order to simulate a storage class of
+the sort for more efficient memory management. @xref{Simulating Storage
+Classes}.
+
+@end itemize
+
+@item Struct@code{.hc.h}
+This is the handcoded interface part of the structure. It contains
+non-canonical definitions for use in other handcoded structures and
+canonical macro based implementations of functions, if such are
+supplied. @xref{Macro Entries}.
+
+@item Struct@code{.hc.c}
+This is the handcoded implementation part of the structure. For each
+n-ranked function not implemented in @sc{Opal} it contains a canonical
+implementation in C (@pxref{Direct Entries}). For each zero-ranked function
+(constant) it contains canonical initialization code, activated through a
+special initialization function (@pxref{Constants}). It furthermore may
+contain other non-canoncial C code.
+
+@end table
+
+
+
+@comment ===================================================================
+@node Look and Feel, Derived Parts, Source Parts, Handcoded Structures
+@comment  node-name,  next,  previous,  up
+@section A Look and Feel Example
+
+@noindent
+Let us take a view at a simple handcoded structure. Not all information
+to understand this example in detail has been presented yet, but it
+might serve to give you a first taste.
+
+As an example we use a simplified version of the structure @code{DEBUG}
+from the @sc{Opal} Standard Library, which provides a function for
+side-effect prints. The @sc{Opal} signature part looks as follows:
+
+@example
+@comment @cartouche
+SIGNATURE DEBUG[data]
+SORT data
+FUN PRINT : bool**denotation**data->data
+@comment @end  cartouche
+@end example
+
+The @sc{Opal} implementation uses a handcoded internal function
+@code{print} to realize the side-effect print:
+
+@example
+@comment @cartouche
+IMPLEMENTATION DEBUG
+/$ handcoded $/
+DEF PRINT(true,msg,data)  == print(msg,data)
+DEF PRINT(false,msg,data) == data 
+-- function to become handcoded:
+FUN print: denotation ** data -> data
+@comment @end cartouche
+@end example
+
+The handcoded interface part is empty in this example:
+
+@example
+@comment @cartouche
+/* hand-coded interface part of DEBUG */
+@comment @end cartouche
+@end example
+
+The handcoded implementation part makes use of the runtime system
+function @code{get_denotation}, which converts an @sc{Opal} object of
+sort denotation to a C string, and a global char buffer named
+@code{charbuf} @c{(@pxref{Denotations})}. 
+
+@example
+@comment @cartouche
+/* hand-coded implementation part of DEBUG */
+
+#include <stdio.h>
+
+extern OBJ _ADEBUG_Aprint(OBJ msg,OBJ data) /* print */ @{
+    fprintf(stderr,"DEBUG PRINT:\n");
+    get_denotation(msg,charbuf,CHARBUFSIZE);
+    fputs(stderr,charbuf);
+    fputc('\n',stderr);
+    return data;
+@}
+
+static init_const_ADEBUG()
+@{@}
+@comment @end cartouche
+@end example
+
+@comment ===================================================================
+@node Derived Parts, Maintenance, Look and Feel, Handcoded Structures
+@comment  node-name,  next,  previous,  up
+@section Derived Parts of Handcoded Structures
+
+@cindex handcoded structure, derived parts
+
+@noindent
+The @sc{Opal} compiler generates C interface and implementation parts
+from the @sc{Opal} parts of a handcoded structure. These files are
+normally not of interest to the user, but it usefull to understand how
+the final C source is assembled from the generated and handcoded C parts.
+
+@table @var
+
+@item @code{[OCS/]}Struct@code{.h}
+This is the generated C interface part of the structure. It primarily
+declares all external canonical functions and constants, and defines
+@dfn{symbolic name aliases} for all objects (the compiler internally uses
+numerically encoded names, @pxref{Naming}). It @emph{includes} the handcoded
+interface part @var{Struct}@code{.hc.h}.
+
+@item @code{[OCS/]}Struct@code{.c}
+This is the generated C implementation part of the structure. It
+declares all internal canonical functions, constants and symbolic
+aliases, contains the generated code of those functions implemented in
+@sc{Opal}, and some additional administrative stuff. It @emph{includes}
+the handcoded implementation part @var{Struct}@code{.hc.c}.
+
+@end table
+
+To continue the example from the last section (@pxref{Look and Feel}),
+the derived C interface for @code{DEBUG} follows. We have added comments
+to illustrate the general scheme:
+
+@example
+@comment @cartouche
+#ifndef ADEBUG_included
+#define ADEBUG_included
+
+/* @r{Name aliases} */
+#define __ADEBUG_APRINT __ADEBUG_1   
+#define _ADEBUG_APRINT _ADEBUG_1
+#define ADEBUG_1 ADEBUG_APRINT
+
+/* @r{Extern Declarations} */
+extern OBJ __ADEBUG_APRINT;
+extern OBJ _ADEBUG_APRINT(OBJ,OBJ,OBJ);
+
+/* @r{Inclusion of handcoded part} */
+#include "DEBUG.hc.h"
+
+/* @r{Default Definition of Macro Implementations} */
+#ifndef ADEBUG_APRINT   /* @r{May be overwritten in hc.h part} */
+#define ADEBUG_PRINT(x1,x2,x3,r) @{r=_ADEBUG_APRINT(x1,x2,x3);@}
+                                 /* Map to function implementation */
+#endif 
+
+#endif /* ADEBUG_included */
+@comment @end cartouche
+@end example
+
+
+The derived C implementation is the following:
+
+@example
+@comment @cartouche
+/* @r{Inclusion of runtime system definitions} */
+#include "BUILTIN.h"    
+
+/* @r{Inclusion of imported and own definitions} */
+#include "DEBUG.h"
+
+/* @r{Name Aliases for internal functions} */
+#define __ADEBUG_Aprint __ADEBUG_2      
+#define _ADEBUG_Aprint _ADEBUG_2
+#define ADEBUG_2 ADEBUG_Aprint
+
+/* @r{Function Declarations and Closure Variable Definitions} */
+extern OBJ _ADEBUG_APRINT(OBJ,OBJ,OBJ); OBJ __ADEBUG_APRINT; /* PRINT */
+extern OBJ _ADEBUG_Aprint(OBJ,OBJ,OBJ); OBJ __ADEBUG_Aprint; /* print */
+
+/* @r{Inclusion of handcoded implementation part} */
+#include "DEBUG.hc.c"
+
+/* @r{Generated C code for PRINT} */
+extern OBJ _ADEBUG_APRINT(OBJ x1,OBJ x2,OBJ x3) /* PRINT */
+@{...@}
+
+/* @r{Closure Evaluation Entries} */
+....
+
+/* @c{Initialization Entry} */
+
+init_ADEBUG()@{
+  static int visited=0; if(visited) return; visited=1;
+  ...
+  init_const_ADEBUG();
+@}
+@comment @end cartouche
+@end example
+
+
+@comment ===================================================================
+@node Maintenance, Accessing Plain Structures, Derived Parts, Handcoded Structures
+@comment  node-name,  next,  previous,  up
+@section Maintaining Handcoded Structures
+
+@cindex handcoded structure, maintenance
+
+@noindent
+The @sc{Opal} compiler is capable of generating @dfn{templates} for the
+handcoded parts of a structure. This is supported by the @sc{ocs}
+drivers @code{ocs} resp. @code{ors}. The intended procedure is as
+follows:
+
+@enumerate
+@item
+Create a subsystem for handcoded structures, using the appropriate system
+description template (usually found under
+@var{ocs}@code{/lib/om/tmpls/SysDefs.subhc.tmpl}). Most of the settings to
+be filled in correspond to those of ordinary @sc{Opal} top-level or
+subsystem templates (See @cite{Users Guide to @sc{Opal}}). Only the
+variables
+@defvr {Make Variable} NORMSTRUCTS
+  This variable lists all ordinary @sc{Opal} structures, i.e. those without
+  a handcoded part.
+@end defvr
+and
+@defvr {Make Variable} FOREIGNSTRUCTS
+  This variable lists all @sc{Opal} structures with handcoded definitions.
+@end defvr
+are specific to this template file.
+
+Please note that you cannot maintain handcoded structures in a top-level
+system, nor can specify the system description from the command line of
+@code{ocs} or @code{ors} --- you must use the system description template.
+
+@item
+Edit the @sc{Opal} signature and implementation parts of the structure.
+Implement all functions you wish to code in @sc{Opal}. If you can not give
+the final definition of a function, give at least a pseudo implementation
+(e.g. @code{DEF f(x) == f(x)}), since the compiler decides for which
+functions templates are generated on the basis whether a function is
+implemented or not.
+
+@item 
+Invoke @code{ocs} resp. @code{ors}. The @sc{Opal} parts of the handcoded
+structure will be compiled to the derived files (usually located in the
+@code{OCS} subdirectory) as well as to two files named
+@var{Struct}@code{.hc.h.tmpl} and @var{Struct}@code{.hc.c.tmpl}.
+
+@item
+If you are compiling for the first time, @code{ocs} will stop with a message
+like @samp{Don't now how to make target @var{Struct}.hc.c}. This is
+perfectly okay, since @code{ocs} actually doesn't know -- its your job.
+
+You usually now derive the handcoded parts from the templates. The
+template for the header is just empty. The template for the
+implementation file contains definitions for all unimplemented
+functions, with the bodys filled up by a @code{HLT} statement.
+
+@item 
+If you are not compiling the first time, the templates are created with each
+recompilation and ignored. If changes have been made, the handcoder is
+responsible to merge the changed templates to the handcoded structure
+parts.
+
+@end enumerate
+
+@comment ===================================================================
+@node Accessing Plain Structures,  , Maintenance, Handcoded Structures
+@comment  node-name,  next,  previous,  up
+@section Accessing Plain Structures from Handcoded Structures
+
+@cindex accessing plain structures
+
+@noindent
+Per default, the @sc{Opal} compiler does not generate interfaces to
+access plain structures from within handcoded structures. To instruct
+the compiler to do so, you must use the same system description file as
+for handcoded system (@pxref{Maintenance}), and fill in the variable
+@code{NORMSTRUCTS} with those structures you wish to access from
+handcoded structures. For these structures the compiler generates
+derived interfaces @code{[OCS/]}Struct@code{.h}, which behave similar as
+for handcoded structures -- execpt that the handcoded interface and
+implementation part is regarded to be empty, and thus not included.
+
+
+@comment ********************************************************************
+@node Naming, Data, Handcoded Structures, Top
+@comment  node-name,  next,  previous,  up
+@chapter Naming Conventions
+
+@noindent
+@sc{Opal} functions are referred to by numeric names in the generated C
+code. To enable comfortable handcoding the derived C parts of a
+hancoded structure declare symbolic aliases for numeric names. However,
+the symbolic names cannot be one-to-one translations, since the lexical
+rules of @sc{Opal} and C are not compatible. Furthermore, the namespace
+of C programs is flat, which requires to augment names with the
+originating structure. Last not least overloading of names originating
+from the same structure has to be coped with.
+
+@menu
+* Transliteration::             
+* Basenames::                   
+@end menu
+
+@comment ===================================================================
+@node Transliteration, Basenames, Naming, Naming
+@comment  node-name,  next,  previous,  up
+@section Transliteration of @sc{Opal} Identifiers
+
+@cindex transliteration of identifiers
+@cindex identifier, transliteration of
+
+@noindent
+A transliteration maps each valid @sc{Opal} identifier to a valid C
+identifier. The method is as follows.
+
+@enumerate
+
+@item
+First, each @sc{Opal} identifier is partioned in fragments of either
+alphanumeric or special letters. This is the syntax for the
+fragmentation:
+
+@example
+@var{Ident} ::= @var{Fragment} @strong{(} @samp{_} @strong{[} @var{Fragment} @strong{]} @strong{)}@strong{*}
+@var{Fragment} ::= @var{Letgit}@strong{+} @samp{?}@strong{*} @strong{|} @var{Special}@strong{+}
+@end example
+
+@noindent
+(The character class @var{Letgit}@strong{+} is defined in the report @cite{The
+Programming Language @sc{Opal}}).  Note that @samp{_} is itself a special
+letter. Ambiguity is resolved as follows: if the current fragment consists
+of specials, underlines are taken to be members of this fragment, except a
+trailing underline which introduces the next letgit fragment. If the
+identifier ends with a letgit fragment followed by a single @samp{_}, this
+is interpreted as the introduction of an empty trailing special fragment.
+
+@item
+Next, each fragment is transliterated as follows: a letgit fragment is
+taken as is but with a prepended @samp{A} and all trailing @samp{?}
+substituted by @samp{_}. A special fragment is prepended by a @samp{S},
+and its characters are mapped according to the following table:
+
+@example
+
+Opal    ! @@ # $ % ^ & * + | ~ - = \ ` @{ @} [ ] : ; < > . / ? _
+C       1 2 3 4 5 6 7 8 p S t m e b q O C o c i a l g d s _ u
+
+@end example
+
+@noindent
+If you have a US keyboard, notify the correlation between the numeric
+keys and the special character associated with the according shifted
+key.
+
+@item
+Last, the transliterated fragments are reconcatenated, separated by
+@samp{_}.
+
+@end enumerate
+
+@noindent
+The following table shows some normal and some pathological examples of
+transliterated identifieres:
+
+@example
+DEBUG           ADEBUG
+empty?          Aempty_
+::?             Sii_
+::?__           Sii_uu
+::?__foo_       Sii_u_Afoo_S
+@end example 
+
+
+@comment ===================================================================
+@node Basenames,  , Transliteration, Naming
+@comment  node-name,  next,  previous,  up
+@section Basenames of Functions
+
+@cindex basename
+
+@noindent
+Each @sc{Opal} function has an associated @dfn{basename}. The basename
+is used to generate the names of the different C objects associated with
+an @sc{Opal} function, @pxref{Functions}. The basename is constructed as
+follows:
+
+@enumerate
+@item
+The transliterated structure identifier is concatened with the
+transliterated function identifier, seperated by @samp{_}.
+@item
+If there are several overloaded function versions originating from the
+same structure, the suffix @samp{_O1} is appended to the name of the
+second version, @samp{_O2} to the name of the third version, and so
+on. The order of overloaded versions is defined by the textual
+order of the declarations in the @sc{Opal} handcoded parts.
+@end enumerate
+
+@noindent
+@strong{Caution:} The naming scheme for overloaded functions from the
+same structure is rather dangerous. You might add an overloaded function
+to an existing handcoded structure if it is declared textually after the
+current versions, or you might delete the textually last version. In all
+other cases you have to watch out for changed names and update your
+sources accordingly. If you make a mistake, there is no one who
+complains. @emph{We recommend not to use overloaded names at all for
+handcoded functions}. You can always perform a simple renaming in the
+@sc{Opal} implementation part to avoid overloaded names in the handcoded
+part, for example:
+
+@example
+FUN f: s -> s 
+FUN f: t -> t
+
+-- rename to avoid overloading
+FUN f_s: s -> s
+FUN f_t: t -> t
+DEF f == f_s
+DEF f == f_t
+-- f_t and f_s handcoded
+@end example
+
+
+@comment ********************************************************************
+@node Data, Functions, Naming, Top
+@comment  node-name,  next,  previous,  up
+@chapter Data Objects and Memory Management
+
+@noindent
+One of the main differences between functional and imperative languages is
+the treatment of data objects: in functional languages the notions of memory
+and reference do not exist and data types are described by rather abstract
+and possible recursive definitions. In imperative languages the notion of
+memory and reference is most important, since dynamic objects can only be
+represented by pointer structures. Moreover, deallocation of memory which is
+not longer used has to be performed manually.
+
+Clearly, the difference in the handling of data objects is the factor
+which complicates a powerful interlanguage working interface between
+functional and imperative languages.
+
+In @sc{ocs}, every @sc{Opal} data object is represented by a uniform C
+object of type @code{OBJ}. This uniformity is necessary to support
+parametric resp. polymorphic function and data type
+definitions. Usually, type @code{OBJ} is defined in C as @code{void *},
+but you should treat it as an abstract entity.
+
+An object of type @code{OBJ} either stands for a primitive,
+self-containing value, or is a reference to a structured heap cell. The
+first kind is called for short @dfn{primtive object}, the second kind
+@dfn{structured object}, which subsumes the reference as well as the
+heap cell.
+
+Each value of type @code{OBJ} is equipped with a type tag in order to
+distinguish the two kinds.
+
+@sc{ocs} uses an enhanced lazy reference counting approach to memory
+management which results in a @dfn{residual} garbage collector, that is,
+the garbage collector is compiled online into the code. This makes
+hand-coding more tedious, since the handcoder also has to perform
+garbage collection within his code, as long as she calculates with
+@sc{Opal} data objects. More exactly, the handcoder is reponsible for
+correctly maintaining the reference counter. 
+
+
+@menu
+* Primitives::                  
+* Structured::                  
+* Reference Counting::          
+* Data Type Conventions::       
+* Auxiliary Memory::            
+@end menu
+
+@comment ===================================================================
+@node Primitives, Structured, Data, Data
+@comment  node-name,  next,  previous,  up
+@section Primitive Objects
+
+@cindex primitive data object
+
+@noindent
+A primitive object stands for a self-containing value. To access the value
+the object must be @dfn{unpacked}, that is, the type tag must be removed. To
+create a primitive object the value must be @dfn{packed}, i.e. the type tag
+must be set. Be aware that passing around unpacked values as @code{OBJ}s
+almost certainly crashes the programm, since they may be interpreted as
+references by the runtime system.
+
+The following macro tests whether an object is primitive:
+
+@deftypefn Macro int is_primitive (OBJ @var{obj})
+Returns 1, if @var{obj} is a primitive object, otherwise 0.
+@end deftypefn
+
+@menu
+* Unsigned Primitives::         
+* Signed Primitives::           
+* Pointer Primitives::          
+@end menu
+
+@comment ------------------------------------------------------------------
+@node Unsigned Primitives, Signed Primitives, Primitives, Primitives
+@comment  node-name,  next,  previous,  up
+@subsection Unsigned Integers as Primitive Objects
+
+@cindex natural numbers
+@cindex primitive data object, natural numbers
+
+@noindent
+There are several functions to handle primitive objects which represent
+unsigned integers:
+
+@tex
+\global\tracingmacros=2
+@end tex
+@deftp Type WORD 
+The type of unsigned integers which are large enough to hold the value of
+an unpacked primitive object.
+@end deftp
+
+@deftypefn {Macro} OBJ pack_word (WORD @var{word})
+@deftypefnx {Macro} WORD unpack_word (OBJ @var{obj})
+Packs respectively unpacks a primitive object as an unsigned word.
+@end deftypefn
+
+@deftypefn {Constant} WORD max_word
+The maximal unsigned integer which may be packed in a primitive
+object. On a 32 Bit machine, this is usually 2^31, since 1 bit is used
+for the type tag.
+@end deftypefn
+
+@deftypefn Constant WORD bits_per_word
+The number of bits available in a @code{WORD}, usually 31.
+@end deftypefn
+
+@comment ------------------------------------------------------------------
+@node Signed Primitives, Pointer Primitives, Unsigned Primitives, Primitives
+@comment  node-name,  next,  previous,  up
+@subsection Signed Integers as Primitive Objects
+
+@cindex integer
+@cindex primitive data object, integer
+
+@noindent
+These are the functions to handle primitive objects which represent
+signed integers:
+
+@deftp Type {SWORD}
+The type of signed integers which is large enough to hold the value of
+an unpacked primitive object.
+@end deftp
+
+@deftypefn Macro OBJ pack_sword (SWORD @var{sword})
+@deftypefnx Macro SWORD unpack_sword (OBJ @var{obj})
+Packs respectively unpacks a primitive object as a signed word.
+@end deftypefn
+
+@deftypefn Constant SWORD min_sword
+@deftypefnx Constant SWORD max_sword
+The minimal and maximal unsigned value which may be packed in a primitive
+object.
+@end deftypefn
+
+@comment ------------------------------------------------------------------
+@node Pointer Primitives,  , Signed Primitives, Primitives
+@comment  node-name,  next,  previous,  up
+@subsection Pointers as Primitive Objects
+
+@cindex pointer
+@cindex primitive data object, pointer
+
+@noindent
+In some situations it might be useful to treat a pointer, returned by a
+C library function or explicitely created by @code{malloc}, as a
+primitive object. A typical situation are pointers of type @code{FILE*}
+from the C standard library.
+
+Pointers can be packed and unpacked:
+
+@deftypefn Macro OBJ pack_pointer (void* @var{ptr})
+@deftypefnx Macro void* unpack_pointer (OBJ @var{obj})
+Packs respectively unpacks a pointer. 
+@end deftypefn
+
+Be aware that these functions rely on pointers always pointing to even
+byte boundaries. The following macro symbol tells you whether this is
+@emph{not} the case, and you must explicitly align pointers by yourself
+(or do not use this feature at all):
+
+@defvr Symbol _ALIGN_POINTERS_
+If defined, the platform does not ensure that pointers returned by
+library functions or by @code{malloc} are aligned on even byte boundaries.
+@end defvr
+
+Currently, we are not aware of any UNIX architecture which requires this
+flag to be set.
+
+Please note that memory allocated from the runtime system is always
+correctly aligned. @xref{Auxiliary Memory}.
+
+
+@comment ===================================================================
+@node Structured, Reference Counting, Primitives, Data
+@comment  node-name,  next,  previous,  up
+@section Structured Objects
+
+@cindex structured data object
+
+@noindent
+Structured objects are references pointing to heap cells. Structured objects
+in this sense encompass both the reference as well as the cell.
+
+@sc{ocs} distinguishes between @dfn{deep}, @dfn{flat}, and
+@dfn{byte-flat} structured objects. The cell of a deep object consists of
+other objects which are subject to garbage collection. A flat object
+consists of arbitrary data which is not subject to garbage collection. A
+byte-flat object may in most cases be identified with a flat object; an
+exeception is persistent binary data storage and network interchange,
+where byte-flat objects have to be distinguished from normal flat
+objects to allow the exchange of byte streams between architectures with
+different endians.
+
+Each of the three kinds of objects is furthermore partitioned into
+@dfn{small} and into @dfn{big} objects. Small objects are allocated and
+deallocated using an array of size-specific free lists; big objects share
+the same free list regardeless of their size.
+
+The kinds of structured objects are determinated at allocation
+time. There are no possibility and no necessarity to test object
+kinds. There is, however, one macro which generally tests whether an
+object is structured:
+
+@deftypefn Macro int is_structured  (OBJ @var{obj})
+Returns 1, if @var{obj} is a structured object, otherwise 0.
+@end deftypefn
+
+
+@menu
+* Declaring ::                  
+* Allocating::                  
+@end menu
+
+@comment ------------------------------------------------------------------
+@node Declaring , Allocating, Structured, Structured
+@comment  node-name,  next,  previous,  up
+@subsection Declaring Structured Data
+
+@noindent
+The layout of a structured object is declared by a plain C @code{struct}
+declaration. As the first component, however, you have to include a
+header predefined in the runtime system.
+
+There are two kind of headers, one for definitively small objects, and
+one for objects which may be either small or big. The first kind is
+normally used for objects of fixed size (which are not bigger then at
+most 127 words), the second for objects with dynamically growing size.
+Small objects require one word less of memory resources then big
+objects with respect to the overhead of memory management.
+
+
+@menu
+* Small Objects::               
+* Big Objects::                 
+@end menu
+
+@comment ..................................................................
+@node Small Objects, Big Objects, Declaring , Declaring
+@comment  node-name,  next,  previous,  up
+@subsubsection Declaring Small Objects
+
+@cindex small object
+@cindex structured data object, small
+
+@noindent
+The following header is used for declaring a small structured object:
+
+@deftp Structure {struct sCELL}
+Include this structure as a first component of your data structure if it
+will be definitively small.
+@end deftp
+@tindex sCELL
+
+A typical example is the declaration of reals:
+
+@example
+typedef struct sREAL @{
+        struct sCELL header;
+        double value;
+@} * REAL;
+@end example
+@noindent
+Please note that this must become a flat object, since the double value
+should not be subject to garbage collection. However, the flatness of a
+structured object is determinated at allocation time,
+@pxref{Allocating}.
+
+
+@comment ..................................................................
+@node Big Objects,  , Small Objects, Declaring
+@comment  node-name,  next,  previous,  up
+@subsubsection Declaring Big Objects
+
+@cindex big object
+@cindex structured data object, big
+
+@noindent
+The following header is used for declaring a big structured object:
+
+@deftp Structure {struct sBCELL}
+Include this structure as a first component of your data structure if it
+will be either small or big.
+@end deftp
+@tindex sBCELL
+
+A typical example is the declaration of dynamically sized arrays:
+
+@example
+typedef struct sARRAY @{
+        struct sBCELL header;
+        /* ... data ... */
+@} * ARRAY;
+@end example
+
+@noindent
+The region following the header will hold the arrays data. Most probably
+this will become a deep structured object, since the array data
+consists of objects again.
+
+There are two macros associated with this kind of cells which allow you
+to access the data as an array of objects and the size of this array.
+
+@deftypefn Macro OBJ* data_big (OBJ @var{obj})
+For a structured object declared as big, return a pointer to the first
+object in the data area.
+@end deftypefn
+
+@deftypefn Macro WORD size_big (OBJ @var{obj})
+For a structured object declared as big, return the size in objects
+of the data area.
+@end deftypefn
+
+
+@comment ------------------------------------------------------------------
+@node Allocating,  , Declaring , Structured
+@comment  node-name,  next,  previous,  up
+@subsection Allocating Structured Objects
+
+@cindex structured data object, memory management
+@cindex memory management, structured data object
+
+@noindent
+The deepness or flatness of structured objects is determinated at
+allocation time. This information is stored in the cells header, such
+that deallocation can be performed without knowledge about deepness or
+flatness. This is crucial to realize parametric resp. polymorphic
+objects.
+
+Six macros for allocation of structured objects are predefined. The size
+argument must always be calculated with one of the size macros given
+below.
+
+@deftypefn Macro void alloc_small (WORD @var{size}, OBJ @var{res})
+@deftypefnx Macro void alloc_small_flat (WORD @var{size}, OBJ @var{res})
+@deftypefnx Macro void alloc_small_byte_flat (WORD @var{size}, OBJ @var{res})
+Allocate a deep, flat, or byte-flat small structured object of
+@var{size}, and store its reference in @var{res}.
+@end deftypefn
+
+@deftypefn Macro void alloc_big (WORD @var{size}, OBJ @var{res})
+@deftypefnx Macro void alloc_big_flat (WORD @var{size}, OBJ @var{res})
+@deftypefnx Macro void alloc_big_byte_flat (WORD @var{size}, OBJ @var{res})
+Allocate a deep, flat, or byte-flat big structured object of @var{size},
+and store its reference in @var{res}.
+@end deftypefn
+
+There are several macros to determinate the required size of a
+structured object:
+
+@deftypefn Macro WORD sizeof_small (@var{type})
+Use this macro to determinate the required size of a small structured
+object of fixed size. The argument is the layout type; e.g.
+@code{sizeof_small(struct sREAL)}.
+@end deftypefn
+
+@deftypefn Macro WORD sizeof_big (@var{type})
+Use this macro to determinate the required size of a big structured
+object of fixed size. The argument is the layout type.
+@end deftypefn
+
+@deftypefn Macro WORD size_data (size_t @var{datasize})
+Use this macro to determinate the size of a small or big structured
+object with dynamic calculated size. @var{datasize} determinates the
+size of the data area, excluding the (big or small) header, e.g.
+@code{size_data(@var{n} * sizeof(OBJ))} where @var{n} is the number of
+objects which shall fit in the data area.
+@end deftypefn
+
+
+@comment ===================================================================
+@node Reference Counting, Data Type Conventions, Structured, Data
+@comment  node-name,  next,  previous,  up
+@section Garbage Collection and Reference Counting
+
+@cindex garbage collection
+@cindex reference counting
+@cindex memory management, garbage collection
+@cindex memory management, reference counting
+
+
+@noindent
+The approach of reference counting to garbage collection is rather
+simple. The cell of a structured object contains a counter holding the
+number of all the references pointing to it, the so-called @dfn{reference
+counter}. If this counter drops to zero, the cell becomes isolated and can
+be collected as free memory.
+
+To make the scheme work, everytime a new reference is created, the
+reference counter must be incremented, and everytime one is deleted, it
+must be decremented. Creating a reference is done by one of the
+allocation functions --- in which case the reference counter is correctly
+initialized --- or by @emph{copying} an existing reference. Deleting a
+reference happens finally when the life-time of an automatic variable
+holding a reference expires.
+
+The reference counting scheme relies on the fact that there are no cyclic
+dependencies between structured objects. The compiler ensures this per
+definition; the handcoder himself is responsible for cyclic dependencies in
+the handcoded structures.
+
+@menu
+* Arbitrary RC::                
+* Structured RC::               
+* Selective Update::            
+* Borrowing::                   
+* Simulating Storage Classes::  
+@end menu
+
+@comment ------------------------------------------------------------------
+@node Arbitrary RC, Structured RC, Reference Counting, Reference Counting
+@comment  node-name,  next,  previous,  up
+@subsection Reference Counting of Arbitrary Objects
+
+@noindent
+The runtime system provides several macros to copy and delete
+references. The most general macros are used in such situations in which
+it is not clear whether an object is structured or primitive:
+
+@deftypefn Macro void copy_some (OBJ @var{obj}, int @var{cnt})
+Increment the reference counter of @var{obj} by @var{cnt}, if @var{obj}
+is structured.
+@end deftypefn
+
+@deftypefn Macro void free_some (OBJ @var{obj}, int @var{cnt})
+Decrement the reference counter of @var{obj} by @var{cnt}, if @var{obj}
+is structured. If the reference counter drops to zero, collect the cell
+for the free memory pool.
+@end deftypefn
+
+@comment ------------------------------------------------------------------
+@node Structured RC, Selective Update, Arbitrary RC, Reference Counting
+@comment  node-name,  next,  previous,  up
+@subsection Reference Counting of Structured Objects
+
+@noindent
+If its is known that an object is structured, the more specific
+macros for reference counting should be used. 
+
+@deftypefn Macro void copy_structured (OBJ @var{obj}, int @var{cnt})
+Increment the reference counter of structured object @var{obj} by @var{cnt}.
+@end deftypefn
+
+@deftypefn Macro void free_structured (OBJ @var{obj}, int @var{cnt})
+Decrement the reference counter of structured object @var{obj} by @var{cnt}.
+If the reference count drops to zero, collect the cell for the free
+memory pool.
+@end deftypefn
+
+
+@comment ------------------------------------------------------------------
+@node Selective Update, Borrowing, Structured RC, Reference Counting
+@comment  node-name,  next,  previous,  up
+@subsection Selective Update
+
+@cindex selective update
+@cindex memory management, selective update
+
+@dfn{Selective Updating} is an important source of optimization used in
+the @sc{Opal} compiler. The following macros may be used to realize it
+on the level of handcoding:
+
+@deftypefn Macro int excl_structured (OBJ @var{obj}, int @var{cnt})
+Test if the reference counter of structured @var{obj} is exactly
+@var{cnt}.
+@end deftypefn
+
+@deftypefn Macro void decr_structured (OBJ @var{obj}, int @var{cnt})
+Decrement the reference counter of structured @var{obj} by @var{cnt}.
+No test is performed if the counter drops to zero. This function should
+be used only if it is known that the counter is greater then @var{cnt}.
+@end deftypefn
+
+@noindent
+A typical example how to use these macros for selective update is an
+update function on handcoded arrays:
+
+@example
+OBJ _AArray_Aupd(A,i,x)@{
+  OBJ result;
+  if (excl_structured(A,1))@{
+      result=A;
+  @} else @{
+      result=duplicate_array(A); decr_structured(A,1);
+  @}
+  FREE(data_big(result)[unpack_word(i)],1);
+  data_big(result)[unpack_word(i)] = x;
+  return result;
+@}
+@end example
+
+@noindent
+Here, @code{duplicate_array} is an auxiliary function which duplicates
+an array.
+
+
+@comment ------------------------------------------------------------------
+@node Borrowing, Simulating Storage Classes, Selective Update, Reference Counting
+@comment  node-name,  next,  previous,  up
+@subsection Borrowing References
+
+@cindex borrowing
+
+@noindent
+In order to allow for maximal sources of selective updating, the number
+of references to some cell should be minimized. The @dfn{borrowing}
+technique may be used for this purpose. It also allows deep objects to
+become freed as flat objects; this is significantly faster, since the
+runtime system has not to perform subfrees on the components any more.
+
+Borrowing is based on the following macros:
+
+@deftypefn Macro void dispose_structured (OBJ @var{obj})
+Dispose the cell of a structured object. This should be done only if it
+is known that the cell is isolated.
+@end deftypefn
+
+@deftypefn Macro void dispose_structured_flat (OBJ @var{obj})
+Dispose the cell of a structured object and force it to be flat. This
+should be done only if it is known that the cell is isolated and that
+all structured objects it contains have been borrowed.
+@end deftypefn
+
+@deftypefn Constant OBJ NIL
+A generic primitive object used for borrowing.
+@end deftypefn
+
+Borrowing is not very often performed in handcoded structures, since it
+is mainly of interest for recursive data types. Those data types should
+be implemented in @sc{Opal}; here the compiler does most probably a
+better job. Anyway, to illustrate borrowing (as it is also performed by
+the compiler), we define a recursive sequence-like type as follows:
+
+@example
+typedef struct sSEQ @{
+        struct sCELL header;
+        OBJ ft;
+        OBJ rt;
+@} * SEQ;
+@end example
+
+A function which selects both the @code{ft} and the @code{rt} element
+from a sequence @code{s} now typically contains the following code:
+
+@example
+...
+@{  OBJ ft = s->ft, rt = s->rt;
+   if (excl_structured((OBJ)s,1)) @{
+       /* @r{borrow @code{ft} and @code{rt} from @code{s}},
+          @r{and treat @code{s} as flat.} */
+       dispose_structured_flat((OBJ)s);
+   @} else @{
+       copy_some(ft,1); copy_some(rt,1);
+       decr_structured((OBJ)s,1);
+   @}
+@}
+@end example
+
+A function which selects only the @code{rt} element has two
+possibilities for borrowing. The first one is to explicitly clear
+the @code{rt} component using the constant @code{NIL}:
+
+@example
+...
+@{  OBJ rt = s->rt; 
+   if (excl_structured((OBJ)s,1)) @{
+       s->rt = NIL;
+       dispose_structured((OBJ)s);
+   @} else @{
+       copy_some(rt,1);
+       decr_structured((OBJ)s,1);
+   @}
+@}
+@end example
+
+@noindent
+This version has the disadvantage that a flat dispose cannot be
+performed, since the @code{ft} component of @code{s} is still
+bounded. 
+
+The second version explicitely frees the @code{ft} component in order to
+perform a flat dispose. This version, however, makes only sense in this
+particular example, since the number of components which must be freed
+ist rather small:
+
+@example
+...
+@{  OBJ rt = s->rt; 
+   if (excl_structured((OBJ)s,1)) @{
+       free_some(s->ft,1);
+       dispose_structured_flat((OBJ)s);
+   @} else @{
+       copy_some(rt,1);
+       decr_structured((OBJ)s,1);
+   @}
+@}
+@end example
+
+@comment ------------------------------------------------------------------
+@node Simulating Storage Classes,  , Borrowing, Reference Counting
+@comment  node-name,  next,  previous,  up
+@subsection Simulating Storage Classes
+
+@cindex simulating storage class
+
+@noindent
+In certain circumstances it is useful to fix the storage classes the
+compiler assigns to handcoded data types in order to give it more exact
+information about the data type.
+
+Assume, for instance, the data types of natural numbers (@code{nat}) and
+arrays (@code{array}) --- both of which are handcoded in the @sc{Opal}
+standard library. Natural numbers certainly are primitive objects, no
+reference handling, therefore, has to be done on natural numbers. In
+order to give the compiler the information not to perform reference
+counting (e.g. in the functions it generates automatically) a simulated
+storage class can be given by
+
+@example
+  DATA nat == somePrimitive
+@end example
+
+Arrays always are deep structured objects. To give the compiler this
+information a simulated storage class can be given by
+
+@example
+  SORT dummy
+  DATA Array == someStructured(dummy1: dummy, dummy2: dummy)
+@end example
+
+@noindent
+Note that it is necessary to give at least two components in the
+declaration, since the compiler otherwise eliminates the constructor,
+and that sort @code{dummy} should not be implemented such that the
+compiler does not know its storage class. To simulate a flat structured
+object, you would have for example sort @code{bool} instead of
+@code{dummy}.
+
+In the functions generated automatically the compiler now can avoid the test
+whether an array is primitive or structured (e.g. before copying a
+reference).
+
+Note that this feature will be provided in a much cleaner way by specialized
+compiler @emph{pragmas} in the near future. (See @cite{The Programming
+Language @sc{Opal}})
+
+@comment ===================================================================
+@node Data Type Conventions, Auxiliary Memory, Reference Counting, Data
+@comment  node-name,  next,  previous,  up
+@section Conventions for Declaring Data Types and Related Functions
+@noindent
+
+@cindex data type, conventions
+
+We recommend to use the following conventions to declare handcoded data
+types which are exported accross structure boundaries. They are also
+used for the handcoded structures of the @sc{Opal} standard library, and
+allow yourself and others to deduce the existence and semantics of
+functions more easily.
+
+With each introduced primitive object type @var{TYPE}, supply a type
+definition and corresponding pack_@var{type} und unpack_@var{type}
+functions.  For example, the handcoded interface part of the structure
+@code{Nat} from the @sc{Opal} library starts as follows:
+
+@example
+/* hand-coded interface part of Nat */
+
+  /* representation */
+
+typedef WORD NAT;
+
+#define pack_nat(x)   pack_word(x)
+#define unpack_nat(x) unpack_word(x)
+
+  /* macro based implementations */
+...
+@end example
+
+With each introduced structured object type @var{TYPE}, supply a
+structure definition s@var{TYPE} and a type definition @var{TYPE} which
+is a pointer to the structure, together with the following macros:
+
+@deftypefn Macro void alloc_@var{type} (OBJ @var{res})
+Allocate an (unintialized) object and store it in @var{res}.
+@end deftypefn
+
+@deftypefn Macro void make_@var{type} (...@var{data}..., OBJ @var{res})
+If useful for this type: allocate an object, initialize it with data,
+and store it in @var{res}.
+@end deftypefn
+
+@deftypefn Macro void copy_@var{type} (OBJ @var{obj}, int @var{cnt})
+@deftypefnx Macro void free_@var{type} (OBJ @var{obj}, int @var{cnt})
+Copy and free macros for type @var{TYPE}.
+@end deftypefn
+
+@deftypefn Macro int excl_@var{type} (OBJ @var{obj}, int @var{cnt})
+@deftypefnx Macro void decr_@var{type} (OBJ @var{obj}, int @var{cnt})
+@deftypefnx Macro void dispose_@var{type} (OBJ @var{obj})
+@deftypefnx Macro void dispose_@var{type}_flat (OBJ @var{obj})
+If useful for this type: macros for selective update and borrowing.
+@end deftypefn
+
+@deftypefn Macro OBJ* data_@var{type} (OBJ @var{type})
+@deftypefnx Macro OBJ* size_@var{type} (OBJ @var{type})
+Return data area and data size of object.
+@end deftypefn
+
+For example, the handcoded interface part of the structure @code{Real}
+from the @sc{Opal} library starts as follows:
+
+@example
+/* hand-coded interface part of Real */
+
+#include <math.h>
+
+  /* representation */
+
+typedef struct sREAL @{
+    struct sCELL header;
+    double value;
+@} * REAL;
+
+#define alloc_real(r)      alloc_small_flat(sizeof_flat(struct sREAL),r)
+#define make_real(v,r)     @{alloc_real(r); ((REAL)(r))->value = v; @}
+#define copy_real(o,n)     copy_structured(o,n)
+#define free_real(o,n)     free_structured(o,n)
+#define excl_real(o,n)     excl_structured(o,n)
+#define decr_real(o,n)     decr_structured(o,n)
+#define dispose_real(o,n)  dispose_structured(o,n)
+
+  /* macro based implementations */
+...
+@end example
+
+@comment ===================================================================
+@node Auxiliary Memory,  , Data Type Conventions, Data
+@comment  node-name,  next,  previous,  up
+@section Allocating Auxiliary Memory
+
+@cindex auxilary memory
+@cindex memory, auxiliary
+
+@noindent
+The runtime system of @sc{ocs} uses its own memory allocation methods
+and free memory pool. Memory allocated by the runtime system will never
+be released such that it can be reused by the C library function
+@code{malloc} and its derivates. Hence, if you require auxiliary
+memory for your handcoded implementations, you should use the following
+functions for allocating and freeing it:
+
+@deftypefn Function void* alloc_aux (size_t @var{size})
+Like the C standard library function @code{malloc}, but allocates from
+the @sc{ocs} runtime system memory pool. This function always return
+properly aligned pointers for use of @code{pack_pointer} and
+@code{unpack_pointer} (@pxref{Pointer Primitives}).
+@end deftypefn
+
+@deftypefn Function void free_aux (void* @var{mem})
+Like the C standard library function @code{free}, but frees memory
+formerly allocated by @code{alloc_aux}.
+@end deftypefn
+
+
+
+
+@comment ********************************************************************
+@node Functions, Builtin, Data, Top
+@comment  node-name,  next,  previous,  up
+@chapter Functions
+
+@noindent
+One of the characteristics of the compilation scheme used by @sc{ocs} is
+to use no special function calling protocol, but to imitate as closely as
+possible the normal C calling conventions. This should enable the C
+compiler to optimize function calls w.r.t. the specific target
+architecture. For handcoding of @sc{Opal} structures it has the pretty
+side-effect that handcoded or compiler generated @sc{Opal} functions
+are almost plain C functions.
+
+However, one has to be aware that functions are first-order citizens in
+@sc{Opal}, but not in C. This problem is coped with as follows: for
+each global @sc{Opal} function exists one C data object, the so-called
+@dfn{closure object} of type @code{OBJ}. This is the representation of a
+function as a first-order citizen, which may be passed around as a
+parameter and stored in other data objects. It is subject of reference
+counting as are other data objects. @xref{Closure Objects}.
+
+Furthermore, for each global @sc{Opal} function exists a @dfn{direct
+call entry}.  This is actually a plain C function which can
+only be used in full applications (that is, applications which supply
+all arguments of a function according to its rank, @pxref{Ranks}). The
+direct call entry is what you actually code in C. The closure objects
+are automatically created by the derived C implementation part of a
+structure. @xref{Direct Entries}.
+
+To support the efficient realization of handcoded basic data types
+there is third kind of C object associated with each @sc{Opal} function:
+the @dfn{macro expansion entry}. You can supply macro definitions of
+functions in the handcoded interface part of a structure.  If you don't
+give macro entries, default ones are supplied by the derived interface
+part. @xref{Macro Entries}.
+
+The different kinds of calling entries only exist for @samp{real}
+functions with rank greater then zero. The value of @sc{Opal} Functions
+of rank zero are evaluated at initialization time of a structure, and
+stored in a global variable. @xref{Constants}.
+
+
+
+@menu
+* Ranks::                       
+* Direct Entries::              
+* Macro Entries::               
+* Closure Objects::             
+* Constants::                   
+@end menu
+
+@comment ===================================================================
+@node Ranks, Direct Entries, Functions, Functions
+@comment  node-name,  next,  previous,  up
+@section Ranks and eta-Enrichment
+
+@cindex rank
+@cindex eta enrichment
+
+@noindent
+The @dfn{rank} of a function is the number of arguments supplied in its
+definition. For example, the definition @code{DEF @@(o)(x,y) == o(x,y)} has
+rank 3 and the definition @code{DEF @@(o) == o} has rank 1, although both
+definitions (nearly) represent the same semantics (if @code{o} represents
+the same function in both cases).
+
+Unfortunately, the rank of a function is a private property of the
+implementation of a structure. If inter-structure optimizations are enabled,
+this property is propagated and exploited for optimizations (creating
+recompilation dependencies between structure implementations), but there
+is currently no way to access it in handcoded structures.
+
+To allow the prediction of function ranks the @sc{Opal} compiler
+performs what we call @dfn{eta-enrichment} of @emph{handcoded}
+structures. This means that additional arguments are appended to the right
+and left hand sides of function definitions according to the arity of
+the functionality of the function.  If @code{FUN @@ : (s ** s -> s) -> s ** s
+-> s}, for example, the definition @code{DEF @@(o) == o} will be
+actually translated to @code{DEF @@(o)(x,y) == o(x,y)}. Hence you can
+predict the rank from the arity of the functionality which is a
+non-private property visible in the signature part of a structure.
+@footnote{This is not yet realized in Version 2.1a; you have to do it by
+hand}.
+
+
+@comment ===================================================================
+@node Direct Entries, Macro Entries, Ranks, Functions
+@comment  node-name,  next,  previous,  up
+@section Direct Call Entry 
+
+@cindex direct call entry
+
+@noindent
+The direct call entry of a function is named @code{_}@var{basename} (for
+function basenames @pxref{Basenames}.) At least this function has to be
+supplied for each function which is to be handcoded.
+
+The direct call entry takes as many arguments of type @code{OBJ} as the
+functions rank is. If the result of a function is not a tuple, it returns a
+single @code{OBJ}. For example, the following direct entry implements the
+successor function on natural numbers:
+
+@example
+OBJ _ANat_Asucc(OBJ n) @{
+    return pack_nat(unpack_nat(n) + 1);
+@}
+@end example
+
+If the result of a function is a tuple, the direct entry returns one of
+the predefined tuple structure types @code{TUP}@var{n} from the runtime
+system:
+
+@deftp Type {TUP@var{n}}
+Used to represent tuple results of functions. Genereally defined as:
+@end deftp
+
+@example
+typedef struct  @{ OBJ c1, c2, .... , c@var{n}; @} TUP@var{n};
+@end example
+
+@noindent
+For example, a possible implementation of the function @code{divmod} on
+natural numbers is:
+
+@example
+TUP2 _ANat_Adivmod(OBJ n, OBJ m) @{
+    TUP2 res; NAT cn = unpack_nat(n); NAT cm = unpack_nat(m);
+    res.c1 = cn / cm; res.c2 = cn % cm;
+    return res;
+@}
+@end example
+
+Note that when the direct function entry is called, it @dfn{owns} the
+references of structured object parameters. If the function uses a
+parameter @var{n} times by passing it to other functions or returning
+it, it has to perform @var{n}@code{-1} copies of the reference; if
+@var{n} is zero, it has to perform one free on the reference. This
+naturally generalizes to local objects created in the course of a
+computation.
+
+@comment ===================================================================
+@node Macro Entries, Closure Objects, Direct Entries, Functions
+@comment  node-name,  next,  previous,  up
+@section Macro Expansion Entry
+
+@cindex macro entry
+
+@noindent
+The macro expansion entry of a function is named @var{basename} (for
+function basenames @pxref{Basenames}.) It allows for inline expansion of
+short function definitions. Inline expansion is crucial for basic data types
+like natural numbers; handcoded structures making use of this feature,
+however, may not port to long-term future generations of @sc{ocs}.
+
+The macro entry takes as many arguments as a the functions rank, and
+additional l-values used to store the result(s) of the function
+evaluation. The sucessor function on naturals may be coded as a macro entry
+as follows:
+
+@example
+#define ANat_Asucc(x,r) @{r=pack_nat(unpack_nat(x) + 1);@}
+@end example
+
+For functions with tuple results, consecutive result parameters are
+supplied:
+
+@example
+#define ANat_Adivmod(n,m,r1,r2)@{ \
+    NAT cn = unpack_nat(m), cm = unpack_nat(m); \
+    r1 = pack_nat(cn / cm); r2 = pack_nat(cn % cm);\
+@}
+@end example
+
+You usually place the macro entry of a function in the handcoded
+interface part of a structure. Be aware of including headers of other
+handcoded structures, if you refer to definitions supplied by them. For
+example, if the function @code{divmod} is implemented in a separate
+structure @code{DivMod} based on the structure @code{Nat}, the header
+has to include @code{Nat.h}:
+
+@example
+/* handcoded interface part of DivMod */
+#include "Nat.h"
+#define ANat_Adivmod(n,m,r1,r2)@{ \
+    NAT cn = unpack_nat(m), cm = unpack_nat(m); \
+    r1 = pack_nat(cn / cm); r2 = pack_nat(cn % cm);\
+@}
+@end example
+
+If you have implemented handcoded functions using macros, you still have to
+supply the direct call entry. This is necessary, since the direct entry is
+used for constructing the closure object of the function. The usual method
+in this case is to implement the direct entry using the macro entry:
+
+@example
+OBJ _ANat_Asucc(OBJ n) @{
+    OBJ res;
+    ANat_Asucc(n,res);
+    return res;
+@}
+@end example
+
+Please note, that the compiler uses the macro entries of imported
+handcoded structures only if inter-structure optimization is enabled.
+This is due to the fact that the pragma @code{/$ handcoded $/} is a
+property private to an implementation.
+
+
+@comment ===================================================================
+@node Closure Objects, Constants, Macro Entries, Functions
+@comment  node-name,  next,  previous,  up
+@section Closure Objects
+
+@cindex closure object
+
+@noindent
+The closure object of a function is named @code{__}@var{basename} (for
+function basenames @pxref{Basenames}.) You never construct closure
+objects by yourself; they are constructed by the runtime system for you.
+
+To evaluate a closure, the literal way is to use the macro @code{METHOD}
+from the runtime system to select an evaluation method and than to call
+this method:
+
+@deftypefn Macro @var{function} METHOD (OBJ @var{clos}, int @var{argc})
+Returns a pointer to a function which can evaluate @var{clos} with
+@var{argc} arguments. The type of function is physically @code{OBJ
+@var{function} (OBJ @var{clos}, OBJ @var{arg1}, ..., OBJ @var{argn})};
+but you must establish this type by a cast.
+@end deftypefn
+
+Evaluating a closure object with 2 arguments looks as follows:
+
+@example
+(* (OBJ (*)(OBJ,OBJ,OBJ)) METHOD(@var{clos},2)) (@var{clos},@var{arg1},@var{arg2})
+@end example
+
+To free you from writing down such boring type casts, the runtime
+systems supplies macros for evaluating closures with upto 8 arguments:
+
+@deftypefn Macro OBJ EVAL@var{n} (OBJ @var{clos}, OBJ @var{arg1}, ..., OBJ @var{argn})
+Selects the appropriate method and evaluates the closure, where @var{n} must
+be in the range from 1 to 8.
+@end deftypefn
+
+
+This section is still to be completed. [ Missing: Evaluating closures
+with tuple results. ]
+
+@menu
+* Closure Contents::            
+* Closure RC::                  
+@end menu
+
+@comment ------------------------------------------------------------------
+@node Closure Contents, Closure RC, Closure Objects, Closure Objects
+@comment  node-name,  next,  previous,  up
+@subsection Contents of Closures
+
+Generally, a closure consists of a pointer to the direct call entry of a
+function, a pointer to a table of methods used to evaluate the closure, and
+any arguments which have been used to construct the function the closure
+represents. You do not have to understand the details but a short
+explanation will be useful later on.
+
+If @code{FUN o : (b -> c) ** (a -> b) -> a -> c} is the usual function
+composition, then the application @code{f o g} denotes a new function
+constructed from applying @code{o} to @code{f} and @code{g}, represented
+by a closure which holds a pointer to the direct call entry of @code{o}
+and the arguments @code{f} and @code{g}.
+
+To obtain the particular evaluation method necessary to evaluate a given
+closure, the table of evaluation methods carried by the closure is indexed by
+the number of arguments the closure shall be evaluated with. There are
+basically three kinds of methods for evaluating a closure:
+
+@enumerate
+@item
+If there are still missing arguments according to the rank of the direct
+call entry stored in the closure, a new closure is constructed holding
+the stored and the supplied arguments with the same direct entry call and an
+appropriately updated table of evaluation methods.
+@item
+If the stored arguments together with the supplied arguments match the
+rank of the stored direct call entry, this is called with all
+arguments.
+@item
+If the stored and the supplied arguments extend the rank, the direct
+entry is called with as many arguments as required and the result
+(which must be a closure for type correct programs) is evaluated with
+the remaining arguments as its arguments.
+@end enumerate
+
+@comment ------------------------------------------------------------------
+@node Closure RC,  , Closure Contents, Closure Objects
+@comment  node-name,  next,  previous,  up
+@subsection Reference Counting of Closures
+
+Closures are in principal structured objects and thus need reference
+counting. Two functions are used for reference counting on closures:
+
+@deftypefn Macro void copy_closure (OBJ @var{clos}, int @var{cnt})
+Increment the reference counter of closure @var{clos} by @var{cnt}.
+@end deftypefn
+
+@deftypefn Macro void free_closure (OBJ @var{clos}, int @var{cnt})
+Decrement the reference counter of closure @var{clos} by @var{cnt}.  If the
+reference count drops to zero, collect the closure for the free memory pool.
+@end deftypefn
+
+
+@comment ===================================================================
+@node Constants,  , Closure Objects, Functions
+@comment  node-name,  next,  previous,  up
+@section Constants
+
+@cindex constant
+
+@noindent
+The value of @sc{Opal} functions of rank zero are calculated at structure
+initialization time and stored in a global variable. This variable is
+named @code{__}@var{basename} (for function basenames
+@pxref{Basenames}).
+
+Please note that this name coincides with the closure object name of a
+function. Actually, a function of rank zero might very well represent a
+higher order object and the variable then holds a closure object.
+Since eta-enrichment is performed on handcoded structures, this
+practically does not occure in the world of handcoding, since the rank
+is always identical with the arity (@pxref{Ranks}).
+
+A handcoded structure must provide a special static function named
+@code{init_const_}@var{CIde}, where @var{CIde} is the transliterated
+identifier of the structure (@pxref{Transliteration}). This function
+intializes all constants of the structure. For example, the structure
+@code{Nat} may contain initialization code as follows:
+
+@example
+static init_const_ANat() @{
+  __ANat_A0 = pack_nat(0);
+  __ANat_Amax = pack_nat(max_word);
+@}
+@end example
+
+Mutual dependend constant systems have to be initialized in a proper
+order. Since the @sc{Opal} compiler has no idea of dependencies of
+handcoded constants from @sc{Opal} coded constants of the same
+structure, it assumes that there are no such dependencies.  Hence, the
+handcoded constants are always initialized @emph{before} the other
+constants and thus cannot refer to them. @footnote{The constant
+initialization scheme might be subject of changes in near future.}
+
+
+@comment ********************************************************************
+@node Builtin, Library, Functions, Top
+@comment  node-name,  next,  previous,  up
+@chapter Builtin data types
+
+@cindex builtin data type
+@cindex data type, builtin
+@cindex type
+
+@noindent
+The data types of boolean values and textual denotations are builtin
+into the runtime system. 
+
+@noindent
+The operations on builtin types are declared in @emph{BOOL.sign} and
+@emph{DENOTATION.sign}. However, these are only pseudo structures, and
+the associated declarations on the C level are incorporated into the
+runtime system headers, which are automatically included in the
+handcoded parts.
+
+@noindent
+In this chapter the operations predefined on the two builtin types are
+described shortly.
+
+@menu
+* Booleans::                    
+* Denotations::                 
+@end menu
+
+@comment ===================================================================
+@node Booleans, Denotations, Builtin, Builtin
+@comment  node-name,  next,  previous,  up
+@section Booleans
+@cindex booleans, BOOL.sign
+
+@noindent
+The following functions operating on boolean values are available:
+
+@deftypefn Macro OBJ pack_bool (int @var{value})
+  Packs an integer to a boolean value; 0 becomes false and anything else
+  true.
+@end deftypefn
+
+@deftypefn Macro OBJ pack_clean_bool (int @var{flag})
+  Used for packing if @var{flag} equals extacly to 0 or 1
+@end deftypefn
+
+@deftypefn Macro int unpack_bool (OBJ @var{obj})
+  Unpacks a boolean value 
+@end deftypefn
+
+The function @code{true}, @code{false}, @code{~}, @code{and}, @code{or}
+etc., as declared in @code{BOOL.sign}, are available as canonical
+implementations, that is, the (closure) variables, direct and macro
+entries are supplied as usually. But note that the origin is not
+@code{BOOL} but @code{BUILTIN}; hence the basename of @code{true} is
+e.g. @code{ABUILTIN_Atrue} (@pxref{Basenames}).
+
+
+@comment ===================================================================
+@node Denotations,  , Booleans, Builtin
+@comment  node-name,  next,  previous,  up
+@section Denotations
+
+@cindex denotations, DENOTATION.sign
+
+@noindent
+
+Since denotations are structured objects, memory management has to be
+addressed in this case as described in @ref{Data Type Conventions}. 
+
+@deftp Type {DENOTATION, sDENOTATION}
+  Data type definition (for the definition of @code{sBCELL} see @ref{Big
+  Objects})
+  @example
+    typedef struct sDENOTATION @{
+      struct sBCELL big;
+      OBJ leng;                   /* packed length */
+      /* ... data ... */          /* data */
+    @} * DENOTATION;
+  @end example
+@end deftp
+
+@deftypefn Function OBJ alloc_denotation (int @var{leng})
+  Allocates an unitialized denotation of given length.
+@end deftypefn
+
+@deftypefn Function OBJ make_denotation (char* @var{cstr})
+  Allocates a denotation and initializes it with the given C
+zero-terminated C string.
+@end deftypefn
+
+@deftypefn Function int get_denotation (OBJ @var{den}, char* @var{buf}, int @var{bufsize})
+  Copies the data of a given denotation in a buffer of a given
+  length, with a trailing zero terminator, and frees the
+denotation. This function returns 1 if
+  the denotations and the terminator fits into the buffer. It
+  returns 0 and only copies the truncated string data if not.
+@end deftypefn
+
+@deftypefn Variable char* charbuf
+@deftypefnx Macro int CHARBUFSIZE
+  In order to facilitate the use of @var{get_denotation} and other
+  string processing functions, this function
+  predefines a character buffer of size @code{CHARBUFSIZE}
+  which equals --- in the current release --- to 1024. You should not
+call any other function of the runtime system when using this buffer,
+since they might globber it.
+@end deftypefn
+
+@deftypefn Macro char* data_denotation (OBJ @var{den})
+  Returns a char pointer to the data of a denotation. Note that
+  denotations are not zero-terminated.
+@end deftypefn
+
+@deftypefn Macro WORD leng_denotation (OBJ @var{den})
+  Returns the length of the denotation.
+@end deftypefn
+
+@deftypefn Macro void free_denotation (OBJ @var{den}, int @var{cnt})
+@deftypefnx Macro void copy_denotation (OBJ @var{den}, int @var{cnt})
+@deftypefnx Macro void excl_denotation (OBJ @var{den}, int @var{cnt})
+@deftypefnx Macro void decr_denotation (OBJ @var{den}, int @var{cnt})
+  Usual RC operations on denotations. @footnote{Bug: the function
+@code{dispose_denotation} is missing in ocs 2.1a.}
+@end deftypefn
+
+As for boolean numbers, for the functions declared in
+@code{DENOTATION.sign} canonical C declarations exist; however, the
+origin to be used for the basename is @code{BUILTIN} rather then
+@code{DENOTATION}.
+
+
+@comment ********************************************************************
+@node Library, Embedding, Builtin, Top
+@comment  node-name,  next,  previous,  up
+@chapter The @sc{Opal} Library
+@noindent
+
+@cindex @sc{Opal} standard library
+@cindex library, @sc{Opal} standard
+
+@noindent
+The @sc{Opal} standard library provides a rich set of structures. Some
+of them are handcoded, and for all structures a handcoding interface
+exists such that they may be accessed from other handcoded structures.
+
+In the following sections the a handcoding interface for basic types
+(@code{Nat}, @code{Int}, @code{Real}), an aggregate types (@code{String}),
+and structures used to access system services (@code{Com}, @code{Process})
+are presented.
+
+@menu
+* Basic Types::                 
+* Aggregate Types::             
+* System::                      
+@end menu
+
+@comment ===================================================================
+@node Basic Types, Aggregate Types, Library, Library
+@comment  node-name,  next,  previous,  up
+@section Basic Types
+
+@cindex basic data type
+@cindex data type, basic
+@cindex type
+
+@table @dfn
+
+@item Nat, Int
+The handcoding interface part @code{Nat.hc.h} only defines packing
+routines but no memory management routines for natural numbers, since
+naturals are primitive. The handcoding interface part @code{Int.hc.h}
+ist very similar -- except of course that all operations work on signed
+values.
+
+
+@cindex natural numbers, integral numbers
+
+@deftp Type {NAT}
+@end deftp
+
+@deftypefn Macro OBJ pack_nat (NAT)
+  Packs to an @sc{Opal} @code{nat}.
+@end deftypefn
+
+@deftypefn Macro NAT unpack_nat (OBJ)
+  Unpacks an @sc{Opal} @code{nat}.
+@end deftypefn
+
+  @cindex integer
+  @tindex INT
+  @findex pack_int
+  @findex unpack_int
+
+The @sc{Opal} structure @code{Nat.sign} defines natural numbers as a
+free type with constructors @code{0} and @code{succ} and several
+arithmetic and boolean operations on them. These operations can be
+accessed in handcoded structures by their transliterated
+names, e.g. _@code{ANat_Asucc}, as usual (@pxref{Transliteration}).
+
+@c Additionally, on the handcoding level there are corresponding unchecked
+@c arithmetic functions (implemented as macros) which do not perform overflow
+@c checking (@code{ANat_AuncheckedSucc} ...).
+@cindex arithmetic functions, unchecked
+@cindex unchecked arithmetic functions
+
+@c @item Int
+@c  The handcoding interface contains a type declaration @code{INT}, macros
+@c  for packing and unpacking integers
+@c  @code{pack_int}, @code{unpack_int}, and macros implementing functions for
+@c  arithmetic on integers without range checks analogous to those of structure
+@c  @code{Nat}. The functions defined in the signature @code{Int.sign} can be
+@c  accessed via their transliterated names.
+
+@item Real
+  In contrast to the preceding two basic types, the type of real numbers is
+  structured, so memory management routines have to be defined for
+  them (@pxref{Data Type Conventions}). The mathematical functions defined
+  in the signature @code{Real.sign} can be accessed via their transliterated
+  names as usual.
+  @cindex real
+
+  Real numbers are defined as
+
+@deftp Type {struct sREAL}
+@example
+typedef struct sREAL @{
+    struct sCELL header;
+    double value;
+@} * REAL;
+@end example
+@end deftp
+@tindex sREAL
+
+The following memory management macros are also defined in @code{Real.hc.h}:
+
+@deftypefn Macro void alloc_real (OBJ @var{res})
+  Allocates a real and stores it in lvalue @var{res}.
+@end deftypefn
+
+@deftypefn Macro void make_real (double, OBJ @var{res})
+  Allocates and initializes a real.
+@end deftypefn
+
+@deftypefn Macro void free_real (OBJ,int)
+@deftypefnx Macro void copy_real (OBJ,int)
+@deftypefnx Macro void excl_real (OBJ,int)
+@deftypefnx Macro void decr_real (OBJ,int)
+@deftypefnx Macro void decr_real (OBJ,int)
+  Usual RC operations on reals @footnote{Bug: @code{dispose_real}
+missing in ocs-2.1a}.
+@end deftypefn
+
+@end table
+
+@comment ===================================================================
+@node Aggregate Types, System, Basic Types, Library
+@comment  node-name,  next,  previous,  up
+@section Aggregate Types
+
+@cindex aggregate type
+@cindex data type, aggregate
+@cindex type
+
+@table @dfn
+
+@item String
+Acting for the other numerous aggregate types of the @sc{Opal} standard
+library, the handcoding interface of the structure implementing strings
+(@code{string.h}, @code{string.hc.h}) is described here in some more
+detail.
+@cindex string
+
+In contrast to the primitive types described in @pxref{Basic Types},
+memory management is essential to use aggregate types in handcoded
+structures.
+
+While the functions operating on strings which are declared in the signature
+file @code{String.sign} can be accessed by their transliterated names
+(@pxref{Transliteration}, the handcoding interface @code{String,hc.h} offers
+the following routines to perform memory management:
+
+@deftypefn Function int get_string (OBJ str, char* buf, int bufsize)
+  Copies the @sc{Opal} string @code{o} into the buffer @code{s} of size
+  @code{n} and frees it. This function returns `1' if the string
+completely fits in
+  the buffer, `0' if not (and truncates the string to the maximal
+  length). The string in the buffer is zero-terminated.
+@end deftypefn
+
+@deftypefn Macro OBJ make_string (char *)
+  This macro creates an @sc{Opal} string from a C string.
+@c  @findex make_string
+@end deftypefn
+
+@deftypefn Macro int is_empty_string(OBJ)
+  This macro tests for the empty string.
+@end deftypefn
+
+@deftypefn Macro void unpack_chunk_string (OBJ, int, OBJ, OBJ)
+  Unpack components of a string, a chunk.
+@end deftypefn
+
+@deftypefn Macro OBJ addr_rest_string(OBJ)
+  Get address of the rest field of a chunk.
+@end deftypefn
+
+@item Array
+Arrays are an important data structure posing interesting problems with
+respect to functional programming languages. The handcoding interface
+@code{Array.hc.h} declares the following routines (confer to @ref{Data Type
+Conventions}.
+@cindex array
+
+@end table
+
+@comment ===================================================================
+@node System,  , Aggregate Types, Library
+@comment  node-name,  next,  previous,  up
+@section Operating System
+
+@noindent
+@sc{Opal} uses a monadic approach to input and output. The IO monad is
+called @dfn{command} and is of sort @code{com'Com}. Technically,
+commands are data types which are passed to the run time system which
+interpretes them, thus performng side-effects.
+
+This section describes commands in more detail, shows how commands can
+be constructed on the handcoding level, and exemplifies their use by
+presenting how commands are used in the @sc{Opal} library to access
+the services of the process abstraction of UNIX.
+
+@menu
+* Commands::                    
+* Constructing Commands::       
+* Example Processes::
+@end menu
+
+@comment ....................................................................
+@node Commands, Constructing Commands, , System
+@comment  node-name,  next,  previous,  up
+@subsection I/O-Handling Using Commands
+@cindex i/o-handling
+@cindex side effect
+@cindex command
+
+@noindent
+@dfn{Monads} are a new and powerful approach to incorporate i/o-handling
+in functional programming languages. 
+
+@cindex monads
+
+In @sc{Opal} monads are implemented by @dfn{commands}. Commands are
+terms of a particular free type (defined in structure @code{Com}). All
+functions exhibiting side-effects (possibly by calling other functions
+with side-effects) are thus characterized by a return type of
+@code{com[data]}.
+
+The free type is defined in @code{Com.sign} as
+@example
+  TYPE com == 
+    yield       (ans: ans)
+    exit        (value: nat)
+    call        (proc: void -> ans)             -- embedding side-effect call
+    followedBy  (com: com, cont: ans -> com)    -- composing commands
+    sync        (proc: void -> ans)             -- embedding thread sync call
+    resume      (cont: ans -> com)              -- resume after sync
+@end example
+@tindex com
+
+@noindent
+The handcoding of functions with side-effects thus proceeds by the following
+two phase scheme:
+@enumerate
+  @item Declare a function on the @sc{Opal} level with return type
+    @code{com[data]} and implement it constructing a term of type @code{com}
+    using a handcoded function performing the side-effect. 
+  @item Implement the handcoded function itself. In order to adjust the
+    evaluation of functional expressions the handcoded function has to be
+    implemented as a particular higher-order function (depending on the
+    function on the @sc{Opal} level). If the handcoded function should take
+    @code{n} parameters @code{p1}, ..., @code{pn}, and return a value of type
+    @code{data}, its functionality has to be @code{FUN handcodedFunction : p1
+    ... pn -> void -> ans[data]}
+@end enumerate
+
+@noindent
+As an example, consider the implementation of the function @code{close},
+which closes a UNIX file.
+
+@table @code
+
+@item File.sign
+  @code{FUN close : file -> com[void]}
+
+  The @sc{Opal} signature declares the function ``close''.
+
+@item File.impl
+  @code{DEF close(f) == call(xclose(f))}
+  
+  @code{FUN xclose : file -> void -> ans[void]}
+
+  The @sc{Opal} implementation defines the function by constructing a term
+  of type @code{com} which --- in this case --- only calls the handcoded
+  function @code{xclose}. Furthermore, it declares the function
+  @code{xclose}. Note the extra @code{void} parameter.
+
+@item File.hc.c
+  The handcoded function only calls the corresponding UNIX function and
+  ensures the proper translation of parameters and return values:
+  @example
+    extern OBJ _AFile_Axclose(OBJ file,OBJ unit) @{
+        FILE *f = unpack_file(file);
+        if (fclose(f) != EOF)@{
+            return_okay_nil;
+        @} else @{
+            return_unix_failure(errno);
+        @}
+    @}     
+  @end example
+
+@end table
+
+@comment ....................................................................
+@node Constructing Commands, Example Processes, Commands, System
+@comment  node-name,  next,  previous,  up
+@subsection Constructing Commands in Handcoded Structures
+
+@noindent
+Section @ref{Commands} described the concept of commands and showed how to
+manage interfacing between @sc{Opal} and handcoded functions. In the
+handcoded interface, however, additional functions and macros are used to
+construct commands which are defined in the handcoding interface
+@code{Com.hc.c}. These are listed in the following table.
+
+@table @code
+
+@item ans_okay_nil
+  A constant object representing a success answer without further data.
+  @vindex ans_okay_nil
+
+@item return_okay_nil
+  A macro returning a success answer without data.
+  @findex return_okay_nil
+
+@item return_okay(data)
+  A macro returning a success answer with data.
+  @findex return_okay
+
+@item return_fail(failure)
+  A macro returning a given failure answer. The failure conditions returned
+  from UNIX functions
+  are predefined in @code{UnixFailures.h}, users can define additional
+  failure message using the following function.
+  @findex return_fail
+
+@item OBJ declare_failure_answer(char * message)
+  This function can be used to construct new failure answers which can be
+  returned using @code{return_fail}.
+  @findex declare_failure_answer
+
+@end table
+
+@noindent
+For an example using these functions/macros @pxref{Commands}.
+
+@comment ....................................................................
+@node Example Processes,  , Constructing Commands, System
+@comment  node-name,  next,  previous,  up
+@subsection Example: Accessing the UNIX Process Abstraction
+
+In order to give a more complete example of interfacing between @sc{Opal}
+and handcoded structures using commands, this section describes the process
+abstraction implementing that of UNIX in the @sc{Opal} standard library.
+@cindex Process.sign, Process.impl
+@cindex Process.hc.h, Process.hc.c
+
+
+@table @code
+  
+@item Process.sign 
+This interface declares @sc{Opal} equivalence for UNIX (heavyweight)
+process and pipe abstraction. It declares the functions @code{self},
+@code{self?}, @code{fork}, @code{execve}, @code{kill}, @code{wait},
+@code{popen}, and @code{pclose}
+
+Process forking, for instance, has the functionality @code{FUN fork :
+com[process]}, since it creates a new process. The process id returned is
+that of the child in the parent process. The child process can identify itself using the function @code{self?}.
+
+@item Process.impl
+The implementation only calls the corresponding handcoded functions as
+described in Section @ref{Commands} in most cases. Handcoded functions,
+however, can also be used directly in @sc{Opal} functions as shown by the
+implementation of function @code{wait}:
+@example
+DEF wait        == call(\\ _ . 
+                        LET a == xwait(nil)
+                        IN
+                        IF okay?(a) 
+                        THEN okay(1st(data(a)) & 2nd(data(a)))
+                        ELSE fail(error(a)) FI
+                   )
+    FUN xwait: void -> ans[pair'Process]
+@end example
+Here, a term which causes the call of the handcoded function @code{xwait} is
+constructed, which evaluates the answer of @code{xwait} using an @sc{Opal}
+expression.
+
+@item Process.hc.h
+The handcoded interface defines packing and unpacking routines
+(@code{pack_process}, @code{unpack_process}). Since process ids are
+basically natural numbers, no particular memory management routines are
+defined.
+
+@item Process.hc.c
+The handcoded implementation part finally implements the handcoded functions
+calling the corresponding UNIX functions as exemplified by function
+@code{xwait}:
+@example
+extern OBJ _AProcess_Axwait(OBJ x1) /* xwait */
+@{ int pid,status;
+  pid = wait(&status);
+  if (pid == -1) @{
+    return_unix_failure(errno);
+  @} else @{
+    return_okay(_AProcess_Apair(pack_process(pid),
+                                pack_nat(status)));
+  @}
+@}
+@end example
+
+
+@end table
+
+
+@comment ********************************************************************
+@node Embedding, Upgrading, Library, Top
+@comment  node-name,  next,  previous,  up
+@chapter Embedding @sc{Opal} Programs into C Programs
+
+In order to call @sc{Opal} programs from C programs, the C-routine
+implementing the @sc{Opal} program has to be called as exemplified by the
+function @code{main} used defined in @code{_ostart.c}.
+@cindex _ostart.c
+@findex main
+
+@example
+main(int argc, char** argv, char** environ)@{
+    OBJ ans;
+
+    start_argc = argc; start_argv = argv;
+    start_env = environ;
+
+    init_ABUILTIN();
+    init();
+
+    COPY(command,1);
+    return MAIN(command);
+@}
+@end example
+
+@noindent
+For this function to work three global variables must be defined:
+@table @code
+@item command
+  The C function implementing the main @sc{Opal} function, i.e. representing
+  the top-level command
+@item init
+  The init entry of the structure containing @code{command}
+@item include
+  The foreign interface of the structure containing @code{command}
+@end table
+
+@comment ********************************************************************
+@node Upgrading, Index, Embedding, Top
+@comment  node-name,  next,  previous,  up
+@chapter Upgrading Handcoded Structures
+@noindent
+
+Prior versions of the @sc{Opal}-compiler --- up to version 2.0h --- used a
+slightly different handcoding scheme. This section describes the changes and
+how to upgrade to the handcoding scheme defined in this document.
+
+This chapter is still incomplete.
+
+@menu
+* Interfacing to Opal::         
+* Transliteration of Identifiers::  
+* Macro Naming::                
+* Object Declaration::          
+* Memory Allocation::           
+@end menu
+
+@comment ===================================================================
+@node Interfacing to Opal, Transliteration of Identifiers, Upgrading, Upgrading
+@comment  node-name,  next,  previous,  up
+@section Interfacing to @sc{Opal}
+
+@cindex RTS, intermediate interface level
+
+Keeping the handcoded part independent from the @sc{Opal} implementations
+was a major design decision taken in the @sc{Opal} compiler up to version
+2.0h. Due to this design decision handcoding had to be done on three
+(instead of two) levels. In between the proper @sc{Opal} and handcoded
+structures the handcoder had to insert the so-called ``RTS''-level.
+
+The definitions of that level have been shifted to the @sc{Opal}
+implementation part of a handcoded structure with compiler version 2.1a
+which also entailed a simplification of the argument and return value
+passing scheme.
+
+Consider interfacing to the startup routine of a graphical user interface.
+Besides an @sc{Opal} function @code{initXmInterface} 
+@example
+  FUN initXmInterface   : com[xmDialog]
+
+  DEF initXmInterface ==
+      abs(call(mapAns(abs: RTSXmDialog->xmDialog, 
+                      initXmInterface'RTSXmDialog)))
+@end example
+you had to declare an additional function on the RTS-level and handle the
+proper translation of argument and return value types.
+@example
+FUN initXmInterface : RTSunit[RTSXmDialog] -> RTSans[RTSXmDialog]
+@end example
+
+With the handcoding scheme introduced in version 2.1a, this declaration is
+completely done on the @sc{Opal} level by
+@example
+FUN initXmInterface   : com[xmDialog]
+
+DEF initXmInterface ==  call(xinitXmInterface)
+    FUN xinitXmInterface: void -> ans[xmDialog]
+@end example
+
+@comment ===================================================================
+@node Transliteration of Identifiers, Macro Naming, Interfacing to Opal, Upgrading
+@comment  node-name,  next,  previous,  up
+@section Transliteration of Identifiers
+
+@cindex transliteration of identifiers
+@cindex identifier, transliteration of
+
+In the compiler version 2.1a minor changes to the lexical rules of
+identifiers (confer to @cite{The Programming Language @sc{Opal}}) have taken
+place. The most important one is that underscores (`@code{_}') are
+allowed as part of an identifier in version 2.1a.
+
+Due to this fact the transliteration scheme had to be changed. In the
+following the old transliteration scheme is given
+
+@itemize @bullet
+@item Each generated name starts with the structure name followed by an
+  underscore (`@code{_}').
+@item Next, the character sequence `@code{v_}' is appended, if the generated
+  name denotes a closure variable.
+@item The name of the function is then appended as it appears in the
+  @sc{Opal} source. The transliteration of special symbols is done as shown in
+  Section @ref{Transliteration}.
+@item Finally, an additional number is appended in case of overloaded 
+  functions.
+@end itemize 
+
+The most important difference thus is that transliterated groups now have to
+be preceded by an `@code{A}' (alphanumeric) or `@code{S}' (special).
+
+@comment ===================================================================
+@node Macro Naming, Object Declaration, Transliteration of Identifiers, Upgrading
+@comment  node-name,  next,  previous,  up
+@section Macro Naming
+
+This section is still to be written.
+
+@comment ===================================================================
+@node Object Declaration, Memory Allocation, Macro Naming, Upgrading
+@comment  node-name,  next,  previous,  up
+@section Object Declaration
+
+This section is still to be written.
+
+@comment ===================================================================
+@node Memory Allocation,  , Object Declaration, Upgrading
+@comment  node-name,  next,  previous,  up
+@section Memory Allocation
+
+This section is still to be written.
+
+
+@node Index,  , Upgrading, Top
+@comment  node-name,  next,  previous,  up
+@unnumbered Index
+
+@printindex fn
+
+@summarycontents
+@contents
+@bye
+

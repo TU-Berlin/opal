@@ -1,0 +1,170 @@
+/* % @noindent
+This structure connects the Tcl system to OPAL.
+*/
+
+SIGNATURE Tcl[state:SORT]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:25 $ ($Revision: 1.1.1.1 $)
+-- Version $_version$
+
+IMPORT	Nat			ONLY nat
+	Int			ONLY int
+	Real			ONLY real
+	String			ONLY string
+	BTUnion			ONLY union
+	Void			ONLY void
+	Seq[string]		ONLY seq
+	Seq[union]		ONLY seq
+	Com[bool]		ONLY ans:SORT 
+	Com[nat]		ONLY ans:SORT 
+	Com[int]		ONLY ans:SORT 
+	Com[real]		ONLY ans:SORT 
+	Com[void]		ONLY com 
+	Com[string]		ONLY com ans:SORT
+	Com[seq[string]]	ONLY ans:SORT
+	Com[interpreter]	ONLY com
+	Com[state]		ONLY com
+
+
+-- %$Interpreters$ ===========================================================
+
+/* % @noindent
+Access to Tcl is realized by providing Tcl interpreters as first-class
+OPAL values. Each such interpreter carries an abstract state of the
+parameter sort of this structure. A new interpreter is created
+from the initial value of the state. To free the resources
+allocated by an interpreter, the function @code{delete} must be
+used.
+*/
+
+SORT interpreter		
+
+SORT state		
+     		
+FUN create	: state 		-> com[interpreter]
+FUN delete	: interpreter		-> com[void]
+
+
+/* %
+The state embedded in a interpreter is retrieved and changed by
+the following functions:
+*/
+
+FUN  state 	: interpreter 				-> com[state]
+FUN  =>    	: interpreter ** (state -> state)	-> com[void]
+
+
+-- %$Defining New Commands$ =================================================
+
+/* % @noindent
+A new Tcl command, implemented in OPAL, is defined for a given interpreter 
+with the functions below. The first form uses a pure function, the second
+form an OPAL command monad to define the behavior of the Tcl command. 
+*/
+
+FUN define	: interpreter ** denotation 
+		     ** (interpreter ** seq[string] -> ans[string]) 
+		     -> com[void]
+FUN define	: interpreter ** denotation 
+		     ** (interpreter ** seq[string] -> com[string]) 
+		     -> com[void]
+
+/* % @noindent
+If the command is called from within Tcl, the first argument is 
+the interpreter executing it. The second argument is
+a sequence of strings, in which the first element always represents the
+name of the command and the remaining elements the arguments to the
+command.
+
+NB. During the execution of an OPAL-implemented Tcl command, agent 
+scheduling @emph{does not} takes place. This implies that no agent 
+communcation is possible. It is, however, possible to spawn an agent 
+from within the execution of the Tcl command, which will start its
+activity after control is returned to the OPAL program.
+@sp 2
+*/
+
+/* %
+The following function undefines a command in the given 
+Tcl interpreter:
+*/
+
+FUN undefine	: interpreter ** denotation 		-> com[void]
+
+
+-- %$Evaluating Scripts$ ==================================================
+
+/* % @noindent
+Several functions are provided to evaluate Tcl scripts. The form
+which uses a @code{seq[union]} constructs the script on the base
+of the @code{format'StringFormat} facility.
+*/
+
+FUN @	: interpreter ** denotation 			-> com[string]
+FUN @	: interpreter ** denotation ** seq[union]	-> com[string]
+FUN @	: interpreter ** string 			-> com[string]
+FUN @	: interpreter ** seq[string] 			-> com[string]
+
+
+/* %
+To evaluate the contents of a named file as a Tcl script, use the
+function @code{source}:
+*/
+
+FUN source : interpreter ** denotation			-> com[string]
+
+-- %$Converting Tcl Data$ ==================================================
+
+/* % @noindent
+The functions below convert Tcl data values into OPAL data values:
+*/
+
+FUN asNat	: string				-> ans[nat]
+FUN asInt	: string				-> ans[int]
+FUN asBool 	: string				-> ans[bool]
+FUN asReal 	: string				-> ans[real]
+FUN asList	: string				-> ans[seq[string]]
+
+
+/* % 
+The function @code{asString} takes a sequence and converts
+it into a string, which represents a properly quoted Tcl list. 
+*/
+
+FUN asString	: seq[string]				-> string
+
+
+/* % The function @code{commandComplete} tests whether the given
+string is a complete Tcl command w.r.t. the balancing of brackets.
+*/
+
+FUN commandComplete? : string				-> bool
+
+
+-- %$Accessing Tcl Variables$ ================================================
+
+/* % @noindent
+To read from Tcl variables, use the functions below. The forms
+with two denotations specify an array element. The forms with
+a dot refer to global variables.
+*/
+
+FUN !	: interpreter ** denotation			-> com[string]
+FUN !	: interpreter ** denotation ** denotation	-> com[string]
+FUN .!	: interpreter ** denotation			-> com[string]
+FUN .!	: interpreter ** denotation ** denotation	-> com[string]
+
+
+/* % 
+Similar as for reading, variable values may be assigned with the
+following functions. 
+*/
+
+FUN :=	: interpreter ** denotation		  ** string	-> com[void]
+FUN :=	: interpreter ** denotation ** denotation ** string	-> com[void]
+FUN .:=	: interpreter ** denotation		  ** string	-> com[void]
+FUN .:=	: interpreter ** denotation ** denotation ** string	-> com[void]
+

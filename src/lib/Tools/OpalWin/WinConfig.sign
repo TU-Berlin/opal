@@ -1,0 +1,424 @@
+/* % 
+This structure provides view configurations.
+*/
+
+SIGNATURE WinConfig
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:22 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		ONLY 	nat:SORT
+	Real		ONLY	real:SORT
+	String		ONLY	string:SORT
+	BTUnion		ONLY 	union:SORT
+	Seq[union]	ONLY    seq:SORT
+
+
+-- %$Configurations in General$ ==============================================
+
+IMPORT	WinInternal	ONLY	view:SORT  config:SORT
+
+FUN {}		: config
+FUN ++		: config  ** config		-> config
+FUN with	: view    ** config		-> view
+
+/* %
+A configuration is an abstract data type which defines the
+graphical appearence or dynamic behavior of a view. It may be attached 
+to a view using the operation @code{View with Config}. This operation
+distributes over view compositions (@ref{@Sign{WinView}}), such that
+e.g. @code{(View1 << View2) with Config} equals to 
+@code{(View1 with Config) << (View2 with Config)}. Configurations may be 
+combined as in @code{Config1 ++ Config2}. @code{@{@}} is the empty
+configuration.
+
+A set of basic configurations applicable to a variety of views is 
+defined below. If a configuration is applied to a view which doesn't
+support it, it is ignored, without producing an error.
+*/
+
+-- %$Texts$ =================================================================
+
+/* %
+A text is attached to a label or a button with the configurations below:
+*/
+
+FUN text	: denotation			-> config
+FUN text	: denotation ** seq[union]	-> config
+FUN text	: string			-> config
+
+/* %
+The version @code{text(Pattern, BTSeq)} is equivalent to 
+@code{text(format'StringFormat(Pattern, BTSeq))}.
+*/
+
+-- %$Reliefs$ ======================================================
+
+/* %
+A relief specifies the 3-dimensional appearence of a view:
+*/
+
+TYPE relief == relief(name: denotation)
+
+/* %
+The following predefined reliefs are available:
+*/
+
+FUN flat raised sunken ridge groove : relief
+
+-- %$$Relief Configuration$ 
+
+FUN relief				: relief -> config
+FUN flat raised sunken ridge groove	: config
+
+
+-- %$Anchor$ ======================================================
+
+/* %
+An anchor specifies the orientation of the placement of the
+contents of a view:
+*/
+
+TYPE anchor		== anchor(name: denotation)
+
+/* %
+The following predefined anchors are defined:
+*/
+
+FUN north east south west center : anchor
+FUN - 				 : anchor ** anchor -> anchor
+
+/* %
+Anchors may be combined with the function @code{-}; only
+the combinations @code{north-east}, @code{north-west},
+@code{south-east} and @code{south-west} are allowed.
+*/
+
+
+-- %$$Anchor Configuration$ 
+
+FUN anchor				: anchor -> config
+
+
+-- %$Colors$ =================================================================
+
+/* %
+A color is specified by a name.
+*/
+
+TYPE color == color(name: denotation)
+
+/* %
+The following constants define predefined colors:
+*/
+
+FUN 	white black 				: color
+FUN	grey lightgrey darkgrey 		: color
+
+FUN	red lightred darkred 			: color
+FUN	orange lightorange darkorange 		: color
+FUN	pink lightpink darkpink 		: color
+
+FUN	blue lightblue darkblue 		: color
+FUN	azure lightazure darkazure 		: color
+FUN	turquoise lightturquoise darkturquoise 	: color
+
+FUN	green lightgreen darkgreen 		: color
+
+FUN	forestgreen ivory violet  		: color
+FUN	magenta purple thistle 			: color
+FUN	burlywood orchid 			: color
+
+
+/* %
+The following function constructs a color name which represents
+an RGB value. The version @code{rgb(D1,D2,D3)} is equivalent to
+@code{rgb(!(D1),!(D2),!(D3))}. The intensitys must be in the interval
+@code{[0.0..1.0]}.
+*/
+
+FUN rgb: real ** real ** real 			 -> color
+FUN rgb: denotation ** denotation ** denotation  -> color
+
+-- %$$Color Configuration$ 
+
+FUN background	bg	: color			-> config
+FUN activeBackground	: color			-> config
+FUN selectBackground	: color			-> config
+FUN insertBackground	: color			-> config
+FUN cursorBackground	: color			-> config
+
+FUN foreground fg	: color			-> config
+FUN activeForeground	: color			-> config
+FUN selectForeground	: color			-> config
+FUN disabledForeground	: color			-> config
+
+FUN selector		: color			-> config
+
+
+-- %$Fonts$ ================================================================
+
+
+/* %
+A font is specified by its name:
+*/
+
+TYPE font == font(name: denotation)
+
+
+/* %
+The following predefined fonts are available (for a customized
+construction of fonts, see structure @code{WinFontName}):
+*/
+
+FUN fixed variable: font
+
+-- %$$Font Configuration$ 
+
+FUN font : font	-> config
+
+
+-- %$Geometry$ ===============================================================
+
+/* %
+Points and rectangular sizes are described by the following types:
+*/
+
+TYPE point      == @ (xc: real, yc: real)
+TYPE size       == x (width: real, height: real)
+
+/* %
+Coordinates in points and extends in sizes are represented as floating 
+point numbers and do measure millimeters. 
+In points, x-coordinates range from left to right and y-coordinates
+from upper to lower screen positions. 
+
+Shortcuts are provided for the denotation of pixel coordinates:
+@code{C px} is defined as @code{C * screenResolution} and
+@code{D px} as @code{!(D) px}. 
+*/
+
+FUN  px			: real				-> real
+FUN  px			: denotation			-> real
+FUN  @			: denotation ** denotation	-> point
+FUN  x			: denotation ** denotation	-> size
+
+
+-- %$$Geometry Configuration$ 
+
+/* %
+The size of a view is explicitely defined by the configurations below:
+*/
+
+FUN width		: real			-> config
+FUN height		: real			-> config
+FUN size		: size			-> config
+FUN size		: real ** real 		-> config
+FUN unitWidth		: nat			-> config
+FUN unitHeight		: nat			-> config
+FUN unitSize		: nat ** nat		-> config
+FUN unitSize		: size 			-> config
+FUN fixedSize		:			   config
+
+/* %
+Note that for views which display a text, the @code{unit} variants
+have to be used, which determine the size by means of line/columns.
+
+A size explicitely configured for a view may be rearranged by the
+packer to fit the needs of children placed by hierarchical
+composition in the view. To avoid this, use the option @code{fixedSize}.
+*/
+
+
+
+-- %$$Padding Configuration$ 
+
+/* %
+The padding of view specifies any extra space to request for its
+display. 
+*/
+
+FUN padX		: real			-> config
+FUN padY		: real			-> config
+FUN pad			: size			-> config
+FUN pad			: real ** real 		-> config
+
+FUN ipadX		: real			-> config
+FUN ipadY		: real			-> config
+FUN ipad		: size			-> config
+FUN ipad		: real ** real 		-> config
+
+/* %
+The version @code{pad(W,H)} is equivalent to @code{pad(W x H)}.
+With normal padding, the given space is added to the overall size demanded
+from the view, but this space is not filled out. 
+
+With internal padding (the @code{ipad} variants) the extra space is 
+filled out, which is not the case for normal padding.
+*/ 
+
+
+-- %$$Border Width Configuration$ 
+
+/* %
+The border width of a view is defined by the configurations below.
+*/
+
+FUN borderWidth	bw	: real			-> config
+FUN activeBorderWidth	: real			-> config
+FUN insertBorderWidth	: real			-> config
+FUN selectBorderWidth	: real			-> config
+FUN cursorBorderWidth	: real			-> config
+
+
+-- %$$Cursor Width Configuration$ 
+
+/* %
+The width of a text cursor is defined by the configuration below.
+*/
+
+FUN cursorWidth		: real			-> config
+
+
+-- %$$Positioning$
+
+FUN position		: real ** real		-> config
+FUN position		: point       		-> config
+FUN relPosition		: real ** real		-> config
+FUN relPosition		: point       		-> config
+
+/* %
+@emph{Note}: explicite positioning currently not supported.
+*/
+
+-- %$Bitmaps$ ==============================================================
+
+/* %
+A bitmap is specified by a name.
+*/
+
+TYPE bitmap == bitmap(name: denotation)
+
+/* %
+The following constants define predefined bitmaps:
+*/
+
+FUN error gray50 gray25 hourglass 
+    info questhead question warning 
+    none : bitmap
+
+/* %
+The following function constructs a bitmap which refers to a file
+in the window servers bitmap file format:
+*/
+
+FUN file : denotation	-> bitmap
+
+
+-- %$$Bitmap Configuration$ 
+
+FUN bitmap	: bitmap		-> config
+FUN bgstipple	: bitmap		-> config
+FUN fgstipple	: bitmap		-> config
+
+
+-- %$Cursors$ ==========================================================
+
+/* %
+A cursor is specified by a name:
+*/
+
+TYPE cursor == cursor(name: denotation)
+
+/* %
+The following constants provide predefined cursor names.
+*/
+
+FUN arrow boat circle clock diamondCross dot drapedBox
+    exchange fleur gobbler gumby hand1 hand2 pencil plus 
+    spraycan target tcross watch : cursor
+
+/* %
+The following function constructs a cursor name which
+addresses two files in the window servers bitmap format 
+for the image resp. the mask of the cursor:
+*/
+
+FUN file : denotation ** denotation -> cursor
+
+
+-- %$$Cursor Configuration$ 
+
+/* %
+The cursor to be used in the editable text of a view is specified
+with one of the configurations below. The version
+@code{cursor(C, Foreground, Background)}
+specify the foreground and background colors to be
+used.
+*/
+
+FUN cursor	: cursor			-> config
+FUN cursor	: cursor ** color ** color	-> config
+
+
+-- %$State: Exp $ =================================================================
+
+/* %
+Views which have a responsive behaviour, such as buttons, may be in
+one of three states: in @code{normal} state they are enabled for
+interaction, in @code{active} state they are just performing an interaction
+and in @code{disabled} state they are insensitive for interactions.
+*/
+
+TYPE state	== normal active disabled
+
+FUN state	: state				-> config
+FUN normal	: config
+FUN active	: config
+FUN disabled	: config
+
+
+
+-- %$Export Selection$ =======================================================
+
+/* %
+A view is configured to export its selection to the window manager
+with @code{exportSelection}:
+*/
+
+FUN exportSelection	: config
+
+
+-- %$Gridding$ ===============================================================
+
+/* %
+A view is configured to define the grid for the size dimension
+of its displaying window with @code{setGrid}:
+*/
+
+FUN setGrid		: config
+
+
+
+-- %$Orientation$ ============================================================
+
+/* %
+For views that can lay themselves out with either a horizontal or 
+vertical orientation, the configurations below define the direction:
+*/
+
+TYPE orient		== horizontal vertical 
+
+FUN orient		: orient	-> config
+FUN horizontal		: config
+FUN vertical		: config
+
+FUN vertical		: config
+
+
+
+/* %
+@page
+*/

@@ -1,0 +1,221 @@
+IMPLEMENTATION ordFmtPrint
+-- %-$Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/ordinatrice/ordFmtPrint.impl,v 1.1.1.1 1998-06-16 16:00:45 wg Exp $
+
+IMPORT InterOpal COMPLETELY
+       AnalyzeIO COMPLETELY
+       Seq ONLY seq % <>? find? :: <>
+       SeqFilter ONLY |
+       SetConv ONLY asSet
+       Set ONLY set
+       SeqMap ONLY *
+       Map ONLY map def {} ! !? extend
+       SetReduce ONLY /
+       Pair ONLY pair & unpair
+       SeqOfSeq ONLY flat
+       SynthesizeIO ONLY addNewImport addIMPORT addFUN addDEF asVarSeq
+       Option ONLY option nil? cont
+       NatConv ONLY `
+       Denotation ONLY ++ empty? := !
+       Nat ONLY nat 1 0 -
+       SeqFold ONLY \
+       ShortCutsIO ONLY @ asAnyPattern  cons
+       kdIOname ONLY `
+       DEBUG COMPLETELY
+       ABORT ONLY ABORT
+       Char ONLY char upper
+
+-- FUN mkFmtPrint: interOpal ** name ** seq[variant] -> interOpal ** object
+
+DEF mkFmtPrint(IO, srt, vrnts) == 
+    LET -- %erstmal Format, DENOTATION und Nat importieren
+        (IO2, den_name) == initDENOTATION(IO)
+        (IO3, nat_name, indent_name) == initNat(IO2)
+        (IO4, fmt_name, ;_name, lit_name, 
+            beg_name, end_name, spc_name) == initFormat(IO3, den_name, nat_name)
+        -- %alle ben"otigten Sorten  und die Paramtersorten
+        sorts == asSet(flat(sortsIn(IO) * vrnts))
+        parsorts == sort?(IO) | parameter(IO, main)
+        -- %alle fmtPrint-Funktionen hinzuf"ugen und aufsammeln
+        (IO5, fpmap) == addIds(IO4, sorts, \\io, na. addFP(io,fmt_name)(na))
+        -- %je Variante eine DEF erzeugen 
+        fmtEqnSeq == mkFmtEqn(IO5, fpmap, srt, indent_name, ;_name,
+                              lit_name, beg_name, end_name, spc_name,
+                              parsorts) * vrnts
+        IO6 == IO5 addDEF (ident(fpmap!srt), fmtEqnSeq)
+        IN (IO6, objOf(IO6)(fpmap!srt))
+
+/* %importiert Format und gibt die Namen f"ur fmt:SORT, ;, lit,
+    beg, end und spc zur"uck */
+FUN initFormat: interOpal **name ** name -> interOpal ** name ** name **
+                                          name ** name **
+                                          name ** name 
+DEF initFormat(IO, den_name, nat_name) ==
+    LET (IO2, FormatOrig) == addNewImport(IO, "Format")
+        (IO3, fmt_id) == (IO2, FormatOrig, none) addIMPORT ("fmt", sort)
+        (IO4, ;_id) == (IO3, FormatOrig, none) addIMPORT 
+                            (";", fct(funct(cart(%(sort(fmt_name), 
+                                                   sort(fmt_name))), 
+                                            sort(fmt_name))))
+        (IO5, lit_id) == (IO4, FormatOrig, none) addIMPORT
+                            ("lit", fct(funct(sort(den_name), sort(fmt_name))))
+        (IO6, beg_id) == (IO5, FormatOrig, none) addIMPORT
+                            ("beg", fct(funct(sort(nat_name), sort(fmt_name))))
+        (IO7, end_id) == (IO6, FormatOrig, none) addIMPORT
+                            ("end", fct(sort(fmt_name)))
+        (IO8, spc_id) == (IO7, FormatOrig, none) addIMPORT
+                            ("spc", fct(funct(sort(nat_name), sort(fmt_name))))
+        fmt_name == name(fmt_id, FormatOrig, none)
+        ;_name == name(;_id, FormatOrig, none)
+        lit_name == name(lit_id, FormatOrig, none)
+        beg_name == name(beg_id, FormatOrig, none)
+        end_name == name(end_id, FormatOrig, none)
+        spc_name == name(spc_id, FormatOrig, none)
+    IN (IO8, fmt_name, ;_name, lit_name, beg_name, end_name, spc_name)
+
+/* %importiert DENOTATION und gibt den Namen der Sorte zur"uck */
+FUN initDENOTATION: interOpal-> interOpal ** name
+DEF initDENOTATION(IO) ==
+    LET (IO2, DenOrig) == addNewImport(IO, "DENOTATION")
+        (IO3, den_id) == (IO2, DenOrig, none) addIMPORT ("denotation", sort)
+    IN (IO3, name(den_id, DenOrig, none))
+
+/* %importiert Nat und gibt den Namen der Sorte und des Indents zur"uck */
+FUN initNat: interOpal -> interOpal ** name ** name
+DEF initNat(IO) ==
+    LET (IO2, NatOrig) == addNewImport(IO, "Nat")
+        (IO3, nat_id) == (IO2, NatOrig, none) addIMPORT ("nat", sort)
+        (IO4, indent_id) == (IO3, NatOrig, none) addIMPORT
+                                (indent_denotation, fct(sort(nat_name)))
+        nat_name == name(nat_id, NatOrig, none)
+        indent_name == name(indent_id, NatOrig, none)
+    IN (IO4, nat_name, indent_name)
+
+-- %Denotation der Nat-Konstanten, die den Indent angibt
+FUN indent_denotation: denotation
+DEF indent_denotation == "2"
+
+/* %f"ugt eine fmtPrint-Funktion auf dem Datentyp hinzu; erster name ist
+fmt_name; nach @code{addLess} aus @code{ordLess} */
+FUN addFP: interOpal ** name -> name -> interOpal ** ident
+DEF addFP(IO, fmtName)(srt) ==
+ 	IF origin(srt) main? THEN 
+        LET forms == insts(structs(IO)!main)!?formal
+        IN IF forms nil? THEN IO addFUN (fmtPrint(symbol(objOf(IO)(srt))), 
+                                         fct(fmtFct(IO,fmtName)(srt)))
+		   ELSE LET ex == find?(\\n.n=srt, cont(forms)) 
+				IN IF ex nil? THEN IO addFUN (fmtPrint(symbol(objOf(IO)(srt))),
+                                              fct(fmtFct(IO,fmtName)(srt)))
+				   ELSE (IO, ident(cont(ex)))
+				   FI
+		   FI
+	ELSE (IO, origin(srt), inst(srt)) addIMPORT 
+			(fmtPrint(symbol(objOf(IO)(srt))), fct(fmtFct(IO,fmtName)(srt)))
+    FI
+   
+/* % konstruiert Funktionalitaet der @code{fmtPrint}-Funktion;
+     in @code{fmtFct(IO, b)(s)} ist @code{IO} die InterOpal-Struktur,
+     @code{fmtName} der Name von @code{fmt} und @code{s} die in Frage stehende
+	Sorte  --- vgl. @code{lessFct'ordLess} */
+
+FUN fmtFct: interOpal ** name -> name -> fct
+DEF fmtFct(IO, fmtName)(s) ==
+	LET body == funct(cart(%(sort(s))),sort(fmtName))
+	    parsorts == sort?(IO) | parameter(IO, origin(s))
+	    prefunct == (\\na. funct(cart(%(sort(na))),sort(fmtName))) * parsorts
+	IN IF parsorts <>? THEN body
+	   ELSE funct(cart(prefunct), body)
+	   FI
+
+
+/* % erzeugt zu einer Variante die passende Gleichung, der Aufruf erfolgt mit
+@code{ mkFmtEqn(IO, fpmap, srt, indent_name, ;_name, lit_name,
+beg_name, end_name, spc_name, parameter-sorts)(variante) */
+FUN mkFmtEqn: interOpal ** map[name,<,name] ** name ** name ** name ** name **
+name ** name ** name ** seq[name] -> variant -> eqn
+DEF mkFmtEqn(IO, fpmap, srt, indent_name, ;_name, lit_name,
+beg_name, end_name, spc_name, parSorts)(variante) ==
+    LET compFctSeq == codom * fctOf(IO) * sel * comps(variante)
+        (nx, varSeq) == asVarSeq(compFctSeq, 0, \\n. "v" ++ (n`))
+        (_, fmtVars) == asVarSeq(sort * parSorts, nx, \\n."fmt" ++ ((n-nx)`))
+        lhs == IF parSorts <>? THEN 
+                  fpmap!srt @ tuple(?, %(cons(variante, varSeq)))
+               ELSE apply(?, fpmap!srt @ tuple(?, var(?, _) * fmtVars),
+                             tuple(?, %(cons(variante, varSeq))))
+               FI
+        newFpmap == extend(fpmap, parSorts,
+                            (\\v. name(ident(v), local, none)) * fmtVars)
+        $ == \\deno. lit_name @ den(?, deno)
+        asFmt == \\v:var. apply(?, recursiveExpr(IO, newFpmap, sort(fct(v))),
+                            tuple(?, %(name(?, name(ident(v), local, none)))))
+--        asFmt:var->expr == \\v:var. (newFpmap!sort(fct(v))) @ 
+--                          name(?, name(ident(v), local, none))
+        ;; == \\e1:expr,e2:expr. ;_name @ tuple(?, %(e1, e2))
+        rhsExprL == (beg_name @ name(?, indent_name)) ;; 
+                    $(`(IO)(cons(variante)))
+        rhsExprR == IF varSeq <>? THEN name(?, end_name)
+                    ELSE (("("$) ;; 
+                          (((\\e1:expr, e2:expr. 
+                                  e1;; ((", "$) ;; e2)) \ asFmt * varSeq) ;;
+                         (")"$))) ;; name(?, end_name)
+                    FI
+    IN     
+        eqn(?, lhs, %(fpmap!srt @ 
+                     asAnyPattern((\\i. name(i, local, none)) * 
+                                                    ident * varSeq)),
+           rhsExprL ;; rhsExprR)
+
+
+-- %kopiert aus ordLess
+/* % erzeugt zu uebergebenem Namen einen Ausdruck: mit der Abb. wird der Name 
+der Fkt. zu einer Sorte bestimmt, fuer jeden Sortenparameter gibt es ein 
+HO-Argument, das wieder mit @code{recursiveExpr} aufgebaut wird */
+FUN recursiveExpr: interOpal **  
+			map[name, <, name] ** name -> expr
+DEF recursiveExpr(IO, fmap0, srt) ==
+	LET fmap == fmap0
+	    ofname == fmap!?srt
+	    fname == IF ofname nil? THEN ABORT("recursiveExpr: " ++ `(IO)(srt) ++ " not in domain") ELSE PRINT(debug_1, "recursiveExpr: processing " ++ `(IO)(srt), cont(ofname)) FI
+	    parsorts == IF origin(fname) local? THEN <>
+			ELSE LET ffct == fctOf(IO)(fname)
+			     IN IF codom(ffct) sort? THEN <>
+			        ELSE sort?(IO) | 
+					parameter(IO, origin(srt), inst(srt))
+			        FI
+                        FI
+	IN IF parsorts <>? THEN name(?, fname)
+	   ELSE fname @ tuple(?, recursiveExpr(IO, fmap, _) * parsorts)
+	   FI
+
+
+-- %kopiert aus ordLess.impl
+/* % @code{addIds(IO, names, addId) == (newIO, M)} @*
+fuegt dem uebergebenen InterOpal @code{IO} fuer jeden Namen in @code{names} mit der Funktion 
+@code{addId} einen neuen Ident hinzu. Die zurueckgegebene Abbildung @code{M} enthaelt zu 
+jedem Namen den mit addId konstruierten Namen: 
+@code{M!n -> name(2nd(addId(X, n)), origin(n), inst(n))} */
+
+FUN addIds: interOpal ** set[name,<] ** 
+		(interOpal ** name -> interOpal ** ident) -> 
+	    				interOpal ** map[name,<,name]
+DEF addIds(IO, names, addId) ==
+	unpair(((\\na,p. LET (oldIO, oldmap) == unpair(p) 
+			     (newIO, newId) == addId(oldIO, na)
+				     newmap == def(na,name(newId,origin(na),
+								inst(na)), 
+						   oldmap)
+			 IN newIO & newmap
+		), 
+	       IO & {}) / 
+              names)
+
+
+-- %the name of the formatting function
+FUN fmtPrint: denotation -> denotation
+DEF fmtPrint(d) == "fmt" ++ capitalize(d)
+
+FUN capitalize: denotation -> denotation
+DEF capitalize(d) == IF d empty? THEN d ELSE (d, 0) := upper(d!0) FI
+
+-- %Debugging ausgeben?
+FUN debug_1 : bool
+DEF debug_1 == false

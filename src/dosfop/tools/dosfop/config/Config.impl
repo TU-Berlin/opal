@@ -1,0 +1,252 @@
+IMPLEMENTATION Config
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/config/Config.impl,v 1.1.1.1 1998-06-16 16:00:33 wg Exp $
+
+IMPORT String 	COMPLETELY
+       Option 	COMPLETELY
+       Seq    	COMPLETELY
+       Map    	COMPLETELY
+       MapConv 	COMPLETELY
+       Nat    	COMPLETELY
+       Pair	COMPLETELY
+       SeqMap COMPLETELY
+       SeqReduce COMPLETELY
+
+/* %The DATA definition of @c{config} is augmented by components for quick
+answering of questions @c{isSubsystem?} and the like from @c{ConfigTest}. */
+
+DATA config == config(
+                 location           : string,
+                 survey             : option[string],
+                 macros             : map[string,<,macroDef],
+                 globalOpts         : map[opt,<,optSetting],
+                 structs            : option[structs],
+                 subsystems         : seq[subsystem],
+                 library            : option[library],
+                 flatStructs        : map[string, <, map[opt, <, optSetting]],
+                 flatSubsystems     : map[string, <, map[opt, <, optSetting]],
+                 flatLibStructs     : map[string, <, map[opt, <, optSetting]],
+                 flatLibSubsystems  : map[string, <, map[opt, <, optSetting]]
+               )
+               none
+
+DEF config( location, survey, macros, globalOpts, structs, subs, lib ) ==
+  config(location, 
+         survey, 
+         macros, 
+         globalOpts, 
+         structs, 
+         subs,
+         lib,
+         flatStructs,
+         flatSubsystems,
+         flatLibStructs,
+         flatLibSubsystems)
+  WHERE
+    flatStructs == allStructs(globalOpts, structs, subs)
+    flatSubsystems == allSubs(globalOpts, subs)
+    flatLibStructs == IF lib avail? THEN 
+                             allStructs(globalOpts, 
+                                        nil, 
+                                        libSubsystems(cont(lib))) 
+                           ELSE 
+                             {} 
+                           FI
+    flatLibSubsystems == IF lib avail? THEN 
+                           allSubs(globalOpts, 
+                                   libSubsystems(cont(lib)))
+                         ELSE 
+                           {} 
+                         FI
+
+/* %The @TYPE definitions are directly translated into @DATA definitions: */
+DATA macroDef == noParam( substitution : string )
+                 withParam(
+                    preParamSubstitution  : string,
+                    postParamSubstitution : string
+                 )        
+
+DATA structs == structs(
+                  structsOpts : map[opt,<,optSetting],
+                  structs     : seq[struct]
+                 )
+                 none
+
+DATA struct == struct(
+                 name       : string,
+                 structOpts : map[opt,<,optSetting]
+               )
+               none
+
+DATA subsystem == subsystem(
+                    name          : string,
+                    location      : string,
+                    survey        : option[string],
+                    subsystemOpts : map[opt,<,optSetting],
+                    structs       : option[structs],
+                    subsystems    : seq[subsystem]
+                  )
+                  none
+
+DATA library == library(
+                  libSurvey     : option[string],
+                  libOpts       : map[opt,<,optSetting],
+                  libSubsystems : seq[subsystem]
+                )
+                none
+
+
+
+DATA opt == TopStructureName
+            OutputFileName
+            ProjectName
+            AuthorsNames
+            Date
+            FunctionalityIndex
+            ConceptIndex
+            ApplicationIndex
+            StructureIndex
+            LibraryInclude
+            SubsystemsInclude
+            PropertiesInclude
+            OnlyInterfaces
+            Language
+            HierarchyVisu
+            NewPages
+            ImportReferences
+            UsedFunctionTables
+            Levels
+            DropEmptyLines
+            SortStructures
+            SingleNode
+            none
+
+DATA optSetting == On
+                   Off
+                   German
+                   English
+                   cont( cont : string )
+                   contSeq( cont : seq[string] )
+                   OnNoSubs
+                   OnNoStructs
+                   OnMediumInst
+                   OnLowInst
+                   OnNoInst
+                   OnNoLibs
+                   OnNoLibsMediumInst
+                   OnNoLibsLowInst
+                   OnNoLibsNoInst
+                   TopDown
+                   BottomUp
+                   Alphabetically
+                   UserDefined
+                   none
+
+
+FUN < : opt ** opt -> bool
+
+/* %Implementing the ordering on options based on an internal mapping: */
+DEF o1 < o2 == @(o1) < @(o2)
+
+/* %The internal function */
+FUN @ : opt -> nat
+/* %defines a mapping from each option to a arbitray @emph{but distinct} natural number
+that can be used for the definition of an ordering on options */
+
+DEF @(none)               == 0
+DEF @(TopStructureName)   == 1
+DEF @(OutputFileName)     == 2
+DEF @(ProjectName)        == 3
+DEF @(AuthorsNames)       == 4
+DEF @(Date)               == 5
+DEF @(FunctionalityIndex) == 6
+DEF @(ConceptIndex)       == 7
+DEF @(ApplicationIndex)   == 8
+-- StructureIndex see below
+DEF @(LibraryInclude)     == 9
+DEF @(SubsystemsInclude)  == 10
+DEF @(PropertiesInclude)  == 11
+DEF @(OnlyInterfaces)     == 12
+DEF @(Language)           == 13
+DEF @(HierarchyVisu)      == 14
+DEF @(NewPages)           == 15
+DEF @(ImportReferences)   == 16
+DEF @(UsedFunctionTables) == 17
+DEF @(Levels)             == 18
+DEF @(DropEmptyLines)     == 19
+DEF @(SortStructures)     == 20
+DEF @(StructureIndex)     == 21
+DEF @(SingleNode)         == 22
+
+
+/* %Setting of the default global option map. If different default settings are needed
+one has to alter the definition here. Be sure that each option has a default setting! */ 
+DEF globalOptsDefault ==
+  asMap(
+    (&(TopStructureName, cont("Main"!)) ::
+    (&(OutputFileName  , cont("stdOut"!)) ::
+    (&(ProjectName     , cont("Project"!)) ::
+    (&(AuthorsNames    , cont(<>)) ::
+    (&(Date            , cont(<>)) ::
+    (&(FunctionalityIndex, Off) ::
+    (&(ConceptIndex      , Off) ::
+    (&(ApplicationIndex  , Off) ::
+    (&(StructureIndex    , Off) ::
+    (&(LibraryInclude    , Off) ::
+    (&(SubsystemsInclude , Off) ::
+    (&(PropertiesInclude , Off) ::
+    (&(OnlyInterfaces    , Off) ::
+    (&(Language          , English) ::
+    (&(HierarchyVisu     , Off) ::
+    (&(NewPages          , Off) ::
+    (&(ImportReferences  , Off) ::
+    (&(UsedFunctionTables, Off) ::
+    (&(Levels            , contSeq(<>)) ::
+    (&(DropEmptyLines    , Off) :: 
+    (&(SortStructures    , TopDown) ::
+    (&(SingleNode        , Off) ::
+    <>))))))))))))))))))))))
+  )
+
+
+
+
+-- %$Auxiliary Functions$
+/* %Return a map from structure names to the associated option map. Parameters
+are the valid options for the current subsystems, the structures and the
+subsystems of the current subsystem */
+FUN allStructs: map[opt, <, optSetting] ** 
+                option[structs] ** seq[subsystem] -> 
+                        map[string, <, map[opt, <, optSetting]]
+DEF allStructs(currentOpts, thisLevel, subs) ==
+    thisLevelStructs <+ 
+    (<+, {}) / (\\ss. allStructs(currentOpts <+ subsystemOpts(ss), 
+                                structs(ss), 
+                                subsystems(ss)
+                               )
+               ) * subs
+    WHERE thisLevelStructs == 
+            IF thisLevel nil? THEN 
+              {}
+            ELSE
+              extend({},
+                     name * structs(cont(thisLevel)),
+                     (\\strmap. currentOpts <+ strmap) * structOpts * 
+                        structs(cont(thisLevel))
+                    )
+            FI
+
+/* %Similar, but for subsystems */
+FUN allSubs: map[opt, <, optSetting] ** seq[subsystem] -> 
+                            map[string, <, map[opt, <, optSetting]]
+DEF allSubs(currentOpts, subs) == 
+    extend({}, name * subs, (\\ss. currentOpts <+ subsystemOpts(ss)) * subs)
+     <+
+    (<+, {}) / (\\ss. allSubs(currentOpts <+ subsystemOpts(ss),
+                              subsystems(ss))
+               ) * subs
+
+
+
+
+
+

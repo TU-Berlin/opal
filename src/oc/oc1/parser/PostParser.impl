@@ -1,0 +1,486 @@
+/* %-
+-- ============================================================================
+-- Author:      carola
+-- Project:     OPAL1-Compiler (syntax analysis)
+-- Purpose:     
+-- ============================================================================
+*/
+
+IMPLEMENTATION PostParser
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  ZOpts           COMPLETELY
+       Options ONLY pchecker?: bool
+        -- absy
+        Struct          COMPLETELY
+        PartName        COMPLETELY
+        Fct             COMPLETELY
+        Impl[partName]  COMPLETELY
+        PreDef          COMPLETELY
+        -- reps
+        Pragma          ONLY pragma noPragma
+        Rep             COMPLETELY
+        RepTab          COMPLETELY
+        -- lib
+        Pos             ONLY pos firstPos
+        Seq             COMPLETELY
+        Pair            COMPLETELY
+        SeqMapEnv       ONLY *
+        SeqMap          ONLY *
+        Denotation      COMPLETELY
+        DEBUG           COMPLETELY
+       Option ONLY avail option nil
+       Impl ONLY law
+       MapConv ONLY asSeq asMap
+       Map ONLY map codom
+       SeqOfSeq ONLY flat
+       SeqZip COMPLETELY
+       GlobPragma[partName] COMPLETELY
+
+-- %- ------------------------------------------------------------------------
+
+FUN postParser : pair[struct,repTab] -> pair[struct,repTab]
+DEF postParser(StruRep) ==
+    PRINT(printFinAbsy?,\\ . `(Stru),Stru) 
+    & PRINT(printRepTab?,\\ . `(RepTab),RepTab)
+    WHERE Res == doPostParser(StruRep)
+          Res2 == insertLawsAsSorts(Res)
+          Res3 == lawKinds(Res2)
+          Res4 == doProofHeads(Res3)
+          Res5 == doProofBodies(Res4)
+          Res6 == doSpecs(Res5)
+          Stru   == 1st(Res6)
+          RepTab == 2nd(Res6)
+
+-- %$Induzierte Signatur$
+FUN doPostParser : pair[struct,repTab] -> pair[struct,repTab]
+        -- Erzeugen der induzierten Signatur und Eintragen der Test-Reps
+DEF doPostParser(Stru & RepTab) == 
+    IF Stru error? THEN (Stru & RepTab)
+    ELSE LET StructIde == structIde(head(Stru))
+             (RTSig1,Type) == *(getInducedSig(bool,StructIde),
+                            RepTab & signature(Stru), freeTypes(Stru))
+             (RTSig2,Data) == *(getInducedSig(bool,StructIde), 
+                                         RTSig1, sortImpls(Stru))
+             (NewRTab,Laws) == nameUnnamed(1st(RTSig2),<>,laws(Stru))
+         IN 
+            (mkstruct(head(Stru),imports(Stru),
+                      2nd(RTSig2),specsign(Stru),
+                      Data, 
+                          funImpls(Stru),Type,Laws,pragmas(Stru),
+                          proofHeads(Stru), proofBodies(Stru),
+                          relations(Stru),
+                          pos(Stru),part(Stru)) 
+                & NewRTab)
+    FI
+
+FUN getInducedSig : partName ** rep
+                    -> pair[repTab,seq[partName]]**sortImpl[partName]
+                    -> pair[repTab,seq[partName]]**sortImpl[partName]
+
+DEF getInducedSig(boolPN,structIde)(rTSig,data) == 
+    (finRT & finSig, finData)
+        WHERE pN      == (sort(data))
+              finData == sortImpl(pN,finVariantS,pos(data))
+              (finRTSig, finVariantS)== 
+                *(getInducedVariantSig(boolPN,inducedSort,structIde),
+                                   rTSig, variants(data))
+             (finRT, finSig) == (1st(finRTSig), inducedSort :: 2nd(finRTSig))
+              inducedSort == partName(ide(pN), avail(structIde),
+                             paramS(pN),firstPos,sort:kind,noPragma,pos(pN))
+
+FUN getInducedVariantSig : partName ** partName ** rep
+                           -> pair[repTab,seq[partName]] ** variant
+                           -> pair[repTab,seq[partName]] ** variant
+DEF getInducedVariantSig(boolPN,sortPN,structIde)(rTSig, var) == 
+        (finRT & finSig, finVar)
+        WHERE
+        finVar == variant( cons(var), finTest, comps(var), pos(var))
+        finCons == partName(ide(cons(var)), avail(structIde), <>, 
+                         firstPos,consFct, noPragma, pos(cons(var)))
+        consFct == IF compFctS <>? THEN op(sort(sortPN))
+                   OTHERWISE
+                   IF rt(compFctS) <>? THEN op(funct(ft(compFctS),
+                                                     sort(sortPN)))
+                   ELSE op(funct(cart(compFctS),sort(sortPN))) FI
+        (finRT,testRep) == insert(1st(finRTSig),lexem(ide(cons(var))) ++ "?")
+        finTest == partName(testRep, avail(structIde),
+                            <>[partName:SORT], firstPos,
+                            op(funct(sort(sortPN), sort(boolPN))),
+                            noPragma, pos(cons(var)))
+        (finRTSig, finCompS) == *(getInducedCompSig(sortPN,structIde),rTSig,
+                                comps(var))
+        compFctS == fct:comp->fct[partName:SORT] * finCompS
+        finSig == finCons :: (finTest :: 2nd(finRTSig))
+
+
+FUN getInducedCompSig : partName ** rep
+                        -> pair[repTab,seq[partName]] ** comp
+                        -> pair[repTab,seq[partName]] ** comp
+DEF getInducedCompSig(sortPN,structIde)(rTSig,co) == 
+    (finRT & finSig, finComp)
+        WHERE
+        finRT == 1st(rTSig)
+        finComp == comp( finSel, fct(co), pos(co))
+        finSel == partName(ide(sel(co)), avail(structIde), <>, firstPos,
+                           op(funct(sort(sortPN), fct(co))), noPragma, pos(co))
+        finSig == finSel :: 2nd(rTSig)
+
+-- %$Unbenannte Laws$
+
+FUN nameUnnamed : repTab ** seq[law] ** seq[law] -> repTab ** seq[law]
+DEF nameUnnamed(RT,SoFar,<>) == (RT,SoFar)
+DEF nameUnnamed(RT,SoFar,(Law AS law(R,F,P)) :: Rest) == 
+    IF R nilRep? 
+    THEN LET (NRT,NRep) == genAndIns(RT,"unnamed")
+         IN nameUnnamed(NRT,law(NRep,F,P)::SoFar,Rest)
+    ELSE nameUnnamed(RT,Law :: SoFar,Rest)
+    FI
+
+-- %$Laws auch als Sorten eintragen$
+
+FUN insertLawsAsSorts: pair[struct,repTab] -> pair[struct, repTab]
+DEF insertLawsAsSorts(error & RT) == (error & RT)
+DEF insertLawsAsSorts((ST AS mkstruct(hd, im, sig, specs, sortIm,
+                                      funIm, freeT, laws, prg, pH, pB,
+                                      rels, p, part)) & RT) ==
+  IF pchecker? THEN
+    LET newSorts == (\\l. partName(ide(l), avail(structIde(hd)), <>, firstPos,
+                                   sort, noPragma, pos(l))) * laws
+        (NRT, newSorts2) == (codePN, RT) * newSorts
+    IN
+    mkstruct(hd, im, sig ++ newSorts2, specs,
+             sortIm, funIm, freeT, laws, prg, pH, pB, rels, p, part) & NRT
+  ELSE
+    ST & RT
+  FI
+
+-- %auxiliary function for @code{*'SeqMapEnv}
+FUN codePN: repTab ** partName -> repTab ** partName
+DEF codePN(RT, partName(i, o, pa, iP, k, pr, P)) ==
+  LET (nRT, lawrep) == code(RT, i)
+  IN
+  (nRT, partName(lawrep, o, pa, iP, k, pr, P))
+DEF codePN(RT, N AS noName) == (RT, N)
+
+-- %$Kinds umwandeln$
+/* %Alle Namen mit Kind law oder proof in entsprechend umbenannte Sorten 
+    umwandeln  */
+FUN lawKinds: pair[struct,repTab] -> pair[struct, repTab]
+DEF lawKinds(error & RT) == (error & RT)
+DEF lawKinds((ST AS mkstruct(hd, im, sig, specs, sortIm, funIm, freeT,
+                             laws, prg, pH, pB, rels, p, part)) & RT) ==
+  IF pchecker? THEN 
+    LET (nRT, nIm) == (lawKindsIm, RT) * im
+        (nRT2, nRels) == (lawKindsRel, nRT) * asSeq(rels)
+        (nRT3, nSpecs) == (lawKindsSpecSign, nRT2) * specs
+        (nRT4, nSortIm) == (lawKindsSortImpl, nRT3) * sortIm
+        (nRT5, nFunIm) == (lawKindsEq, nRT4) * funIm
+        (nRT6, nFreeT) == (lawKindsSortImpl, nRT5) * freeT
+        (nRT7, nLaws) == (lawKindsLaw, nRT6) * laws
+        (nRT8, nPrg) == (lawKindsGlobPragma, nRT7) * prg
+        (nRT9, nHd) == lawKindsOrigin(nRT8, hd)
+    IN
+    mkstruct(nHd, nIm, sig, nSpecs, nSortIm, nFunIm, nFreeT,
+             nLaws, nPrg, pH, pB, asMap(nRels), p, part) & nRT9
+  ELSE
+    ST & RT
+  FI
+
+FUN lawKindsIm: repTab ** import -> repTab ** import
+DEF lawKindsIm(RT, complete(O)) == 
+  LET (nRT, nO) == lawKindsOrigin(RT, O)
+  IN
+  (nRT, complete(nO))
+DEF lawKindsIm(RT, only(O, pNS)) ==
+  LET (nRT, nPNS) == (lawKindsPN, RT) * pNS
+      (nRT1, nO) == lawKindsOrigin(nRT, O)                       
+  IN
+  (nRT1, only(nO, nPNS))
+
+FUN lawKindsPN: repTab ** partName -> repTab ** partName
+DEF lawKindsPN(RT, noName) == (RT, noName)
+DEF lawKindsPN(RT, partName(i, o, pa, iP, k, pr, P)) ==
+  LET (RT1, nPa) == (lawKindsPN, RT) * pa
+  IN
+  IF k law? THEN
+    LET (nRT, lawrep) == code(RT1, i)
+    IN
+    (nRT, partName(lawrep, o, nPa, iP, sort, pr, P))
+  IF k proof? THEN
+    LET (nRT, proofrep) == codeP(RT1, i)
+    IN
+    (nRT, partName(proofrep, o, nPa, iP, none, pr, P))    
+  ELSE
+    (RT1, partName(i, o, nPa, iP, k, pr, P))
+  FI
+
+FUN lawKindsRel: repTab ** pair[rep, seq[import]] ->
+                  repTab ** pair[rep, seq[import]]
+DEF lawKindsRel(RT, rep & ims) ==
+  LET (nRT, nIm) == (lawKindsIm, RT) * ims
+  IN
+  (nRT, rep & nIm)
+
+FUN lawKindsOrigin: repTab ** origin -> repTab ** origin
+DEF lawKindsOrigin(RT, error) == (RT, error)
+DEF lawKindsOrigin(RT, origin(sIde, pos, paramS, pragma)) ==
+  LET (nRT, nParamS) == (lawKindsPN, RT) * paramS
+  IN
+  (nRT, origin(sIde, pos, nParamS, pragma))
+
+FUN lawKindsSpecSign: repTab ** pair[partName, law] ->
+                       repTab ** pair[partName, law]
+DEF lawKindsSpecSign(RT, pN & l) ==
+  LET (nRT, nL) == lawKindsLaw(RT, l) IN (nRT, pN & nL)
+
+FUN lawKindsLaw: repTab ** law -> repTab ** law
+DEF lawKindsLaw(RT, law(ide, f, pos)) ==
+  LET (nRT, nF) == lawKinds(RT, f) IN (nRT, law(ide, nF, pos))
+
+FUN lawKinds: repTab ** formula -> repTab ** formula
+DEF lawKinds(RT, dfd(e, pos)) ==
+  LET (nRT, nE) == lawKinds(RT, e) IN (nRT, dfd(nE, pos))
+DEF lawKinds(RT, equal(l, r, p)) ==
+  LET (nRT1, nL) == lawKinds(RT, l)
+      (nRT2, nR) == lawKinds(nRT1, r)                
+  IN
+  (nRT2, equal(nL, nR, p))
+DEF lawKinds(RT, ineq(l, r, p)) ==
+  LET (nRT1, nL) == lawKinds(RT, l)
+      (nRT2, nR) == lawKinds(nRT1, r)                
+  IN
+  (nRT2, ineq(nL, nR, p))
+DEF lawKinds(RT, neg(f, p)) ==
+  LET (nRT, nF) == lawKinds(RT, f) IN (nRT, neg(nF, p))
+DEF lawKinds(RT, and(l, r, p)) ==
+  LET (nRT1, nL) == lawKinds(RT, l)
+      (nRT2, nR) == lawKinds(nRT1, r)                
+  IN
+  (nRT2, and(nL, nR, p))
+DEF lawKinds(RT, or(l, r, p)) ==
+  LET (nRT1, nL) == lawKinds(RT, l)
+      (nRT2, nR) == lawKinds(nRT1, r)                
+  IN
+  (nRT2, or(nL, nR, p))
+DEF lawKinds(RT, imply(l, r, p)) ==
+  LET (nRT1, nL) == lawKinds(RT, l)
+      (nRT2, nR) == lawKinds(nRT1, r)                
+  IN
+  (nRT2, imply(nL, nR, p))
+DEF lawKinds(RT, eqv(l, r, p)) ==
+  LET (nRT1, nL) == lawKinds(RT, l)
+      (nRT2, nR) == lawKinds(nRT1, r)                
+  IN
+  (nRT2, eqv(nL, nR, p))
+DEF lawKinds(RT, all(vs, f, p)) ==
+  LET (nRT, nF) == lawKinds(RT, f) IN (nRT, all(vs, nF, p))
+DEF lawKinds(RT, ex(vs, f, p)) ==
+  LET (nRT, nF) == lawKinds(RT, f) IN (nRT, ex(vs, nF, p))
+DEF lawKinds(RT, F AS informal(_,_)) == (RT, F)
+DEF lawKinds(RT, F AS none(_)) == (RT, F:formula)
+
+FUN lawKinds: repTab ** expr -> repTab ** expr
+DEF lawKinds(RT, E AS none(_)) == (RT, E:expr)
+DEF lawKinds(RT, E AS rtError(_,_)) == (RT, E)
+DEF lawKinds(RT, E AS den(_,_)) == (RT, E)
+DEF lawKinds(RT, tuple(elems, p)) ==
+  LET (nRT, nElems) == (lawKinds, RT) * elems
+  IN
+  (nRT, tuple(nElems, p))
+DEF lawKinds(RT, apply(f, a, p)) == 
+  LET (nRT1, nF) == lawKinds(RT, f)
+      (nRT2, nA) == lawKinds(nRT1, a)
+  IN
+  (nRT2, apply(nF, nA, p))
+DEF lawKinds(RT, cases(gs, el, p)) ==
+  LET (nRT1, nGs) == (lawKinds, RT) * gs
+      (nRT2, nEl) == lawKinds(nRT1, el)
+  IN
+  (nRT2, cases(nGs, nEl, p))
+DEF lawKinds(RT, lambda(vs, b, p)) ==
+  LET (nRT, nB) == lawKinds(RT, b)
+  IN
+  (nRT, lambda(vs, nB, p))
+DEF lawKinds(RT, val(pN, p)) ==
+  LET (nRT, nPN) == lawKindsPN(RT, pN)
+  IN
+  (nRT, val(nPN, p))
+DEF lawKinds(RT, as(pn, e, p)) ==
+  LET (nRT, nE) == lawKinds(RT, e) 
+  IN
+  (nRT, as(pn, nE, p))
+DEF lawKinds(RT, block(defs, body, p)) ==
+  LET (nRT1, nDefs) == (lawKindsEq, RT) * defs
+      (nRT2, nBody) == lawKinds(nRT1, body)
+  IN
+  (nRT2, block(nDefs, nBody, p))
+DEF lawKinds(RT, typed(e, f, p)) ==
+  LET (nRT1, nE) == lawKinds(RT, e)
+      (nRT2, nF) == lawKinds(nRT1, f)
+  IN
+  (nRT2, typed(nE, nF, p))
+DEF lawKinds(RT, mix(fix, p)) ==
+  LET (es, ss) == unzip(unpair)(fix)
+      (nRT, nEs) == (lawKinds, RT) * es
+  IN
+  (nRT, mix(zip(&)(nEs, ss), p))
+
+FUN lawKinds: repTab ** guard -> repTab ** guard
+DEF lawKinds(RT, guard(if, then, p)) ==
+  LET (nRT1, nIf) == lawKinds(RT, if)
+      (nRT2, nThen) == lawKinds(nRT1, then)
+  IN
+  (nRT2, guard(nIf, nThen, p))
+
+FUN lawKinds: repTab ** fct -> repTab ** fct
+DEF lawKinds(RT, sort(pN)) ==
+  LET (nRT, nPN) == lawKindsPN(RT, pN)
+  IN
+  (nRT, sort(nPN))
+DEF lawKinds(RT, cart(elems)) ==
+  LET (nRT, nElems) == (lawKinds, RT) * elems
+  IN
+  (nRT, cart(nElems))
+DEF lawKinds(RT, funct(arg, res)) ==
+  LET (nRT1, nArg) == lawKinds(RT, arg)
+      (nRT2, nRes) == lawKinds(nRT1, res)
+  IN
+  (nRT2, funct(nArg, nRes))
+DEF lawKinds(RT, F AS nonCartVar(_)) == (RT, F)
+DEF lawKinds(RT, F AS var(_)) == (RT, F)
+DEF lawKinds(RT, F AS noFct) == (RT, F)
+
+FUN lawKindsSortImpl: repTab ** sortImpl -> repTab ** sortImpl
+DEF lawKindsSortImpl(RT, sortImpl(s, vars, p)) ==
+  LET (nRT, nVars) == (lawKinds, RT) * vars
+  IN
+  (nRT, sortImpl(s, nVars, p))
+
+FUN lawKinds: repTab ** variant -> repTab ** variant
+DEF lawKinds(RT, variant(c, t, comps, p)) ==
+  LET (nRT, nComps) == (lawKinds, RT) * comps
+  IN
+  (nRT, variant(c, t, nComps, p))
+
+FUN lawKinds: repTab ** comp -> repTab ** comp
+DEF lawKinds(RT, comp(s, f, p)) ==
+  LET (nRT, nF) == lawKinds(RT, f)
+  IN
+  (nRT, comp(s, nF, p))
+
+FUN lawKindsEq: repTab ** eq -> repTab ** eq
+DEF lawKindsEq(RT, eq(l, r, p)) ==
+  LET (nRT1, nL) == lawKinds(RT, l)
+      (nRT2, nR) == lawKinds(nRT1, r)                
+  IN
+  (nRT2, eq(nL, nR, p))
+
+FUN lawKindsGlobPragma: repTab ** globPragma -> repTab ** globPragma
+DEF lawKindsGlobPragma(RT, prag(items)) == 
+  LET (nRT, nItems) == (lawKinds, RT) * items
+  IN
+  (nRT, prag(nItems))
+
+FUN lawKinds: repTab ** pragmaItem -> repTab ** pragmaItem
+DEF lawKinds(RT, identify(pNs)) ==
+  LET (nRT, nPNs) == (lawKindsPN, RT) * pNs
+  IN
+  (nRT, identify(nPNs))
+DEF lawKinds(RT, pI AS lexem(_,_)) == (RT, pI)
+
+-- %$ProofHeads einsortieren$
+FUN doProofHeads: pair[struct, repTab] -> pair[struct, repTab]
+DEF doProofHeads(error & RT) == error & RT
+DEF doProofHeads((ST AS mkstruct(hd, im, sig, specs, sortIm, funIm, freeT,
+                                 laws, prg, pH, pB, rels, p, part)) & RT) ==
+  IF pchecker? THEN
+    LET (nRT, nSig1) == (proofFun1, RT) * pH
+        nSig2 == proofFun2(nRT) * pH
+    IN
+    mkstruct(hd, im, nSig1 ++ nSig2 ++ sig, specs, sortIm, funIm, freeT,
+             laws, prg, pH, pB, rels, p, part) & nRT
+  ELSE
+    ST & RT
+  FI
+
+-- % PROOF P: n1 n2 .. |- nC ==> FUN PROOF%P: LAW%n1 ** ... -> LAW%nC
+FUN proofFun1: repTab ** proofHead -> repTab ** partName
+DEF proofFun1(RT, proofHead(ide, prems, concl, pos)) ==
+  LET (nRT1, doms) == (lawKindsPN , RT) * prems
+      (nRT2, codom) == lawKindsPN(nRT1, concl)
+      (nRT3, newIde) == codeP(nRT2, ide)
+      K == op(funct(cart(sort * doms), sort(codom)))
+  IN
+  (nRT3, partName(newIde, nil, <>, firstPos, K, noPragma, pos))
+
+-- % PROOF P: n1 n2 .. |- nC ==> FUN PROOF%P: proofscript'PROOFSCRIPT
+FUN proofFun2: repTab -> proofHead -> partName
+DEF proofFun2(RT)(proofHead(ide, _, _, pos)) ==
+  partName(newIde, nil, <>, firstPos, K, noPragma, pos)
+  WHERE K == op(sort(partName(proofscript, avail(PROOFSCRIPT), <>, firstPos, 
+                              sort, noPragma, firstPos)))
+        (_, newIde) == codeP(RT, ide)  -- schon eingetragen
+
+-- %$ProofBody einsortieren$
+FUN doProofBodies: pair[struct, repTab] -> pair[struct, repTab]
+DEF doProofBodies(error & RT) == error & RT
+DEF doProofBodies((ST AS mkstruct(hd, im, sig, specs, sortIm, funIm, freeT,
+                                  laws, prg, pH, pB, rels, p, part)) & RT) ==
+  IF pchecker? THEN
+    LET nFunIms == proofDef(RT) * pB
+    IN
+    mkstruct(hd, im, sig, specs, sortIm, nFunIms ++ funIm, freeT,
+             laws, prg, pH, pB, rels, p, part) & RT
+  ELSE
+    ST & RT
+  FI
+
+-- % PROOF P == s  ==> DEF PROOF%P:proofscript'PROOFSCRIPT == s
+FUN proofDef: repTab -> proofBody -> eq
+DEF proofDef(RT)(proofBody(name, script, pos)) ==
+  LET lhs == typed(val(codeP(RT, codeP, name), pos),
+                   sort(partName(proofscript, avail(PROOFSCRIPT),
+                                 <>, firstPos, sort, noPragma, firstPos)),
+                   pos)
+  IN
+  eq(lhs, script, pos)
+
+FUN codeP: repTab ** (repTab ** rep -> repTab ** rep) ** partName -> partName
+DEF codeP(_, _, noName) == noName
+DEF codeP(RT, f, partName(ide, sIde, paramS, instPos, k, prg, pos)) ==
+  LET (_, newIde) == f(RT, ide)
+  IN
+  partName(newIde, sIde, paramS, instPos, k, prg, pos)
+
+-- %$Spezifikationen verarbeiten%
+/* %Alle Spezifikationsgesetze mit erzeugten Namen versehen.
+    Außerdem alle Gesetze zu den laws eintragen */
+FUN doSpecs: pair[struct, repTab] -> pair[struct, repTab]
+DEF doSpecs(error & RT) == error & RT
+DEF doSpecs((ST AS mkstruct(hd, im, sig, specs, sortIm, funIm, freeT,
+                            laws, prg, pH, pB, rels, p, part)) & RT) ==
+  IF pchecker? THEN
+    LET (nRT, newSpec) == (nameSpec, RT) * specs
+        newLaws == 2nd * newSpec
+    IN
+    (mkstruct(hd, im, sig, newSpec, sortIm, funIm, freeT,
+                            newLaws ++ laws, prg, pH, pB, rels, p, part) & nRT)
+  ELSE
+    ST & RT
+  FI
+
+FUN nameSpec: repTab ** pair[partName, law] -> repTab ** pair[partName, law]
+DEF nameSpec(RT, pN & (L AS law(ide, form, pos))) ==
+  IF ide nilRep? THEN
+    LET
+      (newRT, newIde) == genAndIns(RT, "SPC")
+    IN
+    (newRT, pN & law(newIde, form, pos))
+  ELSE
+    (RT, pN & L)
+  FI

@@ -1,0 +1,184 @@
+
+IMPLEMENTATION Optimize
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: driver of the optimization phase
+-- project: acc
+-- author:  wg
+
+IMPORT	Nat		ONLY nat max:nat > 0
+	String		ONLY string
+	Denotation	ONLY ++
+	Com		ONLY com ans:SORT data okay yield
+	ComCompose	COMPLETELY
+	Seq		COMPLETELY
+	ComSeqReduce	COMPLETELY
+	Void		ONLY void
+	Pair		COMPLETELY
+	Triple		COMPLETELY
+	DEBUG		COMPLETELY
+
+IMPORT	Options		ONLY options 
+	Verbose		ONLY verb phase subphase definition
+			     begVerb conVerb endVerb
+	Error		ONLY ok +
+
+IMPORT	Format		ONLY format pretty
+	FormatDebug	ONLY PRINT
+
+IMPORT	Ide		ONLY ide format:ide->format
+	Ac		ONLY unit:SORT dec:SORT exp:SORT
+			     binding? 
+			     an:dec->an ide:dec-> ide
+	An		ONLY an source:an->sourceAn
+	SourceAn	ONLY sourceAn symbol? symbol:sourceAn->denotation
+	AcFun		ONLY decs setDec dec
+	AcDump		ONLY dump
+	AnFun		ONLY format
+	PreparedOptions ONLY popts options unfold?
+	DumpToFile	ONLY dumpToFile
+
+IMPORT	EqnSys		ONLY eqnSys format
+	OptimPrepare	ONLY optimPrepare 
+	OptimExport	ONLY optimExport
+	OptimUnfold	ONLY optimUnfold
+	OptimLift	ONLY optimLift
+	OptimCse	ONLY optimCse
+	OptimPath	ONLY optimPath
+	OptimEval	ONLY optimEval
+	OptimPragmaEval	ONLY optimPragmaEval
+
+-- ------------------------------------------------------------------------
+
+-- FUN optimize : popts -> unit -> com[unit,err]
+DEF optimize(Opts)(T) ==
+    LET optimBanner == "transforming applicative code ..."
+    IN
+    verb(options(Opts),phase,optimBanner)	& (\\ _ .
+    prepare(Opts)(T)				& (\\ Prepared.
+    LET PrepOpts == 2nd(Prepared)
+    IN
+    unfold(PrepOpts)(1st(Prepared))		& (\\ Unfolded.
+    cseLiftEval(PrepOpts)(1st(Unfolded))	& (\\ Optimized.
+    export(PrepOpts)(1st(Optimized))		& (\\ Exported.
+    yield(okay(1st(Exported) &
+		(3rd(Prepared) + 
+		 2nd(Unfolded) + 
+		 2nd(Optimized) + 
+		 2nd(Exported))))
+    )))))
+
+-- ------------------------------------------------------------------------
+
+FUN prepare : popts -> unit -> com[triple[unit,popts,err]]
+DEF prepare(Opts)(T) ==
+    verb(options(Opts),subphase,("import analysis ...")) & (\\ _ .
+    optimPrepare(Opts)(T) 			   	 & (\\ Prep.
+    optimPragmaEval(Opts, 1st(Prep))		 	 & (\\ Prag .
+    dumpToFile(Opts,"OptimPrepare", dumpUnit,Prag)	 & (\\ Tmp.
+    yield(okay(&(1st(Tmp), 2nd(Tmp),
+	         3rd(Tmp) + 2nd(Prep))))
+    ))))
+     
+
+-- ------------------------------------------------------------------------
+
+FUN export : popts -> unit -> com[pair[unit,err]]
+DEF export(Opts)(T) == 
+    verb(options(Opts),subphase,("export generation ...")) & (\\ _ .
+    optimExport(Opts)(T)
+    -- dumping of the exported unit is performed in optimExport
+    )
+
+
+-- ------------------------------------------------------------------------
+
+FUN unfold : popts -> unit -> com[pair[pair[unit,seq[dec]],err]]
+DEF unfold(Opts)(T) == 
+    IF unfold?(Opts) THEN 
+	verb(options(Opts),subphase,("global unfold analysis ...")) & (\\ _ .
+        LET (T1,order) == optimUnfold(Opts)(T)
+	IN
+	yield(okay((T1 & order) & ok))
+	)
+    ELSE
+	yield(okay((T & decs(binding?,T)) & ok))
+    FI
+
+-- ------------------------------------------------------------------------
+
+FUN cseLiftEval : popts -> pair[unit,seq[dec]] -> com[pair[unit,err]]
+DEF cseLiftEval(Opts)(T & Order) == 
+    verb(options(Opts),subphase,("transformation ..."))
+							& (\\ _ .
+    (cseLiftEvalDec(Opts) /& (T & ok))(Order) 		& (\\ Eval_+_Err.
+    dumpToFile(Opts,"OptimEval",
+		dumpUnit,Eval_+_Err)
+    ))
+
+
+FUN cseLiftEvalDec : popts -> dec ** pair[unit,err] -> com[pair[unit,err]]
+DEF cseLiftEvalDec(Opts)(Dec,T & Err) == 
+    begVerb(options(Opts),definition,decBanner(Dec))  		& (\\ _ .
+
+    conVerb(options(Opts),definition,(" ."))      		& (\\ _ .
+
+    LET (Sys0,Exp,ErrCse) == optimCse(Opts,T,Dec) 
+        Sys == PRINT(printEqnSys?,
+                     format(format,format(false,false,false,false,false)),
+                     Sys0,Sys0)
+    IN
+
+    conVerb(options(Opts),definition,("."))     		& (\\ _ .
+    LET (DecPath,ErrPath) == optimPath(Opts,T,Dec,Sys,Exp)
+    IN
+
+    conVerb(options(Opts),definition,("."))     		& (\\ _ .
+    LET (T1,NewDecs,ErrLift) == optimLift(Opts,T,DecPath)
+	DecsLift	     == dec(T1,ide(DecPath)) :: NewDecs
+    IN
+    
+    conVerb(options(Opts),definition,("."))     		& (\\ _ .
+    LET (T2,ErrEval)   == optimEvalDecs(Opts,T1,DecsLift)
+
+    IN
+    endVerb(options(Opts),definition,(""))     		& (\\ _ .
+    yield(okay(T2 & (ErrCse + ErrPath + ErrLift + ErrEval)))
+    ))))))
+
+  FUN optimEvalDecs : popts ** unit ** seq[dec] -> unit ** err
+  DEF optimEvalDecs(Opts,T,Dec::Decs) ==
+    LET (NewT,RestErr)   == optimEvalDecs(Opts,T,Decs)
+	(NewDec,EvalErr) == optimEval(Opts,NewT,Dec)
+	FinalT           == setDec(NewT,ide(NewDec),NewDec)
+    IN
+    (FinalT,EvalErr + RestErr)
+  DEF optimEvalDecs(Opts,T,<>) == (T,ok)
+
+
+  FUN printEqnSys?: bool
+  DEF printEqnSys? == FIELD?[void]("-zdumpEqnSys")
+
+    
+-- ------------------------------------------------------------------------
+
+FUN decBanner : dec -> denotation
+DEF decBanner(d) ==
+    (IF symbol?(source(an(d))) THEN symbol(source(an(d)))
+			       ELSE pretty(format(ide(d)),max:nat) FI)
+	++ ("")
+
+-- ------------------------------------------------------------------------
+
+FUN dumpUnit : unit -> string
+DEF dumpUnit(U) == dump(U)()
+
+FUN dumpUnit : pair[unit,err] -> string
+DEF dumpUnit(U & _) == dump(U)()
+
+FUN dumpUnit : triple[unit,popts,err] -> string
+DEF dumpUnit(U & (_,_)) == dump(U)()

@@ -1,0 +1,96 @@
+#!/bin/sh
+
+. $OCSOM/specs/ShSpecs.basic
+
+if [ "$1" = "-bind" ]
+then
+  bind=$2
+  shift 2
+else
+  bind=-lastsaved
+fi
+
+if [ "$1" = "-prerelease" ]
+then
+  pre=yes
+  shift 
+else
+  pre=no
+fi
+
+
+ty=$1
+sn=$2
+vf=$3
+
+if [ $# -ne 3 ];
+then 
+  ${ECHO} "usage: genrelid [ -bind <options> ] [ -prerelease ]" 1>&2
+  ${ECHO} "        (newrevision|newversion|lastrelease)" 1>&2
+  ${ECHO} "        <systemname> <versionfile>" 1>&2
+  exit 1
+fi
+
+lastrelease=`${VL} -format '$__lastrelease$' $vf 2> /dev/null`
+
+if [ -z "$lastrelease" ]
+then
+  vnum="0"
+  rnum="-1"
+  if [ $pre = yes ]
+  then
+    pnum="a"
+  fi
+else
+  vnum=`${ECHO} $lastrelease | \
+		${SED} 's:^..*-\([0-9][0-9]*\)[.].*$:\1:'`
+  if [ "$vnum" = "$lastrelease" ]
+  then
+    vnum="0"
+  fi
+  rnum=`${ECHO} $lastrelease | \
+		${SED} 's:^..*-[0-9][0-9]*[.]\([0-9][0-9]*\).*$:\1:'`
+  if [ "$rnum" = "$lastrelease" ]
+  then
+    rnum="-1"
+  fi
+  if [ $pre = yes ]
+  then
+    if [ $ty = lastrelease ] 
+    then
+      pnum=`${ECHO} $lastrelease | \
+		${SED} 's:^..*-[0-9][0-9]*[.][0-9][0-9]*\([a-z]\).*$:\1:'`
+      if [ "$pnum" = "$lastrelease" ]
+      then
+	pnum=a
+      else
+        pnum=`${ECHO} $pnum | tr [a-z] [b-z]`
+      fi
+    else
+      pnum="a"
+    fi
+  else
+    pnum=""
+  fi
+fi
+
+case $ty in
+  newrevision)
+    nrnum=`expr $rnum + 1`
+    rid=$sn-${vnum}.${nrnum}${pnum}
+    ;;
+  newversion)
+    nvnum=`expr $vnum + 1`
+    rid=$sn-${nvnum}.0${pnum}
+    ;;
+  lastrelease)
+    rid=$sn-${vnum}.${rnum}${pnum}
+    ;;
+  *)
+    ${ECHO} invalid release type \"$ty\" >&2
+    exit 1 
+    ;;
+esac
+
+${ECHO} $rid
+exit 0

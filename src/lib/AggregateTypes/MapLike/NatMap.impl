@@ -1,0 +1,88 @@
+IMPLEMENTATION NatMap
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:05 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Array COMPLETELY
+       Nat ONLY nat < 32 succ <= % 0? 0 + max
+       Map COMPLETELY
+       ArrayMap ONLY *
+       ArrayReduce ONLY /
+       Seq ONLY seq <> :: ++
+       Set ONLY set {} + incl
+       ABORT ONLY ABORT
+       Option ONLY avail? nil? nil
+       SetReduce ONLY /
+
+-- %$The Type Itself$
+
+DATA natMap == abs(rep: array[map[nat, <, codom]])
+
+-- %size for the array
+FUN natMapSize:nat
+DEF natMapSize == 32
+
+-- %compute array index from domain argument
+FUN !# : nat -> nat
+DEF n !# == n % natMapSize
+
+-- %$Nonfree Constructors$
+DEF {} == abs(init(natMapSize, {}))
+
+DEF (d, c) def abs(a) == abs(upd(d !#, \\M. (d, c) def M, a))
+
+-- %$Constructing a Map From Datas$
+
+-- %@code{def} see above
+DEF undef(d, abs(a)) == abs(upd(d !#, \\M. d undef M, a))
+
+DEF upd(d, f, abs(a)) == abs(upd(d !#, \\M. upd(d, f, M), a))
+
+DEF extend(NM, <>, <>) == NM
+DEF extend(_, _ :: _, <>) == ABORT("extend'NatMap: seq[nat] too long")
+DEF extend(_, <>,_ :: _) == ABORT("extend'Map: seq[codom] too long")
+DEF extend(NM, d::ds, c::cs) == extend(def(d,c,NM),ds,cs)
+
+-- %$Constructing a Map From a Function$
+
+DEF (n1 .. n2)(f) == IF n1 <= n2 THEN (n1, f(n1)) def (succ(n1) .. n2)(f)
+                     ELSE             {}
+                     FI
+
+DEF iter(n, next, stop?)(f) == 
+    IF stop?(n) THEN {}
+    ELSE (n, f(n)) def (iter(next(n), next, stop?)(f))
+    FI
+
+DEF init(S, f) == 
+    abs((\\S1. init(S1, f)) * 
+        ((\\d, a. upd(d !#, \\S0. incl(d, S0), a), init(natMapSize, {})) / S)
+       )
+
+-- %$Combining Maps$
+
+DEF abs(a1) <+ abs(a2) == abs(init(natMapSize, \\i. a1!i <+ a2!i))
+
+DEF abs(a) <- S == abs(init(natMapSize, \\i. a!i <- S))
+
+-- %$Accessing Codom - Elements$
+
+DEF abs(a) ! d == (a ! (d!#)) ! d
+DEF abs(a) !? d == (a ! (d!#)) !? d
+
+-- %$Information About a Map$
+DEF {}?(NM) ==  (NM #) 0?
+DEF d def? NM == avail?(NM !? d)
+DEF dom(abs(a)) ==  (+, {}) / dom * a
+DEF codom(abs(a)) == (++, <>) / codom * a
+DEF new(NM) == succ((max, 0) / dom(NM))
+
+DEF #(abs(a)) ==  (+, 0) / (# * a) 
+
+DEF exist?(P, abs(a)) == (or, false) / (\\M. exist?(P, M)) * a
+DEF find?(P, abs(a)) == 
+    LET max == \\o1, o2. IF o1 nil? THEN o2 ELSE o1 FI
+    IN  (max, nil) / (\\M. find?(P, M)) * a
+DEF forall?(P, abs(a)) == (and, true) / (\\M. forall?(P, M)) * a

@@ -1,0 +1,98 @@
+
+IMPLEMENTATION ComAgent
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:16 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	Seq		COMPLETELY
+	EQUALITY	ONLY equal
+
+
+DATA agent == someProd(s1: bool, s2: bool)
+		-- simulate flat structured storage class 
+
+-- %$Implementation of the Commands$ =========================================
+
+DEF agent(Beh) == call(agentProc(Beh))
+
+    FUN agentProc: com[result] -> void -> ans[agent]
+    /$ handcoded [agentProc] $/
+
+DEF wait(Agent) == call(waitProc(Agent))
+
+    FUN waitProc: agent -> void -> ans[result]
+    /$ handcoded [waitProc] $/
+
+DEF kill(Agent) == call(killProc(Agent))
+
+    FUN killProc: agent -> void -> ans[void]
+    /$ handcoded [killProc] $/
+
+DEF self == call(selfProc)
+
+    FUN selfProc: void -> ans[agent]
+    /$ handcoded [selfProc] $/
+
+DEF killed?(Ans) == Ans equal ansKilled
+
+FUN ansKilled : ans[result] 
+/$ handcoded [ansKilled] $/
+
+
+-- %$Auxiliary Functions for the Handcoded Implementation$ ===================
+
+/* % @noindent
+The functions defined below do heavily interact with the internals of
+the handcoded implementation of structure @code{ComAgent}. 
+*/
+
+/* %
+Given a sequence of continuations and an answer, the function @code{execCont} 
+constructs the next command to execute. If the sequence is empty, 
+it constructs a special command for terminating an agent:
+*/
+
+FUN execCont : seq[contCom[result]] ** ans[result] -> com[result]
+/$ keep [execCont] $/
+
+DEF execCont(<>, Ans) ==
+    call(termProc(Ans))
+
+DEF execCont(Cont :: Conts, Ans) ==
+    cont(Cont)(Ans) sequenceCompose Conts
+
+FUN termProc : ans[result] -> void -> ans[result]
+/$ handcoded [termProc] $/
+
+
+
+/* %
+The following command is used to activate a clients continuation
+after a service has been successfully performed: 
+*/
+
+FUN activateClient: agent -> ans[result] -> com[result]
+/$ keep [activateClient] $/
+DEF activateClient(Client)(Ans) ==
+    call(activateClientProc(Client, Ans)) 
+
+
+FUN activateClientProc : agent ** ans[result] -> void -> ans[result]
+/$ handcoded [activateClientProc] $/
+
+
+
+/* %
+The following function augments a top-level command by appending
+an @code{exit} with a code depending on the success of the command:
+*/
+
+FUN makeTop : com[void] -> com[void]
+/$ keep [makeTop] $/
+DEF makeTop(Com) == Com ; (\\Ans. IF okay?(Ans) THEN exit(0) ELSE exit(1) FI)
+

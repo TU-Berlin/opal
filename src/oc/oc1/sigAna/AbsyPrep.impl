@@ -1,0 +1,198 @@
+/* %-
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     handle sequence of imports from absy
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+-- ============================================================================
+*/
+
+IMPLEMENTATION AbsyPrep
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  SigAnaTexts             ONLY verbInitSigAna BOOL DENOTATION
+        -- absy 
+        Struct                  COMPLETELY
+        Rep                     ONLY rep = < lexem
+        Set[rep, <]             ONLY set
+        SetConv                 ONLY implode explode set
+        RepTab                  ONLY repTab insert
+        Pos                     ONLY pos firstPos
+        Pragma                  ONLY pragma noPragma +
+        PartName                ONLY partName:SORT = : partName**partName->bool
+        Lexem ONLY PROOFSCRIPT ` lexem
+        -- Lib
+
+        Nat                     ONLY nat
+        Seq                     COMPLETELY
+        SeqCompare              ONLY eq?
+        SeqMap                  ONLY *
+        SeqReduce               ONLY \ 
+        SeqFilter               ONLY partition |
+        SeqMapEnv               ONLY *
+        String                  ONLY string ::? !
+        StringConv              ONLY `
+        Char                    ONLY char space?
+        Pair                    ONLY pair &
+        Com                     ONLY ans:SORT yield okay com EXEC okay? succeed
+        ComCompose              ONLY ; &
+        Void                    ONLY void nil
+        Denotation              ONLY =
+        Verbose                 ONLY verb definition    
+        Options                 ONLY cop? sign? myDepFile myStruct pchecker?
+        OcStream                ONLY output create writeLine string
+       ProcessArgs ONLY env
+       StringFilter ONLY split
+
+-- %- ------------------------------------------------------------------------
+-- %$Hauptfunktion$
+
+-- FUN absyPrep : seq[import] ** repTab ** options 
+--                -> com[pair[seq[seq[pair[import,bool]]],repTab]]
+DEF absyPrep(importS, repTab, options) ==       
+        verb(options, definition, verbInitSigAna) ; 
+        absyPrepH(importS, repTab, options)
+
+
+FUN absyPrepH : seq[import] ** repTab ** options -> ans[void]
+                -> com[pair[seq[seq[pair[import,bool]]],repTab]]
+DEF absyPrepH(importS, repTab, options)(ans) == 
+        yield(okay( finImportS & finRepTab ))
+        WHERE
+        finImportS == IF cop?("noImplicits",options) THEN merge(importS)
+--                  IF ~(sign?(options)) THEN merge(importS)
+                  IF myStruct(options) = BOOL THEN merge(importS)
+                  IF myStruct(options) = DENOTATION THEN merge(importS)
+                  IF pchecker? ANDIF myStruct(options) = (PROOFSCRIPT`) THEN
+                    merge(importS)
+                  ELSE 
+                    IF pchecker? THEN
+                      merge(boolI :: denotationI :: proofscriptI ::
+                            (newImports ++ importS))
+                    ELSE
+                      merge(boolI :: denotationI :: (newImports ++ importS))
+                    FI
+                  FI
+    (repTabPlus, newImports) == externalAutoImports(repTab)
+    (repTabB, boolI) == toImport(repTabPlus, BOOL)  
+    (repTabD, denotationI) == toImport(repTabB, DENOTATION)  
+    (repTabP, proofscriptI) == toImport(repTabD, PROOFSCRIPT`)
+    finRepTab == IF pchecker? THEN repTabP ELSE repTabD FI
+                                  
+
+
+-- %- ------------------------------------------------------------------------
+-- %$Importe aufarbeiten$
+
+FUN toImport : repTab ** denotation -> repTab ** import
+        -- Erzeugen eines IMPORT <text> COMPLETELY
+DEF toImport(repTab, structName) ==
+        (finRepTab,
+         complete(origin(structRep,firstPos,<>[partName], noPragma)))
+        WHERE
+        (finRepTab, structRep) == insert(repTab, structName)
+
+
+FUN merge : seq[import] -> seq[seq[pair[import,bool]]]
+        /* %Aufteilen der Importe derart, dass
+@enumerate
+@item
+Die aussere Liste nach Strukturnamen aufteilt
+@item
+Die innere Liste nach Instanz
+@item
+boolsche Wert angibt, ob auch ein COMPLETELY (true) vorlag.
+@end enumerate
+*/
+DEF merge(S) ==
+        IF S <>? THEN <>
+        ELSE 
+          LET (eqS, unEqS)  == eqIde(structIde(origin(ft(S)))) partition rt(S)
+          IN  mergeEqAct(ft(S) :: eqS) :: merge(unEqS)
+        FI
+
+FUN mergeEqAct : seq[import] -> seq[pair[import,bool]]
+        -- %PRE : die Strukturbezeichner sind gleich
+DEF mergeEqAct(S) ==
+        IF S <>? THEN <>
+        ELSE
+          LET (eqS, unEqS) == eqAct(ft(S)) partition rt(S)
+          IN  mergeEqKind(ft(S) :: eqS) :: mergeEqAct(unEqS)
+        FI
+
+FUN mergeEqKind : seq[import] -> pair[import,bool]
+        -- %PRE : die Strukturbezeichner und Instanzen sind gleich
+DEF mergeEqKind(S) == &( (concImport \ ft(S))(rt(S)), exist?(complete?, S))
+
+FUN concImport : import ** import -> import
+        /* %Verknuepfen der Pragmas und der ONLY-Listen.
+        PRE: Es kann maximal ein completely Import vorkommen */
+DEF concImport (i,firstI) ==
+        LET firstO == origin(firstI)
+            onlyS == IF i complete? THEN 
+                        IF firstI complete? THEN <>[partName:SORT] 
+                        ELSE only(firstI) FI
+                     IF firstI complete? THEN 
+                        IF i complete? THEN <>[partName:SORT]
+                        ELSE only(i) FI
+                     ELSE only(firstI) ++ only(i) FI
+        IN only( origin(structIde(firstO), pos(firstO), paramS(firstO),
+                        pragma(firstO)+pragma(origin(i))), onlyS)
+
+-- %- ------------------------------------------------------------------------
+-- %$Externe automatische Importe$
+
+/* %falls die Variable OC_AUTO_IMPORTS gesetzt ist, werden alle Strukturen
+    in die aktuelle Struktur COMPLETELY importiert. Das funktioniert 
+    nur, wenn auch OCSYSPARAM in den ProjectDefs ergänzt wird. Andernfalls
+    gibt's den Fehler "imported structure not in command line" */
+
+FUN OC_AUTO_IMPORTS: denotation
+DEF OC_AUTO_IMPORTS == 
+  EXEC(env("OC_AUTO_IMPORTS") ; (\\ auto? .
+       IF okay?(auto?) THEN yield(auto?) ELSE succeed("") FI
+       ))
+
+FUN externalAutoImports: repTab -> repTab ** seq[import]
+DEF externalAutoImports(rT) ==
+  LET autostructs == ` * ::? | split(space?, OC_AUTO_IMPORTS!)
+  IN
+  (toImport, rT) * autostructs
+
+-- %- ------------------------------------------------------------------------
+-- %$Hilfsfunktionen$
+
+FUN eqIde : rep -> import -> bool
+        -- %Gleichheit der Strukturbezeichner
+DEF eqIde(rep)(import) == rep = structIde(origin(import))
+
+FUN eqAct: import -> import -> bool
+        -- %Gleichheit des Aktualisierung
+DEF eqAct(i1)(i2) == 
+        eq?(='PartName)(paramS(origin(i1)),paramS(origin(i2)))
+
+-- %- -------------------------------------------------------------------------
+
+
+FUN dumpDeps : options ** seq[import] -> com[void]
+-- %dump dependencies to text file 
+
+DEF dumpDeps(Options, Imports) ==
+        create(Options, myDepFile(Options)) & (\\Output.
+        writeStringList(Options, Output, 
+                delDoubles(structIde * (origin * Imports))))
+
+FUN delDoubles : seq[rep] -> seq[denotation]
+DEF delDoubles(Reps) == lexem * (explode(implode[rep, <](Reps)))
+
+FUN writeStringList : options ** output ** seq[denotation] -> com[void]
+DEF writeStringList(Options, Output, <>) == yield(okay(nil))
+DEF writeStringList(Options, Output, Ft :: Rt) ==
+        writeLine(Options, Output, Ft) & (\\ _ .
+        writeStringList(Options, Output, Rt))
+

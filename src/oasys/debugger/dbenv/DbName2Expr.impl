@@ -1,0 +1,98 @@
+IMPLEMENTATION DbName2Expr
+
+IMPORT
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqFilter	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqMapEnv	COMPLETELY
+	Option		COMPLETELY
+	Nat		COMPLETELY
+	Fmt		COMPLETELY
+	DEBUG		COMPLETELY
+IMPORT	-- repo
+	RepoAbsy	COMPLETELY
+	RepoName	COMPLETELY
+	RepoObjectAccess COMPLETELY
+	RepoUnitAccess	COMPLETELY
+IMPORT	-- this
+	DbIdentTable	COMPLETELY
+	DbNameStack	COMPLETELY
+	DbConvEnv	COMPLETELY
+	Expression	COMPLETELY
+	
+
+/* %
+ Lokale Variablen werden als @code{local}-Expressions übersetzt. Der Name muß
+im NameStack enthalten sein.
+ */
+DEF name2expr(E,Name AS localObjectName(_,_)) == 
+    E @ local(_,nameStack(E) ! Name)
+
+-- %  Es werden Parameterfunktionen von ,,echten'' Funktionen unterschieden:
+DEF name2expr(E,Name) ==
+    IF formal?(baseName(Name))(repo(E))
+      THEN	/* % @BIL Formaler Parameter: Dieser muß im NS stehen und 
+		wird wie eine lokale Variable behandelt. Formale Parameter
+		haben keine Instanziierung. @EIL */
+	   E @ local(_,nameStack(E) ! baseName(Name))
+      ELSE	/* % @BIL Es handelt sich um eine ,,echte'' Funktion. Diese
+		ist i.allg. parametrisiert. Es werden
+		nun die Parameterfunktionen @code{ParaFuns} rausgesucht. Gibt
+		es keine (wenn unparam. oder nur Sortenparameter), ist der Name
+		selbst der gesuchte Ausdruck. Sind Parameterfunktionen 
+		vorhanden, werden deren Namen in Expressions übersetzt und
+		auf die Expression des Namens selbst appliziert. @EIL */
+	   LET ParaNames    == actuals(Name)(repo(E))
+		-- Der Name wird in einen name'Expression konvertiert
+	       Name1	    == name2name(E,Name)
+		/* % @BIL Alle Parameterfunktionen werden rausgefiltert und
+		in Ausdrücke konvertiert. Dazu müssen die Namen formaler
+		Parameterfunktionen im NameStack enthalten sein. @EIL */
+	       ParaFuns == (\\N. oper?(N)(repo(E))) | ParaNames
+	   IN IF ParaFuns <>?
+		THEN	-- Es gibt keine Parameterfunktionen. Es wird keine
+			-- Abstraktion mit dem leeren Tupel vorgenommen!
+		     E @ name(_,Name1)
+		ELSE 
+		  LET	/* % @BIL Es sind Parameterfunktionen vorhanden.
+			Der Name wird in eine Applikation konvertiert, die
+			auf den Namen die Parameterfunktionen appliziert.
+
+			Eine Funktion hat immer die Dimension Eins, so daß die
+			Dimension für diese Appliaktion nicht berechent werden
+			muß. @EIL */
+		      (E1,ParaExprs) == (name2expr,E) * ParaFuns
+			/* % @BIL Diese Ausdrücke werden nun in ein Tupel
+			verpackt. Da jedes Element des Tupels eine Funktion ist,
+			muß die Dimension nicht mitgerechnet werden. 
+			Sie ist immer Eins. @EIL */
+		      (NPara,ParaTupleElems) ==
+			   (\\Index,Elem.
+				(Index+1,tupleExpr(Elem,Index))
+			   ) * (0,ParaExprs)
+		      (E2,ParaTuple) == E1 @ tuple(_,ParaTupleElems,NPara)
+		      (E3,NameExpr) == E2 @ name(_,Name1)
+		  IN E3 @ apply(_,NameExpr,ParaTuple,1)
+	      FI
+    FI
+			
+/* %
+ @code{name2name(Env,Name)} liefert zu einem globalen Namen @code{Name} (Sorten
+und Funktionen incl. formalen Parametern) den zugehörigen Namen im Sinne des
+Interpreters (@code{name'Expression}).
+ */
+DEF name2name(E,Name AS globalObjectName(_,_)) ==
+    LET	InstNames == name2name(E,_) * actuals(Name)(repo(E))
+	ObjId	  == identTable(E) ! Name
+    IN name(ObjId,InstNames)
+
+/* %
+ Die Transformation der Funktionalität basiert auf @code{name2name}:
+ */
+DEF fct2fct(E,name(Sort))	== sort(name2name(E,Sort))
+DEF fct2fct(E,cart(Elems))	== cart(fct2fct(E,_) * Elems)
+DEF fct2fct(E,funct(Dom,Codom)) == funct(fct2fct(E,Dom),fct2fct(E,Codom))
+
+
+

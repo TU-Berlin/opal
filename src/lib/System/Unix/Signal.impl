@@ -1,0 +1,241 @@
+IMPLEMENTATION Signal
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:19 $ ($Revision: 1.1.1.1 $)
+-- low-level access to signals
+   /$ handcoded $/
+
+IMPORT
+  Nat                 ONLY nat 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18
+                           < =
+  Option              ONLY option nil avail
+  Com                 ONLY com ans call
+
+
+-- EXPORTED TYPES --
+
+DATA signal == sigAbrt
+               sigAlrm
+               sigFPE
+               sigHUp
+               sigIll
+               sigInt
+               sigKill
+               sigPipe
+               sigQuit
+               sigSegV
+               sigTerm
+               sigUsr1
+               sigUsr2
+               sigChld
+               sigCont
+               sigStop
+               sigTStp
+               sigTTIn
+               sigTTOu
+
+DATA sighandler == _exit          (status:    procstat)
+                   message        (message:   denotation)
+                   unlink         (file:      denotation)
+                   rmDir          (directory: denotation)
+                   kill           (process:   process,
+                                   signal:    signal)
+                   killPGrp       (pGroup:    process,
+                                   signal:    signal)
+                   wait
+                   collectZombies
+                   ;              (first:     sighandler,
+                                   second:    sighandler)
+
+-- DATA sigmask == handcoded
+
+DATA sigaction == default
+                  ignore
+                  catch
+                  handle(handler: sighandler, blockSigs: sigmask)
+
+-- INTERNAL TYPES --
+
+DATA maskaction == ma_block
+                   ma_unblock
+                   ma_set
+
+
+-- EXPORTED FUNCTIONS --
+
+-- FUN < : signal ** signal -> bool
+DEF Sig1 < Sig2 == ord(Sig1) < ord(Sig2)
+
+-- FUN = : signal ** signal -> bool
+DEF Sig1 = Sig2 == ord(Sig1) = ord(Sig2)
+
+-- FUN < = : sigmask ** sigmask -> sigmask
+-- DEF ... == handcoded
+
+-- FUN {} : sigmask
+DEF {} == hc_sigemptyset
+
+-- FUN {}? : sigmask -> bool
+DEF {}?(Mask) == Mask = {}
+
+-- FUN none? : sigmask -> bool
+DEF none?(Mask) ==
+  ~(
+    (sigAbrt in Mask) or (
+    (sigAlrm in Mask) or (
+    (sigFPE  in Mask) or (
+    (sigHUp  in Mask) or (
+    (sigIll  in Mask) or (
+    (sigInt  in Mask) or (
+    (sigKill in Mask) or (
+    (sigPipe in Mask) or (
+    (sigQuit in Mask) or (
+    (sigSegV in Mask) or (
+    (sigTerm in Mask) or (
+    (sigUsr1 in Mask) or (
+    (sigUsr2 in Mask) or (
+    (sigChld in Mask) or (
+    (sigCont in Mask) or (
+    (sigStop in Mask) or (
+    (sigTStp in Mask) or (
+    (sigTTIn in Mask) or
+    (sigTTOu in Mask)
+    )))))))))))))))))
+  )
+
+-- FUN allSigs : sigmask
+DEF allSigs == hc_sigfillset
+
+-- FUN % : signal -> sigmask
+DEF Sig % == {} + Sig
+
+-- FUN + : sigmask ** signal -> sigmask
+DEF Mask + Sig == hc_sigaddset(Mask,Sig)
+
+-- FUN - : sigmask ** signal -> sigmask
+DEF Mask - Sig == hc_sigdelset(Mask,Sig)
+
+-- FUN + : signal ** signal -> sigmask
+DEF Sig1 + Sig2 == %(Sig1) + Sig2
+
+-- FUN in : signal ** sigmask -> bool
+DEF Sig in Mask == hc_sigismember(Mask,Sig)
+
+-- FUN kill : process -> com[void]
+DEF Proc kill == call( hc_kill_p(Proc,nil) )
+
+-- FUN kill : process ** signal -> com[void]
+DEF Proc kill Sig == call( hc_kill_p(Proc,Sig avail) )
+
+-- FUN killPGrp : process -> com[void]
+DEF PGrp killPGrp == call( hc_kill_grp(PGrp,nil) )
+
+-- FUN killPGrp : process ** signal -> com[void]
+DEF PGrp killPGrp Sig == call( hc_kill_grp(PGrp,Sig avail) )
+
+-- FUN alarm : nat -> com[nat]
+DEF Secs alarm == call( hc_alarm(Secs) )
+
+-- FUN exec : sighandler -> com[void]
+DEF Handler exec == call( hc_exec_sh(Handler) )
+
+-- FUN caught? : signal -> com[bool]
+DEF Sig caught? == call( hc_caught?(Sig) )
+
+-- FUN sigAction : signal -> com[sigaction]
+DEF Sig sigAction == call( hc_sigaction(Sig,nil) )
+
+-- FUN sigAction : signal ** sigaction -> com[sigaction]
+DEF Sig sigAction Action == call( hc_sigaction(Sig,Action avail) )
+
+-- FUN sigMask : com[sigmask]
+DEF sigMask == call( hc_sigprocmask(ma_set,nil) )
+
+-- FUN sigBlock : sigmask -> com[sigmask]
+DEF Mask sigBlock == call( hc_sigprocmask(ma_block,Mask avail) )
+
+-- FUN sigUnblock : sigmask -> com[sigmask]
+DEF Mask sigUnblock == call( hc_sigprocmask(ma_unblock,Mask avail) )
+
+-- FUN sigMask : sigmask -> com[sigmask]
+DEF Mask sigMask == call( hc_sigprocmask(ma_set,Mask avail) )
+
+-- FUN sigPending : com[sigmask]
+DEF sigPending == call( hc_sigpending )
+
+-- FUN sigSuspend : sigmask -> com[void]
+DEF Mask sigSuspend == call( hc_sigsuspend(Mask) )
+
+
+-- INTERNAL FUNCTIONS
+
+FUN ord : signal -> nat
+DEF sigAbrt ord == 0
+DEF sigAlrm ord == 1
+DEF sigFPE  ord == 2
+DEF sigHUp  ord == 3
+DEF sigIll  ord == 4
+DEF sigInt  ord == 5
+DEF sigKill ord == 6
+DEF sigPipe ord == 7
+DEF sigQuit ord == 8
+DEF sigSegV ord == 9
+DEF sigTerm ord == 10
+DEF sigUsr1 ord == 11
+DEF sigUsr2 ord == 12
+DEF sigChld ord == 13
+DEF sigCont ord == 14
+DEF sigStop ord == 15
+DEF sigTStp ord == 16
+DEF sigTTIn ord == 17
+DEF sigTTOu ord == 18
+
+FUN hc_sigemptyset : sigmask
+-- DEF hc_sigemptyset == handcoded
+
+FUN hc_sigfillset : sigmask
+-- DEF hc_sigfillset == handcoded
+
+FUN hc_sigaddset : sigmask ** signal -> sigmask
+-- DEF hc_sigaddset(Mask,Sig) == handcoded
+
+FUN hc_sigdelset : sigmask ** signal -> sigmask
+-- DEF hc_sigdelset(Mask,Sig) == handcoded
+
+FUN hc_sigismember : sigmask ** signal -> bool
+-- DEF hc_sigismember(Mask,Sig) == handcoded
+
+FUN hc_kill_p : process ** option[signal] -> void -> ans[void]
+-- DEF hc_kill_p(Proc,SigOpt)(_) == handcoded
+
+FUN hc_kill_grp : process ** option[signal] -> void -> ans[void]
+-- DEF hc_kill_grp(Proc,SigOpt)(_) == handcoded
+
+FUN hc_alarm : nat -> void -> ans[nat]
+-- DEF hc_alarm(Secs)(_) == handcoded
+
+FUN hc_exec_sh : sighandler -> void -> ans[void]
+-- DEF hc_exec_sh(Handler)(_) == handcoded
+
+FUN hc_caught? : signal -> void -> ans[bool]
+-- DEF hc_caught?(Sig)(_) == handcoded
+
+FUN hc_sigaction : signal ** option[sigaction] -> void -> ans[sigaction]
+-- DEF hc_sigaction(Sig,OptAction)(_) == handcoded
+
+FUN hc_sigprocmask : maskaction ** option[sigmask] -> void -> ans[sigmask]
+-- DEF hc_sigprocmask(Action,OptMask)(_) == handcoded
+
+FUN hc_sigpending : void -> ans[sigmask]
+-- DEF hc_sigpending(_) == handcoded
+
+FUN hc_sigsuspend : sigmask -> void -> ans[void]
+-- DEF hc_sigsuspend(Mask)(_) == handcoded
+
+-- DUE TO COMPILER BUG: USE MASKACTION DISCRIMINATORS --
+FUN foo1 foo2 foo3 : maskaction -> bool
+DEF foo1 == ma_set?
+DEF foo2 == ma_block?
+DEF foo3 == ma_unblock? 

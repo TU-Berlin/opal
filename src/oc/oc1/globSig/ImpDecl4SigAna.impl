@@ -1,0 +1,552 @@
+-- LAST EDIT: Wed Aug 14 18:11:06 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     imported declarations
+-- ============================================================================
+/*
+*/
+
+IMPLEMENTATION ImpDecl4SigAna
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Attributes      ONLY    attr initAttr
+        Compose         ONLY    o
+        Fct             ONLY    fct
+        GlobSig         COMPLETELY
+        ImpExpEntry     COMPLETELY
+        Maps4SigAna     COMPLETELY
+        MySeqFun1       ONLY    combine
+        MySeqFun2       ONLY    * notDisjoint com
+        Name            COMPLETELY
+        Name4SigAna     ONLY    flatInstPN? getCands
+        Nat             ONLY    0 1 nat pred succ !
+        Objects         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        PartNameEntry   COMPLETELY
+        Pos             ONLY    firstPos pos
+        Pragma          ONLY    pragma
+        Rep             ONLY    ord rep
+        Seq             COMPLETELY
+        SeqCompare      ONLY    eq?
+        SeqFilter       ONLY    split |
+        SeqIndex        ONLY    !
+        SeqMap          ONLY    *
+        SeqOfSeq        ONLY    flat
+        SeqReduce       ONLY    /
+        Table           COMPLETELY
+        TableFun2       ONLY /
+        UniqueTable     ONLY    ! table'UniqueTable
+
+-- ---------------------------------------------------------------------------
+-- Importe/Instantiierungen von Strukturen
+
+DEF explInst?(gS,struct,inst) == explInst?(getInstE(gS,struct,inst))
+DEF explUninst?(gS,struct,inst) == explUninst?(getInstE(gS,struct,inst))
+DEF transitive?(gS,struct,inst) == transitive?(getInstE(gS,struct,inst))
+DEF identInst?(gS,struct,inst) == identInst?(getInstE(gS,struct,inst))
+DEF doubleInst?(gS,struct,inst) == doubleInst?(getInstE(gS,struct,inst))
+DEF genericTransitive?(gS,struct,inst) == 
+        genericTransitive?(getInstE(gS,struct,inst))
+DEF genericTransitives?(gS,struct,inst) == 
+        genericTransitives?(getInstE(gS,struct,inst))
+DEF isMarked?(gS,struct,inst) == explInstCycle?(getInstE(gS,struct,inst))
+DEF uninst?(gS,struct,Inst) == 
+        IF instE explUninst? THEN true
+        IF instE identUninst? THEN true
+        IF instE doubleInst? THEN uninst?(gS,struct, inst:instE->inst(instE))
+        ELSE false FI
+        WHERE instE == getInstE(gS,struct,Inst)
+DEF evaluated?(gS, struct, inst) ==
+        IF instE identInst? THEN true
+        IF instE identUninst? THEN true
+        IF instE doubleInst? THEN true
+        ELSE false FI
+        WHERE instE == getInstE(gS,struct,inst)
+
+DEF getDoubleInst(gS,struct,Inst) == inst(getInstE(gS,struct,Inst))
+DEF setDoubleInst(gS,struct,double,inst) ==
+        LET 
+            structE == no(struct) ! structures(gS)
+            origInstE == no(inst) ! insts(structE)
+            newInstE == doubleInst(origInstE,inst)
+            newInsts == (no(double), newInstE) upd insts(structE)
+        IN
+        updStructs(gS, (no(struct), updInsts(newInsts)) upd structures(gS))
+
+FUN getInstE : globSig ** struct ** inst -> instE
+DEF getInstE(gS, struct, inst) == no(inst) ! insts(no(struct) ! structures(gS))
+
+DEF getInstPNAndMark(gS,struct,Inst) ==
+        (updStructs(gS, (no(struct), updInsts(newInsts)) upd structures(gS)),
+         inst(instE))
+        WHERE 
+        structE == no(struct) ! structures(gS)
+        newInsts == (no(Inst), newInstE) upd insts(structE)
+        newInstE == 
+          explInstCycle(pos(instE), (inst(instE)):instPN, onlyS(instE))
+        instE == no(Inst) ! insts(structE)
+
+DEF addOnlyMap(gS, struct, map) ==
+        updStructs(updOnlyPNs(gS, newOnlys), newStructs)
+        WHERE 
+        onlyT == onlyTab(struct, unparam, tabOf(map))
+        (only, newOnlys) == onlyT incl onlyPartNames(gS)
+        newStructs == (no(struct), newStructE) upd structures(gS)
+        newStructE == unparam(structIde(structE), impDecls(structE), 
+                              only, true, reExpS(structE))
+        structE == no(struct) ! structures(gS)
+
+DEF addOnlyMap(gS, struct, inst, map) ==
+        updStructs(updOnlyPNs(gS, newOnlys), newStructs)
+        WHERE 
+        onlyT == onlyTab(struct, unparam, tabOf(map))
+        (only, newOnlys) == onlyT incl onlyPartNames(gS)
+        newStructs == (no(struct), newStructE) upd structures(gS)
+        newStructE == param(structIde(structE), impDecls(structE), newInsts,
+                            formParamS(structE),reExpS(structE))
+        newInsts == (no(inst), 
+                     explUninst(<>[inst:SORT],only)) upd insts(structE)
+        structE == no(struct) ! structures(gS)
+
+DEF addOnlyMap(gS, struct, inst, map, instPN, pos) ==
+        updStructs(updOnlyPNs(gS, newOnlys), newStructs)
+        WHERE 
+        onlyT == onlyTab(struct, unparam, tabOf(map))
+        (only, newOnlys) == onlyT incl onlyPartNames(gS)
+        newStructs == (no(struct), newStructE) upd structures(gS)
+        newStructE == param(structIde(structE), impDecls(structE), newInsts,
+                            formParamS(structE),reExpS(structE))
+        newInsts == (no(inst), newInstE) upd insts(structE)
+        newInstE == explInst(pos, instPN, only)
+        structE == no(struct) ! structures(gS)
+
+DEF posI(gS, struct,inst) == pos(no(inst) ! insts(no(struct) ! structures(gS)))
+DEF pos(gS, instPN) == pos(no(instPN) ! instPartNames(gS))
+
+DEF addInstToUninst(gS, struct, Uninst, inst) ==
+        updStructs(gS, (no(struct), updInsts(newInsts)) upd structures(gS))
+        WHERE 
+        structE == no(struct) ! structures(gS)
+        newInsts == (no(Uninst), newInstE) upd insts(structE)
+        newInstE ==
+          IF instE explUninst? THEN 
+            explUninst(inst :: otherInsts(instE),onlyS(instE))
+          IF instE identUninst? THEN 
+            identUninst(inst :: otherInsts(instE))
+          FI
+        instE == (no(Uninst) ! insts(structE))
+
+DEF addIdentifiedInst(gS, struct, nameS) ==
+        (updStructs(gS, (no(struct), newStructE) upd structures(gS)), inst(n))
+        WHERE 
+        newStructE == updInsts(newInsts)
+        (n,newInsts) == identInst(nameS) incl insts(structE)
+        structE == no(struct) ! structures(gS)
+
+DEF addUnIdentifiedInst(gS, struct, instPN) ==
+        (updStructs(gS, (no(struct), newStructE) upd structures(gS)), inst(n))
+        WHERE 
+        newStructE == updInsts(newInsts)
+        Pos == pos(no(instPN) ! instPartNames(gS))
+        (n,newInsts) == explInstCycle(Pos,instPN,0) incl insts(structE)
+        structE == no(struct) ! structures(gS)
+
+DEF setIdentifiedInst(gS, struct, Inst, nameS) ==
+        LET structE == no(struct) ! structures(gS)
+            instE == no(Inst) ! insts(structE)
+        IN
+        IF instE identInst? THEN gS
+        IF instE identUninst? THEN gS
+        ELSE updStructs(gS, (no(struct), newStructE) upd structures(gS)) 
+        WHERE 
+        newStructE == updInsts(newInsts)
+        newInsts == (no(Inst), newInstE) upd insts(structE)
+        newInstE ==
+          IF instE explInstCycle? THEN identInst(nameS)
+          IF instE explUninst? THEN identUninst(otherInsts(instE))
+          IF instE transitive? THEN identInst(inst(instE))
+          IF instE genericTransitive? THEN identInst(nameS)
+          FI
+        FI
+
+DEF getInstPN(gS, struct, Inst) == inst(getInstE(gS, struct, Inst))
+DEF getInst(gS, struct, Inst) ==
+        IF instE transitive? THEN inst(instE)
+        IF instE genericTransitive? THEN pattern(instE)
+        IF instE genericTransitives? THEN pattern(instE)
+        IF instE identInst? THEN inst(instE)
+        FI
+        WHERE instE == getInstE(gS, struct, Inst)
+
+DEF setInsts(gS,struct,INST,newInsts) ==
+        updStructs(gS,upd(no(struct),updInsts(finInsts),structures(gS)))
+        WHERE
+        finInsts == upd(no(INST), finInstE, insts(no(struct)!structures(gS)))
+        finInstE == 
+          IF instE genericTransitives? THEN 
+            genericTransitives(newInsts,true,pattern(instE))
+          IF instE identUninst? THEN
+            identUninst(newInsts)
+          FI
+        instE == getInstE(gS, struct, INST)
+
+DEF setInstUnused(gS, struct,inst) ==
+        updStructs(gS,upd(no(struct),updInsts(finInsts),structures(gS)))
+        WHERE
+        finInsts == upd(no(inst), finInstE, insts(no(struct)!structures(gS)))
+        finInstE == unusedInst(getInstE(gS, struct, inst))
+
+
+DEF getInsts(gS, struct, inst) == otherInsts(instE)
+        WHERE instE == getInstE(gS, struct, inst)
+
+DEF getOtherInstPNS(gS, Struct, Inst) == getCands(gS, otherInstPN)
+        WHERE 
+        otherInstPN ==  inst:instE->instPN(
+                        getInstE(gS,struct(instE),inst:instE->inst(instE)))
+        instE == getInstE(gS,Struct,Inst)
+
+DEF getOtherInst(gS, Struct,Inst) ==
+        LET instE == getInstE(gS, Struct, Inst) IN
+        (struct(instE), inst(instE))
+
+DEF duplicateInstAppl(gS, name, Inst) ==
+        updStructs(gS, (no(struct(name)), newStructE) upd structures(gS))
+        WHERE 
+        newStructE == updImpDecls(newImpDecls)
+        structE == no(struct(name)) ! structures(gS)
+        newImpDecls == (no(impDecl(name)), newImpDeclE) upd impDecls(structE)
+        newImpDeclE == updInstS(newInstS)
+        newInstS == 
+                IF name nameSet? THEN -- applyCount unwichtig !!!!!
+                  -- die 1 muss verschwinden !!!!
+                  instAppl(Inst,1,initAttr) :: instS(impDeclE)
+                ELSE
+                  front ++ 
+                  (instAppl(Inst,applyCount(ft(back)),initAttr) :: back) 
+                  WHERE
+                  (front,back) == split(unEqIA(inst(name)),instS(impDeclE))
+                FI
+
+        impDeclE == no(impDecl(name)) ! impDecls(structE)
+
+        FUN unEqIA : inst -> instAppl -> bool
+        DEF unEqIA(inst)(iA) == ~(inst = instOf(iA))
+        
+
+DEF findInst(gS,struct,Inst) ==
+        LET instT == insts(no(struct) ! structures(gS))
+            instS == / (\\I, instE, S.
+                         IF <>?(S) THEN
+                            IF instE identInst? THEN
+                               IF eq?(='Name)
+                                  (Inst,inst:instE->seq[name:SORT](instE))
+                               THEN %(I)
+                               ELSE <>
+                               FI
+                            ELSE <>
+                            FI
+                          ELSE S FI, <>)(instT)
+        IN
+        IF instS <>? THEN nil ELSE avail(inst(ft(instS))) FI
+
+DEF errInfo(gS, struct) == (ide(info), pos(info))
+        WHERE info == structIde(no(struct) ! structures(gS))
+
+-- ---------------------------------------------------------------------------
+-- importierte Struktur
+
+DEF addPreOwnSignImport(gS, struct, ide) == 
+        updStructs(updLookups(gS, newLookups), newStructs)
+        WHERE 
+        newStructs == (no(struct),preStruct(errInfo(ide,firstPos),
+                        tabOf(mtInstMap))) def structures(gS)
+        newLookups == addLookupStruct(ord(ide), struct, lookupTable(gS))
+
+DEF addPreImport(idePos, gS) == LET (ide,pos) ==(1st(idePos),2nd(idePos)) IN
+        IF (ord(ide) !? lookupTable(gS)) nil? THEN
+          updStructs(updLookups(gS, newLookups), newStructs)
+          WHERE 
+          (n, newStructs) == 
+             preStruct(errInfo(ide,pos), tabOf(mtInstMap)) incl structures(gS)
+          newLookups == addLookupStruct(ord(ide), struct(n), lookupTable(gS))
+        ELSE gS FI      -- Voreintrag schon vorhanden
+
+DEF updPreImport(gS, ide, instMap) == (updStructs(gS, newStructs), str)
+        WHERE
+        str == cont(struct(ord(ide) ! lookupTable(gS)))
+        newStructs == (no(str), newStructE) upd structures(gS)
+        newStructE == 
+          IF structE preStruct? THEN 
+            preStruct(structIde(structE), tabOf(instMap))
+          IF structE param? THEN 
+            param(structIde(structE), impDecls(structE), tabOf(instMap), 
+                  formParamS(structE),reExpS(structE))
+          IF structE paramTrans? THEN 
+            paramTrans(structIde(structE), impDecls(structE), tabOf(instMap), 
+                  formParamS(structE))
+          IF structE unparam? THEN structE
+          IF structE unparamTrans? THEN structE
+          FI
+        structE == no(str) ! structures(gS)
+
+
+DEF defImport(gS, struct, ImpDecls, reExps, formParams) ==
+        updStructs(gS, (no(struct), newStructE) upd structures(gS))
+        WHERE
+        newStructE == 
+          IF 1st(formParams) <>? THEN
+            unparam(structIde(structE), tabOf(ImpDecls), 0, true, reExps)
+          ELSE
+            param(structIde(structE), tabOf(ImpDecls), insts(structE),
+                    formParams, reExps)
+          FI
+        structE == no(struct) ! structures(gS)
+
+
+DEF defTransImport(gS, struct, ImpDecls) ==
+        updStructs(gS, (no(struct), newStructE) upd structures(gS))
+        WHERE 
+        ide == structIde(structE)
+        structE == no(struct) ! structures(gS)
+        newStructE == unparamTrans(ide, tabOf(ImpDecls))
+
+DEF defTransImport(gS, struct, instMap, ImpDecls, formParams) ==
+        updStructs(gS, (no(struct), newStructE) upd structures(gS))
+        WHERE 
+        ide == structIde(structE)
+        structE == no(struct) ! structures(gS)
+        newStructE == 
+          paramTrans(ide, tabOf(ImpDecls), tabOf(instMap),formParams)
+
+DEF mergeImpDecls(gS,struct,ImpDecls) ==
+        updStructs(gS, (no(struct), newStructE) upd structures(gS))
+        WHERE 
+        newStructE == updImpDecls(tabOf(ImpDecls))(structE)
+        structE == no(struct) ! structures(gS)
+
+
+DEF defSignImport(gS, struct, ide, formParams, insts, impDecls) ==
+        updStructs(gS, newStructs)
+        WHERE 
+        errI == errInfo(ide,firstPos)
+        newStructs == (no(struct), newStructE) upd structures(gS)
+        newStructE == 
+          -- solange die Signatur ueber den Export laeuft transitiv
+          IF 1st(formParams) <>? THEN 
+            unparamTrans(errI, tabOf(impDecls))
+          ELSE 
+            paramTrans(errI,tabOf(impDecls), tabOf(insts),formParams)
+          FI
+
+DEF getInstMap(gS, ide:rep) == 
+        IF structE unparam? THEN mtInstMap
+        IF structE unparamTrans? THEN mtInstMap
+        ELSE instMap(insts(structE)) FI
+        WHERE 
+        structE == no(cont(struct(ord(ide) ! lookupTable(gS)))) !structures(gS)
+DEF getInstMap(gS, struct:struct)== instMap(insts(no(struct) ! structures(gS)))
+DEF getImpDeclMap(gS, struct) == 
+        IF structE preStruct? THEN mtImpDeclMap(0)
+        ELSE impDeclMap(impDecls(structE)) FI
+        WHERE structE == no(struct) ! structures(gS)
+
+DEF getFormParams(gS, struct) == 
+        IF structE param? THEN 2nd(formParamS(structE))
+        IF structE paramTrans? THEN 2nd(formParamS(structE))
+        ELSE <>[option[fct[name:SORT]]] FI
+        WHERE structE == no(struct) ! structures(gS)
+DEF getFormParamImpDecls(gS, struct) == 
+        IF structE param? THEN *(toName(struct))(1st(formParamS(structE)))
+        IF structE paramTrans? THEN *(toName(struct))(1st(formParamS(structE)))
+        ELSE <>[name:SORT] FI
+        WHERE structE == no(struct) ! structures(gS)
+
+        FUN toName : struct -> nat ** pair[impDecl:SORT,pragma:SORT] -> name
+        DEF toName(struct)(n,p) == formParam(struct,1st(p), n)
+
+
+DEF updImport(gS, struct, instMap, impDeclMap) ==
+        updStructs(gS, (no(struct), newStructE) upd structures(gS))
+        WHERE 
+        newStructE == 
+          IF structE paramTrans? THEN
+            paramTrans(structIde(structE), tabOf(impDeclMap), tabOf(instMap),
+                        formParamS(structE))
+          IF structE param? THEN
+            param(structIde(structE), tabOf(impDeclMap), tabOf(instMap),
+                  formParamS(structE), reExpS(structE))
+          FI
+        structE == no(struct) ! structures(gS)
+
+DEF getDelReExports(gS, struct) ==
+        (updStructs(gS, (no(struct), newStructE) upd structures(gS)),
+         reExpS(structE))
+        WHERE 
+        newStructE == 
+          IF structE unparam? THEN
+            unparam(structIde(structE), impDecls(structE), onlyS(structE),
+                    true, <>[name:SORT])
+          IF structE param? THEN
+            param(structIde(structE), impDecls(structE), insts(structE),
+                  formParamS(structE),<>[name:SORT])
+          FI
+        structE == no(struct) ! structures(gS)
+
+DEF alreadyImported?(gS, struct) == 
+        IF structE preStruct? THEN false
+        ELSE true FI
+        WHERE structE == (no(struct) ! structures(gS))
+
+DEF directImported?(gS, struct) == 
+        IF structE param? THEN true
+        IF structE unparam? THEN true
+        ELSE false FI
+        WHERE structE == (no(struct) ! structures(gS))
+
+DEF notParametrized?(gS, struct) == 
+  notParametrized?(gS, structE)
+  WHERE structE == (no(struct) ! structures(gS))
+
+DEF notParametrized?(_, structE) == 
+        IF structE unparamTrans? THEN true
+        IF structE unparam? THEN true
+        ELSE false FI
+
+DEF parametrized?(gS, name) ==
+        IF name extName? THEN notParametrized?(gS, struct(name))~
+        ELSE false FI
+
+DEF structIde(gS,struct) == ide(structIde(no(struct) ! structures(gS)))
+
+DEF updAttr(gS,name,F) == 
+        updStructs(gS, (no(struct(name)), newStructE) upd structures(gS))
+        WHERE 
+        newStructE == updImpDecls(updAttr(impDecl(name),inst(name),F))
+
+        FUN updAttr : impDecl ** inst ** (attr->attr) -> structE
+                -> table[impDeclE:SORT]
+        DEF updAttr(iD,inst,F)(structE) ==
+          upd(no(iD),updAttr(F,inst),impDecls(structE))
+
+-- ---------------------------------------------------------------------------
+
+DEF eqInst(gS, struct, inst1, inst2) ==
+    IF inst1 = inst2 THEN true
+    ELSE        -- jetzt wird es ernst
+      -- gleich sind sie nur, wenn sie auch gleich generisch sind
+      IF uninst?(gS,struct,inst1) THEN uninst?(gS,struct,inst2)
+      IF uninst?(gS,struct,inst2) THEN uninst?(gS,struct,inst1)
+      -- es laeuft also auf einen Namensvergleich der Instanzen hinaus.
+      -- aufgrund von explInst und genericTransitives kann es auch eine
+      -- Kandidatenmenge sein.
+      ELSE notDisjoint(eq?(eqName(gS)))(instSet1,instSet2)
+      WHERE
+        instSet1 == toInstSet(gS,struct)(inst1)
+        instSet2 == toInstSet(gS,struct)(inst2)
+      FI
+    FI
+
+FUN toInstSet : globSig ** struct -> inst -> seq[seq[name:SORT]]
+DEF toInstSet(gS,struct)(Inst) ==
+    IF Inst=unparam ORIF uninst?(gS,struct,Inst) THEN
+      %(2nd((toVar / (0 & <>[name:SORT]))(getFormParams(gS,struct))))
+    IF explInst?(gS,struct,Inst) ORIF isMarked?(gS,struct,Inst) THEN
+      LET instPN == getInstPN(gS,struct,Inst) IN
+      IF flatInstPN?(gS, instPN) THEN
+        LET flatInstS == flatInsts(no(instPN) ! instPartNames(gS)) IN
+        *(\\S. *'SeqMap(name:flatPnEle->name, S))(flatInstS)
+      ELSE
+        LET 
+        pNS == deepInsts(no(instPN) ! instPartNames(gS)) 
+        candsS == *(*'MySeqFun2(cands) o cands)(pNS)
+        IN combine(flat[name:SORT] * candsS) -- :seq[seq[seq[name:SORT]]])
+      FI
+    IF transitive?(gS,struct,Inst) THEN getInst(gS,struct,Inst) %
+    IF doubleInst?(gS,struct,Inst) THEN 
+        toInstSet(gS,struct)(inst(getInstE(gS,struct,Inst)))
+    IF identInst?(gS,struct,Inst) THEN getInst(gS,struct,Inst) %
+    IF genericTransitive?(gS,struct,Inst) THEN
+      LET 
+      (oStruct, oInst) == getOtherInst(gS,struct,Inst)
+      oInstSet == toInstSet(gS,oStruct)(oInst)
+      IN
+      subst(oStruct, getInst(gS,struct,Inst)) * oInstSet
+    IF genericTransitives?(gS,struct,Inst) THEN
+      flat(toInstSet(gS,struct) * getInsts(gS,struct,Inst))
+    ELSE <> 
+    FI
+
+FUN subst : struct ** seq[name:SORT] -> seq[name:SORT] -> seq[name:SORT]
+DEF subst(oStruct, instPatt)(nameS) == checkFormParam(oStruct, nameS) * instPatt
+
+FUN checkFormParam : struct ** seq[name:SORT] -> name -> name
+DEF checkFormParam(oStruct, nameS)(name) ==
+        IF name formParam? THEN IF struct(name) = oStruct 
+                THEN nameS ! pred(no(name)) ELSE name FI 
+        ELSE name FI
+
+FUN toVar : option[fct[name:SORT]] ** pair[nat,seq[name:SORT]] 
+                -> pair[nat,seq[name:SORT]]
+DEF toVar(_,p) == 
+        LET (n, nameS) == (1st(p),2nd(p)) IN (succ(n) & (var(n) :: nameS))
+
+
+FUN eqName : globSig -> name ** name -> bool
+  -- das soll die endgueltige Funktion werden
+DEF eqName(gS)(name1,name2) ==
+    IF name1 = name2 THEN true
+    ELSE -- jetzt wirds ernst
+      -- erst Variablen und Fehler
+      IF name1 error? THEN true
+      IF name2 error? THEN true
+      IF name1 var? THEN true
+      IF name2 var? THEN true
+      OTHERWISE
+      -- jetzt noch die Instanzen bei extName
+      IF (name1 extName?) ANDIF (name2 extName?) THEN
+        IF struct(name1)=struct(name2) ANDIF impDecl(name1)=impDecl(name2) THEN
+          notDisjoint(eq?(eqName(gS)))(instSet1,instSet2)
+      WHERE
+        instSet1 == toInstSet(gS,struct(name1))(inst(name1))
+        instSet2 == toInstSet(gS,struct(name1))(inst(name2))
+        ELSE false FI
+      ELSE false FI
+    FI
+
+FUN eqBaseA : name ** name -> bool
+DEF eqBaseA(name1,name2) ==
+    IF name1=name2 THEN true
+    OTHERWISE 
+        IF name1 intName? THEN false
+        IF name2 intName? THEN false
+        IF name1 var?     THEN false                    
+        IF name2 var?     THEN false                    
+        IF name1 local?     THEN false                  
+        IF name2 local?     THEN false                  
+    OTHERWISE 
+    IF struct(name1) = struct(name2) THEN impDecl(name1) = impDecl(name2)
+    ELSE false FI
+
+-- ---------------------------------------------------------------------------
+-- Hilfsfunktionen
+
+FUN addLookupStruct : nat **struct** table[lookupE:SORT] -> table[lookupE:SORT]
+DEF addLookupStruct(index, struct, tab) == (index, nLookE) upd tab
+        WHERE
+        nLookE ==
+          IF lookEO nil? THEN
+            lookupE(avail(struct), <>[decl:SORT], <>[decl:SORT],
+                    <>[pair[struct:SORT,seq[impDecl:SORT]]],
+                    <>[pair[struct:SORT,seq[impDecl:SORT]]])
+          ELSE LET lookE == cont(lookEO) IN
+            lookupE(avail(struct), sortDeclS(lookE), opDeclS(lookE),
+                    sortImpDeclS(lookE), opImpDeclS(lookE))
+          FI
+        lookEO == index !? tab

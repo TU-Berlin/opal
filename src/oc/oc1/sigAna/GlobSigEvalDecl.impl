@@ -1,0 +1,224 @@
+-- %-  ========================================================================
+-- %-  Author:      mija
+-- %-  Project:     OPAL1-Compiler (signature analysis)
+-- %-  Purpose:     evaluation of declarations
+-- %-  ========================================================================
+
+IMPLEMENTATION GlobSigEvalDecl
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  AbsyFun2        ONLY    =
+        AbsyFun3        ONLY    \*
+        Attributes      COMPLETELY
+        ComCompose      ONLY    ;
+        Com             COMPLETELY
+        DEBUG           ONLY    FIELD? PRINT
+        Decl4SigAna     ONLY    fct setDoubleDecl updDecl
+        Denotation      ONLY    ++
+        ErrCom          ONLY    ambiguousIdentification undefinedIdentification
+        GlobSig         COMPLETELY
+        GlobSigEvalInst ONLY    eqRealName evalInstPN
+        GlobSigImpl     COMPLETELY
+        GlobSigToText   ONLY    `
+        ImpDecl4SigAna  COMPLETELY
+        ImpExpEntry     COMPLETELY
+        Impl            ONLY    law sortImpl
+        MySeqFun1       ONLY    ||
+        Name            COMPLETELY
+        Name4SigAna     COMPLETELY
+        Nat             ONLY    < nat
+        Objects         COMPLETELY
+        Options         ONLY    options
+        Pair            COMPLETELY
+        PartName        COMPLETELY
+        PartNameEntry   COMPLETELY
+        Rep             ONLY    lexem
+        SeqFilter       ONLY    partition
+        SeqReduce       ONLY    /
+        SeqSort         ONLY    msort
+        Seq             COMPLETELY
+        Table           COMPLETELY
+        UniqueTable     COMPLETELY
+
+FUN noError : bool
+DEF noError == true
+
+-- %- ------------------------------------------------------------------------
+
+--FUN evalDecl : options -> globSig ** decl -> com[pair[globSig,bool:SORT]]
+ /* %Auswerten der Nudelergebnisse fuer Deklarationen:
+ Es koennen zusaetzliche neue Instanzen erzeugt werden.
+ Es werden keine Doppeldeklarationen eleminiert (nur erkannt).
+ Es werden keine Doppelinstanzen eleminiert (nur erkannt). */
+DEF evalDecl(options)(gS, decl) ==
+        IF sort?(gS, intName(decl)) THEN yield(okay(gS & noError))
+        ELSE
+          (evalDeclSortPN(options) \* (gS & true))(fct(gS,decl)) ; 
+           evalDecl2(decl)
+        FI
+
+FUN evalDecl2 : decl -> ans[pair[pair[globSig,bool:SORT],fct[name:SORT]]] 
+                -> com[pair[globSig,bool:SORT]]
+DEF evalDecl2(decl)(ans) ==
+        LET (gSoK, fct) ==  (1st(data(ans)), 2nd(data(ans))) IN
+        LET (gS, ok) == (1st(gSoK), 2nd(gSoK)) IN
+        yield(okay(updDecl(gS, decl, fct) & ok))
+
+-- %@zoindex evalDeclSortPN
+FUN evalDeclSortPN? : bool
+DEF evalDeclSortPN? == FIELD?[bool:SORT]("-zevalDeclSortPN")
+
+FUN evalDeclSortPN : options 
+                     -> pair[globSig,bool:SORT] ** name
+                     -> com[pair[pair[globSig,bool:SORT],name:SORT]]
+/* % @b{PRE}: name ist sortPartName
+       das sind alle sortPN, die noch vorhanden sind, alle anderen sind
+        zu flachen pN in instPNs geworden.@*
+   @b{POST}: fehlerlos => name ist interner oder externer Name
+   Doppeldeklarationen werden nicht entfernt, aber erkannt
+*/
+DEF evalDeclSortPN(options)(gSnoError, name0) ==
+        IF name0 error? THEN yield(okay(gSnoError & name0))
+        IF name0 intName? THEN yield(okay(gSnoError & name0))
+        IF name0 extName? THEN yield(okay(gSnoError & name0))
+        IF name0 sortPartName? THEN
+        LET Name == PRINT(evalDeclSortPN?,!!(gS,name0),name0)
+          (gS,ok) == (1st(gSnoError), 2nd(gSnoError))
+        IN
+          (IF cands <>? THEN    -- keine Kandidaten vorhanden
+            undefinedIdentification(options, Pos, Ide);
+            yield(okay((gS & false) & error'Name))
+          OTHERWISE
+          IF inst(ft(cands)) noInstPN? THEN     -- keine Instanz annotiert
+            -- erst ev. doppelte herausfiltern, dann weitersehen
+            IF rt(finCands) <>? THEN  -- nur einer uebrig
+              -- jetzt testen, ob uninstantiertes Objekt
+              IF finName intName? THEN -- alles ok
+                yield(okay(gSnoError & finName))
+              OTHERWISE -- ein externer Name kann parametrisiert sein
+              IF inst(finName) = unparam'Objects THEN -- unparametrisierte Struktur
+                yield(okay(gSnoError & finName))
+              OTHERWISE -- param. Struktur: Instanz beim Import angegeben ?
+              IF uninst?(gS, struct(finName), inst(finName)) or
+                genericTransitive?(gS,finName) THEN -- nein
+                ambiguousIdentification(options, Pos, Ide,
+                  "instantiation missing");
+                yield(okay((gS & false) & error'Name))
+              ELSE -- ja, eindeutige Instanz beim Import angegeben.
+                yield(okay(gSnoError & finName))
+              FI
+              WHERE finName == name(ft(finCands))
+            ELSE        -- noch mehrdeutig
+              ambiguousIdentification(options, Pos, Ide);
+              yield(okay((gS & false) & error'Name))
+            FI
+          ELSE  -- es wurde eine Instanz annotiert
+            IF rt(finCands) ::? THEN    -- mehrere Kandidaten
+              ambiguousIdentification(options, Pos, Ide);
+              yield(okay((gS & false) & error'Name))
+            ELSE        
+              -- Testen, ob die applizierte Instanz ok ist
+              evalInstPN(options,gS,inst(finCand));
+              evalDeclSortPN2(finCand,ok)
+              WHERE finCand == ft(cands)
+            FI
+          FI
+          WHERE 
+          finCands == eqNameh(gS) || cands
+          pN == getPN(gS, sortPN(Name))
+          cands == getFlatPN(pN)
+          (ideR, Pos) == (ide(syn), pos(sortPN(Name)))
+          syn == syntax(gS,sortPN(Name))
+--        Ide == lexem(ideR)  
+          Ide == syn``
+      )
+        FI
+
+        FUN eqNameh : globSig -> flatPnEle ** flatPnEle -> bool
+        DEF eqNameh(gS)(n1,n2) == eqRealName(gS)(name(n1),name(n2))
+
+        FUN !! : globSig ** name -> () -> denotation
+        DEF !!(gS,name)() == `'Name(name) ++ "\n" ++ `(gS)()
+
+
+FUN evalDeclSortPN2 : flatPnEle ** bool
+                     -> ans[pair[pair[globSig,bool:SORT],seq[name:SORT]]]
+                     -> com[pair[pair[globSig,bool:SORT],name:SORT]]
+DEF evalDeclSortPN2(finCand,ok1)(ans) ==
+        LET (gSoK, nameS) == (1st(data(ans)), 2nd(data(ans)))
+            (gS, ok) == (1st(gSoK), 2nd(gSoK))
+        IN 
+            -- nur noch ein Kandidat. Ev. neue Instanz erzeugen
+            yield(okay((finGS & (ok and ok1)) & finName2))
+            WHERE
+            (finGS, finName2) ==
+              IF isGenericInst(gS, getInstE(gS,Struct,Inst)) THEN
+                -- mija, 15.12.93, isGenericInst eingesetzt
+                -- neue Instanz erzeugen und beim impDecl nachtragen
+                (finGS2, extName(Struct, ImpDecl, newInst))
+                WHERE
+                (gS1, newInst) == addIdentifiedInst(gS,Struct,nameS)
+                gS2 == duplicateInstAppl(gS1,finName,newInst)
+                finGS2 == IF uninst?(gS,Struct,Inst) THEN
+                            addInstToUninst(gS2,Struct,inst(finName),newInst)
+                          ELSE gS2 FI
+              ELSE (gS, finName) FI
+            (finName) == (name(finCand))
+            (Struct, ImpDecl,Inst) == (struct(finName),impDecl(finName),
+                                        inst(finName))
+
+FUN isGenericInst : globSig ** instE -> bool
+  -- die Funktion testet ggf. rekursiv, ob eine Instanz generisch ist.
+  -- PRE evalDeclInst ist gelaufen -> keine expl..-Varianten mehr
+  -- mija, 15.12.93
+DEF isGenericInst(gS, transitive(inst)) ==
+  exist?(isGenericInst(gS), inst)
+DEF isGenericInst(gS, genericTransitives(others, dummy, pattern)) == true
+DEF isGenericInst(gS, genericTransitive(struct, inst, pattern)) == true
+DEF isGenericInst(gS, doubleInst(same, inst)) == isGenericInst(gS, same)
+DEF isGenericInst(gS, identInst(inst)) ==
+  exist?(isGenericInst(gS), inst)
+DEF isGenericInst(gS, identUninst(others)) == true
+
+FUN isGenericInst : globSig -> name -> bool
+  -- siehe Variante mit instE
+  -- mija, 15.12.93
+DEF isGenericInst(gS)(name AS extName(struct,impDecl,inst)) ==
+  IF parametrized?(gS, name) THEN
+    isGenericInst(gS, getInstE(gS,struct,inst))
+  ELSE false FI
+DEF isGenericInst(gS)(_) == false
+
+FUN getInstE : globSig ** struct'Objects ** inst -> instE
+  -- kommt aus und gehoert eigentlich nach ImpDecl4SigAna
+  -- mija, 15.12.93
+DEF getInstE(gS, struct, inst) == no(inst) ! insts(no(struct) ! structures(gS))
+
+-- %- ------------------------------------------------------------------------
+
+--FUN findDoubleOpDecl : globSig ** seq[decl:SORT] -> globSig ** seq[decl:SORT]
+/* % Finden aller (restlichen) Doppeldeklarationen von Funktionen
+   @b{PRE} : declS enthaelt alle Ops mit gleichem Bezeichner und nur diese
+*/
+DEF findDoubleOpDecl(gS, declS) == 
+        IF declS <>? THEN (gS, declS)
+        ELSE (finGS, master :: declR) 
+          WHERE
+          (doubles, others) == partition(h12(gS,ft(declS)), rt(declS))
+          (gS1, declR) == findDoubleOpDecl(gS, others)
+          sorted == msort(< :decl**decl->bool)(ft(declS)::doubles)
+          (master,slaves) == (ft(sorted),rt(sorted))
+          finGS == (setDoubleDecl(master) / gS1)(slaves)
+        FI
+
+        FUN < : decl**decl -> bool
+        DEF d1<d2 == no(d1)<no(d2)
+        
+
+        FUN h12 : globSig ** decl -> decl -> bool
+        DEF h12(gS, decl1)(decl2) == 
+                =(eqRealName(gS))(fct(gS,decl1),fct(gS,decl2))

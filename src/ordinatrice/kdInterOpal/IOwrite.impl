@@ -1,0 +1,136 @@
+IMPLEMENTATION IOwrite
+/* % von joe kopiert am 11.5.94
+	und etwas geaendert
+*/
+
+IMPORT
+	BTUnion			COMPLETELY
+	Char			ONLY char
+	Format			ONLY format pretty
+	InterOpal		COMPLETELY
+	OwnInterOpalDump	ONLY dumpInterOpal
+	Nat				ONLY nat 0
+	Option[expr]	ONLY avail? cont option
+	PrintableChar	ONLY underscore dblquote
+	SeqConv			ONLY `
+	Seq				ONLY seq
+	String			ONLY ! % ++ <> string :: +%
+	StringFormat	ONLY format
+
+-- ############################################################################
+
+DEF writeExpr(name(_,n)) == writeName(n)
+
+DEF writeExpr(den(_, rep)) == inDblQuote(rep)
+
+DEF writeExpr(tuple(_, exprs)) == `("(",", ",")")(writeExpr)(exprs)
+
+DEF writeExpr(apply(_, f, a)) ==
+	format("%s(%s)", writeExpr(f) u u(writeExpr(a))) 
+
+DEF writeExpr(cases(_, guards, else)) ==
+	`(""," ", "")(writeGuard)(guards) ++
+	 format("%s FI", u(IF else avail?	THEN
+							format("ELSE %s", u( writeExpr(cont(else))))
+					   ELSE <> FI))
+
+DEF writeExpr (lambda(_,vs,b)) ==
+	format("\\ %s . %s", `("",", ","")(writeVar)(vs) u u(writeExpr(b)))
+
+DEF writeExpr (block(_,eqs,b)) ==
+	format("LET %s IN %s", `(""," ","")(writeEqn)(eqs) u u(writeExpr(b)))
+
+-- ============================================================================
+
+FUN writeName : name -> string
+
+DEF writeName(name(ident(n),_,_)) == format("name(%n, _, _)", n u)
+
+-- ============================================================================
+FUN writeGuard : guard -> string
+
+DEF writeGuard(guard(_, if, then)) ==
+	format("IF %s THEN %s",	 writeExpr(if) u u(writeExpr(then)))
+
+-- ============================================================================
+FUN writeEqn : eqn -> string
+
+DEF writeEqn(eqn(_,l,_,r)) ==
+	format("%s == %s", writePattern(l) u u(writeExpr(r)))
+
+-- ============================================================================
+FUN writePattern :pattern -> string
+
+DEF writePattern(any(_)) == underscore %
+
+DEF writePattern(name(_,n)) == writeName(n)
+
+DEF writePattern(var(_,v)) == writeVar(v)
+
+DEF writePattern(as(_,v,p)) == 
+	format("%s AS %s", writeVar(v) u u(writePattern(p)))
+
+DEF writePattern(apply(_,f,a)) ==
+	format("%s(%s)", writePattern(f) u u(writePattern(a)))
+
+DEF writePattern(tuple(_, pats)) ==
+	`("(",", ",")")(writePattern)(pats)
+
+-- ============================================================================
+DEF writeVar (var(_,ident(_), symb, fct)) == 
+	format("%s : %s)",symb u u(writeFct(fct)))
+
+-- ============================================================================
+
+FUN writeFormula: formula -> string
+
+DEF writeFormula(dfd(_,e))		== format("DFD %s", writeExpr(e)u)
+
+DEF writeFormula(approx(_,l,r)) == 
+	format("%s <<= %s", writeExpr(l) u u(writeExpr(r)))
+
+DEF writeFormula(cong(_,l,r))	==
+	format("%s === %s", writeExpr(l) u u(writeExpr(r)))
+
+DEF writeFormula(neg(_,f))		== format("NOT(%s)", writeFormula(f) u)
+
+DEF writeFormula(conj(_,f1,f2)) ==
+	format("(%s) AND (%s)", writeFormula(f1) u u(writeFormula(f2)))
+
+DEF writeFormula(disj(_,f1,f2)) ==
+	format("(%s) OR (%s)", writeFormula(f1) u u(writeFormula(f2)))
+
+DEF writeFormula(impl(_,f1,f2)) ==
+	format("(%s) ==> (%s)", writeFormula(f1) u u(writeFormula(f2)))
+
+DEF writeFormula(equiv(_,f1,f2))	==
+	format("(%s) <=> (%s)", writeFormula(f1) u u(writeFormula(f2)))
+
+DEF writeFormula(forall(_,vs, f)) ==
+	format("ALL %s . %s", `("",", ","")(writeVar)(vs) u u(writeFormula(f)))
+
+DEF writeFormula(exist (_,vs, f)) ==
+	format("EX %s . %s", `("",", ","")(writeVar)(vs) u u(writeFormula(f)))
+-- ============================================================================
+DEF writePos(unknown) == "<unknown Position>"!
+
+DEF writePos(part(p)) == writePart(p)
+
+DEF writePos(pos(part, row, col)) ==
+	format("<%s part: %n,%n>", writePart(part) u row u u(col))
+
+-- ============================================================================
+DEF writePart(signature) == "signature"!
+DEF writePart(implementation) == "implementation"!
+DEF writePart(intProperties) == "internal property"!
+DEF writePart(extProperties) == "external property"!
+
+-- ============================================================================
+DEF writeInterOpal(IO) == dumpInterOpal(IO)
+
+/* % Hilfsfunktionen aus anderen Strukturen von Johannes */
+FUN inDblQuote : string -> string
+FUN inDblQuote : denotation -> string
+DEF inDblQuote (s) == dblquote::(s +% dblquote)
+DEF inDblQuote (d:denotation) == inDblQuote(d!'String)
+

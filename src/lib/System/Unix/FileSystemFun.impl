@@ -1,0 +1,76 @@
+IMPLEMENTATION FileSystemFun
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:20 $ ($Revision: 1.1.1.1 $)
+
+IMPORT
+  Nat                 ONLY nat
+  Real                ONLY real ! * - < >
+  String              ONLY string
+  StringConv          ONLY `
+  StringFormat        ONLY format
+  BTUnion             COMPLETELY
+  Option              ONLY option nil? cont
+  Com                 ONLY com ans yield okay
+  ComCompose          ONLY &
+  Time                ONLY time -
+  TimeConv            ONLY format
+  FileSystem          ONLY filemode permission ownerRead ownerWrite ownerExec
+                           groupRead groupWrite groupExec worldRead worldWrite
+                           worldExec {} + filestat filetype type mode nlinks
+                           owner group size mtime stat
+  FileSystemConv      COMPLETELY
+  UserAndGroup        ONLY userid user groupid group getUser getGroup
+                           userName groupName
+
+
+
+DEF rwxrwxrwx == rwxrwxr_x + worldWrite
+DEF rw_rw_rw_ == rw_rw_r__ + worldWrite
+DEF rwxrwxr_x == rwxr_xr_x + groupWrite
+DEF rw_rw_r__ == rw_rw____ + worldRead
+DEF rwxr_xr_x == rwxr_x___ + (worldRead + worldExec)
+DEF rw_r__r__ == rw_r_____ + worldRead
+DEF rwxrwx___ == rwxr_x___ + groupWrite
+DEF rw_rw____ == rw_r_____ + groupWrite
+DEF rwxr_x___ == rwx______ + (groupRead + groupExec)
+DEF rw_r_____ == rw_______ + groupRead
+DEF rwx______ == rw_______ + ownerExec
+DEF rw_______ == ownerRead + ownerWrite
+DEF ___rwxrwx == ____w_rwx + (groupRead + groupExec)
+DEF ____w_rwx == ______rwx + groupWrite
+DEF ____w__w_ == _______w_ + groupWrite
+DEF ______rwx == _______w_ + (worldRead + worldExec)
+DEF _______w_ == _________ + worldWrite
+DEF _________ == {}
+
+
+DEF File ls_dlg ==
+  stat(File)            & (\\FStat.
+  getUser (FStat owner) & (\\FOwnOpt.
+  getGroup(FStat group) & (\\FGrpOpt.
+  time                  & (\\Now.
+  LET
+    FOwn == IF FOwnOpt nil? THEN "<??????>" ELSE userName (FOwnOpt cont) FI
+    FGrp == IF FGrpOpt nil? THEN "<??????>" ELSE groupName(FGrpOpt cont) FI
+    FDat == LET
+              MTmDiff    == Now - mtime(FStat)
+              SecPerHour == !("60") * !("60")
+              SecPer6Mon == SecPerHour * !("24") * !("30.42") * !("6")
+            IN
+              IF (MTmDiff < -(SecPerHour)) or (MTmDiff > SecPer6Mon) THEN
+                "%b %e  %Y" format mtime(FStat)
+              ELSE
+                "%b %e %k:%M" format mtime(FStat)
+              FI
+  IN
+    yield(okay( `(
+      "%d%d %3n %-8d %-8d %8n %d %d"
+      format
+      ( `(FStat type) u `(FStat mode) u (FStat nlinks) u 
+        FOwn u FGrp u (FStat size) u FDat u u(File)
+      )
+    )))
+  ))))

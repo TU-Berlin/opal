@@ -1,0 +1,533 @@
+IMPLEMENTATION Check
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/checkConsistency/Check.impl,v 1.1.1.1 1998-06-16 16:00:32 wg Exp $
+
+IMPORT Seq		COMPLETELY
+       SeqMap		COMPLETELY
+       String		COMPLETELY
+       StringConv	COMPLETELY
+       Denotation	COMPLETELY
+       ComCompose	COMPLETELY
+       Stream		COMPLETELY
+       Com		COMPLETELY
+       Void		COMPLETELY
+       Set		COMPLETELY
+       SetConv		COMPLETELY
+       SetFilter	COMPLETELY
+       Map 		COMPLETELY
+       Option		COMPLETELY
+
+IMPORT MyComStream   	COMPLETELY
+       Config		COMPLETELY
+       ConfigFun       	COMPLETELY
+       ConfigTest	COMPLETELY
+       InterOpal	COMPLETELY
+       InterOpalIO	COMPLETELY
+
+-- %$Reading Modules and Constructing a Source-Table$ 
+-- %-------------------------------------------------
+
+FUN checkPresence : string ** config -> com[void]
+
+DEF checkPresence( topLevelStructure, config ) ==
+  IF topLevelStructure |= ("*"!) THEN
+    checkPresenceIntern(topLevelStructure%, {}, config )
+  ELSE
+    checkPresenceIntern(allUsrStructures(config), {}, config)
+  FI
+
+FUN checkPresenceIntern : set[string,<] ** set[string,<]  ** config -> com[void]
+
+DEF checkPresenceIntern( modulesToRead, modulesAlreadyRead, config ) ==
+  IF ~({}?(modulesToRead)) THEN
+    LET
+      actModule == arb(modulesToRead)
+    IN
+      IF isLibrary?(config)(actModule) THEN
+        handleLibraryModule(
+          actModule, 
+          modulesToRead, 
+          modulesAlreadyRead, 
+          config
+        )
+      ELSE -- user implemented file that should be included
+        handleUserModule(
+          actModule, 
+          modulesToRead, 
+          modulesAlreadyRead, 
+          config
+        )
+      FI
+  ELSE
+    yield(okay(nil))
+  FI
+
+
+
+
+-- %$Handling Single Modules$
+-- %-------------------------
+-- %$Handling User-Modules$
+-- %-----------------------
+
+FUN handleUserModule : string ** set[string,<] ** set[string,<] ** config -> com[void]
+DEF handleUserModule( actUserModule, modulesToRead, modulesAlreadyRead, config ) ==
+
+  IF isSubsystem?(config)(actUserModule) and ~(subsystemsInclude?(config)) THEN
+    checkPresenceIntern(
+      excl(actUserModule, modulesToRead),
+      incl(actUserModule, modulesAlreadyRead),
+      config
+    )
+  ELSE
+    checkSign(actUserModule, config) ;
+    (\\ ansSign.
+       (IF okay?(ansSign) THEN
+         yield(okay(nil))
+       ELSE
+	 writeLine(stdOut, error(ansSign))
+       FI) & (\\ _ .
+         checkImpl(actUserModule, config) ;
+	 (\\ ansImpl.
+	   (IF okay?(ansImpl) THEN
+              yield(okay(nil))
+            ELSE
+	      writeLine(stdOut, error(ansImpl))
+            FI) & (\\ _ .
+	       checkPresenceIntern(
+		 restFilesToHandle,
+		 incl(actUserModule, modulesAlreadyRead),
+		 config
+	       )
+	     WHERE
+	       restFilesToHandle == calcRestFiles(
+				      actUserModule,
+				      modulesToRead,
+				      modulesAlreadyRead,
+				      ansSign,
+				      ansImpl,
+				      config
+			            )
+
+	    ) -- \\_
+         ) -- \\ ansImpl
+       ) -- \\_
+    ) -- \\ ansSign
+  FI
+
+
+FUN calcRestFiles :  string ** set[string,<] ** set[string,<] ** 
+                       ans[seq[string]] ** ans[seq[string]] ** config -> set[string,<]
+DEF calcRestFiles( act, toRead, alreadyRead, ansSignImports, ansImplImports, config) ==
+
+  LET
+    signImports == IF okay?(ansSignImports) THEN data(ansSignImports) ELSE <> FI
+    implImports == IF okay?(ansImplImports) THEN data(ansImplImports) ELSE <> FI
+
+    newImportsNotAlreadyRead ==
+      (asSet(signImports) + asSet(implImports)) - alreadyRead 
+  IN  
+    excl(act, toRead) + newImportsNotAlreadyRead
+
+  
+
+
+-- %$Read User-Implemented Structure Parts$
+-- %---------------------------------------
+-- %$Signature$
+-- %-----------
+     
+FUN checkSign : string ** config -> com[seq[string]]
+
+DEF checkSign( signName, config ) ==
+  write(stdErr,"reading file: " ++ `(signName) ++ ".sign ...") & (\\ _ . 
+
+  open(makeFileName(signName, sign, config)`) ; (\\readSignRes.
+
+  (IF okay?(readSignRes) THEN
+     close(data(readSignRes)) &
+     writeLine(stdErr, " ok") & 
+     yield(okay(nil))
+   ELSE
+     writeLine(stdOut, "Error : Cannot find signature of " ++ `(signName)
+			++ " as file " 
+			++ `(makeFileName(signName, sign, config)))
+  FI) & (\\ _ .
+
+  write(
+    stdErr,
+    " reading interOpal for signature: " ++ `(signName) ++ ".sign.inter ..."
+  ) & (\\ _ .
+
+  readInterOpal(false, makeFileName(signName, signInter, config)`) & (\\readSignIORes.
+
+  (IF avail?(readSignIORes) THEN
+     writeLine(stdErr, " ok") &
+     yield(okay(nil))
+   ELSE
+     writeLine(
+       stdOut,
+       "Error : Cannot find InterOpal for signature of " ++ `(signName)
+     )
+  FI) & (\\ _ .
+
+  checkExtp(signName, config); (\\extpAndReadIORes.
+
+  (IF okay?(extpAndReadIORes) THEN
+     IF avail?(readSignIORes) THEN
+       yield(okay(getImports(cont(readSignIORes)) ++ data(extpAndReadIORes)))
+     ELSE
+       yield(okay(data(extpAndReadIORes)))
+     FI
+   ELSE
+     IF avail?(readSignIORes) THEN
+       yield(okay(getImports(cont(readSignIORes))))
+     ELSE
+       yield(okay(<>))
+     FI
+  FI)
+
+  )))))))
+
+-- %$Implementation$
+-- %----------------   
+
+FUN checkImpl : string ** config -> com[seq[string]]
+
+DEF checkImpl( implName, config ) ==
+  write(stdErr, "reading file: " ++ `(implName) ++ ".impl ...") & (\\ _ .
+
+  open(makeFileName(implName, impl, config)`) ; (\\readImplRes.
+
+  (IF okay?(readImplRes) THEN
+     close(data(readImplRes)) &
+     writeLine(stdErr, " ok") &
+     yield(okay(nil))
+   ELSE
+     writeLine(stdOut, "Error : Cannot find implementation of " ++ `(implName))
+  FI) & (\\ _ .
+
+  write(
+    stdErr, 
+    " reading interOpal for implementation: " ++ `(implName) ++".impl.inter ..."
+   ) & (\\ _ .
+
+  readInterOpal(false, makeFileName(implName, implInter, config)`) & (\\readImplIORes.
+
+  (IF avail?(readImplIORes) THEN
+     writeLine(stdErr, " ok") &
+     yield(okay(nil))
+   ELSE
+     writeLine(
+       stdOut, 
+       "Error : Cannot find InterOpal for implementation of " ++ `(implName)     
+     )
+  FI) & (\\ _ .
+
+  checkIntp(implName, config) ; (\\intpAndReadIORes.
+
+  (IF okay?(intpAndReadIORes) THEN
+     IF avail?(readImplIORes) THEN
+       yield(okay(getImports(cont(readImplIORes)) ++ data(intpAndReadIORes)))
+     ELSE
+       yield(okay(data(intpAndReadIORes)))
+     FI   
+   ELSE
+     IF avail?(readImplIORes) THEN
+       yield(okay(getImports(cont(readImplIORes))))
+     ELSE
+       yield(okay(<>))
+     FI   
+  FI)
+
+  )))))))
+
+
+
+-- %$Property-Parts$
+-- %----------------
+ 
+/* %The following functions get the name of a property part to handle.
+First the property part is read, then the corresponding interOpal
+file is read. The property source is then scanned an split into sub-parts defined
+by the DOSFOP source splitting mechanism. The names of the imported files are
+extracted from the InterOpal structure.
+
+The @b{result} of both functions is a property source info struct and the
+corresponding interOpal structure. If the options indicate that no property
+handling should happen, the nil alternatives of the options are delivered. */
+ 
+FUN checkExtp : string ** config -> com[seq[string]]
+
+DEF checkExtp( extpName, config ) ==
+  IF propertiesInclude?(config, extpName) THEN
+
+    write(stdErr, "reading file: " ++ `(extpName) ++ ".extp ...") & (\\ _ .
+
+    open(makeFileName(extpName, extp, config)`) ; (\\readExtpRes.
+
+    (IF okay?(readExtpRes) THEN
+       close(data(readExtpRes)) &
+       writeLine(stdErr, " ok") &
+       yield(okay(nil))
+     ELSE
+       writeLine(
+         stdOut,
+         "Error : Cannot find external properties of " ++ `(extpName)
+       ) 
+    FI) & (\\ _ .
+
+    write(
+      stdErr, 
+      " reading interOpal for external property part: " ++ 
+      `(extpName) ++ ".extp.inter ..."
+    ) & (\\ _ .
+
+    readInterOpal(false, makeFileName(extpName, extpInter, config)`)& (\\readExtpIORes.
+
+    (IF avail?(readExtpIORes) THEN
+       writeLine(stdErr, " ok") &
+       yield(okay(getImports(cont(readExtpIORes))))
+      ELSE
+        writeLine(
+          stdOut,
+          "Error : Cannot find InterOpal for external property part of " ++ `(extpName)
+        ) & (\\ _ .
+         yield(okay(<>))
+        )     
+    FI)
+    
+    )))))
+
+  ELSE
+    yield(okay(<>))
+  FI 
+
+
+FUN checkIntp : string ** config -> com[seq[string]]
+
+DEF checkIntp( intpName, config ) ==
+  IF propertiesInclude?(config, intpName) THEN
+
+    write(
+       stdErr, 
+       "found file: " ++ `(intpName) ++ ".intp ..."
+     ) & (\\ _ .
+
+     open(makeFileName(intpName, intp, config)`) ; (\\readIntpRes.
+
+    (IF okay?(readIntpRes) THEN
+       close(data(readIntpRes)) &
+       writeLine(stdErr, " ok") &
+       yield(okay(nil))
+     ELSE
+       writeLine(
+         stdOut,
+         "Error : Cannot find internal properties of " ++ `(intpName)
+       )
+    FI) & (\\ _ .
+ 
+    writeLine(
+      stdErr, 
+      " reading interOpal for internal property part: " ++
+      `(intpName) ++ ".intp.inter ..."
+    ) & (\\ _ .
+
+    readInterOpal(false, makeFileName(intpName, intpInter, config)`) & (\\readIntpIORes.
+
+    (IF avail?(readIntpIORes) THEN
+         writeLine(stdErr, " ok") &
+         yield(okay(getImports(cont(readIntpIORes))))
+      ELSE
+        writeLine(
+          stdOut,
+          "Error : Cannot find InterOpal for internal property part of " ++ `(intpName)
+        ) & (\\ _ .
+        
+        yield(okay(<>))
+        )
+    FI)
+
+    )))))
+
+  ELSE
+    yield(okay(<>))
+  FI 
+
+
+-- %$Handling Library-Modules$
+-- %--------------------------
+/* %Import relations are not considered for libraries. The set @c{modulesAlreadyRead}
+is exactly increased by one element, whereas @c{actLibraryModule} is
+excluded from the set @c{modulesToRead}.
+
+If library-handling is not specified, no library informations are read and a 
+recursive call to @c{checkPresenceIntern} is induced. */
+
+FUN handleLibraryModule : string ** set[string,<] ** set[string,<] ** 
+                           config -> com[void]
+DEF handleLibraryModule( actLibraryModule,
+                         modulesToRead, modulesAlreadyRead, 
+                         config ) ==
+  IF libraryInclude?(config) THEN
+
+    checkLibSign(actLibraryModule, config) ; (\\ ansLibSign.
+
+    IF okay?(ansLibSign) THEN
+
+      (IF propertiesInclude?(config, actLibraryModule) THEN
+	 checkLibExtp(actLibraryModule, config)
+       ELSE
+	 yield(okay(nil))
+       FI) ; (\\ ansLibExtp.
+
+       IF okay?(ansLibExtp) THEN
+	 checkPresenceIntern(
+	   excl(actLibraryModule, modulesToRead),
+	   incl(actLibraryModule, modulesAlreadyRead),
+	    config
+	  )
+       ELSE
+	 writeLine(stdErr, error(ansLibExtp))
+       FI
+       ) -- \\ ansLibExtp
+    ELSE
+      writeLine(stdErr, error(ansLibSign))
+    FI
+    ) -- \\ ansLibSign
+  ELSE -- no libraries
+    checkPresenceIntern(
+      excl(actLibraryModule, modulesToRead),
+      incl(actLibraryModule, modulesAlreadyRead),
+      config
+    )
+  FI
+
+
+-- %$Read Library Structure Parts$
+-- %------------------------------
+-- %$$Read Library-Signature$
+-- %-------------------------
+
+FUN checkLibSign : string ** config -> com[void]
+DEF checkLibSign( libName, config ) ==
+  write(
+    stdErr, 
+    "reading file: " ++ `(libName) ++ ".sign (LIB) ..."
+  )  & (\\ _ . 
+
+  open( makeFileName(libName, libSign, config)`) ; (\\readLibRes.
+
+  IF okay?(readLibRes) THEN
+    close(data(readLibRes)) &
+    writeLine(stdErr, " ok") & 
+    yield(okay(nil))
+  ELSE
+    writeLine(
+      stdOut, 
+      "Error : Cannot find signature of library " ++ `(libName)
+    ) & (\\ _ .
+    yield(okay(nil))
+    )     
+  FI
+  ))
+
+-- %$$Read Library External Property Part$
+-- %--------------------------------------
+
+FUN checkLibExtp : string ** config -> com[void]
+DEF checkLibExtp( libName, config ) ==
+  write(
+    stdErr, 
+    "found module: " ++ `(libName) ++ ".extp (LIB) ..."
+  ) & (\\ _ .
+
+  open( makeFileName(libName, libExtp, config)`) ; (\\readLibRes.
+
+  IF okay?(readLibRes) THEN
+    close(data(readLibRes)) &
+    writeLine(stdErr, "ok") &
+    yield(okay(nil))
+  ELSE
+    writeLine(
+      stdOut,
+      "Error : Cannot find external properties of library " ++ `(libName)
+    ) & (\\ _ .
+    yield(okay(nil))
+    )     
+  FI
+  ))
+
+
+
+TYPE fileType == sign
+                 impl
+                 extp
+                 intp
+                 signInter
+                 implInter
+                 extpInter
+                 intpInter
+                 libSign
+                 libExtp
+
+DATA fileType == sign
+                 impl
+                 extp
+                 intp
+                 signInter
+                 implInter
+                 extpInter
+                 intpInter
+                 libSign
+                 libExtp
+
+
+
+FUN makeFileName : string ** fileType ** config -> string
+
+DEF makeFileName( name, sign, config ) ==
+  cont(getPath(name)(config)) ++ !("/") ++ name ++ !(".sign")
+
+DEF makeFileName( name, impl, config ) ==
+  cont(getPath(name)(config)) ++ !("/") ++ name ++ !(".impl")
+
+DEF makeFileName( name, extp, config ) ==
+  cont(getPath(name)(config)) ++ !("/") ++ name ++ !(".extp")
+
+DEF makeFileName( name, intp, config ) ==
+  cont(getPath(name)(config)) ++ !("/") ++ name ++ !(".intp")
+
+-- %$$Inter-Opal Files$
+-- %--------------------
+/* %The InterOpal-databases  are located in the @c{/OCS/} subdirectory of the 
+structure named @c{name}!. */
+
+DEF makeFileName( name, signInter, config ) ==
+  cont(getPath(name)(config)) ++ !("/OCS/") ++ name ++ !(".sign.inter")
+
+DEF makeFileName( name, implInter, config ) ==
+  cont(getPath(name)(config)) ++ !("/OCS/") ++ name ++ !(".impl.inter")
+
+DEF makeFileName( name, extpInter, config ) ==
+  cont(getPath(name)(config)) ++ !("/OCS/") ++ name ++ !(".extp.inter")
+
+DEF makeFileName( name, intpInter, config ) ==
+  cont(getPath(name)(config)) ++ !("/OCS/") ++ name ++ !(".intp.inter")
+
+
+-- %$$Library Source-Code Files$
+-- %-------------------------------------
+
+DEF makeFileName( name, libSign, config ) ==
+  cont(getPath(name)(config)) ++ !("/") ++ name ++ !(".sign")
+
+DEF makeFileName( name, libExtp, config ) ==
+  cont(getPath(name)(config)) ++ !("/") ++ name ++ !(".extp")
+
+
+FUN getImports : interOpal -> seq[string]
+
+DEF getImports( interOpal(_, structsMap) ) ==
+  (\\x. symbol(structsMap ! x)!) * asSeq(origin? | dom(structsMap))
+
+

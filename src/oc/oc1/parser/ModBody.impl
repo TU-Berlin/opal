@@ -1,0 +1,309 @@
+--  LAST EDIT: Thu Jun  3 19:20:19 1993 by Carola Gerke (kassandra!carola) 
+
+IMPLEMENTATION ModBody
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT -- pars
+       Terminal         COMPLETELY
+       Token            COMPLETELY
+       PTypes           COMPLETELY
+       PErr             COMPLETELY
+       ModBase          COMPLETELY
+       ZOpts            COMPLETELY
+       ModName          COMPLETELY
+IMPORT -- absy
+       Absy             COMPLETELY
+       PartName         COMPLETELY
+       Struct           COMPLETELY
+       Impl[partName]   COMPLETELY
+       Fct[partName]    COMPLETELY
+       GlobPragma[partName] COMPLETELY
+       Pragma ONLY pragma noPragma
+IMPORT --reps
+       Rep              COMPLETELY
+IMPORT -- admin
+       Pos              COMPLETELY
+IMPORT -- lib
+       Nat              COMPLETELY
+       Denotation       COMPLETELY
+       Seq              COMPLETELY
+       Set              COMPLETELY
+       SeqReduce        COMPLETELY
+       SeqMap           COMPLETELY
+       DEBUG            COMPLETELY
+       Impl ONLY mkSpecLaw
+       Pair ONLY pair &
+       Map ONLY {} map def? ! def
+       Option ONLY nil option
+
+-- %- ----------------------------------------------------------------------
+-- %$Opal Modifier$
+-- %- ----------------------------------------------------------------------
+
+DEF mkInitS  ==
+    Struct(mkstruct(error,<>,<>,<>,<>,<>,<>,<>,<>,<>,<>,{},firstPos,signature))
+DEF mkInitI  ==  
+    Struct(mkstruct(error,<>,<>,<>,<>,<>,<>,<>,<>,<>,<>,{},
+                    firstPos,implementation))
+DEF mkInitEP == Struct(mkstruct(error,<>,<>,<>,<>,<>,<>,<>,<>,<>,<>,{},
+                                firstPos,extProps))
+DEF mkInitIP == Struct(mkstruct(error,<>,<>,<>,<>,<>,<>,<>,<>,<>,<>,{},
+                                firstPos,intProps))
+DEF mkInitT  ==
+    Struct(mkstruct(error,<>,SIG%,<>,<>,<>,<>,<>,TP%,<>,<>,{},
+                    firstPos,signature))
+    WHERE TP == prag(lexem(theory, firstPos)%)
+          SIG == partName(theory, nil, <>, firstPos,
+                          sort, noPragma, firstPos)
+
+DEF modStructOri ==
+    mod(\\A1,A2. 
+        IF (A1 Origin?) and (A2 Struct?)
+        THEN IF struct(A2) error? THEN Struct(error)
+             ELSE LET
+                      Imp == imports(struct(A2))
+                      Sig == signature(struct(A2))
+                      Specs == specsign(struct(A2))
+                      Dat == sortImpls(struct(A2))
+                      Def == funImpls(struct(A2))
+                      Laws == laws(struct(A2))
+                      FT  == freeTypes(struct(A2))
+                      P   == pos(struct(A2))
+                      PR  == revert(pragmas(struct(A2)))
+                      pHs == proofHeads(struct(A2))
+                      pBs == proofBodies(struct(A2))
+                      rels == relations(struct(A2))
+                      Part == part(struct(A2))
+              IN
+              Struct(mkstruct(origin(A1),Imp,Sig,Specs,Dat,Def,FT,
+                              Laws,PR,pHs, pBs, rels, P,Part))
+              FI
+        ELSE Struct(error)
+        FI)
+
+DEF modStructBody ==
+    mod(\\A1,A2. IF (A1 Struct?) THEN Struct(modS(struct(A1),A2))
+                 ELSE Struct(error) FI)
+
+    FUN modS : struct ** absy -> struct
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Import(IS)) == 
+      mkstruct(H,Imp++IS,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             NameSeq(NS)) == 
+      mkstruct(H,Imp,Sig++NS,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Type(TS)) == 
+      mkstruct(H,Imp,Sig,Specs,Data,Def,Typ++TS,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Data(DS)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat++DS,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             EqSeq(ES)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def++ES,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             LawSeq(LS)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law++LS,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             GPragma(PI)) == 
+      mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,GP,pH,pB,RS,P,Part)
+      WHERE GP == IF PI <>? THEN PR ELSE ft(PI) :: PR FI
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             ProofHead(PH)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,PH :: pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             ProofBody(PB)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,PB :: pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             NameSpec(pN, spc)) == 
+      mkstruct(H,Imp,Sig,newSpec::Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+      WHERE newSpec == pN & mkSpecLaw(spc)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Relation(t, i)) == 
+      LET oldImps == IF t def? RS THEN RS!t ELSE <> FI
+          newRels == def(t, i ++ oldImps, RS)
+      IN
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,newRels,P,Part)
+   DEF modS(S , _) == S 
+
+
+-- %- ----------------------------------------------------------------------
+-- %$modFun modifies  < FUN Ide+ : fct  > delivers always NameSeq$
+-- %- ----------------------------------------------------------------------
+
+DEF modFun == mod(\\A1,A2. IF (A1 NameSeq?) and (A2 Fct?) 
+                           THEN NameSeq(modFct(A2) * nSeq(A1)) ELSE NameSeq(<>)
+                           FI)
+DEF mkSort ==
+    mkMod(\\Res.(pRes(Err,NameSeq(modFct(Kind(sort)) * NSeq),TS)
+                WHERE Err == err(Res) + NErr
+                      NErr== IF terminal(ft(TS)) eof? THEN ok
+                             ELSE pErr(ideOnly,pos(ft(TS))) FI
+                      NSeq== nSeq(absy(Res)) TS == tokS(Res)))
+
+    FUN modFct : absy -> partName -> partName
+    DEF modFct (Fct(F)) (partName(I,S,PS,IP,_,PR,Pos)) == 
+                      partName(I,S,PS,IP,op(F),PR,Pos)
+    DEF modFct (Kind(sort)) (partName(I,S,PS,IP,_,PR,Pos)) == 
+                      partName(I,S,PS,IP,sort,PR,Pos)
+    DEF modFct (_)(_) == noName
+
+DEF modCompObjPostCheck (Pos) == mkMod(\\ PRes. mCO(Pos,PRes))
+    FUN mCO : pos ** pRes -> pRes
+    DEF mCO (Pos,pFail(E,Fct(F),T)) == pFail(E+mCompObjPC(Pos,F),Fct(F),T)
+    DEF mCO (Pos,pRes(E,Fct(F),T))  == pRes(E+mCompObjPC(Pos,F),Fct(F),T)
+    DEF mCO (_,PRES)  == PRES
+
+    FUN mCompObjPC : pos ** fct -> err
+    DEF mCompObjPC (Pos,cart(_)) == pErr(compound_object,Pos)
+    DEF mCompObjPC (_,_)           == ok
+
+-- %- ---------------------------------------------------------------------
+-- %$Modifiers for Parsing IMPORTS$
+-- %- ---------------------------------------------------------------------
+
+DEF modImport == mod(\\A1,A2. mImport(A1,A2))
+    FUN mImport : absy ** absy -> absy
+    DEF mImport(Origin(O),NameSeq(NSeq)) == Import(only(O,NSeq)%)
+    DEF mImport(Origin(O),noAbsy)        == Import(complete(O)%)
+    DEF mImport(Import(IS1),Import(IS2)) == Import(IS1 ++ IS2)
+    DEF mImport(IS1 AS Import(_),noAbsy) == IS1
+    DEF mImport(noAbsy,IS1 AS Import(_)) == IS1
+    DEF mImport(_,_) == Import(<>)
+
+-- %- ---------------------------------------------------------------------
+-- %$Modifiers for Parsing Relations$
+-- %- ---------------------------------------------------------------------
+
+DEF modRelation(type) == mod(\\A1,A2. mRelation(type,A1,A2))
+    FUN mRelation : rep ** absy ** absy -> absy
+    DEF mRelation(T,Origin(O),NameSeq(NSeq)) == Relation(T, only(O,NSeq)%)
+    DEF mRelation(T,Origin(O),noAbsy)        == Relation(T, complete(O)%)
+    DEF mRelation(T,Relation(_,IS1),Relation(_,IS2)) == Relation(T, IS1 ++ IS2)
+    DEF mRelation(T,IS1 AS Relation(_, _),noAbsy) == IS1
+    DEF mRelation(T,noAbsy,IS1 AS Relation(_, _)) == IS1
+    DEF mRelation(T,_,_) == Relation(T, <>)
+-- %- ---------------------------------------------------------------------
+-- %$Modifier for TYPE and DATA$
+-- %- ---------------------------------------------------------------------
+
+DEF modType == mod(\\A1,A2. Type(mTD(A1,A2)))
+DEF modData == mod(\\A1,A2. Data(mTD(A1,A2)))
+
+    FUN mTD : absy ** absy -> seq[sortImpl]
+    DEF mTD(Pos(P),Variants(V))            == sortImpl(noName,V,P)%
+    DEF mTD(Name(noName),Type(sortImpl(_,V,P) :: R)) == sortImpl(noName,V,P) :: R
+    DEF mTD(Name(N),Type(sortImpl(_,V,P) :: R))      == sortImpl(N,V,P) :: R
+    DEF mTD(Name(noName),Data(sortImpl(_,V,P) :: R)) == sortImpl(noName,V,P) :: R
+    DEF mTD(Name(N),Data(sortImpl(_,V,P) :: R))      == sortImpl(N,V,P) :: R
+    DEF mTD(Name(noName),_)                == sortImpl(noName,<>,errPos)%
+    DEF mTD(Name(N),_)                     == sortImpl(N,<>,pos(N))%
+    DEF mTD(_,_)                           == <>
+
+DEF modVariant == mod(\\A1,A2. mV(A1,A2))
+    FUN mV : absy ** absy -> absy
+    DEF mV(Name(noName),Comps(C)) == Variants(variant(noName,noName,C,errPos)%)
+    DEF mV(Name(N),Comps(C))      == Variants(variant(N,noName,C,pos(N))%)
+    DEF mV(Name(noName),_)        == Variants(variant(noName,noName,<>,errPos)%)
+    DEF mV(Name(N),_)             == Variants(variant(N,noName,<>,pos(N))%)
+    DEF mV(_,_)           == Variants(<>)
+
+DEF modVariantSeq ==
+    mod(\\A1,A2. IF (A1 Variants?) and (A2 Variants?) 
+                 THEN Variants(variants(A1) ++ variants(A2))
+                 IF (A1 Variants?) and (A2 noAbsy?) THEN A1
+                 IF (A1 noAbsy?) and (A2 Variants?) THEN A2
+                 ELSE Variants(<>)
+                 FI)
+
+DEF modCompSeq ==
+    mod(\\A1,A2. 
+        IF (A1 Comps?) and (A2 Comps?) THEN Comps(comps(A1)++comps(A2))
+        IF (A1 Name?) and (A2 noAbsy?) THEN Comps(mkComp(A1)%)
+        IF (A1 Name?) and (A2 Name?) THEN Comps(mkComp(A1) :: (mkComp(A2)%))
+        IF (A1 Name?) and (A2 Comps?) THEN Comps(mkComp(A1) :: comps(A2))
+        IF (A1 Comps?) and (A2 Name?) THEN Comps(comps(A2) +% mkComp(A1))
+        ELSE Comps(<>) 
+        FI)
+
+   FUN mkComp : absy -> comp
+   DEF mkComp (Name(partName(I,SI,PS,IPos,none,P,Pos))) == 
+       comp(partName(I,SI,PS,IPos,none,P,Pos),noFct,Pos)
+   DEF mkComp (Name(partName(I,SI,PS,IPos,sort,P,Pos))) == 
+       comp(partName(I,SI,PS,IPos,none,P,Pos),noFct,Pos)
+   DEF mkComp (Name(partName(I,SI,PS,IPos,op(FCT),P,Pos))) == 
+       comp(partName(I,SI,PS,IPos,none,P,Pos),FCT,Pos)
+
+   DEF mkComp (_) == comp(noName,noFct,errPos)
+
+DEF modSelPostCheck == mkMod(\\PRes. 
+    IF (absy(PRes) Type?) or (absy(PRes) Data?)
+    THEN LET What == IF absy(PRes) Type? THEN type
+                     IF absy(PRes) Data? THEN data
+                     FI
+             Vars == IF What(absy(PRes)) <>? THEN <>
+                     ELSE variants(ft(What(absy(PRes))))
+                     FI
+         IN IF Vars <>? THEN PRes
+            ELSE pRes(err(PRes) + (+ /ok)(checkVar * Vars),absy(PRes),tokS(PRes))
+            FI
+    ELSE PRes
+    FI)
+
+    FUN checkVar : variant -> err
+    DEF checkVar (variant(_,_,<>,_))    == ok
+    DEF checkVar (variant(_,_,Comps,_)) == (+ / ok)(checkSel * Comps)
+
+    FUN checkSel : comp -> err
+    DEF checkSel (comp(_,noFct,Pos)) == pErr(expFct,Pos)
+    DEF checkSel (comp(noName,noFct,Pos)) == pErr(expFct,Pos)
+    DEF checkSel (C) == IF C comp? THEN ok 
+                        ELSE pErr("Int Err in checkSel'ModBody") FI
+    
+-- %- --------------------------------------------------------------------------
+-- %$Modifier for Laws$
+-- %- --------------------------------------------------------------------------
+
+DEF modLaw (Pos) ==  mod(\\A1,A2. mLaw(A1,A2,Pos))
+    FUN mLaw : absy ** absy ** pos -> absy
+    DEF mLaw(Name(noName),Formula(F),P) == LawSeq(law(nilRep,F,P)%)
+    DEF mLaw(Name(N),Formula(F),P)      == LawSeq(law(ide(N),F,P)%)
+    DEF mLaw(noAbsy,Formula(F),P)       == LawSeq(law(nilRep,F,P)%)
+    DEF mLaw(Formula(F),noAbsy,P)       == LawSeq(law(nilRep,F,P)%)
+    DEF mLaw(LawSeq(L1),LawSeq(L2),_)   == LawSeq(L1 ++ L2)
+    DEF mLaw(LS AS LawSeq(_),_,_)       == LS
+    DEF mLaw(_,LS AS LawSeq(_),_)       == LS
+    DEF mLaw(_,_,_)                     == LawSeq(<>)
+
+-- %- --------------------------------------------------------------------------
+-- %$Modifier for Pragmas$
+-- %- --------------------------------------------------------------------------
+
+DEF mkPrLexem == mkMod(\\ PRes. mPrL(PRes))
+    FUN mPrL : pRes -> pRes
+    DEF mPrL(pRes(Err,_,token(_,Lex,Pos) :: TS)) ==
+        pRes(Err,GPragma(prag(lexem(Lex,Pos)%)%),TS)
+    DEF mPrL(pFail(Err,_,TS AS token(_,_,Pos) :: _)) ==
+             pFail(Err + pErrExp("legal pragma lexem ")(Pos)(TS),GPragma(<>),TS)
+
+DEF modGPragma == mod(\\A1,A2. 
+      LET Pi1 == IF A1 NameSeq? THEN GPragma(prag(identify(nSeq(A1))%)%)
+                 ELSE A1        FI
+          Pi2 == IF A2 NameSeq? THEN GPragma(prag(identify(nSeq(A2))%)%)
+                 ELSE A2        FI
+     IN mGPragma(Pi1,Pi2))
+
+    FUN mGPragma : absy ** absy -> absy
+    DEF mGPragma(GPragma(prag(GP1) :: _),GPragma(prag(GP2) :: _ ))
+        == GPragma(prag(GP1++GP2)%)
+    DEF mGPragma(GP AS GPragma(_),_) == GP
+    DEF mGPragma(_,GP AS GPragma(_)) == GP
+    DEF mGPragma(_,_)                == GPragma(<>)
+

@@ -1,0 +1,163 @@
+IMPLEMENTATION PropGeneration
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+-- ============================================================================
+-- Autor:       ralfi
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Uebersetzung der analysierten Quelle nach InterOpal
+--              Eintragen aller Properties
+-- ============================================================================
+
+IMPORT  InterOpal       COMPLETELY
+        EnvIO           COMPLETELY
+        InterOpalOption ONLY    ioImpl?
+        BaseGeneration  ONLY    pos
+        NameGeneration  ONLY    name2Name
+        SeqMapEnv       ONLY    *
+        ExprGeneration  ONLY    expr2Expr name2Var
+
+IMPORT  Rep             ONLY    rep `
+        Pos             ONLY    pos
+        GlobSigImpl     ONLY    impl:SORT none  parameter? canonical data
+                                anaDef def pattDescr
+        Impl[name'Name] COMPLETELY
+        AnalyzedGlobSig ONLY    locSig:SORT {} :locSig
+        AGSig           ONLY    isApplied?
+
+IMPORT  String          ONLY    string
+        Nat             ONLY    nat
+        SeqMap          ONLY    *
+        Seq             ONLY    seq <>
+        SeqFilter       ONLY    |
+        Map             ONLY    map {} !
+        DEBUG           ONLY    PRINT
+        Pair            ONLY    pair
+
+FUN impl2Prop: globSig ** name'InterOpal ->
+                envIO ** impl'GlobSigImpl -> envIO ** property
+DEF impl2Prop(Sig,Name AS name(Ident,Origin,Inst))
+        (EnvIO AS &(interOpal(Part,_),_),
+                data(sortImpl(GSort,Variants,GPos))) ==
+  LET   (EnvIO2,SVar)   == (variant2Variant(Sig,GSort))*
+                (PRINT(ioImpl?,"impl2Prop(data)",EnvIO),
+                        (\\V. isApplied?(Sig, cons(V))) | Variants)
+        (EnvIO3, SortName) == name2Name(Sig)(EnvIO2, GSort)
+        Pos             == pos(GPos,Part)
+        Pragmas == <>
+  IN (EnvIO3,freeType(Pos,Ident,SortName,SVar,Pragmas))
+
+/*
+DEF impl2Prop(Sig,Name AS name(Ident,Origin,Inst))
+        (EnvIO AS &(interOpal(Part,_),_),none) == 
+  LET   DName   == PRINT(true,"none",Name)
+  IN (EnvIO,freeType(unknown,Ident,DName,<>))
+                
+DEF impl2Prop(Sig,Name AS name(Ident,Origin,Inst))
+        (EnvIO AS &(interOpal(Part,_),_),parameter) == 
+  LET   DName   == PRINT(true,"parameter",Name)
+  IN (EnvIO,freeType(unknown,Ident,DName,<>))
+
+DEF impl2Prop(Sig,Name AS name(Ident,Origin,Inst))
+        (EnvIO AS &(interOpal(Part,_),_),canonical(_)) == 
+  LET   DName   == PRINT(true,"canonical",Name)
+  IN (EnvIO,freeType(unknown,Ident,DName,<>))
+                
+DEF impl2Prop(Sig,Name AS name(Ident,Origin,Inst))
+        (EnvIO AS &(interOpal(Part,_),_),def(_,_,_)) == 
+  LET   DName   == PRINT(true,"def",Name)
+  IN (EnvIO,freeType(unknown,Ident,DName,<>))
+                
+DEF impl2Prop(Sig,Name AS name(Ident,Origin,Inst))
+        (EnvIO AS &(interOpal(Part,_),_),anaDef(_,_,_,_,_)) == 
+  LET   DName   == PRINT(true,"anaDef",Name)
+  IN (EnvIO,freeType(unknown,Ident,DName,<>))
+*/                              
+
+DEF form2Form(Sig)(LSig,dfd(Which,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (EnvIO2,Expr)   == expr2Expr(Sig,LSig)(EnvIO,Which)
+  IN    (dfd(pos(Pos,Part),Expr),EnvIO2)
+
+DEF form2Form(Sig)(LSig,equal(Left,Right,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (EnvIO2,LExpr)  == expr2Expr(Sig,LSig)(EnvIO,Left)
+        (EnvIO3,RExpr)  == expr2Expr(Sig,LSig)(EnvIO2,Right)
+  IN    (cong(pos(Pos,Part),LExpr,RExpr),EnvIO3)
+
+DEF form2Form(Sig)(LSig,ineq(Left,Right,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (EnvIO2,LExpr)  == expr2Expr(Sig,LSig)(EnvIO,Left)
+        (EnvIO3,RExpr)  == expr2Expr(Sig,LSig)(EnvIO2,Right)
+  IN    (approx(pos(Pos,Part),LExpr,RExpr),EnvIO3)
+
+DEF form2Form(Sig)(LSig,neg(Form,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (NForm,EnvIO2)  == form2Form(Sig)(LSig,Form,EnvIO)
+  IN    (neg(pos(Pos,Part),NForm),EnvIO2)
+
+DEF form2Form(Sig)(LSig,and(LForm,RForm,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (LNForm,EnvIO2) == form2Form(Sig)(LSig,LForm,EnvIO)
+        (RNForm,EnvIO3) == form2Form(Sig)(LSig,RForm,EnvIO2)
+  IN    (conj(pos(Pos,Part),LNForm,RNForm),EnvIO3)
+
+DEF form2Form(Sig)(LSig,or(LForm,RForm,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (LNForm,EnvIO2) == form2Form(Sig)(LSig,LForm,EnvIO)
+        (RNForm,EnvIO3) == form2Form(Sig)(LSig,RForm,EnvIO2)
+  IN    (disj(pos(Pos,Part),LNForm,RNForm),EnvIO3)
+
+DEF form2Form(Sig)(LSig,imply(LForm,RForm,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (LNForm,EnvIO2) == form2Form(Sig)(LSig,LForm,EnvIO)
+        (RNForm,EnvIO3) == form2Form(Sig)(LSig,RForm,EnvIO2)
+  IN    (impl(pos(Pos,Part),LNForm,RNForm),EnvIO3)
+
+DEF form2Form(Sig)(LSig,eqv(LForm,RForm,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (LNForm,EnvIO2) == form2Form(Sig)(LSig,LForm,EnvIO)
+        (RNForm,EnvIO3) == form2Form(Sig)(LSig,RForm,EnvIO2)
+  IN    (equiv(pos(Pos,Part),LNForm,RNForm),EnvIO3)
+
+
+DEF form2Form(Sig)(LSig,all(SeqNames,Which,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (Form,EnvIO2)   == form2Form(Sig)(LSig,Which,EnvIO1)
+        (EnvIO1,SeqVar) == (name2Var(Sig,LSig,IPos))*(EnvIO,SeqNames)
+        IPos    == pos(Pos,Part)
+  IN    (forall(IPos,SeqVar,Form),EnvIO2)
+
+DEF form2Form(Sig)(LSig,ex(SeqNames,Which,Pos),
+        EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET   (Form,EnvIO2)   == form2Form(Sig)(LSig,Which,EnvIO)
+        IPos    == pos(Pos,Part)
+        (EnvIO1,SeqVar) == (name2Var(Sig,LSig,IPos))*(EnvIO,SeqNames)
+  IN    (exist(IPos,SeqVar,Form),EnvIO2)
+
+DEF form2Form(_)(_, informal(Txt,Pos),
+                 EnvIO AS &(IO AS interOpal(Part,_),_)) ==
+  LET IPos == pos(Pos, Part)
+  IN
+  (informal(IPos, Txt`), EnvIO)
+  
+
+FUN variant2Variant : globSig ** name'Name -> envIO ** variant'Impl ->
+                        envIO ** variant'InterOpal
+DEF variant2Variant(Sig,GSort)
+        (EnvIO AS &(interOpal(Part,_),_),variant(GCons,GTest,GComps,GPos)) == 
+  LET   Pos             == pos(GPos,Part)
+        (EnvIO2,Cons)   == name2Name(Sig)(EnvIO,GCons)
+        (EnvIO3,Test)   == name2Name(Sig)(EnvIO2,GTest)
+        (EnvIO6,Comps)  == (comp2Comp(Sig,GSort))*(EnvIO3,GComps)
+  IN (EnvIO6,variant(Pos,Cons,Test,Comps))
+
+FUN comp2Comp : globSig ** name'Name -> envIO ** comp'Impl ->
+                        envIO ** comp'InterOpal
+DEF comp2Comp(Sig,GSort)(EnvIO AS &(interOpal(Part,_),_),comp(GSel,_,GPos)) ==
+  LET   Pos             == pos(GPos,Part)
+        (EnvIO1,Sel)    == name2Name(Sig)(EnvIO,GSel)
+  IN (EnvIO1,comp(Pos,Sel))
+

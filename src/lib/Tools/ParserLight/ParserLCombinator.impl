@@ -1,0 +1,127 @@
+IMPLEMENTATION ParserLCombinator
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:25 $ ($Revision: 1.1.1.1 $)
+
+IMPORT ParserL COMPLETELY
+       Option COMPLETELY
+       ParserLCompose ONLY &
+       ParserLMap     ONLY *
+       Seq COMPLETELY
+       Nat COMPLETELY
+       Void ONLY nil
+
+
+-- %$Sequencing$
+-- % lift functions from sequences
+DEF <> == succeed(<>)
+DEF P1 :: P2 == abs(\\s. IF fail?(P1 @@ s) THEN (nil, s)
+                         ELSE LET (d, r) == P1 @@ s
+                                  (s2, r2) == P2 @@ r
+                              IN IF s2 nil? THEN (nil, s)
+                                 ELSE (avail(cont(d) :: cont(s2)), r2)
+                                 FI
+                         FI)
+
+FUN :: : parser[data] ** (()->parser[seq[data]]) -> parser[seq[data]]
+-- % lazy variant to avoid evaluation of recursive parsers (*, +)
+DEF P1 :: P2 == abs(\\s. IF fail?(P1 @@ s) THEN (nil, s)
+                         ELSE LET (d, r) == P1 @@ s
+                                  (s2, r2) == P2() @@ r
+                              IN IF s2 nil? THEN (nil, s)
+                                 ELSE (avail(cont(d) :: cont(s2)), r2)
+                                 FI
+                         FI)
+
+DEF P1 ++ P2 == abs(\\s. IF fail?(P1 @@ s) THEN (nil, s)
+                         ELSE LET (s1, r) == P1 @@ s
+                                  (s2, r2) == P2 @@ r
+                              IN IF s2 nil? THEN (nil, s)
+                                 ELSE (avail(cont(s1) ++ cont(s2)), r2)
+                                 FI
+                         FI)
+
+-- %$Repeaters$
+-- % repeat parser at most/at least this much
+DEF max(0, _) == <>
+DEF max(succ(n), P) == (P :: max(n, P)) | <>
+
+DEF min(n, P) == (n x P) ++ (P *)
+
+-- % @code{(from, to) x P} between from and to times (inclusive)
+DEF (from, to) x P == (from x P) ++ max(to - from, P) 
+-- % exactly this much
+DEF 0 x _ == <>
+DEF succ(n) x P == P :: n x P
+-- %repeat any time as long as possible (always succeeds)
+DEF P * == (P +) | <>
+-- %at least once
+DEF P + == P :: (\\ . P*)
+-- %once or never
+FUN ? : parser[data] -> parser[seq[data]]
+DEF P ? == (0, 1) x P
+DEF P ? == (\\Seq. IF Seq <>? THEN nil ELSE avail(ft(Seq)) FI) * (P ?)
+
+-- %Repeat until context fulfills predicate or parser[void] succeeds
+DEF P until f == abs(\\s. IF f(s) THEN (avail(<>), s)
+                          ELSE LET (d, r) == P @@ s
+                               IN IF d nil? THEN (nil, s)
+                                  ELSE LET (s2, r2) == (P until f) @@ r
+                                       IN IF s2 nil? THEN (nil, s)
+                                          ELSE (avail(cont(d) :: cont(s2)), r2)
+                                          FI
+                                  FI
+                           FI)
+        
+DEF P until E == (phantomV(E) & (\\ _ . <>)) |
+                 P :: (\\ . P until E)
+
+-- %$Pre- and Postfixes, Infixes$
+-- %add Prefix
+DEF Pre <| P == Pre & (\\ _ . P)
+-- %add postfix
+DEF P |> Post == P & (\\d. Post & (\\ _ . succeed(d)))
+-- %add as pre- and postfix
+DEF P <|> pp == pp <| (P |> pp)
+-- %like the functions above, but with parser[void] as separator
+DEF P * S == P + S | <>
+DEF P + S == P :: (\\ . P1 | <>)
+               WHERE 
+                 P1 == S & (\\ _ . P * S)
+-- %$Ignoring$
+-- %map returned data to void type
+DEF ignore(P) == (\\ _ . nil) * P
+
+-- %recognize the string, return the data, but do not change context
+DEF phantom(P) ==
+    abs(\\s. LET (d, _) == P @@ s IN
+          IF d nil? THEN (nil, s) ELSE (d, s) FI)
+/* need this function because we cannot use instantiated versions of 
+here introduced functions */
+FUN phantomV: parser[void] -> parser[void]
+DEF phantomV(P) ==
+    asParser(\\s. LET (d, _) == asFct(P)(s) IN
+          IF d nil? THEN (nil, s) ELSE (d, s) FI)
+
+-- %$Auxiliary functions$
+FUN @@ : parser[data] ** string -> option[data] ** string
+DEF p: parser[data] @@ s == asFct(p)(s)
+
+FUN @@ : parser[seq[data]] ** string -> option[seq[data]] ** string
+DEF p: parser[seq[data]] @@ s == asFct(p)(s)
+
+FUN abs : (string -> option[data] ** string) -> parser[data]
+DEF abs == asParser: (string -> option[data] ** string) -> parser[data]
+
+FUN abs : (string -> option[seq[data]] ** string) -> parser[seq[data]]
+DEF abs == 
+    asParser: (string -> option[seq[data]] ** string) -> parser[seq[data]]
+
+FUN fail? : option[data] ** string -> bool
+DEF fail?(o: option[data], _) == o nil?
+
+FUN fail? : option[seq[data]] ** string -> bool
+DEF fail?(o: option[seq[data]], _) == o nil?
+

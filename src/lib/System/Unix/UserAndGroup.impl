@@ -1,0 +1,116 @@
+IMPLEMENTATION UserAndGroup
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:19 $ ($Revision: 1.1.1.1 $)
+-- user and group management
+   /$ handcoded $/
+
+IMPORT
+  Void                ONLY void nil
+  Com                 ONLY com ans yield okay call
+  ComCompose          ONLY &
+  Option              ONLY option
+  OptionMap           ONLY *
+  Array               ONLY array
+  ArrayConv           ONLY asSeq
+  Seq                 ONLY seq
+  Set                 ONLY set
+  SetConv             ONLY asSet
+
+  UnixFailures	      ONLY someError?	-- enforce dep. by dummy import
+
+-- EXPORTED TYPES --
+
+-- DATA userid == handcoded
+
+DATA user == user( userName : denotation,
+                   userId   : userid,
+                   iGroupId : groupid,
+                   homeDir  : denotation,
+                   shell    : denotation
+                 )
+
+-- DATA groupid == handcoded
+
+DATA group == group( groupName    : denotation,
+                     groupId      : groupid,
+                     groupMembers : set[denotation,<]
+                   )
+
+-- INTERNAL TYPES --
+
+DATA hc_group == hc_group( groupName    : denotation,
+                           groupId      : groupid,
+                           groupMembers : array[denotation]
+                         )
+
+-- EXPORTED FUNCTIONS --
+
+-- FUN < = : userid ** userid -> bool
+-- DEF ... == handcoded
+
+-- FUN < : user ** user -> bool
+DEF User1 < User2 == userId(User1) < userId(User2)
+-- FUN = : user ** user -> bool
+DEF User1 = User2 == userId(User1) = userId(User2)
+
+-- FUN getUser : userid -> com[option[user]]
+DEF getUser(UId) == call( hc_getpwuid(UId) )
+
+-- FUN getUser : denotation -> com[option[user]]
+DEF getUser(UName) == call( hc_getpwnam(UName) )
+
+-- FUN < = : groupid ** groupid -> bool
+-- DEF ... == handcoded
+
+-- FUN < : group ** group -> bool
+DEF Group1 < Group2 == groupId(Group1) < groupId(Group2)
+-- FUN = : group ** group -> bool
+DEF Group1 = Group2 == groupId(Group1) = groupId(Group2)
+
+-- FUN getGroup : groupid -> com[option[group]]
+DEF getGroup(GId) ==
+  call( hc_getgrgid(GId) ) & (\\HCGrpOpt.
+  yield(okay( HCGrpOpt convertGroup ))
+  )
+
+-- FUN getGroup : denotation -> com[option[group]]
+DEF getGroup(GName) ==
+  call( hc_getgrnam(GName) ) & (\\HCGrpOpt.
+  yield(okay( HCGrpOpt convertGroup ))
+  )
+
+-- FUN getGroups : com[set[groupid,<]]
+DEF getGroups ==
+  call( hc_getgroups ) & (\\GArray.
+  yield(okay( asSet(asSeq(GArray)) ))
+  )
+
+
+-- INTERNAL FUNCTIONS --
+
+FUN convertGroup : option[hc_group] -> option[group]
+DEF convertGroup(GrpOpt) ==
+  (\\Grp.
+     group(Grp groupName,
+           Grp groupId,
+           asSet(asSeq(Grp groupMembers))
+          )
+  ) * GrpOpt
+
+FUN hc_getpwuid : userid -> void -> ans[option[user]]
+-- DEF hc_getpwuid(UId)(_) == handcoded
+
+FUN hc_getpwnam : denotation -> void -> ans[option[user]]
+-- DEF hc_getpwnam(UName)(_) == handcoded
+
+FUN hc_getgrgid : groupid -> void -> ans[option[hc_group]]
+-- DEF hc_getgrgid(GId)(_) == handcoded
+
+FUN hc_getgrnam : denotation -> void -> ans[option[hc_group]]
+-- DEF hc_getgrnam(GName)(_) == handcoded
+
+FUN hc_getgroups : void -> ans[array[groupid]]
+-- DEF hc_getgroups(_) == handcoded

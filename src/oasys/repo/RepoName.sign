@@ -1,0 +1,135 @@
+/* % This structure defines the several kinds of @emph{names} used in the 
+repository. Names address entities of the repository. Named entities are
+
+@itemize @bullet
+
+@item @code{units}, that is signatures or implementations of 
+structures
+
+@item @emph{items}, that is components of the source constituting
+a unit (such as @code{SORT s}, @code{FUN f: s} etc.)
+
+@item @emph{pragmas}, that is logical objects representing a pragma
+
+@item @emph{properties}, that is logical objects representing a property
+
+@item @emph{objects}, that is logical objects representing a sort
+or function declaration
+
+@item @emph{local signatures}, that is logical objects representing a 
+binding of local object names to local object declarations
+
+@end itemize
+*/
+
+SIGNATURE RepoName
+
+IMPORT Nat			ONLY nat:SORT
+       Fmt			ONLY fmt:SORT
+       Id			ONLY id:SORT
+
+
+-- %$Unit Names$ ============================================================
+
+/* % Unit names are defined by the types below. We distinguish
+@emph{basic} unit names which represent the formal or unparametized
+version of a unit, and @emph{derived} unit names which represent
+an instantiation of a unit: */
+
+TYPE part == sign impl
+     FUN < =		: part ** part			-> bool
+     FUN fmtPart	: part				-> fmt
+
+TYPE unitName == 
+	basicUnitName	(no	: nat,
+			 part	: part)
+	derivedUnitName (no	: nat,
+			 part	: part,
+			 instNo : nat)
+
+     FUN :=_part	: unitName ** part		-> unitName
+     FUN = <		: unitName ** unitName		-> bool 
+     FUN ~		: unitName ** unitName		-> bool 
+			-- U1 ~ U2: units of the same structure (may be
+			-- different parts or instances)
+     FUN baseName	: unitName			-> unitName
+			-- clear the instance (if any)
+     FUN fmtUnitName	: unitName			-> fmt
+
+
+
+-- %$Item Names$ ============================================================
+
+TYPE itemName  ==
+	itemName	(no	: nat,
+			 unit	: unitName)
+
+     FUN = < 		: itemName ** itemName		-> bool 
+     FUN baseName	: itemName			-> itemName
+     FUN fmtItemName	: itemName			-> fmt
+
+	   
+-- %$Pragma Names$ ==========================================================
+
+TYPE pragmaName ==
+	pragmaName	(no		: nat,
+			 unit		: unitName)
+
+    FUN = < 		: pragmaName ** pragmaName	-> bool 
+    FUN baseName	: pragmaName			-> pragmaName
+    FUN fmtPragmaName	: pragmaName			-> fmt
+
+
+-- %$Property Names$ ========================================================
+
+TYPE propertyName ==
+	propertyName	(no		: nat,
+			 unit		: unitName)
+
+    FUN = < ~		: propertyName ** propertyName	    -> bool 
+    FUN baseName	: propertyName			    -> propertyName
+    FUN fmtPropertyName : propertyName			    -> fmt
+
+
+-- %$Local Signature Names$ =================================================
+
+TYPE localSignName ==
+	localSignName	(no		: nat,
+			 unit		: unitName)
+
+     FUN < = ~	     : localSignName ** localSignName	 -> bool
+     FUN baseName    : localSignName			 -> localSignName
+     FUN fmtLocalSignName : localSignName		    -> fmt
+
+			 
+-- %$Object Names$ ==========================================================
+
+TYPE objectName ==
+	globalObjectName (no		 : nat,
+			  unit		 : unitName)
+	localObjectName	 (no		 : nat,
+			  sign		 : localSignName)
+
+     
+     FUN = < ~		: objectName ** objectName	-> bool
+     FUN baseName	: objectName			-> objectName
+     FUN fmtObjectName	: objectName			-> fmt
+     FUN unitName	: objectName			-> unitName
+	-- unitName(globalObjectName(_,U)) === U
+	-- unitName(localObjectName(_,L))    === unit(L)
+
+-- %$Encoding of Names$ ====================================================
+
+/* % The following functions describe the internal encoding of unit and
+names as identifiers @code{id'Id} (`not for user purposes'). */
+
+FUN internId		: unitName		    -> id
+FUN internUnitName	: id			    -> unitName
+FUN internInstId	: unitName		    -> id
+FUN internUnitName	: id ** unitName	    -> unitName
+
+/* % Opposite of @code{baseName}: make unit with instanciation @code{nat}. */
+FUN derived		: unitName ** nat 	    -> unitName
+FUN derived		: propertyName ** nat	    -> propertyName
+FUN derived		: localSignName ** nat	    -> localSignName
+FUN derived		: objectName ** nat	    -> objectName

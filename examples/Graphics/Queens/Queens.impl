@@ -1,0 +1,306 @@
+
+IMPLEMENTATION Queens
+
+IMPORT	
+	Arrays	COMPLETELY
+	Basics COMPLETELY
+	Com	ONLY EXEC
+ ComChoice	COMPLETELY
+ Commands	COMPLETELY
+ NatSets	COMPLETELY
+	Seqs		COMPLETELY
+ Windows COMPLETELY  
+
+-- %$Main Command$ ==========================================================
+
+FUN queens : com[void]
+DEF queens == animateQueens 
+
+
+-- %$The Algorithm$ ========================================================
+
+-- %$$Communication with the Animator 
+
+FUN animateSolution	: set'Bitset		-> com[void]	
+FUN animatePosition	: set'Bitset		-> com[void]
+FUN animateDone		: com[void]
+
+-- %$$Running the Algorithm
+
+FUN runQueens : com[void]
+DEF runQueens == run({}, allFields, 8) & animateDone
+
+FUN run : set'Bitset ** set'Bitset ** nat	-> com[void]
+
+DEF run(Queens, _, 0) ==
+    -- found a solution
+    animateSolution(Queens)
+
+DEF run(Queens, Free, succ(Cnt)) ==
+    -- try all free positions
+    (Try, nil) /& asSeq( (\\P . row(P) = Cnt) | Free )
+		      -- ^^^^^^^^^^^^^^^^^^^^ the fancy condition to reduce
+		      --                      the search space
+
+    WHERE Try == \\ Pos, _ .
+		    LET NewQueens == incl(Pos, Queens)
+		    	NewFree ==
+			    (\\P. column(Pos)  	 |= column(P)	 and
+				  row(Pos) 	 |= row(P)   	 and
+				  rightdiag(Pos) |= rightdiag(P) and
+				  leftdiag(Pos)  |= leftdiag(P)
+			    ) | Free
+		    IN
+		    animatePosition(NewQueens)		& (\\ _ .
+		    run(NewQueens, NewFree, Cnt)
+		    )
+
+FUN allFields   : set'Bitset
+DEF allFields   == (0 .. 63)(\\X.X)
+FUN 63		: nat
+DEF 63		== "63"!
+
+FUN row column leftdiag rightdiag : nat -> nat
+
+DEF row(Pos) 	   == Pos / 8
+DEF column(Pos)    == Pos % 8
+DEF rightdiag(Pos) == (8 + column(Pos)) - row(Pos)
+				-- actually column(Pos) - row(Pos), but
+				-- add 8 to allow natural arithmetic 
+DEF leftdiag(Pos)  == column(Pos) + row(Pos)
+
+
+
+-- %$Visualization of a Chess Board$ =========================================
+
+FUN boardControl : com[array[regulator]]
+FUN board	 : array[regulator] 				-> view
+FUN place	 : array[regulator] ** nat 			-> com[void]
+FUN remove	 : array[regulator] ** nat 			-> com[void]
+FUN update	 : array[regulator] ** set'Bitset		-> com[void]
+FUN updateDiff	 : array[regulator] ** set'Bitset ** set'Bitset	-> com[void]
+
+DEF boardControl == 
+    (\\ _ . regulator) *& asSeq(allFields)	& (\\Seq.
+    succeed(asArray(Seq))
+    )
+
+
+DEF board(Control) == matrix(8, (0..63)(field(Control)))
+
+    FUN field : array[regulator] -> nat -> view
+    DEF field(Control)(Pos) ==
+	LET Colors == IF black?(Pos) THEN
+			  background(grey) ++ foreground(black)
+		      ELSE background(white) ++ foreground(black) FI
+	IN
+	frame with size("15"!,"15"!) ++ fixedSize ++ Colors ++ raised 
+	    @< *(anchor(center, label with Colors ++ regulate(Control ! Pos)))
+
+    FUN matrix : nat ** seq[view] -> view
+    DEF matrix(N, Views) == 
+	  ^^ / (<< / _) * splitSegm(N, Views)
+
+    FUN splitSegm : nat ** seq[view] -> seq[seq[view]]
+    DEF splitSegm(_, <>) == <>
+    DEF splitSegm(N, S) ==
+	LET (F, R) == split(N, S) IN F :: splitSegm(N, R)
+
+    FUN black? : nat -> bool
+    DEF black?(Pos) ==
+    	(even?(column(Pos)) and even?(row(Pos)))  or
+       	(odd?(column(Pos))  and odd?(row(Pos))) 
+
+
+DEF place(Control, Pos) == 
+    (Control ! Pos) set bitmap(file("q40s.bm"))
+
+DEF remove(Control, Pos) == 
+    (Control ! Pos) set bitmap(none)
+
+DEF update(Control, Queens) ==
+    silently(
+	(\\Pos, _ . IF Pos in Queens THEN place(Control, Pos)
+				     ELSE remove(Control, Pos) FI,
+	 nil) /& asSeq(allFields)
+    );
+    update'WinAppl
+
+DEF updateDiff(Control, Old, New) ==
+    silently(
+	(\\Pos, _ . remove(Control, Pos), nil) /& asSeq(Old - New);
+	(\\Pos, _ . place(Control, Pos), nil) /& asSeq(New - Old)
+    );
+    update'WinAppl
+
+
+-- %$The Animation$ ========================================================
+
+FUN animateQueens	: com[void]
+
+
+-- %$$Gates and SAPs$
+
+DATA mode 		== everyStep solutionStep singlePos singleSol
+
+FUN singleStep? : mode -> bool
+DEF singleStep?(M) == singlePos?(M) or singleSol?(M)
+
+FUN mode		: selector[mode]
+DEF mode		== EXEC(selector(solutionStep))
+
+DATA userAction		== quit start step 
+FUN userAction		: emitter[userAction]
+DEF userAction		== EXEC(emitter)
+
+DATA algoAction		== position (queens : set'Bitset)
+			   solution (queens : set'Bitset)
+			   done
+FUN algoAction		: sap[void, algoAction]
+DEF algoAction		== EXEC(sap)
+
+FUN solutionDisplay     : regulator
+DEF solutionDisplay     == EXEC(regulator)
+
+
+-- %$$Entry Points for the Algorithm$
+
+DEF animateSolution(Queens) ==
+    algoAction => (\\ _ . succeed(solution(Queens))) & done
+
+DEF animatePosition(Queens) == 
+    get(mode)						& (\\ Mode .
+    IF solutionStep?(Mode) or singleSol?(Mode) THEN
+	-- do nothing
+	done
+    ELSE
+	algoAction => (\\ _ . succeed(position(Queens))) 
+		& done
+    FI
+    )
+
+DEF animateDone == algoAction => (\\ _ . succeed(done)) & done
+
+
+-- %$$Buttons and Menus$ 
+
+FUN buttons : view
+DEF buttons ==
+    LET Quit 	== button  
+			with  text("Quit")
+			++   bind(userAction, quit) 
+    	Start 	== button  
+			with text("Start")
+			++   bind(userAction, start) 
+    	Mode 	== (menuButton(Every ++ Solution ++ SinglePos ++ SingleSol)
+			with text("Mode")
+		    WHERE
+		    Every == radioButton
+		    		with label("all positions") 
+		    		++   select(mode, everyStep?, everyStep)
+		    	        ++   bind(userAction, step)
+				     -- attach also to step action to let
+				     -- algorithm restart from single step
+				     -- mode
+		    Solution == radioButton        
+				    with label("all solutions") 
+				    ++   select(mode, solutionStep?, solutionStep)
+		    	        ++   bind(userAction, step)
+		    SinglePos  == radioButton    
+		    		with label("next position") 
+		    		++   select(mode, singlePos?, singlePos)
+		    	        ++   bind(userAction, step)
+		    SingleSol  == radioButton    
+		    		with label("next solution") 
+		    		++   select(mode, singleSol?, singleSol)
+		    	        ++   bind(userAction, step))
+	Step   	== button
+			with text("Step") 
+			++   enable(mode, singleStep?)
+		  	++   bind(userAction, step)
+        SolutionLabel == label 
+			with text("0 solutions ...") 
+                        ++   regulate(solutionDisplay)
+    IN
+    Quit <*+< Start <*+< Mode <*+< Step <*+< SolutionLabel
+
+
+-- %$$Controller$ 
+
+
+DEF animateQueens ==
+    boardControl				& (\\ Board .
+    window(titleName("Queens"),
+    	   buttons ^*+^ board(Board))		& (\\ _ .
+    animate(Board, nil, 1, {}, <>)
+    ))
+
+FUN animate : array[regulator] ** option[agent[void]] ** nat
+			       ** set'Bitset ** seq[set'Bitset] -> com[void]
+DEF animate(Board, Algo?, Steps, Position, Solutions) ==
+    -- handle user actions
+    ( await(userAction)					& (\\ UserAct .
+      IF quit?(UserAct) THEN
+	  exit(0)
+      IF start?(UserAct) THEN
+	  ( IF avail?(Algo?) THEN
+	      kill(cont(Algo?))
+	    ELSE done FI  )				& (\\ _ .
+	  agent(runQueens)				& (\\ Algo .
+	  solutionDisplay set  text("0 solutions ...")	& (\\ _ .
+	  updateDiff(Board, Position, {})		& (\\ _ .
+	  animate(Board, avail(Algo), 1, {}, <>)	
+	  ))))
+      IF step?(UserAct) THEN
+	  animate(Board, Algo?, succ(Steps), Position, Solutions)
+      FI
+      )
+    ) +
+    -- handle algorithm actions, if Steps > 0
+    ( IF avail?(Algo?) and Steps > 0 THEN
+	  algoAction @ nil				& (\\ AlgoAct .
+	  -- define Steps value for next incarnation
+	  get(mode) 					& (\\ Mode .
+	  IF solution?(AlgoAct) THEN
+	      LET NextSolutions == queens(AlgoAct) :: Solutions
+	      IN
+	      -- show that we have at least _one_ solution
+     	      solutionDisplay set 
+															text(`(#(NextSolutions)) ++ 
+																			 " solutions ...") 
+                              				& (\\ _ .
+	      updateDiff(Board, Position,
+			 queens(AlgoAct))		& (\\ _ .
+	      animate(Board, Algo?, IF singleSol?(Mode) THEN 0 ELSE 1 FI,
+		      queens(AlgoAct), NextSolutions)
+	      ))
+	  IF position?(AlgoAct) THEN
+	      updateDiff(Board, Position, 
+			 queens(AlgoAct))		& (\\ _ .
+	      animate(Board, Algo?, IF singlePos?(Mode) THEN 0 ELSE 1 FI,
+		      queens(AlgoAct), Solutions)
+	      )
+	  IF done?(AlgoAct) THEN
+	      -- show that we have _all_ solutions
+	      solutionDisplay set
+															text(`(#(Solutions)) ++ 
+																			 " solutions ...") 
+				      			& (\\ _ .
+	      updateDiff(Board, Position,
+			 ft(Solutions))		& (\\ _ .
+	      animate(Board, nil, 0, ft(Solutions), 
+	      	      Solutions)
+	      ))
+	  FI
+	  ))
+      ELSE deadlock FI
+    )
+
+
+FUN deadlock : com[void]	-- should become part of the agent library!
+DEF deadlock ==
+    deadSAP @ nil
+
+    FUN deadSAP : sap[void,void]
+    DEF deadSAP == EXEC(sap)
+

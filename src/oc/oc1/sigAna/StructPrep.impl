@@ -1,0 +1,115 @@
+/* %-
+-- LAST EDIT: Sun Aug  4 20:14:56 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     insert imported structures into global signature
+-- Zweck:       Eintragen der Importe in die globale Signatur
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+-- ============================================================================
+*/
+
+IMPLEMENTATION StructPrep
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Objects         COMPLETELY
+        Maps4SigAna     COMPLETELY
+        ImpDecl4SigAna  COMPLETELY
+        GlobSigImpl     ONLY impl:SORT data none
+        ImpExpEntry     ONLY instAppl:SORT impDeclE:SORT instE:SORT
+                             toInstAppl applied instOf applied?
+        InterOpal       COMPLETELY
+        InterOpalModifier       COMPLETELY
+        PartNameEntry   ONLY pN:SORT onlyPNE:SORT
+        Name            COMPLETELY
+        Struct          COMPLETELY
+        Table           COMPLETELY
+        -- absy, etc.
+        Rep             COMPLETELY
+        Pos             ONLY pos
+        Fct             ONLY fct
+        -- lib
+        Error           COMPLETELY
+        Compose         COMPLETELY
+        Triple          COMPLETELY
+        SeqMap          ONLY *
+        SeqMapEnv       ONLY *
+        SeqReduce       COMPLETELY
+        MySeqFun1       COMPLETELY
+        MySeqFun2       COMPLETELY
+        AbsyFun2        COMPLETELY
+        Seq             COMPLETELY
+        Option          COMPLETELY
+        OptionMap       COMPLETELY
+        Pair            COMPLETELY
+        DEBUG           ONLY PRINT FIELD?
+        GlobSigToText   ONLY ` -- : globSig -> () -> denotation
+
+-- ---------------------------------------------------------------------------
+
+FUN preInsertStruct : repTab -> globSig ** 
+                        pair[interOpal,seq[pair[import,bool]]] -> 
+                                globSig ** pair[strDecTab, seq[instAppl]]
+  -- Ermitteln der Umcodierungstabellen fuer die Struktur- und 
+  -- Instanzenindizes; Voreintragen der expliziten Instanzen
+  -- Turbo der Instanzentabelle
+  -- PRE:die Importsequenz ist nicht leer
+
+DEF preInsertStruct(RT)(gS, sign & Imports) == 
+        LET Rep == getRep(RT, symbol(sign))
+            Param? == ::?(params(sign))
+            Structs == transStructs(sign)
+            (InstMap, instAppls) == 
+                        *(addExplPreImports(Param?), 
+                                getInstMap(gS, Rep), Imports)
+            (gS1, mainStr) == updPreImport(gS, Rep, InstMap)
+            tab == def(mtStrDecTab,mainStruct, mainStr, mtInstDecTab)
+            gSTab == (preInsertTransitive(RT) \ (gS1 & tab))(Structs)
+            (finGS, finTaba) == (1st(gSTab), 2nd(gSTab))
+            finTab == PRINT(strDecTab?, \\ . `(finTaba), finTaba)
+        IN (finGS, (turbo(finTab) & instAppls))
+
+FUN strDecTab? : bool
+DEF strDecTab? == FIELD?[bool]("-zstrDecTab")
+
+FUN addExplPreImports: bool -> 
+                        instMap ** pair[import,bool] ->
+                                instMap ** instAppl
+        -- Erzeugen von Voreintragen fuer die expliziten Instanzen
+        -- und Instanzenapplikationen fuer die importierten Objekte
+DEF addExplPreImports(paramStr?)(instMap, importP) ==
+        LET (instMap1, instAppl) == 
+          IF paramStr? THEN addPreInst(instMap)
+          ELSE (instMap, unparam toInstAppl) FI
+        IN
+        IF 2nd(importP) THEN (instMap1, applied(instAppl))
+        ELSE (instMap1, instAppl) FI
+
+FUN preInsertTransitive : repTab -> 
+                        struct'InterOpal ** pair[globSig, strDecTab] -> 
+                                pair[globSig, strDecTab] 
+
+DEF preInsertTransitive(RT)(Struct, gS & tab) == 
+        LET Rep == getRep(RT, symbol(Struct))
+            Insts == 1st * insts(Struct)
+            Orig == struct(no(origin(Struct)))
+            instMapTab ==  (preInsertTransInst \ 
+                        (getInstMap(gS, Rep) & mtInstDecTab))(Insts)
+            (instMap, instDecTab) == (1st(instMapTab), 2nd(instMapTab))
+            (finGS, str ) == updPreImport(gS, Rep, instMap)
+            finTab == def(tab, Orig, str, instDecTab)
+        IN finGS & finTab
+
+FUN preInsertTransInst : inst'InterOpal **
+                                pair[instMap:SORT,instDecTab] -> 
+                                        pair[instMap:SORT,instDecTab]
+
+DEF preInsertTransInst(Inst, InstMap & InstDecTab) == 
+        LET     (finIM, instAppl) == addPreInst(InstMap)
+                finTab == def(InstDecTab, asInst(Inst), instAppl instOf)
+        IN finIM & finTab

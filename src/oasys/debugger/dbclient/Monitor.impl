@@ -1,0 +1,348 @@
+IMPLEMENTATION Monitor
+
+IMPORT	Expression			COMPLETELY
+	Environment			COMPLETELY
+	Denotation			COMPLETELY
+	Com				COMPLETELY
+	ComCompose			COMPLETELY
+	ComPairCompose			COMPLETELY
+	Pair				COMPLETELY
+	Nat				COMPLETELY
+	Seq				COMPLETELY
+	Option				COMPLETELY
+	Void				COMPLETELY
+	RUNTIMEENV[environment,expr]	COMPLETELY
+	SeqExtensions			COMPLETELY
+	ChannelData			COMPLETELY
+	ProcessConnect[task,answer]	COMPLETELY
+	UnixFailures			ONLY interruptedSystemCall?
+	ProcessMonitor[environment,
+		       task,answer]	COMPLETELY
+	ProcessInterrupt		COMPLETELY
+	ProcessComInterrupt		COMPLETELY
+	File				COMPLETELY
+	Fmt				COMPLETELY
+	DEBUG				COMPLETELY
+	ABORT				COMPLETELY
+	ProcessCtrl			COMPLETELY
+	ArrayConv			COMPLETELY
+	
+IMPORT	Env	ONLY env
+
+FUN traceChannel? : bool
+DEF traceChannel? == FIELD?[bool]("-ztraceChannel") 
+
+/* %
+ Die Kernfunktion von @code{monitor} ist die handkodierte Funktion
+@code{monitorHC}. Diese prüft, ob eine Task-Anfrage vom Debugger vorliegt (mit
+@code{select}).	 Ist dies der Fall, wird das Kommando @code{break} mit den
+Argumenten @code{Expr} und @code{E} ausgeführt und das resultierende
+Environment als Resultat der Funktion zurückgeliefert. Ist kein Task vorhanden,
+ist @code{E} das Ergebnis der Funktion.
+
+@code{break} verhält sich ähnlich zu @code{monitor}, läuft aber in jedem Fall
+unabhängig von einem vorhandenen Task in die Funktion @code{break}. Diese
+Funktion wird zur Realisierung von Breakpoints verwendet.
+ */
+
+-- !! Funktionen mit Seiteneffekt !!:
+DEF monitor(E,Expr) == 
+    LET (E1,Force?) == decCounter(E)
+    IN IF Force?
+	 THEN monitorForce(E1,break(_,Expr))
+	 ELSE monitor(channel(E1), E1,break(_,Expr), break(_,Expr))
+       FI
+DEF break  (E,Expr) == monitorForce(E,break(_,Expr))
+
+/* %
+ @code{abort} verhält sich ähnlich wie @code{break}, ruft aber das Kommando
+@code{abort} auf.
+ */
+DEF abort(E,Expr,Den) == monitorForce(E,abort(_,Expr,Den))
+
+/* %
+ @code{break} wird genau dann aufgerufen, wenn eine Task-Anfrage
+vorliegt. Dadurch wird die augenblickliche Auswertung unterbrochen. Es wird nun
+als erstes der Empfang eines @code{break}-Tasks simuliert, um die aktuelle
+Termposition in einem @code{broken}-Datum verpackt garantiert auf den Stack zu
+bekommen.
+ */
+FUN break : environment ** expr -> com[environment]
+DEF break(E,Expr) == 
+    IF unknown?(pos(Expr)) or 
+        noEvalIds?(E) -- this case seems to be possible on interrupts
+      THEN -- continue immediately
+	   succeed(E)
+      ELSE LET Id == topEvalId(E)
+	       E1 == E push broken(Id,pos(Expr))
+	   IN twrite(E1,broken(Id))			& (\\E2.
+	      wait(E2)					& (\\E3.
+		-- remove the 'broken'-item from stack
+	      succeed(pop(E3))				))
+    FI
+
+/* %
+ @code{abort} bricht eine Auswertung ab. Technisch wird eine
+@code{aborted}-Answer gesendet und ein @code{aborted}-Datum auf den Stack
+gelegt. Anschließend wird in @code{wait} übergegangen. Von dort darf niemals
+zurückgekehrt werden!
+ */
+FUN abort : environment ** expr ** denotation -> com[environment]
+DEF abort(E,Expr,Den) ==
+    LET Id == topEvalId(E)
+	E1 == E push aborted(Id,pos(Expr))
+    IN twrite(E1,aborted(Id,Den))			& (\\ E2 .
+       wait(E2)						& (\\ _ .
+       -- +++ do never reach the point behind +++
+       ABORT("abort'Monitor: aborted computation can't be continued.")))
+
+/* %
+ @code{abortFromCode} bricht die Auswertung im Kontext einer
+kompilierten Funktion ab. Sie wird als Handler fuer @code{apply'RUNTIMEENV}
+und @code{exec'RUNTIMEENV} verwendet.
+*/
+FUN abortFromCode : environment ** denotation -> environment
+FUN abortFromCode : environment ** denotation -> com[environment]
+
+DEF abortFromCode(E,Den) == monitorForce(E, abortFromCode(_, Den))
+
+DEF abortFromCode(E,Den) ==
+    LET Id == topEvalId(E)
+	E1 == E push aborted(Id,unknown)	
+			-- FIXME: need a special stack item ?
+			--	  item should contain hardware stack
+			--	  context info in the future
+    IN twrite(E1,aborted(Id,Den))			& (\\ E2 .
+       wait(E2)						& (\\ _ .
+       -- +++ do never reach the point behind +++
+       ABORT("abortFromCode'Monitor: aborted computation can't be continued.")))
+
+    
+
+/* %
+ @code{wait} wartet, bis ein Task anliegt, bestätigt ihn sofort und
+bearbeitet diese Anfrage anschließend. Die Funktion terminiert erst, wenn der
+Task @code{continue} empfangen wurde.
+ */
+FUN wait: environment -> com[environment]
+DEF wait(E) ==
+    tread(E) & doTask(E,_)
+
+/* %
+ trace read/write: schreibt die Daten auf den Channel und gibt außerdem einen
+Dump aus, falls "-ztraceChannel" angegeben wurde.
+ */
+FUN tread : environment				-> com[task]
+DEF tread(E) ==
+    read(channel(E))					; (\\Task? .
+    IF okay?(Task?) THEN
+    	IF traceChannel? THEN 
+	    write(stdErr,"IN:"++pretty(fmtTask(data(Task?)))++"\n") & (\\ _ .
+	    yield(Task?)
+	    )
+        ELSE yield(Task?) FI
+    OTHERWISE
+    IF interruptedSystemCall?(Task?) THEN
+    	-- restart
+	readInterrupts & tread(E)
+    ELSE
+    	yield(Task?)
+    FI
+    )
+
+FUN twrite : environment ** answer		-> com[environment]
+DEF twrite(Env,Answer) ==
+    (IF traceChannel?
+      THEN write(stdErr,"OUT:"++pretty(fmtAnswer(Answer))++"\n")
+      ELSE succeed(nil)
+    FI)							& (\\ _ .
+    write(channel(Env),Answer)				; (\\ Res? .
+    IF okay?(Res?) THEN
+    	succeed(Env)
+    OTHERWISE
+    IF interruptedSystemCall?(Res?) THEN
+    	-- restart
+	readInterrupts & twrite(Env, Answer)
+    ELSE
+    	break(error(Res?))
+    FI
+    ))
+
+-- %$Ausführung eines Tasks$ ===========================================
+/* %
+ @code{doTask} bearbeitet einen Task. Resultate an den Debugger werden
+innerhald der Task-Behandlung gesendet.
+ */
+FUN doTask: environment ** task			-> com[environment]
+
+
+-- %$$$$register:$ --------------------------------------------------
+DEF doTask(E,register) ==  
+    getPId				& (\\Self.
+    twrite(E,register(Self))		& 
+    wait
+    )
+
+
+-- %$$$$eval:$ --------------------------------------------------
+DEF doTask(E,eval(EvalId,Expr,Fct)) ==
+    LET /* % @BIL Die Id der Auswertung wird in den Stack der Auswertungs-Ids
+	  gelegt. @EIL	*/ 
+	E0		== E pushEvalId EvalId
+	/* % @BIL Nun wird die Expression ausgewertet. @EIL */
+	(E1,Objs)	== eval(E0)(E0,Expr)
+	/* % @BIL Nun werden die mit Hilfe von @code{PRINT} übersetzten 
+	Ergebnisse (Fmt) berechnet und an den Debugger übergeben. @EIL */
+	(E2,Fmt)	== print(E1)(E1,Objs,Fct)
+	Den		== pretty(Fmt) -- FIXME: use fmt as result
+	/* % @BIL Das Ergebnis wird in der Result-Tabelle abgelegt. @EIL */
+	EvalId1		== topEvalId(E2) -- should always be equal to EvalId
+	E3		== popEvalId(E2)
+	E4		== IF #(Objs) = 1
+			     THEN (E3,EvalId1) := theuniq(Objs)
+			     ELSE rm(E3,EvalId1) -- löschen 
+			   FI
+    IN twrite(E4,result(EvalId1,Den)) & wait
+
+-- %$$$$exec:$ --------------------------------------------------
+/* %
+ Bei einem @code{exec(...)}-Task wird erwartet, daß der Ausdruck vom Typ
+@code{com[data]} ist. Die angegebene Funktionalität ist aber nicht
+@code{com[data]} sondern @code{data}, da das Command @emph{ausgeführt} werden
+soll und als Resultat ein Objekt vom Typ @code{data} liefert.
+ */
+DEF doTask(E,exec(EvalId,Expr,Fct)) ==
+    LET /* % @BIL Die Id der Auswertung wird in den Stack der Auswertungs-Ids
+	  gelegt. @EIL	*/ 
+	E0		== E pushEvalId EvalId
+	/* % @BIL Nun wird die Expression ausgewertet. @EIL */
+	(E1,Objs)	== eval(E0)(E0,Expr)
+	/* % @BIL Das Resultat muß (bei Typkorrektheit) einelementig sein
+	(com[data]). Dieses Command-Datum wird nun mit Hilfe von
+	 exec'RUNTIMEENV ausgeführt. (Bei Continuations wird die
+	 Evaluation, die in dem com[data]-Objekt steckt, innerhalb der
+	 Execution rekursiv aufgerufen.) @EIL */
+    IN	exec(theuniq(Objs),E1,special(abortFromCode))	& (\\AnsResult,E2.
+	IF okay?(AnsResult)
+	  THEN LET /* % @BIL Das Resultat ist vom Typ @code{ans[data]}
+		    und wird nun in ein @code{fmt} konvertiert
+		    und an den Debugger zurückgeliefert. @EIL */
+		   (E3,Fmt) == print(E2)(E2,%(data(AnsResult)),Fct)
+		   Den	    == pretty(Fmt) -- FIXME: use fmt as result
+		   /* % @BIL Das Ergebnis wird nun in der Result-Tabelle
+		 abgelegt. @EIL */
+		   EvalId1  == topEvalId(E3) -- should always be equal to EvalId
+		   E4	    == popEvalId(E3)
+		   E5	    == (E4,EvalId1) := data(AnsResult)
+		IN twrite(E5,result(EvalId1,Den)) & wait
+	  ELSE -- Kommando schlug fehl
+	       LET EvalId1  == topEvalId(E2) -- should always be equal to EvalId
+		   E3	    == popEvalId(E2)
+		   E4	    == rm(E3,EvalId1)
+	       IN twrite(E4,fail(EvalId1,error(AnsResult))) & wait
+	FI						)
+
+-- %$$$$declare:$ -------------------------------------------------
+DEF doTask(E,declare(Decls)) == 
+    declare(E,Decls) & twrite(_,ready) & wait
+
+-- %$$$$define:$ --------------------------------------------------
+DEF doTask(E,define(Defs))   == 
+    define(E,Defs) & twrite(_,ready) & wait
+-- FIXME: should declare an evalId for declaration too. Breakpoints may
+-- cause problems for constants.
+
+-- %$$$$breakPoint$ -----------------------------------------------
+/* %
+ @code{breakPoint'Environment} kann fehlschlagen, wenn die Funktion nicht
+definiert oder ihr Rang Null ist.
+ */
+DEF doTask(E,breakPoint(Bp)) == 
+    breakPoint(E,Bp)				; (\\Ans.
+    IF Ans okay?
+      THEN twrite(data(Ans),ready) & wait
+      ELSE twrite(E,error(error(Ans))) & wait
+    FI						)
+
+-- %$$$$assocPrintFuns$ -------------------------------------------
+DEF doTask(E,assocPrintFuns(Prints)) ==
+    assocPrintFuns(E,Prints) & twrite(_,ready) & wait
+
+-- %$$$$break$ ----------------------------------------------------
+/* %
+ @code{break} ist gewissermaßen ein dummy-Task. Es passiert
+nichts. @code{break} wird nur verwendet, damit die Task-Schleife betreten wird.
+ */
+DEF doTask(E,break) == wait(E)
+
+-- %$$$$continue$ --------------------------------------------------
+/* %
+ Bei @code{continue} wird überprüft, ob es eine fortsetzbare Auswertung im
+Stack. Falls dies der Fall ist, wird die Auswertung fortgesetzt (Verlassen der
+Warte-Schleife), andernfalls wird ein Fehler zurückgegeben.
+ */
+DEF doTask(E,continue) ==
+    IF brokenEval?(E)
+      THEN succeed(E)
+      ELSE twrite(E,error("nothing to continue")) & wait
+    FI
+
+-- %$$$$stepwise evaluation$ ---------------------------------------------
+/* %
+ single-steps werden realisiert, indem die Anzahl der Schritte im Environment
+abgelegt wird. Wenn @code{monitor} durchlaufen wird, wird dieser Wert
+dekremeniert und beim Wechsel auf Null wird ein @code{break} forciert.
+ */
+DEF doTask(E,singleStep(No)) ==
+    IF brokenEval?(E)
+      THEN succeed(setCounter(E,No))
+      ELSE twrite(E,error("nothing to step through")) & wait
+    FI
+
+-- %$$$$nOfBrokens$ -------------------------------------------------
+/* %
+ Die Funktionalität von @code{evalState} wird in der Struktur
+@code{Environment} bereitgestellt.
+ */
+DEF doTask(E,evalStates) == 
+    twrite(E,evalStates(evalStates(E))) & wait
+
+-- %$$$$bt$ ---------------------------------------------------------
+DEF doTask(E,bt) == 
+    LET OptBt == bt?(E)
+    IN IF avail?(OptBt)
+	 THEN twrite(E,bt(cont(OptBt))) & wait
+	 ELSE twrite(E,error("nothing to back trace")) & wait
+       FI
+
+-- %$$$$localEnv$ --------------------------------------------------
+DEF doTask(E,select(No)) == 
+    LET OptSel == select?(E,No)
+    IN IF avail?(OptSel)
+	 THEN twrite(E,selection(cont(OptSel))) & wait
+	 ELSE twrite(E,error("impossible selection in stack")) & wait
+       FI
+
+-- %$$$$sync$ -------------------------------------------------
+DEF doTask(E,sync(Id)) == twrite(E,sync(Id)) & wait
+
+-- %$$$$debug$ ----------------------------------------------------
+DEF doTask(E,debug) ==
+    write(stdOut,(pretty(fmtEnvironment(E))):denotation) & (\\ _ .
+    twrite(E,ready)					) & wait
+
+-- %$$$$exit$ --------------------------------------------------
+DEF doTask(_,exit) == exit(0)
+
+-- %$$$$iprint$ --------------------------------------------------
+DEF doTask(E, iprint(Id, tpos, fct)) ==
+  LET (E1, res) == iprint(E)(E, E ! Id, tpos, fct)
+  IN
+  twrite(E1, iprint(pretty(res)))
+
+-- %$apply$ --------------------------------------------------
+
+FUN apply: environment ** obj ** nat ** seq[obj] ->
+		environment **	seq[obj]
+DEF apply(E,F,Dim,A) ==
+    LET (FA,E1) == apply(F,Dim,A,E, special(abortFromCode)) IN (E1,FA)

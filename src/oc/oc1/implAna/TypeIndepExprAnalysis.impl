@@ -1,0 +1,318 @@
+-- LAST EDIT: Mon Jun 28 02:28:09 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, Jun 23 1993: adapted to new absy
+--		af, Jun 24 1993: no hints for unused generated identifiers
+--		af, Jun 27 1993: added handling of mix expressions
+-- ============================================================================
+
+IMPLEMENTATION TypeIndepExprAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Denotation	ONLY ++ empty
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqFilter	ONLY | partition
+	SeqZip		COMPLETELY
+        Compose		COMPLETELY
+
+	Pos		ONLY pos `
+	Error		ONLY err ok + errKind error hint
+			     string
+
+	Rep		ONLY rep ` generated?
+
+	PartName	ONLY partName:SORT ide pos
+	Fct[partName]	ONLY fct
+	Impl[partName]	COMPLETELY
+
+	RepSet		COMPLETELY
+
+-- ----------------------------------------------------------------------------
+
+FUN rearrange: expr**repSet -> expr**repSet**repSet**repSet**err
+-- Aufgerufen mit einem Ausdruck und der Menge von in der Umgebung
+--   let-gebundenen Variablen
+-- wird der Ausdruck mit sortierten Let/Where-Gleichungen geliefert, sowie
+--   der Menge von benutzten (in der Umgebung let-gebundenen) Variablen,
+--   der Menge der im Ausdruck let- oder lambda-gebundenen Variablen,
+--   der Menge der benutzten Bezeichner und
+--   Fehler beim Scoping von Variablen und Sortieren von Gleichungen sowie
+--     Hinweise ueber unbenutzte Variablen
+
+DEF rearrange(none(p),lets) == (none(p),{},{},{},ok)
+
+DEF rearrange(expr AS val(pname,p),lets) ==
+  (expr,
+   IF ide(pname) in lets THEN (ide(pname),pos(pname))% ELSE {} FI,
+   {},
+   (ide(pname),pos(pname))%,
+   ok)
+
+DEF rearrange(expr AS den(string,pos),lets) == (expr,{},{},{},ok)
+
+DEF rearrange(tuple(exprS,pos),lets) ==
+  LET (newExprS,usedLets,boundVars,usedReps,errors) == rearrangeSeq(exprS,lets)
+  IN (tuple(newExprS,pos),usedLets,boundVars,usedReps,errors)
+
+DEF rearrange(apply(funct,arg,pos),lets) ==
+  LET (newFun,usedLetsFun,boundVarsFun,usedRepsFun,errorsFun) ==
+							rearrange(funct,lets)
+      (newArg,usedLetsArg,boundVarsArg,usedRepsArg,errorsArg) ==
+							rearrange(arg,lets)
+  IN (apply(newFun,newArg,pos),
+      usedLetsFun+usedLetsArg,
+      boundVarsFun+boundVarsArg,
+      usedRepsFun+usedRepsArg,
+      errorsFun+errorsArg)
+
+DEF rearrange(mix(exprBitsetS,pos),lets) ==
+  LET (exprS,bitsetS) == unzip(\\p.(1st(p),2nd(p)))(exprBitsetS)
+      (newExprS,usedLets,boundVars,usedReps,errors) == rearrangeSeq(exprS,lets)
+  IN (mix(zip(&)(newExprS,bitsetS),pos),usedLets,boundVars,usedReps,errors)
+
+DEF rearrange(cases(guards,else,pos),lets) ==
+  LET (newGuards,usedLetsGuards,boundVarsGuards,usedRepsGuards,errorsGuards) ==
+						rearrangeSeq(guards,lets)
+      (newElse,usedLetsElse,boundVarsElse,usedRepsElse,errorsElse) ==
+						rearrange(else,lets)
+  IN (cases(newGuards,newElse,pos),
+      usedLetsGuards+usedLetsElse,
+      boundVarsGuards+boundVarsElse,
+      usedRepsGuards+usedRepsElse,
+      errorsGuards+errorsElse)
+
+DEF rearrange(lambda(pnames,body,pos),lets) ==
+  LET (newBody,usedLetsBody,boundVarsBody,usedRepsBody,errorsBody) ==
+							rearrange(body,lets)
+      (boundVars,scopeErrors) == addLocalsToSignature(pnames,boundVarsBody)
+  IN (lambda(pnames,newBody,pos),
+      usedLetsBody,
+      boundVars,
+      usedRepsBody,
+      (errorsBody+scopeErrors)+checkUsed(pnames,usedRepsBody))
+
+DEF rearrange(block(defs,body,pos),lets) ==
+  LET pnames == (++ \ <>)(partNames*(left*defs))
+      ownLets == toRepSet(pnames)
+      innerLets == lets+ownLets
+      (newBody,usedLetsBody,boundVarsBody,usedRepsBody,errorsBody) ==
+						rearrange(body,innerLets)
+      (newDefs,usedLetsDefs,boundVarsRhss,usedRepsDefs,
+       scopeAndRecursiveErrors) == rearrangeDefs(defs,innerLets)
+      innerBoundVars == boundVarsRhss+boundVarsBody
+      (boundVars,scopeErrors) == addLocalsToSignature(pnames,innerBoundVars)
+  IN (block(newDefs,newBody,pos),
+      (usedLetsDefs+usedLetsBody)-ownLets,
+      boundVars,
+      usedRepsDefs+usedRepsBody,
+      ((errorsBody+scopeErrors)+scopeAndRecursiveErrors)
+                               +checkUsed(pnames,usedRepsDefs+usedRepsBody))
+
+DEF rearrange(typed(expr,fct,pos),lets) ==
+  LET (newExpr,usedLets,boundVars,usedReps,errors) == rearrange(expr,lets)
+  IN (typed(newExpr,fct,pos),usedLets,boundVars,usedReps,errors)
+
+FUN partNames: expr[partName] -> seq[partName]
+
+DEF partNames(val(pname,pos)) == pname%
+
+DEF partNames(tuple(elems,pos)) == object*elems
+
+FUN toRepSet: seq[partName] -> repSet
+
+DEF toRepSet == (\\pname,set.(ide(pname),pos(pname)) incl set) \ {}
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN rearrangeSeq: seq[expr]**repSet -> seq[expr]**repSet**repSet**repSet**err
+DEF rearrangeSeq(<>[expr],lets) == (<>,{},{},{},ok)
+DEF rearrangeSeq(e1 ::[expr] eR,lets) ==
+  LET (newE1,usedLetsE1,boundVarsE1,usedRepsE1,errorsE1) == rearrange(e1,lets)
+      (newER,usedLetsER,boundVarsER,usedRepsER,errorsER) ==
+							rearrangeSeq(eR,lets)
+  IN (newE1::newER,
+      usedLetsE1+usedLetsER,
+      boundVarsE1+boundVarsER,
+      usedRepsE1+usedRepsER,
+      errorsE1+errorsER)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN rearrange: guard**repSet -> guard**repSet**repSet**repSet**err
+
+DEF rearrange(guard(if,then,pos),lets) ==
+  LET (newIf,usedLetsIf,boundVarsIf,usedRepsIf,errorsIf) == rearrange(if,lets)
+      (newThen,usedLetsThen,boundVarsThen,usedRepsThen,errorsThen) ==
+							rearrange(then,lets)
+  IN (guard(newIf,newThen,pos),
+      usedLetsIf+usedLetsThen,
+      boundVarsIf+boundVarsThen,
+      usedRepsIf+usedRepsThen,
+      errorsIf+errorsThen)
+
+FUN rearrangeSeq: seq[guard]**repSet -> seq[guard]**repSet**repSet**repSet**err
+
+DEF rearrangeSeq(<>[guard],lets) == (<>,{},{},{},ok)
+DEF rearrangeSeq(g1 ::[guard] gR,lets) ==
+  LET (newG1,usedLetsG1,boundVarsG1,usedRepsG1,errorsG1) == rearrange(g1,lets)
+      (newGR,usedLetsGR,boundVarsGR,usedRepsGR,errorsGR) ==
+							rearrangeSeq(gR,lets)
+  IN (newG1::newGR,
+      usedLetsG1+usedLetsGR,
+      boundVarsG1+boundVarsGR,
+      usedRepsG1+usedRepsGR,
+      errorsG1+errorsGR)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN rearrangeDefs: seq[eq]**repSet -> seq[eq]**repSet**repSet**repSet**err
+
+DEF rearrangeDefs(defs,lets) ==
+  LET (analDefs,usedLets,boundVarsRhss,usedReps,scopeErrors) ==
+						rearrangeSeq(0,defs,lets)
+      (newDefs,recursiveErrors) == sort(analDefs)
+  IN (eq*newDefs,usedLets,boundVarsRhss,usedReps,scopeErrors+recursiveErrors)
+
+FUN rearrange: nat**eq**repSet -> analEq**repSet**repSet**repSet**err
+
+DEF rearrange(id,eq(left,right,pos),lets) ==
+  LET (newRight,usedLets,boundVarsRight,usedReps,errorsRight) ==
+							rearrange(right,lets)
+      ownLets == toRepSet(partNames(left))
+  IN (eq(id,ownLets,usedLets,eq(left,newRight,pos)),
+      usedLets,
+      boundVarsRight,
+      usedReps,
+      errorsRight)
+
+FUN rearrangeSeq: nat**seq[eq]**repSet ->
+				seq[analEq]**repSet**repSet**repSet**err
+DEF rearrangeSeq(id,<>,lets) == (<>,{},{},{},ok)
+DEF rearrangeSeq(id,eq1::eqR,lets) ==
+  LET (newEq1,usedLetsEq1,boundVarsEq1,usedRepsEq1,errorsEq1) ==
+						rearrange(id,eq1,lets)
+      (newEqR,usedLetsEqR,boundVarsEqR,usedRepsEqR,errorsEqR) ==
+						rearrangeSeq(succ(id),eqR,lets)
+  IN (newEq1::newEqR,
+      usedLetsEq1+usedLetsEqR,
+      boundVarsEq1+boundVarsEqR,
+      usedRepsEq1+usedRepsEqR,
+      errorsEq1+errorsEqR)
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN addLocalsToSignature: seq[partName]**repSet -> repSet**err
+-- die Namen werden zu der Menge addiert,
+-- Fehler bei doppelten oder ueberladenen Bezeichnern
+
+DEF addLocalsToSignature(pnameS,sig) ==
+  LET add == \\pname,sigAndErr.
+               LET (locs,errs) == (1st(sigAndErr),2nd(sigAndErr))
+               IN IF ide(pname) in locs THEN
+                     locs &
+                     (err(error,duplOverlLocal,ide(pname)`,pos(pname)`,
+                          pos(ide(pname),locs))+errs)
+                  ELSE ((ide(pname),pos(pname)) incl locs)&errs
+                  FI
+  IN (1st(P),2nd(P))
+     WHERE P == (add \ (sig&ok))(pnameS)
+
+FUN duplOverlLocal: denotation
+DEF duplOverlLocal ==
+  "duplicate or overloaded local name %s (also added at %s)"
+
+FUN checkUsed: seq[partName]**repSet -> err
+-- Hinweis, dass ein (lokal deklarierter) partieller Name nicht in der
+--   Menge der benutzten Bezeichner auftritt
+
+DEF checkUsed(pnames,usedReps) ==
+  ((\\pname,errs.
+      IF ide(pname) in usedReps THEN errs
+      IF ide(pname) generated?  THEN errs
+      ELSE err(hint,unusedLocalMsg,ide(pname)`,pos(pname))+errs
+      FI) \ ok)(pnames)
+  WHERE unusedLocalMsg == "local name %s is not used"
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+DATA analEq == eq(id:nat,def:repSet,use:repSet,eq:eq)
+
+FUN sort: seq[analEq] -> seq[analEq]**err
+
+DEF sort(eqs) == checkUses(sortUsedFirst(eqs))
+
+FUN sortUsedFirst: seq[analEq] -> seq[analEq]
+-- Sortierung der Knoten nach Finishing Time (groesste zuerst) des depth-first-
+--   search sortiert
+
+DEF sortUsedFirst(<>) == <>
+DEF sortUsedFirst(gray::whites) ==
+  LET (firstBlacks,stillWhites) == dfs(usedBy)(gray,whites)
+  IN sortUsedFirst(stillWhites)++firstBlacks
+
+FUN checkUses: seq[analEq] -> seq[analEq]**err
+
+DEF checkUses(<>) == (<>,ok)
+DEF checkUses(eq1::eqR) ==
+  LET (cyclic,rest) == dfs(uses)(eq1,eqR)
+      (sorted,errors) == checkUses(rest)
+  IN (cyclic++sorted,checkCycle(cyclic)+errors)
+
+FUN checkCycle: seq[analEq] -> err
+
+DEF checkCycle(eq1:: <>) ==
+  IF eq1 uses eq1 THEN err(error,dirRecursiveLet,pos(eq(eq1))) ELSE ok FI
+DEF checkCycle(eq1::(eqs AS eq2::eqR)) ==
+  LET otherPosS == ((\\e,t.(" ")++((pos(eq(e))`)++t)) \ empty)(eqs)
+  IN err(error,indirRecursiveLet,otherPosS,pos(eq(eq1)))
+
+FUN dirRecursiveLet: denotation
+DEF dirRecursiveLet == "recursive let/where: direct recursive equation"
+
+FUN indirRecursiveLet: denotation
+DEF indirRecursiveLet ==
+  "recursive let/where: indirect recursive equation, involving equations at%s"
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN dfs: (analEq**analEq->bool) ->
+         analEq**seq[analEq] -> seq[analEq]**seq[analEq]
+-- liefert Knoten des Spanning Tree eines Knotens in inverser Finishing Time-
+--   Reihenfolge, sowie unbeteiligte Knoten
+
+DEF dfs(edge)(gray,whites) ==
+  LET whiteSuccs == (\\vertex.gray edge vertex) | whites
+      (blacks,stillWhites) == visit(edge)(whiteSuccs,whites)
+  IN (gray::blacks,stillWhites)
+
+FUN visit: (analEq**analEq->bool) ->
+           seq[analEq]**seq[analEq] -> seq[analEq]**seq[analEq]
+
+DEF visit(edge)(<>,whites) == (<>,whites)
+DEF visit(edge)(succ1::succR,whites) ==
+  LET (whiteSucc1,restWhites) == (\\white.id(white)=id(succ1)) partition whites
+  IN IF whiteSucc1 <>? THEN visit(edge)(succR,whites)
+     IF whiteSucc1 ::? THEN
+       LET (firstBlacks,stillWhites) == dfs(edge)(succ1,restWhites)
+           (laterBlacks,finalWhites) == visit(edge)(succR,stillWhites)
+       IN (laterBlacks++firstBlacks,finalWhites)
+     FI
+
+-- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN uses: analEq**analEq -> bool
+DEF uses(eq(id1,def1,used1,eq1),eq(id2,def2,used2,eq2)) ==
+  ~(disjoint(used1,def2))
+
+FUN usedBy: analEq**analEq -> bool
+DEF usedBy(eq(id1,def1,used1,eq1),eq(id2,def2,used2,eq2)) ==
+  ~(disjoint(def1,used2))

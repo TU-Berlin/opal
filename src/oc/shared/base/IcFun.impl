@@ -1,0 +1,269 @@
+
+IMPLEMENTATION IcFun
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:36 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	NatConv		ONLY `
+	Seq		COMPLETELY
+	SeqMap		ONLY *
+	Pair		COMPLETELY
+	Nat		COMPLETELY
+	SetConv[nat,<]  ONLY ` 
+
+IMPORT	NatMap		ONLY natMap ! def def? codom
+	NatMapReduce	ONLY /
+	Format		COMPLETELY
+	FormatFun1	COMPLETELY
+
+IMPORT	Ide		ONLY ide origin:SORT origin:ide->origin
+			     # :ide->nat # :origin->nat target
+			     = : origin**origin->bool
+			     format: ide -> format
+			     format: origin -> format
+			     local? global?
+	Ic		COMPLETELY
+			Store COMPLETELY
+			SourceAn ONLY errorKind:SORT never? optional? always?
+				      pos:SORT line colum
+
+
+-- =========================================================================
+-- mods and objects
+-- =========================================================================
+
+DEF obj(M,i) ==
+    IF origin(i) = target THEN
+	objs(M) ! #(i)
+    ELSE
+	objs(uses(M) ! #(origin(i))) ! #(i)
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+DEF setObj(M,i,o) ==
+    IF origin(i) = target THEN
+	mod(symbol(M),origin(M),kind(M),uses(M),
+		def(#(i),o,objs(M)))
+    ELSE
+	LET M1 == uses(M) ! #(origin(i))
+	    M2 == mod(symbol(M1),origin(M1),kind(M1),uses(M1),
+			def(#(i),o,objs(M1)))
+	IN
+	mod(symbol(M),origin(M),kind(M),
+		def(#(origin(i)),M2,uses(M)),objs(M))
+    FI
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+DEF objs(p?,M) ==
+    /(getWhen(p?), <>, objs(M))
+
+    FUN getWhen : (obj -> bool) -> obj ** seq[obj:SORT] -> seq[obj:SORT]
+    DEF getWhen(p?)(o,os) ==
+	IF p?(o) THEN o::os ELSE os FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+DEF mods(p?,M) ==
+    /(getModWhen(p?), <>, uses(M))
+
+    FUN getModWhen : (mod -> bool) -> mod ** seq[mod:SORT] -> seq[mod:SORT]
+    DEF getModWhen(p?)(m,ms) ==
+	IF p?(m) THEN m::ms ELSE ms FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+DEF symbol(M,orig) ==
+    IF orig = target THEN symbol(M)
+		     ELSE symbol(uses(M) ! #(orig)) FI
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+DEF kind(M,orig) ==
+    IF orig = target THEN kind(M)
+		     ELSE kind(uses(M) ! #(orig)) FI
+
+
+-- ==========================================================================
+-- dumping
+-- ==========================================================================
+
+-- FUN format : (ide -> format) -> stm -> format
+DEF format(fi)(s:stm) ==
+IF nop?(s) THEN
+    blk(2,%(str("nop;")))
+
+IF pos?(s) THEN LET p==pos(s) IN
+    blk(2,%(str("pos "),str(`(line(p))),str(","),str(`(colum(p))),str(";")))
+
+IF halt?(s) THEN LET m==message(s) k==kind(s) IN
+    blk(2,%(str("halt """),str(m),str(""","),
+				IF never?(k)    THEN str("never;")
+				IF optional?(k) THEN str("optional;")
+				IF always?(k)   THEN str("always;") FI))
+
+IF ass?(s) THEN LET is==ins(s) os==outs(s) IN
+    blk(2,%(insAndOuts(fi,is," -> ",os),str(";")))
+
+IF call?(s) THEN LET p==ide(s) is==ins(s) os==outs(s) IN
+    blk(2,%(str("call "),fi(p),str(" "),insAndOuts(fi,is," -> ",os),str(";")))
+    
+IF eval?(s) THEN LET f==ide(s) is==ins(s) os==outs(s) IN
+    blk(2,%(str("eval "),fi(f),str(" "),insAndOuts(fi,is," -> ",os),str(";")))
+    
+IF inlineStatic?(s) THEN LET ma==macro(s) ar==in(s) o==out(s) IN
+    blk(2,%(str("inlineStatic "), str(ma), str(","),str(ar), str(" -> "), fi(o)))
+
+IF inlineDynamic?(s) THEN LET ma==macro(s) ar==in(s) o==out(s) IN
+    blk(2,%(str("inlineDynamic "), str(ma), str(","),fi(ar), str(" -> "), fi(o)))
+
+IF copy?(s) THEN LET i==ide(s) st==store(s) n==times(s) IN
+    blk(2,%(str("copy "),fi(i),str(":"),format(st),str(","),str(`(n)),
+		str(";")))
+
+IF free?(s) THEN LET i==ide(s) st==store(s) n==times(s) IN
+    blk(2,%(str("free "),fi(i),str(":"),format(st),str(","),str(`(n)),
+		str(";")))
+
+IF cons?(s) THEN LET st==store(s) is==ins(s) o==out(s) IN
+    blk(2,%(str("cons "),format(st),str(","),insAndOuts(fi,is," -> ",%(o)),
+	    str(";")))
+
+IF reuse?(s) THEN LET st==store(s) ca==cand(s) /* cst==candStore(s) */
+				is==ins(s) o==out(s) IN
+    blk(2,%(str("reuse "),format(st),str(","),fi(ca),str(":"),format(st))
+       ++ %(str(","),insAndOuts(fi,is," -> ",%(o)),str(";")))
+
+IF block?(s) THEN LET vs==vars(s) ss==stms(s) IN
+    blk(0,%(str("BEGIN "),
+	    list(str(""),str(""),str(""),(format(fi)):obj->format)(vs),
+	    str(";"),nl,formatSeq(fi)(ss),nl,str("END;")))
+
+IF case?(s) THEN LET ds==ide(s) st==store(s) ms==matches(s) df==default(s) IN
+    blk(0,%(str("CASE "),fi(ds),str(":"),format(st),str(" OF"),nl)
+       ++ (%(list(str(" "),nl,str(""),(format(fi)):match->format)(ms))
+       ++  %(nl,str("ELSE"),nl,str(" "),format(fi)(df))))
+
+FI
+    
+FUN formatSeq : (ide -> format) -> seq[stm:SORT] -> format
+DEF formatSeq(fi)(ss) ==
+    list(str(" "),nl,str(""),(format(fi)):stm->format)(ss)
+
+FUN insAndOuts : (ide -> format) ** seq[ide:SORT] ** denotation 
+				 ** seq[ide:SORT] -> format
+DEF insAndOuts(f,is,between,os) ==
+    blk(2,%(list(str(""),str(","),str(""),f)(is),str(between),
+	    list(str(""),str(","),str(""),f)(os)))
+
+FUN format : (ide -> format) -> match -> format
+DEF format(fi)(m:match) == 
+		LET ts== tags(m) st==store(m) sls==sels(m) ss==stms(m) IN
+    blk(2,%(str((`(`)(ts)):denotation),
+	    format(st),str(" "),
+	    list(str(""),str(","),str(""),(format(fi)):sel->format)(sls),
+	    str(" =>"),nl,formatSeq(fi)(ss)))
+
+FUN format : (ide -> format) -> sel -> format
+DEF format(fi)(s:sel) ==
+IF dead?(s) THEN LET i==ide(s) st==store(s) IN
+    blk(0,%(str("dead "),fi(i),str(":"),format(st)))
+IF plain?(s) THEN LET i==ide(s) st==store(s) n==times(s) IN
+    blk(0,%(str("plain "),fi(i),str(":"),format(st),str("/"),str(`(n))))
+IF borrow?(s) THEN LET i==ide(s) st==store(s) n==times(s) IN
+    blk(0,%(str("borrow "),fi(i),str(":"),format(st),str("/"),str(`(n))))
+IF reuse?(s) THEN LET i==ide(s) st==store(s) n==times(s) IN
+    blk(0,%(str("reuse "),fi(i),str(":"),format(st),str("/"),str(`(n))))
+FI
+		
+-- FUN format : (ide -> format) -> obj -> format
+DEF format(fi)(variable(i,st)) ==
+    blk(2,%(str("VAR "),fi(i),str(":"),format(st),str(";")))
+DEF format(fi)(hidden(i,st,_,sy)) ==
+    blk(2,%(str("EXT "),fi(i),str(" """),str(sy),
+	    str(""":"),format(st),str(";")))
+DEF format(fi)(procedure(i,st,md,sy,is,os,s)) ==
+    blk(2,%(str("PROC "),format(md),
+	    fi(i),str(" """),str(sy),str(""":"),format(st))
+       ++ %(str(" "),insAndOuts(fi,is," -> ",os),str(" :="),nl,
+	    format(fi)(s)))
+DEF format(fi)(constant(i,st,md,sy,s)) ==
+    blk(2,%(str("CONST "),format(md),fi(i),str(" """),str(sy),str(""":"),
+	    format(st))
+       ++ %(str(" :="),nl,format(fi)(s)))
+DEF format(fi)(denotation(i,st,md,sy,r)) ==
+    blk(2,%(str("DENO "),format(md),fi(i),str(" """),str(sy),
+	    str(""":"),format(st))
+       ++ %(str(" := """),str(r),str("""")))
+
+
+FUN format : mode -> format
+DEF format(external) == str("EXP ")
+DEF format(internal) == str("INT ")
+DEF format(local)    == str("LOC ")
+
+FUN format : store -> format
+DEF format(s:store) ==
+IF some?(s) THEN
+    str("some")
+IF somePrim?(s) THEN
+    str("somePrim")
+IF prim?(s) THEN LET t==tag(s) IN
+    blk(2,%(str("prim-"),str(`(t))))
+IF onePrim?(s) THEN LET t==tag(s) IN
+    blk(2,%(str("prim1-"),str(`(t))))
+IF someProd?(s) THEN
+    str("someProd")
+IF prod?(s) THEN LET t==tag(s) cs==comps(s) IN
+    blk(2,%(str("prod-"),str(`(t)),
+	    list(str("("),str(","),str(")"),format:store->format)(cs)))
+IF oneProd?(s) THEN LET t==tag(s) cs==comps(s) IN
+    blk(2,%(str("prod1-"),str(`(t)),
+	    list(str("("),str(","),str(")"),format:store->format)(cs)))
+IF someClos?(s) THEN
+    str("someClos")
+IF clos?(s) THEN LET is==ins(s) os==outs(s) IN
+    blk(2,%(str("clos"),
+	    list(str("("),str(","),str(")"),format:store->format)(is),
+	    list(str("->("),str(","),str(")"),format:store->format)(os)))
+IF sum?(s) THEN LET ms==members(s) IN
+    blk(2,%(list(str("{"),str(","),str("}"),format:store->format)(ms)))
+IF tup?(s) THEN LET cs==comps(s) IN
+    blk(2,%(list(str("TUP["),str(","),str("]"),format:store->format)(cs)))
+FI
+
+-- FUN format : (ide->format) -> mod -> format
+DEF format(fi)(M:mod) == LET sy==symbol(M) or==origin(M) 
+			     usM==uses(M) obM==objs(M) IN
+    blk(0,%(str("MODULE "),str(sy),str(" ORIGIN "),format(or),nl)
+       ++ %(blk(2,%(str("USES"),nl,
+		    list(str(" "),nl,str(""),(format(fi)):mod->format)(uss))),
+	    nl,
+	    list(str(" "),nl,str(""),(format(fi)):obj->format)(obs)))
+    WHERE uss == codom(usM)
+	  obs == codom(obM)
+
+-- FUN dump : mod -> () -> string
+DEF dump(M)() ==
+    pretty(format(formatIde(M))(M),"79"!'Nat)
+
+FUN formatIde : mod -> ide -> format
+DEF formatIde(M)(i) ==
+    IF global?(i) THEN
+        IF origin(i) = target THEN
+            IF #(i) def? objs(M) THEN 
+		blk(0,%(str(symbol(objs(M) ! #(i))),format(i)))
+	    ELSE format(i) FI
+	OTHERWISE
+        IF #(origin(i)) def? uses(M) THEN
+            IF #(i) def? objs(uses(M) ! #(origin(i))) THEN
+                blk(0,%(str(symbol(objs(uses(M)! #(origin(i)))! #(i))),
+			format(i)))
+	    ELSE format(i) FI
+	ELSE format(i) FI
+    ELSE format(i) FI

@@ -1,0 +1,370 @@
+/* % Das Environment enthält alle Kontext-Informationen, die zur Auswertung
+eines Ausdrucks durch den Interpreter notwendig sind. Dazu zählen die
+Normalformen globaler Funktionen, Typen von Ausdrücken, symbolische Bezeichner,
+Bindungen lokaler Variablen sowie Kontext-Informationen bezüglich des aktuellen
+Evaluationspunktes (Einordnung in den Kontext des Terms). 
+
+Zu jedem Zeitpunkt ist genau ein Environment definiert. Es wird durch die
+meisten Funktionen, die auf das Environment schreibend zugreifen dürfen,
+,,durchgereicht''. Das resultierende Environment ist das jeweils aktuelle. 
+*/
+
+SIGNATURE Environment
+
+IMPORT  Nat                             ONLY    nat
+        Com[environment]                ONLY    com
+        RUNTIME                         ONLY    obj
+        Option[obj]                     ONLY    option
+        Option[tpos]                    ONLY    option
+        Option[expr]                    ONLY    option
+        Option[kind]                    ONLY    option
+        Option[objectId]                ONLY    option
+        Option[selection]               ONLY    option
+        Option[printInfo]               ONLY    option
+        Option[seq[sortInfo]]           ONLY    option
+        Option[seq[reducedName]]        ONLY    option
+        Seq[obj]                        ONLY    seq
+        Seq[name]                       ONLY    seq
+        Seq[expr]                       ONLY    seq
+        Seq[define]                     ONLY    seq
+        Seq[declare]                    ONLY    seq
+        Seq[sortInfo]                   ONLY    seq
+        Seq[objectId]                   ONLY    seq
+        Seq[reducedName]                ONLY    seq
+        Seq[assocPrintFun]              ONLY    seq
+        Seq[nat]                        ONLY    seq
+        Set[evalId,<]                   ONLY    set
+        Map[evalId,<,evalState]         ONLY    map
+        Com[environment]                ONLY    com
+        Array[obj]                      ONLY    array
+        RUNTIME                         ONLY    obj
+        Fmt                             ONLY    fmt:SORT
+        ProcessConnect[task,answer]     ONLY    channel:SORT
+IMPORT
+        Expression      ONLY    expr:SORT objectId:SORT bindOffset:SORT 
+                                tpos:SORT name:SORT fct:SORT
+                                outputSort:SORT evalId:SORT <
+        ChannelData     ONLY    task:SORT answer:SORT 
+                                reducedName:SORT kind:SORT declare:SORT
+                                define:SORT assocPrintFun:SORT 
+                                breakPoint:SORT sortInfo:SORT
+                                selection:SORT
+                                evalState:SORT
+                
+
+
+-- %$Definition des Environments$
+-- %-----------------------------
+
+/* % Das Environment besteht konzeptionell (im wesentlichen) aus zwei
+verschiedenen Tabellen: der @emph{ObjectTable} und dem @emph{BindingStack}:
+@itemize @bullet
+@item 
+@emph{Funktions-Tabelle:} In der Objekt-Tabelle werden die ,,statischen''
+Informationen zu Sorten und Funktionen wie Definitionen, Parameter
+etc. abgelegt. Jedes Objekt (Sorte oder Funktion) hat eine eindeutige ObjectId
+(siehe Struktur @code{Expression}) mit deren Hilfe der Tabellen-Eintrag
+identifiziert werden kann.
+@item
+@emph{BindingStack:} Der BindingStack enthält alle Informationen, die im
+Laufe der Evaluation eines Ausdrucks aufgesammelt werden. Diese Informationen
+bestehen hauptsächlich aus den Bindungen der lokalen Variablen. Daneben sind
+aber auch Informationen enthalten, die für die Debugger-Funktionalitäten als
+Kontext-Information notwendig sind, um beispielsweise die momentane Position
+der aktuellen Auswertung identifizieren zu können.
+@end itemize
+ */
+
+-- %$Einführung des Environments$ ========================================
+
+SORT environment
+
+FUN fmtEnvironment : environment -> fmt
+
+/* %
+ Das initiale Enviroment wird zum Programmstart mit den beiden Methoden
+@code{wait} und @code{eval} und dem @code{channel} zur Kommunikation mit dem
+Debugger initialisiert. Dieses Verfahren umgeht die zyklischen Abhängigkeiten zwischen den verschiedenen Strukturen des Clients.
+ */
+FUN init: 
+        (environment ** expr            -> environment ** seq[obj]) **
+        (environment ** seq[obj] ** fct -> environment ** fmt) **
+        (environment ** obj ** seq[nat] ** fct -> environment ** fmt) **
+        channel                         
+                                        -> environment
+
+/* %
+ Die beiden Funktionen @code{eval} und @code{print} sowie der @code{channel},
+die bei @code{init} angegeben wurden, können gelesen werden:
+ */
+FUN eval        : environment           -> (environment ** expr ->
+                                            environment ** seq[obj])
+FUN print       : environment           -> (environment ** seq[obj] ** fct ->
+                                            environment ** fmt)
+FUN iprint      : environment           -> (environment ** obj ** seq[nat] **
+                                            fct -> environment ** fmt)
+FUN channel     : environment           -> channel
+
+-- %$Eval-Ids$ =======================================================
+/* %
+ Im Enviroment kann eine Id vermerkt werden, die die gerade aktuelle Id der
+Evaluation bezeichnet. Das Enviroment organsiert die Ids stackartig:
+ */
+FUN pushEvalId  : environment ** evalId -> environment
+FUN popEvalId   : environment           -> environment
+FUN topEvalId   : environment           -> evalId
+FUN noEvalIds?  : environment           -> bool
+
+-- %$Single-Step-Counter$ ============================================
+/* %
+ Zur Unterstützung von Single-Step-Reductions gibt es im Enviroment einen
+Counter, der bei jedem Evaluationsschritt dekrementiert wird. Die Funktion
+@code{setCounter} setzt den Counter auf einen beliebigen Wert und
+@code{decCounter} dekrementiert dieses Wert. Der boolsche Ausdruck gibt an, ob
+gerade auf Null gelaufen wurde.
+
+Mit @code{unsetCounter} kann der Counter wieder zurückgesetzt werden.
+ */
+FUN setCounter  : environment ** nat    -> environment
+FUN unsetCounter: environment           -> environment
+FUN decCounter  : environment           -> environment ** bool
+
+-- %$Objekte in der Objekttabelle$ ========================================
+/* %
+ Die Objekttabelle ist eine flache Tabelle, die alle Funktionen und Sorten, die
+interpretiert werden sollen, beinhaltet. Jedes Objekt der Tabelle ist eindeutig
+durch seine @code{objectId} charakterisiert und kann auch über diese Id
+adressiert werden.
+
+ Es wird zwischen Funktionen (@code{funct?}), Sorten (@code{sort?}) und
+formalen Parametersorten oder -funktionen (@code{formal?}) unterschieden.
+ */
+FUN funct?
+    sort?
+    formal?     : environment ** objectId               -> bool
+
+/* %
+ Sorten und Funktion referenzieren ihre formalen Parameter. (@code{para} ist für
+formale Parameter selbst undefiniert.)
+ */
+FUN para        : environment ** objectId               -> seq[objectId]
+
+/* %
+ Für eine Sorte liefert @code{printInfo?} ein (optionales)
+@code{printInfo}-Datum, das die zur Sorte gehörige Print-Funktion benennt. Ist
+keine derartige Information vorhanden, liefert die Funktion @code{nil}. (undefiniert für Funktionen oder formale Parameter)
+ */
+FUN printInfo   : environment ** objectId               -> option[printInfo]
+
+TYPE printInfo == 
+        printInfo(
+                printFun:       objectId,
+                outputSort:     outputSort,
+                paraSorts:      option[seq[sortInfo]]
+        )
+
+/* %
+ Für Funktionen liefert @code[rank} den Rang. @code{dim} liefert die Dimension
+der Applikation der Funktion mit @code{rank} Argumenten. (Beide Funktionen
+undefiniert für Sorten und formale Parameter.)
+ */
+FUN rank dim    : environment ** objectId               -> nat
+
+/* %
+@code{def} liefert die Definition einer Funktion oder @code{nil}, wenn die
+FUnktion noch nicht definiert wurde. (undefiniert für Sorten und formale
+Parameter.)
+ */
+FUN def         : environment ** objectId               -> option[obj]
+
+/* %
+@code{kind} liefert zu einer Funktion die Art der aktuellen Definition
+@code{coded}, @code{interpreted} oder @code{nil}, wenn die FUnktion noch nicht
+definiert wurde. (undefiniert für Sorten und formale Parameter.)
+ */
+FUN kind        : environment ** objectId               -> option[kind]
+
+/* %
+@code{#} liefert die Anzahl der Definitionen der Funktion. Eine Funktion, die
+nur deklariert noch nicht definiert, liefert den Wert Null. Die Funktion ist
+nur für Funktionen definiert.
+ */
+FUN #           : environment ** objectId               -> nat
+
+/* %
+@code{declare} deklariert neue Objekte in der Funktionstabelle. Die Definition
+für Funktionen ist undefiniert. @code{printInfo} für neu deklarierte Sorten
+liefert @code{nil}.
+ */
+FUN declare     : environment ** seq[declare]           -> com[environment]
+
+/* %
+@code{define} (re)definiert Funktionen. Rang und Dimension werden ebenfalls
+festgelegt. @code{define} ist nur für bereits deklarierte Funktionen definiert.
+ */
+FUN define      : environment ** seq[define]            -> com[environment]
+
+/* %
+@code{breakPoint} setzt einen Breakpoint für eine Funktion. Das Kommando
+schlägt fehl, wenn der Breakpoint auf eine Funktion mit Rang Null angewandt
+werden soll.
+ */
+FUN breakPoint  : environment ** breakPoint             -> com[environment]
+
+/* %
+@code{undoDefine} macht die letzte Definition einer Funktion rückgängig. Wurde
+bisher keine Redefinition durchgeführt, bleibt die Definition
+unverändert. @code{undoDefine} ist nur für Funktionen definiert.
+ */
+FUN olddef      : environment ** objectId               -> com[environment]
+
+/* %
+@code{print} ist nur für Sorten-Objekte definiert und legt die
+Print-Funktionen für die angegebenen Sorten fest.
+ */
+FUN assocPrintFuns
+                : environment ** seq[assocPrintFun]     -> com[environment]
+
+/* %
+@code{instance(E,Formal,Inst)} legt eine Instanz @code{Inst} des formalen
+Parameters @code{Formal} im Enviroment ab. @code{rmInstance} entfernt die
+aktuelle Instanz eines formalen Parameters wieder. @code{getInstance} liefert
+die aktuelle Instanz.
+ */
+FUN instance    : environment ** objectId ** objectId   -> environment
+FUN rmInstance  : environment ** objectId               -> environment
+FUN getInstance : environment ** objectId               -> objectId
+
+-- %$Bindungen im BindingStack$ ==========================================
+/* %
+ Der BindingStack enthält während der Interpretation eines Ausdrucks
+Informationen über lokale Variablen und Reduktionen, in die der Interpreter
+gelaufen ist.
+ */
+
+-- %$$BindItems$ 
+/* %
+ Die Elemente des Binding-Stacks sind @code{bindItems}, die i.allg. Arrays von
+Normalform-Objekten sind. Neben dieser Variante für @code{bindItems} gibt es
+noch weitere, spezielle BindItems, die immer dann auftreten, wenn während der
+Auswertung in einen anderen Kontext (bei Beta-Reduktion) gewechselt wird:
+
+@itemize @bullet
+@item 
+@code{objs:} Bindungen lokaler Variablen
+@item 
+@code{applyPos:} Position, an der ein @code{apply} aufgerufen wurde (das
+möglicherweise zu einer Beta-Reduktion führte.
+@item 
+@code{enter:} Wird bei der Beta-Reduktion eines
+Namens auf den BindingStack gelegt, um auzuzeigen, in welche
+Funktionsauswertung der Interpreter gelaufen ist. Dabei wird zwischen der
+Auswertung interpretierter und kodierter Funktione unterschieden.
+@item 
+@code{broken:} Interpretationen können unterbrochen werden
+(Breakpoints). Das Datum @code{broken} zeigt an, an welcher Stelle eine neue
+Interpretation begonnen hat und trennt somit die verschiedenen Bereiche
+verschiedener Interpretationen.
+@item 
+@code{aborted} ist ähnlich zu @code{broken}, spielt aber eine
+Sonderrolle, da Interpretationen, die @code{aborted} sind, nicht mehr
+fortgesetzt werden können.
+@end itemize
+ */
+TYPE bindItem ==
+        objs(           objs:   array[obj])
+        applyPos(       pos:    tpos)
+        enter(          name:   name,
+                        kind:   kind)
+        broken(         id:     evalId,
+                        pos:    tpos)
+        aborted(        id:     evalId,
+                        pos:    tpos)
+
+-- %$$Zugriff auf BindItems im BindingStack$
+/* %
+@code{E ! N} selektiert das @code{bindItem} im BindingStack, das an der
+Position @code{N} (von ,,top'' an gerechent) steht.
+ */
+FUN !           : environment ** nat                    -> bindItem
+
+/* %
+@code{E ! bindOffset(Item,Pos)} selektiert im Environment ein einzelnes
+@code{obj}.  @code{E ! bindOffset(Item,Pos)} ist dabei im wesenlichen die
+Abkürzung für
+@smallexample
+                (objs? | bindStack(E) ! Item) ! Pos 
+@end smallexample 
+ , d.h. es selektiert aus dem Environment alle BindItems der Form @code{objs}
+bzw. @code{result} und selektiert dann das Item mit der Nummer @code{Item} und
+liest das Objekt mit der Nummer @code{Pos} aus diesem Item. (Bei @code{result}
+ist nur @code{Pos=0} erlaubt.)
+ */
+FUN !           : environment ** bindOffset             -> obj
+
+/* %
+@code{:=} aktualisiert einen Eintrag im BindingStack an der Position
+@code{bindOffset} (siehe oben).
+ */
+FUN :=          : environment ** bindOffset ** obj      -> environment
+
+/* %
+@code{push} und @code{pop} beziehen sich auf die @code{bindItems} des
+BindingStacks.
+ */
+FUN push        : environment ** bindItem               -> environment
+FUN pop         : environment                           -> environment
+
+
+/* % @code{empty?} testet ob der Bindingstack leer ist: */
+
+FUN empty?      : environment                           -> bool
+
+-- %$Die Result-Tabelle$ ==================================================
+/* %
+ Auf die Resultate von Auswertungen kann über deren Ids zugegriffen werden.
+Analog kann das Resultat einer Auswertung unter deren Id im Environment
+abgelegt werden. @code{rm} löscht einen Eintrag in der Tabelle.
+ */
+FUN !           : environment ** evalId                 -> obj
+FUN :=          : environment ** evalId ** obj          -> environment
+FUN rm          : environment ** evalId                 -> environment
+
+/* %
+@code{getResults} liefert die Menge aller im Result-Stack enthaltenen
+Evaluationen.
+ */
+FUN getResults  : environment                           -> set[evalId,<]
+
+-- %$Berechnungen auf dem Environment$ ======================================
+
+/* % 
+@code{brokenEval?} prüft, ob es eine unterbrochene Auswertung im Stack gibt,
+d.h. ob ein Item @code{broken} (vor einem @code{aborted}) existiert.
+ */
+FUN brokenEval? : environment                   -> bool
+
+/* %
+@code{evalStates} ermittelt eine Abbildung aller im Interpreter bekannten
+Evaluationen auf deren Zustände. Auswertungen, die vor einem @code{aborted}
+unterbrochen wurden, werden dabei ignoriert, sind also quasi nicht existent.
+ */
+FUN evalStates  : environment                   -> map[evalId,<,evalState]
+
+/* %
+@code{bt?} ermittelt den Stack der Funktionen, in dem sich die letzte
+unterbrochene (oder abgebrochene) Auswertung gerade befindet. Wurde keine
+Auswertung unterbrochen, wird @code{nil} zurückgeliefert.
+ */
+FUN bt?         : environment                   -> option[seq[reducedName]]
+
+/* %
+@code{select?} selektiert aus der letzten unterbrochenen Auswertung die
+Reduktion mit der angegebenen Nummer. Das Resultat enthält den Namen der
+reduzierten Funktion, die Position, an der die Auswertung wieder verlassen
+wurde und die BindingOffsets der lokalen Variablen.
+ */
+FUN select?     : environment ** nat            -> option[selection]
+
+
+

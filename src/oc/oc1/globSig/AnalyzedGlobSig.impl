@@ -1,0 +1,732 @@
+-- LAST EDIT: Thu Aug  8 13:22:43 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      af / mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     general interface to access globSig
+-- Changes:     af, 18 May 1993: changed local '0' to local '00' in
+--                               'treatExternalNames' to avoid crash
+--                               when using lazy candidate sets
+--              af, Jul  5 1993: added handling of laws
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+
+IMPLEMENTATION AnalyzedGlobSig
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+IMPORT  AbsyFun2        ONLY    * = 
+        AbsyFun3        ONLY    \*
+        Ac              ONLY    dec unit:SORT
+        AnalyzedGlobSigH        COMPLETELY
+        Attributes      COMPLETELY
+        Com             ONLY    com
+        DEBUG           ONLY    FIELD? PRINT
+        Decl4SigAna     ONLY    fct
+        DeclEntry       COMPLETELY
+        Denotation      ONLY    ++
+        Error           ONLY    err:SORT ok
+        Fct             COMPLETELY
+        GlobSig         COMPLETELY
+        GlobSig4SigAna  ONLY    matchByIdeOrig matchOpByIdeOrig 
+                                matchSortByIdeOrig
+        GlobSigImpl     ONLY    data impl locSig parameter?
+        GlobSigToText   ONLY    `
+        ImpDecl4SigAna  ONLY    addIdentifiedInst duplicateInstAppl 
+                                eqBaseA findInst getInst notParametrized?
+        ImpExpEntry     COMPLETELY
+        Impl[name]      ONLY    sortImpl:SORT
+        Map             ONLY    !? def map ! def?
+        MySeqFun1       COMPLETELY
+        MySeqFun3       ONLY    \*
+        Name            COMPLETELY
+        Name4SigAna     ONLY    genericTransitives? getAttr getInst getInsts 
+                                realDecl realInst sort? 
+        Nat             ONLY    = ! 0 1 4 max nat pred
+        NatMap          COMPLETELY
+        Objects         COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        PartNameEntry   COMPLETELY
+        Poly4SigAna     ONLY    /
+        Pos             ONLY    pos
+        Pragma          ONLY    pragma
+        Quadruple       COMPLETELY
+        Rep             COMPLETELY
+        Seq             COMPLETELY
+        SeqConv         ONLY    `
+        SeqFilter       ONLY    partition |
+        SeqMap          ONLY    *
+        SeqMapEnv       ONLY    *
+        SeqOfSeq        ONLY    flat
+        SeqReduce       ONLY    /
+        Table           COMPLETELY
+        TableFun2       ONLY    /
+        Triple          COMPLETELY
+        TypeAn          ONLY    typeDec
+       ABORT ONLY ABORT
+       GlobPragma COMPLETELY
+
+-- ----------------------------------------------------------------------------
+
+DEF global?(intName(Decl))     == true
+DEF global?(extName(S,ID,I))   == true
+DEF global?(formParam(S,ID,N)) == true
+DEF global?(nameSet(S,ID,I))   == true
+DEF global?(else)              == false
+
+DEF rep(gS, name) == 
+        IF name intName? THEN
+          ide(no(realDecl(gS, decl(name))) ! decls(gS))
+        ELSE
+          ide(no(impDecl(name)) ! impDecls(no(struct(name)) ! structures(gS)))
+        FI
+
+DEF origIde(gS, name) == 
+        IF name intName? THEN structIde(gS)
+        ELSE ide(structIde(no(struct(name)) ! structures(gS))) FI
+
+
+DEF origInst(gS,name) == origInstH(gS,name)
+
+DEF sort? == sort?'Name4SigAna
+DEF op?(gS,name) == ~(sort?'Name4SigAna(gS,name))
+
+DEF fct == fct'AnalyzedGlobSigH
+
+DEF origIdeNo(gS, name) == 
+        IF name intName? THEN no(mainStruct)
+        IF name formParam? THEN no(struct(name))
+        IF name extName? THEN no(struct(name))
+        IF name nameSet? THEN no(struct(name))
+        FI
+
+DEF no(gS, name:name) ==
+        IF name intName? THEN no(realDecl(gS, decl(name)))
+        ELSE no(impDecl(name)) FI
+
+DEF globalSet?(name) == name nameSet?
+
+DEF name internal? == name intName?
+
+DEF name external? == (name extName?) or ((name nameSet?) or (name formParam?))
+
+
+DEF origInst(name) == insts(name)
+
+DEF replInst(name, inst) == nameSet(struct(name), impDecl(name), inst)
+
+FUN single? : bool
+DEF single? == FIELD?[bool]("-zsingle")
+
+        FUN `` : name -> denotation
+        DEF ``(name) == "single: " ++ `'Name(name)
+
+DEF single(gS, name0:name) == 
+        LET name == PRINT(single?, \\ . ``(name0), name0) IN
+        IF name nameSet? THEN (finGS, extName(Struct, ImpDecl, Inst))
+          WHERE
+          (Struct, ImpDecl)  == (struct(name), impDecl(name))
+          (finGS,Inst) == 
+                IF InstO nil? THEN
+                  LET (gS1, INST) == addIdentifiedInst(gS0,Struct,finInsts)
+                  IN (duplicateInstAppl(gS1, name, INST), INST)
+                ELSE (gS0, cont(InstO)) FI
+                WHERE InstO == findInst(gS, struct(name), finInsts)
+                      (gS0,finInsts) == *'SeqMapEnv(single, gS, insts(name))
+        ELSE (gS, name) FI
+
+DEF single(gS, fct:fct[name]) == (single \* gS)(fct)
+
+-- ----------------------------------------------------------------------------
+
+DEF eqBase == eqBaseA
+
+DEF eqName == eqInstName
+
+DEF ltName == <'Name
+
+DATA level == level(no:nat)
+
+DEF complete == level(max:nat)
+DEF minimal == level(0)
+DEF standard == level(1)
+
+DEF `(gS, level)(name) == `(gS, no(level))(name)
+
+-- ----------------------------------------------------------------------------
+
+DEF actStructIde == structIde'GlobSig
+
+DEF actStructParams == actStructParamsH
+
+DEF ide(gS, struct) == ide(structIde(no(struct) ! structures(gS)))
+DEF no(gS,struct:struct) == no(struct)
+
+DEF params(gS, struct, inst) == 
+        IF inst = unparam'Objects THEN <>[name]
+        ELSE getInst(gS, struct, inst) FI
+        -- die Instanz ist nie 'identUninst'
+
+DEF `(gS)() == `'GlobSigToText(gS)()
+
+-- ----------------------------------------------------------------------------
+
+DEF bool == bool'GlobSig
+DEF denotation == denotation'GlobSig
+
+-- !!!!!!!!! DUMMY-implementiert !!!!!!!!!!!!!!!!!!!
+DEF true(gS) == IF structIde(gS) = BOOL THEN intName(decl(4)) 
+                ELSE extName(struct(1),impDecl(4),unparam'Objects) FI
+
+
+-- ----------------------------------------------------------------------------
+
+DEF matchingNames(gS, ideP0, origO, insts, unusedLoc) == (nameSP, newLoc)
+        WHERE
+        ideP == PRINT(lookupIn?,```("Names",ideP0,origO,insts,nil[fct[name]]),ideP0)
+        nameSP == PRINT(lookup?, ``(gS, nameS), nameS)
+        nameS == flat(checkGenericInst(gS, insts) * 3rdNames)
+        (newLoc,3rdNames) == \*(\*(checkNameSet(gS)))(unusedLoc, 2ndNames)
+        2ndNames == IF insts <>? THEN 1stNames
+                    ELSE (checkInst(gS,insts) / <>[seq[name]])(1stNames) FI
+        1stNames == delInstPointer(gS) * 
+                    matchByIdeOrig(gS, ideP, origO,applied?)
+
+
+DEF matchingSorts(gS, ideP0, origO, insts, unusedLoc) == (nameSP, newLoc)
+        WHERE
+        ideP == PRINT(lookupIn?,```("Sorts",ideP0,origO,insts,nil[fct[name]]),ideP0)
+        nameSP == PRINT(lookup?,``(gS, nameS), nameS)
+        nameS == flat(checkGenericInst(gS, insts) * 3rdNames)
+        (newLoc,3rdNames0) == \*(\*(checkNameSet(gS)))(unusedLoc, 2ndNames)
+        2ndNames0 == IF insts <>? THEN 1stNames
+                    ELSE (checkInst(gS,insts) / <>[seq[name]])(1stNames) FI
+        1stNames0 == delInstPointer(gS) *
+                    matchSortByIdeOrig(gS, ideP, origO,applied?)
+        3rdNames == PRINT(lookup?, \\ . "3rd: " ++ ``(gS, flat(3rdNames0))(), 3rdNames0)
+        2ndNames == PRINT(lookup?, \\ . "2nd: " ++ ``(gS, flat(2ndNames0))(), 2ndNames0)
+        1stNames == PRINT(lookup?, \\ . "1st: " ++ ``(gS, flat(1stNames0))(), 1stNames0)
+
+DEF matchingOps(gS, ideP0, origO, insts, fctO, unusedLoc) == (nameSP, newLoc)
+        WHERE
+        ideP == PRINT(lookupIn?,```("Ops",ideP0,origO,insts,fctO),ideP0)
+        nameSP == PRINT(lookup?,``(gS, nameS), nameS)
+        nameS == flat(checkGenericInst(gS, insts) * 4thNames)
+        4thNames0 == (IF fctO nil? THEN 3rdNames
+                    ELSE /(eqFct1(gS,cont(fctO)),<>) * 3rdNames FI)
+        (newLoc, 3rdNames0) == \*(\*(checkNameSet(gS)))(unusedLoc, 2ndNames)
+        2ndNames0 == IF insts <>? THEN 1stNames
+                    ELSE (checkInst(gS,insts) / <>[seq[name]])(1stNames) FI
+        1stNames0 == delInstPointer(gS) *
+                        matchOpByIdeOrig(gS, ideP, origO,applied?)
+        4thNames == PRINT(lookup?, \\ . "4th: " ++ ``(gS, flat(4thNames0))() , 4thNames0)
+        3rdNames == PRINT(lookup?, \\ . "3rd: " ++ ``(gS, flat(3rdNames0))(), 3rdNames0)
+        2ndNames == PRINT(lookup?, \\ . "2nd: " ++ ``(gS, flat(2ndNames0))(), 2ndNames0)
+        1stNames == PRINT(lookup?, \\ . "1st: " ++ ``(gS, flat(1stNames0))(), 1stNames0)
+
+FUN eqFct1 : globSig ** fct[name] -> name ** seq[name] -> seq[name] 
+DEF eqFct1(gS,f1)(Name, Rt) == 
+        LET MapCheck == 
+                fctInsts(gS)(fct'AnalyzedGlobSig(gS,Name),f1)(&({},true))
+        IN 
+        IF 2nd(MapCheck) THEN varSubst(1st(MapCheck))(Name) :: Rt
+        ELSE Rt FI
+
+FUN fctInsts : globSig -> fct[name] ** fct[name] -> 
+                pair[natMap[name],bool] -> pair[natMap[name],bool]
+DEF fctInsts(_)(_,_)(Erg AS &(_,false)) == Erg
+DEF fctInsts(gS)(sort(N1), sort(N2))(Erg AS &(Map,true)) == 
+        IF =(gS)(N1,N2) THEN 
+                IF var?(N1) THEN 
+                   IF def?(id(N1), Map) THEN &(Map, =(gS)(Map!id(N1),N2))
+                   ELSE &(def(id(N1), N2, Map), true) FI
+                IF nameSet?(N1) THEN
+                        LET Insts2 == IF nameSet?(N2) THEN insts(N2)
+                                        ELSE getInst(gS, N2) FI
+                        IN fctInsts(gS)(cart(sort * insts(N1)), 
+                                        cart(sort * Insts2))(Erg)
+                ELSE Erg FI
+        ELSE &({},false) FI
+
+DEF fctInsts(gS)(funct(arg1,res1), funct(arg2,res2))(Erg AS &(_,true)) == 
+        fctInsts(gS)(arg1,arg2)(fctInsts(gS)(res1,res2)(Erg))
+
+DEF fctInsts(gS)(cart(ft1::elems1), cart(ft2::elems2))(Erg AS &(_,true)) == 
+        fctInsts(gS)(cart(elems1),cart(elems2))
+                (fctInsts(gS)(ft1,ft2)(Erg))
+DEF fctInsts(_)(cart(<>), cart(<>))(Erg AS &(_,true)) == Erg
+DEF fctInsts(_)(nonCartVar(id1),nonCartVar(id2))(&(Map,true)) == &(Map,id1 = id2)
+DEF fctInsts(_)(var(id1),var(id2))(&(Map,true)) == &(Map,id1 = id2)
+DEF fctInsts(_)(noFct,noFct)(Erg AS &(_,true)) == Erg
+DEF fctInsts(_)(_, _)(&(_,true)) == &({},false)
+
+FUN varSubst : natMap[name] -> name -> name
+DEF varSubst(Map)(Name) ==
+        IF nameSet?(Name) THEN nameSet(struct(Name), impDecl(Name),
+                varSubst(Map) * insts(Name))
+        IF var?(Name) THEN 
+                IF def?(id(Name), Map) THEN Map!id(Name)
+                ELSE Name FI
+        ELSE Name FI
+        
+
+DEF matchingInternalOps(gS, ideP0, fctO) == nameSP
+        WHERE
+        ideP ==PRINT(lookupIn?,```("IntOps",ideP0,nil[rep],
+                        <>[name],fctO),ideP0)
+        nameSO == ord(ideP) !? lookupTable(gS)
+        nameSP == PRINT(lookup?,``(gS, nameS), nameS)
+        nameS == 
+          IF nameSO nil? THEN <>[name]
+          ELSE intName * finNames
+            WHERE
+            finNames == 
+              IF fctO nil? THEN 1stNames
+              ELSE eqFct2(gS,cont(fctO)) | 1stNames FI
+            1stNames == opDeclS(cont(nameSO))
+          FI
+
+        FUN eqFct2 : globSig ** fct[name] -> decl -> bool
+        DEF eqFct2(gS,f1)(name) == ='AbsyFun2(=(gS))(f1,fct(gS,name))
+
+-- ----------------------------------------------------------------------------
+
+FUN checkGenericInst : globSig ** seq[name]
+                -> seq[name] -> seq[name]
+  -- Je nachdem, ob eine Annotation vorliegt herausfiltern der generischen
+  -- oder instantiierten Varianten
+  -- PRE alle Namen sind aus einer Struktur
+DEF checkGenericInst(gS,instAnnot)(nameS) ==
+        PRINT(checkGenericInst?,```(gS, nameS),
+        (IF nameS <>? THEN nameS
+        OTHERWISE
+        IF ft(nameS) intName? THEN nameS
+        OTHERWISE
+        IF notParametrized?(gS,struct(ft(nameS))) THEN nameS
+        ELSE
+          LET (generic,nonGeneric) == genericInst?(gS) partition nameS IN
+          (IF instAnnot <>? THEN        -- keine Annotation
+            IF generic ::? THEN finGeneric ELSE nonGeneric FI
+          ELSE                  -- Annotation
+            IF nonGeneric ::? THEN nonGeneric
+            ELSE 
+              IF generic ::? THEN nameSetH(instAnnot) * finGeneric
+              ELSE nonGeneric FI
+            FI
+          FI
+          -- etwas unsauber, da ich mich auf die Implementierung von || 
+          -- verlasse
+          WHERE finGeneric == nameRel ||| generic)
+        FI))
+
+        FUN nameRel : name ** name -> rel'MySeqFun1[name]
+          -- bzgl. Generizitaet
+        DEF nameRel(n1,n2) ==
+          IF n1 var? THEN
+            IF n2 var? THEN =[name] ELSE >[name] FI
+          IF n1 nameSet? THEN
+            IF n2 var? THEN <[name]
+            IF n2 nameSet? THEN
+              IF impDecl(n1) = impDecl(n2) THEN
+                -- Test der Aktualisierungen
+                cmp(nameRel)(insts(n1),insts(n2))
+              ELSE |=[name] FI
+            ELSE >[name] FI
+          ELSE
+            IF n2 var? THEN <[name]
+            IF n2 nameSet? THEN <[name]
+            ELSE |=[name] FI
+          FI
+
+        FUN nameSetH : seq[name] -> name -> name
+        DEF nameSetH(inst)(name) == nameSet(struct(name),impDecl(name),inst)
+
+FUN ``` : globSig ** seq[name] -> () -> denotation
+DEF ```(gS,nameS)() ==
+        "checkGenericInst: " ++ `'SeqConv("{",",","}")(`(gS,1))(nameS)
+
+FUN checkGenericInst? : bool
+DEF checkGenericInst? == FIELD?[bool]("-zcheckGenericInst")
+FUN lookup? : bool
+DEF lookup? == FIELD?[bool:SORT]("-zlookup")
+FUN lookupIn? : bool
+DEF lookupIn? == FIELD?[bool:SORT]("-zlookupIn")
+
+FUN genericInst? : globSig -> name -> bool
+DEF genericInst?(gS)(name) ==
+        IF name intName? THEN false
+        IF name nameSet? THEN true
+        IF name extName? THEN false
+        FI
+
+-- ----------------------------------------------------------------------------
+
+FUN delInstPointer : globSig -> seq[name] -> seq[name]
+  -- Ausmerzen von doubleInsts und expandieren von genericTransitives
+DEF delInstPointer(gS)(nameS) == 
+        ='Name || (delInstPointer2(gS) / <>[name])(nameS)
+
+FUN delInstPointer2 : globSig -> name ** seq[name] -> seq[name]
+DEF delInstPointer2(gS)(name0,nameS) ==
+        IF name0 extName? THEN
+          IF notParametrized?(gS, struct(name0)) THEN name0 :: nameS
+          ELSE
+            LET name == realInst(gS,name0) IN
+            IF genericTransitives?(gS,name) THEN
+              LET newNameS == 
+               (toName2(gS,struct(name),impDecl(name)) * getInsts(gS,name)) IN
+              newNameS ++ nameS
+            ELSE name::nameS FI
+          FI
+        ELSE name0::nameS FI
+
+        FUN toName2 : globSig ** struct ** impDecl -> inst -> name
+          -- genericTransitive?(gS,struct,inst)
+        DEF toName2(gS,struct,impDecl)(inst) == 
+          realInst(gS,extName(struct,impDecl,inst))
+          
+
+-- ----------------------------------------------------------------------------
+
+DEF getInternalSort(gS, ide) == 
+        intName(ft(sortDeclS(ord(ide) ! lookupTable(gS))))
+
+DEF getInternalOp(gS, ide, fct) == 
+        intName(ft(eqFct2(gS,fct) | opDeclS(ord(ide) ! lookupTable(gS))))
+
+-- ----------------------------------------------------------------------------
+
+DEF pos(gS, name) == 
+        IF name intName? THEN pos(no(realDecl(gS, decl(name))) ! decls(gS))
+        ELSE pos(structIde(no(struct(name)) ! structures(gS)))
+        FI
+
+-- ----------------------------------------------------------------------------
+
+DEF isExported(gS, name) == getAttr(gS,name) isExported
+
+-- ----------------------------------------------------------------------------
+
+DEF freeConstr(gS, name, test, selS) ==
+        updDecls(gS, (n, newDeclE) upd decls(gS))
+        WHERE
+        n == no(decl(name))
+        newDeclE == opCons(ide(declE), pos(declE), attr(declE), impl(declE),
+                           fct(declE), decl(test), decl:name->decl * selS)
+        declE == n ! decls(gS)
+
+DEF isFreeConstr(gS, name) == 
+        IF name intName? THEN (no(decl(name)) ! decls(gS)) opCons?
+        ELSE
+          LET impDeclE == no(impDecl(name)) ! 
+                          impDecls(no(struct(name)) ! structures(gS)) IN
+          (impDeclE closedOpCons?) or (impDeclE opCons?)
+        FI
+
+DEF test(gS, name) == 
+        IF name intName? THEN intName(test(no(decl(name)) ! decls(gS)))
+        ELSE
+          LET impDeclE == no(impDecl(name)) ! 
+                          impDecls(no(struct(name)) ! structures(gS)) IN
+          IF name extName? THEN 
+            extName(struct(name),test(impDeclE), inst(name))
+          IF name nameSet? THEN
+            nameSet(struct(name),test(impDeclE), insts(name))
+          FI
+        FI
+
+DEF selectors(gS, name) == 
+        IF name intName? THEN intName * selS(no(decl(name)) ! decls(gS))
+        ELSE
+          LET impDeclE == no(impDecl(name)) ! 
+                          impDecls(no(struct(name)) ! structures(gS)) IN
+          IF name extName? THEN EN(struct(name),inst(name)) * selS(impDeclE)
+          IF name nameSet? THEN NS(struct(name),insts(name)) * selS(impDeclE)
+          FI
+        FI
+
+-- ----------------------------------------------------------------------------
+
+DEF useOp(gS, name) == setAttr(setUsed4Op, isUsed4Op)(name,gS)
+
+DEF useConstr(gS, name) == setAttr(setUsed4Constr, isUsed4Constr)(name,finGS)
+        WHERE finGS ==
+          IF name intName? THEN
+            IF isFreeConstr(gS,name) THEN 
+              setAttr(setUsed4Constr, isUsed4Constr)(test(gS0,name),gS0)
+              WHERE gS0 == (setAttr(setUsed4Constr, isUsed4Constr) / gS)
+                           (selectors(gS,name))
+            ELSE gS FI
+          ELSE gS FI
+
+DEF useGenerated(gS, name) == 
+        setAttr(setUsed4Generated,isUsed4Generated)(name,gS)
+
+DEF isUsedByUser(gS, name) == 
+--      IF Attr isExported THEN true
+        IF Attr isUsed4Op  THEN true
+        IF Attr isUsed4Constr THEN true
+        ELSE false FI
+        WHERE Attr == getAttr(gS,name)
+
+
+DEF isUsedByCompiler(gS, name) == true
+
+DEF isUsedForAc(gS, name) ==
+--      IF (Attr isExported) and (name intName?) THEN true
+        IF Attr isUsed4Op  THEN true
+        IF Attr isUsed4Generated THEN true
+        ELSE false FI
+        WHERE Attr == getAttr(gS,name)
+
+FUN isUnusedFreeConstructor : globSig ** name -> bool
+DEF isUnusedFreeConstructor(gS, name) ==
+        IF name intName? THEN
+          IF isFreeConstr(gS,name) THEN
+--          IF Attr isExported THEN false
+            IF Attr isUsed4Op THEN false
+            ELSE true FI
+            WHERE Attr == getAttr(gS,name)
+          ELSE false FI
+        ELSE false FI
+
+
+-- ----------------------------------------------------------------------------
+
+DEF freeType(gS, name) == 
+        IF name intName? THEN type(no(realDecl(gS, decl(name))) ! decls(gS))
+        IF name extName? THEN
+          LET impDeclE == no(impDecl(name)) ! 
+                          impDecls(no(struct(name)) ! structures(gS)) 
+              Type ==  type(impDeclE)
+          IN IF data?(Type) THEN 
+                data(*(changeInst(inst(name), struct(name)))
+                        (impl:impl->sortImpl(Type)))
+             ELSE Type FI
+        ELSE none
+        FI
+
+        FUN changeInst : inst ** struct -> name -> name
+        DEF changeInst(inst, Struct)(name) == IF Struct = struct(name) THEN 
+                extName(struct(name),impDecl(name),inst) ELSE name FI
+
+
+DEF impl(gS, name) == 
+        IF intName?(name) THEN 
+                LET DeclE == no(realDecl(gS, decl(name))) ! decls(gS)
+                IN impl(DeclE)
+        ELSE IF sort?'Name4SigAna(gS, name) THEN
+             LET ImpDeclE == no(impDecl(name)) ! 
+                          impDecls(no(struct(name)) ! structures(gS))
+             IN type(ImpDeclE)
+             ELSE none
+             FI
+        FI
+
+DEF defFreeType(gS, name,Impl) ==
+        updDecls(gS, (n, newDeclE) upd decls(gS))
+        WHERE
+        n == no(realDecl(gS, decl(name)))
+        newDeclE == sort(ide(declE), pos(declE), attr(declE), impl(declE),
+                         Impl)
+        declE == n ! decls(gS)
+
+DEF defImpl(gS, name, impl) ==
+        updDecls(gS, (n, newDeclE) upd decls(gS))
+        WHERE
+        n == no(realDecl(gS, decl(name)))
+        newDeclE == 
+          IF declE sort? THEN
+            sort(ide(declE), pos(declE), attr(declE), impl, type(declE))
+          IF declE op? THEN
+            op(ide(declE), pos(declE), attr(declE), impl,
+               fct(declE), spc(declE))
+          IF declE opCons? THEN
+            opCons(ide(declE), pos(declE), attr(declE), impl, fct(declE),
+                   test(declE), selS(declE))
+          FI
+        declE == n ! decls(gS)
+
+-- ----------------------------------------------------------------------------
+
+FUN law:    globSig**rep -> law**locSig
+
+DEF law(gS, r) == unpair(cont(laws(gS) !? r))
+
+
+FUN defLaw: globSig**rep**law**locSig -> globSig**bool
+
+DEF defLaw(gS,r,l,lS) ==
+  LET optLaw == laws(gS) !? r
+  IN IF optLaw nil? THEN (updLaws(gS,(r,l&lS) def laws(gS)),true)
+     IF optLaw avail? THEN (gS,false)
+     FI
+
+-- ----------------------------------------------------------------------------
+
+DEF treatInternalName(F)(gS) == 
+        /[name, declE](map1, F, gS, decls(gS))
+
+        FUN map1 : nat ** declE ** globSig -> option[name]
+        DEF map1(n, declE, gS) == 
+                IF declE double? THEN nil[name]
+                ELSE avail(intName(decl(n))) FI
+
+DEF treatImportedStruct(F)(gS) == 
+        /[struct, structE](map2, F, gS, structures(gS))
+
+        FUN map2 : nat ** structE ** globSig -> option[struct]
+        DEF map2(n, declE, gS) == avail(struct(n))
+
+DEF treatExternalNames(struct)(F)(gS) ==
+        /[seq[name], impDeclE]
+                (map4(struct), F, gS, impDecls(no(struct) ! structures(gS)))
+
+        FUN map4 : struct -> nat ** impDeclE ** globSig->option[seq[name]]
+        DEF map4(struct)(n, iDE, gS) == avail(
+                (IF notParametrized?(gS,struct) THEN
+                  extName(struct, impDecl(n), unparam'Objects) %
+                ELSE
+                  toName(struct,impDecl(n)) * 
+                  (isInst?(Insts) | (instOf * instS(iDE)))
+                  WHERE Insts == insts(no(struct) ! structures(gS))
+                FI))
+
+        FUN toName : struct ** impDecl -> inst -> name
+        DEF toName(struct, impDecl)(inst) == extName(struct,impDecl,inst)
+
+        FUN isInst? : table[instE] -> inst -> bool
+        DEF isInst?(tab)(inst) == (no(inst) ! tab) identUninst?
+
+DEF treatInstance(struct)(F)(gS) ==
+        IF notParametrized?(gS, struct) THEN F(unparam'Objects,gS)
+        ELSE /[inst, instE]
+                (map3, F, gS, insts(no(struct) ! structures(gS))) FI
+
+        FUN map3 : nat ** instE ** globSig -> option[inst]
+        DEF map3(n, declE, gS) == avail(inst(n))
+
+-- ----------------------------------------------------------------------------
+-- Funktionen zur Erzeugung von AC
+-- ----------------------------------------------------------------------------
+
+-- !!!!!!!!! mehr oder weniger DUMMY-implementiert !!!!!!!!!!!!!!!!!!!
+
+FUN freeInternal: globSig -> nat
+-- gibt eine Ordnungsnummer, die selbst (und deren Nachfolger)
+--   von keinem Objekt belegt ist
+DEF freeInternal(gS) == "5000"!'Nat
+-- selbstverstaendlich besser als "max table index (declTab)"
+
+FUN parameter?: globSig**name -> bool
+-- gibt an, ob
+-- - ein Name aktueller Strukturparameter oder
+-- - formaler Parameter einer importierten Struktur ist
+DEF parameter?(gS,name) ==
+  IF name formParam? THEN true
+  IF name intName? THEN impl(gS,name) parameter?
+                                        -- besser auf das Flag abfragen
+  ELSE false
+  FI
+
+
+FUN paramNo: globSig**name -> nat
+-- gibt fuer einen Parameter (s. parameter?) eine Ordnungsnummer in der
+--  jeweiligen Parameterliste (beginnend bei null)
+DEF paramNo(gS,name) ==
+  IF name formParam? THEN pred(no(name))
+  ELSE 
+    IF <>?(actStructParams(gS)) THEN
+      ABORT("paramNo'AnalyzedGlobSig: leere Sequenz fuer " ++ `(gS, standard)(name))
+    ELSE
+      pos(eqNameHOF(gS,name),actStructParams(gS))
+    FI
+  FI
+
+-- muss bleiben
+ FUN eqNameHOF: globSig ** name -> name -> bool
+ DEF eqNameHOF(gS,n1)(n2) == eqName(gS)(n1, n2)
+
+-- FUN formParamKinds: globSig**struct -> seq[option[fct[name]]]
+-- liefert fuer eine importierte Struktur die Liste der Art ihrer Parameter
+
+DEF formParamKinds(gS,struct) ==
+  LET structE == no(struct) ! structures(gS)
+  IN IF structE unparamTrans? THEN <>
+     IF structE unparam?      THEN <>
+     ELSE 2nd(formParamS(structE))
+     FI
+
+FUN treatInternalNames: globSig ->
+                         (name**nat->option[typeDec]**seq[dec]**nat)**
+                           (name->option[dec]) ->
+                         nat -> seq[typeDec]**seq[dec]
+-- bearbeitet alle internen Namen einer Signatur
+--  getrennt nach Sorten und Operationen mit einer Zahl beginnend
+
+DEF treatInternalNames(gS)(FSort,FOp)(start) ==
+  LET X == /
+             (FInternalName(FSort,FOp),&(<>[typeDec],<>[dec],start))(decls(gS))
+  IN (1st(X),2nd(X))
+
+DEF treatInternalNames(gS)(FSort,FOp:name->option[dec]**err)(start) ==
+  LET X == /
+             (FInternalName(FSort,FOp),&(<>[typeDec],<>[dec],ok,start))
+                (decls(gS))
+  IN (1st(X),2nd(X), 3rd(X))
+
+
+FUN treatImportedStructs: globSig -> (struct->unit) -> seq[unit]
+-- bearbeitet alle importierten Strukturen
+DEF treatImportedStructs(gS)(F) ==
+  /(FStructure(F),<>[unit])(structures(gS))
+
+
+FUN treatExternalNames: globSig**struct ->
+                         (name->typeDec)**(name**fct[name]->dec) ->
+                         seq[typeDec]**seq[dec]
+-- bearbeitet alle Namen einer importierten Struktur
+--  getrennt nach Sorten und Operationen (mit ihrer uninst. Funktionalitaet)
+
+DEF treatExternalNames(gS,struct)(FSort,FOp) ==
+  LET F == FExternalName(struct,FSort,FOp)
+      00 == &(<>[typeDec],<>[dec])
+      tab == impDecls(no(struct) ! structures(gS))
+      X == /(F,00)(tab)
+  IN (1st(X),2nd(X))
+
+
+-- -------------------------------------------------------------------------
+-- accessing global pragmas 
+
+FUN pragmas : globSig -> seq[globPragma]
+DEF pragmas == pragmas'GlobSig
+FUN updPragmas : globSig ** seq[globPragma] -> globSig
+DEF updPragmas == updPragmas'GlobSig
+/* %-
+DEF updPragmas(implGlobSig(Ide, Pars, Decls, Structs, Pos, 
+                           OldPrags, Look, ImpPrags, ImpLaws,
+                           Bool, Den, Laws, _), NewPrags) ==
+  implGlobSig(Ide, Pars, Decls, Structs, Pos, 
+              OldPrags, Look, ImpPrags, ImpLaws, Bool, Den, Laws, NewPrags)
+
+*/
+
+DEF theory?(gS)(structRep) ==
+  LET ps == IF structRep def? impPragmas(gS) THEN
+              impPragmas(gS)!structRep
+            ELSE 
+              <>
+            FI
+      ok? == \\p. IF #(pragS(p)) = 1 ANDIF lexem?(ft(pragS(p))) THEN
+                    ide(ft(pragS(p))) = theory
+                  ELSE
+                    false
+                  FI
+  IN
+  exist?(ok?, ps)
+                      

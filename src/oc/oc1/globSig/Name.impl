@@ -1,0 +1,134 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     names for global signature
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION Name
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:42 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Objects		COMPLETELY
+	Fct[name]	ONLY = <
+	-- lib
+	Nat		ONLY = < > 1 2 3 4 5 6 7 8
+	NatConv		ONLY `
+	SeqConv		ONLY ` string
+	SeqCompare	COMPLETELY
+	Denotation	ONLY ++
+-- ---------------------------------------------------------------------------
+
+DATA name ==			-- verschiedene Darstellungen von Namen
+	error			-- (1) Kontextfehler
+	intName(		-- (2) einfache Applikation (interner Name)
+		decl : decl)
+	extName(		-- (3a) einfache Applikation (externer Name)
+		struct : struct,	-- Struktur
+		impDecl : impDecl,	-- Namenspattern
+		inst : inst )		-- Instanz (instE)
+	sortPartName( sortPN : sortPN )	-- (4) partieller Name (sortPNE)
+	formParam( 		-- (5) form. Parameter einer Struktur
+		struct : struct,	-- Struktur
+		impDecl: impDecl,	-- der formale Parameter
+		no : nat)		-- Nummer des form.Parameters
+	nameSet(		-- (6) Namensmenge (mit Variablen)
+		struct : struct,	-- Struktur
+		impDecl : impDecl,	-- Namenspattern
+		insts : seq[name] )	-- Instanz (ev. mit Variablen)
+	var( id : nat )		-- (7) Sortenvariable
+	local( no : nat )	-- (8) lokaler Name (Funktionsdefinition)
+
+-- ---------------------------------------------------------------------------
+-- strukturelle Gleichheiten
+
+DEF n1 = n2 ==
+	IF (n1 error?) THEN n2 error?
+	IF (n1 intName?) and (n2 intName?) THEN no(decl(n1)) = no(decl(n2))
+	IF (n1 extName?) and (n2 extName?) THEN 
+	  IF no(struct(n1))=no(struct(n2)) THEN 
+	    IF no(impDecl(n1)) = no(impDecl(n2)) THEN
+	      no(inst(n1)) = no(inst(n2))
+	    ELSE false FI
+	  ELSE false FI
+	IF (n1 sortPartName?) and (n2 sortPartName?) THEN 
+	  no(sortPN(n1)) = no(sortPN(n2))
+	IF (n1 formParam?) and (n2 formParam?) THEN 
+	  IF no(n1) = no(n2) THEN
+	    IF struct(n1) = struct(n2) THEN impDecl(n1) = impDecl(n2)
+	    ELSE false FI
+	  ELSE false FI
+	IF (n1 var?) and (n2 var?) THEN id(n1) = id(n2)
+	IF (n1 local?) and (n2 local?) THEN no(n1) = no(n2)
+	IF (n1 nameSet?) and (n2 nameSet?) THEN 
+	  IF no(struct(n1))=no(struct(n2)) THEN 
+	    IF no(impDecl(n1)) = no(impDecl(n2)) THEN
+	      eq?(='Name)(insts(n1), insts(n2))
+	    ELSE false FI
+	  ELSE false FI
+	ELSE false 
+	FI
+
+DEF n1 < n2 ==
+	IF TAG(n1) < TAG(n2) THEN true
+	IF TAG(n1) > TAG(n2) THEN false
+	OTHERWISE		-- die Varianten sind gleich
+	IF n1 intName? THEN no(decl(n1)) < no(decl(n2))
+	IF n1 extName? THEN
+	  IF no(impDecl(n1)) < no(impDecl(n2)) THEN true
+	  IF no(impDecl(n1)) > no(impDecl(n2)) THEN false
+	  OTHERWISE
+	  IF no(inst(n1)) < no(inst(n2)) THEN true
+	  IF no(inst(n1)) > no(inst(n2)) THEN false
+	  ELSE no(struct(n1)) < no(struct(n2)) FI
+	IF n1 sortPartName? THEN no(sortPN(n1)) < no(sortPN(n2))
+	IF n1 formParam? THEN 
+	  IF no(impDecl(n1)) < no(impDecl(n2)) THEN true
+	  IF no(impDecl(n1)) > no(impDecl(n2)) THEN false
+	  OTHERWISE
+	  IF no(struct(n1)) < no(struct(n2)) THEN true
+	  IF no(struct(n1)) > no(struct(n2)) THEN false
+	  ELSE no(n1) < no(n2) FI
+	IF n1 nameSet? THEN 
+	  IF no(impDecl(n1)) < no(impDecl(n2)) THEN true
+	  IF no(impDecl(n1)) > no(impDecl(n2)) THEN false
+	  OTHERWISE
+	  IF no(struct(n1)) < no(struct(n2)) THEN true
+	  IF no(struct(n1)) > no(struct(n2)) THEN false
+	  ELSE <?(cmp(<'Name)(insts(n1),insts(n2))) FI
+	IF n1 var? THEN id(n1) < id(n2)
+	IF n1 local? THEN no(n1) < no(n2)
+	ELSE false
+	FI
+
+DEF n1 > n2 == n2 < n1
+
+FUN TAG : name -> nat
+DEF TAG(error)				== 1
+DEF TAG(intName(decl))			== 2
+DEF TAG(extName(struct,impDecl,inst))	== 3
+DEF TAG(sortPartName(sortPN))		== 4
+DEF TAG(formParam(struct,impDecl,no))	== 5
+DEF TAG(nameSet(struct,impDecl,instS))	== 6
+DEF TAG(var(no))			== 7
+DEF TAG(local(no))			== 8
+
+FUN ` : name -> denotation
+DEF `(error) == "error"
+DEF `(extName(Struct, ImpDecl, Inst)) ==
+	  "extName" ++ "(" ++ `(no(Struct))++"," ++ `(no(ImpDecl)) ++ 
+	  "," ++ `(no(Inst)) ++ ")"
+DEF `(nameSet(Struct, ImpDecl, Insts)) ==
+	  "nameSet" ++ "(" ++ `(no(Struct))++"," ++ `(no(ImpDecl)) ++ 
+	  "," ++ `'SeqConv("[",",","]")(`'Name)(Insts) ++ ")"
+DEF `(formParam(Struct, ImpDecl, No)) ==
+	  "formParam" ++ "(" ++ `(no(Struct))++"," ++ `(no(ImpDecl)) ++ 
+	  "," ++ `(No) ++ ")"
+DEF `(intName(Decl)) == "intName" ++ "(" ++ `(no(Decl)) ++ ")"
+DEF `(sortPartName(SortPN)) == "sortPN" ++ "(" ++ `(no(SortPN)) ++ ")"
+DEF `(var(Id)) == "var" ++ "(" ++ `(Id) ++ ")"
+DEF `(local(No)) == "local" ++ "(" ++ `(No) ++ ")"
+

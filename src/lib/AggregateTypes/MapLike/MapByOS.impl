@@ -1,0 +1,132 @@
+IMPLEMENTATION MapByOS [dom:SORT,< :dom**dom->bool,codom]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:04 $ ($Revision: 1.1.1.1 $)
+-- mappings from a dom to a co-dom with a given
+--  transitive and irreflexive order of the dom elements
+
+IMPORT  Nat             COMPLETELY
+       Set             ONLY set abs rep {} {}? incl # exist? forall? excl find?
+        SetMap          ONLY *
+        SetReduce       ONLY /
+        Pair[dom,codom] COMPLETELY
+        Option          COMPLETELY
+        Seq             COMPLETELY
+        ABORT           ONLY ABORT
+       SeqMap ONLY *
+       SetConv ONLY asSeq
+       SeqReduce ONLY /
+
+-- the type itself
+DATA map        == abs(rep: set[pair,less])
+
+DEF a less b    == 1st(a) < 1st(b)
+
+
+-- non free constructors
+DEF {}          == abs({})
+DEF def(d,r,M)  == abs(abs(def(d, r, rep(rep(M)))))
+  FUN def: dom ** codom ** seq[pair] -> seq[pair]
+  DEF def(d, r, <>) == %(d&r)
+  DEF def(d, r, (d1&r1)::s) ==
+             IF d < d1 THEN (d&r) :: (d1&r1) :: s
+             IF d1 < d THEN (d1&r1) :: def(d,r,s)
+             ELSE           (d&r) :: s
+             FI
+
+-- constructing a map from datas
+-- DEF def(d,r,M) ==  s. above
+
+DEF undef(d,M) == abs(abs(undef(d, rep(rep(M)))))
+  FUN undef: dom ** seq[pair] -> seq[pair]
+  DEF undef(_, <>) == <>
+  DEF undef(d, S AS (p AS d1 & _)::r) == IF d < d1 THEN S
+                                   IF d1 < d THEN p :: undef(d, r)
+                                   ELSE           r
+                                   FI
+
+DEF upd(D,f,M) == abs(abs(upd(D, f, rep(rep(M)))))
+  FUN upd: dom ** (codom -> codom) ** seq[pair] -> seq[pair]
+  DEF upd(_, _, <>) == <>
+  DEF upd(d, f, S AS (d1&r1)::r) == IF d < d1 THEN S
+                                    IF d1 < d THEN (d1&r1) :: upd(d,f,r)
+                                    ELSE (d&f(r1))::r
+                                    FI
+
+DEF extend(M, <>,_ :: _) == ABORT("extend'MapByOS: seq[codom] too long")
+DEF extend(M,_ :: _, <>) == ABORT("extend'MapByOS: seq[dom] too long")
+DEF extend(M,<>,<>) == M
+DEF extend(M,d::ds,c::cs) == extend(def(d,c,M),ds,cs)
+
+-- constructing a map from a function
+DEF (n1 .. n2)(f,g) ==  IF n1 > n2 THEN {}
+                        ELSE def(f(n1),g(f(n1)), (succ(n1) .. n2)(f,g))
+                        FI
+
+DEF iter(start, it, P)(f) ==
+                IF ~(P(start)) THEN {}
+                ELSE def(start,f(start), iter(it(start), it, P)(f))
+                FI
+
+DEF init(S, f) == ((\\d, M. def(d, f(d), M)), {}) / asSeq(S)
+
+-- combining maps
+DEF M1 <+ M2 == abs(abs(rep(rep(M1)) <+ rep(rep(M2))))
+  FUN <+ : seq[pair] ** seq[pair] -> seq[pair]
+  DEF <> <+ <> == <>    -- um WARNING zu verhindern
+  DEF s1 <+ <> == s1
+  DEF <> <+ s2 == s2
+  DEF ((d1 & r1) :: s1)  <+ ((d2 & r2) :: s2) ==
+      IF d1 < d2 THEN (d1 & r1) :: (s1 <+ (d2 & r2) :: s2)
+      IF d2 < d1 THEN (d2 & r2) :: (((d1 & r1) :: s1) <+ s2)
+      ELSE            (d2 & r2) :: (s1 <+ s2)
+      FI
+
+DEF M <- s      == (undef / M)(s)
+
+/* geht leider nur mit Gleichheit auf codom :-( kd
+
+-- intersection
+DEF M1 * M2 == abs(abs(rep(rep(M1)) * rep(rep(M2))))
+  FUN * : seq[pair] ** seq[pair] -> seq[pair]
+  DEF <> * _ == <>
+  DEF _ * <> == <>
+  DEF (d1 & r1)::s1 * (d2 & r2)::s2 ==
+          IF d1 < d2 THEN s1 * (d2 & r2)::s2
+          IF d2 < d1 THEN (d1 & r1)::s1 * s2
+          ELSE IF r1 = r2 THEN (d1&r1) :: s1 * s2
+               ELSE            s1 * s2
+               FI
+          FI
+*/
+
+-- accessing codom - Elements
+DEF M!d         == IF c avail? THEN cont(c) 
+                               ELSE ABORT("!'MapByOS: element not in domain") FI
+                   WHERE c == !?(M,d)
+
+DEF M!?d        == rep(rep(M)) !? d
+    FUN !? : seq[pair] ** dom -> option[codom]
+    DEF <> !? _ == nil
+    DEF ((d1&r1)::s1) !? d == IF d < d1 THEN nil
+                            IF d1 < d THEN s1 !? d      
+                            ELSE avail(r1)
+                            FI
+
+-- information about a map
+
+
+
+DEF {}?(M)      == {}?(rep(M))
+DEF d def? M    == avail?(M !? d)
+
+DEF dom(M)      == (\\p.1st(p)) * (M rep)
+DEF codom(M)    == (\\p.2nd(p)) * asSeq(M rep)
+
+DEF M#          == rep(M)#
+
+DEF exist?(P, M) == exist?((\\x.P(unpair(x))), M rep)
+DEF find?(P,M)   == find?((\\x.P(unpair(x))), M rep)
+DEF forall?(P, M) == forall?((\\x.P(unpair(x))), M rep)

@@ -1,0 +1,121 @@
+IMPLEMENTATION DbEvalTable
+
+
+IMPORT  Com             COMPLETELY
+        ComCompose      COMPLETELY
+        ComState        COMPLETELY
+        Map             COMPLETELY
+        MapConv         COMPLETELY
+        MapFilter       COMPLETELY
+        Nat             COMPLETELY
+        Void            COMPLETELY
+        Seq             COMPLETELY
+        SeqSort         COMPLETELY
+        SeqReduce       COMPLETELY
+        Set             COMPLETELY
+        SetConv         COMPLETELY
+        SetFilter       COMPLETELY
+        Pair            COMPLETELY
+        ABORT           COMPLETELY
+        MapReduce       COMPLETELY
+        Fmt             COMPLETELY
+        Denotation      COMPLETELY
+        DenotationSplit COMPLETELY
+        StringFormat    COMPLETELY
+        StringConv      COMPLETELY
+        DbComm          COMPLETELY
+IMPORT  -- repo
+        RepoAbsy        COMPLETELY
+IMPORT  
+        Expression      COMPLETELY
+        ChannelData     COMPLETELY
+       Option COMPLETELY
+        
+
+DEF newEval(Source,Fct)         ==
+    get(evalTabId)                              & (\\Map.
+    succeed(nextId(dom(Map)))                   & (\\Id.
+    evalTabId => ((Id,evalInfo(Source,Fct,unknown)) def _) & (\\ _ .
+    succeed(Id)                                 )))
+
+DEF lastEval == 
+  evalTab & (\\ Map.
+  LET ids == dom((\\ _, eI. ready?(state(eI))) | Map)
+  IN
+  IF ids {}? THEN succeed(nil)
+  ELSE succeed(avail(max(ids)))
+  FI
+  )
+
+DEF rmEval(Id) == evalTabId => (\\Map. Id undef Map)
+
+DEF evalTab == refresh & (\\ _ . get(evalTabId))
+
+FUN refresh : com[void]
+DEF refresh ==
+    clientCheck?                                & (\\Yes.
+    IF Yes THEN
+        rpc(evalStates,evalStates?)                     & (\\ES.
+        evalTabId => (\\ Map . 
+            LET ESMap    == evalStates(ES)
+                -- remove ids not in domain of Map (user removed by rmEval)
+                RelevantESMap== ESMap <- (dom(ESMap) - dom(Map))
+            IN (\\Id,St,M.
+                (Id,(Map ! Id) :=_state St) def M,{}
+               ) / RelevantESMap
+        )                                               )
+    ELSE succeed(nil) FI
+    )
+
+        FUN updEvalInfo : map[evalId,<,evalInfo] -> 
+                                evalId ** evalState -> evalInfo
+        DEF updEvalInfo(M)(Id,St) == (M ! Id) :=_state St
+            
+
+
+DATA evalInfo == evalInfo(      source: denotation,
+                                fct: fct'RepoAbsy,
+                                state: evalState)
+
+        FUN nextId : set[evalId,<] -> evalId
+        DEF nextId(Ids) == evalId(nextId1(msort(<)(asSeq(Ids)),0))
+
+        FUN nextId1 : seq[evalId] ** nat -> nat
+        DEF nextId1(<>,N) == N
+        DEF nextId1(evalId(Ft)::Rt,N) ==
+            IF Ft > N
+              THEN N -- hole found
+            IF Ft = N
+              THEN nextId1(Rt,succ(N))
+            IF Ft < N
+              THEN ABORT("nextId1'DbEvalTable: may never happen")
+            FI
+
+        FUN evalTabId : stateId[map[evalId,<,evalInfo]]
+        DEF evalTabId == EXEC(stateId({}))
+        FUN :=_state : evalInfo ** evalState -> evalInfo
+        DEF evalInfo(V1,Fct,_) :=_state ready ==
+            IF cart?(Fct) -- cart. product is not saved by interpreter
+              THEN evalInfo(V1,Fct,unknown)
+              ELSE evalInfo(V1,Fct,ready)
+            FI
+        DEF evalInfo(V1,Fct,_) :=_state S == evalInfo(V1,Fct,S)
+
+
+DEF fmtEvalTable ==
+        evalTab                                 & (\\Map.
+        LET Entries == msort(\\P1, P2. 1st(P1) < 1st(P2))(asSeq(Map))
+        IN
+        succeed(lit(join(((\\P,S.
+                            fmtInfo(1st(P),2nd(P))::S
+                          ),<>) / Entries,""))) )
+
+FUN fmtInfo : evalId ** evalInfo -> denotation
+DEF fmtInfo(evalId(Id),evalInfo(Source,_,State)) == 
+    `(formatS("(%n) %s %s\n" <- Id & Source & fmtState(State)))
+
+FUN fmtState : evalState -> denotation
+DEF fmtState(aborted)   == "<aborted>"
+DEF fmtState(broken)    == "<interrupted>"
+DEF fmtState(ready)     == "<ok>"
+DEF fmtState(unknown)   == "<???>"

@@ -1,0 +1,229 @@
+IMPLEMENTATION ScanConfig
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/parsingAndScanning/scanConfig/ScanConfig.impl,v 1.1.1.1 1998-06-16 16:00:38 wg Exp $
+
+IMPORT 
+  String 	COMPLETELY       Char		COMPLETELY   CharConv COMPLETELY
+  StringConv	COMPLETELY       Denotation	COMPLETELY
+  Seq    	COMPLETELY
+
+IMPORT
+  TokenConfig 	COMPLETELY       Pos 		COMPLETELY
+  Error	 	COMPLETELY       CharClass 	COMPLETELY
+
+-- %$The Main Configuration Scanning Function$
+-- %------------------------------------------
+FUN scanConfig : string -> seq[token] ** error
+
+/* %The start-state is initialized with the full source string and the initial
+    character position of the scanning process. */
+DEF scanConfig( src ) == start(src, initial)
+
+
+-- %$Start State of the Configuration Language Scanner$
+-- %---------------------------------------------------
+FUN start : string ** pos -> seq[token] ** error
+
+/* %The @c{start}-starte of the scanner automaton decides on the basis of the
+current character, which scanner functions have to be invoked next. In contrast to 
+the @OPAL-scanner this decision is final and cannot be changed in the 
+invoked scanning function. This is due to the lexical structure of the configuration
+language. */
+DEF start( <>, _        ) == (<>, ok)
+DEF start( c::rtSrc, act) ==
+-- one-character token:
+  IF comma?(c) THEN
+    LET
+      (restToken, scanError) == start(rtSrc, upd(act, c))
+    IN
+      IF ~(error?(scanError)) THEN
+        (colon(act) :: restToken, ok)
+      ELSE
+        (<>, scanError)
+      FI
+  IF equal?(c) THEN
+    LET
+      (restToken, scanError) == start(rtSrc, upd(act, c))
+    IN
+      IF ~(error?(scanError)) THEN
+        (equal(act) :: restToken, ok)
+      ELSE
+        (<>, scanError)
+      FI
+
+-- multiple-character token:
+  IF multipleCharTokenStart?(c) THEN
+    LET
+      (token, restSrc, newAct) == 
+         IF slash?(c) or dot?(c) THEN
+           scanDirectoryName(rtSrc, c%, act, upd(act, c))
+         IF pipe?(c) THEN
+           scanTexinfo(rtSrc, <>, act, upd(act, c))    
+         IF letgit?(c) THEN
+           scanKeyword(rtSrc, c%, act, upd(act, c))
+         IF setopen?(c) THEN
+           scanString(rtSrc, <>, act, upd(act, c))
+           -- do not include the setopen in the lexem!
+         IF at?(c) THEN
+           scanMacro(rtSrc, c%, act, upd(act, c))
+         ELSE
+           (error("do not know how to scan multiple char token ('" ++ 
+                       (c`) ++ "'), rest: '" ++ (rtSrc`) ++ "'", act), <>, act)
+         FI
+    IN
+      IF ~(error?(token)) THEN
+        LET
+          (restToken, restScanError) == start(restSrc, newAct)
+        IN
+          (token :: restToken, restScanError)
+      ELSE
+        (<>, error(reason(token)))
+      FI
+    
+  IF percent?(c) THEN
+    start(scanComment(rtSrc, upd(act, c)))
+
+-- lexical sugar: -> just ignore it!
+  IF space?(c) THEN
+    start(rtSrc, upd(act, c))
+
+  ELSE
+    (<>, error(
+           preamble ++ "unexpected symbol " ++ (c`) ++ 
+              "at " ++ (!(act)) ++ trailer
+         )
+    )
+  FI
+
+/* %Convenience function that checks if @c{c} is the beginning of a token that
+can consist of more than one character: (This implementation does look ugly,
+but @c{ORIF} is faster than @c{or}.) */
+FUN multipleCharTokenStart? : char -> bool
+DEF multipleCharTokenStart?( c ) ==
+  IF letgit?(c) ORIF dot?(c)     ORIF slash?(c) ORIF 
+     pipe?(c)   ORIF setopen?(c) ORIF at?(c)            THEN 
+    true
+  ELSE 
+    false
+  FI
+
+-- %$The Individual Scanner States$
+-- %-------------------------------
+
+-- %The function
+FUN scanString : string ** string ** pos ** pos -> token ** string ** pos
+/* %implements a state in the DOSFOP configuration-language scanning-automaton
+that reads the continuation of a string, i.e. the starting open-brace-symbol
+initially has to be deleted from the given parameter @c{c::rtSrc}. 
+All characters upto the closing @c{setclose?} are members of a 
+configuration-language-string.
+
+The earlier test (@c{letgit?(c) or space?(c) or configSpecial?(c)}) for
+characters which are considered as valid members of a
+configuration-language-string, was dropped for efficiency reasons.
+
+The state is left if a @c{setclose?} is encountered and the token for the
+read string is return together with the start position of the initial open-brace. */
+
+DEF scanString( c::rtSrc, lexem, start, act ) ==
+  IF setclose?(c) THEN
+    (string(lexem, start), rtSrc, upd(act,c))
+  ELSE
+    scanString(rtSrc, lexem+%c, start, upd(act,c))
+  FI
+-- %An @eof in a non-properly terminated string produces a lexical error:
+DEF scanString( <>, _, _, act ) ==
+  makeScanError("unexpected end of string at ", act)
+
+
+FUN scanMacro : string ** string ** pos ** pos -> token ** string ** pos
+/* %The initially read at-character (@c{@@}) has lead to this scanner state. The reading
+of the representative name of the macro-definition is done in the following state: */
+DEF scanMacro( src AS c::rtSrc, lexem, start, act ) ==
+  IF letter?(c) THEN
+    scanMacro(rtSrc, lexem+%c, start, upd(act,c))
+  ELSE
+    (macroname(lexem, start), src, act)
+  FI
+-- %An @eof in a non-properly terminated macro-definition token produces a lexical error:
+DEF scanMacro( <>, _, _, act ) ==
+  makeScanError("unexpected end of macro at ", act)
+
+
+FUN scanKeyword : string ** string ** pos ** pos -> token ** string ** pos
+/* %A DOSFOP configuation-language keyword, composed by a sequence of
+@c{letter?}- and @c{underline?}-characters, is scanned here. The token-representation
+is produced in the conversion-function @c{stringAndPos2KeywordToken}. 
+
+If the process of conversion is not successful an error is produced. The @c{reason}
+of the error can be extracted from the error-token generated by 
+@c{stringAndPos2KeywordToken}. */
+DEF scanKeyword( src AS c::rtSrc, lexem, start, act ) ==
+  IF letter?(c) or underline?(c) THEN
+    scanKeyword(rtSrc, lexem+%c, start, upd(act,c))
+  ELSE
+    LET
+      newToken == stringAndPos2KeywordToken(lexem, start)
+    IN
+      IF error?(newToken) THEN
+        makeScanError(reason(newToken), pos(newToken))
+      ELSE
+        (newToken, src, act)
+      FI
+  FI
+-- %An @eof in a non-properly terminated keyword-token produces a lexical error:
+DEF scanKeyword( <>, _, _, act ) ==
+  makeScanError("unexpected end of keyword at ", act)
+
+
+FUN scanTexinfo : string ** string ** pos ** pos -> token ** string ** pos
+
+DEF scanTexinfo( <>, _, _, act ) ==
+  makeScanError("unexpected end of texinfo text at ", act)
+DEF scanTexinfo( c::rtSrc, lexem, start, act ) ==
+  IF pipe?(c) THEN
+    (texinfo(lexem, start), rtSrc, upd(act,c))
+  ELSE
+    scanTexinfo(rtSrc, lexem+%c, start, upd(act,c))
+  FI
+
+FUN scanDirectoryName : string ** string ** pos ** pos -> token ** string ** pos
+
+DEF scanDirectoryName( <>, _, _, act ) ==
+  makeScanError("unexpected end of directory name at ", act)
+DEF scanDirectoryName( src AS c::rtSrc, lexem, start, act ) ==
+  IF letgit?(c) ORIF special?(c) THEN
+    scanDirectoryName(rtSrc, lexem+%c, start, upd(act,c))
+  ELSE
+    (directoryName(lexem, start), src, act)
+  FI
+
+FUN scanComment : string ** pos -> string ** pos
+DEF scanComment( c::rtSrc, act ) ==
+  IF newline?(c) THEN
+    (rtSrc, upd(act, c))
+  ELSE
+    scanComment(rtSrc, upd(act, c))
+  FI
+
+
+-- %$Output of Scanning Errors$
+-- %---------------------------
+
+/* %These two functions provide a convenient measure for returning error-token in
+scanner-state-functions. Moreover a unique error-preamble for the whole module is defined.
+
+As we do not implement an error-recovering scanner, we return an empty rest-source and
+an invalid position (@c{initial}) as this position is never been looked at again. */
+FUN makeScanError : denotation ** pos -> token ** string ** pos
+DEF makeScanError( reason, p ) ==
+  ( error(preamble ++ reason ++ !(p) ++ trailer, p), <>, initial )
+
+FUN preamble : denotation
+DEF preamble == "DOSFOP Configuration Language Scanning Error : \n"
+
+FUN trailer : denotation
+DEF trailer == "\n"
+ 
+
+
+

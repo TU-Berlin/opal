@@ -1,0 +1,157 @@
+
+IMPLEMENTATION OptimEvalFin
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: finitialization of partial evaluation phase
+-- project: acc
+-- author:  wg
+
+
+IMPORT  Nat             COMPLETELY
+        Seq             COMPLETELY
+	SeqMap		ONLY *
+	SeqReduce	ONLY / 
+
+IMPORT  SeqMapEnv       ONLY *
+
+IMPORT  Ide             COMPLETELY
+        Ac              COMPLETELY
+        An     		ONLY an set:an**optimAn->an optim source
+	OptimAn		ONLY optimAn bindingAn complexity rank maxIdeNo
+	SourceAn	ONLY sourceAn error? errorKind kind never?
+	IdeSet		ONLY ideSet {} {}? incl in implode *
+        AcFun           ONLY dec neverReached?
+
+
+-- -------------------------------------------------------------------------
+
+FUN optimEvalFin : popts ** unit ** dec -> dec 
+DEF optimEvalFin(Opts,U,binding(An,Id,Md,Def)) ==
+    LET (FinT,NewDef) == ( fin(I)(T,Def)
+	    		    WHERE I == inh(Opts,U,Id)
+	    			  T == thr(0,{}) )
+	NewAn	      == ( set(An,bindingAn(complexity(FinT),
+				            rank(OldOptAn),maxIdeNo(OldOptAn)))
+			    WHERE OldOptAn == optim(An) )
+    IN
+    binding(NewAn,Id,Md,NewDef)
+
+-- -------------------------------------------------------------------------
+
+FUN fin : inh -> thr ** exp -> thr ** exp
+
+	/* fin currently performs dead code elimination and
+	   calculates the final "complexity" of a function.
+	*/
+
+
+DATA inh ==    
+    /* Inherited context object of fin.
+    */
+    inh(popts   : popts,		-- prepared options
+	unit    : unit, 		-- target unit
+	this	: ide			-- target function
+       )
+
+DATA thr ==
+    /* Threaded context object of fin.
+    */
+    thr(complexity : nat,		-- measure for complexity
+	used       : ideSet		-- set of applied locals
+    )
+
+FUN incrComplexity maxComplexity: thr -> thr
+DEF incrComplexity(T AS thr(C,U)) == 
+    IF C |= max THEN thr(succ(C),U) ELSE T FI
+DEF maxComplexity(thr(C,U)) == 
+    thr(max,U)
+
+
+FUN inclUsed : exp ** thr -> thr
+DEF inclUsed(ide(_,Id AS local(_)),thr(C,U)) ==
+    thr(C,incl(Id,U))
+DEF inclUsed(_,T) == T
+
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF fin(C)(T,Exp) ==
+    -- error, deno, ide
+    (inclUsed(Exp,T),Exp)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF fin(C)(T,Exp AS apply(_,ide(_,Fun AS global(_,_)),Args)) ==
+    LET T1 == IF Fun = this(C) THEN
+		  -- direct recursion, account as maximum
+		  maxComplexity(T)
+	      /*
+	      OTHERWISE
+	      IF constructor?(dec(unit(C),Fun)) THEN
+		  -- constructor application, don't account
+		  T
+	      */
+	      ELSE
+		  incrComplexity(T)
+	      FI
+    IN
+    ( ( inclUsed / T1 )(Args) , Exp )
+
+DEF fin(C)(T,Exp AS apply(_,Fun,Args)) ==
+    ( ( inclUsed / inclUsed(Fun,incrComplexity(T)) )(Args) , Exp )
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF fin(C)(T,lambda(An,Vars,Scope)) ==
+    ( T1, lambda(An,Vars,NewScope) )
+      WHERE (T1,NewScope) == fin(C)(T,Scope)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF fin(C)(T,block(An,Binds,Scope)) ==
+    LET (T1,NewScope) == fin(C)(T,Scope)
+	(T2,NewBinds) == finBinds(C,T1,Binds)
+    IN
+    IF ::?(NewBinds) THEN
+        ( T2, block(An,NewBinds,NewScope) )
+    ELSE ( T2, NewScope ) FI
+
+  FUN finBinds : inh ** thr ** seq[dec] -> thr ** seq[dec]
+  DEF finBinds(C,T,binding(An,Id,Md,Def)::Rest) ==
+    LET (T1,NewRest) == finBinds(C,T,Rest)
+    IN
+    IF Id in used(T1) THEN
+	( T2, binding(An,Id,Md,NewDef) :: NewRest )
+	  WHERE (T2,NewDef) == fin(C)(T1,Def)
+    ELSE
+	-- binding is dead code
+	( T1, NewRest )
+    FI
+  DEF finBinds(C,T,<>) == (T,<>)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF fin(C)(T,case(An,Discr,Matches,Default)) ==
+    LET (T1,NewDefault) == fin(C)(T,Default)
+	(T2,NewMatches) == (finMatch(C))*(T1,Matches)
+    IN
+    IF neverReached?(popts(C),NewDefault) and
+       		#(NewMatches) = 1  and
+       		{}?( used(T2) * implode(ide*vars(ft(NewMatches))) ) THEN
+        -- default not reached; only one match with dead bindings:
+        --   lets through away this case
+	( T2, scope(ft(NewMatches)) )
+    ELSE
+	LET T3 == inclUsed(Discr,T2)
+	    N  == IF error?(Default) THEN #(Matches) ELSE succ(#(Matches)) FI
+	    T4 == IF N > 2 THEN incrComplexity(incrComplexity(T3))
+			   ELSE incrComplexity(T3) FI
+	IN
+	( T4, case(An,Discr,NewMatches,NewDefault) )
+    FI
+
+    FUN finMatch : inh -> thr ** match -> thr ** match
+    DEF finMatch(C)(T,match(Cons,Vars,Scope)) ==
+	LET (T1,NewScope) == fin(C)(T,Scope)
+	IN
+	( T1, match(Cons,Vars,NewScope) )
+

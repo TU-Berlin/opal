@@ -1,0 +1,331 @@
+-- LAST EDIT: Wed Jun 30 17:53:11 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, May 14 1993: changes message for improperlyNamedFunction
+--				 (must not be a parameter)
+-- 	        af, May 14 1993: added eager and lazy candidates option
+--				 unexpectedFct alternative for reasons
+--		af, Jun 22 1993: new format of typing error messages
+-- ============================================================================
+
+IMPLEMENTATION Reason
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:45 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	Char		ONLY char blank newline
+	CharConv	ONLY `
+	Denotation	COMPLETELY
+	String		ONLY string !
+	StringConv	ONLY `
+	BTUnion		ONLY union string nat denotation
+	StringFormat	ONLY format
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqCompare	COMPLETELY
+
+	DEBUG[bool]	ONLY FIELD?
+
+	MySeqFun1	ONLY uniqueSort
+
+	Error		ONLY err errKind error
+	Pos		ONLY pos ` < =
+
+	Rep		ONLY rep `
+	PartName	ONLY partName:SORT ` :partName->denotation
+				pos:partName->pos
+	Fct[name]	ONLY fct `
+
+	AnalyzedGlobSig	ONLY globSig name
+			     level minimal 
+			     ` : globSig**level -> name -> denotation
+
+	Substitution	ONLY subst apply:subst**fct->fct**bool
+
+
+DATA alternReasons == or(alterns:seq[sumOfReasons])
+
+DATA sumOfReasons == and(pos:pos,reasons:seq[reason])
+
+DATA reason == wronglyTypedApplOrInfix(fun:fct,arg:fct,subst:subst)
+               wronglyTypedCondition(if:fct,subst:subst)
+               incompatibleGuards(guard1:fct,guard2:fct,subst:subst)
+               incompatibleElse(guards:fct,else:fct,subst:subst)
+               wrongTypingOfTupleOrCases(expr:fct,fct:fct,subst:subst)
+               wronglyTypedEquation(left:fct,right:fct,subst:subst)
+               globAndLocInLocSig(rep:rep)
+               locMismatchInLocSig(rep:rep,left:fct,right:fct,
+                                   substs:seq[subst])
+               wronglyTypedImplementation(left:fct,right:fct,subst:subst)
+               wronglyTypedPatternSynonym(name:fct,expr:fct,subst:subst)
+               unexpectedFct(demanded:fct,delivered:fct,subst:subst)
+               wronglyTypedEquality(left:fct,right:fct,subst:subst)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN allReasons?: bool
+DEF allReasons? == FIELD?("-zallReasons")
+
+FUN eagerCands?: bool
+DEF eagerCands? == FIELD?("-zeagerCands")
+
+FUN lazyCands?: bool
+DEF lazyCands? == FIELD?("-zlazyCands")
+
+FUN differentPositions?: bool
+DEF differentPositions? ==
+  allReasons? or (lazyCands? or ~(eagerCands?))
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN sortAsOperation
+    operationAsSort
+    localNameWithOrigin
+    noMatchingOp
+    noMatchingConstr
+    noMatchingSort
+    noMatchingName
+    sortDefinedByFunDef
+    improperlyNamedFunction
+    actStructIdeExpected
+    wrongNumberOfParameters
+    sortAsPattern:	partName -> err
+
+DEF sortAsOperation(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "sort %s used as operation"
+
+DEF operationAsSort(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "operation %s used as sort"
+
+DEF localNameWithOrigin(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "local name with origin %s"
+
+DEF noMatchingOp(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "no matching operation for %s"
+
+DEF noMatchingConstr(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "no matching free constructor for %s"
+
+DEF noMatchingSort(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "no matching sort for %s"
+
+DEF noMatchingName(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "no matching name for %s"
+
+DEF sortDefinedByFunDef(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "sort %s defined by function definition"
+
+DEF improperlyNamedFunction(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "improperly named function definition target or parameter %s"
+
+DEF actStructIdeExpected(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "%s must have actual origin"
+
+DEF wrongNumberOfParameters(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "%s must have actual parameters"
+
+DEF sortAsPattern(pname) ==
+  err(error,msg,pname`,pos(pname))
+  WHERE msg == "sort %s used as pattern"
+
+-- == -- == -- == -- == -- == -- == -- == -- == -- == -- == -- == -- == -- ==
+
+DATA alternMsgs == or(alterns:seq[sumOfMsgs])
+
+DATA sumOfMsgs == and(pos:pos,reasons:seq[denotation])
+
+FUN < : sumOfMsgs**sumOfMsgs -> bool
+
+DEF and(pos1,reasons1) < and(pos2,reasons2) ==
+  IF pos1<pos2 THEN true
+  IF pos1=pos2 THEN cmp(<)(reasons1,reasons2) <?
+  ELSE false
+  FI
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN convert: globSig -> alternReasons -> alternMsgs
+
+DEF convert(sig)(or(alts)) == or(uniqueSort(<)(convert(sig)*alts))
+
+FUN convert: globSig -> sumOfReasons -> sumOfMsgs
+
+DEF convert(sig)(and(pos,reasons)) == and(pos,uniqueSort(<)(`(sig)*reasons))
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN error: pos**alternReasons**globSig -> err
+
+DEF error(pos,alterns,sig) == error(pos,convert(sig)(alterns))
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN error: pos**alternMsgs -> err
+
+DEF error(pos,or(and(pIgn,msg :: <>) :: <>)) ==
+  err(error,msg,pos)
+
+DEF error(pos,or(and(pIgn,msgs) :: <>)) ==
+  err(error,"undefined identification\n%s",`(tab(8))(msgs),pos)
+
+DEF error(pos,or(alts)) ==
+  err(error,"undefined identification\n%s",`(1)(alts),pos)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN ` : nat -> seq[sumOfMsgs] -> denotation
+
+DEF `(no)(<>[sumOfMsgs]) == empty
+
+DEF `(no)(and(pos,msgs)::sum) ==
+  LET msg == IF differentPositions? THEN
+		`(`(format("%2n. %s ",nat(no)::(denotation(pos`)%))))(msgs)
+             ELSE `(`(format("%2n. ",nat(no)%)))(msgs)
+             FI
+  IN msg ++ `(succ(no))(sum)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN ` : denotation -> seq[denotation] -> denotation
+
+DEF `(leading1)(<>[denotation]) == empty
+
+DEF `(leading1)(msgs) ==
+  line1 ++ (++ / empty)(line * rt(msgs))
+  WHERE line1 == leading1++(ft(msgs)++(newline`))
+        line == \\r.leadingR++(r++(newline`))
+        leadingR == tab(leading1#)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN tab: nat -> denotation
+
+DEF tab(0) == empty
+DEF tab(n) == (blank`)++tab(n-1)
+
+-- --  --  --  --  -- --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN ` : globSig -> reason -> denotation
+
+DEF `(sig)(wronglyTypedApplOrInfix(fun,arg,subst)) ==
+  LET (funFct,ign1) == apply(subst,fun)
+      (argFct,ign2) == apply(subst,arg)
+  IN `(format(("wrongly typed application") +++(
+            ("function: %s")  +++
+	    ("argument: %s")),
+            %(denotation(`(`(sig,minimal))(funFct)),
+              denotation(`(`(sig,minimal))(argFct)))))
+
+DEF `(sig)(wronglyTypedCondition(if,subst)) ==
+  LET (ifFct,ign) == apply(subst,if)
+  IN `(format("wrongly typed condition '%s'",
+            denotation(`(`(sig,minimal))(ifFct))%))
+
+DEF `(sig)(incompatibleGuards(guard1,guard2,subst)) ==
+  LET (guard1Fct,ign1) == apply(subst,guard1)
+      (guard2Fct,ign2) == apply(subst,guard2)
+  IN `(format(("incompatible guards") +++(
+            ("first:  %s")  +++
+	    ("second: %s")),
+            %(denotation(`(`(sig,minimal))(guard1Fct)),
+              denotation(`(`(sig,minimal))(guard2Fct)))))
+
+DEF `(sig)(incompatibleElse(guards,else,subst)) ==
+  LET (guardsFct,ign1) == apply(subst,guards)
+      (elseFct,ign2) == apply(subst,else)
+  IN `(format(("incompatible else") +++(
+            ("guards: %s")  +++
+	    ("else:   %s")),
+            %(denotation(`(`(sig,minimal))(guardsFct)),
+              denotation(`(`(sig,minimal))(elseFct)))))
+
+DEF `(sig)(wrongTypingOfTupleOrCases(expr,fct,subst)) ==
+  LET (exprFct,ign1) == apply(subst,expr)
+      (fctFct,ign2) == apply(subst,fct)
+  IN `(format(("wrong typing") +++(
+            ("expression: %s")  +++
+	    ("typing:     %s")),
+            %(denotation(`(`(sig,minimal))(exprFct)),
+              denotation(`(`(sig,minimal))(fctFct)))))
+
+DEF `(sig)(wronglyTypedEquation(left,right,subst)) ==
+  LET (leftFct,ign1) == apply(subst,left)
+      (rightFct,ign2) == apply(subst,right)
+  IN `(format(("wrongly typed equation") +++(
+            ("left:  %s")  +++
+	    ("right: %s")),
+            %(denotation(`(`(sig,minimal))(leftFct)),
+              denotation(`(`(sig,minimal))(rightFct)))))
+
+DEF `(sig)(globAndLocInLocSig(rep)) ==
+  `(format(
+        "'%s' would be global operation and local name in the same signature",
+        denotation(rep`)%))
+
+DEF `(sig)(locMismatchInLocSig(rep,left,right,substs)) ==
+  `(format("local name '%s' is used with conflicting types:%s",
+         denotation(rep`)::(denotation(fctPairs)%)))
+  WHERE fctPairs == (++ \ empty)(fctPairSeq)
+        fctPairSeq == toString * substs
+        toString == \\subst.
+                    LET (leftFct,ign1) == apply(subst,left)
+                        (rightFct,ign2) == apply(subst,right)
+                    IN `(format(" '%s'&'%s'",
+                              denotation(`(`(sig,minimal))(leftFct))::
+                              (denotation(`(`(sig,minimal))(rightFct))%)))
+
+DEF `(sig)(wronglyTypedImplementation(left,right,subst)) ==
+  LET (leftFct,ign1) == apply(subst,left)
+      (rightFct,ign2) == apply(subst,right)
+  IN `(format(("wrongly typed implementation") +++(
+            ("left:  %s")  +++
+	    ("right: %s")),
+            %(denotation(`(`(sig,minimal))(leftFct)),
+              denotation(`(`(sig,minimal))(rightFct)))))
+
+DEF `(sig)(wronglyTypedPatternSynonym(name,expr,subst)) ==
+  LET (nameFct,ign1) == apply(subst,name)
+      (exprFct,ign2) == apply(subst,expr)
+  IN `(format(("wrongly typed pattern synonym") +++(
+            ("synonym: %s")  +++
+	    ("pattern: %s")),
+            %(denotation(`(`(sig,minimal))(nameFct)),
+              denotation(`(`(sig,minimal))(exprFct)))))
+
+DEF `(sig)(unexpectedFct(demanded,delivered,subst)) ==
+  LET (demFct,ign1) == apply(subst,demanded)
+      (delFct,ign2) == apply(subst,delivered)
+  IN `(format(("unexpected type of expression") +++(
+            ("demanded:  %s")  +++
+	    ("delivered: %s")),
+            %(denotation(`(`(sig,minimal))(demFct)),
+              denotation(`(`(sig,minimal))(delFct)))))
+
+DEF `(sig)(wronglyTypedEquality(left,right,subst)) ==
+  LET (leftFct,ign1) == apply(subst,left)
+      (rightFct,ign2) == apply(subst,right)
+  IN `(format(("wrongly typed (in)equality") +++(
+            ("left:  %s")  +++
+	    ("right: %s")),
+            %(denotation(`(`(sig,minimal))(leftFct)),
+              denotation(`(`(sig,minimal))(rightFct)))))
+
+FUN +++ : denotation**denotation -> denotation
+
+DEF s1 +++ s2 == s1 ++ "\n     " ++ s2

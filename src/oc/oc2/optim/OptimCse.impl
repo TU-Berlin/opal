@@ -1,0 +1,364 @@
+
+IMPLEMENTATION OptimCse
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: cse detection by constructing non-strict equation system 
+-- subject: from expression
+-- project: acc
+-- author:  wg
+
+
+IMPORT	Nat		ONLY nat = 0? > < 2 0 <=
+	DENOTATION	ONLY denotation
+	Denotation	ONLY =
+	Seq		COMPLETELY
+	SeqMap		ONLY * 
+	SeqReduce	ONLY /
+	SeqFilter	ONLY |
+	Compose		COMPLETELY
+	Option		COMPLETELY
+
+IMPORT	SeqMapEnv	ONLY *
+
+IMPORT	Error		ONLY ok
+
+IMPORT	Ide 		ONLY ide local? global? global
+			 	origin:SORT origin:ide->origin
+			     = target
+	Ac		COMPLETELY
+	An 		COMPLETELY
+	TypeAn		COMPLETELY
+	SourceAn	COMPLETELY
+	OptimAn		COMPLETELY
+	IdeMap		ONLY ideMap {} def ! def? extend
+	IdeSet		ONLY ideSet incl {} implode in excl
+	AcFun		ONLY set ide local? global? dec 
+	TypeAnFun	ONLY typeOfExp typeOfDec typeDec structure typeDecAss
+			     subs
+	OptimAnFun	ONLY props
+	AnFun		ONLY mapAn 
+	PreparedOptions	ONLY popts completeCase? completeCaseAlways?
+			     positions? maxUnfoldComplexity unfold?
+	Builtin		ONLY ABORT
+
+IMPORT	EqnSys		ONLY eqnSys newSys newVar newEqn mergeAn an
+			     setDeps equated? useEqn
+
+-- ------------------------------------------------------------------------
+
+FUN optimCse : popts ** unit ** dec -> eqnSys ** exp ** err
+DEF optimCse(Opts,U,binding(An,Id,Md,Def)) ==
+    LET C == ctx(Opts,U,An,~(lambda?(Def)),{})
+	S == thr(newSys,{})
+        (S1,NewDef) == enter(C)(S,Def)
+    IN
+    (sys(S1),NewDef,ok)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN enter : ctx -> thr ** exp -> thr ** exp
+
+DATA ctx == 
+	/* inherited context of enter
+	*/
+	ctx (	popts: popts,	       	-- prepared options
+		unit: unit,		-- the target unit
+		an: an,			-- annotation of target dec
+		const? : bool,		-- are we cse'ing a constant?
+		subs: ideMap[exp]	-- substitution for local ides
+	    )
+
+FUN upd : ctx ** ideMap[exp] -> ctx
+DEF ctx(o,u,a,c,_) upd m == ctx(o,u,a,c,m)
+
+DATA thr ==
+	/* threaded context of enter
+	*/
+	thr (	sys: eqnSys,		-- equation system
+		unfolds: ideMap[exp]	-- unfolded expressions
+	    )
+
+FUN upd : thr ** eqnSys -> thr
+FUN upd : thr ** ideMap[exp] -> thr
+DEF thr(_,u) upd s == thr(s,u)
+DEF thr(s,_) upd u == thr(s,u)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF enter(C)(S,e) ==
+    (S,e)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF enter(C)(S,e AS ide(a,id)) == 
+    IF local?(id) THEN
+	-- any local is in substitution
+	(S,set(subs(C)!id,a))
+    ELSE
+	(S,e)
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF enter(C)(S,apply(a,f,as)) == 
+    /* enter apply; on the fly flatten it; unfold if admissable 
+    */
+    enterApply(C,S,a,f,as)
+
+    FUN enterApply : ctx ** thr ** an ** exp ** seq[exp:SORT] 
+				-> thr ** exp
+    DEF enterApply(C,S,a,apply(a1,f1,as1),as) ==
+	enterApply(C,S,a1,f1,as1++as)
+    DEF enterApply(C,S,a,f,as) ==
+        IF abort?(C,f) ANDIF deno?(ft(as)) THEN
+      	    -- special function ABORT applied to denotation,
+	    -- convert to optional error
+	    enter(C)(S,error((none:an set ta) set sa))
+		WHERE ty == type(C,S)(f)	-- specialized type of ABORT
+		      ta == IF fun?(ty) THEN typing(res(ty)) 
+					ELSE none:typeAn FI
+		      p  == IF pos?(source(a)) THEN pos(source(a))
+			    OTHERWISE
+		      	    IF pos?(source(an(f))) THEN pos(source(an(f)))
+			    ELSE noPos FI
+		      sa == error(p,repr(ft(as)),optional)
+	ELSE
+            LET (S1,f1)  == enter(C)(S,f)  
+                (S2,as1) == (enter(C))*(S1,as)
+	        (S3,e1)  == insert(C,S2,apply(a,f1,as1)) 
+            IN
+	    IF ide(e1) def? unfolds(S3) THEN
+	        -- already unfolded expression: return unfolded identity
+		-- we sample those identities since we cannot detect
+		-- common subexpressions modulo variable renaming
+		-- that is: f == \\X.case X of C(X1) => ...
+		-- and we have f(E) and f(E)
+		-- will NOT be detected as common subexpression AFTER
+		-- unfolding since X1 will achieve different names
+		LET unfolded == unfolds(S3)!ide(e1)
+		    S4 == IF ide?(unfolded) 
+				ANDIF equated?(sys(S3),ide(unfolded)) THEN
+			      S3 upd useEqn(sys(S3),ide(unfolded))
+			  ELSE S3 FI
+		IN
+	        (S4,unfolded)
+	    OTHERWISE
+    	    IF shallUnfold?(C,S3,f1,as1) THEN 
+	        LET id      == ide(f1)
+		    (C1,e2) == unfold(C,a,f1,as1,dec(unit(C),id))
+				-- C1 contains substitutions
+				-- for lambda-vars |-> as1 
+		    (S4,e3) == enter(C1)(S3,e2)
+		    S5	    == S4 upd def(ide(e1),e3,unfolds(S4))
+				-- sample unfolded identity
+	        IN
+	        (S5,e3)
+    	    ELSE 
+	        (S3,e1)
+    	    FI
+	FI
+
+    FUN abort? : ctx ** exp -> bool
+    DEF abort?(C,ide(_,id)) ==
+	id = ABORT
+    DEF abort?(C,_) == false
+		
+    FUN shallUnfold? : ctx ** thr ** exp ** seq[exp:SORT] -> bool
+    DEF shallUnfold?(C,S,f,as) == 
+	IF ~(unfold?(popts(C))) THEN false
+	OTHERWISE
+   	IF global?(f) THEN
+	    LET d == dec(unit(C),ide(f))
+	    IN
+	    IF bindingAn?(optim(an(d))) ANDIF
+	           implemented?(def(d))     ANDIF
+	           #(as) = rank(optim(an(d))) THEN
+	    	exist?(unfold?, props(unit(C), ide(f))) or
+		(complexity(optim(an(d))) 
+				<= maxUnfoldComplexity(popts(C)))
+	    ELSE false FI
+	ELSE false FI
+
+    FUN implemented? : exp -> bool
+    DEF implemented?(lambda(_,_,error(_))) == false
+    DEF implemented?(_) == true
+
+    FUN unfold : ctx ** an ** exp ** seq[exp] ** dec -> ctx ** exp
+    DEF unfold(C,AppAn,Fun,Args,
+		 Dec AS binding(DecAn,Id,Mode,lambda(LamAn,Vars,Scope))) ==
+	LET (PropPos?,MapPos) == 
+		IF (pos?(source(AppAn)) and positions?(popts(C))) THEN
+		     -- position has to be propagated into Exps of Scope
+		     (true,propPos(pos(source(AppAn))))
+		ELSE (false,\\An.An) FI
+	    (TypeSpec?,MapType) ==
+	        IF spec?(type(an(Fun))) and gen?(typeOfDec(Dec)) THEN
+		     -- specialization of type variables 
+		     -- has to be performed
+		     (true,specType(extend({},vars(typeOfDec(Dec)),
+				              subs(type(an(Fun))))))
+		ELSE (false,\\An.An) FI
+	    NewScope == 
+		IF PropPos? or TypeSpec? THEN
+		     mapAn(MapType,MapType o MapPos)(Scope)
+		ELSE Scope FI
+	    NewC == C upd extend(subs(C),ide * Vars,Args) 
+	IN
+	(NewC,NewScope)
+
+    FUN propPos : pos -> an -> an
+    DEF propPos(Pos)(An) ==
+	IF error?(SrcAn) THEN set(An,error(Pos,message(SrcAn),kind(SrcAn)))
+		         ELSE set(An,pos(Pos)) FI
+	    WHERE SrcAn == source(An)
+
+    FUN specType : ideMap[type] -> an -> an
+    DEF specType(Subs)(An) ==
+	IF typing?(TypeAn) THEN set(An,typing(subs(Subs)(type(TypeAn))))
+	IF spec?(TypeAn)   THEN set(An,spec(subs(Subs)*subs(TypeAn)))
+			   ELSE An FI
+	    WHERE TypeAn == type(An)
+			
+    /*
+    FUN createBindings : seq[dec:SORT] ** seq[exp:SORT] -> seq[dec:SORT]
+    DEF createBindings(vs,as) ==
+	IF <>?(vs) THEN <>[dec:SORT]
+		   ELSE binding(an(ft(vs)),ide(ft(vs)),local,ft(as))
+			::createBindings(rt(vs),rt(as))
+		   FI
+    */
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF enter(C)(S,case(a,ds,ms,df)) == 
+    LET (S1,ds1)  == enter(C)(S,ds)
+	(S2,ms1)  == (enterMatch(C))*(S1,ms)
+	(S3,df1)  == enter(C)(S2,df)
+    IN
+    IF completeCase?(popts(C)) and ~(error?(df1)) THEN
+	-- perform completion of case if possible
+	LET t == expand(C,type(C,S3)(ds1))
+	IN
+	IF sum?(t) THEN
+	    LET matchedSet == implode(cons * ms1)
+		notMatched == (~ o (in(_,matchedSet) o cons:type->ide))
+							| members(t)
+	    IN
+	    IF (#(notMatched) > 0) and 
+		   ((#(notMatched) < 2) or completeCaseAlways?(popts(C))) THEN
+		LET (S4,newms)   == (genMatch(C,df1))*(S3,notMatched)
+		    newdf	 == error(set(set(none:an,sa),ta))
+		    sa		 == error(noPos,"",never)
+		    ta		 == typing(type(C,S4)(df1))
+		IN
+		insert(C,S4,case(a,ds1,ms1++newms,newdf))
+	    ELSE
+    		insert(C,S3,case(a,ds1,ms1,df1))
+	    FI
+	ELSE
+	    insert(C,S3,case(a,ds1,ms1,df1))
+	FI
+    ELSE
+        insert(C,S3,case(a,ds1,ms1,df1))
+    FI
+
+    FUN enterMatch : ctx -> thr ** match -> thr ** match
+    DEF enterMatch(C)(S,match(c,vs,s)) == 
+	LET (C1,S1,vs1) == enterDecs(C,S,vs) -- enter pattern variables
+	    (S2,s1)     == enter(C1)(S1,s) 
+	IN
+	(S2,match(c,vs1,s1))
+
+    FUN expand : ctx ** type -> type
+    DEF expand(C,t) ==
+	structure(typeDecAss(unit(C)))(t)
+
+    FUN genMatch : ctx ** exp -> thr ** type -> thr ** match
+    DEF genMatch(C,e)(S,prod(c,ts)) == 
+	LET (S1,vs) == (genVar)*(S,ts)	-- generate dummy variables
+	IN
+	(S1,match(c,vs,e))
+
+    FUN genVar : thr ** type -> thr ** dec
+    DEF genVar(S,t) ==
+	LET a          == set(none,typing(t))
+	    (newsys,i) == newVar(sys(S),a)
+	IN
+	(S upd newsys,variable(a,i))
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF enter(C)(S,block(a,bs,s)) == 
+    LET (newC,S1,dps) == enterBinds(C,C,S,{},bs)
+	(S2,s1)       == enter(newC)(S1,s)
+    IN
+    IF local?(s1) ANDIF equated?(sys(S2),ide(s1)) THEN
+	-- ???? ide(s1) sometimes in dps ????
+        (S2 upd setDeps(sys(S2),ide(s1),excl(ide(s1),dps)),s1)
+    ELSE (S2,s1) FI
+
+
+    FUN enterBinds : ctx ** ctx ** thr ** ideSet ** seq[dec:SORT] 
+					-> ctx ** thr ** ideSet
+    DEF enterBinds(C,newC,S,dps,bs) ==
+	IF bs <>? THEN (newC,S,dps)
+	ELSE LET d       == ft(bs)
+		 e       == def(d)
+		 (S1,e1) == enter(C)(S,e)
+		 S2      == IF local?(e1) THEN 
+				S1 upd mergeAn(sys(S1),ide(e1),an(d)) 
+			    ELSE S1 FI
+		 dps1    == IF local?(e1) ANDIF equated?(sys(S2),ide(e1)) THEN
+				incl(ide(e1),dps)
+			    ELSE dps FI
+		 newC1   == newC upd def(ide(d),e1,subs(newC))
+	     IN
+	     enterBinds(C,newC1,S2,dps1,rt(bs))
+	FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+DEF enter(C)(S,lambda(a,vs,s)) == 
+	LET (C1,S1,vs1) == enterDecs(C,S,vs)
+	    (S2,s1)     == enter(C1)(S1,s)
+	IN
+	insert(C1,S2,lambda(a,vs1,s1))
+
+-- -------------------------------------------------------------------------
+
+FUN enterDecs : ctx ** thr ** seq[dec:SORT] 
+				-> ctx ** thr ** seq[dec:SORT]
+DEF enterDecs(C,S,ds) ==
+    /* rename ides of seq of decs and build substitution for them.
+    */
+    IF ds <>? THEN (C,S,<>[dec:SORT])
+    ELSE LET (newsys,n)  == newVar(sys(S),an(ft(ds)))
+	     C1          == C upd def(ide(ft(ds)),ide(none:an,n),subs(C))
+	     (C2,S2,ds1) == enterDecs(C1,S upd newsys,rt(ds))
+	 IN
+	 (C2,S2,variable(an(ft(ds)),n)::ds1)
+    FI
+
+-- -------------------------------------------------------------------------
+
+FUN insert : ctx ** thr ** exp -> thr ** exp
+DEF insert(C,S,e) ==
+    /* insert flat expression into equation system.
+    */
+    LET (newsys,i) == newEqn(sys(S),e,set(none:an,typing(type(C,S)(e))))
+    IN
+    (S upd newsys,ide(an(e),i))
+
+FUN type: ctx ** thr -> exp -> type
+DEF type(C,S)(e) == typeOfExp(valTypeAss(C,S),typeDecAss(C))(e)
+
+    FUN valTypeAss : ctx ** thr -> ide -> type
+    DEF valTypeAss(C,S)(i) ==
+        IF local?(i)  THEN 
+	    IF typing?(type(an(sys(S),i))) THEN type(type(an(sys(S),i)))
+				           ELSE some FI
+    	IF global?(i) THEN typeOfDec(dec(unit(C),i)) FI
+
+    FUN typeDecAss : ctx -> ide -> typeDec
+    DEF typeDecAss(C)(i) == 
+   	typeDec(unit(C),i) 
+
+

@@ -1,0 +1,339 @@
+/* %-
+-- ============================================================================
+-- Author:      cm
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     matching partNames within global pragmas
+-- ============================================================================
+/*
+*/
+-- ============================================================================
+*/
+
+IMPLEMENTATION PragmaAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT
+        Nat                     ONLY nat 0 1 >
+        String                  ONLY string
+        Seq                     ONLY <> :: <>? rt ft # ::? ++ exist? forall?
+        SeqMap                  ONLY *
+        SeqReduce               ONLY / \
+        Error                   ONLY err error ok + errKind errors hint
+        GlobSig                 ONLY globSig prioTab structures structIde impPragmas updPrioTab ` rule prio left right both none updImpPragmas
+
+        Rep                     COMPLETELY
+        PartName                ONLY partName:SORT pos ide 
+                                        ` : partName->denotation
+        Name                    ONLY name ` : name -> denotation extName? formParam? struct impDecl inst
+        GlobPragma              COMPLETELY
+        NameAnalysis            ONLY parameter
+        AnalyzedGlobSig         ONLY pragmas updPragmas useOp treatImportedStruct standard ` level op? origIde
+                        single : globSig ** name -> globSig ** name
+                        globalSet? internal? external? 
+                        origInst : name -> seq[name]
+        DEBUG                   ONLY FIELD? PRINT
+       Pair ONLY pair unpair &
+       Objects ONLY struct instPN sortPN no decl impDecl inst
+       Com ONLY com succeed
+       ComCompose ONLY &
+       Table ONLY ! table !?
+       PartNameEntry ONLY rep pos instPNE errInfo onlyPNE pN flatPnEle sortPNE ide
+       Denotation ONLY ++ = +/+
+       Map ONLY def? ! map codom
+       SeqFilter ONLY |
+       PrioTab ONLY insertLeft insertRight ` conflicts tClosure
+       ImpExpEntry ONLY structE structIde preStruct? impDecls unparamTrans? unparam? insts impDeclE instE
+       Fct ONLY fct
+       Option ONLY option nil? avail? cont
+       AGSig ONLY getInternalNames getExternalNames
+       Pos ONLY firstPos
+       Char ONLY char
+       Verbose ONLY verb subphase
+       Void ONLY void
+       MapMap ONLY *
+       Name4SigAna ONLY isClosed?
+       BoolConv ONLY `
+       SetByBST[rep, <] ONLY set in incl
+       SetByBSTConv[rep, <] ONLY asSet
+       SeqOfSeq ONLY flat
+
+-- %$Globale Pragmas$
+        
+FUN analyseGlobPragma : globPragma[partName] ** globSig 
+                                -> globSig ** err
+
+DEF analyseGlobPragma(prag(<>), Gs) == 
+        (updPragmas(Gs, prag(<>)::pragmas(Gs)), ok)
+DEF analyseGlobPragma(prag(Ft :: Rt), Gs) == 
+        LET 
+            (Gs1, RtErr) == analyseGlobPragma(prag(Rt), Gs)
+            (GsNew, Err) == analysePragmaItem(Ft, Gs1)
+        IN (GsNew, Err + RtErr)
+
+FUN analysePragmaItem : pragmaItem[partName] ** globSig 
+                                -> globSig ** err
+
+-- DEF analysePragmaItem(lexem(I, P), _) == (lexem(I, P), ok)
+-- DEF analysePragmaItem(identify(<>), _) == (identify(<>), ok) 
+DEF analysePragmaItem(lexem(I, P), Gs) == 
+        LET GPragS == pragmas(Gs) IN
+        (updPragmas(Gs, prag(lexem(I, P)::pragS(ft(GPragS)))::rt(GPragS)), ok)
+
+DEF analysePragmaItem(identify(<>), Gs) == LET GPragS == pragmas(Gs) IN
+        (updPragmas(Gs, prag(identify(<>)::pragS(ft(GPragS)))::rt(GPragS)), ok)
+                                        
+DEF analysePragmaItem(identify(Ft :: Rt), Gs) ==  
+        LET (Names, Err, Free) == parameter(Ft, Gs, 0)
+            (NewGs, RtErr) == analysePragmaItem(identify(Rt), Gs)
+        IN
+                IF Names <>? THEN (NewGs, Err+RtErr)
+                ELSE IF #(Names) > 1 THEN (NewGs, multiErr(Ft)+RtErr)
+                     ELSE 
+                        LET N == ft(Names)
+                            (LastGs, Name) == IF single?(N) THEN 
+                                single(NewGs, N) ELSE (NewGs, N) FI
+                            NewName == PRINT(printPragmas?,\\ . `(Name), Name)
+                            GPragS == pragmas(LastGs)
+                            PragItS == pragS(ft(GPragS))
+                            Pns == pns(ft(PragItS))
+                        IN
+                        IF ~(globalSet?(NewName)) THEN 
+                           (updPragmas(useOp(LastGs, NewName), 
+                                prag(identify(NewName::Pns)
+                                        ::rt(PragItS))::rt(GPragS)), 
+                           RtErr)
+                        ELSE (LastGs, instErr(Ft) + RtErr)
+                        FI
+
+                     FI
+                FI
+
+FUN novars? : name -> bool
+DEF novars?(Name) ==
+IF globalSet?(Name) THEN exist?(novars?, origInst(Name))
+ELSE internal?(Name) or external?(Name)
+FI
+
+FUN single? : name -> bool
+DEF single?(Name) ==
+IF globalSet?(Name) THEN novars?(Name) ELSE false FI
+
+-- %@zoindex printPragmas
+FUN printPragmas? : bool
+DEF printPragmas? == FIELD?[bool]("-zprintPragmas")
+
+FUN multiErr: partName -> err
+DEF multiErr(Pn) == err(error, 
+        "ambiguous identification of '%s' within pragma",Pn`,pos(Pn))
+
+FUN instErr: partName -> err
+DEF instErr(Pn) == err(error, 
+        "missing instantiation of '%s' within pragma",Pn`,pos(Pn))
+
+-- %$Klammerungen aus Pragmas extrahieren$
+-- %Prioritäten aus Pragmas extrahieren
+FUN analyzePrios: options -> globSig -> com[pair[globSig,bool]]
+DEF analyzePrios(opts)(gS) ==
+  verb(opts, subphase, "analyzing bracketings ..." ) & (
+  treatImportedStruct(analyzePrios(opts))(gS) & (\\ gS1.
+  analyzeOwnPrios(opts, gS1) & 
+  analyzePossibleConflicts(opts)  
+  ))
+
+-- %zoindex tracePrio
+FUN analyzePrios: options -> struct ** globSig -> com[globSig]
+DEF analyzePrios(opts)(s, gS) ==
+  LET
+    sE:structE == no(s)!structures(gS)
+    r0 == ide(structIde(sE))
+    r == PRINT(FIELD?[bool]("-ztracePrio"),
+               \\ . "analyzing bracketings of " ++ (r0`),
+               r0)
+    p == pos(structIde(sE))
+    pragmaS == IF r def? impPragmas(gS) THEN impPragmas(gS)!r ELSE <> FI
+    RTRT == \\p1. prag(rt(rt(pragS(p1))))
+    leftprios == RTRT * leftprio? | pragmaS
+    rightprios == RTRT * rightprio? | pragmaS
+    pT == prioTab(gS)
+    (pT1, E1) == unpair((add(gS, p, insertLeft), pT & ok) \ leftprios)
+    (pT2, E2) == unpair((add(gS, p, insertRight),pT1 & E1) \ rightprios)
+    ptFin == PRINT(FIELD?[bool]("-ztracePrio"),
+                   \\ . "resulting bracketing table\n" ++ `'PrioTab(gS)(pT2),
+                   pT2)
+  IN
+  errors(opts, E2) & 
+  succeed(updPrioTab(gS, ptFin))
+
+FUN leftprio? : globPragma[name] -> bool
+DEF leftprio?(prag(lexem(i1, _) :: lexem(i2, _) ::
+                   identify(_) :: identify(_) :: _)) ==
+  (i1`) = "BRACKET" and (i2`) = "LEFT" 
+DEF leftprio?(_) == false
+
+FUN rightprio? : globPragma[name] -> bool
+DEF rightprio?(prag(lexem(i1, _) :: lexem(i2, _) ::
+                   identify(_) :: identify(_) :: _)) ==
+  (i1`) = "BRACKET" and (i2`) = "RIGHT" 
+DEF rightprio?(_) == false
+
+FUN add: globSig ** pos ** (globSig ->
+          seq[name] ** seq[name] ** prioTab ** pos -> prioTab ** err) ->
+          globPragma[name] ** pair[prioTab, err] -> pair[prioTab, err]
+DEF add(gS, p, f)
+       (prag(identify(N1s) :: (I2 AS identify(N2s)) :: I3) , pT & E) ==
+  LET (pT1, E1) == f(gS)(N1s, N2s, pT, p)
+  IN
+  add(gS, p, f)(prag(I2 :: I3), pT1 & E + E1)
+
+DEF add(gS, p, f)(prag(_ :: <>), PTE) == PTE
+DEF add(gS, p, f)(prag(<>), PTE) == PTE
+
+
+FUN add: globSig ** (globSig ->
+          seq[name] ** seq[name] ** prioTab ** pos -> prioTab ** err) ->
+          globPragma[name] ** pair[prioTab, err] -> pair[prioTab, err]
+DEF add(gS, f)
+       (prag(lexem(_, p) :: _ :: I AS (identify(N1s) :: identify(N2s) :: _)),
+        pT & E) ==
+       add(gS, p, f)(prag(I), pT & E)
+/*
+  LET (pT1, E1) == f(gS)(N1s, N2s, pT, p)
+  IN
+  (pT1 & E1 + E)
+*/
+
+-- %@zoindex tracePrio
+FUN analyzeOwnPrios: options ** globSig -> com[pair[globSig, bool]]
+DEF analyzeOwnPrios(opts, gS0) ==
+  LET
+    gS == PRINT(FIELD?[bool]("-ztracePrio"),
+               \\ . "analyzing priorities of " ++ `(structIde(gS0)),
+               gS0)
+    
+    leftprios == leftprio? | allPragmas(gS)
+    rightprios == rightprio? | allPragmas(gS)
+    pT == prioTab(gS)
+    (pT1, E1) == unpair((add(gS, insertLeft), pT & ok) \ leftprios)
+    (pT2, E2) == unpair((add(gS, insertRight),pT1 & E1) \ rightprios)
+    (pT3, E3) == tClosure(gS, firstPos)(pT2)
+    ptFin == PRINT(FIELD?[bool]("-ztracePrio"),
+                   \\ . "resulting bracketing table\n" ++ `'PrioTab(gS)(pT3),
+                   pT2)
+  IN
+  errors(opts, E2 + E3) & (\\ ok? .
+  succeed(updPrioTab(gS, ptFin) & ok?)
+  )
+
+FUN allPragmas: globSig -> seq[globPragma[name]]
+DEF allPragmas(gS) == pragmas(gS) ++ flat(codom(impPragmas(gS)))
+
+-- %@zoindex prioConflicts
+FUN analyzePossibleConflicts:
+   options -> pair[globSig, bool] -> com[pair[globSig, bool]]
+DEF analyzePossibleConflicts(opts)(gS & ok?) ==
+  
+  IF FIELD?[bool]("-zprioConflicts") THEN
+    verb(opts, subphase, "analyzing bracketing conflicts ...") & (
+    LET iNames == fun? | getInternalNames(gS)
+        eNames == fun? | getExternalNames(gS)
+        fun? == \\n. op?(gS, n)
+        allNames == iNames ++ eNames
+        lConflicts == conflicts(gS)(iNames, allNames)
+        rConflicts == conflicts(gS)(eNames, iNames)
+        allConflicts == lConflicts ++ rConflicts
+    IN
+      IF allConflicts ::? THEN
+        errors(opts, err(hint, "the following pairs of functions have no explicit bracketings:\n" ++ (+/+("\n"), "") / asDeno(gS) * allConflicts, firstPos)) &
+        succeed(gS & ok?)
+      ELSE
+        succeed(gS & ok?)
+      FI
+      )
+  ELSE
+    succeed(gS & ok?)
+  FI
+
+FUN asDeno: globSig -> pair[name, name] -> denotation
+DEF asDeno(gS)(n1 & n2) ==
+  "      " ++ `(gS, standard)(n1) ++ " and " ++ `(gS, standard)(n2)
+
+-- %$Importierte Pragmas behandeln$
+/* %Da Pragmas in importierten Strukturen in die globSig eingetragen werden,
+    @emph{ohne} daß überprüft wird, ob die Namen auch in der Import-Liste
+    stehen, werden diese Namen im Interopal dann trotzdem in die Import-Liste
+    eingetragen. 
+
+    Da Pragmas keinen Namen haben, kann man sie nicht einzeln importieren.
+
+    Die gewählte Lösung ist, alle importierten Pragmas daraufhin zu überprüfen,
+    ob alle applizierten Namen bekannt sind. Falls nicht, wird das Pragma
+    heimlich, still und leise entfernt.
+    Ausnahme: ASSERT- und ASSUME-Markierungen werden beibehalten.
+
+    @code{C} enthält die reps aller COMPLETELY importierten (oder wegen
+    assert oder assume bekannten) Strukturen, da @code{isClosed?} in diesen
+    Fällen leider false liefert.
+*/
+
+DEF analyzeImpPragmas(opts, C)(gS) ==
+  verb(opts, subphase, "analyzing imported pragmas ...") &
+  succeed(updImpPragmas(gS,
+          removeOpen(gS, incl(BOOL, incl(DENOTATION, asSet(C)))) *
+          impPragmas(gS)) & true)
+
+FUN removeOpen: globSig ** set[rep, <] ->
+                 seq[globPragma[name]] -> seq[globPragma[name]]
+DEF removeOpen(gS, C)(gPs) == closed?(gS, C) | gPs
+
+FUN closed? : globSig ** set[rep, <] ->  globPragma[name] -> bool
+DEF closed?(gS, C)(prag(pIs)) == 
+--  IF (pIs ::?) ANDIF ft(pIs) lexem? ANDIF
+--    (ide(ft(pIs)) = assert) or (ide(ft(pIs)) = assume) THEN true
+--  ELSE
+    forall?(closed?(gS, C), pIs)
+--  FI
+
+FUN closed? : globSig ** set[rep, <] -> pragmaItem[name] -> bool
+DEF closed?(gS, C)(identify(names)) == forall?(closed?(gS, C), names)
+DEF closed?(_, _)(lexem(_,_)) == true
+
+-- %@zoindex analyzeImplPragmas
+FUN closed? : globSig ** set[rep, <] -> name -> bool
+DEF closed?(gS, C)(n0) ==
+  LET n == PRINT(FIELD?[bool]("-zanalyzeImplPragmas"),
+                 \\ . "analyzeImplPragmas # " ++
+                      `(gS, standard)(n0) ++
+                      " # " ++ `(isClosed?(gS, n0)) ++
+                      " # " ++ `(origIde(gS, n0) in C),
+                 n0)
+  IN
+  IF origIde(gS, n) in C THEN true ELSE isClosed?(gS, n) FI
+/*
+DEF closed?(gS)(n) == 
+  IF extName?(n) or formParam?(n) THEN
+    -- gibt's die Struktur?
+    LET sE == no(struct(n))!?structures(gS)
+    IN
+    IF sE nil? THEN false
+    IF sE avail? ANDIF preStruct?(sE cont) THEN false
+    ELSE -- gibt's die Implementierung?
+      LET iE == no(impDecl(n))!?impDecls(sE cont)
+      IN
+      IF iE nil? THEN false
+      IF (iE avail?) and (n formParam?) THEN true
+      ELSE
+        IF ((sE cont) unparamTrans?) or ((sE cont) unparam?) THEN true
+        ELSE -- gibt's die Instanz? 
+          avail?(no(inst(n)) !? insts(sE cont))
+        FI
+      FI  
+    FI
+  ELSE 
+    true
+  FI
+
+*/

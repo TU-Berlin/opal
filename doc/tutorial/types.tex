@@ -1,0 +1,1008 @@
+% LAST EDIT: Wed May  4 11:41:17 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Tue May  3 13:19:15 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Fri Apr 29 17:09:21 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Tue Feb 15 14:20:00 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Mon Feb 14 17:53:48 1994 by Juergen Exner (hektor!jue) 
+\chapter{Types in \opal}
+\label{chap:types}
+
+{\bf Note:} This chapter describes how to define new types in \opal.
+This knowledge is not vital for trivial programs, since \opal\ offers a
+sophisticated set of predefined types in the standard library.
+
+A really novice user may skip this chapter altogether. 
+Nevertheless, types and typing are fundamental for efficient and correct
+programming, so you should return to this chapter immediately after
+writing your first few programs.
+\bigskip
+
+
+%Types are supported by nearly every modern programming language. 
+%Nevertheless, we know from theory that types are not vital for
+%programming and indeed there are several programming languages which
+%have no typing at all, e.g.~LISP, Prolog and Assembler.
+%
+%Other languages offer types on a low level (only predefined types are
+%allowed, the programmer can't define new types) or dynamic typing
+%(the type of an expression or object is determined at the runtime of the
+%program), e.g.~Smalltalk.
+%\medskip
+
+\advanced \opal\ is a strongly typed language with static typing which offers
+powerful notations for user-defined types.
+Each expression in a program will be associated with a unique type at
+compile time%
+\footnote{This associated type is described as the  functionality of
+  an expression in
+  Section \ref{sec:expr.simple}.}. 
+If this fails, a context error will result.
+\medskip
+
+%What are the advantages of this concept given that  it complicates the compiler
+%and also the writing of programs?
+%It improves the quality of a program!
+%The programmer is forced to think about the domain of arguments
+%and results of  functions. 
+%Furthermore typing is that  part of program verification which can
+%be done automatically at compile time.
+%
+%A simple example: Let us have a function which runs on numbers.
+%In general (as we know from mathematics) it won't make any difference
+%if you submit real numbers or natural numbers as arguments.
+%But in practice the function won't work on real numbers because of
+%rounding errors. 
+%So you will forbid the function to be used with real numbers.
+%
+%This will be enforced by restricting the arguments to natural numbers
+%which is realized by adequate typing of this function.
+%Whenever someone tries to use the function with real numbers he will
+%receive a type mismatch error by the compiler.
+%
+%So typing is a great help for the programmer to write error-free
+%programs.
+%Furthermore static typing (analysis at compile time) is more sophisticated
+%than dynamic typing (at runtime), because with dynamic typing the error
+%``type mismatch'' is submitted to the user of a program instead of to
+%the programmer, who has is the person to correct the failure.
+%\bigskip
+
+
+In the following sections we will first introduce the concept of free
+types, as used in \opal, and the declaration of types (see
+Section~\ref{sec:freeTypes}).  
+Then we will explain how to define (i.e.~implement) free types (see Section
+\ref{sec:definition.Types}).
+
+Free types also offer an alternative way of defining functions using
+pattern-matching. 
+This results in style for function definitions
+ that is similar to term-rewriting.
+For details, see Section \ref{sec:patternType}.
+
+We will finish this chapter with some concluding remarks about
+parameterized types (see \ref{sec:paramType}) and type synonyms (see
+\ref{sec:synonType}). 
+
+
+\section{The Concept of Free Types}
+\label{sec:freeTypes}
+\advanced
+Types in programming languages correspond to sets in mathematics.
+Thus declaring and defining (in terms of programming) means to
+define a set (in terms of mathematics).
+
+In \opal\ there are no predefined types\footnote{Well, in fact there
+  are two: booleans and denotations are actually built-ins of the
+  compiler for obvious reasons.}, but the standard library offers
+several frequently used types such as natural and real numbers, characters,
+strings and also more complex types such as lists, arrays, mappings, trees
+etc.
+
+In this section we will introduce the concept of free types together
+with  the {\em declaration\/} of \opal\ data types.
+For the definition you should refer to the following section,
+"Definition of Types".
+
+\subsection{A First Example: Enumerated Types}
+\label{sec:enumType}
+\advanced
+ The most simple way to define a set (in mathematics) is to
+enumerate all of its elements. 
+If you need colors you may declare a type \pro{color} by
+enumerating all colors:
+\begin{prog}
+       TYPE color == red blue yellow green cyan orange
+\end{prog}
+
+By this declaration a new set named ``color'' is introduced; in terms of
+programming, the sort ``color'' has been declared:
+\begin{prog}
+       SORT color
+\end{prog}
+
+This set consists of six elements, the colors red, blue, yellow,
+green, cyan and  orange.
+In terms of programming, six constants of type ``color'' have been
+declared\footnote{Don't bother about the keyword \pro{FUN}. A constant is just a
+function without arguments.}:
+\begin{prog}
+        FUN red : color
+        FUN blue: color
+        FUN yellow: color
+        FUN green : color
+        FUN cyan : color
+        FUN orange : color
+\end{prog}
+
+And,  moreover, by this declaration six discriminator functions have
+been declared\footnote{These discriminators have no
+  counterpart in mathematics.}:
+\begin{prog}
+        FUN red? : color -> bool
+        FUN blue? : color -> bool
+        FUN yellow? : color -> bool
+        FUN green? : color -> bool
+        FUN cyan? : color -> bool
+        FUN orange? : color -> bool
+\end{prog}
+As there is no predefined equality on types (see below) these discriminator
+functions are the only way to distinguish between the six elements of
+the set ``color''.  
+The function call ``\pro{blue?(x)}'' yields ``\pro{true}'' if and only
+if its argument ``\pro{x}'' is evaluated as the constant ``\pro{blue}''.
+
+
+\subsubsection{Induced Signature}
+\advanced
+The sort, the constants and the discriminator functions are called the {\em
+  induced signature\/} of a type declaration\footnote{Other elements
+  of the induced signature are constructors and selectors which will
+  be dealt with later.}.
+The  type declaration not only declares the new sort, but also
+all constants and functions of the induced signature.
+In the example above you have declared twelve operations and one sort
+in a single line! So data type declarations are a very powerful
+concept.
+
+\medskip
+A type declaration declares by default all objects of the induced
+signature too. 
+Nevertheless, you may declare them explicitly as done above.
+If a declaration of the induced signature is missing, the compiler
+will add it by itself.
+
+\experienced In fact a type declaration is not only a declaration,
+ although   it is a specification, because it fixes the  behavior of the
+objects of the induced signature as described above (and below).
+
+ 
+
+\subsubsection{Equality and Ordering}
+\advanced Note that {\em only(!)\/} the objects of the induced
+signature are declared by the  type declaration.
+This means there is no equality relation, no ordering or anything
+else.
+
+If, for example, you need equality of colors, you have to program it
+yourself\footnote{Remember, you may use any identifier instead of the 
+  equal sign.}:
+\begin{prog}
+       FUN = : color ** color -> bool
+       DEF = (a,b) == ((a red?) and (b red?))
+                      or (((a blue?) and (b blue?))
+                      or ....
+\end{prog}
+This may be tedious, but  because data types in \opal\ may contain functions
+ and there is no computable function which can check the equality of
+ functions, there is no way the compiler can generate an
+equality relation .
+
+There is also no ordering on the elements of an enumeration type. 
+There is no sense in saying ``blue is smaller then yellow''.
+Thus, there are no relations like ``$\leq$'' or ``$>$'' between
+elements of a type.
+If you need any ordering relation you have to declare (and define) it
+yourself. 
+
+
+\subsection{A Second Example: Product Types}
+\label{sec:productType}
+
+\advanced
+A very common problem is the combination of several different values in one
+single data object. 
+ The particulars of a person constitute a very typical example.
+If you want to combine the surname (\pro{name}), the first name and a personal
+identification number in one object ``person'' you may declare:
+\begin{prog}
+        TYPE person == person ( name : string,
+                                firstName : string,
+                                id : nat)
+\end{prog}
+
+Don't be worried about the two occurrences of the identifier
+\pro{person}.
+Since \opal\ supports overloading you may use different names or the same
+name, just as you prefer.
+
+The first \pro{person} (on the left-hand side of the ``\pro{==}'') declares
+a new sort \pro{person}, similar to the \pro{color} example:
+\begin{prog}
+        SORT person  
+\end{prog}
+
+The second \pro{person} (on the right-hand side of the ``\pro{==}'') may be
+compared with one of the concrete colors, only now it is not a constant,
+but a function which takes three arguments (a string, another string
+and a natural number) to construct a new element of the sort \pro{person}.
+\begin{prog}
+        FUN person: string ** string ** nat -> person
+\end{prog}
+
+As an example, by the function call \pro{person("Chaplin",
+  "Charles", 1234)} the three elements ``Chaplin'', ``Charles'' and
+1234 are merged into one object of type \pro{person}.
+
+\smallskip
+As in the first example with colors, the declaration above also declares
+a discriminator function
+\begin{prog}
+        FUN person? : person -> bool
+\end{prog}
+which is rather useless in this example.
+\medskip
+
+Furthermore, for each component which is combined by the constructor,
+there is a corresponding selector function:
+\begin{prog}
+        FUN name: person -> string
+        FUN firstName: person -> string
+        FUN id: person -> nat
+\end{prog}
+An object of type person could be decomposed by these selector
+functions  into its elements. 
+Let \pro{p} be an object of type person, for example declared by 
+\begin{prog}
+        LET p == person("Chaplin", "Charles", 1234)
+\end{prog}
+In this case the application of the first selector \pro{name} on
+\pro{p} will select the first element of the triple; hence, the
+evaluation of \pro{name(p)} yields \pro{"Chaplin"}.
+ You may select the second and third element in the same way:
+\pro{firstName(p)} yields \pro{"Charles"} and \pro{id(p)} yields
+\pro{1234}.
+
+Constructors and selectors are opposites.
+A constructor composes components into a single object whereas
+selectors decompose objects into their components or---more
+precisely---they select a component from a composed object.
+
+
+\subsubsection{Induced Signature}
+\advanced
+The description in the first example can now be expanded to include
+selectors as another part of the induced signature.
+The same rules apply to selectors as to the induced signature's
+other components
+%Expanding the description in the first example, the selectors are also
+%part of the induced signature and the same rules apply to selectors
+%as to the other components of the induced signature
+ (e.g.~automatic declaration etc.).
+
+\experienced Let us have a concluding note, why this kind of type
+declaration is called a ``product type''.
+
+Imagine you have only a very small computer with a limited number of
+different strings and natural numbers.
+Say the cardinality of the set  {\em string\/} is 1000 and the cardinality
+of the natural numbers is limited to 65536.
+
+The set person is the three-dimensional mathematical cross-product of
+the set {\em string\/}, once more the set {\em string\/} and the set
+{\em nat\/} 
+ ({\em string\/} $\times$ {\em string} $\times$ {\em nat\/}), 
+which means that the total cardinality of the 
+set {\em person} is $1000 * 1000 * 65536 \approx 65*10^9$.  
+
+
+\subsection{The General Concept: Sums of Products}
+\advanced
+Both  examples in the previous sections are only special cases of the general
+concept \opal\ offers for declaring new types. Let us explain this
+concept in another example about particulars. 
+
+We are now no longer interested in the identification number, so we
+will omit it.
+But we want to  know if the person is single, married, widowed or
+divorced. 
+And if the person is married, we also want to know their
+spouse's name.
+On the other hand, if the person is  widowed or divorced, we are not
+interested 
+in the spouse's name but we  do want to know the date the spouse
+died or the marriage was dissolved.
+
+This could be expressed with  a free type like%
+\footnote{The sort \pro{date} must be declared somewhere, but we won't
+  bother about it now.} 
+\begin{prog}
+        TYPE person == single  ( name : string, firstName : string)
+                       married ( name : string, firstName : string,
+                                 spouse : string)
+                       widowed ( name : string, firstName : string,
+                                 dateOfDeath : date)
+                       divorced( name : string, firstName : string,
+                                 dateOfDivorce:date)
+\end{prog}
+
+Before discussing the details let us summarize the signature induced
+by this  type declaration.
+First of all there is the new sort \pro{person}:
+\begin{prog}
+        SORT person
+\end{prog}
+Then we have four constructors, one for each alternative:
+\begin{prog}
+        FUN single  : string ** string -> person
+        FUN married : string ** string ** string -> person
+        FUN widowed : string ** string ** date -> person
+        FUN divorced: string ** string ** date -> person
+\end{prog}
+
+Each constructor has a corresponding discriminator:
+\begin{prog}
+        FUN single?  : person -> bool
+        FUN married? : person -> bool 
+        FUN widowed? : person -> bool 
+        FUN divorced? : person -> bool 
+\end{prog}
+ Finally, there are several selectors:
+\begin{prog}
+        FUN name       : person -> string
+        FUN firstName  : person -> string
+        FUN spouse     : person -> string
+        FUN dateOfDeath  : person -> date
+        FUN dateOfDivorce: person -> date
+\end{prog}
+
+\bigskip
+The  type consists of four alternatives (or variants).
+An object of type \pro{person} will be constructed either by the
+constructor \pro{single} or \pro{married} or \pro{widowed} or
+\pro{divorced}\/  in the same way construction of objects was
+explained in the previous section 
+(see Section \ref{sec:productType}). 
+But in the previous section there was only one alternative.
+Note that the four constructors take different arguments, e.g.\
+\pro{married} takes three strings whereas \pro{divorced} needs two strings
+and an object of type \pro{date}.
+
+If you have an object of type \pro{person}, you need to know which kind of
+person it is, i.e.~ you want to know which constructor was used to compose
+this object.
+This could be tested using the discriminators  as outlined in Section
+\ref{sec:enumType}. 
+There the discriminators were used to distinguish between the
+different colors, now they are used to distinguish between the different
+kinds of a \pro{person}.
+
+ For example, if an object \pro{p} is constructed by \pro{married}
+\begin{prog}
+        LET p == married(\dots, \dots, \dots)
+\end{prog}
+then the test \pro{married?(p)} yields \pro{true} and \pro{widowed?(p)}
+yields \pro{false}.
+\medskip
+
+You have to be able to distinguish between the four variants not only
+for algorithmic reasons (persons with different marital status
+will need different algorithmic treatment), but also for
+technical reasons.
+As the variant \pro{married} does not contain a component about
+\pro{dateOfDeath}, for example, you can't select this component from that
+variant.
+This means, assuming \pro{p} declared as above, the function call
+\pro{dateOfDeath(p)} will result in a runtime-error with program
+abortion.
+On the other hand, the component \pro{name} is part of each
+alternative, so you can use this selector in all cases.
+
+This can't be checked by the compiler, so it is the programmer's
+responsibility to ensure that he only uses a selector in those cases
+where there is also a corresponding component.
+
+In general this will lead to a commonly employed scheme. A function with an
+argument of type \pro{person} will first distinguish the variant of
+the argument and then do the real work:
+\begin{prog}
+  DEF foo(\dots, p, \dots) ==
+          IF single?(p) THEN \dots
+          IF married?(p) THEN \dots
+          IF widowed?(p) THEN \dots
+          IF divorced?(p) THEN \dots FI
+\end{prog}
+This scheme could be expressed very elegantly with pattern-matching (see
+Section~\ref{sec:patternType} for details).
+
+\subsubsection{Context Conditions}
+\advanced
+There are a few more interesting details concerning the  type declaration
+discussed above.
+As you can see, it is possible to use the same selector name in 
+different variants (e.g.~\pro{name}). 
+ The corresponding sorts need not be  the same (in
+the case of \pro{name}, the sort \pro{string}) as they are just
+overloaded identifiers, as permitted in \opal.
+
+Of course you may use different selector names to select ``similar''
+components as in \pro{dateOfDeath} and \pro{dateOfDivorce}.
+But then you have to take care that the selector will only be applied
+to its own variant!
+ 
+\medskip
+The ordering of variants doesn't matter at all.
+ The ordering of the selectors is only relevant with respect to the
+ functionality of the constructor.
+You may also declare the variant \pro{divorced} as
+\begin{prog}
+  \dots
+  divorced( dateOfDivorce : date, name : string, firstName : string)
+\end{prog}
+In this case only the functionality of the constructor \pro{divorced}
+changes into \pro{FUN~divorced : date ** string ** string -> person};
+everything else remains unchanged.
+\medskip
+
+The names of all constructors of a type must be different. 
+Otherwise you won't be able to distinguish between the different
+variants.
+
+The name of the sort must be unique among all the sorts declared in this
+structure, but there is no problem using the same identifier for a sort and
+any function (including constructors and selectors; see the example in
+Section \ref{sec:productType}). 
+
+There is also no problem having the same identifier for constructors and
+selectors, as long as they can be distinguished by their functionality.
+
+
+\subsection{Recursive Types}
+\label{sec:recType}
+\advanced
+In the imperative age of computing recursive types were regarded
+as the ultimate data types, and they were notoriously difficult to
+manage (dealing with pointers!).
+
+In \opal\ there is nothing magic about recursive types at all, as they fit
+naturally into the concept already presented.
+
+Suppose you want to include the parents of a person in the
+particulars.
+Well, the parents are persons too, so it is very easy to declare the
+further enlarged  type \pro{person}: 
+\begin{prog}
+       TYPE person == single  ( name : string, firstName : string,
+                                father: person, mother : person)
+                      married ( name : string, firstName : string,
+                                spouse : string,
+                                father: person, mother : person,
+                                spousesFather: person, 
+                                spousesMother : person)
+                      widowed ( name : string, firstName : string,
+                                dateOfDeath : date,
+                                father: person, mother : person)
+                      divorced( name : string, firstName : string,
+                                dateOfDivorce : date,
+                                father: person, mother : person)
+\end{prog}
+Now each object of type \pro{person} includes the father and the
+mother of this person and in the case of a married person, also the parents
+of the spouse.
+Of course the induced signature changes a lot, but we won't write it
+down explicitly any more.  
+
+There is only one problem left.
+To declare a person you need the particulars person's father and mother.
+This means you  first have to declare two objects of the sort
+\pro{person} as father and mother.
+But to declare them you need four persons as grandparents and so on.
+
+The nice consequence is that you finally get a whole family tree of
+all ancestors. 
+The ugly consequence is that this declaration results in an endless
+data recursion (very similar to an endless algorithmic recursion in
+function definitions), because you {\em always\/} need the parents of
+a person to construct an object of type \pro{person}.
+
+In reality each person has an infinite number of ancestors, but from some
+point in time these are not known any more.
+We will model this in our type by adding a new variant
+\pro{unknown}:
+\begin{prog}
+       TYPE person == single  ( name : string, firstName : string,
+                                father: person, mother : person)
+                      married ( name : string, firstName : string,
+                                spouse : string,
+                                father: person, mother : person,
+                                spousesFather: person, 
+                                spousesMother : person)
+                      widowed ( name : string, firstName : string,
+                                dateOfDeath : date,
+                                father: person, mother : person)
+                      divorced( name : string, firstName : string,
+                                dateOfDivorce:date,
+                                father: person, mother : person)
+                      unknown
+\end{prog}
+Now whenever we are missing information  about a person we can use
+the constant 
+\pro{unknown}, which terminates the data recursion.
+
+\experienced The notion ``free type'' comes from algebra. 
+All elements of the sort \pro{person} can be constructed using the
+constructors and they form a model of the ``freely constructed term
+algebra'' of the corresponding data type.
+
+\advanced There are also examples of those data structures which
+can't be expressed directly by free types.
+A simple example is a type that includes the spouse of a person as
+object of type \pro{person} again.
+But the spouse of the spouse is the original person. 
+This cyclic relation can't be expressed with a free type.
+
+%Another example can be found in Appendix~\ref{app:graph}: ``An
+%Arbitrary Directed Graph''. 
+
+\section{Definition of Types}
+\label{sec:definition.Types}
+ \advanced
+Definition (i.e.~implementation) of types is derived straightforwardly from
+declaration of  types (see the previous section).
+To implement a  type, just substitute the keyword \pro{TYPE} of a type
+declaration with \pro{DATA} and you get an implementation of all
+objects of the corresponding induced signature:
+\begin{prog}
+       DATA person == single  ( name : string, firstName : string,
+                                father: person, mother : person)
+                      married ( name : string, firstName : string,
+                                spouse : string,
+                                father: person, mother : person,
+                                spousesFather: person, 
+                                spousesMother : person)
+                      widowed ( name : string, firstName : string,
+                                dateOfDeath : date,
+                                father: person, mother : person)
+                      divorced( name : string, firstName : string,
+                                dateOfDivorce : date,
+                                father: person, mother : person)
+                      unknown
+\end{prog}
+
+\noindent This implements a data type which fulfills all the
+characteristics of 
+the corresponding free type, as described in the previous section.
+Therefore a type-definition is as powerful as a type-declaration.
+
+\medskip
+If a corresponding free type for the sort is missing, the compiler
+automatically derives the free type from the definition.
+Therefore you can use, for example, pattern-based function definitions even
+without explicit declaration of a free type.
+
+Note, however, that---in contrast to other objects---a type declaration in the
+signature part is {\em not\/} submitted to the implementation part.
+This means you have to define all objects of the induced signature (as for all
+objects of the signature part), but the information about being a free
+type is not available in the implementation part. 
+
+\subsection{Implementation Differing from Declaration}
+
+\experienced It is also possible to have an implementation which
+differs from the declared free type.
+This is very useful in cases where you want to hide implementation
+details.
+
+Imagine you want to write a structure for manipulating text.
+Conceptually it is a good idea to represent texts as lists of
+characters (similar to sequences):
+\begin{prog}
+  SIGNATURE Text
+  IMPORT Char ONLY char
+  TYPE text == :: (ft:char, rt : text)
+               <>
+ >>>{\em a lot of additional operations\/}<<<
+\end{prog}
+
+But in practice you can't implement a text as a sequence of
+characters, because this implementation is slow (imagine, if you wanted to
+select the 5000th character in a text) and wastes enormous amounts of
+memory ( you need additional memory at
+least four times as large as  character stored in order to refer the next
+character). 
+
+{\bf Note:\/} Although the implementation of texts as sequences is impractical,
+it is a very quick and reliable method for rapid prototyping of a program.
+\medskip
+
+Arrays are known as fast and economical alternatives to sequences, but
+they are limited in size.
+Therefore we decided as a compromise to implement texts as a sequence
+(unlimited length) of arrays with fixed length (efficient):
+\begin{prog}
+  DATA text == maketext(firstBlock: array[char],
+                        firstFree : nat,
+                        rest      : text)
+               <>
+  /* ASSURANCE: The array component has a constant size 
+                     of 1024 Elements (1kB)
+                The Array is filled with text up to but not including
+                     the Element indexed by firstFree */
+\end{prog}
+
+In this case only the objects of the induced signature of the free
+type corresponding to the  {\em type definition\/} are defined.
+You as programmer are responsible for defining all objects of the
+induced signature of the {\em type declaration\/}.
+You must ensure that your functions behave just as if they
+were defined by a \pro{DATA}-definition equivalent to the
+\pro{TYPE}-declaration. 
+
+In particular this means:
+\begin{itemize}
+\item The functions \pro{<>} and \pro{<>?} are already defined by the
+  \pro{DATA}-definition. But you must ensure that an empty text is {\em
+    always\/} represented by the constant \pro{<>}.
+\item The discriminator \pro{::?} has to be defined by hand, e.g.~ as
+  \begin{prog}
+    DEF ::?(t) == {\raisebox{-1ex}{\Large \tt~}}(<>? (t))
+  \end{prog}
+\item The selector \pro{ft} could be defined as
+  \begin{prog}
+    DEF ft(t) == IF firstFree(t) > 0 THEN (firstBlock(t))[0] FI
+  \end{prog}
+\item The definition of the remaining functions \pro{::} and \pro{rt}
+  will be left as an exercise.
+\end{itemize}
+
+
+
+%\section{Free Types}
+%\label{sec:freeType}
+%\advanced It is a reliable programming practice to encapsulate an abstract data
+%type in a structure of its own and to export only a small set of
+%operations which are required to deal with this data type. 
+%All of those nasty details which are managed by auxiliary functions
+%are hidden within this structure and invisible to the programmer, who
+%uses this structure.
+%
+%In \opal\ you are able to only {\em declare\/} a type and to use a
+%completely different implementation to define it
+%.
+%A well-known example for such a hidden realization is the UNIX-filesystem. 
+%From the users point of view a Unix-file is just a sequence of
+%characters.
+%But the implementation is much more complex to deal with
+%hardware-requirements (e.g.~blocks), efficiency (in space and time) and
+%so on.
+%
+%This effect can be achieved very easily in \opal.
+%In the signature part of the structure you declare a {\em free
+%  type\/} (which is a completely analogy to Sequences):
+%\begin{prog}
+%  SIGNATURE UnixFile /*signature part*/
+%  TYPE file == :: (ft:char, rt:file)
+%               <>
+% >>>{\em maybe a lot of additional operations\/}<<<
+%\end{prog}
+%Note the different keyword. 
+%Whereas ``\pro{DATA}'' {\em defines\/} a data type (e.g.~it is a
+%concrete implementation), the keyword \pro{TYPE} only {\em declares\/}
+%a type.
+%This means all operations (including the sort) of the induced
+%signature are declared, but there is no implementation associated with
+%them.
+%
+%Often you will choose to use the same structure of the abstract data
+%type also for the implementation\footnote{This is also a good way to
+%  quickly have a simple prototype version of a program.}:
+%\begin{prog}
+%  IMPLEMENTATION UnixFile /*implementation part, prototype version*/
+%  DATA file == :: (ft:char, rt:file)
+%               <>
+%\end{prog}
+%
+%But you are free to choose a completely different implementation, which
+%fits much better to the e.g.~hardware-requirements.
+%
+%In the concrete example of the  UNIX-file you might want to model the
+%file as an array of datablocks, which is faster then the sequences and could
+%also reflect the structure of data-blocks of real disk-drives.
+%The idea is to have as much regularly structured datablocks as
+%possible because these could be stored very efficiently.
+%Only the very first block may be incomplete, because a file normally
+%won't fit exactly into a multiple of 1024 characters:
+%\begin{prog}
+%  IMPLEMENTATION UnixFile /*implementation part, improved version*/
+%  DATA file == toFile(firstBlock:datablock, regulars:array[datablock] )
+%  DATA datablock == toData(arrayOf :array[char])
+%  /* ASSURANCE: a regular datablock always has 1024 Elements (1kB) */
+%\end{prog}
+%
+%In this case you must ensure, that for each function of the induced
+%signature of the free type there will be an implementation, which
+%behaves like the corresponding function of the induced signature of a
+%data type definition. 
+%
+%This means, you must define the following function by yourself:
+%\begin{prog}
+%  FUN :: : char ** file -> file
+%      <> : file
+%  FUN ::? : file -> bool
+%      <>? : file -> bool
+%  FUN ft : file -> char
+%      rt : file -> file
+%\end{prog}
+%
+%The discriminator functions e.g.~could be implemented like
+%\begin{prog}
+%  DEF ::?(f) == (#(arrayOf(firstBlock(f))) = 0) and (#(regulars(f))=0)
+%  DEF <>?(f) == (#(arrayOf(firstBlock(f))) > 0) or  (#(regulars(f))>0)
+%\end{prog}
+%where  \pro{\#} means length of an array and \pro{=},\pro{<} and \pro{0} are
+%imported from the structure \pro{Nat}.
+%
+%The constructor \pro{<>} is trivial to implement (only empty arrays):
+%\begin{prog}
+%  DEF <> == LET dummy == chr(0) 
+%                emptyBlock == toData(init(0,dummy))
+%            IN toFile(emptyBlock, init(0,emptyBlock))
+%\end{prog}
+%
+%The other functions are a little bit more difficult to implement, but
+%the principle is straight forward:
+%\begin{prog}
+%  DEF ft(f) ==
+%     IF #(arrayOf(firstBlock(f))) > 0 THEN arrayOf(firstBlock(f))!0
+%     IF #(arrayOf(firstBlock(f))) = 0 THEN arrayOf(regulars(f)!0)!0
+%     FI
+%
+%  DEF ::(ch,old) == 
+%     LET oldFB == arrayOf(firstBlock(old))
+%     IN
+%     IF #(oldFB) < 1024 THEN /* still space in the first block */
+%        LET newFB == init(#(oldFB)+1, 
+%                          \back\back i. IF i=0 THEN ch
+%                               IF i>0 THEN oldFB!(i-1) FI)
+%         IN toFile(toData(newFB), regulars(old))
+%     IF #(oldFB) = 1024 THEN /* first block full, create new one */
+%        LET oldRegs == regulars(old)
+%            newRegs == init(#(oldRegs)+1, 
+%                            \back\back i. IF i=0 THEN toData(oldFB)
+%                                 IF i>0 THEN oldRegs!(i-1) FI)
+%            dummy == chr(0) 
+%            newFB == toData(init(0,dummy))
+%         IN toFile(newFB, newRegs)
+%     FI
+%\end{prog}
+%The implementation of \pro{rt} will be left as an exercise.
+%
+
+
+\section{Pattern-Matching}
+\label{sec:patternType}
+
+\advanced 
+Pattern matching is a syntactic alternative for defining functions.
+Instead of only giving a formal parameter name at the left-hand side of a
+function definition, 
+you supply a pattern; this means this function definition will only
+be used if the argument matches the pattern.
+
+Let us take the  type \pro{person}  declared above as an example.
+Then the
+function \pro{FUN knownAncestors:person->nat}, which should compute the
+number of ancestors including the person itself, could be defined as
+follows:
+\begin{prog}
+DEF knownAncestors(p AS unknown) == 0                /* definition 1 */
+DEF knownAncestors(p AS single(n, fn, fa, ma)) ==    /* definition 2 */
+              1 + knownAncestors(fa) + knownAncestors(ma)
+\end{prog}
+In this case a definition only matches if the argument to the usual
+parameter \pro{p} has 
+a shape corresponding to the term behind the keyword \pro{AS}.
+More specifically this pattern-based definition will be interpreted as
+follows: 
+\begin{itemize}
+\item if the argument of a call of \pro{knownAncestors} is the
+  constant \pro{unknown}, then the value is \pro{0} (as defined by
+  Definition 1)
+\item if the argument of a call of \pro{knownAncestors} is constructed
+  with \pro{single}, then the arguments of the constructor can be
+  accessed by the newly introduced parameters \pro{n}, \pro{fn},
+  \pro{fa}, \pro{ma}, and the value 
+  results from the right-hand side of the second definition.
+\item in all other cases the application of this function will result
+  in an runtime-error, but the compiler will check whether all variants are
+  covered and warn you beforehand. 
+  You may complete the definition by yourself. 
+\end{itemize}
+
+If you don't need the parameter itself, but only the arguments of the
+pattern, you can omit the parameter and the keyword \pro{AS}:
+\begin{prog}
+DEF knownAncestors(unknown) == 0                /* definition 1.1 */
+DEF knownAncestors(single(n, fn, fa, ma)) ==    /* definition 2.1 */
+              1 + knownAncestors(fa) + knownAncestors(ma)
+\end{prog}
+This has a touch of term rewriting. A term on the left
+side (as parameter of a function definition) is substituted by the
+right side.
+\medskip
+
+The patterns may be nested. So we can write:
+\begin{prog}
+        DEF knownAncestors(single(n, fn, unknown, unknown)) == 1   
+                                                 /* definition 3 */
+\end{prog}
+This means that if both parents of an unmarried person are unknown, the
+number of ancestors is 1, just the person itself.
+
+ Note that Definition 3 does not conflict with Definition 2 as you
+might expect. 
+Definition 3 is a more specialized version of Definition 2 and the
+program will first check whether the most specific version is appropriate
+and only if this fails will it use the more general one.
+
+During compilation, pattern-based definitions are collected and
+transformed into one single definition with a large case distinction.
+Therefore in cases of ambiguity (which of two (or more) patterns is
+more specific) you should ensure that their definitions deliver the
+same results anyway.
+
+
+\important Pattern matching can only be done on the constructors of a
+free type (see Section \ref{sec:freeTypes}: ``The Concept of Free
+Types'').
+ But since a data type definition also induces a corresponding free type if
+the free type is missing, this is not a serious restriction. 
+Nevertheless, pattern matching cannot be done on arbitrary functions;
+only constructors (and formal parameters) are allowed as elements of patterns.
+
+It is a common error to write, e.g.
+\begin{prog}
+  DEF f(0) == ...
+  DEF f(1) == ...
+  DEF f(2) == ...
+  DEF f(a) == ...
+\end{prog}
+This is wrong because only the natural number $0$ is a constructor,
+while $1$ and $2$ are {\em not\/}! 
+In this case you have simply introduced local names for parameters  and
+it is all the same whether you call them $1$ and $2$ or $n$ and $m$ or $x$
+and $y$.  
+
+
+\subsection{Using Wildcards in Pattern-Based Definitions}
+\label{sec:wildcard}
+\advanced
+In the second definition of the example in the previous section 
+\begin{prog}
+  DEF knownAncestors(single(n, fn, fa, ma)) ==    /* definition 2 */
+              1 + knownAncestors(fa) + knownAncestors(ma)
+\end{prog}
+
+\noindent the values of the parameters \pro{n} and \pro{fn} are never used.
+In this case \opal\ allows the use of an underscore as a wildcard with the
+meaning: I know there should be a parameter, but I am not interested
+in its value at all.
+\begin{prog}
+  DEF knownAncestors(single(_, _, fa, ma)) ==    /* definition 2.1 */
+              1 + knownAncestors(fa) + knownAncestors(ma)
+\end{prog}
+ Using wildcards has the advantage that you don't need to invent new
+ names for objects never used. 
+This also improves the readability of the definition.
+
+\section{Parameterized Types}
+\label{sec:paramType}
+\advanced
+A very frequent problem in programming is to construct the same data type over
+different objects.
+A classical example for this problem are  sequences. 
+It does not matter whether you are implementing sequences of natural numbers, of
+characters or of persons. 
+The  algorithms and the data type will be the same in all cases.
+Only the sort the sequence is based on will change.
+
+One can say the data type sequence is parameterized with the concrete
+basic set.
+ In \opal\ this could be expressed using parameterized structures.
+
+For example, the parameterized data type \pro{seq} (as included in the
+standard library) could be declared and implemented as:
+\begin{prog}
+  SIGNATURE Seq[data]
+  SORT data
+  
+  IMPORT Nat ONLY nat
+
+  TYPE seq == ::(ft :data, rt : seq)       /* as free type */
+              <>
+  FUN # : seq -> nat                     /* length of a seq */
+  >>>{\em a lot of additional operations\/}<<<
+\end{prog}
+
+\medskip
+\begin{prog}
+  IMPLEMENTATION Seq[data]
+
+  IMPORT Nat ONLY 1 + 
+
+  DATA seq == ::(ft :data, rt : seq)           /* implementation of */
+              <>                               /* free type         */
+
+  DEF # (s) == IF ::? (s) THEN 1 + #(rt(s)) 
+               IF <>?(s) THEN 0 FI
+
+  >>>{\em much more definitions\/}<<<
+
+\end{prog}
+
+This declares and defines a parameterized structure with a
+parameterized data type \pro{seq}.
+
+This can be used, for example, to  declare a function \pro{convert} which
+converts a sequence of numbers into a sequence of characters by using
+the  structure \pro{Seq} and instantiating the sort \pro{seq} with the
+concrete sorts \pro{nat} and \pro{char}: 
+
+\begin{prog}
+  IMPORT Seq ONLY seq
+  FUN convert : seq[nat] -> seq[char]
+\end{prog}
+We won't bother with what this function will do.
+
+For more details about parameterization and instantiation, see Section
+\ref{sec:struct.param}: ``Parameterized Structures and Instantiations''.
+
+
+\section{No Type Synonyms}
+\label{sec:synonType}
+Sometimes you may want to rename a sort  or use different names
+for the same sort. This is called type synonyms. 
+Unfortunately, \opal\ does not support type synonyms.
+
+For example, if you don't like the standard strings based on arrays,
+you may want to substitute them with an implementation based on the
+predefined structure of sequence:
+\begin{prog}
+  DATA myString == seq[char]     /* illegal construction! */
+\end{prog}
+
+This is not allowed in \opal\ (in fact it is a syntactic error).
+One possible circumvention  is to use \pro{seq[char]} instead of \pro{myString}
+everywhere. Nevertheless, this ``solution'' negates your intention
+to explicitly distinguish between strings and sequences of characters.
+
+The other solution is to use embedding instead of synonyms:
+\begin{prog}
+  DATA myString == asMyString(asSeq : seq[char]) /* this is legal */
+\end{prog}
+In this case you really introduce a new type and the constructor and
+selector only serve as type conversions or---from a different point of
+view---as embedding operations.
+
+The new type \pro{myString} doesn't inherit any functions from
+\pro{seq}. Therefore you have to program all functions yourself,
+e.g.
+\begin{prog}
+  FUN \# : myString -> nat
+  DEF \#(mS) == \#(asSeq(mS))
+\end{prog}
+where the \pro{\#} at the right-hand side of the definition is the
+well-known function from structure \pro{Seq}.
+% Local Variables: 
+% mode: latex
+% TeX-master: "tutorial"
+% End: 

@@ -1,0 +1,279 @@
+-- %- =========================================================================
+-- %- Author:      mija
+-- %- Project:     OPAL1-Compiler (signature analysis)
+-- %- Purpose:     convert abstract partNames 
+-- %- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- %- =========================================================================
+-- %- =========================================================================
+
+IMPLEMENTATION PartNamePrep
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  GlobSig         COMPLETELY
+        Objects         COMPLETELY
+        Name            COMPLETELY
+        PartNameEntry   ONLY pN 
+        PartName        COMPLETELY
+        Name4SigAna     COMPLETELY
+        GlobSig4SigAna  COMPLETELY
+        ImpDecl4SigAna  COMPLETELY
+        Maps4SigAna     ONLY onlyMap:SORT instMap:SORT impDeclMap:SORT
+        PartNameEntry   COMPLETELY
+        -- absy, etc.
+        Fct             ONLY fct var?
+        -- lib
+        MySeqFun3       ONLY /
+        MySeqFun1       COMPLETELY
+        MySeqFun2       ONLY existMap notDisjoint
+        AbsyFun2        COMPLETELY
+        AbsyFun3        COMPLETELY
+        Seq             COMPLETELY
+        SeqFilter       ONLY |
+        SeqMap          ONLY *
+        SeqMapEnv       ONLY *
+        SeqReduce       COMPLETELY
+        SeqZip          ONLY zip
+        SeqOfSeq        ONLY flat
+        Option          COMPLETELY
+
+        Nat             COMPLETELY
+        Pair            COMPLETELY
+        Pragma          ONLY pragma
+        Rep             ONLY rep nilRep
+        Pos             ONLY pos
+
+-- %- ------------------------------------------------------------------------
+
+-- FUN convMatchSortPartName : globSig ** partName -> globSig ** sortPN
+/* %PRE : @code{kind(pN) sort?}
+1. Umwandeln einer Sortenapplikation der absy in eine der globSig@*
+2. Finden einer ersten Kandidatenmenge anhand der statischen Info */
+DEF convMatchSortPartName(gS,pN) == addSortPN(finGS, pN, finPN)
+        WHERE 
+        (finGS, finPN) == convMatchPartName(true)(gS,pN)
+
+-- FUN convMatchInstPartName : globSig ** seq[option[fct[name:SORT]]] **
+-- seq[partName:SORT] ** pos -> globSig ** instPN
+/* % Testen, ob die partielle Instantiierung auf die formalen 
+ Parameter passt und es entsprechende Objekte gibt.@*
+  PRE: beide Sequenzen haben dieselbe Laenge. */
+DEF convMatchInstPartName(gS, formParamS, partNameS, instPos) == 
+        IF #(formParamS) = #(partNameS) THEN    
+          -- die Laengen der Sequenzen sind gleich
+          -- alle partiellen Namen eintragen
+          LET
+          -- Berechnen aller Namensmengen anhand der gegebenen partiellen
+          -- Namen
+          (gS1, pNS) == *'SeqMapEnv(convMatchPartName(false), gS, partNameS)
+          -- Entfernen aller Kanditaten, die nicht der Art des formalen
+          -- Parameters entsprechen.
+          (match,finPNS) ==
+            existMap(matchStaticKind(gS1))
+                    (zip(&[option[fct[name:SORT]],pN:SORT])(formParamS,pNS))
+          IN
+          IF match THEN 
+            addInstPN(gS1, instPos, partNameS, formParamS,finPNS)
+          ELSE (gS, errInstPN(instPos)) FI
+        ELSE (gS, errInstPN(instPos)) 
+        FI
+
+FUN matchStaticKind : globSig -> pair[option[fct[name:SORT]],pN:SORT] 
+                      -> bool ** pN
+-- %passen die Kandidaten zur Art des formalen Parameters
+DEF matchStaticKind(gS)(formParamPN) ==
+        (true /*finCands ::? */, updCands(pN,finCands))
+        -- immer true, damit die Fehlermeldungen besser werden.
+        -- muss angepasst werden !!!!
+        WHERE
+        finCands == (matchStaticKind(gS,formParam) / 
+                                <>[instCand])(cands)
+        cands == getCands(pN)
+        formParam == 1st(formParamPN)
+        pN == 2nd(formParamPN)
+
+FUN matchStaticKind : globSig ** option[fct[name:SORT]] 
+                      -> instCand
+                        ** seq[instCand]
+                      -> seq[instCand]
+-- %passen die Kandidaten auf die Art des formalen Parameters ?
+DEF matchStaticKind(gS,formParam)(Names & InstPN, nameInstPNS) ==
+        -- passen keine Kandidaten, wird der ganze Strukturkontext aussortiert.
+        IF cands <>? THEN nameInstPNS
+        ELSE (cands & InstPN) :: nameInstPNS FI
+        WHERE
+        cands == checkKind(gS,formParam) | Names
+
+FUN checkKind : globSig ** option[fct[name:SORT]] -> name -> bool
+/* %Test, ob die Art eines Namens mit der des formalen Parameter
+  uebereinstimmt. */
+DEF checkKind(gS,formParam)(name) == 
+        IF sort?(gS,name) THEN formParam nil?
+        OTHERWISE
+        IF formParam nil? THEN false
+        IF formParam avail? ANDIF cont(formParam) var? THEN true
+        ELSE =(h4)(fct(gS,name),cont(formParam))
+        FI
+
+        FUN h4 : name ** name -> bool
+        DEF h4(_,_) == true
+
+
+-- %- ------------------------------------------------------------------------
+
+-- FUN convMatchPartName : bool -> globSig ** partName -> globSig ** pN
+-- %Herausfinden aller passenden Namen zu einem partiellen Namen,
+DEF convMatchPartName(mustBeSort)(gS,pN) == 
+        IF kind(pN) op? THEN    -- partName mit annotierter Fct
+          (finGS, defPNOp(pN,finPoss, finFct))
+          WHERE
+          1stNames == matchOpByIdeOrig(gS, ide(pN),orig,ok)
+          -- Die Vorauswahl nach Bezeichner, Herkunft und Art ist getroffen
+          (gS1, poss1) == 
+                IF params <>? THEN -- keine Instanz annot.
+                  (gS, h17 * 1stNames)  
+                ELSE (convMatchNameInst(paramS(pN),instPos(pN)) / 
+                        (gS,<>[instCand]))(1stNames) FI
+          -- die fct ist angegeben und muss noch ueberprueft werden.
+          -- Sehen, ob ueberhaupt einer der Kandidaten die angegebene
+          -- Fct-Struktur aufweist.
+          finPoss0 == (convMatchNameFctS(gS1,Fct) / 
+                        <>[instCand])(poss1)
+          finPoss == treatFinPoss(gS,pN) * finPoss0
+          (finGS, finFct) == 
+            IF finPoss <>? THEN
+              -- keine Kanditaten mehr: die partiellen Namen in der Fct u.inst
+              -- brauchen nicht weiter betrachtet werden.
+              (gS, *(h1)(Fct))
+            ELSE (convMatchSortPartName \* gS1)(Fct) FI
+          Fct == fct(kind(pN))
+        ELSE                    -- partName mit annotierter Sort, oder nichts
+          (finGS, defPN(pN,finPoss))
+          WHERE
+          1stNames == 
+            IF mustBeSort THEN matchSortByIdeOrig(gS, ide(pN), orig,ok)
+            IF kind(pN) sort? THEN matchSortByIdeOrig(gS, ide(pN), orig,ok)
+            ELSE matchByIdeOrig(gS, ide(pN),orig,ok) FI
+          -- Die Vorauswahl nach Bezeichner, Herkunft und Art ist getroffen
+          (finGS, poss) == 
+                IF params <>? THEN -- keine Instanz annot.
+                  (gS, h17 * 1stNames)  
+                ELSE (convMatchNameInst(paramS(pN), instPos(pN)) / 
+                        (gS,<>[instCand]))(1stNames) FI
+          finPoss == treatFinPoss(gS,pN) * poss
+        FI
+        WHERE
+        orig == IF pN partName? THEN structIde(pN) ELSE nil[rep] FI
+        params == paramS(pN)
+
+        FUN ok : instAppl -> bool
+        DEF ok(_) == true
+
+        FUN h1 : partName -> sortPN
+        DEF h1 (_) == noSortPN
+
+        FUN h17 : seq[name:SORT] -> instCand
+        DEF h17(S) == S & noInstPN
+
+FUN treatFinPoss : globSig ** partName -> instCand -> instCand
+  -- %Entfernen von genericTransitives (war mal mehr)
+DEF treatFinPoss(gS, _)(poss0 & InstPN) == (finPoss & InstPN)
+        WHERE
+        finPoss == flat(expandGenericTransitives(gS) * poss0)
+
+-- %- ------------------------------------------------------------------------
+
+FUN convMatchNameInst : seq[partName:SORT] ** pos 
+                    -> globSig ** seq[name:SORT] ** seq[instCand]
+                    -> globSig ** seq[instCand]
+        -- P%RE : @code{partNameS ::? and nameS ::?}
+DEF convMatchNameInst(partNameS,instPos)(gS,nameS,pairS) ==
+/* %Wenn die Struktur nicht parametrisiert ist, koennen die Namen nicht
+  passen, da eine Instanz annotiert ist. */
+        IF ft(nameS) intName? THEN 
+           IF #(formParamS(gS)) |= #(partNameS) THEN  (gS, pairS) 
+                 -- no instance of unparameterized main structure
+           ELSE LET 
+                (gS1, PNParams) == *(convMatchPartName(false), gS, partNameS)
+                NewNames == checkIntInst(gS1, PNParams, nameS)
+                IN IF <>?(NewNames) THEN (gS1, pairS)
+                   ELSE (gS1, NewNames & noInstPN :: pairS)
+                   FI
+           FI
+        ELSE
+          LET  str == struct(ft(nameS))     
+               formParamS == getFormParams(gS, str)
+          IN     
+          IF #(formParamS) |= #(partNameS) THEN (gS, pairS)
+                 -- no instance of unparameterized structure
+          ELSE
+            LET 
+              (gS1, instPN) == 
+                  convMatchInstPartName(gS,formParamS,partNameS,instPos)
+            IN 
+            IF instPN noInstPN? THEN (gS1, pairS)
+            ELSE (gS1, (nameS & instPN) :: pairS) FI
+          FI
+        FI
+
+-- %- ------------------------------------------------------------------------
+
+FUN convMatchNameFctS : globSig ** fct[partName:SORT] 
+                   -> instCand ** seq[instCand] -> seq[instCand]
+/* % Herausfiltern aller Namen, deren Fct nicht uebereinstimmt und
+     weglassen der Sequenz, wenn alle Namen nicht passen. */
+DEF convMatchNameFctS(gS,fct)(Names & InstPN,nameSS) ==
+        IF finNameS <>? THEN nameSS ELSE (finNameS  & InstPN) :: nameSS FI
+        WHERE finNameS == convMatchNameFct(gS,fct) | Names
+
+FUN convMatchNameFct : globSig ** fct[partName:SORT] -> name -> bool
+ -- %true, wenn die Funktionalitaeten uebeinstimmen
+DEF convMatchNameFct(gS,Fct)(name) ==
+        IF sort?(gS,name) THEN false            -- das war ein kalter
+        ELSE =(h3)(Fct,fct(gS,name)) FI
+
+        FUN h3 : partName ** name -> bool
+        DEF h3 (_,_) == true
+
+/* Grobe Kompatibilit"atspr"ufung von Instanzen an internen Namen mit
+   den eigenen formalen Parametern, die im Falle der Signatur noch
+   nicht vollst"andig bekannt sind. */
+
+FUN checkIntInst : globSig ** seq[pN] ** seq[name] -> seq[name]
+-- PRE forall?(intName?, Seq[name]) AND #(Seq[pN]) = #(formParams(GlobSig))
+-- Das Ergebnis ist eine Teilliste der Eingabeliste
+
+
+DEF checkIntInst(Gs, InstPns, IntCands) ==
+LET Formals ==  formParams(Gs)
+    IdentifiedParams == 
+    \ (\\P,S. IF avail?(fullFp(P)) THEN 
+                 cont(fullFp(P)) :: S 
+              ELSE IF avail?(partialFp(P)) ANDIF 
+                      #(intCands(pN(cont(partialFp(P))))) = 1
+                   THEN decl(ft(intCands(pN(cont(partialFp(P)))))) :: S 
+                   ELSE S 
+                   FI 
+              FI, <>, Formals)
+    -- disallow instantiations of formal parameters                           
+    RestCands == (\\N. forall?(\\D. ~(decl(N) = D), IdentifiedParams))
+                                    | IntCands
+IN IF \ (and, true, zip(checkPns(Gs))(InstPns, Formals)) THEN RestCands
+   ELSE <> FI
+
+FUN intCands : pN -> seq[name]
+DEF intCands(Pn) == intName? | flat(cands * getCands(Pn)) 
+
+FUN checkPns : globSig -> pN ** formParam -> bool
+DEF checkPns(Gs)(Pn, Par) ==
+    IF avail?(fullFp(Par)) THEN 
+       LET IntName == intName(cont(fullFp(Par))) 
+       IN exist?(IntName = _, intCands(Pn))
+    OTHERWISE   
+    IF avail?(partialFp(Par)) THEN 
+            notDisjoint(=)(intCands(pN(cont(partialFp(Par)))),
+            intCands(Pn))
+    FI           

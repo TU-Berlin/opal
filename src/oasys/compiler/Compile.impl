@@ -1,0 +1,110 @@
+IMPLEMENTATION Compile
+
+IMPORT	Denotation	COMPLETELY
+	Set		COMPLETELY
+	SetConv		COMPLETELY
+	SetMap		COMPLETELY
+	SetFilter	COMPLETELY
+	Seq		COMPLETELY
+	Com		COMPLETELY
+	ComSeqReduce	COMPLETELY
+	ComCompose	COMPLETELY
+	ComPairCompose	COMPLETELY
+	Pair		COMPLETELY
+	IdTab		COMPLETELY
+	IdMap		COMPLETELY
+	File		COMPLETELY
+
+IMPORT	RepoDiag	COMPLETELY
+	RepoName	COMPLETELY
+	RepoAbsy	COMPLETELY
+	RepoUnitAccess	COMPLETELY
+	RepoSourceAccess COMPLETELY
+	RepoInternAbsy	COMPLETELY
+	RepoInternData	COMPLETELY
+	RepoEvent	COMPLETELY
+
+
+IMPORT	InternCompile	COMPLETELY
+	Check		COMPLETELY
+	
+
+-- %$Compiling Units$ =====================================================
+
+
+DEF guessCompileUnits(Us0)(R) ==
+    LET Us	   == (\\Ui. impl?(part(Ui))) | Us0
+	Check	   == guessCheckUnitsForExec(Us)(R)
+	Prior	   == related(transitive, implImports, needCompilePrior?(R)) 
+			     (Us)(R)
+	Compile	   == needCompile?(R) | Us
+    IN
+    Check & Prior + Compile
+
+FUN needCompile? needCompilePrior? : repo -> unitName -> bool
+
+DEF needCompile?(R)(U) ==
+    ~(library?(U)(R) or compiled?(U)(R))
+
+DEF needCompilePrior?(R)(U) ==
+    needCompile?(R)(U) and released?(U)(R)
+
+
+DEF compileUnits(Us)(R) ==
+    LET Guess == guessCompileUnits(Us)(R)
+    IN
+    checkUnits(1st(Guess))(R)				& (\\ R1 .
+    IF 1st(Guess) <= checked(R1) THEN
+	LET Order == topSort(implImports, \\U. U in 2nd(Guess)) 
+					-- ,needCompilePrior?(R1))
+					-- FIXME: needCompilePrior?
+					-- doesn't capture dependencies
+					-- of handcoded structures
+			    (2nd(Guess))(R1)
+	IN
+	compileSomeUnits(true, revert(Order))(R1)
+    ELSE
+	succeed(R1)
+    FI
+    )
+
+
+FUN compileSomeUnits : bool ** seq[set[unitName,<]] -> repo -> com[repo]
+FUN compileSomeUnit  : unitName -> repo -> com[pair[bool,repo]]
+
+
+DEF compileSomeUnits(Cont?, Units :: Order)(R) ==
+    -- if Cont? is true, we try to compile as many units as possible
+    (\\ Ui, Ok_Ri. 
+	    LET Oki == 1st(Ok_Ri)  Ri == 2nd(Ok_Ri)
+	    IN
+	    IF Oki or Cont? THEN
+		compileSomeUnit(Ui)(Ri)			& (\\Okj, Rj.
+		succeed(Oki and Okj & Rj)
+		)
+	    ELSE succeed(Oki & Ri) FI,
+	 true & R) /& asSeq(Units)			& (\\Ok, R1.
+    IF Ok THEN
+	compileSomeUnits(Cont?, Order)(R1)
+    ELSE
+	succeed(R1)
+    FI
+    )
+DEF compileSomeUnits(_, <>)(R) == succeed(R)
+     
+DEF compileSomeUnit(U)(R) ==
+    LET Deps == related(direct,implImports, \\Ui. released?(Ui)(R))(U)(R)
+    IN
+    IF Deps <= compiled(R) THEN
+	-- go ahead
+	event(progress(unit(U), "compiling"))(R)	& (\\ R1 .
+	compileUnit(U)(R1)				& (\\ Diag, R2 .
+	diag(Diag)(R2)					& (\\ R3 .
+	succeed(ok?(Diag) & R3)
+	)))
+    ELSE
+	-- cannot compile (errors in compiling released imported units)
+	succeed(false & R)
+    FI
+
+

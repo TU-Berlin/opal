@@ -1,0 +1,327 @@
+/* %-
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     
+-- Changes:	af, May 18 1993: globSig is printed on -zprintGsImpl
+--				 only after implAna has finished
+--		af, Jun 30 1993: added analysis of property parts
+-- ============================================================================
+*/
+
+IMPLEMENTATION ImplementationAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		ONLY nat
+	Denotation	ONLY ++ empty =
+	Void		COMPLETELY
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+    Map[rep, <, seq[import]] COMPLETELY
+    Rep ONLY rep < theory assert assume =
+
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	DEBUG		COMPLETELY
+
+	Options		ONLY options pchecker?
+	Verbose		ONLY verb subphase definition
+	Error		ONLY err ok? errors  error + ok errKind warning
+	OcExit		ONLY languageError
+
+	PartName 	ONLY partName ` :partName->denotation sort
+	Impl[partName]	ONLY sortImpl:SORT eq:SORT law:SORT ide
+	Struct		COMPLETELY
+	Rep		ONLY rep lexem
+	GlobPragma	COMPLETELY 
+		-- ONLY `: globPragma[partName] ... -> denotation
+	AnalyzedGlobSig	ONLY globSig ` theory? parameter? standard level
+
+	DataDefAnalysis COMPLETELY
+	FunDefAnalysis 	COMPLETELY
+	LawAnalysis	COMPLETELY
+	PragmaAnalysis	COMPLETELY
+       SeqMap ONLY *
+       Option ONLY option avail nil?
+       Pragma ONLY pragma noPragma
+       MapReduce ONLY /
+       SeqFilter ONLY |
+       SeqReduce ONLY /
+       GlobSig ONLY pragmas structures decls
+       Name ONLY extName? inst struct intName
+       Objects ONLY no decl impDecl sortPN instPN
+       ImpExpEntry ONLY param? paramTrans? insts identInst? inst structE instE
+       GlobSigImpl ONLY impl:SORT ` locSig
+       Table ONLY table !
+--       Impl ONLY sortImpl
+       GlobSig4SigAna ONLY treatDeclS
+       DeclEntry ONLY op? spc declE impl pos attr
+       Attributes ONLY ` attr
+       SeqOfSeq ONLY flat
+
+
+-- %$Hauptfunktion$
+-- %---------------------------------------------------------------------------
+
+FUN implAna: options**struct'Struct -> globSig -> com[globSig]
+
+DEF implAna(options, Struct)(sig) ==
+  implAna(options, freeTypes(Struct), sortImpls(Struct), funImpls(Struct),
+        laws(Struct), pragmas(Struct), relations(Struct), imports(Struct))(sig) &
+  (\\p.LET resSig == printGsImpl(1st(p)) IN
+       IF 2nd(p) THEN yield(okay(resSig)) ELSE yield(fail(languageError)) FI)
+
+-- %$erste Ebene$
+-- %---------------------------------------------------------------------------
+
+FUN ;; : (globSig->com[pair[globSig,bool]])
+			** (globSig->com[pair[globSig,bool]])
+			-> (globSig->com[pair[globSig,bool]])
+DEF (c1;;c2)(sig) ==
+  c1(sig);
+  (\\a1.LET (sig1,okay1) == (1st(data(a1)),2nd(data(a1))) IN
+    c2(sig1);
+    (\\a2.LET (sig2,okay2) == (1st(data(a2)),2nd(data(a2))) IN
+      yield(okay(sig2 & (okay1 and okay2)))))
+
+
+/* %Reihenfolge geändert, jetzt sind Pragmas vorne, da deren Ergebnisse
+   vielleicht mal bei den anderen Phasen benötigt werden.   (kd) */
+FUN implAna: options**seq[sortImpl]**seq[sortImpl]**seq[eq]**seq[law]
+	** seq[globPragma[partName]] ** map[rep, <, seq[import]] ** seq[import]
+             -> globSig -> com[pair[globSig,bool]]
+
+DEF implAna(opts,freeTypes,sortImpls,funImpls,
+            laws, Pragmas, rels, imps)(sig) ==
+  verb(opts,subphase,"analyzing implementations ...");
+  (\\a.
+     (checkImports(opts, imps, rels) ;;
+      (analyzePragmas(opts, Pragmas ++ Rels2Pragmas(rels));;
+       (analyzePrios(opts);;
+        (checkRelations(opts) ;;
+         (analyzeFreeTypes(opts,freeTypes);;
+          (analyzeSortImpls(opts,sortImpls);;
+           (analyzeFunImpls(opts,funImpls);;
+            (analyzeLaws(opts,laws);;
+             (analyzeImpPragmas(opts,
+                                structIde * origin * (complete? |
+                                   (imps ++ flat(codom(rels)))))
+     )))))))))(sig))
+
+-- %$zweite Ebene$
+FUN analyzeFreeTypes: options**seq[sortImpl]->globSig->com[pair[globSig,bool]]
+
+DEF analyzeFreeTypes(opts,<>)(sig) == yield(okay(sig&true))
+DEF analyzeFreeTypes(opts,impl1::impls)(sig) ==
+  (analyzeFreeType(opts,impl1);;
+   analyzeFreeTypes(opts,impls))(sig)
+
+FUN analyzeFreeType: options**sortImpl->globSig->com[pair[globSig,bool]]
+
+DEF analyzeFreeType(opts,impl)(sig) ==
+  verb(opts,definition,((("free type:")++(target(impl)`))++(" ...")));
+  (\\a.
+     LET (newSig,errs) == analyzeTypeDef(impl,sig) IN
+       errors(opts,errs);
+       yield(okay(newSig & (errs ok?))))
+
+FUN analyzeSortImpls: options**seq[sortImpl]->globSig->com[pair[globSig,bool]]
+
+DEF analyzeSortImpls(opts,<>)(sig) == yield(okay(sig&true))
+DEF analyzeSortImpls(opts,impl1::impls)(sig) ==
+  (analyzeSortImpl(opts,impl1);;
+   analyzeSortImpls(opts,impls))(sig)
+
+FUN analyzeSortImpl: options**sortImpl->globSig->com[pair[globSig,bool]]
+
+DEF analyzeSortImpl(opts,impl)(sig) ==
+  verb(opts,definition,(target(impl)`)++(" ..."));
+  (\\a.
+     LET (newSig,errs) == analyzeDataDef(impl,sig) IN
+       errors(opts,errs);
+       yield(okay(newSig & (errs ok?))))
+
+FUN analyzeFunImpls: options**seq[eq]->globSig->com[pair[globSig,bool]]
+
+DEF analyzeFunImpls(opts,<>)(sig) == yield(okay(sig&true))
+DEF analyzeFunImpls(opts,impl1::impls)(sig) ==
+  (analyzeFunImpl(opts,impl1);;
+   analyzeFunImpls(opts,impls))(sig)
+
+FUN analyzeFunImpl: options**eq->globSig->com[pair[globSig,bool]]
+
+DEF analyzeFunImpl(opts,impl)(sig) ==
+  verb(opts,definition,(target(impl)`)++(" ..."));
+  (\\a.
+     LET (newSig,errs) == analyzeFunDef(impl,sig) IN
+       errors(opts,errs);
+       yield(okay(newSig & (errs ok?))))
+
+FUN analyzeLaws: options**seq[law]->globSig->com[pair[globSig,bool]]
+
+DEF analyzeLaws(opts,<>)(sig) == yield(okay(sig&true))
+DEF analyzeLaws(opts,law1::laws)(sig) ==
+  (analyzeLaw(opts,law1);;
+   analyzeLaws(opts,laws))(sig)
+
+FUN analyzeLaw: options**law->globSig->com[pair[globSig,bool]]
+
+DEF analyzeLaw(opts,law)(sig) ==
+  LET lex == lexem(ide(law))
+      msg == IF lex = empty THEN "unnamed law" ELSE lex FI
+  IN verb(opts,definition,msg ++ " ...");
+     (\\a.
+  	LET (newSig,errs) == analyzeLaw(law,sig) IN
+  	  errors(opts,errs);
+  	  yield(okay(newSig & (errs ok?))))
+
+FUN analyzePragmas: options**seq[globPragma[partName]]
+			->globSig->com[pair[globSig,bool]]
+
+DEF analyzePragmas(opts,<>)(sig) == yield(okay(sig&true))
+DEF analyzePragmas(opts,Prag1::Prags)(sig) ==
+  (analyzePragma(opts,Prag1);;
+   analyzePragmas(opts,Prags))(sig)
+
+FUN analyzePragma: options**globPragma[partName] 
+		->globSig -> com[pair[globSig,bool]]
+
+DEF analyzePragma(opts, Gprag)(sig) ==
+	verb(opts, definition, `'GlobPragma(`'PartName)(Gprag) ++ " ..."); 
+	(\\ _ .
+	LET (NewSig, Errs) == analyseGlobPragma(Gprag, sig) 
+	IN
+  	  errors(opts, Errs);
+  	  yield(okay(NewSig & (Errs ok?))))
+
+/* %zu jeder Relation ein passendes Pragma erzeugen. Erstes Element: 
+    Lexem mit entsprechenden Namen, zweites Element: der Name THEORY, 
+    mit passender Annotierung. Der Parser stellt sicher (in mkInitT), 
+    daß jede Theorie eine Sorte THEORY enthält.  (kd)
+ */
+FUN Rels2Pragmas: map[rep, <, seq[import]] -> seq[globPragma[partName]]
+DEF Rels2Pragmas(M) ==
+  LET rsi == \\r, si, S. (ri(r) * si) ++ S
+      ri == \\r. \\i. prag(%(lexem(r, pos(origin(i))),
+                             identify(%(partName(theory,
+                                                 avail(structIde(O)),
+                                                 paramS(O),
+                                                 pos(O),
+                                                 sort,
+                                                 noPragma,
+                                                 pos(O)))
+                                      WHERE O == origin(i)
+                                     )))
+  IN
+  (rsi, <>) / M
+
+/* %überprüfen, ob Importe auch nur auf Nicht-Theorien zugreifen. Das muß
+    hier geschehen, da in der globSig der Unterschied zwischen IMPORT, ASSERT
+    und ASSUME nicht mehr vorhanden ist -- nur indirekt über Pragmas.
+
+    Für Asserts und Assumes wird analog überprüft, ob sie auf Theorien
+    zugreifen. Beachte, dass nach der Analyse weitere Tests nötig sind.
+    (kd)
+*/
+
+FUN checkImports: options ** seq[import] ** map[rep, <, seq[import]] ->
+                   globSig -> com[pair[globSig, bool]]
+DEF checkImports(opts, imps, M)(sig) ==
+  IF pchecker? THEN
+    LET 
+      xOrigins== \\ iS. origin? | origin * iS
+      isT? == \\o. theory?(sig)(structIde(o))
+      isNT? == \\o. ~(theory?(sig)(structIde(o)))
+      wrongImports == isT? | xOrigins(imps)
+      wrongAsserts == isNT? | xOrigins(asserts)
+      wrongAssumes == isNT? | xOrigins(assumes)
+      asserts == IF assert def? M THEN M!assert ELSE <> FI
+      assumes == IF assume def? M THEN M!assume ELSE <> FI
+      errImport == \\o. err(error, "import of theory not possible", pos(o))
+      errAssert == \\o. err(error, "assert allowed for theories only", pos(o))
+      errAssume == \\o. err(error, "assume allowed for theories only", pos(o))
+      allErrors == (+, ok) / (errImport * wrongImports ++
+                              errAssert * wrongAsserts ++
+                              errAssume * wrongAssumes)
+    IN
+    errors(opts, allErrors) & (\\ok? .
+    succeed(sig & ok?)
+    )
+  ELSE
+    succeed(sig & true)
+  FI
+
+/* %überprüft alle Relationen auf Korrektheit: 
+@table @code
+@item ASSUME
+Instanzenliste enthält ausschließlich Parameter und ist nicht leer
+@item ASSERT
+Instanzenliste enthält wenigstens einen Nicht-Parameter
+@end table
+*/
+FUN checkRelations: options -> globSig -> com[pair[globSig, bool]]
+DEF checkRelations(opts)(sig) ==
+  IF pchecker? THEN
+    LET asserts == getPragmaN(assert, sig)
+        assumes == getPragmaN(assume, sig)
+        emptyAssumes == (\\pr. 2nd(pr) <>?) | assumes
+        nonPAssumes == (\\pr. exist?(\\n. ~(parameter?(sig, n)),
+                                     2nd(pr))) | assumes
+        ParAsserts == (\\pr. forall?(\\n. parameter?(sig, n),
+                                     2nd(pr))) | asserts
+        emptyE == \\ p. err(error, "non parameterized assume", p)
+        nonPE == \\p. err(error, "assume of non parameter", p)
+        pE == \\p. err(error, "assert of parameters only not allowed", p)
+        allErrors == (+, ok)/ (emptyE * 1st * emptyAssumes ++
+                               nonPE * 1st * nonPAssumes ++
+                               pE * 1st * ParAsserts)
+    IN
+    verb(opts, subphase, "checking relations ...") & (
+    errors(opts, allErrors) & (\\ok? .
+    succeed(sig &ok?)))
+  ELSE
+    succeed(sig & true)
+  FI
+
+FUN getPragmaN: rep ** globSig -> seq[pair[pos,seq[name]]]
+DEF getPragmaN(relation, sig) ==
+  LET gps == pragmas(sig)
+      ok? == \\p. IF pragS(p) ::? ANDIF  -- erstes pItem ist passendes Lexem
+                     ft(pragS(p)) lexem? ANDIF
+                     ide(ft(pragS(p))) = relation ANDIF
+                     rt(pragS(p)) ::? ANDIF -- zweites ist extName
+                     ft(rt(pragS(p))) identify? ANDIF
+                     pns(ft(rt(pragS(p)))) ::? THEN
+                     LET n == ft(pns(ft(rt(pragS(p)))))
+                     IN extName?(n) 
+                   ELSE
+                     false
+                   FI
+      -- pragma -> pair[pos,seq[name]]
+      getInst == \\p. LET i == inst(ft(pns(ft(rt(pragS(p))))))
+                          s == struct(ft(pns(ft(rt(pragS(p))))))
+                          sE == no(s)!structures(sig)
+                      IN
+                      IF param?(sE) or paramTrans?(sE) THEN
+                        LET iE == no(i)!insts(sE)
+                        IN
+                        IF identInst?(iE) THEN pos(ft(pragS(p))) & inst(iE)
+                        ELSE pos(ft(pragS(p))) & <>
+                        FI
+                      ELSE
+                        pos(ft(pragS(p))) & <>
+                      FI
+  IN
+  getInst * ok? | gps
+                     
+
+
+FUN printGsImpl?: bool
+DEF printGsImpl? == FIELD?[bool]("-zprintGsImpl")
+
+FUN printGsImpl: globSig -> globSig
+DEF printGsImpl(sig) == PRINT(printGsImpl?,`(sig),sig)

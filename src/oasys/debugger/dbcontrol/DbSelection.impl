@@ -1,0 +1,420 @@
+IMPLEMENTATION DbSelection
+
+IMPORT  Array           COMPLETELY
+        ArrayConv       COMPLETELY
+        ArrayMap        COMPLETELY
+        ComCompose      COMPLETELY
+        ComPairCompose  COMPLETELY
+        ComSeqMap       COMPLETELY
+        ComState        COMPLETELY
+        Com             COMPLETELY
+        File            COMPLETELY
+        Denotation      COMPLETELY
+        DenotationSplit COMPLETELY
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        FmtSet          COMPLETELY
+        Map             COMPLETELY
+        MapMap          COMPLETELY
+        MapReduce       COMPLETELY
+        MapFilter       COMPLETELY
+        MapConv         COMPLETELY
+        Nat             COMPLETELY
+        NatConv         COMPLETELY
+        OptionMap       COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Process         COMPLETELY
+        RUNTIME         COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqZip          COMPLETELY
+        SeqReduce       COMPLETELY
+        Seq             COMPLETELY
+        SetConv         COMPLETELY
+        SetFilter       COMPLETELY
+        Set             COMPLETELY
+        Void            COMPLETELY
+        String COMPLETELY
+        StringConv      COMPLETELY
+        SeqMapIndex     COMPLETELY
+        ABORT           COMPLETELY
+        DEBUG           COMPLETELY
+IMPORT
+        SeqMapIndex     COMPLETELY
+        SeqExtensions   COMPLETELY
+IMPORT
+        RepoCom         COMPLETELY
+        RepoCom1        COMPLETELY
+        RepoAn          COMPLETELY
+        RepoAbsy        COMPLETELY
+        RepoName        COMPLETELY
+        RepoNameConv    COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoObjectAccess COMPLETELY
+IMPORT  
+        Expression      COMPLETELY
+        ChannelData     COMPLETELY
+IMPORT
+        DbNameStack     COMPLETELY
+        DbIdentTable    COMPLETELY
+        DbConversion    COMPLETELY
+IMPORT  
+        DbEvalTable     COMPLETELY
+        DbComm          COMPLETELY
+        DbGlobalEnv     COMPLETELY
+       PrintableChar ONLY R E S underscore
+       Char COMPLETELY
+
+
+-- FIXME: move to another place
+
+FUN in : denotation ** denotation -> bool
+DEF in(Sub, D) ==
+    -- FIXME: use the well-known fast substring algorithm ... ehh ...
+    IF #(D) = 0 THEN false
+    OTHERWISE IF Sub <| D THEN true
+                          ELSE Sub in tl(D) FI
+
+
+-- % definition of @code{selectionInfo}:
+
+DATA selectionInfo ==
+        selectionInfo(
+                notInCtxImports :       set[objectName,<],
+                sourceExtender  :       denotation      -> denotation,
+                exprReductor    :       expr'Expression -> expr'Expression,
+                fctAReductor    :       fct'RepoAbsy    -> fct'RepoAbsy,
+                fctEReductor    :       fct'Expression  -> fct'Expression,
+                name?           :       option[objectName],
+                annotedImpl?    :       option[impl]
+        )
+
+-- % get selection
+DEF getSelection == get(selectionNoId) & (\\No. getSelection(No))
+
+DEF getSelection(No) == 
+    clientCheck?                                                & (\\ Yes.
+    IF Yes THEN
+        setSelectionNo(No)                                      & (\\ _ .
+        IF No = max'Nat
+          THEN break("no selection for max'Nat")
+          ELSE rpc(select(No),\\A. selection?(A) or error?(A))  & (\\Answer.
+               IF error?(Answer)
+                THEN /* selection not found */
+                     break(msg(Answer))
+                ELSE succeed(selection(Answer))
+               FI
+               )        
+        FI
+        )
+    ELSE
+        unsetSelection & break("no client active")
+    FI
+    )
+
+
+DEF unsetSelection == setSelectionNo(max'Nat)
+
+DEF analyseRes(Src) ==
+  lastEval & (\\ last0. 
+  LET last == cont(0)(id * last0)
+      lastT == "RES" ++ `(last)
+  IN
+  succeed(`(replaceRes(other, Src!, lastT!)))
+  )           
+
+DATA replaceState == ide other R RE RES
+
+FUN replaceRes: replaceState ** string ** string -> string
+DEF replaceRes(RES, <>, repl) == repl
+DEF replaceRes(_, <>, _) == <>
+DEF replaceRes(other, ft::Src, repl) ==
+  IF ft = R THEN replaceRes(R, Src, repl)
+  IF other?(ft) THEN ft :: replaceRes(other, Src, repl)
+  ELSE ft :: replaceRes(ide, Src, repl)
+  FI
+DEF replaceRes(ide, ft :: Src, repl) ==
+  IF other?(ft) THEN ft :: replaceRes(other, Src, repl)
+  ELSE ft :: replaceRes(ide, Src, repl)
+  FI
+DEF replaceRes(R, ft :: Src, repl) ==
+  IF ft = E THEN replaceRes(RE, Src, repl)
+  IF other?(ft) THEN R :: ft :: replaceRes(other, Src, repl)
+  ELSE R :: ft :: replaceRes(ide, Src, repl)
+  FI
+DEF replaceRes(RE, ft :: Src, repl) ==
+  IF ft = S THEN replaceRes(RES, Src, repl)
+  IF other?(ft) THEN R :: E :: ft :: replaceRes(other, Src, repl)
+  ELSE R :: E :: ft :: replaceRes(ide, Src, repl)
+  FI
+DEF replaceRes(RES, ft :: Src, repl) ==
+  IF other?(ft) THEN repl ++ ft :: replaceRes(other, Src, repl)
+  ELSE R :: E :: S :: ft :: replaceRes(ide, Src, repl)
+  FI
+  
+FUN other? : char -> bool
+DEF other?(c) == c |= underscore and (whitespace?(c) or punctuation?(c))
+  
+
+DEF analyseSelection(Ctx, Src) == 
+    get(selectionNoId) & (\\No. analyseSelection(Ctx, No, Src))
+
+DEF analyseSelection(Ctx, No, Src) ==
+    getSelection(No)                                    ; (\\AnsSel.
+    succeed(IF okay?(AnsSel) THEN avail(data(AnsSel))
+                             ELSE nil FI)               & (\\OptSel.
+    identTable                                          & (\\ITab.
+    evalTab                                             & (\\ETab.
+    succeed((\\ _,Info.ready?(state(Info))) | ETab)     & (\\ResTab.
+    succeed(asSeq(fct * ResTab))                        & (\\ResSeq.
+    succeed(possibleRef?(Src) | ResSeq)                 & (\\ActResSeq.
+    query(\\R.analyse(R,Ctx,Src, ITab,ActResSeq,OptSel)) )))))))
+
+FUN analyse : 
+        repo ** unitName ** denotation
+             ** identTable ** seq[pair[evalId,fct'RepoAbsy]]
+                                ** option[selection] -> selectionInfo
+DEF analyse(R,Ctx,Src,ITab,ResSeq,nil) ==
+    IF <>?(ResSeq) THEN
+        selectionInfo(  {}, 
+                        \\X.X,
+                        \\X.X,
+                        \\X.X,
+                        \\X.X,
+                        nil,
+                        nil
+                    )
+    ELSE
+        LET Prefix    == lambdaResPrefix(R,ResSeq)
+            SampleRes == \\Res, S. deps(2nd(Res))(R) + S
+            NotInCtx  == (\\O. ~(unit(O) ~ Ctx))
+                        | ((SampleRes, {}) \ ResSeq - importedObjects(Ctx)(R))
+            ReductMap == mkMap(<>,ResSeq) -- local bindings are empty (<>)
+            AddItemNo == 1      -- exactly one add. item for results
+        IN selectionInfo(
+                NotInCtx,
+                sourceExtender(Prefix),
+                exprReductor(AddItemNo,ReductMap),
+                fctAReductor(AddItemNo),
+                fctEReductor(AddItemNo),
+                nil,
+                nil
+       )
+   FI
+
+DEF analyse(R,Ctx,Src,ITab,ResSeq,
+        avail(selection(name(Name,Kind),Pos,BindOffs))) ==
+    LET OName           == ITab ! objectId(Name) -- FIXME: instanciation
+        (OptNS,Impl)    == lookFor?(R,ITab,OName,Pos)
+    IN IF avail?(OptNS)
+         THEN LET NS0           == asSeqSeq(cont(OptNS))
+                  NS            == (\\Ns. possibleRef?(R, Src) | Ns) * NS0
+              IN
+              IF <>?(ResSeq) and forall?(<>?, NS) THEN
+                   selectionInfo(
+                        {},
+                        \\X.X,
+                        \\X.X,
+                        \\X.X,
+                        \\X.X,
+                        avail(OName),
+                        avail(Impl)
+                    )
+              ELSE
+                  LET Prefix    == lambdaResPrefix(R,ResSeq)++" "++
+                                   lambdaLocPrefix(R,NS)
+                      SampleRes == \\Res, S. deps(2nd(Res))(R) + S
+                      SampleN   == \\N,   S. deps(N)(R) + S
+                      SampleNS  == \\Seq, S. (SampleN, S) \ Seq
+                      NotInCtx  == (\\O. ~(unit(O) ~ Ctx))
+                                  | ((SampleRes, (SampleNS, {}) \ NS) \ ResSeq
+                                       - importedObjects(Ctx)(R))
+                      ReductMap == mkMap(BindOffs,ResSeq)
+                      AddItemNo == succ(#(NS))
+                  IN selectionInfo(
+                        NotInCtx,
+                        sourceExtender(Prefix),
+                        exprReductor(AddItemNo,ReductMap),
+                        fctAReductor(AddItemNo),
+                        fctEReductor(AddItemNo),
+                        avail(OName),
+                        avail(Impl)
+                     )
+              FI
+         ELSE 
+             ABORT("getNSBindsImpl'DbSelection: selection found but"++
+                        " there is no position "++ `(pos(Pos)))
+       FI
+
+DEF analyse(R,Ctx,Src,ITab,ResSeq,
+        avail(selection(name(Name,Kind),breakPoint,BindOffs))) ==
+    LET OName           == ITab ! objectId(Name) -- FIXME: instanciation
+    IN selectionInfo(
+          {},\\s.s,\\e.e,\\fa.fa,\\fe.fe,avail(OName),nil)
+
+DEF analyse(R,Ctx,Src,ITab,ResSeq,
+        avail(selection(name(Name,Kind),unknown,BindOffs))) ==
+    LET OName           == ITab ! objectId(Name) -- FIXME: instanciation
+    IN selectionInfo(
+          {},\\s.s,\\e.e,\\fa.fa,\\fe.fe,avail(OName),avail(missing(none)))
+
+
+DEF analyse(R,Ctx,Src,ITab,ResSeq,avail(selection(toplevel,_,_))) ==
+    analyse(R,Ctx,Src,ITab,ResSeq,nil) -- FIXME: support this!
+DEF analyse(R,Ctx,Src,ITab,ResSeq,avail(selection(escaped,_,_))) ==
+    analyse(R,Ctx,Src,ITab,ResSeq,nil) -- behaves as for undefined selection
+
+        
+
+-- %$prefixes$ ==================================================
+FUN lambdaLocPrefix: repo ** seq[seq[objectName]] -> denotation
+DEF lambdaLocPrefix(R,SeqObjs) ==
+    (\\S,D. lambdaLocPrefix(R,S)++D ," ") \ SeqObjs
+
+        FUN lambdaLocPrefix : repo ** seq[objectName] -> denotation
+        DEF lambdaLocPrefix(R,ONames) ==
+                "\\\\ "++join((\\N. opalName(N)(R)) * ONames,",")++" . "
+
+FUN lambdaResPrefix : repo ** seq[pair[evalId,fct'RepoAbsy]] -> denotation
+DEF lambdaResPrefix(R,Seq) ==
+    "\\\\ "++join((\\P. ressymbol(P)(R)) * Seq,",")++" . "
+
+        FUN ressymbol : pair[evalId,fct'RepoAbsy] -> repo -> denotation
+        DEF ressymbol(evalId(No) & Fct)(R) ==
+                "RES"++ `(No)++" : "++opalFct(Fct)(R)
+
+
+
+FUN possibleRef? : denotation -> pair[evalId,fct'RepoAbsy] -> bool
+DEF possibleRef?(Src)(evalId(No) & _) ==
+    ("RES" ++ `(No)) in Src
+
+FUN possibleRef? : repo ** denotation -> objectName -> bool
+DEF possibleRef?(R, Src)(O) ==
+    symbol(O)(R) in Src
+    
+
+    
+    
+
+-- %$mkMap$ =========================================================    
+
+DATA bindOrResult ==
+        bind(   bindOffset:     bindOffset)
+        result( evalId:         evalId)
+
+FUN mkMap : seq[seq[bindOffset]] ** seq[pair[evalId,fct'RepoAbsy]] 
+                                        -> map[bindOffset,<,bindOrResult]
+DEF mkMap(Binds,Evals) ==
+    LET BMap == 1st(((\\B,P.
+                        (1st(P) <+ mkBindMap(2nd(P),B)) & succ(2nd(P))
+                     ),{} & 0) \ Binds)
+        EMap == mkEvalMap(#(Binds),Evals)
+    IN BMap <+ EMap
+
+FUN mkBindMap : nat ** seq[bindOffset] -> map[bindOffset,<,bindOrResult]
+DEF mkBindMap(N,Binds) ==
+    asMap((\\Idx,BindOffs. bindOffset(N,Idx) & bind(BindOffs))  * Binds)
+
+FUN mkEvalMap : nat ** seq[pair[evalId,fct'RepoAbsy]] ->
+                                         map[bindOffset,<,bindOrResult]
+DEF mkEvalMap(N,Evals) ==
+    asMap((\\Idx,P.  bindOffset(N,Idx) & result(1st(P))) * Evals)
+
+-- %$source extender$ ==================================================
+FUN sourceExtender : denotation -> denotation -> denotation
+DEF sourceExtender(Prefix)(Source) == Prefix++"(\n"++Source++"\n)"
+
+-- %$expression reductor$ ======================================
+FUN exprReductor : 
+        nat ** map[bindOffset,<,bindOrResult] ->
+                                        expr'Expression -> expr'Expression
+DEF exprReductor(N,Map)(Expr) ==
+    LET Expr1 == removeLambdas(Expr,N)
+    IN Expr1 !! Map
+
+FUN removeLambdas : expr'Expression ** nat -> expr'Expression
+DEF removeLambdas(E,0) == E
+DEF removeLambdas(lambda(_,_,Exprs),succ(N)) == 
+        removeLambdas(theuniq(asSeq(Exprs)),N)
+
+FUN !! : expr'Expression ** map[bindOffset,<,bindOrResult] ->
+                                expr'Expression
+DEF !!(local(P,O),M) ==
+    LET OptBndOrRes == M !? O
+    IN IF avail?(OptBndOrRes)
+         THEN IF bind?(cont(OptBndOrRes))
+                THEN local(P,bindOffset(cont(OptBndOrRes)))
+                ELSE result(P,evalId(cont(OptBndOrRes)))
+              FI
+         ELSE local(P,O)
+       FI
+DEF !!(lambda(P,T,E),M)  == lambda(P,T,(_ !! incr(M)) * E)
+DEF !!(apply(P,F,A,D),M) == apply(P,F !! M,A !! M,D)
+DEF !!(tuple(P,E,D),M)   == tuple(P,(_ !! M) * E,D)
+DEF !!(block(P,E,B,N),M) == block(P,(_ !! incr(M)) * E,B !! incr(M),N)
+DEF !!(cases(P,G,E),M)   == cases(P,(_ !! M) * G,E !! M)
+DEF !!(E:expr,_) == E
+
+FUN !! : blockEqn ** map[bindOffset,<,bindOrResult] ->  blockEqn
+DEF !!(eqn(L,R),M) == eqn(L,R !! M)
+
+FUN !! : guard'Expression ** map[bindOffset,<,bindOrResult] -> guard'Expression
+DEF !!(guard(I,T),M) == guard(I !! M, T !! M)
+
+FUN !! : tupleExpr ** map[bindOffset,<,bindOrResult] -> tupleExpr
+DEF !!(tupleExpr(E,P),M) == tupleExpr(E !! M,P)
+
+
+FUN incr : map[bindOffset,<,bindOrResult] -> map[bindOffset,<,bindOrResult]
+DEF incr(Map) ==
+    ((\\O,BR,M. (bindOffset(succ(item(O)),pos(O)),BR) def M ),{}) / Map
+
+-- %$fct-reductors$ ======================================
+
+FUN fctAReductor : nat -> fct'RepoAbsy -> fct'RepoAbsy
+DEF fctAReductor(0)(F) == F
+DEF fctAReductor(succ(N))(funct(_,C)) == fctAReductor(N)(C)
+
+FUN fctEReductor : nat -> fct'Expression -> fct'Expression
+DEF fctEReductor(0)(F) == F
+DEF fctEReductor(succ(N))(funct(_,C)) == fctEReductor(N)(C)
+
+
+-- % FIXME: should be moved to another place...
+
+
+
+FUN deps : objectName   -> repo -> set[objectName,<]
+FUN deps : kind'RepoAbsy-> repo -> set[objectName,<]
+FUN deps : fct'RepoAbsy -> repo -> set[objectName,<]
+
+DEF deps(N AS localObjectName(_,_))(R) ==
+    deps(kind(N)(R))(R)
+
+DEF deps(N AS globalObjectName(_,_))(R) ==
+    LET Actuals == actuals(N)(R)
+    IN
+    (\\ Act, S. deps(Act)(R) + incl(Act, S), deps(kind(N)(R))(R)) \ Actuals
+
+DEF deps(sort)(R) == {}
+DEF deps(oper(Fct))(R) == deps(Fct)(R)
+
+DEF deps(name(Sort))(R) == incl(Sort, deps(Sort)(R))
+DEF deps(cart(Elems))(R) == (\\E, S. deps(E)(R) + S, {}) \ Elems
+DEF deps(funct(Dom, Codom))(R) == deps(Dom)(R) + deps(Codom)(R)
+
+
+
+
+-- % internal function for glabal state:
+        FUN getSelectionNo : com[nat]
+        DEF getSelectionNo == get(selectionNoId)
+
+        FUN setSelectionNo : nat -> com[void]
+        DEF setSelectionNo(No) == selectionNoId => (\\ _ . No)
+
+        FUN selectionNoId : stateId[nat]
+        DEF selectionNoId == EXEC(stateId(max'Nat))
+        

@@ -1,0 +1,191 @@
+IMPLEMENTATION ConfigTest
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/config/ConfigTest.impl,v 1.1.1.1 1998-06-16 16:00:33 wg Exp $
+
+IMPORT String 		COMPLETELY
+       StringConv 	COMPLETELY
+       Option 		COMPLETELY
+       Seq 		COMPLETELY
+       SeqReduce 	COMPLETELY
+       SeqMap 		COMPLETELY
+       Set 		COMPLETELY
+       SetConv 		COMPLETELY    
+       Map          COMPLETELY   
+
+IMPORT Config 		COMPLETELY
+       MergeOption	COMPLETELY
+       ChooseOption	COMPLETELY
+
+
+-- %$Membership-Tests$
+-- %------------------
+
+-- %The function
+FUN isLibrary? : config -> string -> bool 
+-- %just looks up the string in the domain of the map of library structures.
+DEF isLibrary?( config ) ( searchName ) == 
+    searchName def? flatLibStructs(config)
+DEF isLibrary?( config(_, _, _, _, _, _, nil ) ) ( _ ) == false
+
+-- %By applying
+FUN isSubsystem? : config -> string -> bool
+/* %we search for the given structure @c{searchName} in  all
+@emph{user-defined} subsystems (and not the toplevel!).  */
+DEF isSubsystem?( config ) ( searchName ) ==
+  IF structs(config) avail? ANDIF
+     exist?(\\x. name(x) = searchName, structs(cont(structs(config)))) THEN
+    false
+  ELSE
+    searchName def? flatStructs(config) 
+  FI
+
+-- %On the other hand
+FUN isLibrarySubsystem? : config -> string -> bool
+/* %does the same job as @c{isSubsystem?} for @emph{library}-subsystems. */
+DEF isLibrarySubsystem?( config )(searchName) ==
+    searchName def? flatLibSubsystems(config)
+
+-- %The application of
+FUN subsystemIsInSubsystems? : string -> subsystem -> bool
+/* %provides a measure for searching for a given @c{searchName} in the
+sub-subsystems of a current subsystem. This functionality is useful for
+realizing the scoping mechanism of the DOSFOP configuration language.  */
+DEF subsystemIsInSubsystems?
+      ( searchName ) 
+      ( subsystem(name, _, _, _, _, subSubsystems) ) ==
+  IF name = searchName THEN
+    true
+  ELSE                     
+   exist?(subsystemIsInSubsystems?(searchName) , subSubsystems)
+  FI
+
+
+-- %The recursive implementation of
+FUN isInSubsystem? : string -> subsystem -> bool
+/* %can be applied to user-defined subsystems as well as library-subsystems. If
+structures are present on the current subsystem level the following
+implementation variant matches. Firstly the membership of the @c{searchName} in
+the set of structure names is tested. If this membership-test fails the search
+is continued in the lower level sub-subsystems. */
+DEF isInSubsystem?
+     ( searchName ) 
+     ( subsystem( _, _, _, _, avail(structs(_, structures)), subs) ) ==
+  IF exist?(\\struct. searchName = name(struct), structures) THEN
+    true
+  ELSE
+    exist?(isInSubsystem?(searchName) , subs)
+  FI
+
+/* %In case no structures are specified in the current subsystem specification the recursive
+descent starts immediately: */
+DEF isInSubsystem?( searchName )
+                  ( subsystem( _, _, _, _, nil, subs) ) ==
+    (exist?(isInSubsystem?(searchName) , subs))
+
+-- %Just for complete case distinction: (should never happen!)
+DEF isInSubsystem?( _ ) ( _ ) == false
+
+
+-- %$Getting the Filesystem-Path of a Structure$
+-- %--------------------------------------------
+
+/* %Extraction of a structure's path from a given @config-structure is a major
+task executed during the DOSFOP translation process. The @c{getPath}-operation
+implements the naming concept described more detailed in the Diplomarbeit.
+
+If the @c{searchName} can be found in the top-level structure-specification,
+the global directory path for the project is taken as its location. If this
+search fails the user-implemented subsystems as well as the library-subsystems
+are searched. If this search fails, too, the DOSFOP default mechanism is
+applied and the structure is assumed to be located in the global directory
+path. 
+
+The order of application of the search operations is not significant, due to
+the uniqueness of names for structures and subsystems in @OPAL-projects. 
+
+Be aware that the function @c{getPath} is @overloaded! 
+
+The first variant of */
+FUN getPath : string -> config -> option[string]
+/* %implements the searching process if top-level structure specifications are present : */
+DEF getPath
+      (searchName)
+      (config(loc,_,_,_, avail(structs(_, structures)), usrSubsystems, libOpt)) == 
+  IF exist?(\\struct. searchName = name(struct), structures) THEN
+    avail(loc)
+  ELSE
+    LET 
+      specifiedPathOpt ==
+        (choose (getPath(searchName) , usrSubsystems)) %
+          (IF avail?(libOpt) THEN
+            choose (getPath(searchName) , libSubsystems(cont(libOpt)))
+          ELSE
+            nil
+          FI)
+    IN
+      IF nil?(specifiedPathOpt) THEN
+        avail(loc)
+      ELSE
+        specifiedPathOpt
+      FI
+  FI
+
+
+/* %If no top-level structures are specified in the @config-structure the
+search starts directly with the subsytems-specifications : */
+DEF getPath(searchName)(config(loc, _, _, _, nil, usrSubsystems, libOpt)) == 
+  LET
+    specifiedPathOpt==
+      (choose (getPath(searchName) , usrSubsystems)) %
+          (IF avail?(libOpt) THEN
+            choose (getPath(searchName) , libSubsystems(cont(libOpt)))
+          ELSE
+            nil
+          FI)
+  IN
+    IF nil?(specifiedPathOpt) THEN
+      avail(loc)
+    ELSE
+      specifiedPathOpt
+    FI
+
+-- %For any other cases the search fails (this should never happen!)
+DEF getPath( _ )( _ :config ) == nil
+
+
+-- %This internal function
+FUN getPath : string -> subsystem -> option[string]
+/* %implements the path search algorithm on a single subsystem in higher-order
+fashion, so that @c{SeqReduce}-operations can be applied in connection with
+this (@overloaded!) function. 
+
+Be aware that the default mechanism for the top-level @c{getPath}-operation is 
+@emph{not applied here}, so @nil can be returned!
+
+If structure specifications are available for the current subsystem the
+membership-test (s.a.) is executed first. On failure the sub-subsystems are
+searched for @c{searchName}: */
+DEF getPath( searchName )
+           ( subsystem(_, subPath, _, _, avail(subStructs), subSubsystems) ) ==
+  IF exist?(\\struct. searchName = name(struct), structs(subStructs)) THEN
+    avail(subPath)
+  ELSE
+    choose(getPath(searchName) , subSubsystems)
+  FI
+
+/* %If no structures are specified on the current subsystem level the search
+continues immediately with the sub-subsystems: */
+DEF getPath( searchName )
+              ( subsystem(_, _, _, _, nil, subSubsystems) ) ==
+    choose(getPath(searchName) , subSubsystems)
+
+-- %For any other case the search fails (this should never happen!)
+DEF getPath( _ ) ( _ :subsystem ) == nil
+
+
+
+
+
+
+
+
+

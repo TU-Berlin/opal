@@ -1,0 +1,611 @@
+IMPLEMENTATION StringFormat
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:00 $ ($Revision: 1.1.1.1 $)
+
+IMPORT CharConv ONLY asDigitNat asNat
+       Char ONLY digit? >= <= = blank min max |=
+       String ONLY ! :: <> asString ++ empty |= # = % ft rt exist? +% init <>?
+       StringConv ONLY `
+       StringIndex ONLY slice
+       StringFilter ONLY drop split seq
+
+       PrintableChar COMPLETELY
+       Nat ONLY 0 + * 10 = max 6 1 pred succ ! min - < >= <=
+       NatConv ONLY ` asReal asChar
+       Seq[union] ONLY rt <> :: revert
+       Int ONLY < 0 abs + 1 -
+       IntConv ONLY `
+       Real ONLY < 0 floor abs > <= / 10 * - 1 2 ! + >= =
+       RealConv ONLY asNat ` ``
+       BTUnion COMPLETELY
+       Denotation ONLY init
+
+       ABORT COMPLETELY
+
+DEF format(d:denotation, u) == format(d!, u)
+DEF format(s:string, u) == STRING(s, u, <>)
+
+
+
+-- ----------------------------------------------------------------------
+-- and now the hardwired automaton for formatting
+-- STRING: start state, scanning chars, waiting for % 
+
+/* old without accumulator
+FUN STRING : string ** seq[union] -> string
+DEF STRING(<>, _) == <>
+--DEF STRING(ch :: s, u) ==
+DEF STRING(ss, u) == LET ch == ft(ss) s == rt(ss) IN
+	IF ch = % THEN FORMAT(s, u, stdformat)
+	ELSE	       ch :: STRING(s, u)
+	FI
+*/
+
+
+-- third parameter is accumulator
+FUN STRING : string ** seq[union] ** string -> string
+DEF STRING(s, u, AK) == LET (nrm, frm) == split(\\x.x |= %, s)
+			IN IF <>?(frm) THEN AK ++ nrm
+			   ELSE FORMAT(rt(frm), u, stdformat, AK ++ nrm)
+			   FI
+
+-- . . . . . . . . . and now formatting of data
+-- FORMAT scan flags while they exist
+
+DATA formatT == formatT(leftjustified: bool,
+		      signed: bool,
+		      emptysign: bool,
+		      leadzero: bool,
+		      alternate: bool,
+		      minwidthopt: bool, minwidth: nat,
+		      precopt: bool, precision: nat )
+
+FUN stdformat : formatT
+DEF stdformat == formatT(false, false, false, false, false, 
+				false, 0, false, 0)
+		      
+		      
+FUN FORMAT: string ** seq[union] ** formatT ** string -> string
+DEF FORMAT(<>, _, _, _) == <>
+
+DEF FORMAT(S AS ch :: str, u, 
+		f AS formatT(lF, sF, eF, zF, aF, mw?, mw, pr?, pr), AK) ==
+        -- some abbreviations for very common formats
+        IF ch = n THEN FORMATNAT(str, u, f, AK)
+        IF ch = i THEN FORMATINT(str, u, f, AK)
+        IF ch = r THEN FORMATREAL1(str, u, f, AK)
+        IF ch = R THEN FORMATREAL2(str, u, f, AK)
+        IF ch = e THEN FORMATREAL3(str, u, f, AK)
+        IF ch = s'PrintableChar THEN FORMATSTRING(str, u, f, AK)
+        IF ch = c THEN FORMATCHAR(str, u, f, AK)
+    	IF ch = b THEN FORMATBOOL(str, u, f, AK)
+    	IF ch = d THEN FORMATDENOTATION(str, u, f, AK)	
+	OTHERWISE
+	IF ch = %     THEN STRING(str, u, AK +% %)
+	IF ch = -     THEN FORMAT(str, u, 
+			formatT(true, sF, eF, zF, aF, mw?, mw, pr?, pr), AK)
+	IF ch = +     THEN FORMAT(str, u, 
+			formatT(lF, true, eF, zF, aF, mw?, mw, pr?, pr), AK)
+	IF ch = blank THEN FORMAT(str, u, 
+			formatT(lF, sF, true, zF, aF, mw?, mw, pr?, pr), AK)
+	IF ch = 0     THEN FORMAT(str, u, 
+			formatT(lF, sF, eF, true, aF, mw?, mw, pr?, pr), AK)
+	IF ch = #     THEN FORMAT(str, u, 
+			formatT(lF, sF, eF, zF, true, mw?, mw, pr?, pr), AK)
+        ELSE
+	      FORMATWIDTH(S, u, f, 0, AK)
+	FI
+
+-- FORMATWIDTH get minimal field width
+--	       nat for accumulating
+
+FUN FORMATWIDTH: string ** seq[union] ** formatT ** nat ** string -> string
+DEF FORMATWIDTH(<>, _, _, _, _) == 
+    ABORT("format'StringFormat: unexpected end of input in width")
+
+DEF FORMATWIDTH(S AS ch :: s, u, 
+		F AS formatT(lF, sF, eF, zF, aF, _, _, pr?, pr), n, AK) ==
+    IF n = 0 THEN
+        IF ch = * THEN LET(gn?, gn) == getnat(u) IN
+	   IF ~(gn?) THEN -- ERROR nat expected
+	   ABORT("format'StringFormat: nat expected by * in width")
+                      ELSE FORMATPREC(s, rt(u), formatT(lF, sF, eF, zF, aF,
+				            		true, gn, pr?, pr), AK)
+		      FI
+        IF ch = 0 THEN 
+	    FORMATPREC(s, u, formatT(lF, sF, eF, zF, aF, true, 0, pr?, pr), AK)
+        IF nzdigit?(ch) THEN 
+	      FORMATWIDTH(s, u, F, (10 * n) + asDigitNat(ch), AK)
+	ELSE
+	  FORMATPREC(S, u, F, AK)
+        FI
+    ELSE
+      IF digit?(ch) THEN 
+	 FORMATWIDTH(s, u, F, (10 * n) + asDigitNat(ch), AK)
+      ELSE
+         FORMATPREC(S, u, formatT(lF, sF, eF, zF, aF, true, n, pr?, pr), AK)
+      FI
+    FI
+
+FUN nzdigit?: char -> bool
+DEF nzdigit?(ch) == (ch >= 1) and (ch <= 9)
+
+
+-- FORMATPREC scan precision
+FUN FORMATPREC : string ** seq[union] ** formatT ** string -> string
+DEF FORMATPREC(<>, _, _, _) == <>
+
+DEF FORMATPREC(ch :: s, u, f, AK) ==
+    IF ch = dot THEN FORMATPRECWIDTH(s, u, f, 0, AK)
+    ELSE FORMATTYPE(ch :: s, u, f, AK)
+    FI
+
+-- FORMATPRECWIDTH get precision (may not be empty)
+FUN FORMATPRECWIDTH: string ** seq[union] ** formatT ** nat ** string -> string
+DEF FORMATPRECWIDTH(<>, _, _, _, _) ==
+    ABORT("format'StringFormat: unexpected end of input in precision")
+
+DEF FORMATPRECWIDTH(S AS ch :: s, u, 
+		    F AS formatT(lF, sF, eF, zF, aF, mw?, mw, _,_), n, AK) ==
+    IF n = 0 THEN
+        IF ch = * THEN LET (gn?, gn) == getnat(u) IN
+	   IF ~(gn?) THEN -- ERROR nat expected
+	   ABORT("format'StringFormat: nat expected by * in precision")         
+                      ELSE FORMATTYPE(s, rt(u), 
+			      formatT(lF, sF, eF, zF, aF, mw?, mw,
+				            		  true, gn), AK)
+		      FI
+        IF ch = 0 THEN 
+	    FORMATTYPE(s, u, formatT(lF, sF, eF, zF, aF, mw?, mw, true, 0), AK)
+        IF nzdigit?(ch) THEN 
+	      FORMATPRECWIDTH(s, u, F, (10 * n) + asDigitNat(ch), AK)
+	ELSE
+	  FORMATTYPE(S, u, F, AK)
+        FI
+    ELSE
+      IF digit?(ch) THEN 
+	 FORMATPRECWIDTH(s, u, F, (10 * n) + asDigitNat(ch), AK)
+      ELSE
+         FORMATTYPE(S, u, formatT(lF, sF, eF, zF, aF, mw?, mw, true, n), AK)
+      FI
+    FI
+
+-- FORMATTYPE reads date type designator and switches
+FUN FORMATTYPE: string ** seq[union] ** formatT ** string -> string
+DEF FORMATTYPE(<>, _, _, _) == 
+  ABORT("format'StringFormat: no data type designator")
+
+DEF FORMATTYPE(ch :: str, u, f, AK) ==
+    IF ch = n THEN FORMATNAT(str, u, f, AK)
+    IF ch = i THEN FORMATINT(str, u, f, AK)
+    IF ch = r THEN FORMATREAL1(str, u, f, AK)
+    IF ch = R THEN FORMATREAL2(str, u, f, AK)
+    IF ch = e THEN FORMATREAL3(str, u, f, AK)
+    IF ch = s THEN FORMATSTRING(str, u, f, AK)
+    IF ch = c THEN FORMATCHAR(str, u, f, AK)
+    IF ch = b THEN FORMATBOOL(str, u, f, AK)
+    IF ch = d THEN FORMATDENOTATION(str, u, f, AK)
+    ELSE -- ERROR unknown data type designator
+      ABORT("format'StringFormat: unknown data type designator")
+    FI
+
+-- FORMATNAT converts nat from unions
+-- ignore eF, aF
+-- obey sF, zF but ignore zF if lF is set
+-- output at least pr digits (prepend 0, if necessary)
+
+FUN FORMATNAT: string ** seq[union] ** formatT ** string -> string
+DEF FORMATNAT(s, u, formatT(lF, sF, _, zF, _, mw?, mw, pr?, pr), AK) ==
+    LET (n?, n) == getnat(u) 
+    IN
+        IF ~(n?) THEN ABORT("format'StringFormat: nat expected")
+	ELSE 
+	LET  str == padzeros(!(n`), pr?, pr)
+	     zero == zF and (~(lF))
+	     str2 == pad(str, lF, IF zero THEN 0 ELSE blank FI, 
+			         (mw?, mw) - (IF sF THEN 1 ELSE 0 FI))
+             str3 == IF sF THEN + :: str2 ELSE str2 FI
+        IN 
+	   STRING(s, rt(u), AK ++ str3)
+	FI
+
+-- FORMATINT converts int from unions
+-- ignore aF
+-- ignore zF if lF is set
+-- output at least pr digits (prepend 0, if necessary)
+
+FUN FORMATINT: string ** seq[union] ** formatT ** string -> string
+DEF FORMATINT(s, u, formatT(lF, sF, eF, zF, _, mw?, mw, pr?, pr), AK) ==
+    LET (i?, i) == getint(u)
+    IN
+        IF ~(i?) THEN ABORT("format'Conversion: int expected")
+	ELSE 
+	LET str == padzeros(!(abs(i)`), pr?, pr)
+	    vz == sF or (eF or (i < 0))
+	    zero == (~(lF)) and zF
+	    str2 == pad(str, lF, IF zero THEN 0 ELSE blank FI,
+		                    (mw?, mw) - (IF vz THEN 1 ELSE 0 FI))
+            str3 == IF i < 0 THEN - :: str2
+		    OTHERWISE
+		    IF sF THEN + :: str2
+		    IF eF THEN blank :: str2
+		    ELSE str2
+		    FI	
+        IN
+          STRING(s, rt(u), AK ++ str3)
+	FI
+
+-- FORMATREAL1 convert real from unions
+-- look, if abs(r) > max'Nat or < 1e-4 or abs(r) equals zero
+-- if so, output in e-Format (REAL3), else in flat format (REAL2)
+
+FUN FORMATREAL1: string ** seq[union] ** formatT ** string -> string
+DEF FORMATREAL1(s, u, f, AK) ==
+    LET (r?, r) == getreal(u)
+    IN
+       IF ~(r?) THEN ABORT("format'StringFormat: real expected")
+       ELSE 
+         LET a == abs(r)
+         IN
+         IF a = 0 THEN FORMATREAL2(s, u, f, AK)
+         OTHERWISE 
+         IF a > asReal(max'Nat) THEN FORMATREAL3(s, u, f, AK)
+         IF a < ("0.0001"!) THEN FORMATREAL3(s, u, f, AK)
+         ELSE FORMATREAL2(s, u, f, AK)
+         FI
+       FI
+
+
+-- FORMATREAL2 convert real from unions
+-- always in flat format
+-- if zF, do not remove trailing zeroes
+-- obey lF, sF, aF
+-- af: always add decimal point
+-- precision: digits after decimal point
+FUN FORMATREAL2: string ** seq[union] ** formatT ** string -> string
+DEF FORMATREAL2(s, u, formatT(lF, sF, eF, zF, aF, mw?, mw, pr?, pr), AK) ==
+    LET (r?, r) == getreal(u)
+    IN
+       IF ~(r?) THEN ABORT("format'StringFormat: real expected")
+       ELSE 
+      	 LET prc == IF ~(pr?) THEN 6 ELSE pr FI
+    	     str0 == !((r, prc)``)
+    	     (str1,vorzeichen) == IF r < 0 THEN (str0, 1)
+                                  ELSE IF sF THEN (+ :: str0, 1)
+                                       IF eF THEN (blank :: str0, 1)
+                                       ELSE       (str0,0)
+                                       FI   
+                                  FI
+    	     str2 == IF aF ANDIF ~(exist?(\\x.x=dot,str1)) THEN str1 +% dot
+                     ELSE str1 FI
+             str3 == IF zF THEN addzeros(str2, prc) ELSE str2 FI
+    	     str4 == pad(str3, lF, blank, (mw?,mw) - vorzeichen)
+         IN STRING(s, rt(u), AK ++ str4)
+       FI
+
+FUN addzeros: string ** nat -> string
+DEF addzeros(s, n) ==
+	LET nk == drop(\\x. x |= dot, s)
+	    (len,s1) == IF nk = empty THEN (0,s +% dot) 
+			ELSE (pred(#(nk)), s) FI
+        IN IF n <= len THEN s ELSE s1 ++ init(n - len, 0) FI
+	
+
+/* das war die alte Implementierung von FORMATREAL2 (ab LET prc == IF ...
+   Die Umstellung
+   scheint aber nicht so viel zu bringen, daher mache ich's nicht fuer
+   FORMATREAL3    			kd
+
+         LET prc == IF ~(pr?) THEN 6 ELSE pr FI
+	     sign == IF r < 0 THEN "-"! ELSE 
+			IF sF THEN "+"! 
+			IF eF THEN " "!
+			ELSE	   empty
+			FI
+		    FI
+             rr0 == abs(r)
+             (nachk, aufrunden) == prec(rr0 - floor(rr0), prc, zF~)
+	     rr == floor(rr0) + (IF aufrunden THEN 1 ELSE 0 FI)
+	     alt == IF aF or (nachk |= empty) THEN "."! ELSE empty FI
+	     str == (sign ++ RzuString(rr, true)) ++ (alt ++ nachk)
+	     str2 == pad(str, lF,  blank, (mw?,mw) - #(sign))
+	 IN str2 ++ STRING(s, rt(u))
+       FI
+*/
+
+
+
+-- FORMATREAL3 convert real from unions
+-- always in exp format
+-- if zF, do notremove trailing zeroes
+-- obey lF, sF, aF
+-- af: always add decimal point
+-- precision: digits after decimal point
+FUN FORMATREAL3: string ** seq[union] ** formatT ** string -> string
+DEF FORMATREAL3(s, u, formatT(lF, sF, eF, zF, aF, mw?, mw, pr?, pr), AK) ==
+    LET (r?, r) == getreal(u)
+    IN
+       IF ~(r?) THEN ABORT("format'StringFormat: real expected")
+       ELSE 
+         LET prc == IF ~(pr?) THEN 6 ELSE pr FI
+	     sign == IF r < 0 THEN "-"! ELSE 
+			IF sF THEN "+"! 
+			IF eF THEN " "!
+			ELSE	   empty
+			FI
+                     FI
+             rr0 == abs(r)
+	     (rr1, exp) == normalisiert(rr0, 0)
+             (nachk, aufrunden) == prec(rr1 - floor(rr1), prc, zF~)
+	     rr == floor(rr1) + (IF aufrunden THEN 1 ELSE 0 FI)
+	     alt == IF aF or (nachk |= empty)
+					      THEN "."! ELSE empty FI
+	     str == (sign ++ RzuString(rr, true)) ++ (alt ++ nachk)
+	     expstr == e :: ((exp`)!)
+	     str2 == pad(str ++ expstr, lF,  blank, (mw?,mw) - #(sign))
+	 IN STRING(s, rt(u), AK ++ str2)
+       FI
+
+/* r > 0, r = floor(r) */
+FUN RzuString: real ** bool -> string
+DEF RzuString(r, first?) == IF r <= 0 THEN IF first? THEN "0"! ELSE empty FI
+		            ELSE LET neu == floor(r / 10)
+			       	     k == r - (10 * neu)
+			         IN RzuString(neu, false) ++ !(asNat(k)`)
+	            FI
+
+/* 0 <= r < 1 */
+/* bool (erg): 1 draufaddieren (<==> real >= 0.5 und nk == 0) */
+/* bool rm: folgende Nullen entfernen? */
+FUN prec: real ** nat ** bool -> string ** bool
+DEF prec(r, nk, rm) ==
+    IF nk = 0 THEN
+       IF r < (1/2) THEN (empty, false)
+       ELSE		 (empty, true)
+       FI
+    ELSE
+    LET ziffer0 == asNat(10 * r)
+	next   == (10 * r) - floor(10 * r)
+	(erg, aufrunden) == prec(next, pred(nk), rm)
+	ziffer1 == IF aufrunden THEN succ(ziffer0) ELSE ziffer0 FI
+	ziffer2 == IF ziffer1 = 10 THEN 0 ELSE ziffer1 FI
+    IN 
+      IF (ziffer0 = 0) and ((erg = empty) and rm) THEN 
+	 (empty, false)
+      ELSE
+         (((ziffer2`)!) ++ erg, ziffer1 = 10)
+      FI
+    FI
+             
+
+-- FORMATSTRING convert string from unions
+-- ignore sF, eF, zF, aF
+-- output max. precision chars
+-- FORMATBOOL relies on ignoring aF!
+FUN FORMATSTRING: string ** seq[union] ** formatT ** string -> string
+DEF FORMATSTRING(s, u, formatT(lF, _, _, _, _, mw?, mw, pr?, pr), AK) ==
+    LET (str?, str) == getstring(u)
+    IN 
+       IF ~(str?) THEN ABORT(
+		"format'StringFormat: string or denotation expected")
+       ELSE 
+       LET
+	str2 == IF ~(pr?) THEN str
+		OTHERWISE
+		IF pr = 0 THEN empty
+	        ELSE slice(str, 0, min(pr - 1, #(str) - 1))
+		FI
+        str3 == pad(str2, lF, blank, mw?, mw)
+       IN
+         STRING(s, rt(u), AK ++ str3)
+       FI
+
+-- FORMATCHAR get char convert it to string and perform FORMATSTRING
+FUN FORMATCHAR: string ** seq[union] ** formatT ** string -> string
+DEF FORMATCHAR(s, u, f, AK) ==
+	LET (c?, ch) == getchar(u)
+	IN
+	  IF ~(c?) THEN ABORT("format'StringFormat: char expected")
+	  ELSE 
+	    FORMATSTRING(s, string(%(ch)) :: rt(u), f, AK)
+	  FI
+
+-- FORMATBOOL get bool convert it to string (watch out for alternate flag)
+--	      and perform FORMATSTRING
+FUN FORMATBOOL: string ** seq[union] ** formatT ** string -> string
+DEF FORMATBOOL(s, u, f, AK) ==
+    LET (b?, b) == getbool(u)
+    IN
+      IF ~(b?) THEN ABORT("format'StringFormat: bool expected")
+      ELSE LET 	text == IF b and leadzero(f) THEN "1"!
+		       IF ~(b) and leadzero(f) THEN "0"!
+		       OTHERWISE
+		       IF b and alternate(f) THEN "TRUE"!
+		       IF b and ~(alternate(f)) THEN "true"!
+		       IF ~(b) and alternate(f) THEN "FALSE"!
+		       IF ~(b) and ~(alternate(f)) THEN "false"!
+		       ELSE
+		         ABORT("FORMATBOOL'StringFormat: This cannot happen!")
+		       FI
+           IN FORMATSTRING(s, string(text) :: rt(u), f, AK)
+      FI
+	
+-- FORMATDENOTATION get deno convert it to string and perform FORMATSTRING
+FUN FORMATDENOTATION: string ** seq[union] ** formatT ** string -> string
+DEF FORMATDENOTATION(s, u, f, AK) ==
+	LET (d?, de) == getdeno(u)
+	IN
+	  IF ~(d?) THEN 
+	    ABORT("format'StringFormat: denotation or string expected")
+	  ELSE 
+	    FORMATSTRING(s, string(!(de)) :: rt(u), f, AK)
+	  FI
+
+
+
+-- Auxiliary Functions
+-- getnat getint getreal getstring
+FUN getnat: seq[union] -> bool ** nat
+DEF getnat(<>) == (false, 0)
+DEF getnat(u :: _) == IF nat?(u) THEN (true, nat(u))
+		       ELSE (false, 0)
+		       FI
+FUN getint: seq[union] -> bool ** int
+DEF getint(<>) == (false, 0)
+DEF getint(u :: _) == IF int?(u) THEN (true, int(u))
+		       ELSE (false, 0)
+		       FI
+FUN getreal: seq[union] -> bool ** real
+DEF getreal(<>) == (false, 0)
+DEF getreal(u :: _) == IF real?(u) THEN (true, real(u))
+		       ELSE (false, 0)
+		       FI
+FUN getstring: seq[union] -> bool ** string
+DEF getstring(<>) == (false, <>)
+DEF getstring(u :: _) == IF string?(u) THEN (true, string(u))
+			 IF denotation?(u) THEN (true,!(denotation(u)))
+		         ELSE (false, <>)
+		         FI
+
+FUN getchar: seq[union] -> bool ** char
+DEF getchar(<>) == (false, min)
+DEF getchar(u :: _) == IF char?(u) THEN (true, char(u))
+		       ELSE (false, min)
+		       FI
+
+FUN getbool: seq[union] -> bool ** bool
+DEF getbool(<>) == (false, false)
+DEF getbool(u :: _) == IF bool?(u) THEN (true, bool(u))
+		       ELSE (false, false)
+		       FI
+
+FUN getdeno: seq[union] -> bool ** denotation
+DEF getdeno(<>) == (false, "")
+DEF getdeno(u :: _) == IF denotation?(u) THEN (true, denotation(u))
+		       IF string?(u)     THEN (true, `(string(u)))
+		       ELSE (false, "")
+		       FI
+
+-- Functions for padding
+-- padzeros: add zeros at the left if necessary
+FUN padzeros: string ** bool ** nat -> string
+DEF padzeros(s,false, _) == s
+DEF padzeros(s, true, n) ==
+    IF #(s) < n THEN asString(init(n - #(s), 0)) ++ s
+    ELSE s
+    FI
+
+-- pad: add ch at left or right if necessery
+FUN pad: string ** bool ** char ** bool ** nat -> string
+DEF pad(s, _, _, false, _) == s
+DEF pad(s, left, ch, true, n) ==
+    IF #(s) >= n THEN s
+    ELSE LET p == asString(init(n - #(s), ch))
+	 IN
+	 IF left THEN s ++ p
+	 ELSE p ++ s
+	 FI
+    FI
+
+
+
+
+-- **********************************************************************
+-- auxiliary functions
+
+FUN scanformat: bool ** bool ** nat ** char -> string
+DEF scanformat(store?, width?, width, type) ==
+    LET storeS == IF store? THEN empty ELSE %(*) FI
+	widthS == IF ~(width?) THEN empty ELSE !(width`) FI
+    IN
+    	(%(%)) ++ (storeS ++ (widthS ++ %(type)))
+
+
+-- ----------------------------------------------------------------------
+-- abbreviations
+
+FUN :: : string ** char -> string
+DEF s:string :: ch:char == s ++ %(ch)
+
+FUN :: : nat ** string -> string
+DEF n:nat :: s:string == IF n <= asNat(max) THEN asChar(n) :: s
+			 ELSE -- ERROR not so many chars
+	   ABORT("format'StringFormat: Hex or Oct Character # too large") 
+			 FI
+
+FUN check: nat -> char
+DEF check(n) == IF n <= asNat(max) THEN asChar(n)
+		ELSE ABORT("'StringFormat Hex or Oct Character # too large") 
+		FI
+
+FUN - : bool ** nat ** nat -> bool ** nat
+DEF (false, n1) - _ == (false, n1)
+DEF (true, n1) - n2 == (true, n1 -  n2)
+
+FUN zero? : bool ** nat -> bool
+DEF zero?(false, _) == false
+DEF zero?(true, n) == n = 0
+
+-- das fuehrt zum Fehler:
+/*
+Ac at <6,10> RUNTIME ERROR: undefined selection repr'Ac:(exp->string)
+/bin/sh: 7922 Abort
+*/
+-- DEF ABORT:  denotation -> seq[union] ** string ** string(d) ==
+--    (ABORT(d), empty, empty)
+/* das auch
+DEF ABORT:  denotation -> seq[union] ** string ** string(d) ==
+    LET d1 == ABORT(d)
+    IN (d1, empty, empty)
+*/
+/*
+FUN ABORT:  denotation -> seq[union] ** string ** string
+
+DEF ABORT:  denotation -> seq[union] ** string ** string(d) ==
+    LET d1:denotation == ABORT(d)
+    IN (<>, empty, empty)
+*/
+
+
+FUN substringTo: string ** nat -> string
+DEF substringTo(<>, _) == <>
+DEF substringTo(ch :: _, 0) == %(ch)
+DEF substringTo(ch :: cs, succ(n)) == ch :: substringTo(cs, n)
+
+FUN substringFrom: string ** nat -> string
+DEF substringFrom(<>, _) == <>
+DEF substringFrom(str, 0) == str
+DEF substringFrom(_ :: cs, succ(n)) == substringFrom(cs, n)
+
+/* r >= 0 */
+FUN normalisiert: real ** int -> real ** int
+DEF normalisiert(r, exp) ==
+    IF r = 0 THEN (0,0)
+    OTHERWISE
+    IF r < 10 and r >= 1 THEN (r, exp)
+    IF r >= 10 THEN normalisiert(r / 10, exp + 1)
+    IF r < 1  THEN normalisiert(r * 10, exp - 1)
+    FI
+
+
+-- %$Script-Vereinfachung$
+
+DATA script == mkScript(pattern:denotation, args: seq[union])
+
+DEF formatS(mkScript(Pattern,Args)) == format(Pattern, revert(Args))
+
+DEF mkScript(Pattern,Args) & Den == mkScript(Pattern, denotation(Den)::Args)
+DEF mkScript(Pattern,Args) & Str == mkScript(Pattern, string(Str)::Args)
+DEF mkScript(Pattern,Args) & Rea == mkScript(Pattern, real(Rea)::Args)
+DEF mkScript(Pattern,Args) & Nat == mkScript(Pattern, nat(Nat)::Args)
+DEF mkScript(Pattern,Args) & Int == mkScript(Pattern, int(Int)::Args)
+
+DEF Pattern <- Den == mkScript(Pattern, denotation(Den) :: <>)
+DEF Pattern <- Str == mkScript(Pattern, string(Str) :: <>)
+DEF Pattern <- Rea == mkScript(Pattern, real(Rea) :: <>)
+DEF Pattern <- Nat == mkScript(Pattern, nat(Nat) :: <>)
+DEF Pattern <- Int == mkScript(Pattern, int(Int) :: <>)
+

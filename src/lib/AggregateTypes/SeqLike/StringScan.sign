@@ -1,0 +1,142 @@
+SIGNATURE StringScan
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:59 $ ($Revision: 1.1.1.1 $)
+-- scanning strings
+
+IMPORT	Nat	ONLY nat		Option[nat] 	   ONLY option
+	Int	ONLY int		Option[int]	   ONLY option
+	Real	ONLY real		Option[real]	   ONLY option
+	Char	ONLY char		Option[char]	   ONLY option
+	String	ONLY string		Option[bool]	   ONLY option
+	BTUnion	ONLY union		Seq[union]	   ONLY seq
+					Option[seq]	   ONLY option
+					Option[denotation] ONLY option
+
+
+FUN scan	: string -> option[nat]  ** string
+    scan	: string -> option[int]  ** string
+    scan	: string -> option[real] ** string   
+    scan	: string -> option[char] ** string
+    scan	: string -> option[bool] ** string
+
+-- scan(s) == ( res , unused rest of string )
+-- res is nil, if string is empty or no prefix belongs to the indicated regexp
+-- res is also nil, if a nat or an int is too large; this behaviour will be
+-- implemented for reals also
+-- nat:	   {{ 0 || 1 ... || 9 }}
+-- int:   [[ - ]]  {{ 0 || 1 ... || 9 }}
+-- real:  [[ + || - ]] {{ 0 || 1 ... || 9 }} . {{ 0 || 1 ... || 9 }} [[ e
+--	  [-] {{ 0 || 1 ... || 9 }} ]]
+-- char:  "any char"
+-- bool:  t || tr || tru || true || T || TR || TRU || TRUE || 1 ||
+--	  f || fa || fal || fals || false || F || FA || FAL || FALS || FALSE
+--	  || 0
+
+
+
+FUN scan	: denotation**string->seq[union]	
+    		-- convert string (2nd argument) under the control of format
+		-- as far as possible, and return sequence of converted values.
+		-- scan is similar to scanf; the type descriptors
+		-- are as above.
+
+
+FUN scan	: denotation**string->seq[union]**string
+    		-- same as above, but additionally return unscanned rest of 
+		-- string
+
+FUN scan	: denotation**string -> seq[union]**denotation**string
+		-- same as above, but additionally return unused rest of format
+
+FUN scan	: denotation ** string -> option[seq[union]]
+		-- as first variant, return nil, if not both arguments are
+		-- fully used 
+
+/* The format string is parsed according to the following syntax: 
+
+<format> ::= {{ <formatEl }}
+<formatEl> ::= <char> ||
+	       % [[ * ]] [[ <len> ]] <type>
+	       % % ||
+	       <whitespace>
+<char> ::= <any character>
+<whitespace> ::= space tab newline
+<len>  ::= {{ 0 || .. || 9 }}  "no leading zeros"
+<type> ::= n "nat"|| i "int" || r "real" || s "string" || c "char" ||
+           [ [[ ^ ]] {{ <range> }} "set" ] || b "bool" || d "denotation"
+<range> ::= <char> || <char> - <char>
+
+<whitespace> in the format string is ignored.
+
+* a single character must match the first character of the input after 
+  skipping whitespace
+
+* if * is given after %, the parsed value is not appended to the seq[union]
+
+* if <len> is given, a maximum of <len> characters will be read
+
+* note, that all of the following may match the empty string
+
+* scanning terminates if scanning a nat or an int would yield an
+  unrepresentable number (i.e. > max'Nat/Int or < min'Int)
+  the whole number and the associated format are returned in the rest of the
+  string and the rest of the format string result pair/triple
+  this behaviour will be implemented for reals also
+
+** scanning of nat
+*** skip <whitespace> in the input
+*** scan according to regexp {{ 0 || 1 || .. || 9 }}
+    until maximum field width is reached or the first non matching character
+    is reached
+*** put number as nat() at the end of seq[union]
+
+** scanning of int
+*** skip <whitespace> in the input
+*** scan according to regexp [[ - ]] {{ 0 || 1 || .. || 9 }}
+    until maximum field width is reached or the first non matching character
+    is reached
+*** put number as int() at the end of seq[union]
+
+** scanning of real
+*** skip <whitespace> in the input
+*** scan according to regexp [[ + || - ]] {{ 0 || 1 ... || 9 }} . {{ 0 || 1
+    ... || 9 }} [[ e [-] {{ 0 || 1 ... || 9 }} ]]
+    until maximum field width is reached or the first non matching character
+    is reached
+*** put number as real() at the end of seq[union]
+
+** scanning of string or denotation
+*** skip <whitespace>
+*** scan non <whitespace> characters until maximum field width is reached 
+    or non <whitespace> character is encountered
+*** put string as string() at the end of seq[union]
+
+** scanning of char
+*** DO NOT SKIP <whitespace>
+*** assume default maximum field width of 1 
+*** scan <fieldwidth> characters 
+*** !!! if fieldwidth is not given or given as 1, char() is appended to
+    union, otherwise string() !!!
+
+** scanning of set
+*** DO NOT SKIP <whitespace>
+*** scan matching characters until <fieldwidth> is reached or a non matching
+    character is encountered
+*** put characters as string() the end of seq[union]
+
+*** set is a sequence of <range> enclosed in [ ] 
+*** if seqence of <range> is prepended by ^, characters match if they do not
+    belong to one of the given ranges
+*** if ] is the first char after [ or [^ it is interpreted as a <range> and
+    not as terminating the set
+
+** scanning of bool
+*** skip <whitespace>
+*** t, tr, tru, true, T, TR, TRU, TRUE, 1  scan as value "true"
+*** f, fa, fal, fals, false, F, FA, FAL, FALS, FALSE, 0   scan as value "false"
+
+*/
+

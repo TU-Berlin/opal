@@ -1,0 +1,167 @@
+IMPLEMENTATION Set [data:SORT,< :data**data->bool]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:02 $ ($Revision: 1.1.1.1 $)
+-- sets implemented via an irreflexive, total order
+
+
+
+IMPORT  Nat    	ONLY nat succ >
+	Seq	COMPLETELY
+	SeqCompare[data] ONLY cmp <? rel
+	ABORT   COMPLETELY
+	Option  COMPLETELY
+
+-- the type itself
+
+DATA set == abs(rep : seq[data])
+
+-- non free constructors
+
+DEF {}          == abs(<>)
+
+DEF incl(E,abs(S)) == abs(insert(E,S))
+
+  FUN insert : data ** seq[data] -> seq[data]
+  DEF insert(E,<>) == %(E)
+  DEF insert(E,S AS E1 :: R) ==
+    IF E < E1 THEN E :: S
+    IF E1 < E THEN E1 :: insert(E,R)
+	      ELSE S FI
+
+
+-- constructing a set from datas 
+DEF %(e) == abs(%(e))
+DEF %(e1, e2) == incl(e2, %(e1))
+DEF %(e1, e2, e3) == incl(e3, incl(e2, %(e1)))
+DEF %(e1, e2, e3, e4) == incl(e4, incl(e3, incl(e2, %(e1))))
+DEF %(e1, e2, e3, e4, e5) == incl(e5, incl(e4, incl(e3, incl(e2, %(e1)))))
+DEF %(e1, e2, e3, e4, e5, e6) == 
+		      incl(e6, incl(e5, incl(e4, incl(e3, incl(e2, %(e1))))))
+DEF %(e1, e2, e3, e4, e5, e6, e7) == 
+            incl(e7, incl(e6, incl(e5, incl(e4, incl(e3, incl(e2, %(e1)))))))
+DEF %(e1, e2, e3, e4, e5, e6, e7, e8) == 
+  incl(e8, incl(e7, incl(e6, incl(e5, incl(e4, incl(e3, incl(e2, %(e1))))))))
+
+-- incl see above
+DEF excl(E,abs(S)) == abs(delete(E,S))
+
+  FUN delete : data ** seq[data] -> seq[data]
+  DEF delete(_,<>) == <>
+  DEF delete(E,S AS E1 :: R) ==
+    IF E < E1 THEN S
+    IF E1 < E THEN E1 :: delete(E,R)
+	      ELSE R FI
+
+
+
+-- constructing a set from a function
+DEF (n1 .. n2)(f) == IF n1 > n2 THEN {} 
+		     ELSE	     incl(f(n1), (succ(n1) .. n2)(f)) FI 
+
+DEF iter(start, it, P) == IF ~(P(start)) THEN {}
+			  ELSE incl(start, iter(it(start), it, P))
+			  FI 
+
+-- combining sets
+DEF S1 + S2 == abs(union(S1 rep, S2 rep))
+
+  FUN union : seq[data] ** seq[data] -> seq[data]
+  DEF union(S1,<>) == S1
+  DEF union(<>,S2) == S2
+  DEF union(S1 AS E1 :: R1,S2 AS E2 :: R2) ==
+    IF E1 < E2 THEN E1 :: union(R1,S2)
+    IF E2 < E1 THEN E2 :: union(S1,R2)
+	       ELSE E1 :: union(R1,R2) FI
+
+DEF S1 - S2 == abs(diff(S1 rep, S2 rep))
+
+  FUN diff : seq[data] ** seq[data] -> seq[data]
+  DEF diff(<>,<>) == <>
+  DEF diff(S1,<>) == S1
+  DEF diff(<>,_) == <>
+  DEF diff(S1 AS E1 :: R1,S2 AS E2 :: R2) ==
+    IF E1 < E2 THEN E1 :: diff(R1,S2)
+    IF E2 < E1 THEN diff(S1,R2)
+	       ELSE diff(R1,R2) FI 
+
+DEF S1 * S2 == abs(isect(S1 rep, S2 rep))
+
+  FUN isect : seq[data] ** seq[data] -> seq[data]
+  DEF isect(_,<>) == <>
+  DEF isect(<>,_) == <>
+  DEF isect(S1 AS E1 :: R1,S2 AS E2 :: R2) ==
+    IF E1 < E2 THEN isect(R1,S2)
+    IF E2 < E1 THEN isect(S1,R2)
+	       ELSE E1 :: isect(R1,R2) FI
+ 
+-- accessing datas in a set
+DEF arb(abs(<>)) == ABORT("arb'Set: arb applied to empty set")
+DEF arb(abs(e :: _)) == e
+
+
+-- information about a set
+DEF {}?(S)      == rep(S) <>?
+DEF e in abs(S) == search(e,S)
+
+  FUN search : data ** seq[data] -> bool
+  DEF search(_,<>) == false
+  DEF search(E, E1 :: R) ==
+    IF E < E1 THEN false
+    IF E1 < E THEN search(E,R)
+	      ELSE true FI
+
+DEF #(S)        == #(rep(S))
+DEF min(abs(<>)) == ABORT("min'Set: applied to empty set")
+DEF min(abs(f :: _)) == f -- implementation dependent
+DEF max(abs(<>)) == ABORT("max'Set: applied to empty set")
+DEF max(abs(s)) == last(s) -- implementation dependent
+
+DEF P exist? S == P exist? rep(S)
+
+DEF P find? S == P find? rep(S)
+
+DEF P forall? S == P forall? rep(S)
+
+
+-- comparing sets
+
+DEF S1 <= S2    ==  subset(S1 rep, S2 rep)
+DEF S1  = S2    ==  equal(S1 rep, S2 rep)
+DEF S1 <  S2 	==  propersubset(S1 rep, S2 rep)
+
+FUN subset : seq[data] ** seq[data] -> bool
+  DEF subset(<>,<>) == true
+  DEF subset(_,<>) == false
+  DEF subset(<>,_) == true
+  DEF subset(S1 AS E1 :: R1, E2 :: R2) ==
+    IF E1 < E2 THEN false
+    IF E2 < E1 THEN subset(S1,R2)
+	       ELSE subset(R1,R2) FI
+
+FUN equal : seq[data] ** seq[data] -> bool
+  DEF equal(<>,<>) == true
+  DEF equal(_,<>) == false
+  DEF equal(<>,_) == false
+  DEF equal(E1 :: R1, E2 :: R2) ==
+    IF E1 < E2 THEN false
+    IF E2 < E1 THEN false
+	       ELSE equal(R1,R2) FI
+
+FUN propersubset : seq[data] ** seq[data] -> bool
+  DEF propersubset(<>,<>) == false
+  DEF propersubset(_,<>) == false
+  DEF propersubset(<>,_) == true
+  DEF propersubset(S1 AS E1 :: R1, E2 :: R2) ==
+    IF E1 < E2 THEN false
+    IF E2 < E1 THEN subset(S1,R2) -- S2 kann jetzt auch gleich sein
+	       ELSE propersubset(R1,R2) FI
+
+
+DEF S1 {<} S2   ==  <?(cmp(<)(S1 rep, S2 rep))
+
+
+
+

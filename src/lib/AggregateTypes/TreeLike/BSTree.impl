@@ -1,0 +1,319 @@
+IMPLEMENTATION BSTree
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:10 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Tree[pair[data, nat]] ONLY tree nil node val left right nil? node? 
+            :=_val :=_left :=_right leftmost rightmost children
+            grandchildren level front depth width leaf? exist? forall? find?
+            <  = %
+       Tree[data] ONLY tree nil node val iter
+       TreeMapEnv[nat, data, pair[data, nat]] ONLY *_^
+       Pair[data, nat] ONLY pair 1st 2nd &
+       AnonPair[nat, tree[pair[data, nat]]] ONLY 1st 2nd
+       Nat ONLY nat 0 1 2 succ < + pred > double
+       SeqMap[pair[data, nat], data] ONLY *
+       OptionMap[pair[data, nat], data] ONLY *
+       ABORT ONLY ABORT
+
+-- %$The Data Type of Balanced Search Trees$
+
+DATA bstree == abs(rep: tree'Tree[pair[data, nat]])
+
+-- %Constructors
+DEF nil == abs(nil)
+-- % we assume @code{l} and @code{r} to be valid bstrees.
+DEF node(v, l, r) == 
+    LET bst == node(v & succ(#(l) + #(r)), l rep, r rep)
+    IN
+    IF bst bstree0? THEN 
+       IF bst balanced0? THEN abs(bst) 
+       ELSE ABORT("node'BSTree: bstree would be unbalanced")
+       FI
+    ELSE ABORT("node'BSTree: bs condition violated")
+    FI
+
+-- %Selectors
+DEF val(abs(nil)) == ABORT("val'BSTree: applied to empty bstree")
+DEF val(abs(t)) == 1st(val(t))
+DEF left(abs(nil)) == ABORT("left'BSTree: applied to empty bstree")
+DEF left(abs(t)) == abs(left(t))
+DEF right(abs(nil)) == ABORT("right'BSTree: applied to empty bstree")
+DEF right(abs(t)) == abs(right(t))
+
+-- %Discriminators
+DEF nil?(abs(t)) == nil?(t)
+DEF node?(abs(t)) == node?(t)
+
+
+-- %$Constructing a Tree from Datas$
+DEF %(v) == abs(node(v & 1, nil, nil))
+DEF %(v1, v2) == incl(v1, %(v2))
+DEF %(v1, v2, v3) == incl(v1, %(v2, v3))
+DEF %(v1, v2, v3, v4) == incl(v1, %(v2, v3, v4))
+DEF %(v1, v2, v3, v4, v5) == incl(v1, %(v2, v3, v4, v5))
+DEF %(v1, v2, v3, v4, v5, v6) == incl(v1, %(v2, v3, v4, v5, v6))
+DEF %(v1, v2, v3, v4, v5, v6, v7) == incl(v1, %(v2, v3, v4, v5, v6, v7))
+DEF %(v1, v2, v3, v4, v5, v6, v7, v8) == 
+                               incl(v1, %(v2, v3, v4, v5, v6, v7, v8))
+
+DEF incl(d, abs(t)) == abs(incl(d, t))
+DEF excl(d, abs(t)) == abs(excl(d, t))
+
+FUN incl: data ** tree[pair] -> tree[pair]
+
+DEF incl(d, nil) == node(d & 1, nil, nil)
+DEF incl(d, T AS node(v & _, l, r)) ==
+    IF d < v THEN balance(node(v & succ(#(incl(d,l)) + (r#)), incl(d, l), r))
+    IF v < d THEN balance(node(v & succ((l#) + #(incl(d,r))), l, incl(d, r)))
+    ELSE -- % v = d
+      T
+    FI
+
+FUN excl: data ** tree[pair] -> tree[pair]
+DEF excl(_, nil) == nil
+DEF excl(d, node(v & s, l, r)) ==
+    IF d < v THEN balance(node(v & succ(#(excl(d,l)) + (r#)), excl(d, l), r))
+    IF v < d THEN balance(node(v & succ((l#) + #(excl(d,r))), l, excl(d, r)))
+    ELSE -- found the right place
+      IF l nil? THEN r
+      IF r nil? THEN l
+      ELSE -- two children!
+        LET (newV, newR) == extractLeftmost(r)
+        IN
+        balance(node(newV & pred(s), l, newR))
+      FI
+    FI
+
+-- % remove leftmost node in tree and return the value and the new tree
+FUN extractLeftmost: tree[pair] -> data ** tree[pair]
+DEF extractLeftmost(nil) == (ABORT("extractLeftmost'BSTree: applied to empty tree[pair] -- this cannot happen!"), nil)
+DEF extractLeftmost(node(v & _, nil, r)) == (v, r)
+DEF extractLeftmost(node(v & s, l, r))  == 
+    LET (d, newL) == extractLeftmost(l)
+    IN
+      (d, balance(node(v & pred(s), newL, r)))
+
+-- %$Constructing a Tree from a Function$
+DEF iter(f, start) == 
+    LET tr == 2nd((\\ lsize, rsize, dat. 
+                        LET s == succ(lsize + rsize) IN (s, (dat & s)))
+                  *_^ (0, iter(f, start)))
+    IN
+    IF tr bstree? THEN 
+       IF tr balanced? THEN abs(tr)
+       ELSE ABORT("iter'BSTree: result is unbalanced")
+       FI
+    ELSE ABORT("iter'BSTree: result violates bs condition")
+    FI
+
+-- %$Combining Trees$
+
+/* % @code{val(l) < data < val(r)} must hold before calling this function.
+   returns a balanced tree */
+DEF d ++ (abs(nil), abs(nil)) == abs(d ++ (nil, nil))
+DEF d ++ (abs(nil), abs(r)) == abs(d ++ (nil, r))
+DEF d ++ (abs(l), abs(nil)) == abs(d ++ (l, nil))
+DEF d ++ (abs(l), abs(r)) == 
+    IF 1st(val(l)) < d ANDIF d < 1st(val(r)) THEN abs(d ++ (l, r))
+    ELSE ABORT("++'BSTree: val(l) < d < val(r) does not hold")
+    FI
+
+FUN ++ : data ** tree[pair] ** tree[pair] -> tree[pair]
+DEF d ++ (nil, nil) == %(d & 1)
+DEF d ++ (nil, r) == incl(d, r)
+DEF d ++ (l, nil) == incl(d, l)
+DEF d ++ (l AS node(vl & sl, ll, rl), r AS node(vr & sr, lr, rr)) ==
+    IF sr >_ratio sl THEN
+        LET newL == d ++ (l, lr)
+        IN
+            balance(node(vr & succ(#(newL) + #(rr)), newL, rr))
+    IF sl >_ratio sr THEN
+        LET newR == d ++ (rl, r)
+        IN
+            balance(node(vl & succ(#(ll) + #(newR)), ll, newR))
+    ELSE
+        node(d & succ(sl + sr), l, r)
+    FI
+
+-- %$Working on a Tree$
+-- % cannot violate balancedness here
+DEF abs(t) :=_val v == 
+    IF bstree0?(t :=_val v & (t#)) THEN 
+        abs(t :=_val v & (t#))
+    ELSE ABORT(":=_val'BSTree: bs condition is violated")
+    FI
+
+DEF abs(t) :=_left abs(new) ==
+    LET oldval == val(t)
+        newV == 1st(oldval)
+        new_# == succ((new#) + (right(t)#))
+        newT == t :=_val (newV & new_#) :=_left(new)
+    IN
+    IF newT bstree0? THEN 
+       IF newT balanced0? THEN abs(newT)
+       ELSE ABORT(":=_left'BSTree: result is unbalanced")
+       FI
+    ELSE ABORT(":=_left'BSTree: bs condition is violated")
+    FI
+
+DEF abs(t) :=_right abs(new) ==
+    LET oldval == val(t)
+        newV == 1st(oldval)
+        new_# == succ((new#) + (right(t)#))
+        newT == t :=_val (newV & new_#) :=_right(new)
+    IN
+    IF newT bstree0? THEN 
+       IF newT balanced0? THEN abs(newT)
+       ELSE ABORT(":=_right'BSTree: result is unbalanced")
+       FI
+    ELSE ABORT(":=_right'BSTree: bs condition is violated")
+    FI
+
+
+
+
+-- %$Accessing Datas in a Tree$
+DEF min(abs(nil)) == ABORT("min'BSTree: applied to empty bstree")
+DEF min(abs(t)) == 1st(leftmost(t))
+
+DEF leftmost(abs(nil)) == ABORT("leftmost'BSTree: applied to empty bstree")
+DEF leftmost(abs(t)) == 1st(leftmost(t))
+DEF rightmost(abs(nil)) == ABORT("rightmost'BSTree: applied to empty bstree")
+DEF rightmost(abs(t)) == 1st(rightmost(t))
+
+DEF children(abs(t)) == 1st * children(t)
+DEF grandchildren(abs(t)) == 1st * grandchildren(t)
+
+DEF level(i, abs(t)) == 1st * level(i, t)
+DEF front(abs(t)) == 1st * front(t)
+
+-- %$Information About a Tree$
+DEF d in abs(t) == d in t
+FUN in : data ** tree[pair] -> bool
+DEF d in nil == false
+DEF d in node(v & _, l, r) ==
+    IF d < v THEN d in l
+    IF v < d THEN d in r
+    ELSE true
+    FI
+
+DEF #(abs(t)) == #(t)
+
+FUN # : tree[pair] -> nat
+DEF #(nil) == 0
+DEF #(node(_ & s, _, _)) == s
+
+DEF depth(abs(t)) == depth(t)
+DEF width(abs(t)) == width(t)
+DEF leaf?(abs(t)) == leaf?(t)
+
+DEF exist?(P, abs(t)) == exist?(\\p. P(1st(p)), t)
+DEF forall?(P, abs(t)) == forall?(\\p. P(1st(p)), t)
+DEF find?(P, abs(t)) == 1st * find?(\\p. P(1st(p)), t)
+
+-- %$Comparing trees$
+
+DEF <(<<)(abs(t1), abs(t2)) == <(\\p1, p2. 1st(p1) << 1st(p2))(t1, t2)
+DEF abs(t1) {<} abs(t2) == <(\\p1, p2. 1st(p1) < 1st(p2))(t1, t2)
+
+DEF =(:=:)(abs(t1), abs(t2)) == =(\\p1, p2. 1st(p1) :=: 1st(p2))(t1,t2)
+
+-- %$Auxiliaries$
+/* %@code{bstree?} checks, whether the bstree fulfills the bs condition;
+@code{bstree0?}, checks only values of root, left and right child, and
+assumes that the children are already checked. */
+FUN bstree? : tree[pair] -> bool
+DEF bstree?(nil) == true
+DEF bstree?(node(_, nil, nil)) == true
+DEF bstree?(node(v & _, l AS node(vl & _ , _, _), nil)) == 
+    vl < v and bstree?(l)
+DEF bstree?(node(v & _ , nil, r AS node(vr & _, _, _))) == 
+    v < vr and bstree?(r)
+DEF bstree?(node(v & _ , l AS node(vl & _ , _, _), 
+                         r AS node(vr & _ , _, _))) ==
+    vl < v and v < vr and bstree?(l) and bstree?(r)
+
+FUN bstree0? : tree[pair] -> bool
+DEF bstree0?(nil) == true
+DEF bstree0?(node(_, nil, nil)) == true
+DEF bstree0?(node(v & _, node(vl & _ , _, _), nil)) == vl < v
+DEF bstree0?(node(v & _ , nil, node(vr & _, _, _))) == v < vr
+DEF bstree0?(node(v & _ , node(vl & _ , _, _), 
+                          node(vr & _ , _, _))) ==
+    vl < v and v < vr
+                      
+FUN >_ratio: nat ** nat -> bool
+DEF x >_ratio y == x > double(double(y))
+
+
+FUN balance: tree[pair] -> tree[pair]
+DEF balance(nil) == nil
+DEF balance(T AS node(_ & _, l, r)) ==
+    IF (l#) + (r#) < 2 THEN T
+    OTHERWISE
+    IF (r#) >_ratio (l#) THEN
+       LET lr == left(r)
+           rr == right(r)
+       IN 
+       IF (lr#) < (rr#) THEN lrotate(T) ELSE dlrotate(T) FI
+    IF (l#) >_ratio (r#) THEN
+       LET ll == left(l)
+           rl == right(l)
+       IN
+       IF (rl#) < (ll#) THEN rrotate(T) ELSE drrotate(T) FI
+    ELSE
+       T
+    FI
+
+FUN balanced? balanced0?: tree[pair] -> bool
+DEF balanced?(nil) == true
+DEF balanced?(node(_, l, r)) == 
+    IF (r#) + (l#) < 2 THEN true
+    ELSE IF ((r#) >_ratio (l#)) or ((l#) >_ratio (r#)) THEN false
+         ELSE balanced?(l) and balanced?(r)
+         FI
+    FI
+
+DEF balanced0?(nil) == true
+DEF balanced0?(node(_, l, r)) == 
+    IF (r#) + (l#) < 2 THEN true
+    ELSE ~(((r#) >_ratio (l#)) or ((l#) >_ratio (r#)))
+    FI
+
+
+
+/* % @code{lrotate} swaps one of the subtrees from the right child to
+the left like this: @code{[/x, A, [/y, B, C\]\]} becomes @code{[/y,
+[/x, A, B\], C\]}, where @code{x, y} are node values and @code{A, B, C}
+are whole subtrees; @code{rrotate} is just the
+opposite. @code{lrotate} aborts, if the right child is empty,
+@code{rrotate}, if the left child is empty. */ 
+
+/* % @code{[/x, A, [/z, [/y, B1, B2\], C\]\]} is "double" left rotated to
+@code{[/y, [/x, A, B1\], [/z, B2, C\]\]}. @code{drrotate} is the
+mirror operation. Both functions abort, if they don't find appropriate
+trees. */ 
+FUN lrotate rrotate dlrotate drrotate: tree[pair] -> tree[pair]    
+
+DEF lrotate(node(x & s, A, node(y & _, B, C))) ==
+    node(y & s, node(x & succ((A#) + (B#)), A, B), C)
+DEF lrotate(_ : tree[pair]) == ABORT("lrotate'Tree: right child is empty")
+
+DEF rrotate(node(y & s, node(x & _, A, B), C)) ==
+    node(x &s, A, node(y & succ((B#) + (C#)), B, C))
+DEF rrotate(_ : tree[pair]) == ABORT("rrotate'Tree: left child is empty")
+
+DEF dlrotate(node(x & s, A, node(z & _, node(y & _, B1, B2), C))) ==
+    node(y & s, node(x & succ(#(A) + #(B1)), A, B1),
+                node(z & succ(#(B2) + #(C)), B2, C))
+DEF dlrotate(_ : tree[pair]) == 
+    ABORT("dlrotate'BSTree: wrongly structured tree")
+
+DEF drrotate(node(z & s, node(x & _, A, node(y & _, B1, B2)), C)) ==
+    node(y & s, node(x & succ(#(A) + #(B1)), A, B1),
+                node(z & succ(#(B2) + #(C)), B2, C))
+DEF drrotate(_ : tree[pair]) == 
+    ABORT("drrotate'BSTree: wrongly structured tree")

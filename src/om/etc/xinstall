@@ -1,0 +1,123 @@
+#!/bin/sh
+# OM installation of documents and objects
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/etc/xinstall,v 1.1.1.1 1998-06-16 15:59:54 wg Exp $
+
+. $OCSOM/specs/ShSpecs.basic
+
+progn=$0
+
+
+while [ $# -gt 1 ]
+do
+  case $1 in
+    -s) 
+	strip=on
+	shift
+	;;
+    -a)
+	lib=on
+	shift
+	;;
+    -m)
+	mode="$2"
+	shift ; shift
+	;;
+    -g)
+	group="$2"
+	shift ; shift
+	;;
+    -dm)
+	dmode="$2"
+	shift ; shift
+	;;
+    -dg)
+	dgroup="$2"
+	shift ; shift
+	;;
+    *)
+	files="$files $1"
+	shift
+	;;
+    esac
+done
+
+if [ $# != 1 ]
+then
+  ${ECHO} \
+      "usage: `${BASENAME} $progn` [ -s ] [ -a ] [ -m <mode> ] [ -g <group> ]"
+  ${ECHO} \
+      "                    [ -dm <mode> ] [ -dg <group> ] <file> ... <dir> "
+  exit 255
+fi
+dest="$1"
+
+(
+for dir in `${ECHO} $dest | ${SED} -e 's://:/:g' -e 's:\(.\)/:\1 :g'`
+do
+  if [ -f $dir ]
+  then
+    ${ECHO} "$progn: $dir exists and is not a directory"
+    exit 1
+  elif [ ! -d $dir ] 
+  then
+    ${MKDIR} $dir || exit 2
+  fi
+  if [ -n "$dgroup" ]
+  then
+    ${CHGRP} $dgroup $dir 2>/dev/null
+  fi
+  if [ -n "$dmode" ]
+  then
+    ${CHMOD} $dmode $dir 2>/dev/null
+  fi
+  ${CD} $dir
+done
+)
+
+for f in $files
+do
+  b=`${BASENAME} $f`
+  destf=$dest/$b
+  if [ -f $destf ]
+  then
+    i1=`${LS} -i $f | ${SED} 's:^\(.*\) .*:\1:'`
+    i2=`${LS} -i $destf | ${SED} 's:^\(.*\) .*:\1:'`
+    if [ "$i1" != "$i2" ]
+    then
+      ${RM} -f $destf 2>/dev/null
+      ${CP} $f $dest || exit 2
+    fi
+  else ${CP} $f $dest || exit 2
+  fi
+  if [ -n "$strip" ] || [ -n "$lib" ]
+  then
+    if [ ! -w $dest/$b ]
+    then
+      ${CHMOD} u+w $dest/$b
+      if [ -n "$strip" ]
+      then
+	${STRIP} $dest/$b 2>/dev/null 1>&2
+      else
+	${UPDLIB} $dest/$b 2>/dev/null
+      fi
+      ${CHMOD} u-w $dest/$b
+    else
+      if [ -n "$strip" ]
+      then
+	${STRIP} $dest/$b 2>/dev/null 1>&2
+      else
+	${UPDLIB} $dest/$b 2>/dev/null
+      fi
+    fi
+  fi
+  if [ -n "$group" ]
+  then
+    ${CHGRP} $group $dest/$b 2>/dev/null
+  fi
+  if [ -n "$mode" ]
+  then
+    ${CHMOD} $mode $dest/$b 2>/dev/null
+  fi
+done
+
+      

@@ -1,0 +1,1155 @@
+/* %-
+-- LAST EDIT: Wed Aug 30 16:25:49 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     
+-- Changes:     af, May 14 1993: adapted to lazy candidate sets
+--                               (fixes Bug oc1.28)
+--                               added analyzeTyping
+--              af, Jun 16 1993: sets known types of locals
+--              af, Jun 18 1993: added typing for avoiding bug oc1.34
+--              af, Jun 21 1993: removed unnecessary typing
+--              af, Jun 23 1993: adapted to new absy
+--              af, Jun 24 1993: warning for unused equation
+--              af, Jun 27 1993: added handling of mix expressions
+-- ============================================================================
+*/
+
+IMPLEMENTATION TypeDepExprAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             COMPLETELY
+        String          ONLY string 
+        Denotation      ONLY ++
+        Pair            COMPLETELY
+        Seq             COMPLETELY
+        SeqCompare      ONLY eq?
+        SeqSort         ONLY msort
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqMapEnv       ONLY *
+        SeqFilter       COMPLETELY
+        SeqZip          COMPLETELY
+        SeqIndex        COMPLETELY
+        Map             COMPLETELY
+        Array           COMPLETELY
+
+        Pos             ONLY pos firstPos
+        Error           ONLY err errKind error warning hint ok + ok?
+        Options         ONLY infix?:bool lassoc?:bool rassoc?:bool
+
+        MySeqFun1       COMPLETELY
+
+        Rep             ONLY rep generated? `
+        PartName        ONLY partName:SORT pos:partName->pos ide
+        Fct[partName]   COMPLETELY
+        Fct[name]       COMPLETELY
+        Impl[partName]  COMPLETELY
+        Impl[name]      COMPLETELY
+
+
+        AnalyzedGlobSig ONLY globSig name bool denotation locSig {} + fct
+                             var origInst eqBase internal? global?
+                             ` :globSig**level->name->denotation level standard
+
+        Knowledge       ONLY knowl setFcts
+        Substitution    ONLY subst empty
+                                unify
+                                apply:subst**name->name**bool
+        Reason          COMPLETELY
+        Candidates      COMPLETELY
+        NameAnalysis    ONLY matchingOp selectName selectDeclaredName
+                                localNameDef matchingFcts
+        PrioTab ONLY prio rule assumedLAssoc assumedRAssoc prioTab assumedLAssoc? assumedRAssoc?
+
+        DEBUG           ONLY FIELD? PRINT
+       GlobSig COMPLETELY
+
+FUN analyze: expr[partName]**globSig**knowl**nat**nat -> cands**nat**nat
+/* % Für einen Ausdruck, eine globale Signatur, Wissen über die Verwendung
+   Verwendung von lokalen Bezeichnern sowie den kleinsten noch nicht für
+   lokale Namen bzw. Variablen verwendeten Nummern,
+   wird die Menge der möglichen Zuordnungsfunktionen berechnet.
+   Weitere Ergebnisse sind die neuen kleinsten noch nicht für lokale Namen
+   bzw. Variablen verwendeten Nummern
+*/
+
+FUN substitute: expr[partName]**cands**globSig**nat ->
+                                        expr[name]**globSig**locSig**err
+/* % Ersetzung der partiellen Namen durch Namen bzgl. der (nicht leeren!)
+   Menge von Identifizierungsfunktionen sowie
+ Normalisierung (Teilung) von Gleichungen mit mehrstelliger rechter Seite;
+ liefert Fehlermenge bei mehrdeutiger Menge von Identifizierungsfunktionen
+*/
+
+-- %- -------------------------------------------------------------------------
+-- %$Pair$
+
+FUN analyzePair: expr[partName]**expr[partName]**globSig**knowl**nat**nat ->
+                                                        cands**cands**nat**nat
+
+DEF analyzePair(e1,e2,sig,knowl,firstLocal,firstVar) ==
+  LET (c1,nextLocal,nextVar) == analyze(e1,sig,knowl,firstLocal,firstVar)
+      (c2,freeLocal,freeVar) == analyze(e2,sig,knowl,nextLocal,nextVar)
+  IN (c1,c2,freeLocal,freeVar)
+
+FUN substitutePair: expr[partName]**expr[partName]**cands**globSig**nat ->
+                                expr[name]**expr[name]**globSig**locSig**err
+
+DEF substitutePair(e1,e2,cands,sig,offset) ==
+  LET (c1,c2) == split(cands)
+      (newE1,interSig,lsig1,err1) == substitute(e1,c1,sig,offset)
+      (newE2,finalSig,lsig2,err2) == substitute(e2,c2,interSig,offset)
+  IN (newE1,newE2,finalSig,lsig1+lsig2,err1+err2)
+
+-- %- -------------------------------------------------------------------------
+-- %$Seq$
+
+FUN analyzeSeq: seq[expr[partName]]**globSig**knowl**nat**nat ->
+                                                        seq[cands]**nat**nat
+DEF analyzeSeq(<>[expr[partName]],sig,knowl,nextLocal,nextVar) ==
+  (<>,nextLocal,nextVar)
+DEF analyzeSeq(e1 ::[expr[partName]] eR,sig,knowl,firstLocal,firstVar) ==
+  LET (c1,nextLocal,nextVar) == analyze(e1,sig,knowl,firstLocal,firstVar)
+      (cR,freeLocal,freeVar) == analyzeSeq(eR,sig,knowl,nextLocal,nextVar)
+  IN (c1::cR,freeLocal,freeVar)
+
+FUN substituteSeq: seq[expr[partName]]**cands**globSig**nat ->
+                                        seq[expr[name]]**globSig**locSig**err
+DEF substituteSeq(exprs:seq[expr[partName]],cands,sig,offset) ==
+  substituteSeq(exprs,splitSeq(exprs#)(cands),sig,offset)
+
+FUN substituteSeq: seq[expr[partName]]**seq[cands]**globSig**nat ->
+                                        seq[expr[name]]**globSig**locSig**err
+DEF substituteSeq(<>[expr[partName]],<>,sig,offset) == (<>,sig,{},ok)
+DEF substituteSeq(e1 ::[expr[partName]] eR,c1::cR,sig,offset) ==
+  LET (newE1,sig1,lsig1,err1) == substitute(e1,c1,sig,offset)
+      (newER,newSig,lsigR,errR) == substituteSeq(eR,cR,sig1,offset)
+  IN (newE1::newER,newSig,lsig1+lsigR,err1+errR)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Seq of guards$
+FUN analyzeSeq: seq[guard[partName]]**globSig**knowl**nat**nat ->
+                                                        seq[cands]**nat**nat
+DEF analyzeSeq(<>[guard[partName]],sig,knowl,nextLocal,nextVar) ==
+  (<>,nextLocal,nextVar)
+DEF analyzeSeq(e1 ::[guard[partName]] eR,sig,knowl,firstLocal,firstVar) ==
+  LET (c1,nextLocal,nextVar) == analyze(e1,sig,knowl,firstLocal,firstVar)
+      (cR,freeLocal,freeVar) == analyzeSeq(eR,sig,knowl,nextLocal,nextVar)
+  IN (c1::cR,freeLocal,freeVar)
+
+FUN substituteSeq: seq[guard[partName]]**cands**globSig**nat ->
+                                        seq[guard[name]]**globSig**locSig**err
+DEF substituteSeq(exprs:seq[guard[partName]],cands,sig,offset) ==
+  substituteSeq(exprs,splitSeq(exprs#)(cands),sig,offset)
+
+FUN substituteSeq: seq[guard[partName]]**seq[cands]**globSig**nat ->
+                                        seq[guard[name]]**globSig**locSig**err
+DEF substituteSeq(<>[guard[partName]],<>,sig,offset) == (<>,sig,{},ok)
+DEF substituteSeq(e1 ::[guard[partName]] eR,c1::cR,sig,offset) ==
+  LET (newE1,sig1,lsig1,err1) == substitute(e1,c1,sig,offset)
+      (newER,newSig,lsigR,errR) == substituteSeq(eR,cR,sig1,offset)
+  IN (newE1::newER,newSig,lsig1+lsigR,err1+errR)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Seq of eqs$
+
+FUN analyzeSeq: seq[eq[partName]]**globSig**knowl**nat**nat ->
+                                seq[cands]**knowl**nat**nat**seq[rep]
+DEF analyzeSeq(<>,sig,knowl,nextLocal,nextVar) ==
+  (<>,knowl,nextLocal,nextVar,<>)
+DEF analyzeSeq(e1::eR,sig,knowl,firstLocal,firstVar) ==
+  LET (c1,extKnowl,nextLocal,nextVar,locals1) ==
+                                analyze(e1,sig,knowl,firstLocal,firstVar)
+      (cR,finalKnowl,freeLocal,freeVar,localsR) ==
+                                analyzeSeq(eR,sig,extKnowl,nextLocal,nextVar)
+  IN (c1::cR,finalKnowl,freeLocal,freeVar,locals1++localsR)
+
+FUN substituteSeq: seq[eq[partName]]**cands**globSig**nat ->
+                                        seq[eq[name]]**globSig**locSig**err
+DEF substituteSeq(exprs:seq[eq[partName]],cands,sig,offset) ==
+  substituteSeq(exprs,splitSeq(exprs#)(cands),sig,offset)
+
+FUN substituteSeq: seq[eq[partName]]**seq[cands]**globSig**nat ->
+                                        seq[eq[name]]**globSig**locSig**err
+DEF substituteSeq(<>[eq[partName]],<>,sig,offset) == (<>,sig,{},ok)
+DEF substituteSeq(e1::eR,c1::cR,sig,offset) ==
+  LET (newEs1,sig1,lsig1,err1) == substitute(e1,c1,sig,offset)
+      (newER,newSig,lsigR,errR) == substituteSeq(eR,cR,sig1,offset)
+  IN (newEs1++newER,newSig,lsig1+lsigR,err1+errR)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Seq of partial names$
+FUN analyzeSeq: seq[partName]**globSig**knowl**nat**nat ->
+                                                seq[cands]**knowl**nat**nat
+DEF analyzeSeq(<>,sig,knowl,nextLocal,nextVar) == (<>,knowl,nextLocal,nextVar)
+DEF analyzeSeq(e1::eR,sig,knowl,firstLocal,firstVar) ==
+  LET (c1,extKnowl,nextLocal,nextVar) ==
+                                analyze(e1,sig,knowl,firstLocal,firstVar)
+      (cR,finalKnowl,freeLocal,freeVar) ==
+                                analyzeSeq(eR,sig,extKnowl,nextLocal,nextVar)
+  IN (c1::cR,finalKnowl,freeLocal,freeVar)
+
+FUN substituteSeq: seq[partName]**cands**globSig**nat ->
+                                                seq[name]**globSig**locSig**err
+DEF substituteSeq(exprs:seq[partName],cands,sig,offset) ==
+  substituteSeq(exprs,splitSeq(exprs#)(cands),sig,offset)
+
+FUN substituteSeq: seq[partName]**seq[cands]**globSig**nat ->
+                                                seq[name]**globSig**locSig**err
+DEF substituteSeq(<>[partName],<>,sig,offset) == (<>,sig,{},ok)
+DEF substituteSeq(e1 ::[partName] eR,c1::cR,sig,offset) ==
+  LET (newE1,sig1,lsig1,err1) == substitute(e1,c1,sig,offset)
+      (newER,newSig,lsigR,errR) == substituteSeq(eR,cR,sig1,offset)
+  IN (newE1::newER,newSig,lsig1+lsigR,err1+errR)
+
+-- %- -------------------------------------------------------------------------
+-- %$Val$
+DEF analyze(val(pname,pos),sig,knowl,nextLocal,nextVar) ==
+  LET (idNames,errors,unusedVar) == matchingOp(pname,sig,knowl,nextVar)
+  IN IF errors ok? THEN (single(idNames,pos),nextLocal,unusedVar)
+                   ELSE (none(errors),nextLocal,unusedVar)
+     FI
+
+DEF substitute(val(pname,pos),cands,sig,offset) ==
+  LET (name,newSig,ambiguousErr) ==
+                                selectName(extract(sig)(cands),sig,offset,pos)
+  IN (val(name,pos),newSig,{},ambiguousErr)
+
+-- %- -  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Den$
+
+DEF analyze(den(rep,pos),sig,knowl,nextLocal,nextVar) ==
+  (empty(idFct(sort(denotation'AnalyzedGlobSig(sig)),empty)%,pos),nextLocal,nextVar)
+
+DEF substitute(den(rep,pos),cands,sig,offset) ==
+  (den(rep,pos),sig,{},ok)
+
+-- %- -  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Tuple$
+DEF analyze(tuple(<>,pos),sig,knowl,firstLocal,firstVar) ==
+  (empty(idFct(cart(<>),empty)%,pos),firstLocal,firstVar)
+
+DEF substitute(tuple(<>,pos),cands,sig,offset) ==
+  (tuple(<>,pos),sig,{},ok)
+
+DEF analyze(tuple(elems,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (candsS,freeLocal,nextVar) ==
+                                analyzeSeq(elems,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combineSeq(lazy)(sig,pos,nextVar)(combTuple)(candsS)
+  IN (newCands,freeLocal,freeVar)
+
+FUN combTuple: fct[name]**fct[name]**subst**nat
+               -> fct[name]**seq[subst]**nat**seq[reason]
+
+DEF combTuple(f1,f2,s,v) == (cart(f1::(f2%)),s%,v,<>)
+
+DEF substitute(tuple(es,pos),cands,sig,offset) ==
+  LET (newElems,newSig,newLSig,errors) ==
+                                substituteSeq(es,cands,sig,offset)
+  IN (tuple(flatElems(newElems),pos),newSig,newLSig,errors)
+
+FUN flatElems: seq[expr[name]] -> seq[expr[name]]
+
+DEF flatElems(Elems) ==
+  ((\\expr,exprS.IF expr tuple? THEN elems(expr)++exprS
+                                ELSE expr::exprS
+                 FI) / <>)(Elems)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Apply$
+DEF analyze(apply(fun,arg,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (funCands,argCands,freeLocal,nextVar) ==
+                        analyzePair(fun,arg,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combApply(sig))
+                                   (funCands,argCands)
+  IN (newCands,freeLocal,freeVar)
+
+FUN combApply: globSig
+               -> fct[name]**fct[name]**subst**nat
+               -> fct[name]**seq[subst]**nat**seq[reason]
+
+DEF combApply(sig)(funFct,argFct,subst,v) ==
+  LET resFct == var(v)
+      (newSubsts,free) == unify(sig)
+                               (funFct,funct(argFct,resFct),subst,succ(v))
+  IN IF newSubsts <>? THEN (resFct,subst%,succ(v),
+                            wronglyTypedApplOrInfix(funFct,argFct,subst)%)
+     IF newSubsts ::? THEN (resFct,newSubsts,free,<>)
+     FI
+
+DEF substitute(apply(fun,arg,pos),cands,sig,offset) ==
+  LET (newFun,newArg,newSig,newLSig,errors) ==
+                                substitutePair(fun,arg,cands,sig,offset)
+  IN (apply(newFun,newArg,pos),newSig,newLSig,errors)
+
+-- %--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Cases$
+DEF analyze(cases(guards,none(_),pos),sig,knowl,firstLocal,firstVar) ==
+  analyzeGuards(guards,pos,sig,knowl,firstLocal,firstVar)
+
+DEF substitute(cases(guards,none(p),pos),cands,sig,offset) ==
+  LET (newGuards,newSig,newLSig,errors) ==
+                                substituteGuards(guards,cands,sig,offset)
+  IN (cases(newGuards,none(p),pos),newSig,newLSig,errors)
+
+DEF analyze(cases(guards,else,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (guardsCands,elseCands,freeLocal,nextVar) ==
+        analyzePair(cases(guards,none(pos),pos),else,sig,knowl,firstLocal,firstVar)
+      combFct == \\guardsFct,elseFct,subst,var.
+                   LET (newSubsts,free) == unify(sig)
+                                                (guardsFct,elseFct,subst,var)
+                   IN IF newSubsts <>? THEN (guardsFct,subst%,var,
+                                             incompatibleElse(guardsFct,
+                                                              elseFct,subst)%)
+                      IF newSubsts ::? THEN (guardsFct,newSubsts,free,<>)
+                      FI
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combFct)
+                                   (guardsCands,elseCands)
+  IN (newCands,freeLocal,freeVar)
+
+DEF substitute(cases(gs,else,pos),cands,sig,offset) ==
+  LET (newGuards,newElse,newSig,newLSig,errors) ==
+                substitutePair(cases(gs,none(pos),pos),else,cands,sig,offset)
+  IN (cases(guards(newGuards),newElse,pos),newSig,newLSig,errors)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Lambda$
+
+DEF analyze(lambda(<>'Seq,body,pos),sig,knowl,firstLocal,firstVar) ==
+  LET varsCands == empty(idFct(cart(<>),empty)%,pos)
+      (bodyCands,freeLocal,nextVar) ==
+                        analyze(body,sig,knowl,firstLocal,firstVar)
+      combFct == \\varsFct,bodyFct,subst,var.
+                                        (funct(varsFct,bodyFct),subst%,var,<>)
+      (newCands,freeVar) == combine(eager)(sig,pos,nextVar)(combFct)
+                                   (varsCands,bodyCands)
+  IN (newCands,freeLocal,freeVar)
+
+DEF substitute(lambda(<>,body,pos),cands,sig,offset) ==
+  LET (varsCands,bodyCands) == split(cands)
+      (newBody,finalSig,lsig,bodyErrors) ==
+                        substitute(body,bodyCands,sig,offset)
+  IN (lambda(<>,newBody,pos),finalSig,lsig,bodyErrors)
+
+DEF analyze(lambda(vars,body,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (varsCands,extKnowl,nextLocal,nextVar,locals) ==
+                analyzeLocalDefs(vars,pos,sig,knowl,firstLocal,firstVar)
+      (varsCands2,typedKnowl,nextVar2) ==
+                setKnownFcts(sig,ide*vars,varsCands,extKnowl,nextVar)
+      (bodyCands,freeLocal,interVar) ==
+                analyze(body,sig,typedKnowl,nextLocal,nextVar2)
+      combFct == \\varsFct,bodyFct,subst,var.
+                                        (funct(varsFct,bodyFct),subst%,var,<>)
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
+                                   (varsCands2,bodyCands)
+      (finalCands,ultimateFreeVar) == hide(sig,freeVar)(locals)(newCands)
+  IN (finalCands,freeLocal,ultimateFreeVar)
+
+DEF substitute(lambda(vars,body,pos),cands,sig,offset) ==
+  LET (varsCands,bodyCands) == split(cands)
+      (newVars,interSig,lsig1,varsErrors) ==
+                        substituteLocalDefs(vars,varsCands,sig,offset)
+      (newBody,finalSig,lsig2,bodyErrors) ==
+                        substitute(body,bodyCands,interSig,offset)
+  IN (lambda(newVars,newBody,pos),finalSig,lsig1+lsig2,varsErrors+bodyErrors)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Block$
+
+DEF analyze(block(defs,body,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (defsCands,extKnowl,nextLocal,nextVar,locals) ==
+                        analyzeDefs(defs,pos,sig,knowl,firstLocal,firstVar)
+      (bodyCands,freeLocal,interVar) ==
+                        analyze(body,sig,extKnowl,nextLocal,nextVar)
+      combFct == \\defsFct,bodyFct,subst,var.(bodyFct,subst%,var,<>)
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
+                                   (defsCands,bodyCands)
+      (finalCands,ultimateFreeVar) == hide(sig,freeVar)(locals)(newCands)
+  IN (finalCands,freeLocal,ultimateFreeVar)
+
+DEF substitute(block(defs,body,pos),cands,sig,offset) ==
+  LET (defsCands,bodyCands) == split(cands)
+      (newDefs,interSig,lsig1,defsErrors) ==
+                                substituteDefs(defs,defsCands,sig,offset)
+      (newBody,finalSig,lsig2,bodyErrors) ==
+                                substitute(body,bodyCands,interSig,offset)
+  IN (block(newDefs,newBody,pos),finalSig,lsig1+lsig2,defsErrors+bodyErrors)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Typed Expressions$
+DEF analyze(typed(expr,fct,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (exprCands,freeLocal,nextVar) ==
+                                analyze(expr,sig,knowl,firstLocal,firstVar)
+      (newCands,freeVar) == analyzeTyping(fct,pos,sig,exprCands,nextVar)
+  IN (newCands,freeLocal,freeVar)
+
+DEF substitute(typed(expr,fct,pos),cands,sig,offset) ==
+  LET (exprCands,fctCands) == split(cands)
+  IN substitute(expr,exprCands,sig,offset)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Guards (several)$
+FUN analyzeGuards: seq[guard[partName]]**pos**globSig**knowl**nat**nat ->
+                                                                cands**nat**nat
+
+DEF analyzeGuards(guards,pos,sig,knowl,firstLocal,firstVar) ==
+  LET (candsS,freeLocal,nextVar) ==
+                        analyzeSeq(guards,sig,knowl,firstLocal,firstVar)
+      combFct == \\f1,f2,s,v.
+                   LET (newSubsts,free) == unify(sig)(f1,f2,s,v)
+                   IN IF newSubsts <>? THEN (f1,s%,v,
+                                             incompatibleGuards(f1,f2,s)%)
+                      IF newSubsts ::? THEN (f1,newSubsts,free,<>)
+                      FI
+      (newCands,freeVar) == combineSeq(eager)(sig,pos,nextVar)(combFct)(candsS)
+  IN (newCands,freeLocal,freeVar)
+
+FUN substituteGuards: seq[guard[partName]]**cands**globSig**nat ->
+                                        seq[guard[name]]**globSig**locSig**err
+
+DEF substituteGuards(guards,cands,sig,offset) ==
+  substituteSeq(guards,cands,sig,offset)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$$Guards$
+FUN analyze: guard[partName]**globSig**knowl**nat**nat -> cands**nat**nat
+
+DEF analyze(guard(if,then,pos),sig,knowl,firstLocal,firstVar) ==
+  LET (ifCands,thenCands,freeLocal,nextVar) ==
+                        analyzePair(if,then,sig,knowl,firstLocal,firstVar)
+      boolCands == empty(idFct(sort(bool'AnalyzedGlobSig(sig)),empty)%,pos)
+      combFct1 == \\ifFct,boolFct,subst,var.
+                   LET (newSubsts,free) == unify(sig)(ifFct,boolFct,subst,var)
+                   IN IF newSubsts <>? THEN (boolFct,subst%,var,
+                                             wronglyTypedCondition(ifFct,
+                                                                   subst)%)
+                      IF newSubsts ::? THEN (boolFct,newSubsts,free,<>)
+                      FI
+      (interCands,interVar) == combine(eager)(sig,pos,nextVar)(combFct1)
+                                      (ifCands,boolCands)
+      combFct2 == \\ifFct,thenFct,subst,var.(thenFct,subst%,var,<>)
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combFct2)
+                                   (interCands,thenCands)
+  IN (newCands,freeLocal,freeVar)
+
+FUN substitute: guard[partName]**cands**globSig**nat ->
+                                        guard[name]**globSig**locSig**err
+
+DEF substitute(guard(if,then,pos),cands,sig,offset) ==
+  LET (interCands,thenCands) == split(cands)
+      (ifCands,boolCands) == split(interCands)
+      (newIf,interSig,ifLSig,ifErrors) == substitute(if,ifCands,sig,offset)
+      (newThen,newSig,thenLSig,thenErrors) ==
+                                substitute(then,thenCands,interSig,offset)
+  IN (guard(newIf,newThen,pos),newSig,ifLSig+thenLSig,ifErrors+thenErrors)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Definitions (several)$
+FUN analyzeDefs: seq[eq[partName]]**pos**globSig**knowl**nat**nat ->
+                                        cands**knowl**nat**nat**seq[rep]
+
+DEF analyzeDefs(defs,pos,sig,knowl,firstLocal,firstVar) ==
+  LET (candsS,extKnowl,freeLocal,nextVar,locals) ==
+                                analyzeSeq(defs,sig,knowl,firstLocal,firstVar)
+      combFct == \\f1,f2,s,v.(f1,s%,v,<>)
+      (newCands,freeVar) == combineSeq(lazy)(sig,pos,nextVar)(combFct)(candsS)
+  IN (newCands,extKnowl,freeLocal,freeVar,locals)
+
+FUN substituteDefs: seq[eq[partName]]**cands**globSig**nat ->
+                                        seq[eq[name]]**globSig**locSig**err
+
+DEF substituteDefs(defs,cands,sig,offset) ==
+  substituteSeq(defs,cands,sig,offset)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Definitons$
+FUN analyze: eq[partName]**globSig**knowl**nat**nat ->
+                                        cands**knowl**nat**nat**seq[rep]
+
+DEF analyze(eq(left,right,pos),sig,knowl,firstLocal,firstVar) ==
+  LET leftPartNames == IF left tuple? THEN object*elems(left)
+                       IF left val?   THEN object(left)%
+                       FI
+      (leftCands,extKnowl,nextLocal,nextVar,locals) ==
+        analyzeLocalDefs(leftPartNames,pos,sig,knowl,firstLocal,firstVar)
+      (rightCands,freeLocal,interVar) ==
+                                analyze(right,sig,extKnowl,nextLocal,nextVar)
+      combFct == \\leftFct,rightFct,subst,var.
+                   LET (newSubsts,free) == unify(sig)
+                                                (leftFct,rightFct,subst,var)
+                   IN IF newSubsts <>? THEN (leftFct,subst%,var,
+                                             wronglyTypedEquation(leftFct,
+                                                                  rightFct,
+                                                                  subst)%)
+                      IF newSubsts ::? THEN (leftFct,newSubsts,free,<>)
+                                            -- must deliver a functionality
+                                            -- that can be unified with var
+                                            -- (because of lazy candidates)
+                      FI
+      (newCands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
+                                   (leftCands,rightCands)
+      (newCands2,typedKnowl,freeVar2) ==
+                setKnownFcts(sig,ide*leftPartNames,newCands,extKnowl,freeVar)
+  IN (newCands2,typedKnowl,freeLocal,freeVar2,locals)
+
+FUN substitute: eq[partName]**cands**globSig**nat ->
+                                        seq[eq[name]]**globSig**locSig**err
+
+DEF substitute(eq(left,right,p),cands,sig,offset) ==
+  LET (leftCands,rightCands) == split(cands)
+      leftPartNames == IF left tuple? THEN object*elems(left)
+                       IF left val?   THEN object(left)%
+                       FI
+      -- generated identifiers are expected to be wildcards
+      unusedWarn == IF generated? forall? (ide * leftPartNames) THEN
+                                               err(warning,"unused equation",p)
+                    ELSE ok
+                    FI
+      (leftNames,interSig,leftLSig,leftErrors) ==
+                        substituteLocalDefs(leftPartNames,leftCands,sig,offset)
+      (newRight,finalSig,rightLSig,rightErrors) ==
+                        substitute(right,rightCands,interSig,offset)
+      lsig == leftLSig+rightLSig
+      errors == leftErrors+rightErrors
+      toVal  == \\name.val(name,pos(left))
+      toExpr == \\names.IF (names#)=1 THEN toVal(ft(names))
+                        IF (names#)>1 THEN tuple(toVal*names,pos(left))
+                        FI
+  IN (eq(toExpr(leftNames),newRight,p)%,finalSig,lsig,unusedWarn+errors)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+-- %$Local Definitions$
+FUN analyzeLocalDefs: seq[partName]**pos**globSig**knowl**nat**nat ->
+                                        cands**knowl**nat**nat**seq[rep]
+
+DEF analyzeLocalDefs(partNameS,pos,sig,knowl,firstLocal,firstVar) ==
+  LET (candsS,extKnowl,freeLocal,nextVar) ==
+                        analyzeSeq(partNameS,sig,knowl,firstLocal,firstVar)
+      combFct == \\f1,f2,s,v.(cart(f1::(f2%)),s%,v,<>)
+      (newCands,freeVar) == combineSeq(eager)(sig,pos,nextVar)(combFct)(candsS)
+  IN (newCands,extKnowl,freeLocal,freeVar,ide*partNameS)
+
+FUN substituteLocalDefs: seq[partName]**cands**globSig**nat ->
+                                                seq[name]**globSig**locSig**err
+
+DEF substituteLocalDefs(partNames,cands,sig,offset) ==
+  substituteSeq(partNames,cands,sig,offset)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN analyze: partName**globSig**knowl**nat**nat -> cands**knowl**nat**nat
+
+DEF analyze(pname,sig,knowl,firstLocal,firstVar) ==
+  LET (idNames,extKnowl,errors,unusedLocal,unusedVar) ==
+                        localNameDef(pname,sig,knowl,firstLocal,firstVar)
+  IN IF errors ok? THEN (single(idNames,pos(pname)),extKnowl,
+                         unusedLocal,unusedVar)
+                   ELSE (none(errors),extKnowl,unusedLocal,unusedVar)
+     FI
+
+FUN substitute: partName**cands**globSig**nat -> name**globSig**locSig**err
+
+DEF substitute(pname,cands,sig,offset) ==
+  selectDeclaredName(extract(sig)(cands),sig,offset,pos(pname))
+
+-- %- -------------------------------------------------------------------------
+-- %$Hilfsfunktionen$
+FUN setKnownFcts: globSig**seq[rep]**cands**knowl**nat -> cands**knowl**nat
+
+DEF setKnownFcts(sig,reps,cands,knowl,firstVar) ==
+  LET (candsNfree,repsNfctsS) ==
+         *'SeqMapEnv(\\cNf,r.
+           LET (thisCands,thisVar) == (1st(cNf),2nd(cNf))
+               (fcts,nextCands,nextVar) ==
+                        extractLocalFcts(sig,thisVar)(thisCands)(r)
+           IN (nextCands & nextVar,r & fcts)
+           , cands & firstVar, reps)
+      newKnowl == ((\\repNfcts,kn.
+                    LET (rep,fcts) == (1st(repNfcts),2nd(repNfcts))
+                    IN IF fcts <>? THEN kn
+                       IF fcts ::? THEN setFcts(rep,fcts,kn)
+                       FI) \ knowl)(repsNfctsS)
+  IN (1st(candsNfree),newKnowl,2nd(candsNfree))
+
+-- %- -------------------------------------------------------------------------
+
+FUN analyzeTyping: fct[partName]**pos**globSig**cands**nat -> cands**nat
+
+DEF analyzeTyping(fct,pos,sig,exprCands,firstVar) ==
+  LET (fctCands,nextVar) == analyzeFct(fct,sig,pos,firstVar)
+      combFct == \\exprFct,fctFct,subst,var.
+                   LET (newSubsts,free) == unify(sig)(exprFct,fctFct,subst,var)
+                   IN IF newSubsts <>? THEN (exprFct,subst%,var,
+                                             wrongTypingOfTupleOrCases(exprFct,
+                                                                       fctFct,
+                                                                       subst)%)
+                      IF newSubsts ::? THEN (exprFct,newSubsts,free,<>)
+                      FI
+  IN combine(eager)(sig,pos,nextVar)(combFct)(exprCands,fctCands)
+
+--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN analyzeFct: fct[partName]**globSig**pos**nat -> cands**nat
+
+DEF analyzeFct(fct,sig,pos,firstVar) ==
+  LET (fcts,errors,unusedVar) == matchingFcts(fct,sig,firstVar)
+  IN IF errors ok? THEN (empty(fcts,pos),unusedVar)
+                   ELSE (none(errors),unusedVar)
+     FI
+
+-- %- ========================================================================
+-- %$Mixfix-Analyse$
+/* %extension for mix syntax variant, comes only in connection with -
+    zlassoc, -zrassoc or -zinfix */
+
+FUN analyze: expr[partName]**globSig**knowl**nat**nat -> cands**nat**nat
+-- %see above
+
+DEF analyze(mix(S,P),Sig,Knowl,FirstLocal,FirstVar) ==
+  LET (CandsS,NextLocal,NextVar) ==
+                analyzeSeq(1st*S,Sig,Knowl,FirstLocal,FirstVar)
+   IN IF exist?(none?,CandsS) THEN
+       LET (NewCands,FreeVar) ==
+               combineSeq(eager)(Sig,P,NextVar)(combTuple)(none? | CandsS)
+       IN (NewCands,NextLocal,FreeVar)
+      ELSE analyzeMixS(true,S,CandsS,P,Sig,Knowl,NextLocal,NextVar)
+      FI
+
+FUN analyzeMixS: bool**seq[pair[expr[partName],set]]**seq[cands]**pos
+                 **globSig**knowl**nat**nat
+                 -> cands**nat**nat
+-- %ermittelt die Kandidatenmenge fuer alle moeglichen Infix-Ausdruecke
+
+-- %@zoindex topDownInfixAna
+DEF analyzeMixS(top?,ExprBitsetS,CandsS,P,Sig,Knowl,FirstLocal,FirstVar) ==
+        IF infix? and ~(FIELD?[bool]("-ztopDownInfixAna")) THEN
+           LET (NewCands,FreeVar) ==
+                        analyzeMixExpr(ExprBitsetS,CandsS,P,Sig,FirstVar)
+           IN (NewCands,FirstLocal,FreeVar)
+        ELSE analyzeMixSOld
+                (top?,ExprBitsetS,CandsS,P,Sig,Knowl,FirstLocal,FirstVar)
+        FI
+
+FUN analyzeMixExpr: seq[pair[expr[partName],set]]**seq[cands]
+                    **pos**globSig**nat
+                    -> cands**nat
+
+DEF analyzeMixExpr(S,CandsS,P,Sig,NextVar) ==
+           LET OpInfos == mkArray(initOpInfos(1st*S,CandsS))
+               NoOps == #(OpInfos)
+               NewOpInfosAndVar ==
+                completeOpInfos(Sig,P)(0,NoOps-1)(OpInfos&NextVar)
+               (NewOpInfos,FreeVar) ==
+                        (1st(NewOpInfosAndVar),2nd(NewOpInfosAndVar))
+               NewCands == exprs(NewOpInfos!0)!NoOps
+           IN (NewCands,FreeVar)
+
+FUN mkArray: seq[opInfo] -> array[opInfo]
+
+DEF mkArray(S) == init(#(S),\\N.S!N)
+
+DATA opInfo == op (pos:   pos,
+                   self:  cands,
+                   left:  cands,
+                   right: cands,
+                   exprs: map[nat,<,cands])
+
+FUN initOpInfos: seq[expr[partName]]**seq[cands] -> seq[opInfo]
+
+DEF initOpInfos(_ :: <>,_ :: <>) == <>
+
+DEF initOpInfos(_        ::opExpr ::rightExpr ::restExprS,
+                leftCands::opCands::rightCands::restCandsS) ==
+  op(pos(opExpr),opCands,leftCands,rightCands,{}) ::
+  initOpInfos(rightExpr::restExprS,rightCands::restCandsS)
+
+FUN completeOpInfos: globSig**pos -> nat**nat ->
+                        pair[array[opInfo],nat] -> pair[array[opInfo],nat]
+/* % vervollstaendigt OpInfos
+ Argumente:
+@table @code
+@item Sig:
+globale Signatur
+@item Pos:
+Position des gesamten Mixfix-Ausdrucks
+@item SizeDone: 
+ Groesse der bereits in den OpInfos enthaltenen analysierten
+              Teilausdruecke (als Zahl der enthaltenen Operatoren)
+@item SizesToDo: 
+Zahl der @emph{NACH} der naechsten Groesse noch fehlenden Groessen
+@item OpInfosAndVar: 
+Paar aus unvollstaendigen OpInfos und
+              in den Kandidatenmengen der OpInfos unbenutzter Variablen
+@end table
+*/
+
+DEF completeOpInfos(Sig,Pos)(SizeDone,0)(OpInfosAndVar) ==
+  completePlacedMix(Sig,Pos)(succ(SizeDone),true)(0, OpInfosAndVar)
+
+DEF completeOpInfos(Sig,Pos)(SizeDone,succ(NextSizesToDo))(OpInfosAndVar) ==
+  completeOpInfos(Sig,Pos)(succ(SizeDone),NextSizesToDo)
+  ((completePlacedMix(Sig,Pos)(succ(SizeDone),false) / (OpInfosAndVar))
+        ((0..succ(NextSizesToDo))(\\N.N)))
+
+FUN completePlacedMix: globSig**pos -> nat**bool ->
+                        nat**pair[array[opInfo],nat] -> pair[array[opInfo],nat]
+/* % vervollstaendigt OpInfos um die Kandidatenmenge eines Ausdrucks bestimmter
+  Groesse und Plazierung, aber beliebiger Struktur
+ Argumente:
+@table @code
+@item Sig:
+       globale Signatur
+@item Pos: 
+      Position des gesamten Mixfix-Ausdrucks
+@item Size:
+      Groesse des Ausdrucks
+@item Top?:
+      Angabe, ob es sich um den gesamten Infix-Ausdruck handelt
+@item LeftOp:
+    Index des linkestens Operators im Ausdruck
+@item OpInfos & FirstVar: 
+      Paar aus unvollstaendigen OpInfos und
+              in den Kandidatenmengen der OpInfos unbenutzter Variablen
+@end table
+*/
+DEF completePlacedMix(Sig,Pos)(Size,Top?)(LeftOp,OpInfos&FirstVar) ==
+  LET TopOps == (0 .. (Size-1))(\\N.N)
+      CandsAndVarS == analyzeMix(Sig)(Size,Top?)(LeftOp)(OpInfos,FirstVar)
+                        * TopOps
+      (CandsS,VarS) == unzip(\\p.(1st(p),2nd(p)))(CandsAndVarS)
+      FreeVar == (max \ 0)(VarS)
+      Cands == bestMix(better(Sig,FreeVar),splitTuple)(uniteMix(CandsS,Pos))
+  IN updateOpInfos(OpInfos,LeftOp,Size,Cands) & FreeVar
+
+FUN analyzeMix: globSig -> nat**bool -> nat -> array[opInfo]**nat ->
+                        nat -> pair[cands,nat]
+/* % ermittelt Kandidatenmenge (und unbenutzte Variable) fuer einen
+     Ausdruck mit
+ gegebener Groesse, Plazierung und gegebenem oberstem Operator (und
+ ansonsten freier Struktur).
+ Argumente:
+@table
+@item Sig:
+       globale Signatur
+@item Size:
+      Groesse des Ausdrucks
+@item Top?:
+      Angabe, ob es sich um den gesamten Infix-Ausdruck handelt
+@item LeftOp:
+    Index des linkestens Operators im Ausdruck
+@item OpInfos:
+   unvollstaendige OpInfos
+@item FirstVar:
+  in den Kandidatenmengen der OpInfos unbenutzte Variablen
+@item TopOffset:
+ Offset des obersten Operators im Ausdruck relativ zum LeftOp,
+              also Zahl der Operatoren links vom obersten Operator
+@end table
+*/
+
+DEF analyzeMix(Sig)(Size,Top?)(LeftOp)(OpInfos,FirstVar)(TopOffset) ==
+  LET LeftSize  == TopOffset
+      RightSize == (Size-1)-LeftSize
+      TopOp   == LeftOp+TopOffset
+      RightOp == TopOp+1
+      LeftCands  == IF LeftSize = 0 THEN left(OpInfos!TopOp)
+                    ELSE exprs(OpInfos!LeftOp)!LeftSize
+                    FI
+      OpCands    == self(OpInfos!TopOp)
+      RightCands == IF RightSize = 0 THEN right(OpInfos!TopOp)
+                    ELSE exprs(OpInfos!RightOp)!RightSize
+                    FI
+      OpPos      == pos(OpInfos!TopOp)
+      OpNo       == (TopOffset*2)+1
+  IN &(combineMix(Top?)(lazy)(Sig,OpPos,FirstVar)
+                (combApply(Sig),combTuple)
+                (OpCands,LeftCands,RightCands,OpNo))
+
+FUN updateOpInfos: array[opInfo]**nat**nat**cands -> array[opInfo]
+
+DEF updateOpInfos(OpInfos,Op,Size,Cands) ==
+  (Op,updateOpInfo(OpInfos!Op,Size,Cands)) upd OpInfos
+
+FUN updateOpInfo: opInfo**nat**cands -> opInfo
+
+DEF updateOpInfo(op(Pos,Self,Left,Right,Exprs),Size,Cands) ==
+  op(Pos,Self,Left,Right,(Size,Cands) def Exprs)
+
+-- %--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN analyzeMixSOld: bool**seq[pair[expr[partName],set]]**seq[cands]**pos
+                 **globSig**knowl**nat**nat
+                 -> cands**nat**nat
+-- %ermittelt die Kandidatenmenge fuer alle moeglichen Infix-Ausdruecke
+
+DEF analyzeMixSOld(top?,ExprBitsetS,CandsS,P,Sig,Knowl,FirstLocal,FirstVar) ==
+  LET OpNoS == chooseOps(ExprBitsetS,CandsS)
+      (MixCandsS,FreeLocal,FreeVar) ==
+                analyzeMixSRed(top?,ExprBitsetS,CandsS,OpNoS,
+                               Sig,Knowl,FirstLocal,FirstVar)
+  IN (bestMix(better(Sig,FreeVar),splitTuple)(uniteMix(MixCandsS,P)),
+      FreeLocal,FreeVar)
+
+FUN analyzeMixSRed: bool**seq[pair[expr[partName],set]]**seq[cands]**seq[nat]
+                    **globSig**knowl**nat**nat
+                    -> seq[cands]**nat**nat
+
+DEF analyzeMixSRed(top?,ExprBitsetS,CandsS,<>,Sig,Knowl,FirstLocal,FirstVar) ==
+  (<>,FirstLocal,FirstVar)
+
+DEF analyzeMixSRed(top?,ExprBitsetS,CandsS,OpNo::S,Sig,Knowl,FirstLocal,FirstVar) ==
+  LET (ThisCands,ThisLocal,ThisVar) ==
+                analyzeMix(top?,ExprBitsetS,CandsS,OpNo,
+                           Sig,Knowl,FirstLocal,FirstVar)
+      (OtherCandsS,MaxLocal,MaxVar) ==
+                analyzeMixSRed(top?,ExprBitsetS,CandsS,S,
+                               Sig,Knowl,FirstLocal,FirstVar)
+  IN (ThisCands::OtherCandsS,
+      max(ThisLocal,MaxLocal),
+      max(ThisVar,MaxVar))
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN chooseOps: seq[pair[expr[partName],set]]**seq[cands] -> seq[nat]
+/* waehlt die Positionen moeglicher (top-level) Operatoren
+ -zinfix: jeder zweite Position
+ sonst die zweite (-zrassoc) bzw. die vorletzte (-zlassoc) */
+
+DEF chooseOps(S,_) ==
+  IF infix? THEN (\\N.pred(N*2)) * (1..(#(S)/2))(\\n.n)
+  OTHERWISE
+  IF rassoc? THEN %(1)
+  IF lassoc? THEN %(#(S)-2)
+  FI
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN analyzeMix: bool**seq[pair[expr[partName],set]]**seq[cands]**nat
+                 **globSig**knowl**nat**nat
+                 -> cands**nat**nat
+-- %ermittelt die Kandidatenmenge fuer einen moeglichen Infix-Ausdruck
+
+DEF analyzeMix(top?,ExprBitsetS,CandsS,OpNo,Sig,Knowl,FirstLocal,FirstVar) ==
+  LET (PreEBS,RtEBS) == split(OpNo,ExprBitsetS)
+      OpEB           == ft(RtEBS)
+      PostEBS        == rt(RtEBS)
+      OpPos          == pos(1st(OpEB))
+      (PreCS, RtCS)  == split(OpNo,CandsS)
+      OpC            == ft(RtCS)
+      PostCS         == rt(RtCS)
+      (PreCands,PreLocal,PreVar) ==
+                IF OpNo=1 THEN (ft(PreCS),FirstLocal,FirstVar)
+                ELSE analyzeMixSOld(false,PreEBS,PreCS,OpPos,
+                                 Sig,Knowl,FirstLocal,FirstVar)
+                FI
+      (PostCands,PostLocal,PostVar) ==
+                IF #(PostCS)=1 THEN (ft(PostCS),PreLocal,PreVar)
+                ELSE analyzeMixSOld(false,PostEBS,PostCS,OpPos,Sig,Knowl,PreLocal,PreVar)
+                FI
+      (NewCands,FreeVar) == combineMix(top?)(lazy)
+                                      (Sig,OpPos,PostVar)
+                                      (combApply(Sig),combTuple)
+                                      (OpC,PreCands,PostCands,OpNo)
+  IN (NewCands,PostLocal,FreeVar)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN splitTuple: fct[name] -> fct[name]**fct[name]
+
+DEF splitTuple(cart(f1::(f2:: <>))) == (f1,f2)
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+/* %Klammerung testen: Aufruf mit@*
+@code{better(Sig,Var)(currentPrio,Arg1,Op1,Arg2,Op2,Arg3,Subst)}@*
+@table @code
+@item Sig
+aktuelle GlobSig
+@item Var
+Index der ersten freien Typvariablen; wird nur temprorär benutzt
+@item currentPrio
+aktuelle Klammerung des folgenden Ausdrucks
+@item Arg1 Op1 Arg2 Op2 Arg3
+zu testender Infixausdruck, in Argumente und Operationen zerlegt
+@item Subst
+aktuelle Substitution
+@end table
+
+Verfahren: zuerst wird die currentPrio entgegengesetzte Klammerung auf
+Typkorrektheit getestet. Falls nicht korrekt, ist Resultat
+@code{currentPrio, none}. Andernfalls wird die Tabelle in der
+GlobSig zu Rate gezogen.
+*/
+
+FUN better: globSig**nat
+            -> prio**fct[name]**name**fct[name]**name**fct[name]**subst
+            -> prio**rule
+/* %
+ hier koennten auch Prioritaeten zwischen Op1 und Op2
+ sowie (fuer gleiche Op1 und Op2) spezielle Assoziativitaetsangaben
+ beruecksichtigt werden.
+
+ liefert, welche Kombination (left/right/both) moeglich sind
+ sowie den Grund (none/assumedLAssoc/assumedRAssoc)
+*/
+-- %@zoindex debugPrio
+DEF better(Sig,Var)(left,Arg1,Op1,Arg2,Op2,Arg3,Subst) ==
+  IF infix? THEN
+     IF lassoc? or rassoc? ANDIF global?(Op1) ANDIF global?(Op2) THEN
+        LET Op2Fct == fct(Sig,Op2)
+            (Op2SubstS,Op2Var) == unify(Sig)
+                                       (Op2Fct,funct(cart(Arg2%Arg3),var(Var)),
+                                        Subst,succ(Var))
+        IN IF Op2SubstS <>? THEN (left,PRINT(FIELD?[bool]("-zdebugPrio"),
+                                           "better-left-1",
+                                           none))
+           IF Op2SubstS ::? THEN
+              LET Op1Fct == fct(Sig,Op1)
+                  (Op1SubstS,Op1Var) == unify(Sig)
+                                             (Op1Fct,
+                                              funct(cart(Arg1%var(Var)),
+                                                    var(Op2Var)),
+                                              Op2SubstS,succ(Op2Var))
+              IN IF Op1SubstS <>? THEN (left,PRINT(FIELD?[bool]("-zdebugPrio"),
+                                           "better-left-2",
+                                           none))
+                 IF Op1SubstS ::? THEN
+                   LET (Op1a,_)  == apply(Subst,Op1)
+                       (Op2a,_)  == apply(Subst,Op2)
+                   IN
+                   prio(Sig)(Op1a, Op2a, prioTab(Sig))
+
+/* %-
+                    IF lassoc? THEN
+                       LET (Op1a,_)  == apply(Subst,Op1)
+                           (Op2a,_)  == apply(Subst,Op2)
+                       IN IF eq(Sig)(Op1a,Op2a) THEN (left,assumedLAssoc)
+                          ELSE (both,none)
+                          FI
+                    IF rassoc? THEN
+                       LET (Op1a,_)  == apply(Subst,Op1)
+                           (Op2a,_) == apply(Subst,Op2)
+                       IN IF eq(Sig)(Op1a,Op2a) THEN (right,assumedRAssoc)
+                          ELSE (both,none)
+                          FI
+                    FI
+*/
+                 FI
+           FI
+     ELSE (both,none) -- there are no other precedences than typing
+                      -- which is already done by analyzeMix
+     FI
+  OTHERWISE
+  IF lassoc? THEN (left,assumedLAssoc)
+  IF rassoc? THEN (right,assumedRAssoc)
+  FI
+
+-- %@zoindex debugPrio
+DEF better(Sig,Var)(right,Arg1,Op1,Arg2,Op2,Arg3,Subst) ==
+  IF infix? THEN
+     IF lassoc? or rassoc? ANDIF global?(Op1) ANDIF global?(Op2) THEN
+     LET Op1Fct == fct(Sig,Op1)
+         (Op1SubstS,Op1Var) == unify(Sig)
+                                    (Op1Fct,funct(cart(Arg1%Arg2),var(Var)),
+                                     Subst,succ(Var))
+     IN IF Op1SubstS <>? THEN (right,PRINT(FIELD?[bool]("-zdebugPrio"),
+                                           "better-right-1",
+                                           none))
+        IF Op1SubstS ::? THEN
+           LET Op2Fct == fct(Sig,Op2)
+               (Op2SubstS,Op2Var) == unify(Sig)
+                                          (Op2Fct,
+                                           funct(cart(var(Var)%Arg3),
+                                                 var(Op1Var)),
+                                           Op1SubstS,succ(Op1Var))
+           IN IF Op2SubstS <>? THEN (right,PRINT(FIELD?[bool]("-zdebugPrio"),
+                                           "better-right-2",
+                                           none))
+              IF Op2SubstS ::? THEN
+                LET (Op1a,_)  == apply(Subst,Op1)
+                    (Op2a,_)  == apply(Subst,Op2)
+                IN 
+                prio(Sig)(Op1a, Op2a, prioTab(Sig))
+/* %-
+                 IF lassoc? THEN
+                    LET (Op1a,_)  == apply(Subst,Op1)
+                        (Op2a,_)  == apply(Subst,Op2)
+                    IN IF eq(Sig)(Op1a,Op2a) THEN (left,assumedLAssoc)
+                       ELSE (both,none)
+                       FI
+                 IF rassoc? THEN
+                    LET (Op1a,_)  == apply(Subst,Op1)
+                        (Op2a,_)  == apply(Subst,Op2)
+                    IN IF eq(Sig)(Op1a,Op2a) THEN (right,assumedRAssoc)
+                       ELSE (both,none)
+                       FI
+                 ELSE (both,none)
+                 FI
+*/
+              FI
+        FI
+     ELSE (both,none) -- there are no other precedences than typing
+                      -- which is already done by analyzeMix
+     FI
+  OTHERWISE
+  IF lassoc? THEN (left,assumedLAssoc)
+  IF rassoc? THEN (right,assumedRAssoc)
+  FI
+
+FUN eq: globSig -> name**name -> bool
+-- sollte aus globSig kommen! (Gibt's fast identisch in FunDefAnalysis!)
+
+DEF eq(sig)(var(id1),var(id2)) == id1=id2
+DEF eq(sig)(var(id1),name2) == false
+DEF eq(sig)(name1,var(id2)) == false
+DEF eq(sig)(name1,name2) ==
+  IF eqBase(name1,name2) THEN
+    IF name1 internal? THEN true
+    ELSE eq?(eq(sig))(origInst(sig,name1),origInst(sig,name2))
+    FI
+  ELSE false
+  FI
+
+-- %- -------------------------------------------------------------------------
+
+FUN substitute: expr[partName]**cands**globSig**nat ->
+                                        expr[name]**globSig**locSig**err
+-- see above
+
+DEF substitute(mix(S,P),cands,sig,offset) ==
+  substituteMix(substitute)(S,P,cands,sig,offset)
+
+FUN substituteMix: (expr[partName]**cands**globSig**nat
+                    ->expr[name]**globSig**locSig**err)
+                   -> seq[pair[expr[partName],set]]**pos**cands**globSig**nat
+                   -> expr[name]**globSig**locSig**err
+
+DEF substituteMix(Substitute)(S,P,cands,sig,offset) ==
+  LET freeVar == 1000000 -- should be argument,
+                         -- using resonable large number instead
+      (opCands,preCands,postCands,opNoS,rule) ==
+                        unmix(better(sig,freeVar),splitTuple)(cands)
+  IN IF #(opNoS)=1 THEN
+        LET opNo == ft(opNoS)
+            (preEBS,rtEBS) == split(opNo,S)
+            opEB           == ft(rtEBS)
+            postEBS        == rt(rtEBS)
+            preNoMix       == opNo=1
+            postNoMix      == #(postEBS)=1
+            (newPre,preSig,preLSig,preErr) ==
+                IF preNoMix THEN Substitute(1st(ft(preEBS)),preCands,sig,offset)
+                ELSE substituteMix(Substitute)(preEBS,P,preCands,sig,offset)
+                FI
+            (newOp,opSig,opLSig,opErr) ==
+                Substitute(1st(opEB),opCands,preSig,offset)
+            (newPost,postSig,postLSig,postErr) ==
+                IF postNoMix THEN
+                   Substitute(1st(ft(postEBS)),postCands,opSig,offset)
+                ELSE substituteMix(Substitute)(postEBS,P,postCands,opSig,offset)
+                FI
+            newApply == apply(newOp,
+                              tuple(flatElems(newPre%newPost),pos(newPre)),
+                              pos(newOp))
+            newErr == preErr+(opErr+postErr)
+            lrAssocErr == IF infix? or ~(newErr ok?) THEN ok
+                          OTHERWISE
+                          IF lassoc? and ~(preNoMix) THEN
+                             LET thisOp == object(newOp)
+                                 otherOp == object(funct(newPre))
+                             IN IF eq(postSig)(thisOp,otherOp) THEN ok
+                                ELSE differentOperators(postSig,P,
+                                                        thisOp,otherOp)
+                                FI
+                          IF rassoc? and ~(postNoMix) THEN
+                             LET thisOp == object(newOp)
+                                 otherOp == object(funct(newPost))
+                             IN IF eq(postSig)(thisOp,otherOp) THEN ok
+                                ELSE differentOperators(postSig,P,
+                                                        thisOp,otherOp)
+                                FI
+                          ELSE ok
+                          FI
+            allErr == newErr+lrAssocErr
+            assumedAssocHint == IF (allErr ok?) and
+                                   ~(preNoMix and postNoMix) THEN
+                                      assumedHint(postSig,newOp,rule)
+                                ELSE ok
+                                FI
+        IN (newApply,postSig,preLSig+(opLSig+postLSig),
+            (newErr+lrAssocErr)+assumedAssocHint)
+     ELSE (none(P),sig,{},ambiguousInfix(S,P,opNoS))
+     FI
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN ambiguousInfix: seq[pair[expr[partName],set]]**pos**seq[nat] -> err
+
+DEF ambiguousInfix(EBS,Pos,OpNoS) ==
+  err(error,msg,expr,Pos)
+  WHERE msg == "ambiguous infix application: %s"
+        expr == visualizeInfixWithMark(EBS,1,msort(<)(OpNoS))
+
+FUN visualizeInfixWithMark: seq[pair[expr[partName],set]]**nat**seq[nat]
+                            -> denotation
+-- OpNoS muss aufsteigend sortiert sein!
+
+DEF visualizeInfixWithMark((E&B):: <>,_,_) == " ."
+
+DEF visualizeInfixWithMark((E1&B1)::((val(PN,P)&B2):: R),Irrelevant,<>) ==
+  LET Oprnd == " ."
+      Op == (" ") ++ (ide(PN)`)
+      Rest == visualizeInfixWithMark(R,Irrelevant,<>)
+  IN (Oprnd++Op)++Rest
+
+DEF visualizeInfixWithMark((E1&B1)::((val(PN,P)&B2):: R),
+                           ThisOpNo,OpNo::OpNoR) ==
+  IF ThisOpNo=OpNo THEN
+     LET Oprnd == " ."
+         Op == (" (>)") ++ (ide(PN)`)
+         Rest == visualizeInfixWithMark(R,succ(succ(ThisOpNo)),OpNoR)
+     IN (Oprnd++Op)++Rest
+  ELSE
+     LET Oprnd == " ."
+         Op == (" ") ++ (ide(PN)`)
+         Rest == visualizeInfixWithMark(R,succ(succ(ThisOpNo)),OpNo::OpNoR)
+     IN (Oprnd++Op)++Rest
+  FI
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN differentOperators: globSig**pos**name**name -> err
+
+DEF differentOperators(sig,pos,op1,op2) ==
+  err(error,msg,`(sig,standard)(op1),`(sig,standard)(op2),pos)
+  WHERE msg == "operators are not identical: %s and %s"
+
+-- %-  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+
+FUN assumedHint: globSig**expr[name]**rule -> err
+
+-- %@zoindex prioShow
+DEF assumedHint(sig,val(op,pos),r) ==
+  IF FIELD?[bool]("-zprioShow") THEN
+    IF r assumedLAssoc? THEN
+      err(hint,msg,`(sig,standard)(op),pos)
+      WHERE msg == "assumed left associativity of %s"
+    IF r assumedRAssoc? THEN
+      err(hint,msg,`(sig,standard)(op),pos)
+      WHERE msg == "assumed right associativity of %s"
+    IF (r direct?) or (r closure?) THEN
+      err(hint, msg, `(r), `(sig, standard)(op), pos)
+      WHERE msg == "used bracketing %s for %s"
+    ELSE
+      ok
+    FI
+  ELSE
+    ok
+  FI
+
+DEF assumedHint(sig,val(op,pos),none) == ok

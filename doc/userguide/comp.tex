@@ -1,0 +1,993 @@
+% LAST EDIT: Mon Oct  2 15:07:02 1995 by Christian Maeder (troilos!maeder) 
+\section{Introduction}
+\label{chap:comp}
+
+For you to compile \opal{} programs the \opal{} compilation system 
+needs to be installed at your site. So first of all you 
+need to know in which directory it resides. 
+At our site cs.tu-berlin.de this is \pro{/usr/ocs}. In the following we will
+refer to this place as {\it ocs\/}. In
+the current Version 2.1 this directory {\it ocs\/} contains at least a file
+\pro{VERSION} and subdirectories \pro{bin} and \pro{lib}. Generally,
+further subdirectories \pro{man}, \pro{doc} and \pro{examples} are included. 
+
+\begin{prog}
+> ls  -1 {\it ocs\/}
+VERSION
+bin/
+doc/
+examples/
+lib/
+man/
+\end{prog}
+
+Compilation of \opal{} programs is controlled and driven  by
+a single command, \pro{ocs} or \pro{ors}\footnote{The \opal{} release
+system \pro{ors} is based on the \pro{shape} toolkit which extends the
+functionality of \pro{ocs} by features like version control and
+configuration management. It accepts the same command line parameters as
+\pro{ocs}. All aspects of \pro{ors} which require some understanding of the
+\pro{shape} toolkit will not be explained in this paper.}. This command is
+located in the  
+\pro{bin} subdirectory of the \opal{} compilation system which must be
+included in your search path. In our case (\texttt{csh}) this can be done by:
+
+\begin{prog}
+> set path=(/usr/ocs/bin $path)
+\end{prog}
+
+With a \pro{bash} the following should work:
+\begin{prog}
+> PATH=/usr/ocs/bin:$PATH
+\end{prog}
+Generally, you will include the above or a similar line in the \pro{.cshrc}
+or \pro{.bashrc}
+file of  
+your home directory, but any other means to extend your search path
+by {\it ocs\/}\pro{/bin} will suffice. (Depending on your UNIX shell, you may
+also edit a file like \pro{.profile, .login, .applications} or other.)
+
+
+All actions regarding the \opal{} compilation system are invoked by an
+appropriate call of \pro{ocs}. To check if your environment is okay,
+execute ``\pro{ocs info}''!
+\begin{prog}
+> ocs info
+You are using `ocs-2.1'
+located at `/usr/ocs'.
+The project ($OCSPROJECT) is not specified.
+\end{prog}
+If you
+get something different (except a more recent version number), then check your
+environment variables \pro{OCS} and \pro{OCSPROJECT}. Especially the
+environment variable \pro{OCS} may refer to an old version of the \opal{}
+compilation system, which does not support the described features. The
+variable \pro{OCSPROJECT} may correctly refer to a file, usually
+called \pro{ProjectDefs}, that allows inclusion of additional
+libraries or supports other features.
+
+\subsection{Compiling}
+
+The behavior of the \pro{ocs} command is triggered by targets. In the
+above case the target was \pro{info}. Other simple targets are
+\pro{help}, \pro{xhelp} or \pro{sendbug}. 
+Each target can be further specified via
+options. The default target, which can be omitted, is \pro{all}, which
+does the compilation and linking. This target and many others require
+\opal{} structures as arguments. Usually these arguments are given via
+initial ``\pro{-top <Struct> <command>}'' or ``\pro{-sub <name>
+<Struct>\{,<Struct>\} }'' \pro{ocs} options.  The latter option, which
+is used for subsystems, will be described in more depth in
+\ref{sec:privLib}. In most cases, as long as you keep all your
+\opal{} structures in one directory, \pro{ocs} with \pro{-top}
+arguments will work splendidly.  In order to compile a small program
+like \pro{HelloWorld}, you simply execute one of the following equivalent
+command lines in the same directory where your files
+\pro{HelloWorld.sign} and \pro{HelloWorld.impl} reside. (The program
+HelloWorld and other examples can be found in {\it ocs}/examples/.)
+
+\begin{prog}
+> ocs -top HelloWorld hello 
+> ocs -top HelloWorld hello all
+\end{prog}
+
+The argument \pro{hello} refers to the top-level command within the
+signature \pro{HelloWorld.sign}.
+This top-level command must be a constant, {\em not overloaded},
+{\em non-recursive}\footnote{Constants cannot be recursive in Opal.} 
+\opal{} function of type 
+\pro{com[void]}\footnote{The type of a top-level
+command cannot be checked by \pro{ocs}!}. 
+The output of the above \pro{ocs} command the first time you call it should
+look as follows: 
+
+{\small \begin{alltt}
+gmake[1]: fopen: OCS/OcsDefs-SysDefs: No such file or directory
+Generating rules for hello'HelloWorld ...
+Checking Signature of HelloWorld ...
+ syntax checking ...
+ context checking ...
+Compiling Implementation of HelloWorld ...
+ syntax checking ...
+ context checking ...
+ translating to applicative code ...
+ translating to imperative code ...
+ translating to C ...
+Generating sun4 object code for HelloWorld ...
+Generating startup code for hello ...
+Linking hello ...
+\end{alltt}}
+
+If no errors have occurred, you may now execute the program \pro{hello}.
+
+\begin{prog}
+> ./hello
+Hello World
+\end{prog}
+
+The line not preceded by the prompt is the output of \pro{hello}, as
+implemented in \pro{HelloWorld.impl}.  
+If you invoke the same \pro{ocs} command as before, you will get the
+following output.
+
+\begin{prog}
+> ocs -top HelloWorld hello
+  gmake[1]: Nothing to be done for `_all'.
+\end{prog}
+
+This last message indicates that there is no need to recompile or re-link
+anything, since nothing has changed. Usually \pro{ocs} tries to do as
+little as possible in order to \emph{make a target}. 
+
+\subsection{Spelling Hints}
+
+If you misspell the name of your top-level command (below: \pro{Hello} with
+a capital \pro{H}
+instead of \pro{hello}), you might get a message of this
+kind:
+
+{\small \begin{alltt}
+> ocs -top HelloWorld Hello
+Generating startup code for Hello ...
+.../_ostart.c: In function `main':
+.../_ostart.c:57: `__AHelloWorld_AHello' undeclared (...)
+.../_ostart.c:57: (Each undeclared identifier is reported only once
+.../_ostart.c:57: for each function it appears in.)
+gmake[1]: *** [OCS/_HelloWorld_Hello.o] Error 1
+gmake: *** [all] Error 1
+\end{alltt}}
+This will also create a wrong file \pro{SysDefs.HelloWorld-Hello} instead of \\
+\pro{SysDefs.HelloWorld-hello}, which is of no further use and may be deleted.
+
+If you misspell names of imported structures within your \opal{} sources, you
+will get a message of the following kind: 
+
+\begin{prog}
+...
+  Cannot locate structure '<Name>'
+...
+\end{prog}
+In such a case make sure that \pro{<Name>} is a legal \opal{} structure that is
+either in the library or in the current directory. Correct possible spelling
+errors in your program and rerun \pro{ocs} as before without any or the
+\pro{all} target. 
+
+\subsection{Targets and Options}
+
+Another important target is the \pro{clean} target. It deletes all
+previously generated object files residing in 
+an \pro{OCS/} subdirectory of your current directory. This is useful if,
+for example, generated  
+object files have been corrupted, a new incompatible compiler
+version has been installed or you simply want to save disk space.
+The next call to \pro{ocs} with the \pro{all} target (or no target) will
+recompile your whole program. Cleaning up can also be achieved by deleting
+the whole \pro{OCS/} subdirectory.
+
+In conjunction with global optimization 
+(see \ref{sec:comp.add}) full re-compilation may be necessary. Also if
+you have several subsystems (see \ref{sec:privLib}) compiled on
+different computer architectures, the object code will be incompatible.
+
+\begin{prog}
+> ocs -top HelloWorld Hello clean
+Cleaning up ...
+\end{prog}
+
+If you make an error in calling \pro{ocs}, you will get a usage message.
+
+\begin{prog}
+> ocs -help
+
+usage: ocs [ -top <struct> <command> | -sub <system> <struct,...> ]
+           [ <option> ... ]
+           [ help | ... ]
+\end{prog}
+This message should at least indicate that \pro{-help} is not an option but
+a \emph{target} \pro{help}, which like \pro{info}, \pro{xhelp} and \pro{sendbug}
+does not need any 
+\opal{} structures as further arguments.
+% These are {\em simple} targets.
+
+
+%{\small \begin{alltt}
+%>  ocs xhelp
+%[...]
+%The following options control only the effect of -sub or -top:
+%     -v -v0 -v1 -v2 -v3               verbose level (see oc(1))
+%     -w -w0 -w1 -w2                   warning level (see oc(1))
+%     -o -o1 -o2 -o<letter>            optimization flag (see oc(1))
+%     -d -dd -dt -dT                   debugging flag (see oc(1))
+%     -s[f|d|p] <path/system>          base on subsystem 
+%     -prop                            enable property language
+%     -keep                            keep generated C sources
+
+%The following options control the building of targets:
+%     -force <struct>.\{sign,impl,c\}    force recompilation
+
+%     opt=(no|modest|medium|full)      choose optimization configuration
+%     debug=(no|opal|c)                choose debugging configuration
+%     profile=(no|gprof)               choose profiling configuration
+%     ocs=(stdocs|expocs)              choose Opal compiler
+%     <var>=<value>                    overwrite project variable
+
+%Target is one of:
+%     help                             basic help
+%     xhelp                            extended help
+%     info                             information about OCS project
+%     sendbug                          send a bug report :-)
+%     [ all ]        (subnodes)        build system 
+%     check          (subnodes)        check properties
+%     clean                            remove all derived objects
+%     gen                              force generating building rules
+%     cleanall       (subnodes)        `clean' on subnodes and this node
+%     genall         (subnodes)        `gen' on subnodes and this node
+%     pack           (subnodes)        pack as <nodename>.tar.gz
+%     install                          install at INSTALLBINPATH
+
+%\end{alltt}}
+%This message gives a rough overview about supported options and targets. 
+
+An interesting \emph{option} is \pro{-v3} which allows observation of minor
+compilation steps. 
+
+\begin{prog}
+> ocs -top HelloWorld hello -v3
+\end{prog}
+
+Should the compiler crash, the verbose output could be very useful in
+locating the trouble (see \ref{sec:errors}). The following sections will
+give more details on the way \pro{ocs} works and  
+explain the advanced features and options of this compilation driver. 
+
+\section{What Really Happens}
+\label{sec:real}
+The casual reader may skip this section. 
+The \opal{} compilation system keeps all compilation products, so-called
+objects, as well as diagnostic files \pro{*.diag}\footnote 
+{When editing source files with an emacs you may be interested in the
+opal browser ({\it ocs\/}\pro{/lib/emacs/opal-mode.el}) to
+keep track of syntax and type errors, but also to obtain detailed information
+of successfully compiled sources.} in a subdirectory \pro{OCS/}. A
+special object is an internal 
+\pro{OCS/OcsDefs-SysDefs} \footnote{When using \pro{ors} and \pro{shape}
+  the dependency file is called \pro{OCS/OrsDefs-SysDefs}} 
+file holding the dependencies imposed by import relations of all source
+and object files.  
+%Further files, which contain a
+%list of all imported structures of corresponding sources, have extension
+%\pro{*.deps}, i.e. \pro{OCS/HelloWorld.impl.deps}.  
+This \pro{OCS/OcsDefs-SysDefs} file is actually a 
+{\em makefile}, which is automatically generated by \pro{genmake} and passed as argument to a call of GNU
+\pro{make} or \pro{gmake}. GNU \pro{make} is triggered by a \pro{SysDefs} file 
+which resides in your source directory and is a
+direct translation of your \pro{ocs} command line. The \pro{SysDefs} file
+for the above example looks as follows:
+
+\begin{prog}
+TOPSTRUCT=Hello
+TOPCOM=hello
+GENOPTIONS=-V -v3 
+GENSUBSYS= $(GENSTDSYS)
+SOURCES=$(SIGNS) $(IMPLS)
+COMPONENTS=$(SOURCES)
+include $(OMLIBPATH)/GlobalRules.top
+\end{prog}
+
+%The \pro{OCS/OcsDefs-SysDefs} dependency file is recreated whenever
+%necessary by \pro{genmake}, but it is possible to create this file
+%explicitly with the \pro{gen} target of \pro{ocs}. The program
+%\pro{genmake}, which must not be confused with \pro{gmake}, itself depends
+%on all \pro{*.deps} files. 
+
+%{\advanced The very fast generation of these \pro{*.deps} files is
+%internally performed by the program \pro{opalimports}, but the front-end
+%\pro{oc1} will also generate them when it is call with the
+%\pro{-zonlyParse} option. Called with this option the compiler only requires
+%the source 
+%structure on the command line and mainly writes an abstract syntax to a
+%file with extension \pro{.absy}. Compilation then could be continued with
+%the \pro{-zdoNotParse} option, provided the command line is extended by all
+%imported structures and their corresponding directories. (The options passed
+%to the \opal{} compiler can be viewed with the \pro{-zprintOptions} option.)}
+
+%You are not supposed to call any of the above programs yourself, but you
+%might trigger re-compilation by deleting specific objects. For example
+%touching a source corresponds to deleting its \pro{.deps} file, deleting the
+%\pro{OCS/OcsDefs-SysDefs}
+% dependency file is faster than calling
+%\pro{ocs} with the \pro{gen} target, and also removing the whole
+%\pro{OCS}-subdirectory is a thorough \pro{clean}. Beware, however, not to
+%delete at random, i.e. \pro{*.opt} files.
+
+If \pro{SysDefs.HelloWorld-hello} is renamed or linked to
+\pro{SysDefs}, you may invoke compilation by \pro{ocs} without any
+further arguments. This is particularly useful if your command line
+has become rather long, i.e.\ in conjunction with subsystems or
+additional options as described in \ref{sec:privLib}. You may even
+edit the file \pro{SysDefs} yourself to change the behavior of \pro{ocs}
+without having to assemble a complete new command line. 
+If you have established a
+link to \pro{SysDefs}, you may alternatively call \pro{ocs} without arguments
+to rerun \pro{ocs} as before or with different arguments, which will update
+your \pro{SysDefs} file. (However, this does not work if you change 
+your top-level command or top-level structure, because then a different file is
+created.) In general, 
+within bigger projects, it may be much more convenient to work only with
+such \pro{SysDefs} files. 
+
+Usually, \pro{gmake} requires further \emph{rules} to build a target. These
+are kept in the \opal{} maintenance subdirectory {\it
+ocs\/}\pro{/lib/om}. The actual
+programs to analyze the import relation and compile \opal{} structures
+are {\it ocs\/}\pro{/bin/opalimports}, {\it ocs\/}\pro{/bin/genmake} and
+the front-end {\it ocs\/}\pro{/bin/oc1} 
+in conjunction with the back-end {\it ocs\/}\pro{/bin/oc2}.
+Both {\em ends} are also called \pro{oc} for \opal{} compiler. 
+
+The program \pro{opalimports} extracts names of imported structures from
+sources and writes them to \pro{*.deps} files, which are used by
+\pro{genmake} to create the file \pro{OcsDefs-SysDefs}. The front-end 
+\pro{oc1} generates export files (\pro{*.exp}) from \emph{signatures} and
+analyzed\footnote{This is actually {\em applicative code} that differs from 
+{\em inter-Opal\/}} \opal{}
+(\pro{*.ana}) from \emph{implementations}.
+The results of the back-end
+\pro{oc2} are \pro{*.opt} files to allow global optimization and C sources
+(\pro{*.c} and \pro{*.h}),
+which will be further compiled by a 
+C compiler like \pro{gcc} to object code (\pro{*.o}).  Eventually, object
+code will be linked together with a linker (\pro{ld}) to an executable
+program like \pro{hello}.
+
+A further possibility to influence the behaviour of \pro{ocs} or
+\pro{gmake} is to include an additional makefile containing project
+definitions. This makefile, usually called \pro{ProjectDefs} and which
+may be located anywhere, will be included if your environment variable
+\pro{OCSPROJECT} refers to this file with its complete path. With
+``\pro{ocs info}'' you can check if this environment variable is set.
+
+\advanced{Editing \pro{ProjectDefs} files requires some knowledge
+about the options which may be passed to the individual programs. But
+in principle you just define \pro{make} -macros or -variables as in
+\pro{SysDefs} files (see \ref{sec:comp.add}). You never create a
+\pro{ProjectDefs} file from scratch yourself but simply modify a copy of the
+template {\it ocs}\pro{/lib/om/tmpls/ProjectDefs.tmpl}.}
+
+The order of inclusion of various makefiles which define \emph{make
+  variables} and \emph{targets} 
+(see {\it ocs\/}\pro{/lib/om/make/Makefile.develop}) is as follows:\\
+\\
+  \pro{ProjectDefs} file \\
+  {\it ocs\/}\pro{/lib/om/specs/Specs.os.auto} \\
+%  {\it ocs\/}\pro{/lib/om/specs/Specs.ocs.\{stdocs,expocs\}} \\
+%  {\it ocs\/}\pro{/lib/om/specs/Specs.opt.\{full,medium,modest,no\}} \\
+%  {\it ocs\/}\pro{/lib/om/specs/Specs.debug.\{c,no,opal\}} \\
+  \pro{SysDefs} file \\
+  {\it ocs\/}\pro{/lib/om/make/GlobalRules.top} \\
+%  {\it ocs\/}\pro{/lib/om/make/GlobalRules.\{top,sub,subhc\}} \\
+  \pro{OCS/OcsDefs-SysDefs} file \\
+  {\it ocs\/}\pro{/lib/om/make/GlobalRules} \\
+
+Variable definitions which may be given on the \pro{ocs} command line
+itself are considered before a \pro{ProjectDefs} file.
+
+\section{Constructing a Private Library}
+\label{sec:privLib}
+%The \opal{} compilation system, like the language \opal{}, is designed
+%to efficiently develop fairly big software products. The
+%\opal{} compiler itself is written in \opal. 
+Large projects are
+typically distributed over several directories. For this reason
+\pro{ocs} (and especially \pro{ors}) supports compilation of more or less
+unrelated 
+(non-top-level) \opal{} structures within one
+directory. 
+%For example, the \opal{} standard library comprises several directories
+%with library structures. 
+Compilation in such a directory, which is then called a
+subsystem, is invoked via \pro{-sub} as the first \pro{ocs} argument.
+
+Consecutive arguments of \pro{-sub} are the directory name and a
+comma-separated list of structure names (either in quotes or without
+blanks). 
+
+\begin{prog}
+> cd ../trees
+> ocs -sub trees Tree,TreeMap,MkTree,TestTree
+\end{prog}
+
+This command assumes that there are four structures (i.e.\ eight files
+\\ \pro{Tree.sign}, 
+\pro{Tree.impl}, 
+  \pro{TreeMap.sign}, 
+\pro{TreeMap.impl}, 
+\pro{MkTree.sign}, 
+\pro{MkTree.impl}, \\ \pro{TestTree.sign} and
+\pro{TestTree.impl}) in the current directory \pro{trees}. In case
+that \pro{TestTree} imports all the other structures (similar to a
+top-level structure) it would suffice to run: 
+
+\begin{prog}
+> ocs -sub trees TestTree
+\end{prog}
+
+The above command is almost identical to that for a top-level
+structure\footnote{Our naming convention is that \opal{} structures start
+  with a capital letter, whereas top-level
+  commands such as all \opal{} functions and directory names start with
+  a lower-case letter.},
+but instead of an executable program a library archive \pro{OCS/libtrees.a}
+will be created. This new library may be referred to later on by the full
+name of the directory \pro{trees}.
+
+Suppose you have established another directory \pro{inout} to hold
+your own I/O functions. If all structures are independent of \pro{trees}, an
+independent other library can be set up:
+
+\begin{prog}
+> cd ../inout
+> ocs -sub inout Read,Write
+\end{prog}
+
+All so-called subsystems (as well as top-level systems) may import
+structures from the standard \opal{} 
+library, because these are implicitly included by \pro{ocs}. But if
+structures from self-defined subsystems need to be imported elsewhere, then these
+subsystems must be referred to on the \pro{ocs} command line. Suppose your
+I/O functions are meant to handle trees. In that case your subsystem
+\pro{inout} should be compiled as follows:
+
+\begin{prog}
+> ocs -sub inout Read,Write -s ../trees
+\end{prog}
+
+The dots correspond to the proper (relative) path to the directory \pro{trees}.
+Take a look at the \pro{SysDefs} file (\pro{SysDefs.inout}) generated by the
+above command:
+
+\begin{prog}
+NODENAME=inout
+STRUCTS=Read Write
+GENOPTIONS=-v1 
+GENSUBSYS= -s ../trees $(GENSTDSYS)
+SOURCES=$(SIGNS) $(IMPLS)
+COMPONENTS=$(SOURCES)
+include $(OMLIBPATH)/GlobalRules.sub
+\end{prog}
+
+The \pro{NODENAME} corresponds to the directory name of the
+subsystem. \pro{STRUCTS} lists the structures of the current subsystem,
+\pro{GENSUBSYS} other dependent subsystems. \pro{GENSTDSYS} stands for
+the standard \opal{} library.
+
+Both subsystems may be referred to within a third directory, e.g.:
+
+\begin{prog}
+> cd ../main
+> ocs -top Main run -s ../inout -s ../trees
+\end{prog}
+
+
+\subsection{Hierarchy of Subsystems}
+\label{sec:hierarchy}
+In a project with many subsystems and possibly several top-level
+systems it is useful to have a single \pro{SysDefs} file in each directory
+to hold subsystem dependencies, because then a simple call of
+\pro{ocs} without any parameter will do all the necessary compilation in
+each directory. However, all directories will still
+need to be compiled from the bottom up w.r.t.\ their dependencies, i.e.\ 
+libraries to be used must be compiled first. This task can be avoided by
+creating a 
+special \pro{SysDefs} file in yet another directory. In our case we would
+create a \pro{SysDefs} file like {\it
+  ocs\/}\pro{/lib/om/tmpls/SysDefs.misc} in the parent directory of
+\pro{trees}, \pro{inout} and \pro{main} as follows:
+\newpage
+\begin{prog}
+SUBNODES=trees inout main
+
+_default: all
+
+_all:
+
+_clean:
+
+_check:
+
+include $(OMLIBPATH)/GlobalRules
+\end{prog}
+
+A \pro{SysDefs} for \pro{ocs} behaves like a \pro{Makefile} for \pro{make},
+i.e.\ variables and targets may be defined.
+The special variable \pro{SUBNODES} lists directories which need to be
+handled by \pro{ocs} 
+\emph{prior} to the \emph{current} directory. The order of the listed
+subnodes is of 
+course significant because \pro{trees} should be compiled before \pro{inout}
+and \pro{inout} before \pro{main}. 
+The \emph{underline targets} are used for recursion control, as defined in 
+{\it ocs\/}\pro{/lib/om/make/GlobalRules}. 
+
+The above parent directory itself may be viewed as an ordinary \emph{subnode}
+from yet another node, and thus a large hierarchy between directories (i.e.\
+subnodes) may be established. 
+
+At a \emph{top node} a call of \pro{ocs} with target \pro{cleanall} would remove all objects of all
+\emph{subnodes} and complete recompilation could be achieved by a simple call of
+\pro{ocs}. 
+
+If no subnodes are given, a call of \pro{ocs} will only 
+compile the sources of the current directory, assuming that subsystems
+given by the variable \pro{GENSUBSYS} have been properly compiled previously,
+either explicitly or implicitly by a call from an \emph{upper node}. 
+
+In general a \emph{node} is simply a
+directory with at least a single file \pro{SysDefs}. Some \emph{nodes} may
+be \emph{subsystems} that form a library of \opal{} structures.
+The hierarchy between \emph{subsystems} is established by the \opal{}
+import relation and described by \pro{GENSUBSYS} entries, whereas the hierarchy
+between \emph{nodes} must be set up 
+manually by defining the variable \pro{SUBNODES} in \pro{SysDefs}
+files. Both hierarchies are independent of the \emph{subdirectory}
+relation, but care should be taken that a hierarchy of
+\emph{subnodes} does not contradict the hierarchy of
+\emph{subsystems}. It would also be quite uncommon (but possible) to place
+top nodes in subdirectories of subnodes.
+
+\subsection{Alternative Hierarchies}
+The variable \pro{SUBNODES} may also be defined in the \pro{SysDefs} file
+of the directory \pro{main} as follows:
+
+\begin{prog}
+SUBNODES=../trees ../inout
+TOPSTRUCT=Main
+TOPCOM=run
+GENOPTIONS=v1 
+GENSUBSYS=-s ../inout -s ../trees $(GENSTDSYS)
+SOURCES=$(SIGNS) $(IMPLS)
+COMPONENTS=$(SOURCES)
+include $(OMLIBPATH)/GlobalRules.top
+\end{prog}
+
+In this case \pro{main} becomes the \emph{top node} and the special
+\pro{SysDefs} of the parent directory is no longer necessary. It would also make
+sense to let \pro{main} be the parent directory of \pro{trees} and
+\pro{inout}. This would shorten the relative path names to the right of the
+variables \pro{SUBNODES} and \pro{GENSUBSYS}. 
+
+Because \pro{inout} depends on \pro{trees}, the file \pro{inout/SysDefs} might
+just as well contain \pro{../trees} in its \pro{SUBNODES} line. In this case the
+subnode \pro{trees} could be omitted from 
+\pro{main/SysDefs} because \pro{trees} has then become an indirect subnode of
+\pro{main}. 
+
+Summarizing, all alternatives described above are only recommended for small
+projects. Within bigger projects many subsystems rarely change and need not
+always be checked by the \pro{SUBNODES} mechanism. Only the final
+overall compilation would be performed from a top node, as
+described in \ref{sec:hierarchy}
+
+\section{Additional Options}
+\label{sec:comp.add}
+
+The \pro{ocs} command also passes a couple of options to the \opal{} compiler
+\pro{oc}. An overview is listed in ``\pro{ocs xhelp}''. The
+verbose and warning-level options simply modify the visible output of the
+compiler. Level zero \pro{-v0 -w0} enforces quiet compilation and will
+suppress all warnings. This level is intended for compilation batches where 
+the output can be ignored. The default options \pro{-v1 -w1} (or \pro{-v -w})
+will display major compilation steps and give warnings in cases of unusual or
+error-prone \opal{} source code. With \pro{-v3 -w2} even minor compilation
+steps and further hints will be displayed.
+
+The options \pro{-d} and \pro{-o} influence only the object code
+generated by the back-end \pro{oc2}. The default is to ignore
+debugging. With \pro{-dd} or just \pro{-d} you may generate code for
+use with an object code debugger. This option is also necessary for producing
+a back-trace
+of a crashing program (see \ref{sec:debug}) later on. The options \pro{-dT} or
+\pro{-dt} serve to trace function 
+entries and exits of all or only exported functions respectively.
+
+In conjunction with optimization, debugging will be very difficult, because it is
+difficult to associate object code with your original \opal{} sources. 
+
+\experienced {It is already difficult to associate \opal{} sources
+with corresponding C sources. You must pass the \pro{-keep} option to
+\pro{ocs} to study  \pro{*.c} files. With this option set the intermediate  
+compilation products \pro{*.c}, and \pro{*.ana} files will not be removed after
+creation of \pro{*.o} object files. Within a subsystem that you do not
+want to change any more, you may even delete all \pro{*.o} files because all
+object code is stored in an archive \pro{OCS/lib<NODENAME>.a}}
+
+The default for optimization is to perform no optimization. Special
+optimization methods can be switched on individually by
+\pro{-o<letters>}, where the letters may be any combination of \{\pro{e, u, s,
+c, m, p, g, T, S, C}\}.  These stand for elimination of common subexpressions,
+unfolding of function definitions and equations, simplification of
+expressions, constant evaluation only once, memory allocation
+optimization, partialities optimization, global inter-structure
+optimization, time-consuming optimizations, speculative optimizations
+and C compiler optimizations, respectively.  Optimization flags are
+either passed to the back-end \pro{oc2} or to the C compiler \pro{gcc}.
+
+You usually do not need to set all these options, rather only specify
+\pro{-o} or \pro{-o1} (these stand for \pro{-oeucmC}) or \pro{o2}, 
+dthereby additionally setting \pro{-opgT}, which
+performs time consuming global optimization. 
+
+\advanced {The settings of your \pro{ocs} default behaviour may switch
+on special debug and/or optimize flags. In this case you cannot switch
+off these flags except by editing your \pro{SysDefs} file variable
+\pro{GENOPTIONS}.}
+
+\pro{ocs} also supports the \opal{} property language.
+With the \pro{-prop} option set, dependency rules are generated for the
+corresponding sources \pro{EXTERNAL} and \pro{INTERNAL PROPERTIES} with
+extensions \pro{*.extp} and \pro{*.intp}. Context checking of these properties
+is invoked by the \pro{check} target of \pro{ocs} and will result in so
+called {\em inter-Opal} files \pro{*.inter}. 
+% If there are no property sources available in the same directory, then
+% empty source files will be created. 
+Inter-Opal is intended as a common interface to other \opal{}
+tools, like the existing \pro{browser}, a documentation system \pro{DOSFOP}
+or the proof-checker \pro{BOP}. 
+If you establish a whole subsystem with property
+sources, then this subsystem should be included with \pro{-sp} either on
+the \pro{ocs} command line or in your \pro{SysDefs} file to the right of
+\pro{GENSUBSYS}. 
+
+\advanced {The modifiers \pro{d} and \pro{f} for inclusion of subsystems 
+also control the generation of dependencies. Option \pro{-sf} includes a
+{\em frozen} subsystem, which does not need to hold the source files, while
+\pro{-sd} corresponds to the default \pro{-s}.} 
+
+\subsection{Customizations}
+Instead of specifying options as described above, it is possible to
+define special variables on the command line. For example, after a
+long period of development and testing you would release your program
+fully optimized as follows.
+
+\begin{prog}
+> ocs -top HelloWorld hello opt=full debug=no
+\end{prog}
+
+If you are using additional subsystems, you may first do an \pro{ocs}
+call with the \pro{cleanall} target to enforce recompilation with
+full optimization for all subsystems later on. 
+%To enforce re-compilation
+%of an individual structure use the \pro{-force
+%<Struct>.\{sign,impl,c\}} option.
+
+%Usually it is more convenient to modify variables in your \pro{SysDefs} file.
+%The following is an incomplete list of \pro{make} variables that you may
+%edit.
+%\begin{tabbing}
+%\pro{TOPSTRUCT, TOPCOM}: names of top-level structure and top-level command\\
+%\pro{NODENAME, STRUCTS}: directory name of subsystem and list of structures\\
+%\pro{GENOPTIONS}: \pro{genmake} options usually passed directly to the compiler\\
+%\pro{SUBNODES}: further directories to be checked for re-compilation\\
+%\pro{GENSUBSYS}: subsystems which will be searched by \pro{genmake}\\
+%\pro{GENSTDSYS}: contains the library subsystems (edit with care)\\
+%\end{tabbing}
+
+%A \pro{SysDefs} file also includes a file \pro{GlobalRules.top} or
+%\pro{GlobalRules.sub} for top-level systems or subsystems respectively.
+%(\pro{GlobalRules.subhc} is used for subsystems with
+%hand-coded structures.)
+%These files, located in {\it ocs\/}\pro{/lib/om/make}, are responsible for 
+%building either an object archive or an executable program. They
+%include the file \pro{GlobalRules} (without extension) which is imported for
+%a recursive descent of \pro{gmake} through all subnodes.
+
+Another way to modify the behaviour of \pro{ocs} is to set up a
+\pro{ProjectDefs} file. With this you are able to override settings that
+are usually fixed by files located in the {\it ocs\/}\pro{/lib/om/specs}
+directory. Whenever you are using a \pro{ProjectDefs} file,
+which must be 
+included by setting the environment variable \pro{OCSPROJECT}, you may
+choose an {\em experimental} compiler.  
+
+\begin{prog}
+> ocs -top HelloWorld hello ocs=expocs
+\end{prog}
+
+The value \pro{expocs} of the variable \pro{ocs} will enable a set of
+experimental variables within in your \pro{ProjectDefs} file. 
+The following is an incomplete list of \pro{make} variables for
+\pro{ProjectDefs} files.
+
+\begin{tabbing}
+  \pro{CLDLIBS}: list of libraries used by the linker \pro{ld}\\
+  \pro{CLDLIBPATH}: path for the linker to look for libraries\\
+ \pro{ocs}: may be \pro{stdocs} or \pro{expocs}\\
+ \pro{debug}: may be \pro{no}, \pro{c} or \pro{opal}\\
+ \pro{opt}: may be \pro{no}, \pro{modest}, \pro{medium} or \pro{full}\\
+ \pro{EXP\_OC1}: alternative front-end oc1\\
+ \pro{EXP\_OC2}: alternative back-end oc2\\
+ \pro{EXP\_OC1FLAGS}: flags for oc1\\
+ \pro{EXP\_OC2FLAGS}: flags for oc2\\
+ \pro{EXP\_GENSTDSYS}: alternative standard libraries
+\end{tabbing}
+
+If one of these \pro{EXP\_...}\ variables is not defined, the standard values
+(i.e. \pro{STD\_OC1}) will be
+used.  By using ``\pro{+=}'' when assigning values to variables the standard
+values (flags) can be easily 
+extended. If you use ``\pro{:=}'' instead, the variable will be completely
+redefined. Note that variables can also be set on the command
+line with a simple ``\pro{=}'' without blanks or within quotes. 
+
+The following example will include a \pro{tcl} library and measure the
+compilation time of the front-end. 
+
+\begin{prog}
+  CINCPATH      := -I/usr/tcl/include 
+  CLDLIBS       := -ltk -ltcl -ldpnetwork -lnsl -lXpm -lX11 -lsocket
+  CLDLIBPATH    := -L/usr/tcl/lib -L/usr/X11/lib
+  ocs := expocs
+  EXP_OC1 := time /usr/ocs/bin/oc1
+  EXP_OC1FLAGS += -ztraceIO
+\end{prog}
+
+
+
+%A rudimentary X-Windows interface has been successfully implemented with 
+%\pro{ocs} based on the motif widget set and a couple of
+%hand-coded\footnote{See also: {\em Hand-coder's Guide to the \opal{}
+%Compilation System 
+%(Version 2)}}
+%\opal{} structures. The Flag \pro{-zinterOpal} allows usage of the
+%\opal{} browser in conjunction with the emacs \pro{opal-mode}.
+Instead of setting \pro{ocs := expocs} within your \pro{ProjectDefs} file,
+you generally achieve more flexibility by setting this variable on the
+command line. 
+
+\section{Error Handling}
+\label{sec:errors}
+
+If something goes wrong or behaves unexpectedly you will first have to find
+the source of the trouble. It may be one of the following:
+
+\begin{itemize}
+\item your environment, search path, \pro{gmake}, \pro{gcc}, other UNIX
+shell 
+commands, \pro{SysDefs}- or \pro{ProjectDefs}-files
+\item the \opal{} compilation system
+\item front-end or back-end of the \opal{} compiler
+\item your \opal{} sources
+\end{itemize}
+
+The first thing to do is to check your environment by executing ``\pro{ocs
+info}''. Make sure that you are in the directory where your sources
+reside. Check your \pro{ocs} command line for proper
+arguments\footnote{Targets must \emph{not} be preceded by a hyphen}. Both
+\pro{-top} and \pro{-sub} options expect exactly two further arguments,
+either a top-level structure and a top-level command or a subnode's name and
+a list of structures as one argument without blanks or within quotes. 
+
+If you are using your own \pro{SysDefs} file, check the variables described
+above. Make sure that \pro{GENOPTIONS} contains the \pro{-V} option in order
+to produce verbose output. If necessary, also add \pro{-v3} and \pro{-w2}
+options, which will be used by the compiler to achieve maximum verbosity.
+Error messages from the compiler can be recognized by the word \pro{ERROR},
+followed by a position given as a row and column number. The verbose output of
+the compiler should enable you to determine the current compiler phase and
+your current source part. 
+
+Compilation of C sources may fail because specific header files could not
+be found. This may be fixed by defining the variables \pro{CINCPATH} or 
+\pro{EXP\_CCFLAGS}.
+
+If something goes wrong during linking, the reason might be a wrong top-level
+command name or that required libraries are not accessible. If system libraries
+are not accessible, ask your system administrator. Some libraries may be
+included by defining the variables \pro{CLDLIBS} and \pro{CLDLIBPATH}. 
+Make sure that your own
+subsystem libraries are properly compiled and archived. Once you
+have an executable program the following unwanted outcomes during runtime
+are possible:
+
+\begin{itemize}
+\item \pro{RUNTIME ERROR}
+\item \pro{Segmentation Fault}
+\item \pro{Bus Error}
+\item Non-Termination
+\end{itemize}
+
+An \opal{}  \pro{RUNTIME ERROR} indicates a programming error, i.e.\ you have
+applied a 
+partial function to a variant of an object it was not defined for. For
+example, you applied the function \pro{ft'Seq} to an empty sequence or
+\pro{cont'Option} to \pro{nil}.
+
+A \pro{Segmentation Fault} may have several causes. One may be that
+your program has used up all memory or other resources. Try to observe the
+memory usage with a UNIX command like \pro{top}.
+
+A \pro{Bus Error} usually indicates corrupted object code. For example, such
+code will be 
+produced if your top-level command was not of type \pro{com'Com[void'Void]}
+or the top-level command name was overloaded. Another reason may be that
+objects from subsystems have been compiled on a different architecture. In
+this case recompile your whole program by first deleting all your objects
+with the \pro{cleanall} target from \pro{ocs}.
+
+Apparent or actual non-termination are caused by endless recursions or rather
+long computations of possibly exponential order. In such a case abort program
+execution with \pro{Ctrl-c} or the UNIX kill command. Provided your program
+was compiled with the debugging option \pro{-d}, a back-trace generated by
+\pro{btrace} (see below) may be useful to locate the bug.
+
+\subsection{Sending Bugs}
+
+Unfortunately the \opal{} compiler itself may sometimes crash in one of the ways
+described above. This is of course a serious bug, but compiler crashes are far
+more likely if flawed programs are compiled. Although you will get no 
+advice as to which problem may have crashed the compiler, there are
+most probably errors in your sources too. If you think your sources are
+correct, you are requested to consult the document {\em How to Identify and
+Workaround Bugs of the \opal{} compiler}. If this document cannot help you,
+you have probable discovered a new compiler bug. We would be very
+grateful if you sent this bug to us using the \pro{sendbug} target from
+\pro{ocs}. But before sending a bug, please make sure that the bug is
+reproducible by 
+fully recompiling all your sources after all objects have been removed (with
+target \pro{cleanall}). Also make sure that you are using a reasonably
+new compiler version and that a possible \pro{ProjectDefs} file does not
+refer to 
+a different compiler. At least execute ``\pro{ocs info}''! Compilation
+should be run verbosely \pro{-V -v3} in order to facilitate your categorization
+of the bug.
+Of course, it would be great if you can give some sort of analysis of the
+compiler 
+bug, which you may have gained when trying to work around it. Even better,
+mail us a successful workaround!
+
+\begin{prog}
+> ocs sendbug
+
+This script simplifies the report and analysis of OCS bugs.
+
+In the following, you will be asked several questions. If you
+wish to include the sources which raised the problem, you
+will be asked in particular for the directory path to a
+system which contains the sources.
+
+
+Do you wish to continue? (y/n) y
+
+What do You suggest the bug is related to?
+Categories are:
+ 1 = syntax analysis
+ 2 = context analysis
+ 3 = code generation
+ 4 = standard library
+ 5 = maintenance system, environment
+ 6 = other
+Your choice? 
+\end{prog}
+You will also be asked what your \pro{ocs} command line looks like. 
+When you answer this question do not include any target like \pro{all, gen,
+clean, check} or \pro{pack}. When being asked to comment on the bug it would be
+helpful 
+if you could paste at least your error message into the mail buffer.
+ 
+If you have more general problems, comments or questions on \opal{},
+you might like to mail us at \pro{opal-discussion@cs.tu-berlin.de} or post news
+to \\ \pro{bln.comp.lang.opal}. 
+
+
+\subsection{Debugging}
+\label{sec:debug}
+The support for debugging \opal{} programs is very poor at the moment.
+Therefore, the best debugging strategy is simply checking \opal{}
+sources.
+
+The C debugger can be used to inspect the dynamic call chain of
+crashed programs or to trace the execution in the \opal{} sources.
+This is realized by using the \pro{\#line} directive of the C
+preprocessor. In order to use this feature, you must have supplied the
+option \pro{-dd} to \pro{ocs}.
+
+Two scripts based on the GNU debugger \pro{gdb} are bundled with \pro{ocs}.
+
+\begin{enumerate}
+\item The script \pro{btrace}, when prefixed to a command running an \opal{}
+  program, runs the program under \pro{gdb}, analyzes its output, and 
+  given a crash produces a back-trace of the form:
+  \begin{verbatim}
+        Foo.impl: 110
+        Foo.impl: 138
+        ...
+  \end{verbatim}
+  This script mainly filters out those elements of \pro{gdb}'s back-trace which
+  are practically impossible to understand for someone not familiar with the
+  coding details.
+\item The script \pro{debug} operates in a similar manner to
+  \pro{btrace}, except that you end in the \pro{gdb} command line
+  interpreter. With \pro{up} and {\tt down} you can walk through the
+  stack frame, and with \pro{list} you can view the corresponding
+  \opal{} sources.
+\end{enumerate}
+
+Another alternative is to use the \pro{gdb-mode} which comes with emacs.
+
+\subsection{Debug Prints}
+
+The structure \pro{DEBUG} from the standard library provides ways of spreading
+side-effect prints through the \opal{} code.  This can be used to explicitly
+trace certain program points, including the output of structured data objects
+at these points. The conversion of a particular data type into a textual
+representation must, however, be realized by the user.
+
+Note that when using the functions from \pro{DEBUG} the \opal{} compiler
+will always eliminate dead code, even if optimization is not enabled;
+therefore, you have to feign a use of the side-effect functions. In the
+following example, the side-effect print is {\em not\/} performed:
+
+\begin{verbatim}
+    DEF f(X) == LET _ == PRINT(true,"Hello, I'm f",X) IN X
+\end{verbatim}
+
+To achieve your objective you have to write something like:
+
+\begin{verbatim}
+    DEF f(X0) == LET X == PRINT(true,"Hello, I'm f",X0) IN X
+\end{verbatim}
+
+This works because \pro{PRINT} is identity in the third argument, and
+because the 
+compiler does not know this, it cannot optimize it away.
+
+If you simply use \pro{writeLine'Stream} within your commands to trace
+program execution, be aware that the arguments of following commands may be
+evaluated before you have started writing:
+\begin{verbatim}
+    writeLine(stdOut, "Hello") & 
+    writeLine(stdOut, f(N)`)
+\end{verbatim}
+In the above example the arguments of the second \pro{writeLine} are evaluated
+before the first \pro{writeLine} has been executed. Thus, if function \pro{f}
+crashes, no output 
+will appear on the screen. To avoid this strange behaviour supply a dummy
+argument to the second command: 
+
+\begin{verbatim}
+    writeLine(stdOut, "Hello") & (\\ _ .
+    writeLine(stdOut, f(N)`))
+\end{verbatim}
+Now evaluation of the second argument of \pro{\&'ComCompose} will only occur
+after the first line has been written.
+
+Of course you cannot use \pro{writeLine} within functions that are not
+commands, i.e. functions of type \pro{com'Com}. Therefore \pro{PRINT'DEBUG}
+should be the preferred choice to display execution points.
+
+
+% Local Variables: 
+% mode: latex
+% TeX-master: "userguide"
+% End: 
+

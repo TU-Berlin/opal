@@ -1,0 +1,52 @@
+IMPLEMENTATION RepoCom
+
+IMPORT	ComState	COMPLETELY
+	Option		COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	RepoInternData	COMPLETELY
+
+FUN upd : (repo -> repo) -> com[void]
+DEF upd(F) ==
+    getAndClearRepository	& (\\Repo.
+    setRepository(F(Repo))	)
+
+FUN upd : (repo -> com[repo]) -> com[void]
+DEF upd(Cmd) ==
+    getAndClearRepository	& (\\Repo.
+    Cmd(Repo)			; (\\Repo?.
+    IF okay?(Repo?) THEN
+        setRepository(data(Repo?))
+    ELSE
+        -- restore old repository
+        setRepository(Repo)	&
+	break(error(Repo?))
+    FI
+    ))
+
+-- ================================================
+FUN repositoryId : stateId[option[repo]]
+DEF repositoryId == EXEC(stateId(nil))
+
+FUN setRepository : repo -> com[void]
+DEF setRepository(R) == 
+    repositoryId => (\\ _ .avail(R))
+
+FUN getAndClearRepository : com[repo]
+DEF getAndClearRepository == 
+	(repositoryId ?)		& (\\OptRepo.
+	(repositoryId => (\\ _ . nil))	&
+    (IF OptRepo avail? THEN succeed(OptRepo cont)		
+     ELSE break("getAndClearRepository'RepoCom: no repository found")
+     FI)
+    )
+
+
+FUN getRepository : com[repo]
+DEF getRepository == 
+	(repositoryId ?)		& (\\OptRepo.
+    (IF OptRepo avail? THEN succeed(OptRepo cont)		
+     ELSE break("getRepository'RepoCom: no repository found")
+     FI)
+    )
+

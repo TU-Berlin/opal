@@ -1,0 +1,519 @@
+/* % In dieser Struktur werden Sorten eingeführt, die für die Definition eines
+,,@OPAL-Lambda-Ausdrucks'' als Grundlage der Evaluation im Interpreter benötigt
+werden.
+
+Hierzu wird zuerst die Sorte @code{objectId} eingeführt, mit deren Hilfe jede
+Funktion/Sorte eindeutig identifiziert werden kann. Parallel dazu wird
+die Sorte @code{bindOffset} eingeführt, die die Bindung einer lokalen Variablen
+im @emph{BindingStack} eindeutig lokalisiert.  Aufbauend auf den Object-Ids
+werden dann Positionen innerhalb eines Terms durch ein Datum zur Sorte
+@code{tpos} charakterisiert, wobei jede @code{tpos}-Position eindeutig einen
+Teilterm innerhalb eines Definitionsterms zu einer benannten Funktion
+beschreibt. Schließlich wird der Typ @code{expr} eingeführt, der Terme der
+Sprache @OPAL für die Interpretation geeignet darstellt. */
+
+SIGNATURE Expression
+
+IMPORT  Seq[name]                       ONLY    seq
+        Seq[tupleExpr]                  ONLY    seq
+        Seq[expr]                       ONLY    seq
+        Seq[blockEqn]                   ONLY    seq
+        Seq[guard]                      ONLY    seq
+        Seq[bindOffset]                 ONLY    seq
+        Seq[fct]                        ONLY    seq
+        Seq[pair[selector,patt]]        ONLY    seq
+        Seq[testtree]                   ONLY    seq
+        Array[bpattern]                 ONLY    array
+        Array[expr]                     ONLY    array
+        Array[nat]                      ONLY    array
+        Option[expr]                    ONLY    option
+        Pair[selector,patt]             ONLY    pair
+        Pair[expr,mtree]                ONLY    pair
+        Nat                             ONLY    nat
+        RUNTIME                         ONLY    obj
+        Fmt                             ONLY    fmt
+
+
+-- %$Object-Ids$ ========================================================
+/* %
+ Der Typ @code{objectId} dient zur eindeutigen Identifikation einer
+Funktion/Sorte dient. Object-Ids sind Abstraktionen natürlicher Zahlen.  Die
+Object-Ids werden innerhalb des Opal-Clients zur Verwaltung der Definitionen
+von Funktionen und zur Identifikation von Sorten verwendet (siehe
+@code{ObjectTable}). Die Vergabe der Ids an Funktionen/Sorten erfolgt innerhalb
+des Debuggers. Object-Ids werden auch für @emph{formale} Sorten und
+Funktionsparameter vergeben!
+
+Die Sorte aller Funktions- und Sorten-Ids ist opaque. Die üblichen Ordnungs- und
+Gleichheitsrelationen sind definiert. Weiterhin gibt es eine bijektive Abbildung
+@code{#} zwischen natürlichen Zahlen und Funktions-Ids. Es gibt eine minimale
+Funktions-Id sowie einen Nachfolger-Operator. (nat,0,succ,<,=) ist isomorph zu
+(objectId,min,next,<,=).
+ */
+TYPE objectId == objectId(no : nat)
+
+FUN < =         : objectId ** objectId          -> bool
+FUN next        : objectId                      -> objectId
+FUN fmtObjectId : objectId                      -> fmt
+
+FUN unknown     : objectId
+
+-- %$Binding-Offsets$ ========================================
+/* %
+ Ein @code{bindOffset} dient zur Identifikation eines Datums im
+@emph{Binding-Stack}. Dieser Stack enthält während der Evaluation eines
+Ausdrucks die Bindungen lokaler Variabeln. Mit Hilfe eines Offsets kann man die
+Bindung zu einer Variablen eindeutig bestimmen. Dabei ist der Offset einer
+Variablen abhängig vom Kontext der Auswertung, d.h. eine Variable kann zu
+verschiedenen Auswertungspunkten unterschiedliche Offsets haben!
+
+@code{bindOffset} ist eine Abstraktion des kart. Prouktes @code{nat x nat}. Die
+üblichen Relationen und Operationen sind definiert. @code{next} inkrementiert
+die Position (@code{pos}) eines @code{bindOffsets}.
+ */
+TYPE bindOffset == bindOffset(item: nat, pos: nat)
+
+FUN < =          : bindOffset ** bindOffset     -> bool
+FUN next         : bindOffset                   -> bindOffset
+FUN fmtBindOffset: bindOffset                   -> fmt
+
+/* %
+ Die Bindungen lokaler Variablen tauchen an verschiedenen Stellen auf:
+ @itemize @bullet
+ @item Beim Pattern-matching bei der Beta-Reduktion: Hier werden alle Bindungen
+in das oberste Stack-Item beschrieben. Dieses Item enthält nur die Bindungen für
+dieses PAttern-Mathing, so daß die Indices von Null bis @code{n-1} laufen, wenn
+@code{n} die Anzahl der im Pattern gebundenen Variablen ist.
+ @item Beim Pattern-Matching bei der @code{block}-Reduktion: Da hierbei alle
+Bindungen aus allen Pattern des Blockes in ein gemeinsames Stack-Item (auch das
+Toplevel-Item) geschrieben werden, beginnt jedes Pattern mit der Indizierung,
+bei der das vorherige Pattern aufgehört hat. Die Pattern ,,füllen'' das
+Stack-Item also sequenziell.
+ @item Bei unbenannten Lambda-Abstraktionen: ...
+@end itemize
+
+Generell werden Bindungen ausschließlich auf dem obersten Stack-Item (BindItem)
+abgelegt. Lesen kann man die Daten aus jedem BindItem.
+ */
+-- %$Evaluations-Ids$ ========================================
+/* %
+ Evaluations-ids @code{evalId} werden zur eindeutigen Identifizierung von
+Auswertungen benötigt.
+ */
+TYPE evalId == evalId(id: nat)
+
+FUN < =         : evalId ** evalId              -> bool
+FUN fmtEvalId   : evalId                        -> fmt
+-- %$Term-Positionen$ ====================================
+/* %
+ Die Termpositionen werden benötigt, um während der Evaluation eines Ausdrucks
+z.B. bei Breakpoints die Stelle, an der der Breakpoint auftrat zu
+benennen. @code{unknown} wird intern dazu verwendet, temporäre Terme
+aufzubauen, denen kein direkter Bezug zum Originalterm zugeordnet werden
+kann. (Unterbrechungen an diesen Stellen werden durch die Funktion
+@code{break'Monitor} im Clienten berhindet.) Die Variante @code{breakPoint}
+wird nur für Breakpoints innerhalb des Clienten verwendet. Sie beziehen sich
+immer auf die gesamte Funktion.
+ */
+TYPE tpos == 
+        tpos(pos:       nat)
+        breakPoint
+        unknown
+
+FUN < =         : tpos ** tpos                  -> bool
+FUN next        : tpos                          -> tpos
+FUN fmtTpos     : tpos                          -> fmt
+
+-- %$Parametrisierte Sorten und Funktionen$
+-- %---------------------------------------
+/* %
+ Sorten und Funktionen sind im allgemeinen parametrisiert, d.h. sie haben
+formale Sorten- und Funktionsparameter. Dieser Fakt ist für den Interpreter aus
+zwei Gründen wichtig:
+
+@itemize @bullet
+@item @emph{Erstens} sind Funktionen mit Parameterfunktionen semantisch als
+ polymorphe Higher-Order-Funktionen zu betrachten, d.h. die Parameterfunktionen
+ werden Argumente der (uninstanziierten) Funktion. 
+
+ Diese Tatsache wird aber
+ bereits seitens der Definition für Expressions behandelt: Die
+ Parameterfunktionen werden hier durch gewöhnliche Abstraktionen
+ bzw. Applikationen angewendet.
+@item @emph{Zweitens} wird die Angabe der Instanziierungen zur
+ Ausgabekonvertierung in eine menschenlesbare Form (@code{PRINT}-Problematik)
+ benötigt. Hier tritt das Problem bei parametrisierten Objekten auf, deren
+ konkrete Instanziierung bei der Evaluation mitgerechnet werden muß. 
+
+ Die Kodierung, die vom OCS realisiert wird, unterstützt die
+ Angaben der Instanziierung nicht vollständig, weil sie im Ausführungsmodell für
+ @OPAL nicht notwendig sind. Einzig und allein die Angabe der Instanziierungen
+ der Parameterfunktionen wird hier durch polymorphe Higher-Order-Funktionen
+ unterstützt (siehe oben). Alle anderen Informationen, die (formal
+ parametrisierte) Funktionalitäten instanziieren und damit konkretisieren,
+ müssen @emph{außerhalb} dieses Kodierungsschemas behandelt werden!
+
+ Lösung: Alle konkreten Instanzen werden in das Closure-Objekt der benannten
+ Funktion mit hineingesteckt. Erfolgt die Beta-Reduktion dieser Funktion,
+ werden diese Parameter im Environment (BindingStack) gesichert und somit in die
+ Auswertung hinübergerettet.
+@end itemize
+ */
+TYPE name == name(      objectId:       objectId,    -- Id des glob. Obj.
+                        instances:      seq[name])   -- Instanzenliste
+
+FUN fmtName     : name                          -> fmt          
+
+-- %$Ausdrücke$ ==================================================
+/* %
+ Der Datentyp @code{expr} beschreibt einen beliebigen @OPAL-Ausdruck. Jeder
+dieser Ausdrücke ist durch eine Position markiert, die @emph{eindeutig}
+charakterisiert, wo sich der Ausdruck im Kontext des Gesamtausdrucks
+befindet.
+ */
+TYPE expr == 
+
+/* %
+ Die Applikation einer Funktion wird durch einen Namen beschrieben.
+Funktionalität und Definition der Funktion können mit Hilfe der
+Funktions-Tabelle ermittelt werden. Der Name muß dabei immer eine instanziierte
+Funktion und keine(!) Sorte sein. Die Instanzen der formalen Parameter dürfen
+selbst auch formale Parameter enthalten.
+ */
+        name(   pos:            tpos,
+                name:           name)
+
+
+/* %
+ Ein lokaler Identifier wird mit Hilfe eines @code{bindOffset} im
+Binding-Stack lokalisiert.
+ */
+        local(  pos:            tpos,   
+                offset:         bindOffset)
+
+/* %
+ Resultate bereits erfolgter Auswertungen sind -- semantisch betrachtet --
+äquivalent zu @code{local}. Da ihre Normalformen aber im @code{Result-Stack}
+enthalten sind, wird die Unterscheidung hier getroffen. Resulte werden durch
+die Id ihrer Auswertung im Result-Stack eindeutig lokalisiert.
+ */
+        result( pos:            tpos,
+                id:             evalId)
+
+/* %
+ Die Lambda-Abstraktion wird durch die Variante @code{lambda} eingeführt. Wir
+lassen für die Abstraktion beliebige Pattern zu. Freie Variablen wurden aus dem
+Lambda-Term durch Lambda-Lifting eleminiert. Da Lambda-Abstraktionen (durch
+Pattern-Matching) mehrere Gleichungen beinhalten können, sind die abstrahierten
+freien Variablen die freien Variablen @emph{aller} Definitionsterme!
+ */
+        lambda( pos:            tpos,
+                mtree:          mtree,
+                exprs:          array[expr])
+
+/* %
+ Die Applikation von Argumenten auf eine Funktion wird durch die Variante
+@code{apply} modelliert. Dabei können Lambda-Abstraktionen auch partiell
+appliziert werden. Die Dimension des Applikations-Ausdrucks wird durch
+@code{dim} repräsentiert.
+ */
+        apply(  pos:            tpos,
+                f:              expr,
+                arg:            expr,
+                dim:            nat)
+
+/* %
+ Ein Tupel ist eine (geordnete) Folge von Ausdrücken. Zur effizienten
+Auswertung wird jeder Ausdruck des Tupels mit der Summe der Dimensionen der
+vorangegangenen Ausdrücke markiert. (Deshalb ist das Tupel eine Folge von
+@code{tupleExprs}.) Damit läßt sich die ,,Position'' der einzelnen Objekte in
+der Normalform des Tupels (Sequenz von @code{obj}) schneller
+ermitteln. @code{dim} gibt die Dimension des Tupels an.
+ */
+        tuple(  pos:            tpos,
+                elems:          seq[tupleExpr],
+                dim:            nat)
+
+/* %
+ Ein @code{LET/WHERE}-Ausdruck wird durch die Variante @code{block}
+repräsentiert. Die Auswertung erfolgt, indem die Gleichungen sequentiell
+ausgewertet werden, wodurch die freien Variablen der linken Seiten der
+Gleichungen gebunden werden. Anschließend wird der @code{body}-Ausdruck
+ausgewertet, wobei die Bindungen der freien Variablen durch die Normalformen
+der rechten Seiten definiert werden. Diese Bindungen werden im Binding-Stack
+verwaltet. @code{numberOfVars} gibt die Gesamtanzahl aller im Block definierten
+(d.h. auf der linken Seite der Gleichungen stehenden) Variablen an. Diese
+Information wird zur Evaluation aus Effizienzgründen benötigt.
+
+Die Gleichungen müsssen entsprechend ihrer Abhängigkeiten sortiert sein.
+ */
+        block(  pos:            tpos,
+                eqns:           seq[blockEqn],
+                body:           expr,
+                numberOfVars:   nat)
+
+/* %
+ Ein @code{CASE}-Konstrukt dient zur Darstellung einer
+@code{IF-THEN-ELSE}-Fallunterscheidung von @OPAL auf der Grundlage eines
+boolschen Wertes. Der Fall, daß keine @code{ELSE}-Expression angegeben wurde,
+wird durch den Ausdruck @code{undefined} dargestellt.
+ */
+        cases(  pos:            tpos,
+                guards:         seq[guard],
+                else:           expr)
+
+/* %
+ Ein Datum kann durch eine Denotation repräsentiert werden. Die Normalform
+eines solchen Terms ist die Denotation selbst.
+ */
+        den(    pos:            tpos,
+                rep:            denotation)
+
+/* %
+ Eine spezielle Variante eines Ausdrucks ist der undefinierte Ausdruck. Er
+dient zur Repräsentation einer ''fehlenden Definition''. Die Reduktion eines
+solchen Ausdrucks im Interpreter führt zwangsläufig zu einem Laufzeitfehler des
+Opal-Client.
+ */
+        undefined(
+                pos:            tpos)
+
+/* %
+ @code{nil} wird zur Kodierung leerer Tupel verwendet: @code{tuple} in
+Expressions tauchen nur nichtleer auf. Bei der Übersetung in Expressions sind
+alle leeren Tupel bereits in das konstante Datum @code{nil} transformiert
+worden: @code{a()} wird nun als @code{a(nil)} repräsentiert.
+ */
+        nil(    pos:            tpos)
+
+/* %
+ @code{cons,test,sel} beschreiben @code{DATA}-Implementierungen von
+Sorten über free types.
+
+Konstruktoren werden durch eine für die Sorte eindeutigen @code{tag}
+(natürliche Zahl) und ihren Rang @code{rnak}beschrieben. Die zugehörige
+Testfunktion hat denselben @code{tag} wie der Konstruktor, der Rang ist aber
+immer Eins. Selektoren sind Projektionen. Ein Selektor kann für mehrere
+Varianten eines free types definiert sein und dort auch unterschiedliche
+Positionen belegen. Das Array @code{positions} weist jedem @code{tag} einer
+Variante die Position der Selektion für diese Variante zu. Ist die Selektion
+für eine Variante undefiniert, enthält das Array an der entprechenden Stelle
+@code{max'Nat} um die Undefiniertheit auszudrücken.
+ */
+        cons(   pos:            tpos,
+                tag:            nat,
+                rank:           nat)
+
+        test(   pos:            tpos,
+                tag:            nat)
+
+        sel(    pos:            tpos,
+                positions:      array[nat])
+
+/* %
+ @code{bp} und @code{guardedBp} dienen zur Repräsentation von Breakpoints für
+Funktionen. Das @code{obj} ist das eigentliche Funktionsobjekt, das durch einen
+Breakpoint gekapselt wird. Die Variante @code{guardedBp} erhält zusätzlich noch
+einen Funktionsausdruck @code{guard}, der bei der Reduktion ausgewertet wird
+und einen boolschen Wert liefert. Bei @code{false} wird der Breakpoint
+ignoriert.
+ */
+        bp(     pos:            tpos,
+                id:             objectId,
+                obj:            obj,
+                rank:           nat,
+                dim:            nat)
+
+        guardedBp(
+                pos:            tpos,
+                id:             objectId,
+                obj:            obj,
+                rank:           nat,
+                dim:            nat,
+                guard:          expr)
+                
+
+        asDenoFormatter(
+                pos:            tpos,
+                obj:            obj)
+
+        asFmtFormatter(
+                pos:            tpos,
+                obj:            obj)
+                
+/* %
+ Die Variante @code{obj} wird insbesondere bei der Analyse der textuellen
+Repräsentation verwendet, bei der Normalformen auf @code{print}-Funktionen
+appliziert werden. 
+
+@sc{Wichtig:} Diese Variante darf vom Debugger nicht verwendet werden, da
+Objekte i.allg. nicht über den Communication Channel geschickt werden können
+(wegen der Funktionen)!
+ */
+        obj(    pos:            tpos,
+                obj:            obj)
+
+
+        FUN fmtExpr : expr -> fmt
+        FUN prettyExpr: expr -> fmt
+
+/* %Liefert true, wenn der Ausdruck vom Debugger typisierbar ist.
+    Das ist z.Z. nur bei @code{name} der Fall. */
+
+FUN typeable? : expr -> bool
+
+
+-- %$Hilfstypen für Ausdrücke$ ===============================================
+/* %
+ Eine Gleichung innerhalb eines Blockes besteht aus einem Matchingtree und
+einem Ausdruck. Der Matchingtree beschreibt dabei @emph{genau ein} Pattern und
+eine undefinierte (weil unwichtige) Expression. Die Zuweisung der Normalform zu
+den Variablen kann nur erfolgen, wenn das Pattern paßt. Dies ist für @OPAL 1
+durch Restriktion der Pattern in jedem Fall erfüllt. Für eventuelle
+Erweiterungen wird hier die allgemeinere Form gewählt. Ist ein Matching nicht
+möglich, erfolgt i.allg. ein Laufzeitfehler, bei @OPAL 1 ist das, wie gesagt,
+ausgeschlossen.
+ */
+TYPE blockEqn == 
+        eqn(    lhs:            mtree,
+                rhs:            expr
+        )
+
+
+/* %
+ Guards werden zur Darstellung von @code{cases}-Ausdrücken verwendet.
+ */
+TYPE guard == guard(    if:             expr,
+                        then:           expr)
+
+
+/* %
+ Elemente von Tupeln sind gewöhliche Ausdrücke, die (aus Effizienzgründen) mit
+einer vorberechenten Position versehen werden. Diese Position drückt die Summe
+der Dimensionen der vor diesem Element im Tupel stehenden Elemente
+aus. Beispiel: In @code{(a:S,b:S**S**S,c:S**S,d:S)} hat @code{c} die Position
+4=1+3 und @code{d} hat die die Position 6=1+3+2.
+ */
+TYPE tupleExpr == tupleExpr(expr: expr, pos: nat)
+
+-- %$Funktionalität eines Ausdrucks$ ========================================
+
+TYPE fct ==
+        sort(   name:   name
+        )
+        cart(   elems:  seq[fct]
+        )
+        funct(  dom:    fct,
+                codom:  fct
+        )
+        FUN fmtFct : fct -> fmt
+        FUN prettyFct: fct -> fmt
+
+-- %$Kind einer Funktion$ ==================================================
+
+TYPE kind == interpreted coded
+
+        FUN fmtKind : kind -> fmt
+
+
+TYPE sortInfo == 
+        sortInfo(       
+                name:           name,
+                outputSort:     outputSort
+        )
+
+        FUN fmtSortInfo : sortInfo      -> fmt
+
+TYPE outputSort == denotation fmt
+
+        FUN fmtOutputSort : outputSort  -> fmt
+
+-- %$Pattern-Matching$ ==================================================
+
+-- %$$Der Matching-Tree$
+/* %
+ Der Datentyp @code{mtree} dient zur Repräsentation beliebiger
+Matching-Bäume für Gleichungen. Ein Matching-Tree besteht aus einem
+@code{matchtree}, der den Testdurchlauf beim Selektieren der richtigen
+Pattern-Variante für eine gegebene Argumentsequenz repräsentiert. Für ein
+gegebenes Objekt-Tupel kann mit @code{select'Interpreter} eine natürliche Zahl
+ermittelt werden, die die Pattern-Variante repräsentiert, die auf das
+Objekt-Tupel nach dem best-fit Pattern-Matching paßt. Diese Zahl ist der Index
+auf das zugehörige Pattern in der Menge @code{patterns}.
+ */
+TYPE mtree ==
+        mtree(  tree:           matchtree,
+                patterns:       array[bpattern],
+                rank:           nat
+        )
+
+/* %
+ Aus Effizienzgründen wird beim Abarbeiten des Matching-Trees ein Stack
+aufgebaut, der alle bisher selektierten Objekte aufnimmt. Damit kann jede neue
+Selektion eines Datums, das geprüft werden soll, durch sein ,,Vaterobjekt'' und
+die Selektion beschrieben werden, die das Teilobjekt aus dem überoeordneten
+Vaterobjekt selektiert. Das überoeordnete Objekt wird durch einen Index in den
+Stack beschrieben, um eine Neuberechung des Vaterobjektes zu vermeiden.
+ */
+TYPE matchtree ==
+        matchtree(
+                parent:         nat,
+                sel:            selector,
+                subtrees:       seq[testtree]
+        )
+        leaf(   n:              nat
+        )
+
+TYPE testtree == testtree(test: expr, tree: matchtree)
+
+/* %
+ Das Pattern-Matching beginnt an oberster Stelle immer mit einer Menge von
+Objekten, die untersucht werden sollen. Betrachtet man diese Menge als anonymes
+Tupel, ergibt sich ein sehr sauberes Konzept der Pattern-Analyse. Der Typ
+@code{selector} realisiert die Abstraktion der Selektion insbesondere für
+anonyme Tupel: die Projektion @code{proj(i)} ist die Projektion eines Tupels auf
+das @code{i}-te Element des Tupels. @code{sel} ist die Kapselung gewöhnlicher
+Selektionen, die allgemein durch Ausdrücke dargstellt werden. Im allgemeinen
+handelt es sich dabei allerdings um Namen globaler Funktionen.
+ */
+
+TYPE selector == sel(expr: expr)
+                 proj(n: nat)   -- 0..m für ein Tupel (x_0,...,x_m)
+
+
+-- %$$Definition der Binding-Pattern$
+/* %
+ Ein @code{bpattern} wird durch eine Zahl @code{nVars} und ein Pattern
+@code{patt} beschrieben. @code{nVars} gibt die Anzahl in @code{patt} enthaltenen
+Variablen an.
+ */
+TYPE bpattern == 
+        bpattern(       nVars:  nat,
+                        patt:   patt
+        )
+
+/* %
+ @code{patt} ist eine reduzierte Variante für Pattern, die insbesondere zur
+effizienten Auswertung der Bindungen beim Pattern-Matching dient. Dabei gilt:
+Wildcards (@code{any}) sind entfernt worden und Konstruktorterme sind auf die
+Angabe relevanter Paare Selektor/Pattern beschränkt. 
+
+Die @code{bindOffsets} der Variablen in einem Pattern haben generell die
+@code{itemNo} Null, da Pattern immer in einem gemeinsamen BindItem auf der
+obersten Stackebene abgelegt werden. Der Index in diesem BindItem beginnt die
+Zählung aber nicht immer mit Null, da bei @code{block}-Expressions die Bindungen
+mehrerer Pattern in ein gemeinsames BindItem eingetragen werden.
+ */
+TYPE patt ==
+        any
+        var(    offset:         bindOffset
+        )
+        constr( selpatt:        seq[pair[selector,patt]]
+        )
+        as(     offset:         bindOffset,     
+                pattern:        patt
+        )
+        
+
+
+

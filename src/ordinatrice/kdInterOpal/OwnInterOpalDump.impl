@@ -1,0 +1,241 @@
+IMPLEMENTATION OwnInterOpalDump
+
+IMPORT
+	BTUnion			COMPLETELY
+	InterOpal		COMPLETELY
+	MapConv			ONLY `
+	Map				ONLY ! def? map
+	Nat				ONLY nat
+	Option			ONLY avail? cont option
+	SeqConv			ONLY `
+	Seq				ONLY seq
+	String			ONLY ! string
+	StringFormat	ONLY format
+
+-- ############################################################################
+
+IMPORT
+	InterOpal		COMPLETELY
+	String			COMPLETELY
+	StringFormat	COMPLETELY
+	MapConv			COMPLETELY
+	SeqConv			COMPLETELY
+	Option			COMPLETELY
+
+DEF dumpInterOpal(interOpal( part,structs)) == 
+	format("interOpal(%s,\n%s)",
+		   dumpPart(part) u u(`(dumpOrigin, dumpStruct)(structs)))
+-- ============================================================================
+DEF dumpLocal(interOpal(_,structs)) ==
+	IF (local, structs) def? THEN
+		dumpStruct(structs ! local)
+	ELSE "local struct empty."!
+	FI
+-- ============================================================================
+DEF dumpPart(signature) == "signature"!
+DEF dumpPart(extProperties) == "extProperties"!
+DEF dumpPart(implementation) == "implementation"!
+DEF dumpPart(intProperties) == "intProperties"!
+		
+-- ============================================================================
+DEF dumpStruct(struct(pos, origin, symbol, insts, onlys, objs, props, _)) ==
+	format("struct(%s, %s, ""%s"",\n %s,\n %s,\n %s,\n %s)",
+			`(dumpPos)(pos) u dumpOrigin(origin) u symbol u
+			`(dumpInst, `(dumpName))(insts) u
+			`(dumpInst, `(dumpName))(onlys) u
+			`(dumpIdent, dumpObject)(objs) u
+			u(`(dumpIdent, dumpProperty)(props)))
+-- ============================================================================
+DEF dumpProperty(freeType(pos, ident, sort, variants, _)) ==
+	format("freeType(%s, %s, %s, %s)",
+			dumpPos(pos) u dumpIdent(ident) u dumpName(sort) u
+			u(`(dumpVariant)(variants)))
+
+DEF dumpProperty(law(pos, ident, symbol, formula, _)) ==
+	format("law(%s, %s, %s, %s)",
+			dumpPos(pos) u dumpIdent(ident) u
+			(IF symbol avail? THEN format("avail(%s)", u(cont(symbol)))
+			 ELSE ">nil<"! FI) u
+			u(dumpFormula(formula)))
+
+DEF dumpProperty(other(pos, id, _, _)) ==
+  format("other(%s, %s, ?, ?)",
+         dumpPos(pos) u u(id))
+
+-- ============================================================================
+	  
+DEF dumpObject(object(pos, ident, symbol, kind, def, props, _)) ==
+	format("object(%s, %s, ""%s"", %s, %s, %s)",
+		   `(dumpPos)(pos) u dumpIdent(ident) u symbol u dumpKind(kind) u
+		   dumpImpl(def) u u(`(dumpIdent)(props)))
+-- ============================================================================
+DEF dumpImpl(missing) == "missing"!
+
+DEF dumpImpl(imported) == "imported"!
+
+DEF dumpImpl(parameter(pos, no)) ==
+	format("parameter(%s, %n)", dumpPos(pos) u u(no))
+
+DEF dumpImpl(induced(pos, sort)) ==
+	format("induced(%s, %s)", dumpPos(pos) u u(dumpName(sort)))
+
+DEF dumpImpl(data(variants)) ==
+	format("data(%s)", u(`(dumpVariant)(variants)))
+
+DEF dumpImpl(def(eqns)) ==
+	format("def(%s)", u(`(dumpEqn)(eqns)))
+
+DEF dumpImpl(other(_,id, _)) == format("other(%d, ?)", u(id))
+-- ============================================================================
+
+DEF dumpVariant(variant(pos, cons, test, comps)) ==
+	format("variant(%s, %s, %s, %s)",
+		   dumpPos(pos) u dumpName(cons) u dumpName(test) u
+		   u(`(dumpComp)(comps)))
+
+-- ============================================================================
+
+DEF dumpComp(comp(pos, sel)) ==
+	format("comp(%s, %s)", dumpPos(pos) u u(dumpName(sel)))
+
+-- ============================================================================
+
+DEF dumpKind(sort) == "sort"!
+DEF dumpKind(fct(f)) == format("fct(%s)", u(dumpFct(f)))
+DEF dumpKind(other(id,_)) == format("other(%d, ?)", u(id))
+
+-- ============================================================================
+
+DEF dumpPos(unknown) == "unknown"!
+
+DEF dumpPos(part(p)) == format("part(%s)", u(dumpPart(p)))
+
+DEF dumpPos(pos(part, row, col)) ==
+	format("pos(%s, %n, %n)", dumpPart(part) u row u u(col))
+DEF dumpPos(region(part, row, col, endRow, endCol)) ==
+  format("region(%s, %n, %n, %n, %n)", dumpPart(part) u row u col u endRow u u(endCol))
+
+DEF dumpIdent(ident(no)) == format("ident(%n)", no u)
+
+-- ============================================================================
+FUN dumpName : name -> string
+
+DEF dumpName(name(id, org, inst)) ==
+	format("name(%s,%s,%s)", dumpIdent(id) u dumpOrigin(org) u 
+							 u(dumpInst(inst)))
+
+-- ============================================================================
+	
+DEF dumpOrigin(local) == "local"!
+DEF dumpOrigin(main) == "main"!
+DEF dumpOrigin(origin(no)) == format("origin(%n)", no u)
+
+-- ============================================================================
+DEF dumpInst(none) == "none"!
+DEF dumpInst(formal) == "formal"!
+DEF dumpInst(inst(no)) == format("inst(%n)",no u)
+DEF dumpInst(generic) == "generic"!
+-- ----------------------------------------------------------------------------
+DEF dumpExpr(name(_,n)) == format("name(_,%s)", u(dumpName(n)))
+
+DEF dumpExpr(den(_, rep)) == format("den(_, ""%d"")", rep u)
+
+DEF dumpExpr(tuple(_, exprs)) ==
+	format("tuple(_, %s)", u(`(dumpExpr)(exprs)))
+
+DEF dumpExpr(apply(_, f, a)) ==
+	format("apply(_, %s, %s)", dumpExpr(f) u u(dumpExpr(a)))
+
+DEF dumpExpr(cases(_, guards, else)) ==
+	format("cases(_, %s, %s)", `(dumpGuard)(guards) u
+		   u(IF else avail? THEN format("cont(%s)", u(dumpExpr(cont(else))))
+			ELSE "nil"! FI))
+
+DEF dumpExpr (lambda(_,vs,b)) ==
+	format("lambda(_, %s, %s)", `(dumpVar)(vs) u u(dumpExpr(b)))
+
+DEF dumpExpr (block(_,eqs,b)) ==
+	format("block(_, %s, %s)", `(dumpEqn)(eqs) u u(dumpExpr(b)))
+
+-- ============================================================================
+FUN dumpFct : fct -> string
+
+DEF dumpFct(sort(s)) == format("sort(%s)", u(dumpName(s)))
+
+DEF dumpFct(cart(elems)) == format("cart(%s)", u(`(dumpFct)(elems)))
+
+DEF dumpFct(funct(dom, codom)) ==
+	format("funct(%s, %s)", dumpFct(dom) u u(dumpFct(codom)))
+
+-- ============================================================================
+FUN dumpGuard : guard -> string
+
+DEF dumpGuard(guard(_, if, then)) ==
+	format("guard(_,%s,%s)", dumpExpr(if) u u(dumpExpr(then)))
+
+-- ============================================================================
+FUN dumpEqn : eqn -> string 
+
+DEF dumpEqn(eqn(_,l,bf,r)) ==
+	format("eqn(_,%s,%s,%s)", dumpPattern(l) u `(dumpPattern)(bf) u 
+							  u(dumpExpr(r)))
+
+-- ============================================================================
+FUN dumpPattern :pattern -> string
+
+DEF dumpPattern(any(_)) == !("any(_)")
+
+DEF dumpPattern(name(_,n)) == format("name(_,%s)", u(dumpName(n)))
+
+DEF dumpPattern(var(_,v)) == format("var(_,%s)",dumpVar(v) u)
+
+DEF dumpPattern(as(_,v,p)) == 
+	format("as(_,%s,%s)",dumpVar(v) u u(dumpPattern(p)))
+
+DEF dumpPattern(apply(_,f,a)) ==
+	format("apply(_,%s,%s)",dumpPattern(f) u u(dumpPattern(a)))
+
+DEF dumpPattern(tuple(_, pats)) ==
+	format("tuple(_, %s)", u(`(dumpPattern)(pats)))
+
+-- ############################################################################
+DEF dumpVar (var(_,ident(n), symb, fct)) == 
+	format("var(_, ident(%n), ""%s"", %d)", n u symb u u( dumpFct(fct)))
+
+-- ============================================================================
+FUN dumpFormula: formula -> string
+
+DEF dumpFormula(dfd(_,e))	== format("dfd(_,%s)", dumpExpr(e)u)
+
+DEF dumpFormula(approx(_,l,r)) == 
+	format("approx(_,%s,%s)",dumpExpr(l) u u(dumpExpr(r)))
+
+DEF dumpFormula(cong(_,l,r))	==
+	format("cong(_,%s,%s)",dumpExpr(l) u u(dumpExpr(r)))
+
+DEF dumpFormula(neg(_,f))	== format("neg(_, %s)",dumpFormula(f)u)
+
+DEF dumpFormula(conj(_,f1,f2)) ==
+	format("conj(_,%s,%s)",dumpFormula(f1) u u(dumpFormula(f2)))
+
+DEF dumpFormula(disj(_,f1,f2)) ==
+	format("disj(_,%s,%s)",dumpFormula(f1) u u(dumpFormula(f2)))
+
+DEF dumpFormula(impl(_,f1,f2)) ==
+	format("impl(_,%s,%s)",dumpFormula(f1) u u(dumpFormula(f2)))
+
+DEF dumpFormula(equiv(_,f1,f2)) ==
+	format("equiv(_,%s,%s)",dumpFormula(f1) u u(dumpFormula(f2)))
+
+DEF dumpFormula(forall(_,vs, f)) ==
+	format("forall(_,%s, %s)",`(dumpVar)(vs) u u(dumpFormula(f)))
+
+DEF dumpFormula(exist (_,vs, f)) ==
+	format("exist(_,%s, %s)",`(dumpVar)(vs) u u(dumpFormula(f)))
+
+DEF dumpFormula(informal(_, txt)) ==
+  format("informal(_,%s)", u(txt))
+
+DEF dumpFormula(other(_, id, _)) ==
+  format("other(_,%s,_)", u(id))
+-- ============================================================================

@@ -1,0 +1,288 @@
+-- LAST EDIT: Tue Jun 22 17:17:59 1993 by Andreas Fett (paris!fetti) 
+-- ============================================================================
+-- Autor:	af
+-- Projekt:	OPAL1-Compiler
+-- Changes:	af, Jun 22 1993: changed message for different data and type
+-- ============================================================================
+
+IMPLEMENTATION DataDefAnalysis
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		ONLY nat 1 =
+	Triple		COMPLETELY
+	Seq		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqFilter	ONLY | split
+	SeqZip		COMPLETELY
+
+	Pos		ONLY pos `
+	Error		COMPLETELY
+
+	Rep		ONLY rep
+
+	PartName	ONLY partName:SORT
+	Fct[partName]	ONLY fct
+	Fct[name]	ONLY fct
+	Impl[partName]	COMPLETELY
+	Impl[name]	COMPLETELY
+
+	AnalyzedGlobSig	ONLY globSig name freeConstr eqName
+			     impl:SORT pos:impl->pos impl:impl->sortImpl
+				none parameter data canonical
+				none? parameter?:impl->bool data?
+			     freeType defFreeType
+				impl:globSig**name->impl defImpl
+			     ` :globSig**level -> name -> denotation
+				level standard minimal
+
+	NameAnalysis	ONLY inducedSort inducedConstr inducedDiscr
+				inducedSelector matchingFct
+
+-- ----------------------------------------------------------------------------
+
+FUN target: sortImpl[partName] -> partName
+
+DEF target == sort
+
+-- ----------------------------------------------------------------------------
+
+FUN analyzeTypeDef: sortImpl[partName]**globSig -> globSig**err
+FUN analyzeDataDef: sortImpl[partName]**globSig -> globSig**err
+
+DEF analyzeTypeDef(impl,sig) ==
+  LET (newImpl,nextSig,err) == analyzeSortImpl(impl,sig)
+  IN IF ~(err ok?) THEN (nextSig,err)
+     ELSE includeTypeDef(newImpl,nextSig)
+     FI
+
+DEF analyzeDataDef(impl,sig) ==
+  LET (newImpl,nextSig,err) == analyzeSortImpl(impl,sig)
+  IN IF ~(err ok?) THEN (nextSig,err)
+     ELSE includeDataDef(newImpl,nextSig)
+     FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN analyzeSortImpl: sortImpl[partName]**globSig
+						-> sortImpl[name]**globSig**err
+
+DEF analyzeSortImpl(sortImpl(pname,variants,pos),sig) ==
+  LET (target,targetErr) == inducedSort(pname,sig)
+      (newVariants,varErr,newSig) == ((1st(T),2nd(T),3rd(T))
+	WHERE T == ((\\oldVar,ves.
+                       LET (vars,errs,thisSig) == (1st(ves),2nd(ves),3rd(ves))
+                           (newVar,nextSig,newErr) ==
+					analyzeVariant(oldVar,target,thisSig)
+                       IN &(newVar::vars,newErr+errs,nextSig))
+                    / &(<>,ok,sig))(variants))
+  IN (sortImpl(target,newVariants,pos),newSig,targetErr+varErr)
+
+FUN analyzeVariant: variant[partName]**name**globSig
+						-> variant[name]**globSig**err
+
+DEF analyzeVariant(variant(cons,test,comps,pos),target,sig) ==
+  LET checkAddComp == \\c1,cR.
+                        IF #((\\c.eqName(sig)(sel(c1),sel(c)))|cR)=1 THEN
+					err(error,duplicateSel,
+						`(sig,standard)(sel(c1)),pos)
+                        ELSE ok
+                        FI
+      addNewComp == \\oldComp,ces.
+                      LET (cmps,errs,thisSig) == (1st(ces),2nd(ces),3rd(ces))
+                          (newComp,nextSig,newErr) ==
+					analyzeComp(oldComp,target,thisSig)
+			  addErr == checkAddComp(newComp,cmps)
+                      IN &(newComp::cmps,newErr+(addErr+errs),nextSig)
+      (newComps,compErr,newSig) == ((1st(T),2nd(T),3rd(T))
+			     WHERE T == (addNewComp / &(<>,ok,sig))(comps))
+      (newCons,consErr) == inducedConstr(cons,target,fct*newComps,newSig)
+      newTest == inducedDiscr(test,target,newSig)
+  IN (variant(newCons,newTest,newComps,pos),newSig,compErr+consErr)
+
+FUN analyzeComp: comp[partName]**name**globSig -> comp[name]**globSig**err
+
+DEF analyzeComp(comp(sel,fct,pos),target,sig) ==
+  LET (newFct,newSig) == matchingFct(fct,sig)
+      (newSel,selErr) == inducedSelector(sel,target,newFct,newSig)
+  IN (comp(newSel,newFct,pos),newSig,selErr)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN includeTypeDef: sortImpl[name]**globSig -> globSig**err
+
+DEF includeTypeDef(def AS sortImpl(target,variants,pos),sig) ==
+  IF ~(freeType(sig,target) none?) THEN
+		(sig,err(error,duplicateFreeType,`(sig,standard)(target),pos))
+  IF impl(sig,target) parameter? THEN
+		(sig,
+		 err(error,parameterAsFreeType,`(sig,standard)(target),pos))
+  ELSE LET interSig == defFreeType(sig,target,data(def))
+           (finalSig,err,conss,tests) == includeFreeConstrs(variants,interSig)
+       IN (finalSig,err)
+  FI
+
+FUN includeFreeConstrs: seq[variant[name]]**globSig ->
+					globSig**err**seq[name]**seq[name]
+
+DEF includeFreeConstrs(<>,sig) == (sig,ok,<>,<>)
+DEF includeFreeConstrs((v1 AS variant(cons,test,comps,pos))::vR,sig) ==
+  LET (interSig,errR,consR,testR) == includeFreeConstrs(vR,sig)
+      consErr == IF uniqueIn(sig)(cons,consR) THEN
+			err(error,duplFreeConstr,`(sig,standard)(cons),pos)
+                 ELSE ok
+                 FI
+      testErr == IF uniqueIn(sig)(test,testR) THEN
+			err(error,duplFreeDiscr,`(sig,standard)(test),pos)
+                 ELSE ok
+                 FI
+      (finalSig,err1) == includeFreeConstr(v1,interSig)
+  IN (finalSig,(consErr+(testErr+(err1+errR))),cons::consR,test::testR)
+
+FUN includeFreeConstr: variant[name]**globSig -> globSig**err
+
+DEF includeFreeConstr(variant(cons,test,comps,pos),sig) ==
+  LET consErr == IF impl(sig,cons) parameter? THEN
+			err(error,parameterAsConstr,`(sig,standard)(cons),pos)
+                 ELSE ok
+                 FI
+      testErr == IF impl(sig,test) parameter? THEN
+			err(error,parameterAsDiscr,`(sig,standard)(test),pos)
+                 ELSE ok
+                 FI
+      selErr == \\sel.IF impl(sig,sel) parameter? THEN
+			err(error,parameterAsSel,`(sig,standard)(sel),pos)
+                      ELSE ok
+                      FI
+  IN (freeConstr(sig,cons,test,sel*comps),
+     ((+ \ (consErr+testErr))(selErr*(sel*comps))))
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN includeDataDef: sortImpl[name]**globSig -> globSig**err
+
+DEF includeDataDef(def AS sortImpl(target,variants,p),sig) ==
+  LET prevImpl == impl(sig,target)
+  IN IF prevImpl data? THEN
+	(sig,err(error,duplicateImplementation,`(sig,standard)(target),
+                 `(pos(impl(prevImpl))),p))
+     IF prevImpl parameter? THEN
+	(sig,err(error,parameterImplementation,`(sig,standard)(target),p))
+     IF prevImpl none? THEN
+       LET (newSig,implErr) ==
+		includeVariants(variants,defImpl(sig,target,data(def)),<>)
+       IN IF freeType(sig,target) none? THEN
+            LET (finalSig,typeErr) == includeTypeDef(def,newSig)
+            IN (finalSig,implErr+typeErr)
+          ELSE (newSig,IF implErr ok? THEN
+                         checkEquivalent(sig,target,def,
+                                         impl(freeType(sig,target)))
+                       ELSE implErr
+                       FI)
+          FI
+     FI
+
+FUN includeVariants: seq[variant[name]]**globSig**seq[name] -> globSig**err
+
+DEF includeVariants(<>,sig,implSels) == (sig,ok)
+DEF includeVariants(v1::vR,sig,implSels) ==
+  LET (interSig,err1,newSels) == includeVariant(v1,sig,implSels)
+      (finalSig,errR) == includeVariants(vR,interSig,implSels++newSels)
+  IN (finalSig,err1+errR)
+
+FUN includeVariant: variant[name]**globSig**seq[name] ->
+							globSig**err**seq[name]
+DEF includeVariant(variant(cons,test,comps,pos),sig,implSels) ==
+  LET consErr == checkImpl(sig,cons,impl(sig,cons),pos)
+      testErr == checkImpl(sig,test,impl(sig,test),pos)
+      interSig == defImpl(defImpl(sig,cons,canonical(pos)),test,canonical(pos))
+      (finalSig,selErr,newSel) == includeComps(comps,interSig,implSels)
+  IN (finalSig,(consErr+testErr)+selErr,newSel)
+
+FUN includeComps: seq[comp[name]]**globSig**seq[name] ->
+							globSig**err**seq[name]
+DEF includeComps(<>,sig,implSels) == (sig,ok,<>)
+DEF includeComps(comp(sel,fct,pos)::cR,sig,implSels) ==
+  IF exist?(\\s.eqName(sig)(s,sel),implSels) THEN
+						includeComps(cR,sig,implSels)
+  ELSE LET selErr == checkImpl(sig,sel,impl(sig,sel),pos)
+           interSig == defImpl(sig,sel,canonical(pos))
+           (finalSig,errR,newSelR) == includeComps(cR,interSig,implSels)
+       IN (finalSig,selErr+errR,sel::newSelR)
+  FI
+
+FUN checkImpl: globSig**name**impl**pos -> err
+
+DEF checkImpl(sig,name,none,p) == ok
+DEF checkImpl(sig,name,parameter,p) ==
+  err(error,parameterImplementation,`(sig,standard)(name),p)
+DEF checkImpl(sig,name,canonical(p1),p) ==
+  err(error,duplicateImplementation,`(sig,standard)(name),p1`,p)
+
+FUN uniqueIn: globSig -> name**seq[name] -> bool
+
+DEF uniqueIn(sig)(name,seq) == #((\\n.eqName(sig)(name,n))|seq) = 1
+
+FUN checkEquivalent: globSig**name**sortImpl[name]**sortImpl[name] -> err
+
+DEF checkEquivalent(sig,target,sortImpl(sort1,variants1,pos1),
+                               sortImpl(sort2,variants2,pos2)) ==
+  checkEquivalent(sig,variants1,variants2,warn)
+  WHERE warn == err(warning,msg,`(sig,minimal)(target),pos1)
+        msg ==
+"implementation of %s may be not equivalent to its free type"
+
+FUN checkEquivalent: globSig**seq[variant[name]]**seq[variant[name]]**err
+									-> err
+
+DEF checkEquivalent(sig,<>,<>,w) == ok
+DEF checkEquivalent(sig,<>,vs,w) == w
+DEF checkEquivalent(sig,v1::vR,<>,w) == w
+DEF checkEquivalent(sig,v1::vR,vs,w) ==
+  LET (other1,thisNother2) == split(\\v. ~(eqName(sig)(cons(v1),cons(v))),vs)
+  IN IF thisNother2 <>? THEN w
+     IF thisNother2 ::? THEN
+       LET this == ft(thisNother2)
+       IN IF ~((and \ eqName(sig)(test(v1),test(this)))
+		(zip(eqName(sig))(sel*comps(v1),sel*comps(this)))) THEN w
+          ELSE checkEquivalent(sig,vR,other1++rt(thisNother2),w)
+          FI
+     FI
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+FUN duplicateSel: denotation 
+DEF duplicateSel == "duplicate selector definition of %s"
+
+FUN duplicateFreeType: denotation
+DEF duplicateFreeType == "duplicate free type for %s"
+
+FUN parameterAsFreeType: denotation
+DEF parameterAsFreeType == "parameter as free type %s"
+
+FUN parameterAsConstr: denotation
+DEF parameterAsConstr == "parameter %s as constructor in free type"
+
+FUN parameterAsDiscr: denotation
+DEF parameterAsDiscr == "parameter %s as discriminator in free type"
+
+FUN parameterAsSel: denotation
+DEF parameterAsSel == "parameter %s as selector in free type"
+
+FUN duplFreeConstr: denotation
+DEF duplFreeConstr == "duplicate constructor %s in free type"
+
+FUN duplFreeDiscr: denotation
+DEF duplFreeDiscr == "duplicate discriminator %s in free type"
+
+FUN parameterImplementation: denotation
+DEF parameterImplementation ==
+  "parameter implementation: %s must not be implemented"
+
+FUN duplicateImplementation: denotation
+DEF duplicateImplementation ==
+  "duplicate implementation: %s already implemented at %s"

@@ -1,0 +1,171 @@
+/* %This structure defines @dfn{balanced search trees}, following the
+ideas of Stephen Adams as presented in "Functional Pearls: Efficient
+sets - a balancing act", Journal of Functional Programming, 3 (4),
+553-561, October 1993.  Search trees fulfill the property that every
+element in the left subtree is smaller, and every element of the right
+subtree is greater than the node value. Note that elements occur at
+most once in a balances search tree. */ 
+SIGNATURE BSTree[data, < : data ** data -> bool]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:08 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Nat ONLY nat
+       Option[data] ONLY option
+       Seq[data] ONLY seq
+
+-- %$Parameter$
+/* %@code{data} is the type of the elements of a tree. @code{<} is
+assumed to be an irreflexive total order. */
+SORT data
+FUN < : data ** data -> bool
+
+-- %$The Data Type of Balanced Search Trees$
+
+/* %The constructor @code{node} is partial; it is undefined if
+the bs condition is not met or the resulting tree is not balanceds. */
+
+/* %- I would have liked to annotate the tree'BSTree with the
+parameters, but bug oc 1.13 prohibits this. */
+
+TYPE bstree == nil
+               node(val: data, left: bstree, right: bstree)
+
+-- %$Constructing a Tree from Datas$
+
+/* % @code{%} convert the given data to an arbitrary tree containing
+these data */
+FUN % : data -> bstree
+FUN % : data ** data -> bstree
+FUN % : data ** data ** data -> bstree
+FUN % : data ** data ** data ** data -> bstree
+FUN % : data ** data ** data ** data ** data -> bstree
+FUN % : data ** data ** data ** data ** data ** data -> bstree
+FUN % : data ** data ** data ** data ** data ** data ** data -> bstree
+FUN % : data ** data ** data ** data ** data ** data ** 
+                                                data ** data -> bstree
+
+/* %Add or remove an element from a tree. */
+FUN incl excl : data ** bstree -> bstree
+
+-- %$Constructing a Tree from a Function$
+/* % @code{iter(f, nil)} returns @code{nil}. @*
+@code{iter(f, avail(d))} applies @code{f} to the data, giving a left
+and right value, and then returns a tree with data at the node, and a
+left and a right child recursively constructed from the result of
+@code{f(d)}. The function aborts, if the tree condition is violated or
+the resulting tree is not balanced. */
+
+FUN iter : (data -> option[data] ** option[data]) ** option[data] -> 
+                                                            bstree
+
+-- %$Combining Trees$
+/* % If one of the trees is empty, @code{++} is equivalent to
+@code{incl}. If this is not the case (@code{d ++ (l, r)}),
+@code{val(l) < d < val(r)} must hold. */
+
+FUN ++ : data ** bstree ** bstree -> bstree
+
+-- %$Working on a Tree$
+
+/* % The following functions replace the value (or the left child or
+the right child) of the first argument. These functions are undefined
+for empty trees and abort if the tree property is violated or
+the resulting tree is not balanced. */
+
+FUN :=_val : bstree ** data -> bstree
+FUN :=_left : bstree ** bstree -> bstree
+FUN :=_right : bstree ** bstree -> bstree
+
+
+-- %$Accessing Datas in a Tree$
+/* %@code{min} returns the minimal element of the tree */
+FUN min: bstree -> data
+
+/* % @code{leftmost} and @code{rightmost} return the "leftest" or
+"rightest" data of a tree. Both are undefined for empty trees. */
+FUN leftmost rightmost     : bstree -> data   
+
+/* % @code{children} and @code{grandchildren} return the values of the
+subtrees or the subtrees of the subtrees in arbitrary order. Both are
+always defined. */
+FUN children grandchildren : bstree -> seq[data]
+
+/* % @code{level(i, t)} returns all the elements found at depth
+@code{i}. @code{level} is always defined. */
+FUN level: nat ** bstree -> seq[data]
+
+/* % Return the values of the leaves from left to right. */
+FUN front: bstree -> seq[data]
+
+-- %$Information About a Tree$
+-- % Test, whether an element occurs in the tree
+FUN in : data ** bstree -> bool
+
+-- % The number of nodes of the tree.
+FUN # 	: bstree -> nat	
+
+/* % Length of the longest path from root to a leaf. The depth of a
+     leaf is 0, depth of an empty tree is undefined. */
+FUN depth: bstree -> nat
+
+/* % The number of leaves of the tree */
+FUN width: bstree -> nat
+
+/* % Are both children empty trees? */
+FUN leaf? : bstree -> bool
+
+/* % Check, whether a given predicate holds for one (@code{exist?}) or
+all (@code{forall?}) data, or return one value from the tree which
+fulfills the predicate, if one exists (@code{find?}). */
+FUN exist?	: (data -> bool) ** bstree -> bool
+FUN forall?	: (data -> bool) ** bstree -> bool
+FUN find?	: (data -> bool) ** bstree -> option[data]
+
+-- %$Comparing trees$
+/* % When supplied with a total irreflexive order, @code{<(<)}
+constitutes a valid total order on trees which may be used e.g. in
+instantiations of the set data type. @code{@{<@}} uses the order from
+the instantiation. */
+FUN < : (data ** data -> bool) -> bstree ** bstree -> bool
+FUN {<} : bstree ** bstree -> bool
+
+/* % Likewise, @code{=(=)} is an equivalence relation (or an equality)
+on trees, if @code{=} is an equivalence (an equality) on datas. */
+FUN = : (data ** data -> bool) -> bstree ** bstree -> bool
+
+
+-- %$Not for User Purpose$
+/* %Do never use these functions, as these may change without notice!
+*/
+IMPORT Tree[pair[data, nat]] ONLY tree
+       Pair[data, nat] ONLY pair
+
+FUN abs : tree[pair] -> bstree
+FUN rep : bstree -> tree[pair]
+FUN bstree? : tree[pair] -> bool
+FUN bstree0? : tree[pair] -> bool
+
+/* %- This function balances the input */
+
+FUN balance: tree[pair] -> tree[pair]
+FUN balanced? : tree[pair] -> bool
+
+/* %- @code{lrotate} swaps one of the subtrees from the right child to
+the left like this: @code{[/x, A, [/y, B, C\]\]} becomes @code{[/y,
+[/x, A, B\], C\]}, where @code{x, y} are node values and @code{A, B, C}
+are whole subtrees; @code{rrotate} is just the
+opposite. @code{lrotate} aborts, if the right child is empty,
+@code{rrotate}, if the left child is empty. */ 
+FUN lrotate: tree[pair] -> tree[pair]
+FUN rrotate: tree[pair] -> tree[pair]
+
+/* %- @code{[/x, A, [/z, [/y, B1, B2\], C\]\]} is "double" left rotated to
+@code{[/y, [/x, A, B1\], [/z, B2, C\]\]}. @code{drrotate} is the
+mirror operation. Both functions abort, if they don't find appropriate
+trees. */ 
+FUN dlrotate: tree[pair] -> tree[pair]
+FUN drrotate: tree[pair] -> tree[pair]
+

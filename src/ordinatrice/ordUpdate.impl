@@ -1,0 +1,109 @@
+IMPLEMENTATION ordUpdate
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/ordinatrice/ordUpdate.impl,v 1.1.1.1 1998-06-16 16:00:45 wg Exp $
+
+IMPORT  InterOpal COMPLETELY
+	AnalyzeIO COMPLETELY
+	SynthesizeIO COMPLETELY
+	ShortCutsIO COMPLETELY
+	
+	Seq ONLY seq %
+	SeqReduce ONLY /
+	SeqMap ONLY *
+	SeqIndex ONLY upd pos
+	Set ONLY set + {}
+	SetConv ONLY asSet
+	SetReduce ONLY /
+	Pair COMPLETELY
+	PairCompare ONLY cmp
+	RelCmp ONLY rel <?
+	Map ONLY map def {} ! def?
+	MapConv ONLY asSeq
+	Denotation ONLY ++
+	kdIOname ONLY `
+	Nat ONLY nat 1
+	NatConv ONLY `
+	Option COMPLETELY
+
+/* % Eingabe: Name der Sorte und die Varianten aus dem free type@*
+Ausgabe: neues InterOpal und die Menge der Idents der Update-Funktionen */
+
+-- FUN mkUpdate: interOpal ** name ** seq[variant] -> interOpal ** seq[object]
+DEF mkUpdate(IO,srt,vrnts) ==
+	LET seltab == (+, {}) / getSelectors(IO) * vrnts
+	    (IO2, selmap) == addSelectors(IO, seltab, srt)
+	    IO3 == (addSelDefs(selmap), IO2) / vrnts
+	IN (IO3, objOf(IO3)(main) * (2nd * asSeq(selmap)))
+
+
+
+
+/* % erzeugt Menge aller Selektoren als Paar (name, fct) */
+
+FUN getSelectors: interOpal-> variant -> set[pair[name, fct], <]
+DEF getSelectors(IO)(variant(_,_,_,comps)) ==
+	asSet((\\n. (n & codom(fctOf(IO)(n)))) * sel * comps)
+
+/* % fuegt zum Selektor mit Name und Funktionalitaet die Deklaration einer
+	Update-Funktion ein; gibt neues InterOpal und ident des Objekts
+	zurueck */
+FUN addSelector: interOpal ** pair[name, fct] ** name -> interOpal ** ident
+DEF addSelector(IO, na & fc, srt) ==
+	IO addFUN(":=_" ++ `(IO)(na), fct((srt x fc) => srt))
+
+/* % fuegt alle Selektoren hinzu, liefert map aller Selektoren */
+FUN addSelectors: interOpal ** set[pair[name,fct],<] ** name ->
+			interOpal ** map[pair[name,fct],<,ident]
+DEF addSelectors(IO, s, srt) ==
+	unpair(
+	((\\nf,p. LET (oldIO, oldmap) == unpair(p)
+	            (newIO, newId) == addSelector(oldIO, nf, srt)
+		IN newIO & def(nf, newId, oldmap)
+	), IO & {}) / s)
+
+/* % fuegt zu einer Variante die Definitionen fuer Selektoren hinzu */
+FUN addSelDefs: map[pair[name,fct],<,ident] ->
+			 variant ** interOpal -> interOpal
+DEF addSelDefs(selmap)(variant(_,co,_,cms), IO)==
+	(addSelDef(co, cms, fctOf(IO) * sel * cms, selmap), IO) / cms
+
+FUN addSelDef: name ** seq[comp] ** seq[fct] ** map[pair[name,fct],<,ident] ->
+			comp ** interOpal -> interOpal
+DEF addSelDef(co, cms, fcts, selmap)(cm AS comp(_, na), IO) ==
+	LET selide == selmap!(na & codom(fctOf(IO)(na)))
+	    p == cont(pos(_ = cm, cms))
+	    (nx, cvars) == asVarSeq(fcts, 1, `)
+	    clpattern == tuple(?, upd(p, any(?), var(?, _) * cvars))
+	    crexpr:expr == tuple(?, upd(p, 
+				name(?, name(ident(nx), local, none)),
+      				(\\v.name(?, 
+				     name(ident(v), local, none))) * cvars))
+	    newvar == var(?, ident(nx), "new", codom(fctOf(IO)(na)))
+	    lhs == $(IO,selide) @ ((co @ clpattern), var(?, newvar))
+	    rhs == co @ crexpr
+	IN IO addDEF (selide, %(lhs ==== rhs))
+	    
+	    
+
+
+/* %$Hilfsfunktionen$ */
+FUN < : pair[name, fct] ** pair[name, fct] -> bool
+DEF p1 < p2 == cmp(<,<)(p1,p2) <?
+
+/* % fuer Funktionalitaeten */
+FUN x : fct ** fct -> fct
+DEF f1 x f2 == cart(%(f1, f2))
+
+FUN x : name ** fct -> fct
+DEF n:name x f == sort(n) x f
+
+FUN => : fct ** fct -> fct
+DEF f1 => f2 == funct(f1, f2)
+
+FUN => : fct ** name -> fct
+DEF f => n:name == f => sort(n)
+
+/* % aus Selektorident den Namen finden */
+FUN $ : interOpal ** ident -> name
+DEF IO $ ide == LET s == structs(IO)!main
+		    in == IF formal def? insts(s) THEN formal ELSE none FI
+		IN name(ide, main, in)

@@ -1,0 +1,63 @@
+IMPLEMENTATION ArgspecBasic
+
+IMPORT
+	Argspec		COMPLETELY
+	ArgspecIntern	COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	Option		COMPLETELY
+	Set		COMPLETELY
+	String		COMPLETELY
+	StringScan	COMPLETELY
+	Denotation	COMPLETELY
+	Void		COMPLETELY
+
+-- %-============================================================
+FUN lit : denotation -> argspec[denotation]
+DEF lit(Token) ==
+    argspec(
+	parseLiteral(Token),		-- parser
+	completeToken(Token),		-- completer
+	Token,				-- usage
+	Token)				-- prefix
+
+FUN parseLiteral : denotation -> (denotation -> com[denotation])
+DEF parseLiteral(Token)(Arg) ==
+    IF Token = Arg
+      THEN succeed(Token)
+      ELSE break("- `"++Token++"' expected instead of `"++Arg++"'\n")
+    FI
+
+FUN completeToken : denotation -> (denotation -> com[set[denotation,<]])
+DEF completeToken(Token)(Arg) ==
+    IF Arg <| Token
+      THEN succeed(%(Token))
+      ELSE succeed({})
+    FI
+
+-- %-============================================================
+FUN var : denotation ** (denotation -> com[set[denotation,<]])	->
+			argspec[denotation]
+
+DEF var(Usage,Completer) == argspec(succeed,Completer,Usage)
+
+DEF var(Usage) == var(Usage,noCompletion)
+
+-- %-============================================================
+FUN nat : denotation ** (denotation -> com[set[denotation,<]]) ->
+			argspec[nat]
+DEF nat(Usage,Completer) == argspec(parseNat,Completer,Usage)
+
+FUN parseNat : denotation -> com[nat]
+DEF parseNat(Arg) ==
+    LET (OptN,Rt) == scan(!(Arg))
+    IN IF avail?(OptN) and <>?(Rt)
+	 THEN succeed(cont(OptN))
+	 ELSE break("- Natural number expected instead of `"++Arg++"'\n")
+       FI
+
+FUN noCompletion   : denotation -> com[set[denotation,<]]
+DEF noCompletion(_) == succeed({})
+
+FUN failCompletion : denotation -> com[set[denotation,<]]
+DEF failCompletion(_) == break("")

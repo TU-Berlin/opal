@@ -1,0 +1,300 @@
+# Definitions for: Compilers kernel library
+
+# Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
+# See OCSHOME/etc/LICENSE or 
+# http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+# $Date: 1998-06-16 16:00:15 $ ($Revision: 1.1.1.1 $)
+#
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Fundamental system definitions (please fill out)
+
+
+# Name of the system 
+
+NODENAME = Compiler
+
+
+# The names of the direct subdirectories of this node 
+# also to be built. NOTE that these are not the OCS subsystems 
+# but rather reflect the hierarchy of the project tree. 
+
+SUBNODES  = 
+
+
+# Sources of the system included into a release
+# The action on this node associated with 'all'
+
+
+SIGNS = BOOL.sign DENOTATION.sign ABORT.sign 
+EXTPS = BOOL.extp DENOTATION.extp ABORT.extp 
+IMPLS = BOOL.impl DENOTATION.impl ABORT.impl 
+INTPS = BOOL.intp DENOTATION.intp ABORT.intp 
+
+SOURCES = $(SIGNS) $(EXTPS) $(IMPLS) $(INTPS) \
+	  BUILTIN.h BUILTIN.c \
+          genmttab.c \
+          genvarclosures.c \
+          unixconfig.h unixconfig.h.in \
+	  SysDefs
+
+
+# Manuals attached to this system included into a release
+
+MANUALS = 
+
+
+# All components of this system. Add here auxiliary
+# files which shall not be included into a release.
+
+COMPONENTS = $(SOURCES) $(MANUALS) 
+
+# Include this statement to deactivate the derived object cache. 
+.BPOOL:
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Fundamental system rules (please fill out)
+
+# The default target
+
+_default: all
+
+SIGNINTERS = $(OCSDIR)/BOOL.sign.inter $(OCSDIR)/DENOTATION.sign.inter \
+	$(OCSDIR)/ABORT.sign.inter
+IMPLINTERS = $(OCSDIR)/BOOL.impl.inter $(OCSDIR)/DENOTATION.impl.inter \
+	$(OCSDIR)/ABORT.impl.inter
+EXTPINTERS = $(OCSDIR)/BOOL.extp.inter $(OCSDIR)/DENOTATION.extp.inter \
+	$(OCSDIR)/ABORT.extp.inter
+INTPINTERS = $(OCSDIR)/BOOL.intp.inter $(OCSDIR)/DENOTATION.intp.inter \
+	$(OCSDIR)/ABORT.intp.inter
+INTERS := $(SIGNINTERS) $(IMPLINTERS) $(EXTPINTERS) $(INTPINTERS)
+OBJECTS = $(OCSDIR)/BUILTIN.o 
+HEADERS = $(OCSDIR)/BUILTIN.h $(OCSDIR)/unixconfig.h
+
+SYS_OC1FLAGS = $(VAR_OC1FLAGS) -v1 
+SYS_OC2FLAGS = $(VAR_OC2FLAGS) -v1
+SYS_CCFLAGS  = $(VAR_CCFLAGS) -I$(OCSDIR)
+
+ARNAME = $(OCSDIR)/libCompiler.a 
+SOINTERNAME = $(OCSDIR)/libCompiler.so
+SONAME = $(SOINTERNAME).1.0
+SONAMEOPT := 
+# `if [ "$(shared)" = yes ]; then echo $(SONAME); fi`
+ARNAMEOPT := $(ARNAME)
+# `if [ "$(archive)" = no ]; then echo ""; else echo $(ARNAME); fi`
+
+INTERFACENODEPATH = Internal/$(NODENAME)
+OBJECTNODEPATH = opal
+ARCHIVE = opal
+
+_all: _mkdir $(SIGNINTERS) $(IMPLINTERS) $(EXTPINTERS) $(INTPINTERS) \
+               $(ARNAMEOPT) $(SONAMEOPT)
+
+
+_mkdir:
+	@if [ ! -d "$(OCSDIR)" ] ; then $(MKDIR) $(OCSDIR); else true; fi
+
+# building of 'predefined' OPAL structures
+
+$(OCSDIR)/BOOL.sign.inter: BOOL.sign
+	@$(ECHO) "Generating signature export for predefined BOOL"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -s -zprop -h. BOOL
+
+$(OCSDIR)/DENOTATION.sign.inter: DENOTATION.sign $(OCSDIR)/BOOL.sign.inter
+	@$(ECHO) "Generating signature export for predefined DENOTATION"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -s -zprop -h. DENOTATION BOOL
+
+$(OCSDIR)/ABORT.sign.inter: ABORT.sign $(OCSDIR)/BOOL.sign.inter $(OCSDIR)/DENOTATION.sign.inter
+	@$(ECHO) "Generating signature export for predefined ABORT"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -s -zprop -h. ABORT DENOTATION BOOL
+
+# building of 'predefined' OPAL structures (external properties)
+
+$(OCSDIR)/BOOL.extp.inter: $(OCSDIR)/BOOL.sign.inter BOOL.extp
+	@$(ECHO) "Generating property export for predefined BOOL"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -E -zprop -h. BOOL
+
+$(OCSDIR)/DENOTATION.extp.inter: $(OCSDIR)/DENOTATION.sign.inter DENOTATION.extp \
+   $(OCSDIR)/BOOL.extp.inter
+	@$(ECHO) "Generating property export for predefined DENOTATION"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -E -zprop -h. DENOTATION BOOL
+
+$(OCSDIR)/ABORT.extp.inter: $(OCSDIR)/ABORT.sign.inter ABORT.extp \
+    $(OCSDIR)/BOOL.extp.inter $(OCSDIR)/DENOTATION.extp.inter
+	@$(ECHO) "Generating property export for predefined ABORT"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -E -zprop -h. ABORT DENOTATION BOOL
+
+# building of 'predefined' OPAL structures (implementation)
+
+$(OCSDIR)/BOOL.impl.inter: $(OCSDIR)/BOOL.sign.inter BOOL.impl
+	@$(ECHO) "Generating implementation export for predefined BOOL"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -i -zprop -h. BOOL
+
+$(OCSDIR)/DENOTATION.impl.inter: $(OCSDIR)/DENOTATION.sign.inter DENOTATION.impl \
+   $(OCSDIR)/BOOL.extp.inter
+	@$(ECHO) "Generating implementation export for predefined DENOTATION"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -i -zprop -h. DENOTATION BOOL
+
+$(OCSDIR)/ABORT.impl.inter: $(OCSDIR)/ABORT.sign.inter ABORT.impl \
+    $(OCSDIR)/BOOL.sign.inter $(OCSDIR)/DENOTATION.sign.inter
+	@$(ECHO) "Generating implementation export for predefined ABORT"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -i -zprop -h. ABORT DENOTATION BOOL
+
+# building of 'predefined' OPAL structures (internal properties)
+
+$(OCSDIR)/BOOL.intp.inter: $(OCSDIR)/BOOL.sign.inter $(OCSDIR)/BOOL.extp.inter \
+    $(OCSDIR)/BOOL.impl.inter BOOL.intp
+	@$(ECHO) "Generating internal properties for predefined BOOL"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -I -zprop -h. BOOL
+
+$(OCSDIR)/DENOTATION.intp.inter: $(OCSDIR)/DENOTATION.sign.inter \
+    $(OCSDIR)/DENOTATION.extp.inter $(OCSDIR)/DENOTATION.impl.inter \
+    DENOTATION.intp $(OCSDIR)/BOOL.extp.inter
+	@$(ECHO) "Generating internal properties for predefined DENOTATION"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -I -zprop -h. DENOTATION BOOL
+
+$(OCSDIR)/ABORT.intp.inter: $(OCSDIR)/ABORT.sign.inter $(OCSDIR)/ABORT.extp.inter \
+    $(OCSDIR)/ABORT.impl.inter ABORT.intp $(OCSDIR)/BOOL.extp.inter \
+    $(OCSDIR)/DENOTATION.extp.inter
+	@$(ECHO) "Generating internal properties for predefined ABORT"; \
+	$(OC1) $(OC1FLAGS) $(SYS_OC1FLAGS) -I -zprop -h. ABORT DENOTATION BOOL
+
+# building of objects
+
+$(OCSDIR)/BUILTIN.h: BUILTIN.h
+	@$(ECHO) "Copying BUILTIN header file ..."; \
+	$(RM) -f $@; $(CP) $? $@
+
+$(OCSDIR)/unixconfig.h: unixconfig.h
+	@$(ECHO) "Copying unixconfig header file ..."; \
+	$(RM) -f $@; $(CP) $? $@
+
+# FIXME: need a LDOBJ for making a relocatable object in OS Specs
+
+$(OCSDIR)/BUILTIN.o : BUILTIN.c $(HEADERS) genmttab.c genvarclosures.c
+	@$(ECHO) "Generating object code for raw BUILTIN"; \
+	$(CC) $(CCFLAGS) $(SYS_CCFLAGS) -o OCS/BUILTIN-raw.o -c BUILTIN.c; \
+	$(ECHO) "Generating closure method tables"; \
+	$(CC) -I. $(CCFLAGS) $(SYS_CCFLAGS) -o $(OCSDIR)/genmttab genmttab.c; \
+	( $(CD) $(OCSDIR); ./genmttab; \
+	  $(CC) -I. $(CCFLAGS) $(SYS_CCFLAGS) -c _mttab_*.c ); \
+	$(ECHO) "Generating variadic closure support"; \
+	$(CC) -I. $(CCFLAGS) $(SYS_CCFLAGS) -o $(OCSDIR)/genvarclosures \
+						 genvarclosures.c; \
+	( $(CD) $(OCSDIR); ./genvarclosures; \
+	  $(CC) -I. $(CCFLAGS) $(SYS_CCFLAGS) -c _varclosures.c ); \
+        $(ECHO) "Creating BUILTIN object file"; \
+	ld -r -o OCS/BUILTIN.o OCS/BUILTIN-raw.o \
+		OCS/_mttab*.o OCS/_varclosures.o; \
+	$(RM) -f OCS/BUILTIN-raw.o OCS/_mttab*.o OCS/_varclosures.o \
+		 OCS/genmttab OCS/genvarclosures
+
+
+# building the library
+
+$(ARNAME): $(HEADERS) $(OBJECTS) 
+	@$(ECHO) "Archiving Compiler library"; \
+	$(RM) -f $(ARNAME) ; \
+	$(AR) q $(ARNAME) $(OBJECTS); \
+	$(RANLIB) $(ARNAME)
+
+$(SONAME): $(ARNAME) $(OBJECTS)
+	$(ECHO) "Linking shared object"; \
+	_os="`$(AR) t $(ARNAME)`"; \
+	$(AR) x $(ARNAME); \
+	$(DLD) $(LDFLAGS) -o $(SONAME) \
+		_mttab_*.o $(OBJECTS) \
+		$(LDLIBPATH) $(DLDLDLIBPATH) \
+	        $(LDLIBS) $(DLDLDLIBS) \
+		  || exit 1; \
+	$(RM) -f $$_os; \
+	(cd $(OCSDIR); ln -s `$(BASENAME) $(SONAME)` \
+			     `$(BASENAME) $(SOINTERNAME)` 2>/dev/null || true)
+
+
+# The action on this node associated with 'clean'
+
+_clean:
+	@$(ECHO) "Cleaning up"; \
+	$(RM) -rf $(OCSDIR)
+
+
+# The action on this node associated with 'check'
+
+_check: _all
+
+
+# The action associated with 'install' 
+
+_install: _installlib _installmanuals
+
+_installlib: _all $(SIGNS) 
+	@if [ -z $(INSTALLINTERFACEPATH) ] || [ -z $(INSTALLOBJECTPATH) ] ; \
+	then $(ECHO) "You must define the variables INSTALLINTERFACEPATH resp. INSTALLOBJECTPATH."; \
+	else\
+	  $(ECHO) "Installing interfaces in $(INSTALLINTERFACEPATH)/$(INTERFACENODEPATH)"; \
+	  $(OCSOM)/etc/xinstall $(INSTALLINTERFACEFLAGS) \
+	  $(SIGNS) $(INSTALLINTERFACEPATH)/$(INTERFACENODEPATH) || exit 1 ; \
+	  _olib="lib$(ARCHIVE)-$(lib).a"; \
+	  _opath="$(INSTALLOBJECTPATH)/$(OBJECTNODEPATH)-$(lib)"; \
+	  $(ECHO) "Installing export files and header in $$_opath"; \
+	  $(OCSOM)/etc/xinstall $(INSTALLOBJECTFLAGS) \
+	        $(HEADERS) $(INTERS) $$_opath || exit 1; \
+	  $(ECHO) "Updating object code in archive $$_opath/$$_olib"; \
+	  _os="`$(AR) t $(ARNAME)`"; \
+	  $(AR) x $(ARNAME); \
+	  $(CHMOD) u+w $$_opath/$$_olib 2>/dev/null; \
+	  $(AR) r $$_opath/$$_olib $(OBJECTS) || exit 1; \
+	  $(RM) -f $$_os; \
+	  $(RANLIB) $$_opath/$$_olib; \
+	  $(CHMOD) u-w $$_opath/$$_olib 2>/dev/null; \
+	fi
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Release management definitions (fill out if required)
+
+# Path to this node relative to the root of the release tree
+
+RELEASENODEPATH = src/lib/Internal/$(NODENAME)
+
+# Derived objects which shall be included into the release
+
+RELEASEOBJECTS =
+
+
+
+# Path to the boot area for this node relative to the release tree
+
+RELEASEBOOTPATH = src/lib/boot
+
+# Sources which shall be included into the boot area of a release
+
+BOOTSOURCES = BUILTIN.c BUILTIN.h genmttab.c
+
+# Derived objects which shall be included into the boot area of a release
+
+BOOTOBJECTS = 
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Release management rules (fill out if required)
+
+
+# The action to derive the release objects
+
+_releaseobjects: 
+
+
+# The action to derive the boot objects
+# We have also to derive all SIGNINTERS and HEADERS in order that boot objects
+# in other systems can be derived
+
+_bootobjects: _mkdir $(BOOTOBJECTS) $(HEADERS) $(SIGNINTERS) 
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Include generic rules (do not change)
+
+include $(OMLIBPATH)/GlobalRules

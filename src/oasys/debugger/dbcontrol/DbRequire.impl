@@ -1,0 +1,616 @@
+IMPLEMENTATION DbRequire
+
+
+IMPORT  Array           COMPLETELY
+        ComCompose      COMPLETELY
+        ComPairCompose  COMPLETELY
+        ComSeqMap       COMPLETELY
+        ComSeqReduce    COMPLETELY
+        Com             COMPLETELY
+        File            COMPLETELY
+        Denotation      COMPLETELY
+        DenotationSplit COMPLETELY
+        Fmt             COMPLETELY
+        FmtSeq          COMPLETELY
+        FmtSet          COMPLETELY
+        Map             COMPLETELY
+        Nat             COMPLETELY
+        NatConv         COMPLETELY
+        OptionMap       COMPLETELY
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Process         COMPLETELY
+        RUNTIME         COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqZip          COMPLETELY
+        SeqSort         COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqCompare      COMPLETELY
+        SeqOfSeq        COMPLETELY
+        Seq             COMPLETELY
+        Set             COMPLETELY
+        SetConv         COMPLETELY
+        SetReduce       COMPLETELY
+        SetFilter       COMPLETELY
+        SetMap          COMPLETELY
+        SetTopSort      COMPLETELY
+        Void            COMPLETELY
+        StringConv      COMPLETELY
+        SeqMapIndex     COMPLETELY
+        ABORT           COMPLETELY
+IMPORT  -- repo
+        RepoAbsy        COMPLETELY
+        RepoAn          COMPLETELY
+        RepoCom         COMPLETELY
+        RepoCom1        COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoInternData  COMPLETELY
+        RepoName        COMPLETELY
+        RepoObjectAccess COMPLETELY
+        RepoPropertyAccess COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoComAbort    COMPLETELY
+        RepoFocus       COMPLETELY
+IMPORT  -- dbshared
+        Expression      COMPLETELY
+        ChannelData     COMPLETELY
+IMPORT  -- dbenv
+        DbConversion    COMPLETELY
+        DbIdentTable    COMPLETELY
+        DbNameStack     COMPLETELY
+        DbUnitTable     COMPLETELY
+        DbAbsyAux       COMPLETELY
+        DbConvEnv       COMPLETELY
+        DbName2Expr     COMPLETELY
+IMPORT  -- this
+        DbGlobalEnv     COMPLETELY
+        DbPrintLayer    COMPLETELY
+        DbEvalTable     COMPLETELY
+        DbComm          COMPLETELY
+        DbCommFastRpc   COMPLETELY
+        DbDebugState    COMPLETELY
+        DbSelection     COMPLETELY
+        
+
+-- %-===================================================================
+FUN tracePrintFun? : bool
+DEF tracePrintFun? == FIELD?[bool]("-ztracePrintFun")
+IMPORT DEBUG COMPLETELY
+       SeqConv ONLY `
+       OptionConv ONLY `
+       Compose ONLY o
+       PairConv ONLY `
+       FmtOption ONLY fmtOption
+-- %$require debug state$ ==============================================
+
+DEF requireDebugState(O0, noDebug) ==
+    LET O == baseName(O0)
+    IN
+    event(progress(object(O), "... disabling debug state"))     
+                                                        & (\\ _ .
+    identTable                                          & (\\ ITab .
+    query(interpreted?(baseName(unit(O))))              & (\\ Interp? .
+    LET Kind == IF Interp? THEN interpreted
+                           ELSE coded FI
+    IN
+    query(\\R. asDefine(R, ITab, O, Kind))              & (\\ Def .
+    rpc(define(%(Def)),ready?)                          & (\\ _ .
+    succeed(nil)                                        
+    )))))
+
+DEF requireDebugState(O0, debug(_, _)) ==
+    LET O == baseName(O0)
+    IN
+    event(progress(object(O), "... enabling debug state"))      
+                                                        & (\\ _ .
+    identTable                                          & (\\ ITab .
+    query(\\R. asDefine(R, ITab, O, interpreted))       & (\\ Def .
+    rpc(define(%(Def)),ready?)                          & (\\ _ .
+    succeed(nil)                                        
+    ))))
+
+
+DEF requireDebugState(O0, break(Src, Ctx)) ==
+    LET O == baseName(O0)
+    IN
+    requireDebugState(O, debug(Src, Ctx))               & (\\ _ .
+    event(progress(object(O), "... setting breakpoint"))        
+                                                        & (\\ _ .
+    identTable                                          & (\\ITab.
+    rpc(breakPoint(bp(ITab ! O)),ready?)                & (\\ _ .
+    succeed(nil)        
+    ))))
+
+DEF requireDebugState(O0, guardedBreak(Src, Ctx, _, Expr)) ==
+    -- ASSERT: Expr is correct guard for object
+    LET O == baseName(O0)
+    IN
+    event(progress(object(O), "... setting guarded breakpoint"))        
+                                                        & (\\ _ .
+    requireDebugState(O, debug(Src, Ctx))               & (\\ _ .
+    identTable                                          & (\\ ITab .
+    query(\\R. fct(R, Expr))                            & (\\ ExprFct .
+    query(fct(O))                                       & (\\ FunFct .
+    query(\\R. &(asExpr(R, ITab, Expr)))                & (\\ Guard, _ .
+    LET Rank == etaEnrichedRank(ExprFct)
+        Dim  == rankDimTable(FunFct, 0) ! Rank
+    IN
+    rpc(breakPoint(guardedBp(ITab ! O, Guard, Rank, Dim)),
+        ready?)                                         & (\\ _ .
+    succeed(nil)        
+    )))))))
+
+
+
+-- %-===================================================================
+-- %$require$ ==========================================================
+FUN require : set[unitName,<] -> com[void]
+DEF require(Units) ==
+    -- make library implementations to signatures
+    --  and interpreted signatures to implementations
+    event(progress(repository, "... requiring evaluator units"))
+                                                        & (\\ _ .
+    query(\\R. (\\U. IF library?(U)(R) THEN
+                         U :=_part sign
+                     OTHERWISE
+                     IF interpreted?(U)(R) THEN
+                         U :=_part impl
+                     ELSE U FI) * Units)                & (\\ Units1 .
+    -- calculate the transitive reflexive closure of Units
+    -- according to imports which are outdated
+    -- to speedup things, we assert 
+    --    ~(Outdated?(U)) => all (transitive) imports are _not_ outdated
+    -- which has to be guaranteed by the update mechanism of 
+    -- unitTable
+    unitTable                                           & (\\ UTab .
+    LET Outdated? == \\U. IF avail?(UTab !? U) THEN
+                             ~(upToDate?(cont(UTab !? U)))
+                          ELSE true FI
+        Units2 == Outdated? | Units1
+    IN
+    query(\\R. related(transitive, imports, Outdated?)
+                      (Units2)(R)
+                  + Units2)                             & (\\ ActUnits.
+
+    -- update these units in bottom-up order
+    query(topSort(imports, Outdated?)(ActUnits))        & (\\ Order .
+    (\\U, _ . mkUpToDate(U), nil) /& 
+                flat(asSeq * revert(Order))             & (\\ _ .
+
+    -- now calculate the print-functions for
+    -- the sorts of Units**
+    query(\\R. related(transitive, imports) (Units)(R)
+                  + Units)                             & (\\ AllUnits.
+    query(calcPrintFuns(AllUnits)))                     & (\\SortsAndPFuns.
+
+    -- if the print functions originate from any outdated
+    -- units which are not in ActUnits, these have
+    -- to be recursively required
+    LET PrintUnits == 
+            (\\P, Si. LET U == baseName(unit(2nd(P)))
+                      IN
+                      IF Outdated?(U) and ~(U in ActUnits) THEN
+                          incl(U, Si)
+                      ELSE Si FI,
+            {}) \ SortsAndPFuns
+    IN
+    (IF {}?(PrintUnits) THEN
+        succeed(nil)
+     ELSE require(PrintUnits) FI)                       & (\\ _ .
+   
+    -- now register print functions, which has to be done
+    -- after requiring of PrintUnits
+    registerPrintFuns(SortsAndPFuns)                    & (\\ _ .
+
+    succeed(nil)
+    )))))))))
+
+
+FUN calcPrintFuns : set[unitName,<] -> repo -> seq[pair[objectName,objectName]]
+DEF calcPrintFuns(Units0)(R) ==
+    LET Sorts0 == (\\U, Si. ((\\O.sort?(O)(R)) | objects(U)(R)) + Si,
+                  {}) / Units
+        Result0 ==  (\\S, SP. 
+                     LET P0? == getPrintFun(S)(R)
+                         P? == PRINT(tracePrintFun?, \\ . "calcPrintFun (0) " ++ pretty(fmtObjectName(S)) ++ " ~> " ++ pretty(fmtOption(fmtObjectName)(P0?)), P0?)
+                     IN
+                     IF avail?(P?) THEN
+                       S & cont(P?)  ::  SP
+                     ELSE
+                       LET P1? == lookForPrintFun?(R)(S)
+                       IN
+                       IF avail?(P1?) THEN
+                         S & cont(P1?)  ::  SP
+                       ELSE SP FI
+                     FI,
+                     <>) / Sorts
+        Units == PRINT(tracePrintFun?, \\ . "calcPrintFun(1) " ++ pretty(fmtSet(fmtUnitName)(Units0)), Units0)
+        Sorts == PRINT(tracePrintFun?, \\ . "calcPrintFun(2) " ++ pretty(fmtSet(fmtObjectName)(Sorts0)), Sorts0)
+    IN
+    PRINT(tracePrintFun?, \\ . "calcPrintFun(3) " ++
+          `(`(pretty o fmtObjectName, pretty o fmtObjectName))(Result0), Result0)
+
+FUN registerPrintFuns : seq[pair[objectName,objectName]] -> com[void]
+DEF registerPrintFuns(SortsAndPFuns) ==
+    (\\P, A. asAssocPrintFun?(1st(P), 2nd(P)) & (\\Assoc? .
+             IF avail?(Assoc?) THEN
+                 succeed(cont(Assoc?) :: A)
+             ELSE succeed(A) FI
+             ),
+     <>) /& SortsAndPFuns                               & (\\AssocPFuns.
+    rpc(assocPrintFuns(AssocPFuns))                     & (\\ _ .
+    succeed(nil)
+    ))
+
+ 
+
+FUN mkUpToDate : unitName -> com[void]
+DEF mkUpToDate(UName) ==
+    event(progress(unit(UName),".. evaluator update for"))      
+                                                        & (\\ _ .
+    prepareDeclares(UName)                              & (\\Decls.
+        -- fastRpc
+    rpc(declare(Decls),prepareDefines(UName),ready?)    & (\\AnsDefs,Ans.
+    yield(AnsDefs)                                      & (\\Defs.
+    yield(Ans)                                          & (\\ _ .
+    rpc(define(Defs),defineAnswer?)                     & (\\ RpcAns .
+    handleDefineAnswer(RpcAns)                          & (\\ _ .
+        -- ok, the unit is up to date now
+    :=_unitTable(\\UTab. (UName,upToDate) def UTab)     & (\\ _ .
+    succeed(nil)
+    ))))))))
+
+
+-- %$$$$declaration of objects$ =============================================
+FUN declare: unitName -> com[void]
+DEF declare(UName) ==
+    query(objects(UName))                             & (\\ObjNameSet.
+    succeed(asSeq(ObjNameSet))                        & (\\ObjNames.
+    :=_identTable( _ insert ObjNames)                 & (\\ _ .
+    identTable                                        & (\\ITab.
+    query(\\R.asDeclare(R,ITab,_) * ObjNames)         & (\\Decls.
+    rpc(declare(Decls),ready?)                        & (\\ _ .
+    succeed(nil)                                      ))))))
+
+FUN prepareDeclares : unitName -> com[seq[declare]]
+DEF prepareDeclares(UName) ==
+    query(objects(UName))                             & (\\ObjNameSet.
+    succeed(asSeq(ObjNameSet))                        & (\\ObjNames.
+    :=_identTable( _ insert ObjNames)                 & (\\ _ .
+    identTable                                        & (\\ITab.
+    query(\\R.asDeclare(R,ITab,_) * ObjNames)         ))))
+
+-- %$$$$definition of objects$ ==============================================
+
+FUN define : unitName                           -> com[void]
+DEF define(UName) ==
+    prepareDefines(UName)                               & (\\Defs.
+    rpc(define(Defs),defineAnswer?)                     & (\\Ans .
+    handleDefineAnswer(Ans)                             
+    ))
+
+FUN defineAnswer? : answer -> bool
+DEF defineAnswer?(Ans) == ready?(Ans) or broken?(Ans) or aborted?(Ans)
+                                      or error?(Ans)
+
+FUN handleDefineAnswer : answer -> com[void]
+DEF handleDefineAnswer(ready) == succeed(nil)
+DEF handleDefineAnswer(error(Msg)) == break(Msg)
+DEF handleDefineAnswer(broken(evalId(_))) == 
+    select(0)                                           & (\\ ImplText .
+    diag(!!(error, freeRef("evaluator"),
+           "evaluation of constant interrupted:\n\t%s", ImplText))
+                                                        & (\\ _ .
+    abort
+    ))
+DEF handleDefineAnswer(aborted(evalId(_), Reason)) ==
+    select(0)                                           & (\\ ImplText .
+    diag(!!(error, freeRef("evaluator"),
+           "evaluation of constant aborted: `%s'\n\t%s", Reason, ImplText))
+                                                        & (\\ _ .
+    abort
+    ))
+
+-- FIXME: copied from DbEvaluation; this function should perhaps go
+-- to DbSelection
+
+FUN select: nat -> com[denotation]
+DEF select(No) ==
+    focus                                               & (\\UName.
+    clientCheck                                         & (\\ _ .
+    analyseSelection(UName, No, "")                     & (\\SI.
+    IF avail?(name?(SI)) ANDIF avail?(annotedImpl?(SI))
+                         ANDIF missing?(cont(annotedImpl?(SI)))
+      THEN query(\\R.
+             LET Name == cont(name?(SI))
+                 Symb == symbol(Name)(R)
+                 SSymb== symbol(unit(Name))(R)
+             IN "compiled function "++Symb++"'"++SSymb) 
+    OTHERWISE
+    IF avail?(annotedImpl?(SI)) and avail?(name?(SI))
+      THEN query(\\R. pretty(fmtImpl(cont(name?(SI)),
+                                     cont(annotedImpl?(SI)))(R)))
+    IF avail?(name?(SI)) and nil?(annotedImpl?(SI))
+      THEN query(\\R.
+             LET Name == cont(name?(SI))
+                 Symb == symbol(Name)(R)
+                 SSymb== symbol(unit(Name))(R)
+             IN "breakpoint reached for "++Symb++"'"++SSymb)    
+      ELSE succeed("unrecognizable implementation for selection " ++ `(No))
+    FI
+    )))
+   
+-- END OF COPY
+
+
+FUN prepareDefines : unitName -> com[seq[define]]
+DEF prepareDefines(UName) ==
+    identTable                                          & (\\ITab.
+    query(\\R.
+        LET Kind == IF interpreted?(UName)(R) THEN
+                        interpreted
+                    ELSE coded FI
+            AllFuns == commonFun?(R, Kind) | objects(UName)(R)
+            (Consts, Funs) ==
+                partition(\\O. name?(fct(baseName(O))(R)), AllFuns)
+            DepsMap == (calcDeps(R, UName), {}) / Consts
+            ConstOrder == topSort(\\C. DepsMap ! C)(Consts)
+        IN
+        (asDefine(R, ITab, _, Kind) * flat(asSeq * revert(ConstOrder))) ++
+        (asDefine(R, ITab, _, Kind) * asSeq(Funs))
+      )
+    )
+
+   FUN commonFun? : repo ** kind'Expression -> objectName -> bool
+   DEF commonFun?(R,Kind)(OName) ==
+       LET Impl == impl(object(OName)(R))
+       IN (induced?(Impl) or def?(Impl) or (coded?(Kind) and hidden?(Impl)))
+                and oper?(kind(object(OName)(R))) 
+    
+
+-- %compute dependencies:
+
+FUN calcDeps : repo ** unitName 
+                        -> objectName ** map[objectName,<,set[objectName,<]]
+                        -> map[objectName,<,set[objectName,<]]
+DEF calcDeps(R, U)(O, M) ==
+    IF O def? M THEN M
+    ELSE
+        LET M1 == def(O, {}, M)
+                        -- to prevent deadlocks because of cycles
+            Deps == (\\D. unit(baseName(D)) = U) | deps(impl(baseName(O))(R))
+                        -- FIXME: fuse this filter for efficiency
+            (Deps1, M2) == unpair(
+                (\\D, S_M.
+                    IF ~(name?(fct(D)(R))) THEN
+                        -- depend on a function:
+                        -- recursively call calcDeps to get constant 
+                        -- dependencies of this function
+                        LET Mi == calcDeps(R, U)(D, 2nd(S_M))
+                        IN
+                        ((Mi ! D) + 1st(S_M)) & Mi 
+                    ELSE 
+                        incl(D, 1st(S_M)) & 2nd(S_M)
+                    FI,
+                {} & M1) / Deps
+            )
+        IN
+        def(O, Deps1, M2)
+    FI
+        
+
+FUN deps : impl -> set[objectName,<]
+DEF deps(def(_,Eqns)) == (+,{}) \ (\\E.deps(E)) * Eqns
+DEF deps(_ : impl) == {}
+
+FUN deps : eqn -> set[objectName,<]
+DEF deps(eqn(_,_,L,_,E)) == deps(L)+deps(E)
+
+FUN deps : expr'RepoAbsy -> set[objectName,<]
+DEF deps(name(_,N)) == IF globalObjectName?(N) THEN %(N) ELSE {} FI
+DEF deps(apply(_,F,A)) == deps(F) + deps(A)
+DEF deps(tuple(_,E)) == (+,{}) \ (\\I.deps(I)) * E
+DEF deps(cases(_,G,nil)) == (+,{}) / deps * G
+DEF deps(cases(_,G,avail(E))) ==
+         ((+,{}) / deps * G) + deps(E)
+DEF deps(let(_,E,B)) ==
+         ((+,{}) / deps * E) + deps(B)
+DEF deps(_ : expr) == {}
+
+FUN deps : guard'RepoAbsy -> set[objectName,<]
+DEF deps(guard(_,I,T)) == deps(I)+deps(T)
+    
+
+-- %$print functions$ ==================================================
+
+-- %$$require print functions$ ----------------------------------------
+
+/* % The functions in this section are perhaps obsolete */
+
+FUN requirePrintFuns : unitName -> com[void]
+DEF requirePrintFuns(UName) ==
+    query(objects(UName))                               & (\\ObjNames.
+        -- look for sorts
+    query(\\R. (\\N.sort?(N)(R)) | asSeq(ObjNames))     & (\\Sorts.
+        -- look for related print funs
+    query(\\R. (\\S. (S & getPrintFun(S)(R))) * Sorts)  & (\\SortsAndOptPFuns.
+        -- make assocPrintFuns, i.e. pairs (sort,printfun)
+    requirePFun *& SortsAndOptPFuns                     & (\\OptAssocPFuns .
+    succeed(cont * avail? | OptAssocPFuns)              & (\\AssocPFuns.
+    rpc(assocPrintFuns(AssocPFuns))                     & (\\ _ .
+    succeed(nil)                                        ))))))
+
+FUN requirePFun : pair[objectName,option[objectName]] ->
+                                com[option[assocPrintFun]]
+/* %
+ If there is no print function selected, try to find one.
+ */
+DEF requirePFun(Sort & nil) == 
+    query(\\R. lookForPrintFun?(R)(Sort))               & (\\OptPFun.
+    IF avail?(OptPFun)
+      THEN require(%(unit(cont(OptPFun))))              & (\\ _ .
+           asAssocPrintFun?(Sort,cont(OptPFun))         )
+      ELSE succeed(nil)
+    FI                                                  )
+DEF requirePFun(Sort & avail(Printer)) ==
+    require(%(unit(Printer)))                           & (\\ _ .
+    asAssocPrintFun?(Sort,Printer)                      & (\\OptAssPFun.
+    IF avail?(OptAssPFun)
+      THEN -- require the units of print funs
+           -- FIXME: deadlock caused by cyclic dependencies?
+           succeed(OptAssPFun)
+      ELSE requirePFun(Sort & nil) -- try to get another one
+    FI                                                  ))
+    
+
+-- %$$valid print-functions$ ----------------------------------------
+/* %
+ @code{validPrintFun?(R,Sort)(Oper)} checks if @code{Oper} is a valid print
+function for @code{Sort}.
+ */
+FUN validPrintFun? : repo ** objectName -> objectName -> bool
+DEF validPrintFun?(R,Sort)(Printer) ==
+    LET Fct == fct(Printer)(R)
+        OptInfos == asIntSortInfo(R)(Fct)
+    IN IF avail?(OptInfos)
+         THEN LET (SInf,_) == unpair(cont(OptInfos))
+                  S            == objectName(SInf)
+              IN IF unit(S)~unit(Sort) ANDIF 
+                      no(S) = no(Sort) ANDIF
+                      eq?(=)(actuals(S)(R),actuals(Printer)(R))
+                    THEN true
+                    ELSE false
+                  FI
+         ELSE false
+       FI
+
+-- %$$associate print-functions$ ----------------------------------------
+/* %
+ @code{asAssocPrintFun(Sort,Oper)} tries to generate the
+@code{assocPrintFun}-entry for a given print function @code{Oper} for
+@code{Sort}. @code{nil} is returned if the @code{Oper} is not a valid print
+function for @code{Sort}.
+ */
+FUN asAssocPrintFun? : objectName ** objectName -> com[option[assocPrintFun]]
+DEF asAssocPrintFun?(Sort,Printer) ==
+    identTable                                          & (\\ITab.
+    query(\\R.asAssocPrintFun?(R,ITab,Sort)(Printer))   )
+
+FUN asAssocPrintFun? : 
+        repo ** identTable ** objectName -> objectName -> option[assocPrintFun]
+DEF asAssocPrintFun?(R,ITab,Sort)(Oper) ==
+    LET Fct == fct(Oper)(R)
+        OptInfos == asIntSortInfo(R)(Fct)
+    IN IF avail?(OptInfos)
+         THEN LET (SInf,Paras) == unpair(cont(OptInfos))
+                  S            == objectName(SInf)
+              IN IF unit(S)~unit(Sort) ANDIF 
+                      no(S) = no(Sort) ANDIF
+                      eq?(=)(actuals(S)(R),actuals(Oper)(R))
+                    THEN avail(asAssocPrintFun(R,ITab,SInf,Paras,Oper))
+                    ELSE nil
+                  FI
+         ELSE nil
+       FI
+
+FUN asIntSortInfo : 
+     repo -> fct'RepoAbsy -> option[pair[intSortInfo,option[seq[intSortInfo]]]]
+DEF asIntSortInfo(R)(funct(cart(Paras),P)) ==
+    LET OptParaSInfos == validPrinter?(R) * Paras
+        OptSInfo      == validPrinter?(R)(P)
+    IN IF avail?(OptSInfo) ANDIF avail? forall? OptParaSInfos
+         THEN avail(cont(OptSInfo) & avail(cont * OptParaSInfos))
+         ELSE nil
+       FI
+DEF asIntSortInfo(R)(funct(Para AS funct(_,_),P)) ==
+    LET OptParaSInfo == validPrinter?(R)(Para)
+        OptSInfo      == validPrinter?(R)(P)
+    IN IF avail?(OptSInfo) ANDIF avail?(OptParaSInfo)
+         THEN avail(cont(OptSInfo) & avail(%(cont(OptParaSInfo))))
+         ELSE nil
+       FI
+DEF asIntSortInfo(R)(P) ==
+    LET OptSInfo == validPrinter?(R)(P)
+    IN IF avail?(OptSInfo)
+         THEN avail(cont(OptSInfo) & nil)
+         ELSE nil
+       FI
+
+DATA intSortInfo ==
+        sInfo(  objectName:     objectName,
+                outputSort:     outputSort
+        )
+
+FUN validPrinter? : repo -> fct'RepoAbsy -> option[intSortInfo]
+DEF validPrinter?(R)(funct(name(ArgSort),name(OutSort))) ==
+    LET SortSymb   == symbol(baseName(OutSort))(R)
+        StructSymb == symbol(unit(baseName(OutSort)))(R)
+    IN IF SortSymb = "fmt" ANDIF StructSymb = "Fmt"
+         THEN avail(sInfo(ArgSort,fmt))
+       IF SortSymb = "denotation" ANDIF StructSymb = "DENOTATION"
+         THEN avail(sInfo(ArgSort,denotation))
+         ELSE nil
+       FI
+DEF validPrinter?(_)(_) == nil
+
+FUN asAssocPrintFun : repo ** identTable ** intSortInfo **
+                 option[seq[intSortInfo]] ** objectName -> assocPrintFun
+DEF asAssocPrintFun(R,ITab,SortI,OptParaIs,Oper) ==
+    LET E   == init(R,ITab)
+        PId == ITab ! Oper
+    IN assocPrintFun(
+        asSortInfo(E)(SortI),
+        PId,
+        (\\Paras. asSortInfo(E) * Paras) *'OptionMap OptParaIs
+       )
+
+FUN asSortInfo : env -> intSortInfo -> sortInfo
+DEF asSortInfo(E)(sInfo(S,OutS)) ==
+    sortInfo(name2name(E,S),OutS)
+
+
+/* %look for a print function: let S be the structure where the sort is
+    declared. Look first in S, then FmtS and then SConv. */
+FUN lookForPrintFun? : repo -> objectName -> option[objectName]
+DEF lookForPrintFun?(R)(Sort) ==
+    LET Symb == symbol(unit(Sort))(R)
+    IN IF avail?(lookForPrintFun?(R,Symb)(Sort))
+         THEN lookForPrintFun?(R,Symb)(Sort)
+       OTHERWISE
+       IF avail?(lookForPrintFun?(R,"Fmt"++Symb)(Sort))
+         THEN lookForPrintFun?(R,"Fmt"++Symb)(Sort)
+       OTHERWISE
+       IF avail?(lookForPrintFun?(R,Symb++"Conv")(Sort))
+         THEN lookForPrintFun?(R,Symb++"Conv")(Sort)
+         ELSE nil
+       FI
+
+/* %look in the named unit for a valid print function and return it. */
+FUN lookForPrintFun? : repo ** denotation -> objectName -> option[objectName]
+DEF lookForPrintFun?(R,Symb)(Sort) ==
+  LET OptUnit == lookup?(Symb,sign)(R)
+  IN IF avail?(OptUnit)
+     THEN LET Objs == objects(cont(OptUnit))(R)
+              Funs == (\\N.oper?(N)(R)) | asSeq(Objs)
+              PFuns == noSel?(R) | validPrintFun?(R,Sort) | Funs
+          IN IF <>?(PFuns) 
+             THEN nil
+             ELSE avail(ft(PFuns)) -- take the first function you can get
+             FI
+     ELSE nil
+     FI
+
+/* %Return false, if function positively is a selector of a free type. */
+FUN noSel? : repo -> objectName -> bool
+DEF noSel?(R)(f) == nil?(freeType?(f)(R))
+
+/* %Why does this work? If function has been filtered for being a valid
+    print function, it must be of type @code{data -> fmt} or
+    @code{data -> denotation}. Hence, it cannot be a constructor or
+    discriminator. Thus, if it has an associated free type property,
+    @code[f} must be a selector.
+*/

@@ -1,0 +1,112 @@
+#!/usr/local/bin/wish -f
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/filebrowser_tcl,v 1.1.1.1 1998-06-16 16:00:30 wg Exp $
+# Parameter : Name of calling tcl-application 
+
+# Create a scrollbar on the right side of the main window and a listbox
+# on the left side.
+
+option readfile $env(DOSFOP)/defaults/options.data
+
+source $env(DOSFOP)/tcl/help.tcl
+source $env(DOSFOP)/tcl/global.tcl
+
+####################
+# global constants #
+####################
+
+set sendDestName [lindex $argv 0]
+set initialDir   [lindex $argv 1]
+set helpSupportedWidgets {.currdir .list .mbar.help .mbar.file}
+
+
+frame .all
+
+set fileMenu [makeStandardMenu $helpSupportedWidgets]
+$fileMenu add command -label "Exit" \
+                      -command {destroy .} \
+                      -accelerator "  Ctrl+x"
+
+bind all <Control-x> {destroy .}
+
+label .currdir -textvariable dir 
+bind .currdir <Double-Button-1> {
+  catch "send $sendDestName set newSubsystemEntryLocation $dir"
+}
+
+frame .listFrame
+scrollbar .scroll -command ".list yview"
+listbox .list -yscroll ".scroll set" -width 45 -height 20 -setgrid yes
+
+frame   .msgFrame 
+message .notice -width 500 \
+         -text "Double-click on directory-name to change directory.\nCopy structure- or directory name to Browser by double-clicking on name."
+
+pack .mbar -side top -fill x 
+pack .currdir -in .all -side top -fill x -padx 2m -pady 2m
+pack .notice -in .msgFrame
+pack .msgFrame -in .all -side bottom -fill x -padx 2m -pady 2m
+pack .scroll -in .listFrame -side right -fill y 
+pack .list -in .listFrame -side left -fill both -expand yes
+pack .listFrame -in .all -side bottom -fill x -padx 2m -pady 2m
+pack .all
+
+wm minsize . 1 1
+wm title . "File-Browser"
+
+
+proc browse file {
+    global env
+    global dir
+    global sendDestName
+
+    switch $file {
+	.       {set file $dir}
+        ..      {set file [file dirname $dir]}
+        default {set file $dir/$file}
+    }  
+
+    if [file isdirectory $file] {
+        set dir $file
+	updateListbox 
+    } 
+    if [file isfile $file] {
+
+       # only send entry if browser still existent!
+
+       set ftype [file extension $file]
+       if {($ftype == ".sign") || ($ftype == ".impl") || \
+	       ($ftype == ".extp") || ($ftype == ".intp")} then {
+	   catch "send $sendDestName set newStructEntry [file rootname [file tail $file]]"
+       } else {
+	   catch "send $sendDestName set newStructEntry [file tail $file]"
+       }
+       catch "send $sendDestName insertStructure"
+    }
+}
+
+proc updateListbox {} {
+  global dir
+
+  .list delete 0 end 
+  foreach i [exec ls -a $dir] {
+      .list insert end $i
+  }
+}
+
+# Fill the listbox with a list of all the files in the directory (run
+# the "ls" command to get that information).
+
+# Set up bindings for the browser.
+
+bind .list <Control-q> {destroy .}
+bind .list <Control-c> {destroy .}
+focus .list
+bind .list <Double-Button-1> {browse "[%W get [%W nearest %y]]"}
+
+set dir $initialDir
+updateListbox 
+
+
+
+
+

@@ -1,0 +1,101 @@
+# Generic make rules for all OCS systems 
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/make/GlobalRules,v 1.1.1.1 1998-06-16 15:59:50 wg Exp $
+
+OM_RULES_INCLUDED := yes
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Targets 
+
+
+RERUNVARS :=	-f $(MAKEFILE)
+
+all:
+	@$(MAKE) $(RERUNVARS) RTARGET=all _subsystems _all
+	
+sub:
+	@$(MAKE) $(RERUNVARS) RTARGET=sub _realsubsystems _all
+	
+check:
+	@$(MAKE) $(RERUNVARS) RTARGET=check _subsystems _check
+	
+install:
+	@$(MAKE) $(RERUNVARS) RTARGET=install _subsystems _install
+
+installthis:
+	@$(MAKE) $(RERUNVARS) RTARGET=install _install
+
+gen:
+	@if [ -n "$(LOCALDEFS)" ] ; then \
+	  $(RM) -f $(LOCALDEFS); \
+	  $(MAKE) $(RERUNVARS) $(LOCALDEFS); \
+	fi
+
+genall:
+	@$(MAKE) $(RERUNVARS) RTARGET=genall _subsystems gen
+
+
+clean: _clean
+
+
+cleanall:
+	@$(MAKE) $(RERUNVARS) RTARGET=cleanall _subsystems clean
+
+pack:
+	@$(MAKE) $(RERUNVARS) RTARGET=pack _pack _subsystems
+
+
+.PHONY: all sub install gen genall clean cleanall pack check
+.PRECIOUS: all sub install gen genall clean cleanall pack check
+
+
+# Run MAKE with RTARGET on all SUBNODES
+
+_subsystems:
+	@__subsystems="$(SUBNODES)"; \
+	for i in $$__subsystems; \
+	do \
+	  $(ECHO) ">>>> Visiting subnode '$$i' making '$(RTARGET)' <<<<" ; \
+	  $(DATE); \
+	  ($(CD) $$i; $(MAKE) $(RERUNVARS) 'RTARGET=' $(RTARGET)) \
+					|| exit 2; \
+	done
+
+# Run MAKE with RTARGET on all SUBSYSTEMS
+
+_realsubsystems:
+	@__subsystems="$(SUBSYSTEMS)"; \
+	for i in $$__subsystems; \
+	do \
+	  $(ECHO) ">>>> Visiting subsystem '$$i' making '$(RTARGET)' <<<<" ; \
+	  $(DATE); \
+	  ($(CD) $$i; $(MAKE) $(RERUNVARS) 'RTARGET=' $(RTARGET)) \
+					|| exit 2; \
+	done
+
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Miscellaneous generic actions
+
+_installmanuals: $(MANUALS)
+	@-if [ -z "$(INSTALLMANPATH)" ] ; \
+	then $(ECHO) "You must define the variable INSTALLMANPATH." ; \
+	else \
+	_sections="1 2 3 4 5 6 7"; \
+	_manuals="$(MANUALS)"; \
+	for m in $$_manuals; \
+	do \
+	  for i in $$_sections; \
+	  do \
+	    if [ "`$(BASENAME) $$m .$$i`.$$i" = $$m ] ; \
+	    then \
+	      $(ECHO) "Installing $$m in $(INSTALLMANPATH)/man$$i"; \
+	      $(OCSOM)/etc/xinstall $(INSTALLMANFLAGS) \
+			$$m $(INSTALLMANPATH)/man$$i ; \
+	    fi; \
+	  done; \
+	done; \
+	fi
+
+_pack: $(COMPONENTS)
+	@$(ECHO) "Packing node"; \
+	$(TAR) cvf - $(COMPONENTS) | $(COMPRESS) > $(NODENAME).tar.gz

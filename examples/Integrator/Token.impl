@@ -1,0 +1,115 @@
+IMPLEMENTATION Token
+
+IMPORT Real ONLY real ! 
+       RealConv ONLY `
+       Denotation ONLY delete = empty ! ++ <
+       Nat ONLY nat 0
+       Char ONLY char digit?  ! =
+       Map ONLY map def !? ! {}
+       Option ONLY option nil avail? cont
+
+DATA token == openT                       -- '('
+              closeT                      -- ')'
+              eoiT                        -- end of input
+              numberT(value: real)        -- [-](0-9)*[.(0-9)*]
+              xT                          -- 'x'
+              yT                          -- 'y'
+              absT                        -- 'ABS'
+              addT                        -- 'ADD'
+              subT                        -- 'SUB'
+              mulT                        -- 'MUL'
+              divT                        -- 'DIV'
+              sinT                        -- 'SIN'
+              cosT                        -- 'COS'
+              expT                        -- 'EXP'
+              logT                        -- 'LOG'
+              powT                        -- 'POW'
+              piT                         -- 'PI'
+              other(content: denotation)  -- other denotations
+
+-- %$Recognizing Token $
+FUN lookupMap: map[denotation, <, token]
+DEF lookupMap ==
+def("(",        openT,
+def(")",        closeT,
+def("",         eoiT,
+def("x",        xT,             def("X",        xT,
+def("y",        yT,             def("Y",        yT,
+def("ABS",      absT,           def("abs",      absT,
+def("ADD",      addT,           def("add",      addT,
+def("SUB",      subT,           def("sub",      subT,
+def("MUL",      mulT,           def("mul",      mulT,
+def("DIV",      divT,           def("div",      divT,
+def("SIN",      sinT,           def("sin",      sinT,
+def("COS",      cosT,           def("cos",      cosT,
+def("EXP",      expT,           def("exp",      expT,
+def("LOG",      logT,           def("log",      logT,
+def("POW",      powT,           def("pow",      powT,
+def("PI",       piT,            def("pi",       piT,
+{})))))))))))))))))))))))))))))
+
+DEF lookupToken(d) ==
+    LET res == lookupMap !? d
+    IN
+    IF avail?(res) THEN cont(res)
+    ELSE
+      IF (d!0) = ("-"!) THEN 
+        IF checknumber(precomma, delete(d, 0, 0)) THEN numberT(d!)
+        ELSE other(d)
+        FI
+      IF digit?(d!0) THEN 
+        IF checknumber(precomma, d) THEN numberT(d!)
+        ELSE other(d)
+        FI
+      ELSE other(d)
+      FI
+    FI
+
+-- %$$Automaton for recognizing (real) numbers$
+DATA cnState == precomma postcomma
+
+FUN checknumber: cnState ** denotation -> bool
+/* %
+@SPC @code{checknumber(state, d) = b}
+@PRE @code{true}
+@POST @code{state = precomma} => (@code{b <=> d} consists of digits, followed
+optionally by a comma and another list of digits) @*             
+      @code{state = postcomma =>} (@code{b <=> d} consists of digits)
+@ENDSPC
+*/
+DEF checknumber(state, d) ==
+    IF d = empty THEN true
+    ELSE LET c == d!0
+             rest == delete(d, 0, 0)
+         IN IF precomma?(state) THEN
+              IF digit?(c) THEN checknumber(precomma, rest)
+              IF c = ("."!) THEN checknumber(postcomma, rest)
+              ELSE false
+              FI
+            IF postcomma?(state) THEN
+              IF digit?(c) THEN checknumber(postcomma, rest)
+              ELSE false
+              FI
+            FI
+    FI
+
+-- %$Representing Tokens$
+DEF asDeno(tok) == 
+    IF openT?(tok) THEN "'('"
+    IF closeT?(tok) THEN "')'"
+    IF eoiT?(tok) THEN "#"
+    IF numberT?(tok) THEN "'number(" ++ (value(tok)`) ++ ")'"
+    IF xT?(tok) THEN "'x'"
+    IF yT?(tok) THEN "'y'"
+    IF absT?(tok) THEN "'ABS'"
+    IF addT?(tok) THEN "'ADD'"
+    IF subT?(tok) THEN "'SUB'"
+    IF mulT?(tok) THEN "'MUL'"
+    IF divT?(tok) THEN "'DIV'"
+    IF sinT?(tok) THEN "'SIN'"
+    IF cosT?(tok) THEN "'COS'"
+    IF expT?(tok) THEN "'EXP'"
+    IF logT?(tok) THEN "'LOG'"
+    IF powT?(tok) THEN "'POW'"
+    IF other?(tok) THEN "'other(" ++ content(tok) ++ ")'"
+    FI

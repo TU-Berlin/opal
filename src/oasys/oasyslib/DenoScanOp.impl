@@ -1,0 +1,74 @@
+IMPLEMENTATION DenoScanOp
+
+
+IMPORT  Com     COMPLETELY
+        String  COMPLETELY
+        Seq     COMPLETELY
+        Option  COMPLETELY
+        Pair    COMPLETELY
+        Denotation      COMPLETELY
+        DenoScanCompose COMPLETELY
+        StringConv      COMPLETELY
+
+FUN | : (denotation -> ans[pair[data,denotation]]) **
+                (denotation -> ans[pair[data,denotation]]) ->
+                        (denotation -> ans[pair[data,denotation]])
+DEF (S1 | S2)(Str) ==
+    LET S1Res == S1(Str) -- try the 1st one
+    IN IF S1Res okay?
+         THEN S1Res
+         ELSE LET S2Res == S2(Str) -- try the 2nd one
+              IN IF S2Res okay?
+                   THEN S2Res
+                   ELSE fail(error(S1Res) ++ " OR " ++ error(S2Res))
+                 FI
+       FI
+
+FUN ? : (denotation -> ans[pair[data,denotation]]) ->
+                (denotation -> ans[pair[option[data],denotation]])
+DEF ?(S)(Str) ==
+    LET SRes == S(Str)
+    IN IF SRes okay?
+         THEN LET (Data,Rt) == unpair(data(SRes))
+              IN okay(avail(Data) & Rt)
+         ELSE okay(nil & Str)     -- failed, hence, nil is returned
+       FI
+
+FUN * : (denotation -> ans[pair[data,denotation]]) ->
+                (denotation -> ans[pair[seq[data],denotation]])
+DEF *(S)(Str) ==
+    LET SRes == S(Str)
+    IN IF SRes okay?
+         THEN LET (Data,Rt) == unpair(data(SRes))
+                  (DSeq,Rt1)== unpair(data(*(S)(Rt)))
+              IN okay(Data::DSeq & Rt1)
+         ELSE okay(<> & Str)     -- failed, hence, <> is returned
+       FI
+
+FUN okay : data -> (denotation -> ans[pair[data,denotation]])
+DEF okay(D)(Str) == okay(D & Str)
+
+FUN fail : denotation  -> (denotation -> ans[pair[data,denotation]])
+DEF fail(Den)(_) == fail(Den)
+
+FUN forget : (denotation -> ans[pair[data,denotation]]) ->
+                (denotation -> ans[data])
+DEF forget(S)(Str) ==
+    LET SRes == S(Str)
+    IN IF SRes okay?
+         THEN okay(1st(data(SRes)))
+         ELSE fail(SRes error)
+       FI
+
+-- forget the rest of this denotation, fail if nonempty
+FUN forgetEmpty :  (denotation -> ans[pair[data,denotation]]) ->
+                (denotation -> ans[data])
+DEF forgetEmpty(S) == forget(S o <>)
+    
+-- yield data and denotation if empty, fail otherwise
+FUN <> : data -> (denotation -> ans[pair[data,denotation]])
+DEF <>(Dat)(D) == 
+    IF D = ""
+      THEN okay(Dat & "")
+      ELSE fail("empty denotation expected instead of "++ D)
+    FI

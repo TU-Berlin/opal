@@ -1,0 +1,43 @@
+#!/bin/sh
+# generating meaningful backtraces for OCS programs
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/btrace,v 1.1.1.1 1998-06-16 15:59:51 wg Exp $
+
+gdb=gdb
+awk=awk
+rm=/bin/rm
+
+if [ $# -lt 1 ] 
+then
+  echo "usage: $0 program argument ..."
+  exit 2
+fi
+
+program=$1
+shift
+for arg
+do
+  arguments="$arguments \"$arg\""
+done
+gdbcmdfile=/tmp/debug_$$
+
+# commands to be executed by gdb
+echo run $arguments >$gdbcmdfile
+echo "bt" >>$gdbcmdfile
+echo "quit" >>$gdbcmdfile
+
+# run gdb in batch mode and pipe output to awk filter
+$gdb -q -batch -fullname -se $program -x $gdbcmdfile -nx 2>&1 | \
+$awk 'BEGIN{method=0;filter=0;} \
+     /#.* in .*/ \
+       {filter=1;method=0;} \
+     filter==1 &&  /#.* in .*_mt_[0-9]*_[0-9]*_[0-9]*.*/ \
+       {method=1;} \
+     filter==1 &&  /#.* in .*_p_[0-9]*_c.*/ \
+       {method=1;} \
+     filter==1 && method==0 && /.* at .*\.impl:[0-9]*/ \
+       {print $(NF-1),$NF;filter=0;next;}; \
+     filter==1 && /.* at .*/ \
+       {filter=0;method=0;next;}; \
+     filter==0 \
+       {print;}'
+$rm -f $gdbcmdfile

@@ -1,0 +1,352 @@
+#!/bin/sh
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/ocs,v 1.1.1.1 1998-06-16 15:59:51 wg Exp $
+
+SHELL=/bin/sh
+export SHELL
+
+if [ -z "$OCS" ] 
+then
+  OCS=`expr $0 : '\(..*\)/bin/..*$'`  
+  export OCS
+fi
+
+if [ -z "$OCSOM" ] 
+then
+  OCSOM=$OCS/lib/om
+  export OCSOM
+fi
+
+if [ -z "$OCSPROJECT" ]
+then
+  OCSPROJECT=$OCSOM/specs/empty
+  export OCSPROJECT
+fi
+
+if [ -z "$DOSFOP" ]
+then
+  DOSFOP=$OCS/dosfop
+  export DOSFOP
+fi
+
+. $OCSOM/specs/ShSpecs.basic
+
+
+progn=$0
+target=all
+
+makeflags=""
+genflags=""
+genverb="-v0"
+
+usage="\
+
+usage: ocs [ -top <struct> <command> | -sub <system> <struct,...> ]
+           [ <option> ... ]
+           [ help | ... ]
+
+"
+
+helpgenopts="\
+
+The following options control only the effect of -sub or -top:
+     -v -v0 -v1 -v2 -v3               verbose level (see oc(1))
+     -w -w0 -w1 -w2                   warning level (see oc(1))
+     -o -o1 -o2 -o<letter>            optimization flag (see oc(1))
+     -d -dd -dt -dT                   debugging flag (see oc(1))
+     -s[f|d|p] <path/system>          base on subsystem (see genmake(1))
+     -prop                            enable property language
+     -keep                            keep generated C sources
+"
+
+
+helpopts="\
+
+The following options control the building of targets:
+     -force <struct>.{sign,impl,c}    force recompilation
+"
+
+helpxopts="\
+     opt=(no|modest|medium|full)      choose optimization configuration
+     debug=(no|opal|c)                choose debugging configuration
+     profile=(no|gprof)               choose profiling configuration
+     ocs=(stdocs|expocs)              choose Opal compiler
+     <var>=<value>                    overwrite project variable
+"
+
+helptargets="\
+
+Target is one of:
+     help                             basic help
+     xhelp                            extended help
+     info                             information about OCS version and project
+     [ all ]        (subnodes)        build system and systems in subnodes
+     sub            (subsystems)      build system and used subsystems
+     check          (subnodes)        check properties
+     clean                            remove all derived objects
+     gen                              force generating building rules
+     sendbug                          send a bug report :-)
+"
+
+helpxtargets="\
+     pack           (subnodes)        pack as <nodename>.tar.gz
+     cleanall       (subnodes)        \`clean' on subnodes and this node
+     genall         (subnodes)        \`gen' on subnodes and this node
+     install                          install using INSTALL{BIN,LIB,MAN}PATH
+
+"
+
+if [ "$1" = "-top" ] || [ "$1" = "-sub" ] 
+then
+    if [ $# -ge 3 ]
+    then
+      if [ "$1" = "-top" ] 
+      then
+        topcom=$3
+        topstruct=$2
+        sysdefs=SysDefs.$topstruct-$topcom
+        shift ; shift ; shift
+      else
+        subsys=$2
+        subsysstructs=`${ECHO} $3 | ${SED} -e 's/,/ /g'`
+        sysdefs=SysDefs.$subsys
+        shift ; shift ; shift
+      fi
+    else
+      ${CAT} <<EOI 
+wrong usage!
+$usage
+EOI
+      exit 255
+    fi
+else
+  sysdefs=SysDefs
+fi
+
+while [ $# -ge 1 ] 
+do
+  case $1 in
+    help)
+      ${CAT} <<EOI
+$usage
+$helpgenopts
+$helpopts
+$helptargets
+EOI
+      exit 0
+      ;;
+    xhelp)
+      ${CAT} <<EOI
+$usage
+$helpgenopts
+$helpopts
+$helpxopts
+$helptargets
+$helpxtargets
+EOI
+      exit 0
+      ;;
+    info)
+      if [ -r "$OCS/VERSION" ]
+      then
+        ${ECHO} "You are using \``${CAT} $OCS/VERSION`'"
+	${ECHO} "located at \`$OCS'."
+      else
+	${ECHO} "You are probably using an experimental version of OCS"
+	${ECHO} "located at \`$OCS'."
+      fi
+      if [ "$OCSPROJECT" = "$OCSOM/specs/empty" ]
+      then
+	${ECHO} "The project (\$OCSPROJECT) is not specified."
+      else
+	${ECHO} "The project is \`$OCSPROJECT'."
+      fi
+      exit 0
+      ;; 
+    -v0)
+      genverb=""
+      shift
+      ;;
+    -v1|-v)
+      genverb="-v1"
+      shift
+      ;;
+    -v[2,3])
+      genverb="-V $1"
+      shift
+      ;;
+    -d[d,t,T]|-d)
+      genflags="$genflags $1"
+      shift
+      ;;
+    -sf|-sd|-s|-sp)
+      gensubsys="$gensubsys $1 $2"
+      shift ; shift
+      ;;
+    -o[1,2,e,u,c,m,p,g,T,S,s,C]|-o)
+      genflags="$genflags $1"
+      shift
+      ;;
+    -w[0,1,2]|-w)
+      genflags="$genflags $1"
+      shift
+      ;;
+    -prop)
+      genflags="$genflags -prop"
+      shift
+      ;;
+    -keep)
+      genflags="$genflags -keep"
+      shift
+      ;;
+    -force)
+      if [ $# -ge 2 ] 
+      then
+	case $2 in
+	  *.sign)
+	    ${RM} -f OCS/`${BASENAME} $2 .sign`.exp
+	    ;;
+	  *.impl)
+	    ${RM} -f OCS/`${BASENAME} $2 .impl`.o
+	    ${RM} -f OCS/`${BASENAME} $2 .impl`.c
+	    ${RM} -f OCS/`${BASENAME} $2 .impl`.ana
+	    ;;
+	  *.c)
+	    ${RM} -f OCS/`${BASENAME} $2 .c`.o
+	    ${RM} -f OCS/`${BASENAME} $2 .c`.c
+	    ;;
+	  *)
+	    ${CAT} <<EOI
+wrong usage!
+$usage
+EOI
+	    exit 255
+	    ;;
+	esac
+        shift ; shift
+      else
+	${CAT} <<EOI
+wrong usage!
+$usage
+EOI
+	exit 255
+      fi
+      ;;
+    -n)
+      set -x
+      makeflags="$makeflags -n "
+      shift
+      ;;
+    *=*)
+      makeflags="$makeflags $1"
+      shift
+      ;;
+    all)
+      target=all
+      shift
+      break
+      ;;
+    sub)
+      target=sub
+      shift
+      break
+      ;;
+    clean)
+      target=clean
+      shift
+      break
+      ;;
+    cleanall)
+      target=cleanall
+      shift
+      break
+      ;;
+    gen)
+      target=gen
+      shift
+      break
+      ;;
+    genall)
+      target=genall
+      shift
+      break
+      ;;
+    pack)
+      target=pack
+      shift
+      break
+      ;;
+    sendbug)
+      $OCSOM/etc/sendbug
+      exit 0
+      ;;
+    install)
+      target=install
+      shift
+      break
+      ;;
+    installthis)
+      target=installthis
+      shift
+      break
+      ;;
+    check)
+      target=check
+      shift
+      break
+      ;;
+    *)
+      ${CAT} <<EOI
+wrong usage!
+$usage
+EOI
+      exit 255
+  esac
+done
+
+if [ $# -ge 1 ]
+then
+  ${CAT} <<EOI
+wrong usage!
+$usage
+EOI
+  exit 255
+fi
+    
+if [ -n "$topcom" ] 
+then
+  ${ECHO} "SYSKIND=top" > SysDefs.$$
+  ${ECHO} "TOPSTRUCT=$topstruct" >> SysDefs.$$
+  ${ECHO} "TOPCOM=$topcom" >> SysDefs.$$
+  ${ECHO} "GENOPTIONS=$genverb $genflags" >> SysDefs.$$
+  ${ECHO} "GENSUBSYS=$gensubsys \$(GENSTDSYS)" >> SysDefs.$$
+  if [ -r $sysdefs ] && ${CMP} -s SysDefs.$$ $sysdefs
+  then
+    ${RM} SysDefs.$$
+  else
+    ${MV} SysDefs.$$ $sysdefs
+  fi
+elif [ -n "$subsys" ] 
+then
+  ${ECHO} "SYSKIND=sub" > SysDefs.$$
+  ${ECHO} "NODENAME=$subsys" >> SysDefs.$$
+  ${ECHO} "STRUCTS=$subsysstructs" >> SysDefs.$$
+  ${ECHO} "GENOPTIONS=$genverb $genflags" >> SysDefs.$$
+  ${ECHO} "GENSUBSYS=$gensubsys \$(GENSTDSYS)" >> SysDefs.$$
+  if [ -r $sysdefs ] && ${CMP} -s SysDefs.$$ $sysdefs
+  then
+    ${RM} SysDefs.$$
+  else
+    ${MV} SysDefs.$$ $sysdefs
+  fi
+fi
+
+if [ -r "$sysdefs" ] 
+then
+    (${XGMAKE} -f $OCSOM/make/Makefile.develop \
+	 "SYSDEFS=$sysdefs" $makeflags $target 2>&1 || echo "+++failure+++") \
+    | ${OCSOM}/etc/filterocs $target
+    exit $status
+else
+  ${ECHO} "No file \`SysDefs' and no system definition on command line"
+  exit 255
+fi

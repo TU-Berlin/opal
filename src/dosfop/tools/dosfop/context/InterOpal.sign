@@ -1,0 +1,386 @@
+-- %Definition of abstract representation of @sc{Opal}: @b{InterOpal}.
+
+SIGNATURE InterOpal
+-- %- =========================================================================
+-- %- Autor:       wg, af, ralfi
+-- %- Projekt:     OPAL1-Compiler - Zwischensprache InterOpal
+-- %- subject: intermediate representation of OPAL
+-- %- version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/context/InterOpal.sign,v 1.1.1.1 1998-06-16 16:00:33 wg Exp $
+-- %- =========================================================================
+
+IMPORT  Map[ident,<,object]     ONLY    map
+        Map[ident,<,property]   ONLY    map
+        Map[inst,<,seq[name]]   ONLY    map
+        Map[origin,<,struct]    ONLY    map
+        Nat                     ONLY    nat
+        Option[expr]            ONLY    option
+        Option[denotation]              ONLY    option
+        Seq[comp]               ONLY    seq
+        Seq[eqn]                ONLY    seq
+        Seq[expr]               ONLY    seq
+        Seq[fct]                ONLY    seq
+        Seq[guard]              ONLY    seq
+        Seq[ident]              ONLY    seq
+        Seq[name]               ONLY    seq
+        Seq[pattern]            ONLY    seq
+        Seq[pos]                ONLY    seq
+        Seq[var]                ONLY    seq
+        Seq[variant]            ONLY    seq
+        Seq[pragma]             ONLY    seq
+        Seq[pragmaItem]         ONLY    seq
+        Dyn                     ONLY    dyn
+
+-- %$Whole Structures$
+
+TYPE interOpal == 
+        interOpal( part         : part,
+                   structs      : map[origin,<,struct] 
+                                -- Mapping from origin to main/imported
+                                -- structure
+                 )
+
+TYPE part ==
+        signature
+        extProperties
+        implementation
+        intProperties
+
+                                
+TYPE struct == 
+        struct(    pos          : seq[pos],
+                                -- textual position(s) where struct
+                                -- is imported (if any)
+                   origin       : origin,
+                                -- origin of this structure
+                   symbol       : denotation,
+                                -- symbolic identifier
+                   insts        : map[inst,<,seq[name]],
+                                -- instantiations
+                                -- main =>
+                                --    parameterized =>
+                                --       exactly one formal instantiation 
+                                --    else no instantiation 
+                                -- NOT main =>
+                                --    parameterized =>
+                                --       all proper instantiations (inst(_))
+                                --       + one formal instantiation 
+                                --    else no instantiation
+                   onlys        : map[inst,<,seq[name]],
+                                -- onlys per instantiation
+                                -- (imported structure only)
+                   objs         : map[ident,<,object],
+                                -- objects of this structure
+                   props        : map[ident,<,property],
+                                -- properties of this structure,
+                   pragmas      : seq[pragma]
+                                -- global pragmas of structure
+        )
+
+-- %$Properties and formulae$
+TYPE property ==
+/* %@table @asis
+@item free type */
+        freeType(  pos          : pos,
+                   -- %textual position of free type
+                   ident        : ident,        
+                   -- %identifier of property (same as associated sort
+                   sort         : name,
+                   -- %sort associated with free type
+                   variants     : seq[variant],
+                   -- %variants of free type
+                   pragmas      : seq[pragma]
+                   -- %pragmas associated with property
+        )
+-- %@item algebraic law
+        law(       pos          : pos,
+                   -- %textual position of law
+                   ident        : ident,        
+                   -- %identifier of property
+                   symbol       : option[denotation],
+                   -- %symbolic identifier of law (if any)
+                   formula      : formula,
+                   -- %body 
+                   pragmas      : seq[pragma]
+                   -- %pragmas associated with property
+        )
+-- %@item other
+        other(     pos: pos,
+                   -- %textual position of law
+                   id: denotation,
+                   -- %symbolic name of kind of property
+                   data: dyn,
+                   -- %data associated with property
+                   pragmas      : seq[pragma]
+                   -- %pragmas associated with property 
+              )
+-- %@end itemize
+                  
+TYPE formula ==
+        dfd(       pos          : pos,
+                   expr         : expr
+        )
+        approx(    pos          : pos,
+                   left         : expr,
+                   right        : expr
+        )
+        cong(      pos          : pos,
+                   left         : expr,
+                   right        : expr
+        )
+        neg(       pos          : pos,
+                   formula      : formula
+        )
+        conj(      pos          : pos,
+                   left         : formula,
+                   right        : formula
+        )
+        disj(      pos          : pos,
+                   left         : formula,
+                   right        : formula
+        )
+        impl(      pos          : pos,
+                   premise      : formula,
+                   conclusion   : formula
+        )
+        equiv(     pos          : pos,
+                   left         : formula,
+                   right        : formula
+        )
+        forall(    pos          : pos,
+                   vars         : seq[var],
+                   range        : formula
+        )
+        exist(     pos          : pos,
+                   vars         : seq[var],
+                   range        : formula
+        )
+        informal(  pos          : pos,
+                   text         : denotation
+        )
+        other(     pos          : pos,
+                   id           : denotation,
+                   data         : dyn)
+                  
+                  
+-- %$Objects$
+TYPE object == 
+        object(    pos          : seq[pos],
+                                -- textual declaration position(s) (if any)
+                   ident        : ident,
+                                -- ident of this object
+                   symbol       : denotation,
+                                -- symbolic identifier
+                   kind         : kind,
+                                -- kind (sort or op with functionality)
+                   def          : impl,
+                                -- implementation
+                   props        : seq[ident],
+                                -- related properties (if any)
+                   pragmas      : seq[pragma]
+                                 -- related pragmas
+        )
+
+TYPE impl == 
+        missing         -- missing implementation 
+        imported        -- implementation is hidden
+        parameter( pos          : pos,
+                                -- textual position in formal parameter list
+                   no           : nat
+                                -- logical position of parameter (1..n)
+        )       
+        induced(   pos          : pos,
+                                -- textual position in DATA statement   
+                   sort         : name
+                                -- sort of DATA inducing implementation
+        )
+        data(      variants     : seq[variant] 
+                                -- data definition
+        )
+        def(       eqns         : seq[eqn]
+                                -- function definition
+        )
+        other(     pos          : pos,
+                                -- textual position in formal parameter list
+                   id           : denotation,
+                                -- other information
+                   data         : dyn
+             )   
+
+TYPE variant == 
+        variant(   pos          : pos,
+                                -- variant position
+                   cons         : name,
+                                -- constructor function
+                   test         : name,
+                                -- test function
+                   comps        : seq[comp]
+                                -- components
+       )
+
+TYPE comp == 
+        comp(      pos          : pos,
+                                -- component position
+                   sel          : name
+                                -- selector function
+        )
+            
+-- %$Equations$                    
+TYPE eqn == 
+        eqn(       pos          : pos,
+                                -- equation position
+                   lhs          : pattern,
+                                -- original pattern
+                   patterns     : seq[pattern], 
+                                -- all perfect-fit patterns
+                   rhs          : expr 
+                                -- rhs of expression
+        )
+
+TYPE pattern == 
+        any(       pos          : pos
+                                -- wildcard
+        )
+        name(      pos          : pos,
+                   name         : name
+                                -- globals only
+        )
+        var(       pos          : pos,
+                   var          : var
+        )
+        as(        pos          : pos,
+                   var          : var,
+                   pattern      : pattern
+        )
+        apply(     pos          : pos,
+                   funct        : pattern,
+                   arg          : pattern
+        )
+        tuple(     pos          : pos,
+                   elems        : seq[pattern]
+        )
+
+TYPE var ==
+        var(       pos          : pos,
+                                -- declaration position
+                   ident        : ident,
+                                -- ident denoting variable
+                   symbol       : denotation,
+                                -- symbolic identifier
+                   fct          : fct
+                                -- functionality
+        )
+
+-- %$Expressions$
+TYPE expr == 
+        name(      pos          : pos,
+                   name         : name
+        )
+        den(       pos          : pos,
+                   rep          : denotation
+        )       
+        tuple(     pos          : pos,
+                   elems        : seq[expr] 
+        )
+        apply(     pos          : pos,
+                   funct        : expr, 
+                   arg          : expr 
+        )
+        cases(     pos          : pos,
+                   guards       : seq[guard], 
+                   else         : option[expr]
+        )
+        lambda(    pos          : pos,
+                   vars         : seq[var],
+                   body         : expr
+        )
+        block(     pos          : pos,
+                   eqns         : seq[eqn],
+                   body         : expr
+        )
+
+TYPE guard == 
+        guard(     pos          : pos,
+                   if           : expr, 
+                   then         : expr 
+        )
+
+-- %$Functionalities$
+TYPE kind == 
+        sort
+        fct(       fct          : fct
+        )
+        other(     id           : denotation,
+                   data         : dyn
+        )
+
+TYPE fct == 
+        sort(      sort         : name 
+        )
+        cart(      elems        : seq[fct] 
+        )
+        funct(     dom          : fct, 
+                   codom        : fct 
+        )
+
+-- %$Names$
+TYPE pos  ==
+        unknown
+        part(      part         : part
+        )
+        pos(       part         : part,
+                   row          : nat, 
+                   col          : nat
+        )
+        region(    part         : part,
+                   row          : nat,   -- start
+                   col          : nat,   -- start
+                   endRow       : nat,
+                   endCol       : nat
+        )
+
+TYPE name == 
+        name(    ident          : ident,
+                                -- ident unique w.r.t. origin if global,
+                                -- ident unique w.r.t. associated global,
+                 origin         : origin,
+                 inst           : inst
+        )
+FUN < : name ** name -> bool
+
+TYPE ident ==
+        ident(     no           : nat
+        )
+FUN < : ident ** ident -> bool
+FUN firstLaw : ident
+FUN nextLaw  : ident -> ident
+FUN isLaw?   : ident -> bool
+
+        
+TYPE origin ==
+        local   -- origin of a local name
+        main    -- origin of the main structure
+        origin(    no           : nat
+                                -- number unique w.r.t. interOpal
+        )
+FUN < : origin ** origin -> bool
+
+TYPE inst ==
+        none    -- object/structure not parameterized
+        formal  -- instantiated with own formal parameter
+        generic
+        inst(      no           : nat
+                                -- number unique w.r.t. origin
+        )
+FUN < : inst ** inst -> bool
+
+-- %$Pragmas$
+
+TYPE pragma == pragma( items: seq[pragmaItem] )
+
+TYPE pragmaItem == objects (objects: seq[name])
+                   token   (pos: pos,
+                            text: denotation) 
+
+-- %$Misc$
+-- %Key to use when storing binary interopal files
+FUN ioTypeKey : denotation

@@ -1,0 +1,266 @@
+IMPLEMENTATION Generate
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject:  driver of the C code generation phase
+-- project:  ac/gen
+-- author:   wg 6-92
+
+IMPORT	Nat		COMPLETELY
+	Denotation	COMPLETELY
+	String		ONLY string !
+	StringFormat	ONLY format
+	BTUnion		ONLY u :string ** seq[union] -> seq[union]
+				u :string -> seq[union] union
+	Compose		ONLY o
+	Char 		ONLY char newline
+	Void		ONLY void nil
+	Com		ONLY com ans:SORT yield okay okay? data error exit
+	OcStream	ONLY output stdErr create 
+			     close:options**output->com[void] write
+        ComCompose      COMPLETELY
+        ComSeqReduce   	COMPLETELY
+        Seq             COMPLETELY
+        SeqMap		COMPLETELY
+        SeqReduce    	COMPLETELY
+	SeqFilter 	ONLY partition
+	SeqSort		ONLY msort
+	Triple		ONLY triple
+--	Conversion	COMPLETELY
+
+IMPORT	Options		ONLY options myStruct
+			     myCFile myHFile myHcCFileTmpl myHcHFileTmpl
+	Verbose		COMPLETELY
+	Error		ONLY err:SORT ok +
+
+IMPORT	PreparedOptions	ONLY popts options foreignTemplate? foreignInterface?
+	Ide		ONLY origin:SORT target = : origin**origin->bool
+						< : ide**ide->bool
+	Ic		COMPLETELY
+	IcFun		ONLY objs mods
+	Builtin		ONLY BUILTIN
+
+IMPORT	BoxedText	COMPLETELY
+	GenObj		COMPLETELY
+	InitOrder	COMPLETELY
+	CalcEvalMethods COMPLETELY
+	GenEvalMethod   COMPLETELY
+
+
+FUN codingSchemeVersion : string	-- to become external
+DEF codingSchemeVersion == ("acc-2.1")!
+
+-- ---------------------------------------------------------------------------
+
+FUN generate : popts -> unit ** mod -> com[err]
+DEF generate(Opts)(U,M) ==
+    verb(options(Opts),phase,("translating to C ...")) & (\\ _ .
+    LET (Err,Consts) == initOrder(Opts,M)
+    IN
+    IF foreignTemplate?(Opts) THEN
+	LET (ImplConsts,UimplConsts) == partition(implementedConst?,Consts)
+	IN
+        genCFile(Opts,U,M,ImplConsts) 	& (\\ _ .
+	genHFile(Opts,M)		& (\\ _ .
+	genHcCFileTmpl(Opts,M,UimplConsts) & (\\ _ .
+	genHcHFileTmpl(Opts,M)		& (\\ _ .
+	yield(okay(Err))
+	))))
+    OTHERWISE
+    IF foreignInterface?(Opts) THEN
+        genCFile(Opts,U,M,Consts) 	& (\\ _ .
+	genHFile(Opts,M)		& (\\ _ .
+	yield(okay(Err))
+	))
+    ELSE
+        genCFile(Opts,U,M,Consts) 	& (\\ _ .
+	yield(okay(Err))
+	)
+    FI
+    )
+
+-- ---------------------------------------------------------------------------
+
+FUN genCFile : popts ** unit ** mod ** seq[obj] -> com[void]
+DEF genCFile(Opts,U,M,Consts) ==
+    LET ConstCode == ( (\\C,CS. genConstCode(Opts,M,C)::CS) / <> )(Consts)
+    IN
+    create(options(Opts),myCFile(options(Opts)))	& (\\Out.
+    write(options(Opts),Out,genHeader(Opts,M))		& (\\ _ .
+    IF foreignTemplate?(Opts) THEN
+	LET ConstCode1 == genConstInitCall(Opts,M)::ConstCode
+	IN
+	(externDecs(Opts,Out,M) /& nil)(mods(anyMod,M))	   & (\\ _ .
+        write(options(Opts),Out,genInterfaceImport(Opts,M))& (\\ _ .
+        ( (\\ ob,_ . 
+		write(options(Opts),Out,
+			genInterfaceDec(Opts,M,ob)))
+	  /& nil )(objs(anyInternal?,M))		   & (\\ _ .
+	decs(Opts,Out,M)				   & (\\ _ .
+	write(options(Opts),Out,genHcInclude(Opts,M))	   & (\\ _ .
+	procs(Opts,Out,implementedProc?,M)	   	   & (\\ _ .
+	constaux(Opts,Out,implementedConst?,M)		   & (\\ _ .
+	footer(Opts,Out,U,M,ConstCode1)		   	   & (\\ _ .
+	close(Opts,Out)					  
+	))))))))
+     ELSE
+	(externDecs(Opts,Out,M) /& nil)(mods(anyMod,M))	   & (\\ _ .
+	decs(Opts,Out,M)				   & (\\ _ .
+	procs(Opts,Out,procedure?,M)			   & (\\ _ .
+	constaux(Opts,Out,constant?,M)		   	   & (\\ _ .
+	footer(Opts,Out,U,M,ConstCode)			   & (\\ _ .
+	close(Opts,Out)
+	)))))
+    FI
+    ))
+
+  FUN anyMod : mod -> bool
+  DEF anyMod(m) == true
+
+
+  FUN footer: popts ** output ** unit ** mod ** seq[box] -> com[void]
+  DEF footer(Opts,Out,U,M,Init) == 
+    LET Methods == calcEvalMethods(Opts,U)
+    IN
+    methods(Opts,Out,Methods)				     & (\\ _ .
+    write(options(Opts),Out,genModCode(Opts,M,Methods,Init)) & (\\ _ .
+    write(options(Opts),Out,genFooter(Opts,M)) 		
+    ))
+
+  FUN methods : popts ** output ** seq[triple[nat,nat,nat]] -> com[void]
+  DEF methods(Opts,Out,Mths) ==
+    ( (\\ Mth,_ . write(options(Opts),Out,genEvalMethod(Opts,Mth)))
+	/& nil )
+    (Mths)
+
+  FUN decs: popts ** output ** mod -> com[void]
+  DEF decs(Opts,Out,M) ==
+    ( (\\ ob,_ . write(options(Opts),Out,genDec(Opts,M,ob)))
+	/& nil )
+    (sortById(objs(anyObj,M)))
+
+  FUN externDecs: popts ** output ** mod -> mod ** void -> com[void]
+  DEF externDecs(Opts,Out,M)(EM,_) ==
+    IF builtin?(kind(EM)) THEN
+	yield(okay(nil))
+    IF foreign?(kind(EM)) THEN
+	write(options(Opts),Out,genInterfaceImport(Opts,EM))
+    ELSE
+        ( (\\ ob,_ . write(options(Opts),Out,genExternDec(Opts,M,ob)))
+	    /& nil )
+        (sortById(objs(anyObj,EM)))
+    FI
+
+  FUN procs : popts ** output ** (obj -> bool) ** mod -> com[void]
+  DEF procs(Opts,Out,whatProc?,M) ==
+    LET Proc == \\ ob,_ . verb(options(Opts),definition,symbol(ob)) & (\\ _ .
+			  write(options(Opts),Out,genProcCode(Opts,M,ob))
+			  )
+    IN
+    ( Proc /& nil )(sortById(objs(whatProc?,M)))
+    
+  FUN constaux : popts ** output ** (obj -> bool) ** mod -> com[void]
+  DEF constaux(Opts,Out,whatConst?,M) ==
+    LET Aux == \\ ob,_ . verb(options(Opts),definition,symbol(ob)) & (\\ _ .
+			  write(options(Opts),Out,genConstAuxCode(Opts,M,ob))
+			  )
+    IN
+    ( Aux /& nil )(sortById(objs(whatConst?,M)))
+    
+
+  FUN anyObj : obj -> bool
+  DEF anyObj(ob) == true
+
+  FUN implementedProc? unimplementedProc? implementedConst? : obj -> bool
+
+  DEF implementedProc?(procedure(_,_,_,_,_,_,Stm)) ==
+    noStrictHalt(Stm)
+  DEF implementedProc?(_) == false
+
+  DEF unimplementedProc?(Ob) == procedure?(Ob) and ~(implementedProc?(Ob))
+  
+  DEF implementedConst?(constant(_,_,_,_,Stm)) ==
+    noStrictHalt(Stm)
+  DEF implementedConst?(_) == false
+
+  FUN noStrictHalt : stm -> bool
+  DEF noStrictHalt(halt(_,_)) == false
+  DEF noStrictHalt(block(_,Stms)) == forall?(noStrictHalt,Stms)
+  DEF noStrictHalt(_) == true
+  
+  FUN sortById : seq[obj] -> seq[obj]
+  DEF sortById(Obs) == msort(\\Ob1,Ob2. ide(Ob1) < ide(Ob2))(Obs)
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN genHFile: popts ** mod -> com[void]
+DEF genHFile(Opts,M) ==
+    create(options(Opts),myHFile(options(Opts)))	& (\\ Out .
+    write(options(Opts),Out,genInterfaceHeader(Opts,M)) & (\\ _ .
+    ( (\\ ob,_ . write(options(Opts),Out,
+			genInterfaceDec(Opts,M,ob)))
+	/& nil )(sortById(objs(anyExternal?,M)))	& (\\ _ .
+    (IF foreignTemplate?(Opts) THEN
+	 write(options(Opts),Out,
+		genHcInterfaceInclude(Opts,M))
+     ELSE yield(okay(nil)) FI)				& (\\ _ .
+    ( (\\Ob,_ . write(options(Opts),Out,
+		  genMacroDef(Opts,M,Ob)))
+	/& nil)(sortById(objs(procedure?,M)))		& (\\ _ .
+    write(options(Opts),Out,genInterfaceFooter(Opts,M))	& (\\ _ .
+    close(Opts,Out)
+    ))))))
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN genHcCFileTmpl: popts ** mod ** seq[obj] -> com[void]
+DEF genHcCFileTmpl(Opts,M,Consts) ==
+    create(options(Opts),myHcCFileTmpl(options(Opts)))	& (\\ Out .
+    write(options(Opts),Out,
+      format(
+	"/* hand-coded implementation part of %s */\n/* coding scheme version %s */\n\n",
+	(myStruct(options(Opts))!'String) u (codingSchemeVersion u)
+      ))						& (\\ _ .
+    procs(Opts,Out,unimplementedProc?,M)		& (\\ _ .
+    write(options(Opts),Out,
+      	genConstInitFun(Opts,M,
+	     ( (\\C,CS.genConstCode(Opts,M,C)::CS) / <> )
+	     (Consts)))					& (\\ _ .
+    close(Opts,Out)					
+    ))))
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+FUN genHcHFileTmpl: popts ** mod -> com[void]
+DEF genHcHFileTmpl(Opts,M) ==
+    create(options(Opts),myHcHFileTmpl(options(Opts)))	& (\\ Out .
+    write(options(Opts),Out,
+      format(
+	"/* hand-coded interface part of %s */\n/* coding scheme version %s */\n\n",
+	(myStruct(options(Opts))!'String) u (codingSchemeVersion u)
+      ))						& (\\ _ .
+    close(Opts,Out)
+    ))
+
+-- ---------------------------------------------------------------------------
+
+
+FUN anyExternal? anyInternal? : obj -> bool
+DEF anyExternal?(Ob) == external?(mode(Ob))
+DEF anyInternal?(Ob) == internal?(mode(Ob))
+
+FUN anyExternalProc? anyInternalProc? : obj -> bool
+DEF anyExternalProc?(Ob) == procedure?(Ob) and external?(mode(Ob)) 
+DEF anyInternalProc?(Ob) == procedure?(Ob) and internal?(mode(Ob)) 
+
+    
+-- ---------------------------------------------------------------------------
+
+FUN close : popts ** output -> com[void]
+DEF close(Opts,Out) == 
+    write(options(Opts),Out,newline) & close(options(Opts),Out)
+
+

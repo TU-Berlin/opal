@@ -1,0 +1,189 @@
+
+
+IMPLEMENTATION WinAppl
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	Real		COMPLETELY
+	RealConv	COMPLETELY
+	StringScan	COMPLETELY
+	StringConv	COMPLETELY
+	BTUnion		COMPLETELY
+	Seq		COMPLETELY
+	Option		COMPLETELY
+	Denotation	COMPLETELY
+
+
+IMPORT	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	COMPLETELY
+	Env		COMPLETELY
+
+IMPORT	WinInternal	COMPLETELY
+	WinTclTk	COMPLETELY
+
+
+-- %$Application Parameter and Environment$ ==================================
+
+DEF applName ==
+    EXEC( arg(0) )
+
+DEF applArgs ==
+    EXEC( args & (\\Args. succeed(rt(Args))) )
+
+DEF applEnv(Var) ==
+    EXEC( env(Var) ; (\\Val. IF okay?(Val) THEN succeed(avail(data(Val)))
+                                           ELSE succeed(nil) FI) )
+
+-- %$Screen Size and Resolution$ ============================================
+
+DEF screenResolution == pixelSize
+
+DEF screenWidth ==
+    EXEC(
+	eval("winfo screenmmwidth .")
+		& (\\ WidthStr .
+	LET Width  == scan("%r", WidthStr)
+	IN
+	IF ::?(Width) THEN
+	    succeed(real(ft(Width)))
+	ELSE
+	    yield(fail("Cannot determine width of screen"))
+	FI
+	)
+    )
+
+DEF screenHeight ==
+    EXEC(
+	eval("winfo screenmmheight .")
+		& (\\ HeightStr .
+	LET Height == scan("%r", HeightStr)
+	IN
+	IF ::?(Height) THEN
+	    succeed(real(ft(Height)))
+	ELSE
+	    yield(fail("Cannot determine height of screen"))
+	FI
+	)
+    )
+
+-- %$Color Model$ =========================================================
+
+DATA colorModel ==
+    directColor grayScale pseudoColor staticColor staticGray trueColor
+
+
+DEF colorModel ==
+    EXEC(
+        eval("winfo visual .")              	& (\\ Str.
+        LET Model         == `(Str)
+        IN
+        IF Model = "directcolor" THEN 
+            colorDefaults & succeed(directColor)
+        IF Model = "grayscale"   THEN 
+            grayDefaults  & succeed(grayScale)
+        IF Model = "pseudocolor"   THEN 
+            colorDefaults & succeed(pseudoColor)
+        IF Model = "staticcolor"   THEN 
+            colorDefaults & succeed(staticColor)
+        IF Model = "staticgray"   THEN 
+            eval("winfo screendepth .")       & (\\ DepthStr.
+            LET Depth == convNat(DepthStr)
+            IN
+            IF Depth = 1 THEN
+                -- black-and-white screen
+                blackAndWhiteDefaults & 
+                succeed(staticGray)
+            ELSE
+                grayDefaults & 
+                succeed(staticGray)
+            FI
+            )
+        IF Model = "truecolor"   THEN 
+            colorDefaults  & succeed(trueColor)
+        FI
+        )
+    )
+
+FUN colorDefaults grayDefaults blackAndWhiteDefaults : com[void]
+
+DEF colorDefaults ==
+    startupDefaults("#e9e4d0", "black",
+                    "white",   "black",
+                    "white",   "red",  "black")
+
+DEF grayDefaults ==
+    startupDefaults("gray60",  "black",
+                    "white",   "black",
+                    "black",   "white", "black")
+
+DEF blackAndWhiteDefaults ==
+    startupDefaults("white",  "black",
+                    "white",  "black",
+                    "black",  "white", "black")
+
+
+FUN startupDefaults : denotation ** denotation ** 
+                      denotation ** denotation ** 
+                      denotation ** denotation ** 
+                      denotation -> com[void]
+DEF startupDefaults(BG, FG, 
+                    ActiveBG, ActiveFG, 
+                    SelectBG, SelectFG, 
+                    InsertBG) ==
+    setDefault(builtin,  "*Background",                 BG);
+    setDefault(builtin,  "*Foreground",                 FG);
+    setDefault(builtin,  "*HighlightBackground",        BG);
+    setDefault(builtin,  "*HighlightColor",        	ActiveBG);
+    setDefault(builtin,  "*HighlightThickness",        	"0");
+    setDefault(builtin,  "*activeBackground",           ActiveBG);
+    setDefault(builtin,  "*activeForeground",           ActiveFG);
+    setDefault(builtin,  "*selectColor",           	SelectFG);
+    setDefault(builtin,  "*selectBackground",           SelectBG);
+    setDefault(builtin,  "*selectForeground",           SelectFG);
+    setDefault(builtin,  "*insertBackground",           InsertBG);
+    setDefault(builtin,  "*BorderWidth",                "2");
+    setDefault(builtin,  "*Relief",                     "raised");
+    setDefault(builtin,  "*Toplevel.relief",            "flat");
+    setDefault(builtin,  "*Frame.relief",               "groove");
+    setDefault(builtin,  "*Listbox.relief",             "sunken");
+    setDefault(builtin,  "*Text.relief",                "sunken");
+    setDefault(builtin,  "*Entry.relief",               "sunken");
+    setDefault(builtin,  "*Label.relief",               "flat");
+    setDefault(builtin,  "*Text.background",            "white");
+    setDefault(builtin,  "*Entry.background",           "white");
+    setDefault(builtin,  "*Scrollbar.foreground",       BG);
+    setDefault(builtin,  "*Scrollbar.activeForeground", ActiveBG)
+
+-- %$Option Defaults$ ======================================================
+
+DATA defaultPrio ==
+    builtin application preference interactive
+
+DEF setDefault(Prio, Pattern, Value) ==
+    act("option add %s {%s} %s" <- Pattern + Value + `(Prio))
+
+DEF loadDefaults(Prio, File) ==
+    act("option readfile %s %s" <- File + `(Prio))
+
+FUN ` : defaultPrio -> denotation
+DEF `(builtin)      == "30"     -- larger then widgetDefault
+DEF `(application)  == "startupFile"
+DEF `(preference)   == "userDefault"
+DEF `(interactive)  == "interactive"
+
+
+-- %$Odds and Ends$ ======================================================
+
+DEF update == update'WinTclTk
+
+DEF evaluate ==
+    act("update idletasks")
+
+DEF silently(Com) ==
+    retain; Com; submit

@@ -1,0 +1,114 @@
+/* % This structure provides internal conversions of InterOpal to
+repository types. */
+
+SIGNATURE RepoInternAbsy
+
+IMPORT  Seq[objectName]         ONLY seq:SORT
+        Set[unitName,<]         ONLY set:SORT
+        Set[denotation,<]       ONLY set:SORT
+        Denotation              ONLY <
+        IdMap[unitImport]       ONLY idmap:SORT
+        IdMap[object]           ONLY idmap:SORT
+        IdMap[property]         ONLY idmap:SORT
+        IdMap[unitLocalSign]    ONLY idmap:SORT
+
+IMPORT  Com[repo]               ONLY com:SORT
+        Com[set[denotation,<]]  ONLY com:SORT
+        Com[pair[repo,bool]]    ONLY com:SORT
+
+IMPORT  InterOpal               ONLY interOpal:SORT
+
+IMPORT  RepoName                ONLY unitName:SORT objectName:SORT 
+                                        < : unitName ** unitName -> bool
+        RepoAbsy                ONLY object:SORT property:SORT
+        RepoInternData          ONLY repo:SORT unitImport:SORT
+                                     unitLocalSign:SORT
+        RepoDiag                ONLY diag:SORT
+        Pair[repo, bool]        ONLY pair
+
+
+-- %$Reading Absy$ =======================================================
+
+/* % @code{readAbsy(IO, full?)(R)} reads the InterOpal @code{IO} and
+converts it to a repository representation.  The unit represented by
+@code{IO} must be present in the repository: if @code{IO} is an
+external property part, this unit is the signature, and if @code{IO}
+is an internal property part, this unit is the implementation
+part. Moreover, all signature parts of structures imported by
+@code{IO} must be present as units in the repository. If this
+conditions aren't obeyed, @code{readAbsy} will produce
+diagnostics. 
+
+If the boolean flag @code{full?} is true, the read absy will
+contain implementations of objects (if present), otherwise the
+implementations will be set to hidden.
+*/
+
+FUN readAbsy : interOpal ** bool -> repo -> readResult ** repo
+
+TYPE readResult == 
+        readResult      (diag           : diag,
+                         unit           : unitName,
+                         instances      : set[unitName, <],
+                         formals        : seq[objectName],
+                         imports        : idmap[unitImport],
+                         objects        : idmap[object],
+                         properties     : idmap[property],
+                         localSigns     : idmap[unitLocalSign])
+
+
+/* % If the diagnostics of @code{readAbsy} are @code{ok}, then
+the remaining components of the result contain the following
+information. 
+
+@code{unit} defines the unit addressed by @code{IO}.
+
+@code{instances} defines the set of @emph{new} instances of units
+imported by @code{IO}, which haven't been up to now in @code{R}.  The
+resulting repository will be modified to include these instances (even if
+@code{diag} isn't okay). To undo the effects on the repository caused
+by @code{readAbsy}, these instances have to be removed.
+
+@code{formals} defines the formal parameters of the structure 
+represented by @code{IO}.
+
+@code{imports} gives a mapping of imports by instance, indexed by the
+internal identifier @code{internId'RepoName} of the imported unit
+(which includes information of a derivation by
+instantiation). See @code{RepoInternData} for the type
+@code{unitImportInfo}.
+
+@code{objects} gives a mapping from internal object identifiers to
+object values found in @code{IO}. The object identifier is taken `as
+is' from @code{IO}, that is has the same number as in
+@code{IO}. Similarily, @code{properties} are defined, however,
+@code{IO} identifiers for properties are normalized against @code{0}
+by substracting @code{firstLaw} from them.
+
+@code{localSigns} defines a mapping from internal local signature
+identifiers introduced in the result to information about these
+signatures.  The domain of this mapping is disjunct from the internal
+identifiers used so for in the unit represented by @code{IO} in
+@code{R}.  
+*/
+
+-- %$Loading Unit Absy$ ================================================
+
+/* % @code{loadUnitAbsy(U)(R)} loads the abstract syntax of unit
+@code{U} from @code{absyFile(U)(R)}.  Diagnostics produced are the
+same as for @code{readAbsy}, and will be dispatched as events. 
+A @code{newAbsy} event is generated on success. */
+
+FUN loadUnitAbsy : unitName -> repo -> com[repo]
+
+/* %Similar, but does not fail, if loading is impossible because of
+    binary io tag mismatch. Instead, return false as second result. */
+
+FUN loadUnitAbsy : unitName -> repo -> com[pair[repo, bool]]
+
+-- %$Getting Absy Dependencies$ =========================================
+
+/* % @code{getAbsyDeps(U)(R)} retrieves the dependencies as stored
+in the abstract syntax file of @code{U}. */
+
+FUN getUnitAbsyDeps     : unitName -> repo -> com[set[denotation,<]]

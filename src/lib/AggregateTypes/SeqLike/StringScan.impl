@@ -1,0 +1,678 @@
+IMPLEMENTATION StringScan
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:00 $ ($Revision: 1.1.1.1 $)
+-- Scanning of strings
+
+IMPORT 	Nat  COMPLETELY		
+	Int  COMPLETELY
+	Real COMPLETELY		
+	Char COMPLETELY 
+	Denotation COMPLETELY
+       	String COMPLETELY	
+	StringConv ONLY ` !
+	PrintableChar COMPLETELY
+	Compose ONLY o
+	ABORT ONLY ABORT
+
+	Option ONLY option nil nil? cont avail
+	Seq[union] ONLY    seq <> ::        rt % ++		    +%
+	Seq[char] ONLY     seq <> :: <>? ft rt % ++ drop #    split +%
+	Seq[subrange] ONLY seq <> :: <>?              exist?
+
+	BTUnion COMPLETELY
+	RealConv COMPLETELY
+	IntConv COMPLETELY
+	NatConv COMPLETELY
+	CharConv COMPLETELY
+	StringFilter COMPLETELY
+	StringConv ONLY `
+	OptionMap ONLY *
+
+
+
+-- **********************************************************************
+-- simple conversions
+
+
+/* r >= 0 */
+FUN normalisiert: real ** int -> real ** int
+DEF normalisiert(r, exp) ==
+    IF r < 10 and r >= 1 THEN (r, exp)
+    IF r >= 10 THEN normalisiert(r / 10, exp + 1)
+    IF r < 1  THEN normalisiert(r * 10, exp - 1)
+    FI
+
+/* 1 > r >= 0 */
+-- nat: anzahl bisher erzeugter Stellen (max. 16 Stellen)
+FUN gebr: real ** nat -> string
+DEF gebr(r, ns) == IF 0 = r or ns >= 16 THEN empty
+	       ELSE LET rneu == 10 * r
+			n == asNat(rneu)
+		    IN ((n`)!) ++ gebr(rneu - floor(rneu), succ(ns))
+               FI
+	       	 
+/*
+
+DEF !(ch:char) == ch%
+DEF !(b:bool) == IF b THEN "true"! ELSE "false"! FI
+
+*/
+
+
+-- nat
+DEF scan(s) == LET (n, rest, ok?) == scanNat(s, <>, nil, 0)
+	       IN IF ~(ok?) or (rest#) = (s#) THEN 
+		     (nil, s)
+		  ELSE	  
+		     (avail(n), rest)
+		  FI
+-- int
+DEF scan(s) == LET sc == s
+	           sign == ft(sc) = -
+		   sc2 == IF sign THEN rt(sc) ELSE sc FI
+		   (n, rest, ok?) == scanNat(sc2, <>, nil, 0)
+	       IN
+	           IF ~(ok?) or (sc2#) = (rest#) THEN
+		      (nil, s)
+		   ELSE 
+		      IF sign THEN (avail(-(asInt(n))), rest)
+		      ELSE         (avail(asInt(n)), rest)
+                      FI
+		   FI
+-- real
+DEF scan(s) == LET (oreal, rest) == scan(s, Rsign, 0, 0, 0)
+	       IN  (oreal, rest)
+
+DATA RscanState == Rsign Rvork Rnachk Rexpsign Rexp_+ Rexp_-
+-- Eingabe / Zustand [Rsign] / accu [0] / vorz / faktor bzw. exp
+FUN scan: string ** RscanState ** real ** real ** real -> 
+					  option[real] ** string
+DEF scan(<>, state, acc, vorz, fak) == 
+    IF state Rsign?    THEN (nil, <>)
+    IF state Rvork?    THEN (avail(acc * vorz), <>)
+    IF state Rnachk?   THEN (avail(acc * vorz), <>)
+    IF state Rexpsign? THEN (avail(acc * vorz), <>)
+    IF state Rexp_+?   THEN (avail(scale(acc * vorz, fak, 1)), <>)
+    IF state Rexp_-?   THEN (avail(scale(acc * vorz, fak, -(1))), <>)
+    FI
+
+DEF scan(ch :: rest, state, acc, vorz, fak) ==
+    IF state Rsign? THEN IF ch = + THEN scan(rest, Rvork, acc, 1, fak)
+			 IF ch = - THEN scan(rest, Rvork, acc, -(1), fak)
+			 IF digit?(ch) THEN
+				        scan(ch :: rest, Rvork, acc, 1, fak)
+			 ELSE
+			   (nil, ch :: rest)
+			 FI
+    IF state Rvork? THEN IF digit?(ch) THEN 
+			    LET val == asReal(asDigitNat(ch))
+			    IN
+			       scan(rest, Rvork, (10 * acc) + val, vorz, fak)
+			 IF ch = dot THEN scan(rest, Rnachk, acc, vorz, 1)
+			 IF ch = e   THEN scan(rest, Rexpsign, acc, vorz, 1)
+			 ELSE
+			 	(avail(acc * vorz), ch :: rest)
+			 FI
+    IF state Rnachk? THEN IF digit?(ch) THEN
+			    LET val == asReal(asDigitNat(ch))
+				nfak == fak / 10
+		            IN
+			      scan(rest, Rnachk, acc + (nfak * val), vorz,
+			      nfak)
+			  IF ch = e THEN scan(rest, Rexpsign, acc, vorz, 1)
+			  ELSE
+			  	(avail(acc * vorz), ch :: rest)
+			  FI
+    IF state Rexpsign? THEN IF ch = + THEN scan(rest, Rexp_+, acc, vorz, 0)
+			    IF ch = - THEN scan(rest, Rexp_-, acc, vorz, 0)
+			    IF digit?(ch) THEN 
+				   scan(ch :: rest, Rexp_+, acc, vorz, 0)
+		            ELSE
+			    	(avail(acc * vorz), ch :: rest)
+			    FI
+    IF state Rexp_+? THEN IF digit?(ch) THEN
+			     LET val == asReal(asDigitNat(ch))
+			     IN	 scan(rest, Rexp_+, acc, vorz, 
+						    (10 * fak) + val)
+                          ELSE
+			     (avail(scale(acc * vorz, fak, 1)), ch::rest)
+			  FI
+    IF state Rexp_-? THEN IF digit?(ch) THEN
+			     LET val == asReal(asDigitNat(ch))
+			     IN	 scan(rest, Rexp_-, acc, vorz, 
+						    (10 * fak) + val)
+                          ELSE
+			     (avail(scale(acc * vorz, fak, -(1))), ch::rest)
+			  FI
+    FI
+
+FUN scale: real ** real ** real -> real
+DEF scale(r, exp, add) == IF exp <= 0 THEN r
+			  OTHERWISE
+			  IF add < 0 THEN scale(r / 10, exp - 1, add)
+			  IF add > 0 THEN scale(r * 10, exp - 1, add)
+			  FI
+
+-- char
+DEF scan(s) == IF s = empty THEN (nil, s) 
+	       ELSE		 (avail(ft(s)), rt(s))
+	       FI 
+
+-- bool
+DEF scan(s) == IF s = empty THEN (nil, s)
+	       ELSE 
+	       LET sc == s
+		   ff == ft(sc)
+		   r == rt(sc)
+	       IN
+	       IF ff = 0 THEN (avail(false), rt(s))
+	       IF ff = 1 THEN (avail(true), rt(s))
+	       IF ff = t THEN (avail(true), scantrue(r))
+	       IF ff = T THEN (avail(true), scantrue(r))
+	       IF ff = f THEN (avail(false), scanfalse(r))
+	       IF ff = F THEN (avail(false), scanfalse(r))
+	       ELSE	      (nil, s)
+	       FI
+	       FI
+
+
+FUN scantrue: string -> string
+DEF scantrue(sq)  == 
+    LET (_, sq1) == drop(e, E)(drop(u, U)(drop(r, R)(true, sq)))
+    IN
+      sq1
+
+FUN scanfalse: string -> string
+DEF scanfalse(sq) == 
+    LET (_, sq1) == drop(e, E)(drop(s, S)(drop(l, L)(
+					     drop(a, A)(true, sq))))
+    IN
+       sq1
+
+FUN drop: char ** char -> bool ** string -> bool ** string
+DEF drop(_ , _)(false, sq) == (false, sq)
+DEF drop(_ , _)(true, <>) == (false, <>)
+DEF drop(ch1, ch2)(true, ch :: sq) == IF ch1 = ch THEN (true, sq)
+				      IF ch2 = ch THEN (true, sq)
+				      ELSE		(false,ch :: sq)
+				      FI
+
+-- **********************************************************************
+-- scanning input strings
+
+DEF scan(formatS, eing) ==
+    LET (us, _, _) == SCANSTRING(eing, formatS!, <>)
+    IN us
+
+DEF scan(formatS, eing) ==
+    LET (us, restEing, _) == SCANSTRING(eing, formatS!, <>)
+    IN (us, restEing)
+
+DEF scan(formatS, eing)==
+    LET (us, restEing, restFormat) == SCANSTRING(eing, formatS!, <>)
+    IN
+    (us,restFormat`,restEing)
+
+DEF scan(formatS, eing) ==
+    LET (us, restEing, restFormat) == SCANSTRING(eing, formatS!, <>)
+    IN
+      IF (restEing <>?) and (restFormat <>?) THEN avail(us)
+      ELSE					  nil
+      FI
+
+
+
+-- SCANSTRING
+-- ignore whitespace in formatS 
+-- if % found scan single item
+-- else match exactly
+FUN SCANSTRING: string ** string ** seq[union] -> 
+			     seq[union] ** string ** string
+-- DEF SCANSTRING(<>, formatS, us) == (us, empty, formatS)
+-- DEF SCANSTRING(str AS _ :: _, <>, us) == (us, str, empty)
+-- DEF SCANSTRING(str AS _ :: _, cF :: formatS, us) ==
+DEF SCANSTRING(str, <>, us) == (us, str, empty)
+DEF SCANSTRING(str, cF :: formatS, us) ==
+  LET str1 == drop(space?, str) IN
+    IF cF space? THEN SCANSTRING(str, formatS, us)
+    IF cF = % THEN SCAN(str, formatS, us)
+    OTHERWISE
+    IF str1 <>?  THEN (us, str, cF :: formatS)
+    OTHERWISE
+    IF cF = ft(str1) THEN SCANSTRING(rt(str1), formatS, us)
+    ELSE
+    	(us, str1, cF :: formatS)
+    FI
+
+-- SCAN: just read a %
+--       other % then match this 
+--	 *: set flag
+--	 else scan width
+FUN SCAN: string ** string ** seq[union] -> 
+		       seq[union] ** string ** string
+DEF SCAN(_, <>, _) == 
+    (ABORT("scanStringScan: no single % at end of format string allowed"),
+			     empty, empty)
+DEF SCAN(str, cF :: formatS, us) ==
+    IF cF = % THEN IF str <>? THEN 
+			      (us, str, cF :: formatS)
+	           ELSE LET cs == ft(str)
+			    rest == rt(str)
+			IN
+			  IF cs = % THEN SCANSTRING(rest, formatS, us)
+			  ELSE (us, str, cF :: formatS)
+			  FI
+		   FI
+    IF cF = * THEN SCANWIDTH(str, formatS, us, false, 0)
+    ELSE	   SCANWIDTH(str, cF :: formatS, us, true, 0)
+    FI
+
+-- SCANWIDTH: read digits (no leading zeros)
+--	      and determine maximal field width
+FUN SCANWIDTH: string ** string ** seq[union] ** bool ** nat ->
+			           seq[union] ** string ** string
+DEF SCANWIDTH(str, <>    , us, _, _) == (us, str, empty)
+DEF SCANWIDTH(str, cF :: formatS, us, store, width) ==
+    IF width = 0 THEN -- erster Aufruf
+		 IF cF = 0 THEN SCANITEM(str, formatS, us, store, avail(0))
+		 IF cF nzdigit? THEN SCANWIDTH(str, formatS, us, store,
+						    		 asDigitNat(cF))
+		 ELSE SCANITEM(str, cF :: formatS, us, store, nil)
+		 FI
+    ELSE
+      IF cF digit? THEN SCANWIDTH(str, formatS, us, store, (10 * width) +
+                                                              asDigitNat(cF))
+      ELSE SCANITEM(str, cF ::formatS, us, store, avail(width))
+      FI
+    FI
+
+-- SCANITEM: read char and switch to type special state
+
+FUN SCANITEM: string ** string ** seq[union] ** bool ** option[nat] ->
+                                        seq[union] ** string ** string
+DEF SCANITEM(_, <>,     _, _, _) == 
+  (ABORT("scanStringScan: no data type designator"), empty, empty)
+DEF SCANITEM(str, cF :: formatS, us, store, width) ==
+    IF cF = lsqbrace THEN SCANSETSTART(str, formatS, us, store, width)
+    IF cF = n	     THEN SCANNAT(str, formatS, us, store, width)
+    IF cF = i	     THEN SCANINT(str, formatS, us, store, width)
+    IF cF = r	     THEN SCANREAL(str, formatS, us, store, width)
+    IF cF = s	     THEN SCANSTRING(str, formatS, us, store, width)
+    IF cF = c	     THEN SCANCHAR(str, formatS, us, store, width)
+    IF cF = b	     THEN SCANBOOL(str, formatS, us, store, width)
+    IF cF = d	     THEN SCANDENOTATION(str, formatS, us, store, width)
+    ELSE 
+	 (ABORT("scanStringScan: unknown data type designator"), empty, empty)
+    FI
+
+-- ......................................................................
+-- intermediate handling of ranges
+
+DATA subrange == single(char: char)
+	         set(from: char, to: char)
+
+DATA range == notrange(subranges: seq[subrange])
+	      range(subranges: seq[subrange])
+
+FUN in: char ** subrange -> bool
+DEF ch1 in single(ch2) == ch1 = ch2
+DEF ch  in set(chF, chT) == (chF <= ch) and (ch <= chT)
+
+FUN in: char ** range -> bool
+DEF ch in notrange(rs) == ~(exist?(\\x. ch in x, rs))
+DEF ch in range(rs)    == exist?(\\x. ch in x, rs)
+
+FUN :>: : subrange ** range -> range
+DEF sr :>: notrange(srs) == notrange(sr :: srs)
+DEF sr :>: range(srs)	== range(sr :: srs)
+
+-- SCANSETSTART : get information about ^ as fist character
+
+FUN SCANSETSTART: string ** string ** seq[union] ** bool **
+		option[nat] -> seq[union] ** string ** string
+DEF SCANSETSTART(_, <>,     _, _, _) == 
+    (ABORT("scanStringScan: unterminated range"), empty, empty)
+DEF SCANSETSTART(str, cF :: formatS, us, store, width) ==
+    IF cF = ^ THEN SCANSETFIRST(str, formatS, us, store, width,
+							 notrange(<>))
+    ELSE SCANSETFIRST(str, cF :: formatS, us, store, width, range(<>))
+    FI
+
+-- SCANSETFIRST: get first char of range
+--		 ] is end of range iff it is not first char after [ or [^
+
+FUN SCANSETFIRST: string ** string ** seq[union] ** bool **
+		option[nat] ** range -> seq[union] ** string ** string
+DEF SCANSETFIRST(_, <>,     _, _, _, _) == 
+    (ABORT("scanStringScan: unterminated range"), empty, empty)
+DEF SCANSETFIRST(str, cF :: formatS, us, store, width, rg) ==
+    IF cF = rsqbrace THEN
+       IF subranges(rg) <>? THEN SCANSETFIRST(str, formatS, us, store,
+				 width, single(rsqbrace) :>: rg)
+       ELSE SCANSET(str, formatS, us, store, width, rg)
+       FI
+    ELSE
+    	SCANSETRANGE(str, formatS, us, store, width, rg, cF)
+    FI
+
+-- SCANSETRANGE just got one char
+--		determine whether it's start of a range (now minus)
+--		or a single char
+FUN SCANSETRANGE: string ** string ** seq[union] ** bool **
+    option[nat] ** range ** char -> seq[union] ** string ** string
+DEF SCANSETRANGE(_, <> , _, _, _, _, _) == 
+    (ABORT("scanStringScan: unterminated range"), empty, empty)
+DEF SCANSETRANGE(str, cF :: formatS, us, store, width, rg, ch) ==
+    IF cF = - THEN SCANSETSECOND(str, formatS, us, store, width, rg, ch)
+    ELSE  SCANSETFIRST(str, cF :: formatS, us, store, width, 
+			       single(ch) :>: rg)
+    FI
+
+-- SCANSETSECOND just read ch and a minus
+--		 if next char is ] then add both as singles and stop
+--		 else add a range and continue
+FUN SCANSETSECOND: string ** string ** seq[union] ** bool **
+    option[nat] ** range ** char -> seq[union] ** string ** string
+DEF SCANSETSECOND(_, <> , _, _, _, _, _) == 
+  (ABORT("scanStringScan: unterminated range"), empty, empty)
+DEF SCANSETSECOND(str, cF :: formatS, us, store, width, rg, ch) ==
+    IF cF = rsqbrace THEN SCANSET(str, formatS, us, store, width,
+		     single(ch) :>: (single(-) :>: rg))
+    ELSE
+       SCANSETFIRST(str, formatS, us, store, width, set(ch, cF) :>: rg)
+    FI
+
+-- End of intermediate handling of ranges
+-- ......................................................................
+
+-- SCANSET: scan set of chars as specified an range
+--	    do not skip whitespace
+--	    do not stop at whitespace
+FUN SCANSET: string ** string ** seq[union] ** bool ** option[nat] **
+		       range -> seq[union] ** string ** string
+DEF SCANSET(str, formatS, us, store, width, rg) ==
+    LET (matched, rest) == scanSet(str, width, rg, empty)
+    IN
+    	IF store THEN SCANSTRING(rest, formatS, us ++ %(denotation(matched`)))
+	ELSE	      SCANSTRING(rest, formatS, us)
+	FI
+
+FUN scanSet: string ** option[nat] ** range ** string -> string ** string
+DEF scanSet(<>, _, _, acc) == (acc, <>)
+DEF scanSet(ch :: str, width, rg, acc) ==
+    IF width zero? THEN (acc, ch :: str)
+    OTHERWISE
+    IF ch in rg THEN scanSet(str, width - 1, rg, acc :: ch)
+    ELSE	     (acc, ch :: str)
+    FI
+
+-- SCANNAT: scan natural number (0-9)*
+--	    skip whitespace
+--	    stop at whitespace
+
+FUN SCANNAT: string ** string ** seq[union] ** bool ** option[nat] ->
+				       seq[union] ** string ** string
+-- DEF SCANNAT(<>, formatS, us, store, width) == (us, empty, formatS)
+-- DEF SCANNAT(ch :: str, formatS, us, store, width) ==
+DEF SCANNAT(str, formatS, us, store, width) ==
+    LET str2 == drop(space?, str)
+	(n0, rest, ok?) == scanNat(str2, <>, width, 0)
+    IN
+      IF ok? THEN
+            IF store THEN SCANSTRING(rest, formatS, us ++ %(nat(n0)))
+	    ELSE	    SCANSTRING(rest, formatS, us)
+	    FI    
+      ELSE
+      	(us, rest, scanformat(store, width, n) ++ formatS)
+      FI
+
+FUN scanNat: string ** option[nat] ** nat ->  nat ** string
+DEF scanNat(<>, _, n) == (n, <>)
+DEF scanNat(ch :: str, width, n) ==
+    IF width zero? THEN (n, ch :: str)
+    OTHERWISE
+    IF digit?(ch) THEN scanNat(str, width - 1, (10 * n) + asDigitNat(ch))
+    ELSE
+    	(n, ch :: str)
+    FI
+
+FUN scanNat: string ** string ** 
+		       option[nat] ** nat ->  nat ** string ** bool
+DEF scanNat(<>, _, _, n) == (n, <>, true)
+DEF scanNat(ch :: str, vor, width, n) ==
+    IF width zero? THEN (n, ch :: str, true)
+    OTHERWISE
+    IF digit?(ch) THEN LET val == asDigitNat(ch)
+			   test == (max - val) / 10
+			   ok? == n <= test
+		       IN IF ok? THEN
+				 scanNat(str, vor +% ch, 
+					   width - 1, (10 * n) + val)
+                          ELSE
+			     (0, vor ++ (ch :: str), false)
+			  FI
+    ELSE
+    	(n, ch :: str, true)
+    FI
+
+-- SCANINT: scan integer [-](0-9)*
+FUN SCANINT: string ** string ** seq[union] ** bool ** option[nat] ->
+				       seq[union] ** string ** string
+-- DEF SCANINT(<>, formatS, us, store, width) == (us, empty, formatS)
+-- DEF SCANINT(ch :: str, formatS, us, store, width) ==
+DEF SCANINT(str, formatS, us, store, width) ==
+    LET str2 == drop(space?, str)
+	neg == IF str2 <>? THEN false ELSE ft(str2) = - FI
+	str3 == IF neg THEN rt(str2) ELSE str2 FI
+	w == IF neg THEN width - 1 ELSE width FI
+	(n, rest, ok?) == scanNat(str3, <>, w, 0)
+	i0 == IF neg THEN -(asInt(n)) ELSE asInt(n) FI
+    IN
+    IF ok? THEN
+       IF store THEN SCANSTRING(rest, formatS, us ++ %(int(i0)))
+       ELSE	     SCANSTRING(rest, formatS, us)
+       FI
+    ELSE
+       (us, rest, scanformat(store, width, i) ++ formatS)
+    FI
+
+-- SCANREAL: scan real [+|-][(0-9)*][.[(0-9)*]][e[+|-][(0-9)*]]
+FUN SCANREAL: string ** string ** seq[union] ** bool ** option[nat] ->
+				       seq[union] ** string ** string
+-- DEF SCANREAL(<>, formatS, us, store, width) == (us, empty, formatS)
+-- DEF SCANREAL(ch :: str, formatS, us, store, width) ==
+DEF SCANREAL(str, formatS, us, store, width) ==
+    LET str2 == drop(space?, str)
+	(str3, str4) == IF width nil? THEN (str2, <>) 
+			ELSE		   split(cont(width), str2) 
+			FI
+	(oreal, rest) == scan(str3, Rsign, 0, 0, 0)
+	r == IF oreal nil? THEN 0 ELSE cont(oreal) FI
+	neurest == rest ++ str4
+    IN
+    	IF store THEN SCANSTRING(neurest, formatS, us +% real(r))
+	ELSE	      SCANSTRING(neurest, formatS, us)
+	FI
+
+
+-- SCANSTRING: scan string of nonempty characters
+ --	       drop whitespace
+--	       stop at whitespace
+FUN SCANSTRING: string ** string ** seq[union] ** bool ** option[nat] ->
+				       seq[union] ** string ** string
+-- DEF SCANSTRING(<>, formatS, us, store, width) == (us, empty, formatS)
+-- DEF SCANSTRING(ch :: str, formatS, us, store, width) ==
+DEF SCANSTRING(str, formatS, us, store, width) ==
+    LET str2 == drop(space?, str)
+	(matched, rest) == scanString(str2, width, empty)
+    IN
+      IF store THEN SCANSTRING(rest, formatS, us ++ %(string(matched)))
+      ELSE	    SCANSTRING(rest, formatS, us)
+      FI
+
+FUN scanString: string ** option[nat] ** string -> string ** string
+DEF scanString(<>, _, acc) == (acc, <>)
+DEF scanString(ch :: str, width, acc) ==
+    IF width zero? THEN (acc, ch :: str)
+    OTHERWISE
+    IF ch space? THEN (acc, ch :: str)
+    ELSE
+    	scanString(str, width - 1, acc :: ch)
+    FI
+
+-- SCANCHAR: scan number of characters
+--	     do not drop whitespace
+--	     do not stop at whitespace
+--	     assume default width of 1
+FUN SCANCHAR: string ** string ** seq[union] ** bool ** option[nat] ->
+					   seq[union] ** string ** string
+DEF SCANCHAR(<>, formatS, us, _, _) == (us, empty, formatS)
+DEF SCANCHAR(ch :: str, formatS, us, store, width) ==
+    LET w == IF width nil? THEN 1 ELSE cont(width) FI
+	matched == substringTo(ch :: str, w - 1)
+	rest == substringFrom(ch :: str, w)
+	item == IF w = 1 THEN char(ch) ELSE string(matched) FI
+    IN
+    	IF store THEN SCANSTRING(rest, formatS, us ++ %(item))
+	ELSE	      SCANSTRING(rest, formatS, us)
+	FI
+
+-- SCANBOOL: scan truth value
+--	     drop whitespace
+FUN SCANBOOL: string ** string ** seq[union] ** bool ** option[nat] ->
+					   seq[union] ** string ** string
+DEF SCANBOOL(str, formatS, us, store, width) == 
+    LET str2 == drop(space?, str)
+	w == IF width nil? THEN max ELSE cont(width) FI
+	(b, rest) == scanBool(str2, w)
+    IN
+      IF store THEN SCANSTRING(rest, formatS, us ++ %(bool(b)))
+      ELSE	    SCANSTRING(rest, formatS, us)
+      FI
+
+FUN scanBool: string ** nat -> bool ** string
+DEF scanBool(sq, w) == 
+    LET (ok1?, rest1) == cmp(sq, 1'PrintableChar :: <>, w, true) 
+	(ok2?, rest2) == cmp(sq, t::(r::(u::(e:: <>))), w, true)
+	(ok3?, rest3) == cmp(sq, 0'PrintableChar :: <>, w, true)
+	(ok4?, rest4) == cmp(sq, f::(a::(l::(s::(e:: <>)))), w, true)
+    IN
+      IF ok1? THEN (true, rest1)
+      IF ok2? THEN (true, rest2)
+      IF ok3? THEN (false, rest3)
+      IF ok4? THEN (false, rest4)
+      ELSE (false, sq)	   -- default = false
+      FI
+
+FUN cmp: string ** string ** nat ** bool -> bool ** string
+DEF cmp(sq, test, w, first?) ==
+
+
+    IF sq <>? THEN (~(first?), <>)
+    IF test <>? THEN (true, sq)
+    IF w 0? THEN (true, sq)
+    OTHERWISE
+    IF upper(ft(sq)) = upper(ft(test)) THEN 
+				       cmp(rt(sq), rt(test), pred(w), false)
+    ELSE (~(first?), sq)
+    FI
+
+-- SCANDENOTATION: scan denotation of nonempty characters
+ --	       drop whitespace
+--	       stop at whitespace
+FUN SCANDENOTATION: string ** string ** seq[union] ** bool ** option[nat] ->
+				       seq[union] ** string ** string
+DEF SCANDENOTATION(str, formatS, us, store, width) ==
+    LET str2 == drop(space?, str)
+	(matched, rest) == scanString(str2, width, empty)
+    IN
+      IF store THEN SCANSTRING(rest, formatS, 
+				      us ++ %(denotation(matched`)))
+      ELSE	    SCANSTRING(rest, formatS, us)
+      FI
+
+
+
+
+-- **********************************************************************
+-- auxiliary functions
+
+FUN scanformat: bool ** option[nat] ** char -> string
+DEF scanformat(store?, width, type) ==
+    LET storeS == IF store? THEN empty ELSE %(*) FI
+	widthS == IF width nil? THEN empty ELSE (cont(width)`)! FI
+    IN
+    	(%(%)) ++ (storeS ++ (widthS ++ %(type)))
+
+
+-- ----------------------------------------------------------------------
+-- abbreviations
+
+FUN :: : string ** char -> string
+DEF s:string :: ch:char == s ++ %(ch)
+
+/* unused
+FUN :: : nat ** string -> string
+DEF n:nat :: s:string == IF n <= asNat(max'Char) THEN asChar(n) :: s
+			 ELSE -- ERROR not so many chars
+	   ABORT("formatStringScan: Hex or Oct Character # too large") 
+			 FI
+*/
+/* unused
+FUN check: nat -> char
+DEF check(n) == IF n <= asNat(max'Char) THEN asChar(n)
+		ELSE ABORT("StringScan: Hex or Oct Character # too large") 
+		FI
+*/
+
+
+FUN - : option[nat] ** nat -> option[nat]
+DEF nil - _ == nil
+DEF avail(n1) - n2 == avail(n1 - n2)
+
+
+FUN zero? : option[nat] -> bool
+DEF zero?(nil) == false
+DEF zero?(avail(n)) == n = 0
+
+-- das fuehrt zum Fehler:
+/*
+Ac at <6,10> RUNTIME ERROR: undefined selection repr'Ac:(exp->string)
+/bin/sh: 7922 Abort
+*/
+-- DEF ABORT:  denotation -> seq[union] ** string ** string(d) ==
+--    (ABORT(d), empty, empty)
+/* das auch
+DEF ABORT:  denotation -> seq[union] ** string ** string(d) ==
+    LET d1 == ABORT(d)
+    IN (d1, empty, empty)
+*/
+/*
+FUN ABORT:  denotation -> seq[union] ** string ** string
+
+DEF ABORT:  denotation -> seq[union] ** string ** string(d) ==
+    LET d1:denotation == ABORT(d)
+    IN (<>, empty, empty)
+*/
+
+
+FUN substringTo: string ** nat -> string
+DEF substringTo(<>, _) == <>
+DEF substringTo(ch :: _, 0) == %(ch)
+DEF substringTo(ch :: cs, succ(n)) == ch :: substringTo(cs, n)
+
+FUN substringFrom: string ** nat -> string
+DEF substringFrom(<>, _) == <>
+DEF substringFrom(str, 0) == str
+DEF substringFrom(_ :: cs, succ(n)) == substringFrom(cs, n)
+
+FUN nzdigit?: char -> bool
+DEF nzdigit?(ch) == (ch >= 1) and (ch <= 9)
+
+
+
+
+

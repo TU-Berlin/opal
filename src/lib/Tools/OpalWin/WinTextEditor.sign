@@ -1,0 +1,320 @@
+/* %
+This structure provides the gate of text editors.
+
+A text editor gate allows the control of a complex text view, which provides
+text editing functionality to the user. The design of the text editor gate 
+is completely oriented towards the Tk text widget (credits to the author).
+*/
+
+SIGNATURE WinTextEditor
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:22 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat                     ONLY nat
+        Int                     ONLY int
+        Void                    ONLY void
+        String                  ONLY string
+        Seq[searchOpt]          ONLY seq
+        Seq[index]              ONLY seq
+        Seq[range]              ONLY seq
+        Set[tag, <]             ONLY set
+        Option[index]           ONLY option
+
+IMPORT  Com[tag]                ONLY com
+        Com[index]              ONLY com
+        Com[mark]               ONLY com
+        Com[seq[range]]         ONLY com
+        Com[void]               ONLY com
+        Com[string]             ONLY com
+        Com[textEditor]         ONLY com
+        Com[option[index]]      ONLY com
+
+IMPORT  WinView                 ONLY view   : SORT
+        WinConfig               ONLY config : SORT 
+                                     point  : SORT
+        WinTag                  ONLY tag    : SORT
+                                     <      : tag ** tag -> bool
+
+
+-- %$Creating and Attaching Text Editors$ ====================================
+
+/* %
+A new text editor is constructed with the command below:
+*/
+
+SORT textEditor
+
+FUN textEditor          : com[textEditor]
+
+/* %
+A text editor is attached to a view with the configuration below:
+*/
+
+FUN edit                : textEditor -> config
+
+/* %
+At one time, one editor may be attached to only one view. Subsequent
+applications of the @code{editor} configuration cancel the use of the
+editor for previous views.
+
+Currently, only text and entry views (@pxref{@Overview{WinText}}) may have 
+attached a text editor.
+
+@sp 1
+
+@emph{Note that any commands on text editors are disabled 
+(i.e. will block) as long as the text editor is not attached
+to a view which is displayed in a window.} To execute e.g. 
+a sequence of initialization commands on a text editor at a time a view
+isn't yet attached or displayed, an agent may be spawn; the commands
+will be executed as soon as the view will be displayed.
+*/
+
+
+-- %$Addressing Text$ ========================================================
+
+-- %$$Indices$
+
+/* %
+The characters managed by a text editor may be addressed in
+several ways. The type @code{index} is used for this
+purpose: 
+*/
+
+TYPE index ==
+        pos             (line   : nat,          -- starts at 1
+                         column : nat)          -- starts at 0
+        point           (point  : point)        -- character below point
+        end                                     -- after the last character
+        chars           (index  : index,        -- adjust count characters
+                         count  : int)
+        lines           (index  : index,        -- adjust count lines
+                         count  : int)
+        linestart       (index  : index)        -- beginning of line
+        lineend         (index  : index)        -- end of line
+        wordstart       (index  : index)        -- beginning of word
+        wordend         (index  : index)        -- end of word
+
+        first           (tag    : tag)          -- first character with tag
+        last            (tag    : tag)          -- last character with tag
+
+        at              (mark   : mark)         -- character after mark
+
+
+-- %$$Ranges$
+
+/* %
+Continuous ranges of characters are adressed by a value of type @code{range}:
+*/
+
+TYPE range ==
+        range           (first  : index, 
+                         last   : index)
+
+/* %
+The function @code{index} normalizes an index to the form 
+@code{pos(Line, Column)}.
+*/
+
+FUN index : textEditor ** index -> com[index]
+
+-- %$$Marks$
+
+/* %
+A mark is associated with the gap between two characters in a text.
+If characters around a mark are removed the mark will still remain. 
+Marks may be used in indices to address the character currently
+following the mark. 
+*/
+
+
+
+SORT mark
+FUN  insert     : mark
+FUN  current    : mark
+FUN  mark       : textEditor ** index                           -> com[mark]
+FUN  move       : textEditor ** mark ** index                   -> com[void]
+FUN  delete     : textEditor ** mark                            -> com[void]
+
+/* %
+
+The predefined mark @code{insert} is associated with the users
+insertion cursor. The predefined mark @code{current} is automatically
+maintained to address the character nearest to the current mouse position.
+
+The command @code{mark} creates a mark and sets it to point just
+before the character addressed by the given index. The command
+@code{move} changes the position of a mark.
+The command @code{delete} deletes the given mark.
+*/
+
+
+-- %$Modifying and Retrieving Text$ =========================================
+
+/* %
+Several commands provide modifying and retrieving the text managed by
+a text editor.
+*/
+
+
+FUN insert      : textEditor ** string                          -> com[void]
+FUN insert      : textEditor ** string ** index                 -> com[void]
+FUN insert      : textEditor ** string ** index ** config       -> com[tag]
+
+
+FUN delete      : textEditor                                    -> com[void]
+FUN delete      : textEditor ** index                           -> com[void]
+FUN delete      : textEditor ** range                           -> com[void]
+FUN delete      : textEditor ** seq[range]                      -> com[void]
+
+FUN get         : textEditor                                    -> com[string]
+FUN get         : textEditor ** index                           -> com[string]
+FUN get         : textEditor ** range                           -> com[string]
+
+
+TYPE searchOpt == forwards backwards exact regexp nocase 
+FUN search      : textEditor ** denotation ** index 
+                             ** seq[searchOpt]          -> com[option[index]]
+
+FUN see         : textEditor ** index                   -> com[void]
+
+/* %
+The @code{insert} commands insert the given string at the given index. If
+no index is given, the insertion point is @code{at(insert)}. If a
+configuration is specified, then the inserted string is tagged with
+a newly generated tag (which is returned by the command),
+and the configuration is applied to this tag (see below for tags and 
+configurations).
+
+The @code{delete} commands remove text.  If no index or range is given, the 
+character @code{at(insert)} is addressed.
+
+The @code{get} commands retrieve the text specified by the index or range.
+If no index or range is given, the entire text is retrieved.
+
+The @code{search} command implements searching for a phrase specified
+by its second argument. A sequence of options determines the searching
+mode.
+
+The @code{see} command ensures that the character at the given index
+is visible in the scrolling region of the displayed view.
+*/
+
+
+-- %$Tags$ ===================================================================
+
+/* %
+Each character (or embedded window) managed through a text editor may 
+have assigned a set of tags. Via configurations associated with tags the 
+graphical appearence and the reponsive behaviour of characters or groups
+of characters may be controlled.
+*/
+
+FUN selection   : tag
+
+FUN tag         : textEditor ** index ** tag            -> com[void]
+FUN tag         : textEditor ** range ** tag            -> com[void]
+FUN tag         : textEditor ** seq[range] ** tag       -> com[void]
+
+FUN untag       : textEditor ** index ** tag            -> com[void]
+FUN untag       : textEditor ** range ** tag            -> com[void]
+FUN untag       : textEditor ** seq[range] ** tag       -> com[void]
+
+FUN ranges      : textEditor ** tag                     -> com[seq[range]]
+
+FUN set         : textEditor ** tag ** config           -> com[void]
+
+FUN lower       : textEditor ** tag                     -> com[void]
+FUN raise       : textEditor ** tag                     -> com[void]
+
+
+
+/* %
+The tag @code{selection} has a predefined meaning: it is automatically
+assigned to the characters belonging to the current selection.
+
+A given tag is associated with a single character, the characters in
+a range or the characters in a sequence of ranges with the command
+@code{tag}.  The command @code{untag} removes an association.
+
+The command @code{ranges} return the (minimal) ranges of characters
+which have assigned a given tag. All indices in the returned ranges are 
+of the form @code{pos(Line, Column)}. 
+
+The command @code{set} associates a configuration with a given tag.
+The following general configurations are sensitive:
+@table @emph
+@item Graphical Appearence
+@example
+background bgstipple borderwidth fgstipple font foreground relief 
+@end example
+@item Dynamic Behaviour
+@example
+bind regulate sync enable
+@end example
+@end table
+Only event-based bindings are allowed,
+and only those related to the mouse or keyboard
+
+
+The commands @code{lower} and @code{raise} manipulate the priority
+of tags. If a character has assigend a set of tags,  only the
+one with the highest priority is effective w.r.t. the associated
+configurations. By default, the last tag newly introduced with one of
+the @code{tag} or @code{set} commands has highest priority, which
+may be changed with these commands.
+*/
+
+
+-- %$Embedding Views$ ======================================================
+
+/* %
+Views may be embedded in the text managed by a text editor. An
+embedded view behaves as a single character according to text oriented
+commands.
+*/
+
+FUN insert      : textEditor ** view ** index           -> com[void]
+FUN insert      : textEditor ** view ** index ** config -> com[tag]
+
+/* %
+The following specific configurations are supported for embedded views:
+*/
+
+TYPE align == top center bottom baseline
+FUN align       : align         -> config
+FUN stretch     : config
+
+/* %
+The alignment specifies how to place the view w.r.t. the line it is
+displayed in. With @code{top}, the top of the view is aligned with
+the top of the line. With @code{center}, the view is centered within
+the range of the line. With @code{bottom} and @code{baseline}, the
+bottom of the view is aligned with the bottom resp. baseline of the line.
+
+The configuration @code{stretch} specifies, that the height of
+the view should be expanded to the height of the line.
+*/
+
+
+
+-- %$Providing Text Editors$ =================================================
+
+/* %
+Currently, the providing level of a text editor is completely oriented
+towards Tk texts. The command @code{register(Win, Wid)} registers
+the Tk text widget @code{Wid} displayed by window @code{Win} to
+be edited by the given text editor. Any previous registration is
+discarded. 
+*/
+
+IMPORT  WinInternal     ONLY window:SORT widget:SORT
+
+FUN register : textEditor ** window ** widget -> com[void]
+
+/* %
+@page
+*/

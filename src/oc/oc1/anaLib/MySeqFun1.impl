@@ -1,0 +1,195 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (context analysis)
+-- Purpose:     additional library functions
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION MySeqFun1[a]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:41 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Seq		COMPLETELY
+	SeqFilter	ONLY | split
+	Compose		ONLY o
+	MySeqFun3	ONLY combine
+	SeqMap	 	ONLY *
+	Nat		ONLY nat 0 succ 2 / -
+
+-- ---------------------------------------------------------------------------
+
+FUN existMap : (a -> bool ** a) -> seq[a] -> bool ** seq[a]
+    -- Mapping der Sequenz, solange die Funktion true liefert.
+DEF existMap(F)(<>) == (true, <>)
+DEF existMap(F)(S AS ft::rt) ==
+    LET (ok?, ele) == F(ft) IN
+    IF ok? THEN LET (okR?, SR) == existMap(F)(rt) IN (okR?, ele :: SR)
+    ELSE (ok?, S) FI
+
+-- ---------------------------------------------------------------------------
+
+DATA rel == = < > |=
+
+FUN || : (a ** a -> bool) ** seq[a] -> seq[a]
+    -- 'set'-Bildung
+DEF = || <> 	   == <>
+DEF = || (ft::rt)  == ft :: (= || ((~ o (\\a.ft=a)) | rt))
+
+
+FUN ||| : (a ** a -> rel) ** seq[a] -> seq[a]
+  -- 'set'-Bildung bzgl. rel
+  -- n1 = n2	=> n1 oder n2 entfernen
+  -- n1 < n2	=> n1 entfernen
+  -- n1 > n2	=> n2 entfernen
+  -- n1 |= n2	=> beide bleiben drin
+DEF |||(F,S) == 
+  IF S <>? THEN S 
+  ELSE LET (unRelS, finFT) == |(F,ft(S),rt(S)) IN finFT :: |||(F,unRelS)
+  FI
+
+FUN | : (a ** a -> rel) ** a ** seq[a] -> seq[a] ** a
+  -- rel-Filter
+DEF |(F,a,S) == 
+  IF S <>? THEN (<>,a)			-- Testobjekt bleibt drin
+  ELSE LET rel == a F ft(S) IN
+    IF rel =? THEN |(F,a,rt(S))		-- ft(S) fliegt raus
+    IF rel <? THEN |(F,ft(S),rt(S))	-- altes Testobjekt fliegt raus
+    IF rel >? THEN |(F,a,rt(S))		-- ft(S) fliegt raus
+    IF rel |=? THEN 			-- unvergleichbare Objekte
+      LET (unRelS, finA) == |(F,a,rt(S)) IN (ft(S)::unRelS, finA)
+    FI
+  FI
+
+FUN uniqueSort: (a**a->bool) -> seq[a] -> seq[a]
+-- sortiert Sequenz und schmeisst doppelte raus
+
+DEF uniqueSort(<)(<>) == <>
+
+DEF uniqueSort(<)(s) == uniqueSort(<)(s,s#)
+
+FUN uniqueSort: (a**a->bool) -> seq[a]**nat -> seq[a]
+-- identisch, aber die Laenge der Sequenz als weiteres Argument
+
+DEF uniqueSort(<)(s,0) == s
+
+DEF uniqueSort(<)(s,succ(0)) == s
+
+DEF uniqueSort(<)(s,n) ==
+  LET (s1,n1,s2,n2) == halfs(s,n)
+  IN merge(<)(uniqueSort(<)(s1,n1),uniqueSort(<)(s2,n2))
+
+FUN halfs: seq[a]**nat -> seq[a]**nat**seq[a]**nat
+-- halbiert eine wenigstens zwei-elementige Sequenz (mit angegebener Laenge),
+--   liefert die Teilsequenzen mit ihrer Laenge
+
+DEF halfs(s,n) ==
+  LET n1 == n/2
+      n2 == n-n1
+      (s1,s2) == split(n1,s)
+  IN (s1,n1,s2,n2)
+
+FUN merge: (a**a->bool) -> seq[a]**seq[a] -> seq[a]
+-- vereinigt zwei eindeutige,
+--   (bzgl. der angegebenen Ordnung) sortierte Sequenzen
+
+DEF merge(<)(s,<>) == s
+
+DEF merge(<)(<>,s) == s
+
+DEF merge(<)(s AS s1::sR,t AS t1::tR) ==
+  IF s1<t1 THEN s1 :: merge(<)(sR,t)
+  IF t1<s1 THEN t1 :: merge(<)(s,tR)
+  ELSE          s1 :: merge(<)(sR,tR)
+  FI
+
+FUN cmp : (a ** a -> rel) -> seq[a] ** seq[a] -> rel
+  -- PRE: #(S1)=#(S2)
+  -- Produktordnung (Lifting von der Funktion auf Sequenzen
+  -- Ai:(S1.i = S2.i)				=> S1 = S2
+  -- (Ai:(S1.i < S2.i)	or (S1.i = S2.i))	
+  --  and Ei:(S1.i < S2.i)			=> S1 < S2
+  -- (Ai:(S1.i > S2.i)	or (S1.i = S2.i))	
+  --  and Ei:(S1.i > S2.i)			=> S1 > S2
+  -- ELSE					=> S1 |= S2
+DEF cmp(F)(S1,S2) == cmp(F,S1,S2,= :rel)
+
+FUN cmp : (a ** a -> rel) ** seq[a] ** seq[a] ** rel -> rel
+DEF cmp(F,S1,S2,prevRel) ==
+  IF S1 <>? THEN prevRel
+  ELSE LET rel == ft(S1) F ft(S2) IN
+    IF rel =? THEN cmp(F,rt(S1),rt(S2),prevRel)
+    IF rel <? THEN
+      IF prevRel =? THEN cmp(F,rt(S1),rt(S2),rel)
+      IF prevRel <? THEN cmp(F,rt(S1),rt(S2),rel)
+      IF prevRel >? THEN cmp(F,rt(S1),rt(S2),|=)
+      IF prevRel |=? THEN cmp(F,rt(S1),rt(S2),|=)
+      FI
+    IF rel >? THEN
+      IF prevRel =? THEN cmp(F,rt(S1),rt(S2),rel)
+      IF prevRel >? THEN cmp(F,rt(S1),rt(S2),rel)
+      IF prevRel <? THEN cmp(F,rt(S1),rt(S2),|=)
+      IF prevRel |=? THEN cmp(F,rt(S1),rt(S2),|=)
+      FI
+    IF rel |=? THEN cmp(F,rt(S1),rt(S2),rel)
+    FI
+  FI  
+
+
+-- ---------------------------------------------------------------------------
+
+FUN - : (a ** a -> bool) -> seq[a] ** seq[a] -> seq[a]
+DEF -(=)(S,<>) == S
+DEF -(=)(S,ft::S2) ==
+    LET (front, tail) == split(\\x. ~(ft=x), S) IN  
+    IF tail <>? THEN -(=)(front, S2)
+    ELSE -(=)(front ++ rt(tail), S2)
+    FI
+
+-- ---------------------------------------------------------------------------
+
+FUN combine : seq[seq[a]] -> seq[seq[a]]
+  -- Bilden aller Kombinationen der Elemente der verschiedenen inneren
+  -- Sequenzen.
+DEF combine(<>) 	== %(<>)
+DEF combine(ft::rt) 	== combine(::, ft, combine(rt))
+
+-- ---------------------------------------------------------------------------
+
+FUN insert : (a -> bool) ** (a -> seq[a]) -> seq[a] -> seq[a]
+DEF insert(testF, convF)(S) ==
+    LET (front, back) == split(~ o testF, S) IN
+    IF back <>? THEN front
+    ELSE front ++ (convF(ft(back)) ++ back)
+    FI
+
+-- ---------------------------------------------------------------------------
+
+FUN pos : (a -> bool) ** seq[a] -> nat
+DEF pos(testF, ft::rt) ==
+	IF testF(ft) THEN 0 ELSE succ(pos(testF,rt)) FI
+
+-- ---------------------------------------------------------------------------
+
+FUN union : (a ** a -> a) ** (a ** a -> bool) -> seq[a] ** seq[a] -> seq[a]
+  -- Mengenbildung mit gleichzeitiger Verknuepfung von Elementen mit 
+  -- gleichem Schluessel
+DEF union(comb,=)(<>,<>) == <>
+DEF union(comb,=)(S,<>) == S
+DEF union(comb,=)(<>,S) == S
+DEF union(comb,=)(Ft::Rt,S) ==
+    LET (unEq,withEq) == split(\\x. ~(x=Ft),S) IN
+    IF withEq <>? THEN	--  Ft nicht in S
+      Ft :: union(comb,=)(Rt,S)
+    ELSE
+      comb(Ft,ft(withEq)) :: union(comb,=)(Rt,unEq++rt(withEq))
+    FI
+
+    /* ++++++++++++++++ DIFF von OPAL0	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	... found after 18+6 hours ...................
+	wg 6.10.92
+    LET (unEq,withEq) == split(\\x.x=Ft,S) IN
+    */
+

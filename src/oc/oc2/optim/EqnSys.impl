@@ -1,0 +1,191 @@
+IMPLEMENTATION EqnSys
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: equation systems 
+-- project: acc
+-- author:  wg
+
+
+IMPORT	Ide		ONLY ide:SORT # :ide->nat local origin:SORT
+	IdeSet		ONLY ideSet {} incl + explode *
+	Ac		COMPLETELY
+	An		ONLY an <+
+	IdeMap		ONLY ideMap {} def? ! def explode
+	AcFun		ONLY = : exp**exp->bool
+			     format:(ide->format)**(an->format)->exp->format
+
+IMPORT	Format 		COMPLETELY
+	FormatFun1	ONLY list
+	NatConv		ONLY `
+
+IMPORT	Nat		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		ONLY *
+	SeqReduce	ONLY \
+	SeqSort		ONLY msort
+	Array		COMPLETELY
+	Option		COMPLETELY
+	Pair		COMPLETELY
+
+
+-- -------------------------------------------------------------------------
+
+DATA eqnSys ==
+    @(	entrys	: ideMap[entry],	-- should (could) be an array
+	hash	: array[seq[ide:SORT]],
+	ideCnt	: nat
+    )
+
+DATA entry ==
+    free 	(ide: ide, an: an)
+    binded	(ide: ide, an: an, def: exp, rc: nat, deps: option[ideSet])
+
+-- -------------------------------------------------------------------------
+
+DEF newSys == @({}[entry],init(hashRange,<>[ide:SORT]),0)
+
+DEF newVar(S,a) ==
+    (@(def(id,free(id,a),entrys(S)),hash(S),succ(ideCnt(S))),id)
+	WHERE id == local(succ(ideCnt(S)))
+
+DEF newEqn(S,e,a) ==
+    LET h   == hashCode(e)
+	en? == search(S,e,hash(S)!h)
+    IN
+    IF avail?(en?) THEN
+	-- old exp
+	(@(def(ide(en),en1,entrys(S)),
+	   hash(S),
+	   ideCnt(S)),
+	ide(cont(en?)))
+	  WHERE en1 == binded(ide(en),an(en),def(en),succ(rc(en)),deps(en))
+		en  == cont(en?)
+    ELSE
+	-- new exp
+	(@(def(id,en,entrys(S)),
+	   (hash(S),h):=(id::(hash(S)!h)),
+	   succ(ideCnt(S))),
+	   id)
+	    WHERE id == local(succ(ideCnt(S)))
+	          en == binded(id,a,e,1,nil)
+    FI
+
+
+DEF equated?(S,i) ==
+    IF i def? entrys(S) THEN binded?(entrys(S)!i)
+			ELSE false FI
+
+DEF rhs(S,i) ==
+    def(entrys(S)!i)
+
+DEF an(S,i) ==
+    an(entrys(S)!i)
+
+DEF mergeAn(S,i,a) ==
+    @(def(i,en1,entrys(S)),hash(S),ideCnt(S))
+ 	WHERE en1 == IF binded?(en) THEN 
+			 binded(ide(en),an(en)<+a,def(en),rc(en),deps(en))
+		     ELSE free(ide(en),an(en)<+a) FI
+	      en  == entrys(S)!i
+
+DEF useEqn(S,i) ==
+    @(def(i,en1,entrys(S)),hash(S),ideCnt(S))
+	WHERE en1 == binded(ide(en),an(en),def(en),succ(rc(en)),deps(en))
+	      en  == entrys(S)!i
+    
+DEF setDeps(S,i,ds) ==
+    @(def(i,en1,entrys(S)),hash(S),ideCnt(S))
+ 	WHERE newDeps ==
+		IF rc(en) > 1 THEN
+		    -- expression shared: have to build 
+		    -- intersection with current deps since deps(en)
+		    -- might not be strict in the current context
+		    deps(en) * ds
+		ELSE
+		    -- expression unshared: union with current deps
+		    deps(en) + ds
+		FI
+	      en1 == binded(ide(en),an(en),def(en),rc(en),newDeps)
+	      en  == entrys(S)!i
+
+  FUN * : option[ideSet] ** ideSet -> option[ideSet]
+  DEF nil * S == avail(S)
+  DEF avail(S) * S1 == avail(S * S1)
+
+  FUN + : option[ideSet] ** ideSet -> option[ideSet]
+  DEF nil + S == avail(S)
+  DEF avail(S) + S1 == avail(S + S1)
+
+DEF deps(S,i) ==
+    LET Deps == deps(entrys(S)!i)
+    IN
+    IF avail?(Deps) THEN cont(Deps) ELSE {} FI
+
+-- -------------------------------------------------------------------------
+
+FUN search : eqnSys ** exp ** seq[ide:SORT] -> option[entry]
+DEF search(S,e,is) ==
+    IF <>?(is) THEN nil
+    ELSE
+	IF def(en)=e THEN avail(en) ELSE search(S,e,rt(is)) FI
+		WHERE en == entrys(S)!ft(is)
+    FI
+
+FUN hashCode : exp -> nat
+DEF hashCode(e) ==
+    	IF apply?(e)  THEN (incArgSum,atomHashCode(fun(e))) \ args(e)
+    	IF lambda?(e) THEN (incDecSum,atomHashCode(scope(e))) \ vars(e)
+	IF case?(e)   THEN (incMatchSum,atomHashCode(default(e)))\ matches(e)
+		      ELSE atomHashCode(e) FI
+		      
+FUN atomHashCode : exp -> nat
+DEF atomHashCode(e) ==
+    IF ide?(e)   THEN (#(ide(e)) * idePrime) % hashRange
+    IF deno?(e)  THEN denoPrime
+    IF error?(e) THEN pred(hashRange) FI
+
+FUN incArgSum: exp ** nat -> nat
+DEF incArgSum(e,s) == ((argPrime * atomHashCode(e)) + s) % hashRange
+
+FUN incMatchSum: match ** nat -> nat
+DEF incMatchSum(m,s) == ((matchPrime * atomHashCode(scope(m))) + s) 
+					% hashRange
+
+FUN incDecSum: dec ** nat -> nat
+DEF incDecSum(d,s) == ((decPrime * #(ide(d))) + s) % hashRange
+
+FUN idePrime denoPrime argPrime matchPrime decPrime hashRange: nat
+DEF idePrime   == "3"!
+DEF argPrime   == "5"!
+DEF matchPrime == "7"!
+DEF decPrime   == "9"!
+DEF denoPrime  == "11"!
+DEF hashRange  == "123"!
+
+-- ---------------------------------------------------------------------------
+
+-- FUN format : (ide->format)**(an->format)->eqnSys->format
+DEF format(fi,fa)(S) ==
+    list(str(""),nl,str(""),formatEntry(fi,fa))
+        (msort(\\E1,E2. #(ide(E1)) > #(ide(E2)))
+	      (2nd[ide:SORT,entry]*explode(entrys(S))))
+
+FUN formatEntry : (ide->format)**(an->format)->entry->format
+DEF formatEntry(fi,fa)(e) ==
+    IF free?(e) THEN
+        blk(1,%(fi(ide(e)),brk(0),fa(an(e)),str("= free")))
+    ELSE
+        blk(1,%(fi(ide(e)),brk(0),fa(an(e)),
+		Deps,
+		blk(0,%(str(" rc="),str(`(rc(e))))),
+		str(" ="),nl,format(fi,fa)(def(e))))
+	  WHERE Deps == IF avail?(deps(e)) THEN 
+		     	    list(str(" {"),str(","),str("} "),fi)
+				(explode(cont(deps(e))))
+			ELSE str(" nodep ") FI
+    FI
+

@@ -1,0 +1,451 @@
+/* %-
+-- LAST EDIT: Wed Aug  7 11:15:51 1996 by Christian Maeder (andromache!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:
+-- Changes:     af, Jun 22 1993: modified reading of myExpFile
+--                               (implementing language modification w.r.t.
+--                                inclusion of free types)
+--              af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+--              af, Jun 29 1993: modified reading of own exp file
+--                               (implementing also property language)
+--              af, Jun 29 1993: using lexem instead of !'Rep for getting
+--                               structure identifier of imports
+-- ============================================================================
+*/
+
+IMPLEMENTATION GlobSigInit
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Objects         COMPLETELY
+        DeclPrep        COMPLETELY
+        StructOwn       COMPLETELY
+        GlobSigInitPass COMPLETELY
+        GlobSig4SigAna  COMPLETELY
+        Maps4SigAna     COMPLETELY
+        Name4SigAna     COMPLETELY
+        PartNamePrep    COMPLETELY
+        GlobSigImpl     ONLY impl:SORT data none
+        ImpExpEntry     ONLY instAppl:SORT impDeclE:SORT instE:SORT
+                             toInstAppl applied instOf applied?
+        InterOpal       ONLY interOpal:SORT ioTypeKey origin:SORT main:origin
+                                struct:SORT symbol:struct -> denotation
+        InterOpalModifier       COMPLETELY
+        PartNameEntry   COMPLETELY
+        Name            COMPLETELY
+        GlobSigToText   ONLY ` -- : globSig -> () -> denotation
+        Struct          COMPLETELY
+        Table           COMPLETELY
+        SigAnaTexts     COMPLETELY
+
+        -- absy, etc.
+        PartName        COMPLETELY
+        Rep             COMPLETELY
+        Pos             ONLY pos firstPos
+        Fct             ONLY fct
+        Impl ONLY law:SORT ide
+       GlobPragma ONLY prag lexem globPragma
+       GlobSig ONLY updPragmas pragmas
+        -- lib
+
+        DEBUG           ONLY PRINT
+        Option          COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        OcStream        COMPLETELY
+        OcBinStream     COMPLETELY
+        Options         COMPLETELY
+        Verbose         COMPLETELY
+        Nat             COMPLETELY
+        Error           COMPLETELY
+        Compose         COMPLETELY
+       MapReduce ONLY /
+
+        Seq             COMPLETELY
+        SeqMap          ONLY *
+        SeqMapEnv       ONLY *
+        SeqOfSeq        ONLY flat
+        SeqReduce       COMPLETELY
+        SeqCompare      COMPLETELY
+        SeqZip          COMPLETELY
+        SetByBST             COMPLETELY
+        SetByBSTConv         ONLY asSeq
+        MySeqFun1       COMPLETELY
+        MySeqFun2       COMPLETELY
+        MySeqFun3       COMPLETELY
+        AbsyFun2        COMPLETELY
+        AbsyFun3        COMPLETELY
+        Option          COMPLETELY
+        OptionMap       COMPLETELY
+        Triple          COMPLETELY
+        Quadruple       COMPLETELY
+        Pair            COMPLETELY
+        Denotation      ONLY ++ # =
+
+        OcExit          ONLY languageError ioError
+
+
+FUN less : pair[rep,pos'Pos] ** pair[rep,pos'Pos] -> bool
+DEF less(R1 & _, R2 & _) == R1 < R2 
+
+FUN insert : repTab ** seq[denotation] -> repTab
+DEF insert(Rt, <>) == Rt
+DEF insert(RT, Ft :: Rt) ==
+        LET (NewRT, _) == insert(RT, Ft)
+        IN insert(NewRT, Rt)
+
+-- ---------------------------------------------------------------------------
+
+FUN globSigInit: origin'Struct ** seq[partName] **
+                  seq[pair[partName, law]] ** options
+                -> pair[seq[seq[pair[import,bool]]],repTab]
+                -> com[globSig]
+
+DEF globSigInit(structHead, sigS, specS, options)(impSS & repTab) ==
+        readOwnImport(options) & (\\P1:pair[err,option[interOpal]].
+        LET 
+            (Err1, OptSign) == (1st(P1), 2nd(P1))
+            (bool, den, BOOL, DEN, rT) == getPreDefReps( repTab )
+                -- %Erzeugen einer ersten GlobSig
+            gS == defPreDefs({}'GlobSig4SigAna, bool, den, BOOL, DEN)
+            CycErr == checkDirectCyclicImports(
+                        structIde(structHead), impSS) 
+            ParamErr == checkFormImplParams(structHead, OptSign)
+        IN
+        readImports(options, impSS)(ok & <>) & (\\P2:pair[err,seq].
+        LET SignS == 2nd(P2) IN
+        errors(options, CycErr) & (\\CycOk?:bool.
+        errors(options, Err1) & (\\OwnOk?:bool.
+        errors(options, ParamErr) & (\\ParamOk?:bool.
+        errors(options, 1st(P2)) & (\\ExpsOk?:bool.
+        (IF CycOk? THEN
+          IF ExpsOk? THEN
+           IF OwnOk? and ParamOk? THEN
+            yield(okay(SignS)) 
+           IF OwnOk?~ THEN yield(fail(ioError))    
+           IF ParamOk?~ THEN yield(fail(languageError))
+           FI
+          IF ExpsOk?~ THEN yield(fail(ioError))
+          FI
+         IF CycOk?~ THEN yield(fail(languageError))
+         FI : com[seq]) &
+        (LET
+          nSigS == ((\\pN. pN & nil) * sigS)  ++
+                   ((\\p. 1st(p) & avail(ide(2nd(p)))) * specS)
+       IN
+        globSigInit3(options, structHead, nSigS, rT, gS, OptSign))
+        ))))))
+
+FUN globSigInit3 : options ** origin'Struct ** seq[pair[partName, option[rep]]] ** repTab
+                   ** globSig**option[interOpal]
+                   -> seq[pair[interOpal,seq[pair[import,bool]]]]
+                   -> com[globSig]
+/* %
+ Alle Dateien konnten ohne Fehler gelesen werden. Jetzt werden
+ folgende Paesse durchlaufen und dann die eigenen Deklarationen 
+ eingetragen:
+@table
+@item Pass 1
+@itemize @minus{}
+@item
+Aufbau der vollstaendigen RepTab, dabei Merken aller Strukturnamen
+@item
+Erzeugen einer leeren Lookup-Tabelle
+@item
+Eintragen aller Strukturen in die Strukturtabelle, mit Hilfe der LookupTable
+@item
+turbo der Strukturtabelle
+@end itemize
+@item Pass 2 (ohne eigene Signatur)
+@itemize minus{}
+@item 
+Aufbau der Umcodiertabellen anhand der LookupTable
+@item
+Anlegen der Instanzentabellen
+@item
+turbo der Instanzentabellen
+@end itemize
+@item Pass 3
+@itemize @minus{}
+@item 
+Eintragen der ImpDecls (mit turbo)
+@item
+Nachtragen der Instanzentabellen
+@end itemize
+@item Pass 4
+@itemize @minus{}
+@item Erzeugen der Tabellen fuer die partiellen Namen unter
+        Benutzung einer ersten (statischen) Abschaetzung 
+@end itemize
+@end table
+*/
+DEF globSigInit3(options, strHead, sigS, rT, gSa, sign)(Inters) ==
+errors(options, checkInstantiation(options, Inters)) & (\\ ok? .
+        IF ~(ok?) THEN yield(fail(languageError))
+        ELSE LET 
+        gS == PRINT(options,"printGsPrep",gSa)
+        withOwn? == sign avail?
+        Symbs == IF withOwn? THEN symbols(cont(sign)) ELSE <> FI
+        RT2 == insert(rT, Symbs)        
+        (IdePosS, Rt3) ==  unpair
+                  (\ (\\P, SetTab. 
+                           \ (\\T, S2.
+                                   LET NewRt == insert(2nd(S2), symbols(T))
+                                       NewSet == getRep(NewRt, symbol(T)) 
+                                                               & toPos(2nd(P))
+                                                 incl 1st(S2)
+                                   IN NewSet & NewRt, SetTab, structs(1st(P))),
+                                            {}[pair,less] & RT2, Inters))
+        gS1a == globSigInitPass1(Rt3, gS, sign, asSeq(IdePosS))
+        gS1 == PRINT(options,"printGsInitPass1", gS1a)
+        -- %erst Eintragen der eigenen Signatur, damit die Indizes stimmen
+        gS2a == 
+          IF withOwn? THEN
+            insertOwnSignature(options)(Rt3, gS1, cont(sign), impl?(options))
+          ELSE  gS1 FI
+        (gS2b, pNdeclS) == *(prepStaticDeclInfo, gS2a, sigS)
+        gS2 == PRINT(options,"printGsInitOwnSign",gS2b)
+        (gS3a, ImpCodeTab) == globSigInitPass2(Rt3, gS2, Inters)
+        gS3 == PRINT(options,"printGsInitPass2",gS3a)
+        gS4 == globSigInitPass3(Rt3,gS3,ImpCodeTab)
+        gS5 == PRINT(options,"printGsInitPass3",gS4)
+          -- %Voreintragen der Deklarationen (sortPN's sind unvollstaendig)
+        gS6 == IF withOwn? THEN 
+          /* % allow a missing parameter list for implementations or
+               support check of (unnecessarily) supplied parameters 
+               (see also GlobSigEvalParam.impl) */
+                IF paramS(strHead) <>? THEN gS5 
+                ELSE -- % include known parameters
+                     extStructHead(gS5, strHead) 
+                FI
+               ELSE defStructHead(gS5, strHead) 
+               FI 
+        gS7a == globSigInitPass4(gS6, pNdeclS,ImpCodeTab) 
+        gS7 == PRINT(options,"printGsInitPass4",gS7a)
+
+        finGS == PRINT(options,"printGsInit",gS7)
+        IN      yield(okay(finGS))
+        FI)
+
+FUN toPos : seq[pair[import,bool:SORT]] -> pos'Pos
+DEF toPos(SP) == LET orig == origin(1st(ft(SP))) IN (pos(orig))
+
+FUN getPreDefReps : repTab -> rep ** rep ** rep ** rep ** repTab
+DEF getPreDefReps(repTab) == (boolR, denR, BOOLR, DENR, finRepTab)
+        WHERE
+        (repTab1, boolR) == insert(repTab, bool)
+        (repTab2, denR ) == insert(repTab1, denotation)
+        (repTab3, BOOLR) == insert(repTab2, BOOL)
+        (finRepTab, DENR)== insert(repTab3, DENOTATION)
+
+-- %- ------------------------------------------------------------------------
+
+FUN defStructHead : globSig ** origin'Struct -> globSig
+ /* %Eintragen des Strukturkopfes und der Applikationen der formalen
+  Parameter */
+DEF defStructHead(gS, orig) == 
+        defStructHead(finGS,structIde(orig),pos(orig),pragma(orig), formParamS)
+        WHERE
+        (finGS, formPNS) == *(convMatchPartName(false), gS, paramS(orig))
+        formParamS == zip(+++)(formPNS, paramS(orig))
+
+FUN extStructHead : globSig ** origin'Struct -> globSig
+ /* %Eintragen des Strukturkopfes und der Applikationen der formalen
+  Parameter */
+
+DEF extStructHead(gS, orig) == 
+        extStructHead(finGS, formParamS)
+        WHERE
+        (finGS, formPNS) == *(convMatchPartName(false), gS, paramS(orig))
+        formParamS == zip(+++)(formPNS, paramS(orig))
+
+FUN +++ : pN ** partName -> pair[onlyPNE:SORT,pragma:SORT]
+DEF +++(pN, partName) == 
+        (onlyPNE(pN, errInfo(partName)) & 
+         pragma'PartName:partName->pragma(partName))
+
+FUN PRINT: options ** denotation ** globSig -> globSig
+
+DEF PRINT(options,zopt,sig) ==
+  PRINT(cop?(zopt,options),sig`,sig)
+
+-- %- ------------------------------------------------------------------------
+-- %Neue Routine zum Lesen und Prüfen von Exportfiles 
+
+FUN readOwnImport : options -> com[pair[err, option[interOpal]]] 
+-- %eigene Exportfiles f"ur impl, extp und intp lesen 
+DEF readOwnImport(Options) ==
+   IF Options sign? THEN yield(okay(ok &'Pair nil))
+   IF impl?(Options) or extp?(Options) THEN
+        optread[interOpal](Options,mySignExpFile(Options),ioTypeKey) & (\\OptSign.
+        IF OptSign avail? THEN yield(okay(ok &'Pair OptSign))
+        IF OptSign nil? THEN yield(okay(
+            err(error, nofile, mySignExpFile(Options), firstPos) & nil))
+        FI)
+   IF Options intp? THEN
+        optread[interOpal](Options,myExtpExpFile(Options),ioTypeKey) & (\\OptSign.
+        (IF OptSign avail? THEN 
+                readImportList(Options, %(myImplExpFile(Options),
+                                mySignExpFile(Options)))(ok & %(cont(OptSign)))
+        ELSE 
+                readImportList(Options, %(mySignExpFile(Options),
+                        myImplExpFile(Options),
+                        mySignExpFile(Options)))(err(warning, nofile 
+                                   ++ (": no 'external properties' included"), 
+                                mySignExpFile(Options), firstPos) & <>[interOpal])
+        FI)
+        &'ComCompose mergeImportList(Options))
+   FI
+
+-- % the proper order of signatures is <extp, impl, sign>
+FUN readImportList : options ** seq[denotation] -> pair[err, seq[interOpal]]
+                -> com[pair[err, seq[interOpal]]] 
+DEF readImportList(_, <>)(ErrSignS) == yield(okay(ErrSignS))
+DEF readImportList(Options, Ft :: Rt)(Err & SignS) ==
+        optread[interOpal](Options, Ft , ioTypeKey) & (\\OptSign.
+        readImportList(Options, Rt)
+        (IF OptSign avail? THEN Err & (cont(OptSign)::SignS)
+        IF OptSign nil? THEN (Err +'Error
+                err(error, nofile, Ft, firstPos)) & SignS
+        FI))
+
+FUN mergeImportList : options -> pair[err, seq[interOpal]] 
+                -> com[pair[err, option[interOpal]]]
+DEF mergeImportList(_)(Err & SignS) ==
+IF #(SignS) ='Nat 3 THEN succeed(ok & avail(ft(SignS)))
+
+/* % due to unused internal properties merging of signatures is no
+   longer support on all 3 interOpal files. Thus internal properties 
+   do not inherit from implementation but only from external properties. 
+*/
+ELSE yield(okay(&'Pair(Err, nil))) FI
+
+
+FUN checkDirectCyclicImports : rep ** seq[seq[pair[import, bool]]]
+                                         -> err
+/* % "Uberpr"ufung von direkten zyklischen Importen. 
+   Indirekte zyklische Importe muessen durch genmake oder oasys
+   erkannt werden. Der direkte Test ist deswegen eigentlich auch unnoetig.
+*/ 
+DEF checkDirectCyclicImports(_, <>) == ok
+DEF checkDirectCyclicImports(MainName, FtImpS :: RtImpSS) ==
+LET 
+    Origin == origin(1st(ft(FtImpS)))
+    ImpStructName == structIde(Origin)
+    Pos == pos(Origin)
+IN
+(IF ImpStructName ='Rep MainName THEN
+        err(error, "illegal direct cyclic import of '%s'", lexem(MainName), Pos)
+ELSE ok
+FI) +'Error checkDirectCyclicImports(MainName,  RtImpSS)
+
+
+FUN readImports : options ** seq[seq[pair[import, bool]]] 
+        -> pair[err,seq[pair[interOpal,seq[pair[import, bool]]]]]
+        -> com[pair[err, seq[pair[interOpal,seq[pair[import, bool]]]]]]
+/* %Alle ben"otigten Exportfiles lesen, ohne Abbruch alle probieren
+initialer Aufruf mit @code{"&(ok,<>)"} */
+DEF readImports(_, <>)(ErrSignS) == yield(okay(ErrSignS))
+DEF readImports(Options, FtImpS :: Rt)(Err & SignS) ==
+/* % Die Instanzenliste d"urfte niemals leer sein nach "merge"
+also ist  FtImpS ::?  erfuellt */
+        LET Origin == origin(1st(ft(FtImpS)))
+            ImpStructName == lexem(structIde(Origin))
+            ExpFileName == IF extp?(Options) or intp?(Options) 
+                        THEN extpExpFile(ImpStructName, Options)        
+                        ELSE expFile(ImpStructName, Options)
+                        FI
+        IN
+                IF #(ExpFileName) 0? THEN
+                    readImports(Options, Rt)((Err + 
+                            err(error,
+                                "imported structure '%s' not in command line", 
+                                ImpStructName, pos(Origin)))
+                        & SignS)
+                ELSE
+                optread[interOpal](Options, ExpFileName, ioTypeKey) & (\\OptSign.
+                  (IF OptSign avail? THEN 
+                                readImports(Options, Rt)
+                                    (Err & ((cont(OptSign) & FtImpS) :: SignS))
+                  IF OptSign nil? THEN 
+                    IF extp?(Options) or intp?(Options) THEN
+-- %try to get normal exp-file 
+           optread[interOpal](Options, expFile(ImpStructName, Options), 
+                                ioTypeKey) & (\\OptsSign.
+                      readImports(Options, Rt)
+                        (IF OptsSign avail? THEN &(Err +
+                                err(warning, nofile 
+                                   ++ (": only 'signature export' imported"), 
+                                        ExpFileName, pos(Origin)), 
+                                    (cont(OptSign) & FtImpS) :: SignS)
+                        IF OptsSign nil? THEN &(Err +
+                                err(error, nofile, ExpFileName, pos(Origin)), 
+                                    SignS)
+                        FI))
+-- %end of try
+                    ELSE 
+                           readImports(Options, Rt)(&(Err +
+                                err(error, nofile, ExpFileName, pos(Origin)), 
+                                    SignS))
+                    FI
+                  FI))
+                FI              
+
+/* %nur korrespondierende Listen seq[interOpal] und seq..[import..]
+ist die seq[interOpal] k"urzer, dann ist die Position ggf. unklar (firstPos?)
+*/
+
+FUN checkInstantiation : options **  seq[pair[interOpal,seq[pair[import, bool]]]]
+                                         -> err 
+/* %Anzahl der Parameter überprüfen
+zusätzlich Instantierung und ONLY im sign-Teil testen */
+DEF checkInstantiation(_, <>) == ok 
+DEF checkInstantiation(Options, (Sign & ImpS) :: RtImpSS) == 
+checkSingleInstantiation(Options, #(params(Sign)), ImpS) +  
+checkInstantiation(Options, RtImpSS) 
+
+FUN checkSingleInstantiation : options ** nat ** seq[pair[import, bool]] -> err
+DEF checkSingleInstantiation(_, _, <>) == ok 
+DEF checkSingleInstantiation(Options, Num,  
+                (FtImp & _) :: RtImpS) == 
+/* %BOOL und DENOTATION sind immer COMPLETELY drinnen
+ auf COMPLETELY wird vom Parser untersucht */
+  LET Origin == origin(FtImp)
+      Ide == structIde(Origin) 
+      Pos == pos(Origin)
+      ParamS == paramS(Origin)
+      IName == lexem(Ide)
+  IN 
+  (IF Num ='Nat #(ParamS) THEN ok
+   ELSE IF #(ParamS) 0? THEN
+          IF sign?(Options) or extp?(Options) THEN 
+            err(IF cop?("UninstImport", Options) THEN hint ELSE error FI, 
+                "uninstantiated import of '%s'", 
+                IName, Pos) 
+          ELSE ok
+          FI
+        ELSE err(error, 
+                 "wrong number of parameters in instantiated import of '%s'", 
+                 IName, Pos) 
+        FI
+   FI)
+  +'Error checkSingleInstantiation(Options, Num, RtImpS) 
+
+FUN nofile : denotation 
+DEF nofile == "imported file '%s' not found"
+
+-- % check if number of formal parameters kept the same
+FUN checkFormImplParams : origin'Struct ** option[interOpal] -> err
+DEF checkFormImplParams(_, nil) == ok
+DEF checkFormImplParams(Orig, avail(Inter)) == 
+    LET N == #(paramS(Orig))
+    IN IF N = 0 ORIF N = #(params(Inter)) THEN ok ELSE 
+    err(error, "wrong number of parameters inherited from own signature '%s'",
+          lexem(structIde(Orig)), pos(Orig)) 
+          FI
+    

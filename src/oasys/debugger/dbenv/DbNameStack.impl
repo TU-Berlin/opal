@@ -1,0 +1,88 @@
+IMPLEMENTATION DbNameStack
+
+IMPORT	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqZip		COMPLETELY
+	SeqFold		COMPLETELY
+	SeqIndex	COMPLETELY
+	SeqOfSeq	COMPLETELY
+	SeqFilter	COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqCompare	COMPLETELY
+	Set		COMPLETELY
+	SetConv		COMPLETELY
+	Pair		COMPLETELY
+	Map		COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	Nat		COMPLETELY
+	Option		COMPLETELY
+	OptionMap	COMPLETELY
+	OptionCompare	COMPLETELY
+	ABORT		COMPLETELY
+	Fmt		COMPLETELY
+	FmtSeq		COMPLETELY
+	RepoAbsy	COMPLETELY
+	RepoName	COMPLETELY
+	Expression	ONLY	bindOffset
+	Denotation	COMPLETELY
+
+
+DATA nameStack == nameStack(items: seq[nameItem])
+DATA nameItem == nameItem(names: seq[objectName])
+
+DEF <> == nameStack(<>)
+
+DEF nameStack(S) pushItem == nameStack(nameItem(<>)::S)
+DEF nameStack(<>) popItem == ABORT("popItem'NameStack: stack"++
+				   " is empty (no nameItem)")
+DEF nameStack(S) popItem  == nameStack(rt(S))
+
+-- % push
+DEF nameStack(<>) push _ :objectName == 
+    ABORT("push'NameStack: stack is empty (no nameItem)")
+DEF nameStack(nameItem(Names)::Rt) push N ==
+    nameStack(nameItem(Names +% N)::Rt)
+
+-- % aktueller BindOffset
+DEF actBindOffset(nameStack(nameItem(It) :: _)) == bindOffset(0,It #)
+DEF actBindOffset(nameStack(<>)) == 
+    ABORT("actBindOffset'NameStack: undefined for empty stack")
+
+-- % Finden eines Elementes
+DEF nameStack(NS) ! N == findName(NS,N,0)
+
+   FUN findName : seq[nameItem] ** objectName ** nat -> bindOffset
+   DEF findName(<>,_,_) == ABORT("!'NameStack: objectname is unknown")
+   DEF findName(Ft::Rt,N,ItemNo) ==
+     LET OptPosInItem == findName(Ft,N)
+     IN IF OptPosInItem avail?
+	  THEN bindOffset(ItemNo,OptPosInItem cont)
+	  ELSE findName(Rt,N,ItemNo succ)
+        FI
+
+   FUN findName : nameItem ** objectName -> option[nat]
+   DEF findName(nameItem(Names),N) == pos(_ = N,Names)
+
+-- % Differenz zweier Toplevel-StacksItems
+DEF nameStack(nameItem(X) :: _) - nameStack(nameItem(Y) :: _) == 
+	#(X) - #(Y)
+DEF _ - _ == ABORT("-'NameStack: undefined for empty stacks")
+
+DEF asSeqSeq(nameStack(Items)) == names * Items
+
+DEF fmtNameStack(nameStack(Items)) == 
+    beg(1) ;
+	list(fmtNameItem,
+		lit("NAMESTACK(");brk,
+		lit("-----");brk,
+		lit(")"),
+		Items) ;
+    end
+
+	FUN fmtNameItem: nameItem -> fmt
+	DEF fmtNameItem(nameItem(Names)) == 
+	    list(fmtObjectName,none,lit(","),brk,Names)
+
+
+

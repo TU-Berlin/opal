@@ -1,0 +1,523 @@
+IMPLEMENTATION TransLib
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransLib.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+/* %One of the main difficulties of the implementation is the adoption of Info-pointers
+to the user-specified configuration, as the user can influence the extent of 
+structure inclusion by configuration options. So the main task of the functions
+implemented in the following module is the dection of valid node w.r.t. a given
+configuration in order to construct appropriate Info-pointer settings. */
+
+IMPORT 
+  String        COMPLETELY       Stream        	COMPLETELY
+  Seq           COMPLETELY       Void          	COMPLETELY
+  SeqMap	COMPLETELY       Compose       	COMPLETELY
+  Com           COMPLETELY       Option		COMPLETELY
+  ComCompose    COMPLETELY
+	
+IMPORT
+  MyString	COMPLETELY       Context       	COMPLETELY
+  Config       	COMPLETELY       Language	COMPLETELY
+  ConfigFun     COMPLETELY       TransType      COMPLETELY
+  Content	COMPLETELY       TransHelp     	COMPLETELY
+  SourceTab     COMPLETELY       TransNode     	COMPLETELY
+  SourceTabFun  COMPLETELY       TransPointers	COMPLETELY
+  SubsystemType	COMPLETELY       TransMenu     	COMPLETELY
+
+-- %$Building Library-Subsystems$
+-- %-----------------------------
+
+FUN buildAllLibSubsystems : 
+      seq[subsystem[libSourceInfo]] ** string ** string ** string **
+          partType ** config ** output -> com[void]
+
+/* %The initial @LET-equations calculate the node environment for the subsequent
+calls to functions that
+@enumerate
+@item translate the library structures of the current subsystem level.
+@item translate the subsystems of the current subsystem.
+@item handle the rest of the subsystems of the current level.
+@end enumerate
+The trailing @WHERE-equation build up the Texinfo parts for the current subsystem's
+abstraction level that can be calculated locally.  */
+
+DEF buildAllLibSubsystems( actSubsystem :: rtSubsystems,
+                           actSubsystemUpNode,
+                           actSubsystemPrevNode,
+                           actSubsystemNextNodeEnv,
+                           actSubsystemPartType,
+                           config,
+                           outputFile ) ==
+
+  LET
+    actSubsystemNodeName == LIBRARY_SUBSYSTEM(name(actSubsystem))
+
+    actSubsystemNextNode == IF <>?(sources(actSubsystem)) THEN
+                              IF <>?(subsystems(actSubsystem)) THEN
+                                IF <>?(rtSubsystems) THEN
+                                  actSubsystemNextNodeEnv
+                                ELSE
+                                  LIBRARY_SUBSYSTEM(name(ft(rtSubsystems)))
+                                FI
+                              ELSE
+                                LIBRARY_SUBSYSTEM(name(ft(
+                                                subsystems(actSubsystem))))
+                              FI
+                            ELSE
+                              name(ft(sources(actSubsystem))) ++ !_(libSign)
+                            FI
+
+    actSubsystemPartName == Library_Subsystem_:_(name(actSubsystem))
+
+/* %Construction of the name of the node that follows the translation 
+of the sources of the actual subsystem: */
+    actSubsystemSourcesNextNode == 
+                            IF <>?(subsystems(actSubsystem)) THEN
+                              IF <>?(rtSubsystems) THEN
+                                actSubsystemNextNodeEnv
+                              ELSE
+                                LIBRARY_SUBSYSTEM(name(ft(rtSubsystems)))
+                              FI
+                            ELSE
+                              LIBRARY_SUBSYSTEM(name(ft(
+                                        subsystems(actSubsystem))))
+                            FI
+
+/* %Construction of the name of the node that precedes the subsystems 
+of the current subsystem: */
+    actSubsystemSubsystemsPrevNode ==
+                            IF <>?(sources(actSubsystem)) THEN
+                              actSubsystemNodeName
+                            ELSE
+                              nodeLastName(
+                                sources(actSubsystem),
+                                name(last(sources(actSubsystem))),
+                                config
+                              )
+                            FI
+
+    actSubsystemLastNode == IF <>?(subsystems(actSubsystem)) THEN
+                              actSubsystemSubsystemsPrevNode
+                            ELSE
+                              cont(
+                                lastNode(
+                                  last(subsystems(actSubsystem)),
+                                  config
+                                )
+                              )
+                            FI
+
+    subSubsystemsNextNodeEnv == IF <>?(rtSubsystems) THEN
+                                 actSubsystemNextNodeEnv
+                               ELSE
+                                 LIBRARY_SUBSYSTEM(name(ft(rtSubsystems)))
+                               FI
+
+  IN
+
+-- %Writing out the status for the DOSFOP-user:
+    writeLine(stdErr, !("translating: SUBSYSTEM ") 
+                         ++ name(actSubsystem) ++ !(" ...")) &
+    (\\ _ .
+        write(
+          outputFile,
+          actSubsystemHeader
+        ) &
+    (\\ _ .
+        write(
+          outputFile,
+          actSubsystemMenu%
+        ) &
+    (\\ _ .
+
+-- %Translate the library structures of the current subsystem level:
+        buildLibNodes(
+           name * sources(actSubsystem),  -- lib sources to build
+           <>,                            -- no sources already built
+           sources(actSubsystem),
+           actSubsystemNodeName,          -- upNode
+           actSubsystemSourcesNextNode,   -- node after last lib node
+           addDepth(actSubsystemPartType),
+           config,
+           outputFile
+        ) &
+    (\\ _ .
+
+-- %Translate the subsystems of the current subsystem:
+        buildAllLibSubsystems(
+          subsystems(actSubsystem),
+          actSubsystemNodeName,
+          actSubsystemSubsystemsPrevNode,
+          subSubsystemsNextNodeEnv,
+          addDepth(actSubsystemPartType),
+          config,
+          outputFile
+        ) & 
+    (\\ _ .
+        write(
+          outputFile,
+          actSubsystemTrailer
+        ) & 
+    (\\ _ .
+
+-- %Handle the rest of the subsystems of the current level:
+       buildAllLibSubsystems(
+          rtSubsystems,
+          actSubsystemUpNode,
+          actSubsystemLastNode,
+          actSubsystemNextNodeEnv,
+          actSubsystemPartType,
+          config,
+          outputFile
+        ) 
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+    ) -- \\ _
+ 
+  WHERE
+    actSubsystemHeader == texinfo(
+                            optionalNewPageSubsystem(
+                              config, 
+                              name(actSubsystem)
+                            )
+                          )
+                          %
+                          buildHeader(
+                            env(
+                              actSubsystemNodeName,
+                              actSubsystemNextNode,
+                              actSubsystemPrevNode,
+                              actSubsystemUpNode,
+                              actSubsystemPartType,
+                              actSubsystemPartName
+                            )
+                          )
+
+/* %The menu consists of references to the signature
+parts of the structures of the current subsystem and pointers to all
+sub-subsystems locatated one level below the current subsystem (Note the difference
+to user-implemented modules, where the subsystem's menu points to the
+structures' overviews!): */
+   actSubsystemMenu    == texinfo(
+                            conc(
+                              line("@ifinfo"),
+                              Sources_of_Library_Subsystem_:,
+                              nl,
+                              line("@end ifinfo"),
+                              buildMenu(
+                                strings2MenuEntries(
+                                  name * sources(actSubsystem),
+                                  " Sign"!
+                                )
+                              ),
+                              nl, nl
+                            ) ++
+                            conc(
+                              line("@ifinfo"),
+                              Subsystems_of_Library_Subsystem_:,
+                              nl,
+                              line("@end ifinfo"),
+                              buildMenu(
+                                strings2MenuEntries(
+                                  name * subsystems(actSubsystem),
+                                  LIBRARY_SUBSYSTEM
+                                )
+                              ),
+                              nl
+                            )
+                          )
+
+    actSubsystemTrailer == IF section?(actSubsystemPartType) THEN
+                             texinfo(
+                               optionalNewPageSubsystem(
+                                 config,
+                                 name(actSubsystem)
+                               )
+                             )%
+                           ELSE
+                             <>
+                           FI
+
+DEF buildAllLibSubsystems( <>, _, _, _, _, _ , _) == yield(okay(nil))
+
+-- %$Building Library Nodes of One Level$
+-- %-------------------------------------
+-- %The implementation of the subsequent function
+
+FUN buildLibNodes : 
+  seq[string] ** seq[string] ** seq[libSourceInfo] ** string ** string ** 
+    partType ** config ** output -> com[void]
+
+/* %translates all library structures whose names are initially given by the first
+parameter. The settings of the configuration-database are considered. The execution
+of each call to @c{buildLibNodes} deletes the first element of the
+@c{filesToBuild}-sequence and appends this element to the 
+@c{filesAlreadyBuilt}-sequence. */ 
+
+DEF buildLibNodes( <>, _, _, _, _, _, _, _ ) == yield(okay(nil))
+DEF buildLibNodes( filesToBuild AS actNode::restFilesToBuild,
+                   filesAlreadyBuilt,
+                   libSourceInfos,
+                   upNodeEnv,
+                   nextNodeEnv,
+                   partType,
+                   config,
+                   outputFile ) ==
+
+  writeLine(stdErr, !("translating: ") ++ actNode ++ !(" ...")) &
+  (\\ _ .
+      buildLibSign(
+        filesToBuild,
+        filesAlreadyBuilt,
+	libSourceInfos,
+        upNodeEnv,
+        nextNodeEnv,
+        partType,
+	config,
+        outputFile
+      ) & 
+  (\\ _ .
+     (IF propertiesInclude?(config, actNode) THEN
+	buildLibExtp(
+          filesToBuild,
+	  filesAlreadyBuilt,
+	  libSourceInfos,
+          nextNodeEnv,
+          partType,
+	  config,
+          outputFile
+        )
+      ELSE
+        yield(okay(nil))
+      FI) & 
+  (\\ _ .
+      buildLibNodes(
+        restFilesToBuild,
+        filesAlreadyBuilt +% actNode,
+        libSourceInfos,
+        upNodeEnv,
+        nextNodeEnv,
+        partType,
+        config,
+        outputFile
+      ) 
+  ) -- \\ _
+  ) -- \\ _
+  ) -- \\ _
+
+
+-- %$Building Single Library Modules$
+-- %---------------------------------
+/* %The transformation of a single library @b{signature part} into the intermediate
+Texinfo representation is implementented by the following function. A library
+signature part is translated in three parts:
+@table @asis
+@item A Header
+The header consists of Texinfo administrative information as well as an optional
+page-break specification. 
+@item A Menu
+A menu provides a powerful means to jump directly to a signature's sub-part or
+to an optionally included external property-specification.
+@item The Source-Code
+The ---possibly subdivided--- source code representation is constructed in the
+function @c{buildBody}. The source might be subdivided into sub-nodes (for the 
+Info-representation) or subsections (for the printable documentation).
+@end table 
+
+The two @string-sequences @c{filesToBuild} and @c{filesAlreadyBuilt} describe
+the translation context of the current (@c{actNode}) signature and enable the
+calculation of its pointer-context. */
+
+FUN buildLibSign : 
+  seq[string] ** seq[string] ** seq[libSourceInfo] **  string ** string ** 
+    partType ** config ** output -> com[void]
+
+DEF buildLibSign( <>, _, _, _, _, _, _, _ ) == yield(okay(nil))
+DEF buildLibSign( filesToBuild AS actNode::restFilesToBuild,
+                    filesAlreadyBuilt, libSourceInfos,
+                      libSignUpNodeEnv, 
+                        libSignNextNodeEnv, libSignPartType,
+                          config, outputFile ) ==
+  writeLine(stdErr, !("translating: ") ++ 
+                        actNode ++ !_(libSign) ++ !(" ...")) &
+  (\\ _ .
+  LET
+    libSignContent      == cont(get(libSourceInfos, content o sign, actNode))
+    libSignPartNames    == content2PartNames(libSignContent)
+      
+    libSignNodeName     == actNode ++ !_(libSign)
+
+    libSignNextNode     == nextModuleNode(
+                             filesAlreadyBuilt,
+                             filesToBuild,
+                             libSignNextNodeEnv,
+                             libSign,
+                             config
+                           ) 
+     
+    libSignUpNode       == libSignUpNodeEnv
+
+    libSignPrevNode     == prevModuleNodeLib(
+                             filesAlreadyBuilt,
+                             filesToBuild,
+                             libSignUpNodeEnv,
+                             libSign,
+                             config,
+                             libSourceInfos
+                           )
+
+    libSignPartName     == Signature_of_Library_(actNode)
+  
+  
+  IN
+    
+    write(outputFile, header ++ menu ++ source)
+
+  WHERE
+      
+    header ==
+      texinfo(optionalNewPage(config, actNode))
+      %
+      buildHeader(
+        env(
+          libSignNodeName,
+          libSignNextNode,
+          libSignPrevNode,
+          libSignUpNode,
+          libSignPartType,
+          libSignPartName
+        )
+      )
+  
+    menu ==
+      texinfo(
+        buildMenu(
+          strings2MenuEntries(
+            libSignPartNames,
+            partName(libSignNodeName, config)
+          ) ++
+          (IF propertiesInclude?(config, actNode) THEN
+             menuEntry(
+               actNode ++ !_(libExtp),
+               <>
+             )%
+           ELSE  
+             <>
+           FI) 
+        ) 
+      )%
+
+    source ==
+      buildBody(
+        libSignContent,
+        emptyContext,     -- no context for libs !
+        libSignNextNodeEnv,
+        libSignNodeName,
+        libSignPartType,
+        actNode,
+        config
+      )
+                   
+
+  )
+
+ 
+/* %The transformation of a single library @b{external property part} into 
+the intermediate Texinfo representation is implementented by the following function. */
+
+FUN buildLibExtp : 
+  seq[string] ** seq[string] ** seq[libSourceInfo] **  string ** partType **
+    config ** output -> com[void]
+
+DEF buildLibExtp( <>, _, _, _, _, _, _ ) == yield(okay(nil))
+DEF buildLibExtp( filesToBuild AS actNode:: _,
+                     filesAlreadyBuilt, libSourceInfos,
+                         libExtpNextNodeEnv, libExtpPartType,
+                           config, outputFile 
+    ) ==
+
+  writeLine(stdErr, !("translating: ") ++ 
+                       actNode ++ !_(libExtp) ++ !(" ...")) &
+  (\\ _ .
+  LET
+    libExtpContent      == cont(
+                             get(
+                               libSourceInfos,
+                               (content o cont) o extProp, 
+                               actNode
+                             )
+                           )
+
+    libExtpPartNames    == content2PartNames(libExtpContent)
+      
+    libExtpNodeName     == actNode ++ !_(libExtp)
+
+    libExtpNextNode     == nextModuleNode(
+                             filesAlreadyBuilt,
+                             filesToBuild,
+                             libExtpNextNodeEnv,
+                             libExtp,
+                             config
+                           )
+
+    libExtpUpNode       == actNode ++ !_(libSign)
+
+    libExtpPrevNode     == prevModuleNodeLib(
+                             filesAlreadyBuilt,
+                             filesToBuild,
+                             actNode ++ !_(libSign),
+                             libExtp,
+                             config,
+                             libSourceInfos
+                           )
+
+    libExtpPartName     == External_Property_Part_of_Library_(actNode)
+  
+  
+  IN
+
+    write(outputFile, header ++ menu ++ source)
+
+  WHERE
+        
+    header ==
+      texinfo(optionalNewPage(config, actNode))
+      %
+      buildHeader(
+        env(
+          libExtpNodeName,
+          libExtpNextNode,
+          libExtpPrevNode,
+          libExtpUpNode,
+          libExtpPartType,
+          libExtpPartName
+        )
+      )
+  
+      menu ==
+        texinfo(
+          buildMenu(
+            strings2MenuEntries(
+              libExtpPartNames,
+              partName(libExtpNodeName, config)
+            )
+          )
+        )%
+
+      source ==
+        buildBody(
+          libExtpContent,
+          emptyContext,     -- no context for libs !
+          libExtpNextNodeEnv,
+          libExtpNodeName,
+          libExtpPartType,
+          actNode,
+          config
+        )
+  )  
+
+
+
+

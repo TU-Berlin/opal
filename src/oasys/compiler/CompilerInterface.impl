@@ -1,0 +1,253 @@
+IMPLEMENTATION CompilerInterface
+
+IMPORT  Set             COMPLETELY
+        SetConv         COMPLETELY
+        Seq             COMPLETELY
+        SeqFilter       COMPLETELY
+        Nat             COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        ComSeqReduce    COMPLETELY
+        File            COMPLETELY
+        FileName        COMPLETELY
+        Pair            COMPLETELY
+        Void            COMPLETELY
+        Fmt             COMPLETELY
+        Option          COMPLETELY
+        Denotation      COMPLETELY
+
+IMPORT  Cmdtable[denotation] COMPLETELY
+        ArgspecBasic    COMPLETELY
+        ArgspecOp       COMPLETELY
+        ArgspecCompose  COMPLETELY
+
+IMPORT  Compile         COMPLETELY
+        Check           COMPLETELY
+        Exec            COMPLETELY
+        Increment 	COMPLETELY
+        Link 		COMPLETELY
+	Archive		COMPLETELY
+
+IMPORT  RepoCom         COMPLETELY
+        RepoCom1        COMPLETELY
+        RepoGlobalAccess COMPLETELY
+        RepoUnitAccess  COMPLETELY
+        RepoObjectAccess COMPLETELY
+        RepoNameConv    COMPLETELY
+        RepoEvent       COMPLETELY
+        RepoDiag        COMPLETELY
+        RepoAbsy        COMPLETELY
+	RepoAdmin	COMPLETELY
+
+IMPORT  OasysCmdtable   COMPLETELY
+       SeqReduce COMPLETELY
+       RepoFocus ONLY focus? focus
+       SetMap ONLY *
+       SetReduce ONLY /
+       ComState COMPLETELY
+       ComAction ONLY done
+
+DEF initCompiler ==
+    register(compilerCmdtable)
+
+DEF finitCompiler ==
+    succeed(nil)
+
+
+FUN compilerCmdtable : cmdtable[denotation]
+DEF compilerCmdtable ==
+
+    cmd(lit("oasys-check") o *(unitNameSpec) & 2nd & asSet @ check,
+        "Check units"
+    )
+    ++
+    cmd(lit("oasys-compile") o *(unitNameSpec) & 2nd & asSet @ compile,
+        "Compile units"
+    )
+    ++
+    cmd(lit("oasys-intern-editable") o ?(lit("+") | lit("-") | lit("~") | lit("=") | lit("?")) & 2nd o *(unitNameSpec) @ editable,
+        "add, subtract, toggle (default), set, query editable units" ++
+        "\n default unit is current focus"
+    )
+--    ++
+--    cmd(lit("oasys-linker-args") o ?(lit("+") | lit("=") | lit("?")) & 2nd o *(var("ARG")) @ linkerArgs,
+--       "append, set (default), query current linker arguments"
+--  )
+    ++
+    cmd(lit("oasys-link") o objectNameSpec & 2nd o ?(var("EXEC-NAME")) @ linker,
+        "link top-level command to executable EXEC-NAME. If EXEC-NAME is\n" ++
+	"omitted, use name of top-level command."
+    )  
+    ++
+    cmd(lit("oasys-archive") o ?(var("FOLDER-NAME")) & 2nd @ archiver,
+        "create object-archive for use with the ocs-command for the given FOLDER-NAME.\n" ++
+        "FOLDER-NAME is the base name of the source path.\n" ++
+        "If FOLDER-NAME is omitted, archives are created for all folders."
+    )  
+    ++
+    cmd(lit("oasys-intern-increment") o var("ITEM") & 2nd o *(var("ITEMCONT"))
+        @ increment,
+        "increment focussed unit by items, if it is editable (see oasys-editable)"
+    )
+    /*
+    ++
+    cmd(lit("oasys-run") o var("NAME") & 2nd @ run,
+        "Run object"
+    )
+    ++
+    cmd((lit("oasys-echeck") o unitNameSpec & 2nd) o var("<TEXT>") @ echeck,
+        "Check expression"
+    )
+    */
+
+
+FUN check : set[unitName,<]     -> com[denotation]
+DEF check(Us) ==
+    upd(\\R.
+        IF {}?(Us) THEN 
+            checkUnits(units(R))(R)
+        ELSE 
+            checkUnits(Us)(R)
+        FI
+    )                                           & (\\ _ .
+    succeed("")
+    )
+
+FUN compile : set[unitName,<]   -> com[denotation]
+DEF compile(Us) ==
+    upd(\\R.
+        IF {}?(Us) THEN 
+            compileUnits(units(R))(R)
+        ELSE 
+            compileUnits(Us)(R)
+        FI
+    )                                           & (\\ _ .
+    succeed("")
+    )
+
+/*
+FUN run : objectName    -> com[denotation]
+DEF run(O) ==
+    upd(callObject(O, <>, <>, stdIn, stdOut, stdErr))
+                                                & (\\ _ .
+    succeed("")
+    )
+*/
+
+FUN echeck : pair[unitName,denotation]  -> com[denotation]
+DEF echeck(U & Text) ==
+    queryUpd(checkExpr(U, {}, Text))            & (\\ Res .
+    diag(diag(Res))                             & (\\ _ .
+    IF ok?(diag(Res)) THEN
+        succeed(pretty(fmtExpr(expr(Res))))
+    ELSE succeed("not ok") FI
+    ))
+
+FUN editable: pair[option[denotation], seq[unitName]] -> com[denotation]
+DEF editable(op0 & units0) ==
+  LET units1 == asSet(units0)
+      op == cont("~")(op0)
+  IN
+  (IF units1 {}? THEN focus & (\\f. succeed(%(f)))
+   ELSE succeed(units1) FI) & (\\ units. 
+  IF op = "+" THEN
+    query(\\R. addEditableUnits(units)(R)) & (\\unUsed.
+    asDeno(unUsed) & (\\ t.
+    succeed(IF unUsed {}? THEN t ELSE "cannot make editable " ++ t FI)
+    ))
+  IF op = "-" THEN subEditableUnits(units) & succeed("")
+  IF op = "=" THEN 
+    clearEditableUnits & (\\ _ . 
+    query(\\R. addEditableUnits(units)(R)) & (\\unUsed.
+    asDeno(unUsed) & (\\ t.
+    succeed(IF unUsed {}? THEN t ELSE "cannot make editable " ++ t FI)
+    )))
+  IF op = "~" THEN
+    editableUnits & (\\ curr.
+    subEditableUnits(curr * units) & (\\ _ .
+    query(\\R. addEditableUnits(units - curr)(R)) & (\\unUsed.
+    asDeno(unUsed) & (\\ t.
+    succeed(IF unUsed {}? THEN t ELSE "cannot make editable " ++ t FI)
+    ))))
+  IF op = "?" THEN succeed("")
+  FI) & (\\ res1.
+  editableUnits & (\\ us.
+  asDeno(us) & (\\res2.
+  succeed(+/+("\n")(res1, "current set: " ++ res2))
+  )))
+
+FUN asDeno: set[unitName, <] -> com[denotation]
+DEF asDeno(unUsed) ==
+    IF ~({}?(unUsed)) THEN
+      query(\\R. (+/+(" "), "") /[denotation,<,denotation]
+            (\\u. asDeno(symbolic)(u)(R)) * unUsed) 
+    ELSE
+      succeed("")
+    FI
+    
+FUN increment: pair[denotation, seq[denotation]] -> com[denotation]
+DEF increment(1st & rst) ==
+  LET txt == (+/+(" "), "") / (1st :: rst)
+  IN
+  focus? & (\\ fU.
+  IF nil?(fU) THEN
+    succeed("no focus selected")
+  IF avail?(fU) THEN
+    LET u == cont(fU)
+    IN
+    editable?(u) & (\\ ok? .
+    IF ~(ok?) THEN succeed("focus is not editable")
+    ELSE
+      upd(increment(u, txt)) &
+      succeed("")
+    FI
+    )
+  FI
+  )
+
+
+FUN linkerArgs: stateId[seq[denotation]]
+DEF linkerArgs == EXEC(stateId(<>))
+
+
+FUN linkerArgs: pair[option[denotation], seq[denotation]] -> com[denotation]
+DEF linkerArgs(op0 & args) ==
+  LET op == cont("=")(op0)
+  IN
+  (
+  IF op = "=" THEN linkerArgs => (\\ _ . args)
+  IF op = "+" THEN linkerArgs => (\\ old. old ++ args)
+  IF op = "?" THEN done
+  FI
+  ) & (
+  get(linkerArgs) & (\\ curr.
+  succeed("current linker args: " ++ (+/+(" "), "")/curr)
+  ))
+
+FUN linker: pair[objectName, option[denotation]] -> com[denotation]
+DEF linker(oN & ExecName?) ==
+  get(linkerArgs) & (\\ LArgs.
+  upd(\\R.
+    LET ExecName == IF avail?(ExecName?) THEN cont(ExecName?)
+                                         ELSE symbol(oN)(R) FI
+    IN
+    linkObject(oN, LArgs, ExecName)(R)
+  ) & succeed("")
+  )
+
+FUN archiver: option[denotation] -> com[denotation]
+DEF archiver(FolderName?) ==
+    query(\\R.
+      (\\F. IF ocsFolder?(kind(F)) THEN
+                IF nil?(FolderName?) THEN true
+                ELSE cont(FolderName?) = 
+			            baseName(dirName1(sourcePath(F))) FI
+	    ELSE false FI)
+	| searchPath(R))				& (\\ Folders.
+    IF <>?(Folders) THEN
+       succeed("no folders matching given name")
+    ELSE
+       ((\\F, _ . upd(archiveFolder(F)), nil) /& Folders)
+                                      & succeed("")
+    FI
+    )

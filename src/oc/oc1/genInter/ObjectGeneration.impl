@@ -1,0 +1,388 @@
+IMPLEMENTATION ObjectGeneration
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+/* %-
+-- ============================================================================
+-- Autor:       ralfi
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Uebersetzung der analysierten Quelle nach InterOpal
+--              Eintragen von Objekten in InterOpal
+-- ============================================================================
+*/
+
+IMPORT  InterOpal       COMPLETELY
+        EnvIO           COMPLETELY
+        InterOpalOption ONLY    printInterOpal? dump? ioObj? ioName? ioInst?
+        BaseGeneration  ONLY    updateObject updateStruct pos updateOnlys = rep2Ident rep2LawIdent  importPos updateInst
+                                updateObjPos updateProp addPragma
+        ImplGeneration  ONLY    impl2Impl
+        PropGeneration  ONLY    impl2Prop form2Form
+        NameGeneration  ONLY    name2Name 
+        FctGeneration   ONLY    kind2Kind
+-- OC
+        AGSig           ONLY    freeType:globSig**name->impl'GlobSigImpl formalParams
+                                uninst?
+        AnalyzedGlobSig ONLY    globSig complete minimal standard level theory?
+                                no:globSig**name->nat ` rep local? 
+                                impl:globSig**name->impl'GlobSigImpl
+                                locSig:SORT none? internal? sort? global? 
+                                data?
+                                freeType:globSig**name->impl'GlobSigImpl
+        GlobSigImpl     ONLY    impl:SORT
+        GlobPragma      COMPLETELY
+        Rep             ONLY    rep ` generated? predefinedStr? = theory
+        Name            ONLY    name < intName? decl extName? struct impDecl `
+        Impl            ONLY    formula law
+        Fct[name'Name]  ONLY    fct
+        TableFun2 ONLY /
+-- lib
+        DEBUG           ONLY    PRINT FIELD?
+        String          ONLY    string
+        Seq             ONLY    ++ seq <> :: % exist? <>? ft #
+        Denotation      ONLY     ++ =
+        Map             ONLY    map {} def ! def? codom
+        SeqFilter       ONLY    |
+        SeqReduce       ONLY    / \
+        SeqMap          ONLY    *
+        SeqReduce       ONLY    /
+        Set[name'Name,<] COMPLETELY
+        SetConv[name'Name,<] ONLY       asSet asSeq
+        
+        SetReduce[name'Name,<,envIO]
+                        ONLY    /
+        SetMap          ONLY    *
+        Option          ONLY    avail option nil avail? cont
+       SeqMapEnv ONLY *
+       Pos ONLY lin col
+       Pair ONLY pair & 1st 2nd
+       ABORT ONLY ABORT
+       Nat ONLY 1 = nat 0
+       GlobSig ONLY decls structures  pragmas structIde
+       ImpExpEntry ONLY structE impDecls impDeclE op? closedOp? spc structIde param? paramTrans?
+       DeclEntry ONLY op? spc declE
+       Table ONLY table !
+       Objects ONLY no decl impDecl struct inst sortPN instPN
+       PartNameEntry ONLY errInfo:SORT ide
+       ImpDecl4SigAna ONLY notParametrized?
+       Compose ONLY o
+       NatConv ONLY `
+       PairConv ONLY `
+       SeqConv ONLY `
+       BoolConv ONLY `
+       Lexem ONLY theory lexem
+
+FUN addLaw          : globSig -> law[name'Name] ** locSig ** ident ** envIO 
+                                -> envIO
+DEF addLaw(Sig:globSig) == addLaw(main)(Sig)
+
+
+FUN addLaw: origin -> globSig -> pair[law[name'Name], locSig] ** envIO -> envIO
+DEF addLaw(orig)(Sig)(l & lS, envIO) ==
+  addLaw(orig)(Sig)(l, lS, ident(0), envIO)
+
+FUN addLaw          : origin -> 
+                       globSig -> law[name'Name] ** locSig ** ident ** envIO 
+                                -> envIO
+DEF addLaw(orig)(Sig)(law(Rep,Form,Pos),LocSig,_,EnvIO AS &(interOpal(Part,_), _)) ==
+   LET  IPos    == pos(Pos,Part)
+        Sym     == -- IF "SPC" <| (Rep`) THEN avail(Rep`)
+                   -- OTHERWISE
+                   IF generated?(Rep) THEN nil 
+                   ELSE avail(Rep `) 
+                   FI 
+        Ide == rep2LawIdent(Rep)
+        Prop    == law(IPos,Ide,Sym,IForm,<>)
+        (IForm,EnvIO2)
+                == form2Form(Sig)(LocSig,Form,EnvIO)
+        IO2     == io(EnvIO2)
+        IO3     == updateStruct(orig,updateProp(Prop,structs(IO2)!orig),IO2)
+   IN &(IO3, dep(EnvIO2))
+
+FUN addInternalName : globSig -> name'Name ** envIO -> envIO
+DEF addInternalName(Sig)(NName,EnvIO) ==
+        LET 
+        (EnvIO2,IName) == name2Name(Sig)(EnvIO,NName)
+        IN add2Object(Sig,EnvIO2)(NName,IName)
+
+FUN addExternalName : globSig -> envIO ** seq[name'Name]  -> envIO
+DEF addExternalName(Sig)(IO & Deps,DN) == IO & (Deps + asSet(DN))
+
+FUN addAllDependExtNames : globSig -> envIO  -> interOpal
+-- traegt alle abhangigen Objekte aus envIO in InterOpal ein
+-- doppelte werden durch set geloescht
+-- neue daraus entstehende Abhaengigkeiten werden durch dn rekursiven Aufruf
+-- behandelt
+DEF addAllDependExtNames(Sig)(&(IO,NNames))== 
+IF NNames {}? THEN IO
+ELSE
+  LET   EnvIO   == /(addExternalNameH(Sig),&(IO, {}))(NNames)
+        DepNames == dep(EnvIO)
+        RestSet == DepNames - NNames
+  IN addAllDependExtNames(Sig)(&(io(EnvIO), RestSet))
+FI
+
+-- %@zoindex noUninstReexport
+FUN addExternalNameH : globSig -> name'Name ** envIO -> envIO
+-- traegt den Namen in die Importliste ein und in die Objektliste
+DEF addExternalNameH(Sig)(NName,EnvIO) ==
+  IF FIELD?[bool]("-znoUninstReexport") ANDIF uninst?(Sig,NName) THEN
+        EnvIO
+  ELSE
+  LET   (EnvIO1,IName)  == name2Name(Sig)(EnvIO,NName)
+        EnvIO2          == &(add2Only(EnvIO1 io)(IName),EnvIO1 dep)
+        EnvIO3          == add2Object(Sig,EnvIO2)(NName,IName)
+  IN EnvIO3 -- io(EnvIO3) & excl(NName, dep(EnvIO3))
+  FI 
+
+FUN add2Only: interOpal -> name'InterOpal -> interOpal
+-- PRE name external
+-- fuegt den Namen in die Importliste ein
+-- (Importliste erzeugen, auffuellen bzw. nichts machen)
+DEF add2Only(IO AS interOpal(_,Structs))(Name AS name(_,Origin,Inst)) ==
+IF Origin main? THEN IO
+IF Origin local? THEN IO
+ELSE
+  LET   Struct  == Structs!Origin
+        Onlys   == onlys(Struct)
+        (SNames, Change)  == 
+                   IF Inst def? Onlys
+                   THEN LET SNm == Onlys!Inst
+                        IN IF exist?(=(Name),SNm) THEN (SNm, false)
+                           ELSE (Name :: SNm, true) FI
+                   ELSE (Name%, true) FI
+  IN IF Change THEN 
+        updateStruct(Origin,updateOnlys(Inst,SNames,Struct),IO)
+     ELSE IO FI
+FI
+
+FUN add2Object: globSig ** envIO -> name'Name ** name'InterOpal -> envIO
+DEF add2Object(Sig,EnvIO AS &(interOpal(_,Structs),_))
+        (NName,Name AS name(Ident,Origin,_)) ==
+--      LET 
+--        NName == PRINT(true, "add2Object/name'Name:" ++ `(NName0), NName0)
+--    IN
+  LET   Objects == objs(Structs!Origin)
+        Symbol  == (rep(Sig,NName))`
+        Def? == def?(Ident,Objects)
+  IN 
+      IF ~(Def?) THEN 
+      LET 
+--        NName1 == PRINT(true, "add2Object/name'Name:" ++ `(Sig,standard)(NName), NName)
+         NName1 == NName
+        Name1 == Name
+        (EnvIOOut,Pos,Kind,Def,Props)
+                == lookupPosKindImplProp(Sig)(EnvIO)(NName1,Name1,Origin)
+        Object  == object(Pos,Ident,Symbol,Kind,Def,Props,<>)
+        Struct  == (structs(EnvIOOut io))!Origin
+      IN &(updateStruct(Origin,updateObject(Object,Struct),EnvIOOut io),
+                EnvIOOut dep)
+-- %@zoindex znoioOverwrite
+      ELSE IF ~(FIELD?[bool]("-znoioOverwrite")) ANDIF internal?(NName) THEN
+      LET 
+        (EnvIOOut,Pos,Kind,Def,Props)
+                == lookupPosKindImplProp(Sig)(EnvIO)(NName,Name,Origin)
+        (OldDef, OldProp, OldPragmas)  == 
+                LET OldObj == Objects!Ident
+                IN (def(OldObj), props(OldObj), pragmas(OldObj))
+        NewProp == IF Props <>? THEN OldProp ELSE Props FI 
+        NewDef  == IF Def missing? THEN OldDef ELSE Def
+                   FI
+        NewPragmas == OldPragmas
+        Object  == object(Pos,Ident,Symbol,Kind,NewDef,NewProp, NewPragmas)
+        Struct  == (structs(EnvIOOut io))!Origin
+      IN &(updateStruct(Origin,updateObject(Object,Struct),EnvIOOut io),
+                EnvIOOut dep)
+      ELSE EnvIO FI
+      FI
+
+FUN lookupPosKindImplProp : globSig -> envIO -> 
+        name'Name ** name'InterOpal ** origin ->
+        envIO ** seq[pos'InterOpal] ** kind ** impl'InterOpal ** seq[ident]
+DEF lookupPosKindImplProp(Sig)(EnvIO AS &(interOpal(Part,_),_))
+                                        (NName,Name,Origin) ==
+  LET   Pos     == pos(Sig,NName,Part)
+                -- auch fuer externe Namen ok
+        (EnvIO1,Kind)
+                == kind2Kind(Sig)(EnvIO,NName)
+        (EnvIO2,Def)
+                == impl2Impl(Sig,NName)
+                        (EnvIO1,impl(Sig,NName))
+        (EnvIO3,Props)
+                == IF (Def data?) and (NName internal?) THEN
+                        lookupInternalProp(Sig)(EnvIO2,NName,Name)
+                   OTHERWISE
+                   IF   (NName global?) and sort?(Sig,NName) THEN
+                        lookupExternalProp(Sig)(EnvIO2,NName,Name)
+                   ELSE (EnvIO2,<>) FI
+        Props2 == IF NName intName? THEN
+                    LET
+                      entry == no(decl(NName)) ! decls(Sig)
+                    IN
+                    IF entry op? ANDIF avail?(spc(entry)) THEN
+                      rep2LawIdent(cont(spc(entry))) :: Props 
+                    ELSE
+                      Props
+                    FI
+                  IF NName extName? THEN
+                    LET
+                      eStruct == no(struct(NName))!structures(Sig)
+                      entry ==  no(impDecl(NName)) ! impDecls(eStruct)
+                    IN
+                    IF (entry op?) or (entry closedOp?) ANDIF
+                         avail?(spc(entry)) THEN
+                      rep2LawIdent(cont(spc(entry))) :: Props 
+                    ELSE
+                      Props
+                    FI
+                  ELSE
+                    Props
+                  FI
+  IN (EnvIO3,Pos,Kind,Def,Props2)   
+
+FUN lookupInternalProp : globSig -> envIO ** name'Name ** name'InterOpal ->
+                        envIO ** seq[ident]
+DEF lookupInternalProp(Sig)(EnvIO,NName,Name AS name(_,main,_)) ==
+  LET   ImplInst        == freeType'AnalyzedGlobSig(Sig,NName)
+  IN    IF ImplInst data? THEN 
+                  LET   (EnvIO1, Prop)  == impl2Prop(Sig,Name)(EnvIO,ImplInst)
+                        Struct          == (structs(EnvIO1 io))!main
+                  IN (&(updateStruct(main,updateProp(Prop,Struct),EnvIO1 io),
+                                EnvIO1 dep),ident(Prop)%)
+        ELSE (EnvIO,<>)
+        FI
+
+FUN lookupExternalProp : globSig -> envIO ** name'Name ** name'InterOpal ->
+                        envIO ** seq[ident]
+DEF lookupExternalProp(Sig)(EnvIO,NName,Name AS name(_,Origin,_)) ==
+  LET   ImplInst        == freeType'AnalyzedGlobSig(Sig,NName)
+        ImplUninst      ==  freeType'AGSig(Sig,NName)
+  IN    IF ImplInst data? THEN 
+                  LET   (EnvIO1, _)     == impl2Prop(Sig,Name)(EnvIO,ImplInst)
+                        (EnvIO2, Prop)  == impl2Prop(Sig,Name)(EnvIO1,ImplUninst)
+                        Struct          == (structs(EnvIO2 io))!Origin
+                  IN (&(updateStruct(Origin,updateProp(Prop,Struct),EnvIO2 io),
+                                EnvIO2 dep),ident(Prop)%)
+        ELSE (EnvIO,<>)
+        FI
+
+-- FUN addGlobPragma: globSig ** part -> globPragma ** envIO -> envIO
+DEF addGlobPragma(gS, part)(gP,EnvIO) == 
+  LET ok? == \\p. IF #(pragS(p)) = 1 ANDIF lexem?(ft(pragS(p))) THEN
+                    ide(ft(pragS(p))) = theory
+                  ELSE
+                    false
+                  FI
+  IN
+  PRINT(FIELD?[bool]("-zaddGlobPragma"),
+        (\\ . " adding pragmas of main@" ++ ` (structIde(gS)) ++ "thy?:" ++ 
+        `(exist?(ok?, pragmas(gS)))),
+        addGlobPragma(main, exist?(ok?, pragmas(gS)))(gS, part)(gP, EnvIO))
+
+-- FUN addGlobPragma: origin ** bool -> globSig ** part -> globPragma ** envIO -> envIO
+DEF addGlobPragma(Str, thy?)(Sig,Part)(prag(PragS), EnvIO) == 
+  LET (EnvIO2, PragS2) == (pItem2PItem(Sig,Part), EnvIO) * PragS
+      nStr == addPragma(pragma(PragS2), structs(io(EnvIO2))!Str)
+      nIO == updateStruct(Str, nStr, io(EnvIO2))
+      nDeps0 == dep(EnvIO2) -- IF thy? THEN dep(EnvIO2) ELSE dep(EnvIO) FI
+      nDeps == PRINT(FIELD?[bool]("-zaddGlobPragma"),
+                     "addGlobPragma thy? = " ++ `(thy?), nDeps0)
+  IN
+  nIO & nDeps
+
+-- FUN addImpPragma: globSig ** part ->
+--                   pair[rep, seq[globPragma]] ** envIO -> envIO
+DEF addImpPragma(Sig, Part)(r & globPS, EnvIO) ==
+  LET str == findStructs(Sig, r) -- (\\ x. symbol(x) = (r`)) | codom(structs(io(EnvIO)))
+      orig == IF str <>? THEN ABORT("addImpPragma'ObjectGeneration: no structure named `" ++ (r`) ++ "' found")
+              IF #(str) = 1 THEN 2nd(ft(str))
+              ELSE ABORT("addImpPragma'ObjectGeneration: found several structures named `"  ++ (r`) ++ "'")
+              FI
+       EnvIO2a == createEmptyStruct(Sig, EnvIO)(orig, 1st(ft(str)))
+       EnvIO2 == PRINT(FIELD?[bool]("-zaddGlobPragma"),
+                       \\ . " adding pragmas of " ++ (r`) ++
+                       " thy?: " ++ `(theory?(Sig)(r)),
+                       EnvIO2a)
+  IN
+  (addGlobPragma(orig, theory?(Sig)(r))(Sig,Part), EnvIO2) \ globPS
+
+DEF addImpLaw(Sig)(r & laws, EnvIO) ==
+/* %-  IF predefinedStr?(r) THEN EnvIO
+  ELSE
+*/
+    LET str == findStructs(Sig, r) -- (\\ x. symbol(x) = (r`)) | codom(structs(io(EnvIO)))
+        orig == IF str <>? THEN ABORT("addImpLaw'ObjectGeneration: no structure named `" ++ (r`) ++ "' found")
+                IF #(str) = 1 THEN 2nd(ft(str))
+                ELSE ABORT("addImpLaw'ObjectGeneration: found several structures named `"  ++ (r`) ++ "'")
+                FI
+       EnvIO2 == createEmptyStruct(Sig, EnvIO)(orig, 1st(ft(str)))
+    IN
+    (addLaw(orig)(Sig), EnvIO2) \ laws
+-- %-  FI
+
+FUN pItem2PItem: globSig ** part ->
+                  envIO ** pragmaItem'GlobPragma[name'Name] ->
+                  envIO ** pragmaItem'InterOpal
+
+DEF pItem2PItem(Sig,_)(EnvIO, identify(Obs)) ==
+  LET (EnvIO2, Obs2) == (name2Name(Sig), EnvIO) * Obs
+  IN
+  (EnvIO2, objects(Obs2))
+
+DEF pItem2PItem(_,Part)(EnvIO, lexem(Ide, Pos)) ==
+  (EnvIO, token(pos(Part, lin(Pos), col(Pos)), Ide`))
+
+-- %@zoindex findStructs
+FUN findStructs: globSig ** rep -> seq[pair[bool,origin]]
+DEF findStructs(gS, vgl) ==
+  LET f == \\ no:nat, sE, found. IF ide(structIde(sE)) = vgl THEN
+                               (~(notParametrized?(gS, sE))) & origin(no) ::
+                               found
+                             ELSE
+                               found
+                             FI
+      res == (f / <>)(structures(gS))
+   IN
+   PRINT(FIELD?[bool]("-zfindStructs"),
+         \\ . "findStructs: Results for " ++ (vgl`) ++
+              ":" ++ `(`(`, ` o no))(res),
+              res)
+
+-- %origin nicht local oder main
+FUN createEmptyStruct: globSig ** envIO -> origin ** bool -> envIO
+DEF createEmptyStruct(Sig, EnvIO AS &(IO AS interOpal(_,Structs),DN))
+                     (Origin AS origin(no), param?) ==
+  IF Origin def? Structs THEN 
+    PRINT(ioInst?, \\ . "createEmptyStruct/found: " ++ ((ide(structIde(no ! structures(Sig))))`), EnvIO)
+  ELSE
+    LET  
+      OPos    == importPos(Sig,no)
+      OOrigin == Origin
+      OSymbol == (ide(structIde(no ! structures(Sig))))`
+      OSNames == formalParams(Sig,no)
+      OInsts  == IF param? THEN {} ELSE def(none,<>,{}) FI 
+                 -- formale geht erst spaeter
+      OImport == {}
+      OObjs   == {}
+      OProps  == {}            
+      OPragmas == PRINT (ioInst?, \\ . "createEmptyStruct/new: " ++ OSymbol, <>)
+      OStruct == struct(OPos,OOrigin,OSymbol,OInsts,
+                        OImport,OObjs,OProps,OPragmas)
+      IO2     == updateStruct(Origin,OStruct,IO)
+    IN
+    IF ~(param?) THEN 
+      &(IO2,DN)
+    ELSE
+      -- + formale Parameter: passiert automatisch
+      LET 
+        (EnvIO2,SName) == *(name2Name(Sig), &(IO2,DN),OSNames)
+        (IOLoc,DN2) == (EnvIO2 io,EnvIO2 dep)
+        Struct  == structs(IOLoc)!Origin
+      IN 
+      &(updateStruct(PRINT(ioInst?,\\ . "update formal" ++ OSymbol,Origin),
+                     updateInst(formal,SName,Struct),IOLoc),
+        DN2+asSet(OSNames))
+    FI
+  FI

@@ -1,0 +1,64 @@
+IMPLEMENTATION Distributor
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:27 $ ($Revision: 1.1.1.1 $)
+
+-- %$Imports$
+IMPORT ComService ONLY sap @ =>
+       Seq ONLY seq <> ::
+       SeqMap ONLY *
+       SeqReduce ONLY /
+       ComCompose ONLY &
+       ComChoice ONLY +
+       ComAgent ONLY agent
+       Com ONLY com succeed
+       Void ONLY void nil
+       ComMap[sap[void, data], distOut] ONLY *
+       ComAction ONLY done
+
+-- %$Sort dist and Constructors$
+
+DATA dist == dist(input: sap[data, void],
+                  register: sap[void, distOut])
+
+DEF dist == sap[data, void] & (\\ input.
+            sap[void, distOut] & (\\ register.
+            LET m == dist(input, register) 
+            IN
+            agent(distAgent(m, <>)) & (\\ _ .
+            succeed(m)
+            )))
+
+-- %$Input$
+
+DEF dist emit d == agent(input(dist) @ d) & done
+
+-- %$Output$
+DATA distOut == distOut(output: sap[void, data])
+
+DEF register(dist) == register(dist) @ nil
+
+DEF await(mO) == output(mO) @ nil
+
+-- %$The associated agent$
+FUN distAgent: dist ** seq[distOut] -> com[void]
+DEF distAgent(dist, clients) ==
+  ((input(dist) => supply(clients)) & ( \\ _ .
+   distAgent(dist, clients)
+  ))
+  +
+  ((register(dist) => newMuxOut) & ( \\ new .
+   distAgent(dist, new :: clients)
+  ))
+
+FUN supply: seq[distOut] -> data -> com[void]
+DEF supply(clients)(d) ==
+  LET cmd == \\ mO. output(mO) => (\\ _ . succeed(d))
+      ag == \\c. agent(c) & done
+  IN (&, done) / ag * cmd * clients
+
+FUN newMuxOut: void -> com[distOut]
+DEF newMuxOut(nil) == distOut * sap[void, data] 
+                        

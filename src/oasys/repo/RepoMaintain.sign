@@ -1,0 +1,126 @@
+/* % This structure provides operations for creating, saving, opening
+and closing the repository, and for registering units. */
+
+SIGNATURE RepoMaintain
+
+IMPORT	Seq[folder]			ONLY seq:SORT
+	Void				ONLY void:SORT
+	Com[void]			ONLY com:SORT
+	Com[repo]			ONLY com:SORT
+	Set[unitName,<]			ONLY set:SORT
+
+IMPORT	Repo				ONLY repo:SORT
+	RepoName			ONLY unitName:SORT 
+					     < : unitName ** unitName -> bool
+	RepoAdmin			ONLY folder:SORT
+		
+
+-- %$Creating and Saving Repositories$ =====================================
+
+/* % The command @code{newRepo(Path)} creates a new repository located
+at the given @code{Path}. The default source directory for the
+repository is the directory name of @code{Path}. */
+
+FUN newRepo		: denotation		 -> com[repo]
+
+
+/* % The command @code{openRepo(Path)} opens a repository to be found
+under @code{Path}; the default source directory for the repository is
+the directory name of @code{Path}. This command examines the OS
+environment to re-establish a state as it was saved with
+@code{saveRepo(R)} described below. The command fails if units
+belonging to the saved repository cannot be located in the current OS
+environment [discuss].	After sucessfull opening of a repository, all
+source files maintained by the repository are set to `read-only' on
+the OS level. An arbitrary number of units may be outdated w.r.t. the
+checking and the compilation state. */
+
+FUN openRepo		: denotation		  -> com[repo]
+
+
+/* % The command @code{saveRepo(Path)(R)} saves the state of a
+repository. Modified sources and intermediate files stored internally
+in the repository are made permanent in their subsystems. A
+description of the current state is written to the file @code{Path},
+which contains the following information:
+
+@itemize @bullet
+
+@item Any annotations belonging to the repository as a whole
+
+@item The names of all registered units including their annotation
+
+@item The search path
+
+@end itemize
+*/
+
+FUN saveRepo		: denotation		 -> repo -> com[repo]
+
+
+/* % The command @code{closeRepo(Path)(R)} closes the repository after
+saving its state. Any locks on source files are released. After
+closing, the given repository @code{R} must not be used further. The
+command @code{forgetRepo(R)} also closes the repository, but doesn't
+performs a save. */
+
+FUN closeRepo		: denotation		-> repo -> com[void]
+FUN forgetRepo		:			   repo -> com[void]
+
+
+/* % Resetting the search path of a repository behaves like re-opening
+the repository in a new OS context. It can fail because of missing
+sources of structures. The repository returned by this command should
+be considered to be completely loaded anew; information kept in an
+application about the old repository is invalid.  */
+
+FUN resetSearchPath	: seq[folder]		-> repo -> com[repo]
+
+
+
+-- %$Registering Structures$ ================================================
+
+/* % To register a structure in the repository, the command
+@code{registerStructure(Symbol, Force)(R)} is used. This command does nothing
+if the unit already exists in the repository. It otherwise tries to
+locate both parts of unit @code{Name} in the search path (the parts
+must belong to the same system), analysizes their source, and
+establishes their initial state (checked or compiled). If @code{Force}
+is true and the structure cannot be located, then new units are created
+belonging to the default system. This command also recursively registers 
+any imports belonging to the parts of structure @code{Name}; however, 
+recursive registering is performed with setting @code{Force} to false.
+
+The command fails if any of the (recursively) registered units cannot
+be located. On failure, according diagnostic events will be produced. 
+For any newly created units and newly loaded source, abstract syntax
+or object according events will be produced.
+*/
+			
+FUN registerStructure	: denotation ** bool  -> repo -> com[repo]
+
+/* % The command @code{reloadUnits(UnitNames)(R)} does part of
+the work done by @code{registerStructure} for an already registered and
+located unit: it checks if the source of the given unit @code{Name}
+has been changed. If so, it analysizes the source, recursively
+registers any dependencies, and checks if the absy is up-to-date.
+Events are produced as with @code{registerStructure}. */
+
+FUN reloadUnits		: set[unitName,<]     -> repo -> com[repo]
+
+FUN reloadUserUnit	: unitName -> repo -> com[repo]
+FUN reloadUserUnitObject : unitName -> repo -> com[repo]
+-- %$Requiring Optional Information About Structures$ =======================
+
+/* % @code{requireFullAbsy(U)} ensures that the full abstract syntax
+of the given unit will be available from the point of its call. 
+This command sets the @code{fullAbsy} flag, and reloads the abstract
+syntax if necessary. */
+
+FUN requireFullAbsy : unitName		     -> repo  -> com[repo]
+
+/* % Similarily, @code{requireSource(U)} ensures that the source
+of a unit will be present (if recoverable): */
+
+
+FUN requireSource   : unitName		     -> repo  -> com[repo]

@@ -1,0 +1,219 @@
+IMPLEMENTATION Bag [data,< : data**data->bool]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:02 $ ($Revision: 1.1.1.1 $)
+-- multisets, implemented via an irreflexive, total order
+
+
+
+IMPORT  Nat    	ONLY nat succ > 1 = + 0? pred 0 - min max <= <  >
+	Seq	COMPLETELY
+	SeqCompare ONLY cmp <? rel
+	ABORT   COMPLETELY
+	Pair[data, nat] COMPLETELY
+	Option ONLY option
+	OptionMap ONLY *
+
+-- the type itself
+
+DATA bag == abs(rep : seq[pair])
+
+-- non free constructors
+
+DEF {}          == abs(<>)
+
+DEF incl(E,abs(S)) == abs(insert(E,S))
+
+  FUN insert : data ** seq[pair] -> seq[pair]
+  DEF insert(E,<>) == %( E & 1 )
+  DEF insert(E, B AS (E1&N1) :: R) ==
+    IF E < E1 THEN (E&1) :: B
+    IF E1 < E THEN (E1&N1) :: insert(E,R)
+	      ELSE (E1&succ(N1)) :: R
+    FI
+
+DEF inclCt(E,N,abs(S)) == IF N 0? THEN abs(S) ELSE abs(insertCt(E,N,S)) FI
+
+  FUN insertCt : data ** nat** seq[pair] -> seq[pair]
+  DEF insertCt(E,N,<>) == %( E & N )
+  DEF insertCt(E, N, B AS (E1&N1) :: R) ==
+    IF E < E1 THEN (E&N) :: B
+    IF E1 < E THEN (E1&N1) :: insertCt(E,N,R)
+	      ELSE (E1&(N + N1)) :: R
+    FI
+
+
+-- constructing a bag from datas 
+DEF %(e) == abs(%(e&1))
+DEF %(e1, e2) == incl(e2, %(e1))
+DEF %(e1, e2, e3) == incl(e3, incl(e2, %(e1)))
+DEF %(e1, e2, e3, e4) == incl(e4, incl(e3, incl(e2, %(e1))))
+DEF %(e1, e2, e3, e4, e5) == incl(e5, incl(e4, incl(e3, incl(e2, %(e1)))))
+DEF %(e1, e2, e3, e4, e5, e6) == 
+		      incl(e6, incl(e5, incl(e4, incl(e3, incl(e2, %(e1))))))
+DEF %(e1, e2, e3, e4, e5, e6, e7) == 
+            incl(e7, incl(e6, incl(e5, incl(e4, incl(e3, incl(e2, %(e1)))))))
+DEF %(e1, e2, e3, e4, e5, e6, e7, e8) == 
+  incl(e8, incl(e7, incl(e6, incl(e5, incl(e4, incl(e3, incl(e2, %(e1))))))))
+
+-- incl see above
+DEF excl(E,abs(S)) == abs(delete(E,S))
+
+  FUN delete : data ** seq[pair] -> seq[pair]
+  DEF delete(_,<>) == <>
+  DEF delete(E,S AS (E1&N1) :: R) ==
+    IF E < E1 THEN S
+    IF E1 < E THEN (E1&N1) :: delete(E,R)
+	      ELSE IF N1 = 1 THEN R 
+		   ELSE (E1&pred(N1) :: R)
+		   FI
+    FI
+
+DEF exclAll(E,abs(S)) == abs(deleteall(E,S))
+
+  FUN deleteall : data ** seq[pair] -> seq[pair]
+  DEF deleteall(_,<>) == <>
+  DEF deleteall(E,S AS (E1& N1) :: R) ==
+    IF E < E1 THEN S
+    IF E1 < E THEN (E1&N1) :: deleteall(E,R)
+	      ELSE R
+    FI
+
+
+
+-- constructing a bag from a function
+DEF (n1 .. n2)(f) == IF n1 > n2 THEN {} 
+		     ELSE	     incl(f(n1), (succ(n1) .. n2)(f)) FI 
+
+DEF iter(start, it, P) == IF ~(P(start)) THEN {}
+			  ELSE incl(start, iter(it(start), it, P))
+			  FI 
+
+-- combining bags
+DEF S1 + S2 == abs(union(S1 rep, S2 rep))
+
+  FUN union : seq[pair] ** seq[pair] -> seq[pair]
+  DEF union(S1,<>) == S1
+  DEF union(<>,S2) == S2
+  DEF union(S1 AS (E1&N1) :: R1,S2 AS (E2&N2) :: R2) ==
+    IF E1 < E2 THEN (E1&N1) :: union(R1,S2)
+    IF E2 < E1 THEN (E2&N2) :: union(S1,R2)
+	       ELSE (E1&(N1 + N2)) :: union(R1,R2) FI
+
+DEF S1 - S2 == abs(diff(S1 rep, S2 rep))
+
+  FUN diff : seq[pair] ** seq[pair] -> seq[pair]
+  DEF diff(<>,<>) == <>
+  DEF diff(S1,<>) == S1
+  DEF diff(<>,_) == <>
+  DEF diff(S1 AS (E1&N1) :: R1,S2 AS (E2&N2) :: R2) ==
+    IF E1 < E2 THEN (E1&N1) :: diff(R1,S2)
+    IF E2 < E1 THEN diff(S1,R2)
+	       ELSE IF N1 > N2 THEN (E1 & (N1 - N2)) :: diff(R1, R2)
+		    ELSE diff(R1, R2)
+		    FI
+    FI
+
+DEF S1 * S2 == abs(isect(S1 rep, S2 rep))
+
+  FUN isect : seq[pair] ** seq[pair] -> seq[pair]
+  DEF isect(_,<>) == <>
+  DEF isect(<>,_) == <>
+  DEF isect(S1 AS (E1&N1) :: R1,S2 AS (E2&N2) :: R2) ==
+    IF E1 < E2 THEN isect(R1,S2)
+    IF E2 < E1 THEN isect(S1,R2)
+	       ELSE (E1&(min(N1,N2))) :: isect(R1,R2) FI
+
+DEF S1 U S2 == abs(unionmax(S1 rep, S2 rep))
+
+  FUN unionmax : seq[pair] ** seq[pair] -> seq[pair]
+  DEF unionmax(S1,<>) == S1
+  DEF unionmax(<>,S2) == S2
+  DEF unionmax(S1 AS (E1&N1) :: R1,S2 AS (E2&N2) :: R2) ==
+    IF E1 < E2 THEN (E1&N1) :: unionmax(R1,S2)
+    IF E2 < E1 THEN (E2&N2) :: unionmax(S1,R2)
+	       ELSE (E1&(max(N1,N2))) :: unionmax(R1,R2) FI
+ 
+-- accessing datas in a bag
+DEF arb(abs(<>)) == ABORT("arb'Bag: arb applied to empty bag")
+DEF arb(abs(p :: _)) == 1st(p)
+
+
+-- information about a bag
+DEF {}?(S)      == rep(S) <>?
+DEF e in abs(S) == search(e,S)
+
+  FUN search : data ** seq[pair] -> bool
+  DEF search(_,<>) == false
+  DEF search(E, (E1& _) :: R) ==
+    IF E < E1 THEN false
+    IF E1 < E THEN search(E,R)
+	      ELSE true FI
+
+DEF #(S)        == #(rep(S))
+
+DEF d ct S == d ct (S rep)
+    FUN ct: data ** seq[pair] -> nat
+    DEF ct(_, <>) == 0	     
+    DEF ct(d, (e&n):: r) ==
+	IF d < e THEN d ct r
+	IF e < d THEN d ct r
+	ELSE	      n
+	FI
+
+
+DEF P find? S == 1st * (\\x.P(1st(x))) find? rep(S)
+
+DEF P exist? S == (\\x.P(1st(x))) exist? rep(S)
+
+DEF P forall? S == (\\x.P(1st(x))) forall? rep(S)
+
+
+-- comparing bags
+
+DEF S1 <= S2    ==  subbag(S1 rep, S2 rep)
+DEF S1  = S2    ==  equal(S1 rep, S2 rep)
+DEF S1 <  S2 	==  propersubbag(S1 rep, S2 rep)
+
+FUN subbag : seq[pair] ** seq[pair] -> bool
+  DEF subbag(<>,<>) == true
+  DEF subbag(_,<>) == false
+  DEF subbag(<>,_) == true
+  DEF subbag(S1 AS (E1&n1) :: R1, (E2&n2) :: R2) ==
+    IF E1 < E2 THEN false
+    IF E2 < E1 THEN subbag(S1,R2)
+	       ELSE IF n1 <= n2 THEN subbag(R1, R2)
+		    ELSE false
+		    FI
+    FI
+
+FUN equal : seq[pair] ** seq[pair] -> bool
+  DEF equal(<>,<>) == true
+  DEF equal(_,<>) == false
+  DEF equal(<>,_) == false
+  DEF equal((E1&n1) :: R1, (E2&n2) :: R2) ==
+    IF E1 < E2 THEN false
+    IF E2 < E1 THEN false
+	       ELSE IF n1 = n2 THEN equal(R1,R2) 
+		    ELSE false
+		    FI
+    FI		   
+
+FUN propersubbag : seq[pair] ** seq[pair] -> bool
+  DEF propersubbag(<>,<>) == false
+  DEF propersubbag(_,<>) == false
+  DEF propersubbag(<>,_) == true
+  DEF propersubbag(S1 AS (E1&n1) :: R1, (E2&n2) :: R2) ==
+    IF E1 < E2 THEN false
+    IF E2 < E1 THEN propersubbag(S1, R2)
+	       ELSE IF n1 < n2 THEN subbag(R1, R2)
+		    IF n1 = n2 THEN propersubbag(R1, R2)
+		    IF n1 > n2 THEN false
+		    FI
+    FI
+
+
+
+

@@ -1,0 +1,186 @@
+/* %purpose:    analyze commandline options (see oc(1)), compute filenames
+*/
+-- %-  LAST EDIT: Thu Nov  4 15:53:14 1993 by maeder@cs.tu-berlin.de korso
+SIGNATURE Options
+
+/* %-
+============================================================================
+author: ws/af
+project:        opal-1/common
+purpose:        analyze commandline options (see oc(1))
+--              compute filenames
+Version:        Options.sign[3.0] accessed Mon Jan 17 20:03:59 1994
+Bytes:  4486
+
+changes: cg+af 7.6.93 included language variant options
+--                       changed handling of part (w.r.t. property language)
+--                       improvements in using option character constants
+changes: cg+af 24.6.93 included language variant options {r,l}assoc/infix
+changes: cg+af 25.6.93 incl. language variant options simpleLambda/seqGuard
+--                        renamed language variant opt. suspension to section
+changes: af 29.6.93 included options and filenames for interOpal/prop.lang.
+changes: cg 1.7.93  included option -zunderline
+changes: af 26.9.93 included filenames for dumping abtract syntax
+============================================================================
+-- Log for /home/uebb/wg/ocs/trans/ocs/src/oc/shared/admin/Options.sign[3.4]:
+--   ocs-1.0b
+-- [1.2] Wed Jul 14 02:49:25 1993 opal@cs.tu-berlin.de saved
+--   added identification string
+-- [1.3] Wed Jul 14 02:49:35 1993 opal@cs.tu-berlin.de saved
+--   support of property files and AC dump file
+--   ,
+-- [1.4] Wed Jul 14 02:49:45 1993 wg@cs.tu-berlin.de published
+--   added several language extension options (cg+af)
+--   hidden directorys replaced by single repository OCS
+--   reworked debug and optimization flags (wg)
+--   ,
+-- [2.0] Wed Jul 14 02:49:45 1993 wg@cs.tu-berlin.de accessed
+--   added several language extension options (cg+af)
+--   hidden directorys replaced by single repository OCS
+--   reworked debug and optimization flags (wg)
+--   ,
+-- [2.1] Sun Sep 26 15:08:47 1993 fetti@cs.tu-berlin.de accessed
+--   
+-- [2.2] Sun Nov  7 23:02:39 1993 maeder@cs.tu-berlin.de accessed
+--   [Thu Nov  4 15:44:58 1993] Intention for change:
+--   added Function extpExpFile to get exp- and extp.exp- file
+-- [2.3] Mon Dec 20 15:46:50 1993 wg@cs.tu-berlin.de saved
+--   Added myHcCFileTmpl myHcHFileTmpl
+-- [3.0] Mon Jan 17 20:03:59 1994 wg@cs.tu-berlin.de accessed
+--   [Mon Jan 17 19:28:20 1994] Intention for change:
+--   --- no intent expressed ---
+-- [3.1] Wed Jul 24 16:46:40 1996 maeder@cs.tu-berlin.de proposed
+--   [Mon Jul 15 14:13:57 1996] Intention for change:
+--   added command line option for location of central repository
+--   added option generation for interpreter 
+-- [3.2] Thu Sep  5 15:58:06 1996 wg@cs.tu-berlin.de proposed
+--   changes related to oasys
+-- [3.3] Wed Jul  9 10:45:48 1997 kd@cs.tu-berlin.de accessed
+--   [Fri Jun 20 11:23:17 1997] Intention for change:
+--   neue Option pchecker?
+-- [3.4] Thu Jun 11 15:47:21 1998 kd@cs.tu-berlin.de proposed
+--   [Fri May 29 16:45:28 1998] Intention for change:
+--   neue Option fuer def und data in signaturen
+============================================================================
+*/
+
+IMPORT  String                  ONLY    string
+        Char                    ONLY    char
+        Seq[denotation]         ONLY    seq
+        Nat                     ONLY    nat
+        Com[options]            ONLY    com
+        Stream                  ONLY    output
+
+SORT options
+
+FUN analyzeOptions: com[options]
+/* %the commandline is analyzed and transformed to options;
+    @samp{-...} is an option,
+    @samp{...} is a structname (s. b.)
+*/
+
+-- %analyze options from sequence of command arguments
+FUN analyzeOptionsInline : seq[denotation]      -> com[options]
+
+    -- NEED THIS IMPORT BECAUSE OF A DAMNED OC1 BUG
+--    IMPORT Com[seq[denotation]] ONLY    com
+
+FUN myStruct    : options->denotation   -- structure name
+
+-- %$general  options$
+FUN verbLevel                           -- -v[level]
+    warnLevel   : options->nat          -- -w[level]
+
+-- %$compilation modes$
+FUN 
+    sign?                               -- -s
+    impl?                               -- -i
+    extp?                               -- -E only for property language variant
+    intp?       : options->bool         -- -I only for property language variant
+
+
+-- %$language extensions $
+/* (should be abstracted in future; to avoid recompilation of
+  whole oc when a new feature is added ... wg) */
+FUN prop?                               -- -zprop
+    wildcard?                           -- -zwildcard
+    section?                            -- -zsection
+    simpleLambda?                       -- -zsimpleLambda
+    underline?                          -- -zunderline
+    seqGuard?                           -- -zseqGuard
+    rassoc?                             -- -zrassoc
+    lassoc?                             -- -zlassoc
+    infix?                              -- -zinfix
+    pchecker?                           -- -zpchecker
+    defSign?                            -- -zdefSign
+    : options->bool
+
+FUN prop?                               -- -zprop
+    wildcard?                           -- -zwildcard
+    section?                            -- -zsection
+    simpleLambda?                       -- -zsimpleLambda
+    underline?                          -- -zunderline
+    seqGuard? : bool                    -- -zseqGuard
+
+FUN rassoc?                             -- -zrassoc
+    lassoc?                             -- -zlassoc
+    infix?                              -- -zinfix
+    pchecker?                           -- -zpchecker
+      : bool  
+
+
+-- %$optimization kinds$
+FUN optimKind?  : char ** options -> bool
+                                        -- -o12eucmpgTS
+                                        --   1,2 are aliases, which is
+                                        --   actually expanded
+    busy?       : denotation**options->bool     -- -b 
+
+-- %$debugging kinds$
+FUN debugKind?  : char ** options -> bool
+                                        -- -otTd
+
+
+-- %$z-options$
+FUN cop?        : denotation**options->bool -- -z[text]
+
+
+-- %$misc$
+FUN interOpal? : options->bool          -- -zinterOpal
+    onlyParse? : options->bool          -- -zonlyParse
+    doNotParse?: options->bool          -- -zdoNotParse
+
+-- %$filenames$
+-- %return my complete filename
+FUN myFile                              -- sign or impl or extp or intp 
+                                        -- OPAL file
+    myDepFile                           -- sign or impl or extp or intp
+                                        -- dep(endency) file
+    myDiagFile                          -- sign or impl or extp or intp
+                                        -- diag(nostic) file
+    myAnaFile                           -- ana(lyzed) file
+    myExpFile                           -- exp(ort) file to be written
+    mySignExpFile                       -- export file of signature part
+    myImplExpFile                       -- export file of implementation part
+    myExtpExpFile                       -- export file of external property part
+    myAbsyFile                          -- abstract syntax file
+    myInterOpalFile                     -- interOpal file
+    myOptFile                           -- opt(imized) file
+    myAcFile                            -- AC-Binary-Dump (28.5.93 antje )
+    myCFile                             -- c file
+    myHFile                             -- h file
+    myHcCFileTmpl                       -- hand-coded c file template
+    myHcHFileTmpl                       -- hand-coded h file template
+        : options->denotation   
+
+/* %filenames : give basename ret. complete filename (ignoring tmp-files); 
+               fn is <>, if fn is not part of options  */
+FUN optFile                             -- opt(imized) file
+    expFile     
+    extpExpFile : denotation**options->denotation       -- exp(ort) files
+
+-- %file intended for diagnostic file (see @code{myDiagFile})
+FUN file : options->output              -- get file
+    file : options**output->options     -- set file
+
+

@@ -1,0 +1,468 @@
+% LAST EDIT: Tue May  3 12:18:14 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Tue Feb 15 16:12:21 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Tue Nov 16 10:43:28 1993 by Mario Suedholt (kreusa!fish) 
+% LAST EDIT: Tue Jan 12 16:30:57 1993 by Juergen Exner (hektor!jue) 
+\chapter{Programming in the Large}
+\label{chap:large}
+\novice
+In contrast to programming in the small---which covers how to define
+single functions and data types---programming in the large describes
+how several functions and data types can be combined in separate units to
+emphasize the abstract structure of a program.
+These units are often called modules, structures or classes.
+Programming in the large also involves some other features, such as separate
+compilation or re usability of parts of a program.
+
+In general, \opal\ follows the same principles of modular programming
+as other modern programming languages, e.g.~Modula-2.
+The types and functions, etc.~are collected in {\em structures\/}
+(similar to modules in Modula-2), which may be combined by 
+import interfaces to form a complete program (for details, see below). 
+Information-hiding is realized by explicit export-interfaces,
+analogously to Modula-2.
+
+In the following we will describe structures and their combination by
+import and export interfaces (Section \ref{sec:struct}), how to build
+complete programs (Section \ref{sec:struct}) and we will
+introduce parameterized structures and their instantiation
+(Section~\ref{sec:struct.param}).
+
+\section{Structures in \opal, Import and Export}
+\label{sec:struct}
+\novice
+In \opal\ the basic compilation unit is the structure.
+In this section we explain the relations between structures and
+describe how structures can be combined.
+\medskip
+
+Each structure can be compiled independently from other structures.
+Only the export interface (i.e.~the signature part) of imported
+structures (directly or transitively imported) is required
+and---provided the imported structure is not compiled already---it will
+also be analyzed.
+The compilation process is transparent for the user.
+For details see ``A User's Guide to the \opal\ Compilation System''\cite{Ma}.
+
+\medskip
+As already mentioned in Chapter \ref{chap:example}, ``A First
+Example'', a structure in \opal\ consists of two parts, the signature part
+and the implementation part, which are physically stored in two files.
+A signature part only contains declarations; all definitions are
+ delegated to the implementation part.
+
+Objects which are declared in the implementation part are local to
+this structure (i.e.~they can't be used in other structures) and
+therefore they are of no interest with respect to inter-structural relations.
+
+
+\subsection{The Export of a Structure: The Signature Part}
+\novice
+The signature part of a structure defines the export interface of this
+structure. 
+Each object declared or imported in the signature part is said to be
+exported by the structure. 
+Only exported objects can be accessed from other structures by using
+imports (see below).
+
+\advanced To export a data type you can declare either a free type or the
+objects of the induced signature in the signature part. 
+If you don't include the type declaration in the signature part,
+the information about being a free type won't be included in the
+export interface.  
+Therefore you can't use this information in other structures, it
+is not possible, for example,  to use pattern-based definitions (on
+this data type) outside this structure.
+With the exception of very special applications, it is a good idea
+to  always export the free type.
+\medskip
+
+\novice The signature part must be consistent on its own.
+Specifically, if a sort is used to describe the functionality of
+an object, this sort must be declared (maybe as part of the induced
+signature of a free type) or imported in the signature part too.
+
+All imports in a signature part must be selective, i.e.~you are not
+allowed to use complete imports (see below) in the export interface.
+\medskip
+
+\advanced Furthermore, all parameterized structures which are imported in the
+signature part must be instantiated (for details, see
+Section~\ref{sec:struct.param}). Uninstantiated imports are allowed
+only in the implementation part of a structure.
+
+
+\subsubsection{Transitive Exports}
+\novice
+\opal\ supports  transitive exports. Transitive exports are objects
+you have imported in the {\em signature part\/} of a structure and
+therefore they are re-exported again by your own structure.
+
+The consequences can  best be explained in an example.
+Imagine you have a structure \pro{Mystruct} which only exports the
+function \pro{FUN~foo~:~nat~->~nat}.
+This requires the import of \pro{nat`Nat:SORT} (remember annotations!)
+in the signature part, because otherwise the signature part won't be
+correct:
+\begin{prog}
+           SIGNATURE Mystruct
+           IMPORT Nat ONLY nat
+           FUN foo : nat -> nat
+\end{prog}
+
+In this case the sort \pro{nat} is  exported by \pro{Mystruct} too,
+although it's origin is the structure \pro{Nat} and it is not declared in
+\pro{Mystruct}.
+
+When importing \pro{Mystruct} somewhere else, you have to import
+\pro{nat`Nat:SORT} additionally, either from the structure \pro{Nat}
+or---if you prefer---from structure \pro{Mystruct}.
+Otherwise the sort for the argument and the result of \pro{foo} will be
+missing.
+
+
+\subsection{The Import of a Structure}
+\novice
+To use objects declared and exported by another structure you have to
+import them into your structure. 
+An import can be complete or selective.
+In the first case you write, e.g.
+\begin{prog}
+          IMPORT Nat COMPLETELY
+\end{prog}
+This will import all exported objects of structure \pro{Nat}. 
+It could be regarded as enlarging your structure by the signature part
+of \pro{Nat}.
+All objects declared in the signature part of \pro{Nat} are now known
+in the importing structure too.
+Of course you can't redefine an imported object, because it has
+already been implemented in  structure \pro{Nat}.
+
+Remember that a complete import is not allowed in the signature part
+of a structure.
+\medskip
+
+The import could be restricted to particular objects by naming them
+explicitly:
+\begin{prog}
+          IMPORT Nat ONLY nat + - 0 1
+\end{prog}
+In this case only the sort \pro{nat} and the object \pro{+},
+\pro{-},  \pro{0} and  \pro{1} are imported.
+
+It is possible to have multiple imports from the same structure (and
+even of the same object, although this is not very useful):
+\begin{prog}
+          IMPORT Nat ONLY nat + - 0 1
+                 Nat ONLY * /
+\end{prog}
+It might be helpful in importing  additional objects for auxiliary
+functions, for example, which should not appear in the main imports. 
+
+\important The import hierarchy must be acyclic, i.e. if a structure
+\pro{Struct\_a} imports a
+structure \pro{Struct\_b}, then \pro{Struct\_b} can't import
+\pro{Struct\_a}, neither directly nor transitively from other structures.
+
+
+\subsubsection{Overloaded Names in Imports}
+\novice
+The handling of overloaded names in imports is different from the
+general scheme for overloading in \opal.
+Whereas normally the compiler complains if it can't identify an object
+unambiguously, in the case of imports {\em all\/} possible objects are
+imported.
+
+The import of
+\begin{prog}
+         IMPORT Int ONLY int -
+\end{prog}
+for example, imports the sort \pro{int} and both functions \pro{-},
+the unary as well as the dyadic:
+\begin{prog}
+         FUN - : int->int
+         FUN - : int ** int -> int
+\end{prog}
+
+This generally simplifies the imports, but it can  sometimes also lead to an
+unexpected error.
+Imagine a structure which exports two functions \pro{is}:
+\begin{prog}
+          SIGNATURE Mystruct
+          IMPORT ...
+          FUN is : nat -> bool
+          FUN is : char -> bool
+\end{prog}
+Then you do an import
+\begin{prog}
+          IMPORT Mystruct ONLY is
+                 Nat      ONLY nat
+\end{prog}
+because you want to use the first function.
+
+The compiler will complain with an error message such as ``\probreak{ERROR: application of is needs
+  import of char}'', because {\em both\/} functions are imported and the second
+one requires the sort \pro{char}.
+
+If you only want to import the first function you must be more
+specific and annotate the imported objects:
+\begin{prog}
+          IMPORT Mystruct   ONLY is:nat->bool
+                 Nat        ONLY nat
+\end{prog}
+
+\bigskip
+\novice Generally it is a good idea to import only those objects which are
+really required by your algorithm.
+You should prefer selective imports to complete imports for
+several reasons: 
+\begin{itemize}
+\item Compilation time decreases because the compiler has less
+  objects to manage.
+\item The documentary expressiveness of the program text increases.
+\item The quality of the program increases, as the programmer is
+  forced to think more carefully about the imports.
+\end{itemize}
+
+Nevertheless, sometimes during program development it is useful to
+do a complete import if you don't want to think too much about
+the import.
+
+There is a tool called ``browser'' available which transforms a complete
+import into an appropriate selective import with respect to the
+objects really needed, see \cite{browser} for details.
+
+
+\subsection{Systems of Structures}
+\advanced
+\opal\ structures can be combined in subsystems and systems, thus 
+comprising  private libraries. 
+The handling of these ``super-large'' programming structures is the task
+of the \opal\ Compilation System, not of the language \opal\ itself.
+
+For more information on how to create subsystems with
+several structures and use different libraries, refer to ``A User's
+Guide to the \opal\ Compilation System'' \cite{Ma}.
+
+
+\subsection{Importing Foreign Languages}
+\experienced \opal\ supports the integration of modules written in
+foreign languages into \opal\ programs.
+In the case of C this is called hand-coding (because C is also the
+target language of the compiler).
+
+The import of foreign modules is recommended only for very special
+purposes.
+In the current release, e.g.~some few structures of the library have
+been hand-coded due to efficiency reasons (e.g.~numbers and texts) or
+because they need  routines which depend on the operating
+system(e.g.~access to  the file system) and therefore cannot be
+expressed in \opal\ itself. 
+
+If you are thinking about doing hand-coding by yourself, {\em don't do it.\/} 
+If you are prepared to go to any length, you should refer to
+``Hand-coder's Guide to OCS Version 2'' \cite{handcoding}.
+
+\section{\opal\ Programs}
+\label{sec:opalProg}
+\novice
+A complete \opal\ program consists of several \opal\ structures which
+may reside in various subsystems and in the actual working
+directory. 
+There is no syntactic item which identifies the ``main structure'', the
+``entry point'' or the ``start function'' of a program.
+Instead, you have to tell the \opal\ compilation system (OCS)
+which structure should be considered the root of the program (i.e.~the
+``main structure'') and which function the entry point.
+
+The OCS call (cf. Chapter \ref{chap:example}: ``A first
+Example: Hello World'')
+\begin{prog}
+      >  \underline{ocs -top HelloWorld hello}
+\end{prog}
+will compile the structure \pro{HelloWorld} and---as far as
+necessary---all imported structures of \pro{HelloWorld} (directly
+imported as well 
+as transitively imported) and then link the resulting object code.
+
+%\begin{sloppypar}
+The compilation process is optimized such that structures are only
+ recompiled when their former compilations are obsolete
+because of changes in the program text.
+This optimized compilation is handled automatically by OCS
+and the user doesn't need to worry about the order of the several
+compilation steps.
+Submitting one compile command with the root structure of the program
+will compile all necessary structures.
+%\end{sloppypar}
+\medskip
+
+The call above tells OCS to use the function
+\pro{hello} as the entry point of the program and this name will also
+be the name of the generated executable binary file.
+When calling the generated binary program \pro{hello}, the function
+\pro{hello} of the root structure \pro{HelloWorld} will be evaluated.
+
+\important This entry point must be a constant of type \pro{com[void]}
+and must be exported by the signature part of the root structure.
+\begin{prog}
+          SIGNATURE HelloWorld
+          ...
+          FUN hello : com[void]
+\end{prog}
+
+There can be several functions with this functionality in the root
+structure, so the entry point of the program can easily be altered;
+ but for each
+generated binary you must explicitly state which one should be used
+as entry point.
+
+
+\section{Parameterized Structures}
+\label{sec:struct.param}
+\advanced
+ As already mentioned in Section \ref{sec:paramType}, a
+common difficulty is  writing a data structure or algorithm which is more
+general than the usual typing restrictions allow.
+
+Sets are a typical example.
+The algorithms for enlarging a set, checking if a data item is a member
+of the set or computing the cardinality of a set are the same
+whether it is a set of numbers, a set of strings or even a set
+of a sets  of persons.
+In traditional programming languages (e.g. Modula-2) you would have to
+write the data structure set several times as set of numbers, set of
+characters and so on.
+
+\opal\ offers the concept of parameterized structures to avoid this
+nasty and boring repetition.
+You could write the structure set once using a parameterized structure
+and the concrete instantiation (i.e. set of numbers, set of characters
+etc.) will be fixed when using the structure.
+
+In the following we describe how to write (Section \ref{sec:write.param}) and how to
+use (Section \ref{sec:use.param}) parameterized structures.
+
+
+\subsection{How to write Parameterized Structures}
+\label{sec:write.param}
+\advanced
+ Writing parameterized structures is easy.
+You just have to add the names of the parameters to the structure name
+as annotations in the signature part:
+\begin{prog}
+          SIGNATURE Set[data, <]
+\end{prog}
+You also have to declare what these parameters should be:
+\begin{prog}
+          SORT data
+          FUN < : data ** data -> bool
+\end{prog}
+
+In this example the first parameter \pro{data} is a sort and the second
+``\pro{<}'' a dyadic operation which takes two elements of this sort
+and yields a boolean value.
+Of course you cannot define the objects of the parameter list
+(\pro{data}, \pro{<}) in the implementation part.
+But you can use them as if they were declared (and in fact they are)
+in the structure \pro{Set} just like any other object.
+
+As an example you could write a function
+\begin{prog}
+          FUN foo : data ** data -> data
+          DEF foo(a,b) == IF a < b THEN a
+                          IF b < a THEN b FI
+\end{prog}
+or declare a new type
+\begin{prog}
+          TYPE okOrError == ok(value:data)
+                            error(msg:string)
+\end{prog}
+Because you can use the parameters anywhere in the structure, not only
+the structure as a whole but also each single function and sort is
+parameterized with \pro{data} and \pro{<}.
+
+Remember however that \pro{<} is just a name---nothing more---and can be
+substituted by any other name.
+In the case of the structure \pro{Set} the  intention is, that the
+function should be 
+a total strict order, though this can only be expressed in comments
+because this is a semantic requirement that can't be checked by the compiler.
+
+
+\subsection{How to use Parameterized Structures}
+\label{sec:use.param}
+\advanced
+To use a parameterized structure you have to substitute the abstract
+parameters by concrete values. This is called instantiation.
+To use sets of natural numbers you could import
+\begin{prog}
+      IMPORT Set[nat'Nat, <'Nat] ONLY set in #
+\end{prog}
+
+In this import the parameter \pro{data} is instantiated with \pro{nat}
+and the parameter \pro{<} with the function \pro{<} from the structure
+\pro{Nat}.
+Note that the fact that parameter and instance have same identifier
+(\pro{<}) is  pure chance. 
+
+The signatures of the imported objects are
+\begin{prog}
+      SORT set
+      FUN in : set ** nat -> bool
+      FUN #  : set -> nat
+\end{prog}
+Remember, in the structure \pro{Set} the function  \pro{in} has been
+declared as \\ \pro{FUN~in~:~set~**~data~->bool}. 
+This \pro{data} has been substituted by \pro{nat} due to the
+instantiation.
+
+Using this import you can write a function
+\begin{prog}
+      FUN foo : set -> bool
+      DEF foo(s) == (#(s)) in s
+\end{prog}
+for example, which checks if the number of elements of a set is a 
+member of the set itself. 
+\bigskip
+
+You can also use uninstantiated imports of parameterized structures.
+Conceptually you import all possible instances of the structure; of
+course these will be  quite numerous.
+
+In the import
+\begin{prog}
+      IMPORT Set ONLY set in #
+\end{prog}
+the parameters \pro{data} and \pro{<} are still undefined.
+
+ Uninstantiated imports are allowed only in the implementation part, in
+signature parts you always have to use instantiated imports.
+
+ Note that in case of an uninstantiated or more then one
+instantiated import the application of \pro{set} is still ambiguous
+and therefore has to be annotated to resolve this ambiguity.
+
+If you want to declare a function \pro{transform}, which converts a
+set of numbers into a set of characters, you have to instantiate the
+sort \pro{set} by annotations:
+\begin{prog}
+      FUN transform : set[nat, <] -> set[char, <]
+\end{prog}
+
+Uninstantiated imports are useful if you need several different
+instantiations. In the case above you may also do two
+instantiated imports:
+\begin{prog}
+      IMPORT Set[nat, <] ONLY set in #
+      IMPORT Set[char, <] ONLY set in #
+\end{prog}
+But this doesn't help because now you have two sorts named \pro{set}
+and they too have to be distinguished in the declaration of
+\pro{transform} by annotations.
+
+
+
+% Local Variables: 
+% mode: latex
+% TeX-master: "tutorial"
+% End: 

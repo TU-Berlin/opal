@@ -1,0 +1,161 @@
+#!/bin/sh
+# generate a shared library from a set of OCS systems
+# .sign.inter files are used to derminate the structures.
+# lib<system>.a is used to get the objects.
+#
+# expects OCSOM to be set
+#
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/etc/genshlib,v 1.1.1.1 1998-06-16 15:59:54 wg Exp $
+
+
+. $OCSOM/specs/ShSpecs.basic
+
+tsosuffix="tso"
+
+## analyze arguments 
+
+symlink="no"
+vers="2.3.0"
+deps=""
+
+while [ $# -ge 2 ]
+do
+  if [ $1 = "-h" ]
+  then
+     symlink="yes"
+  elif [ $1 = "-v" ]
+  then
+     shift
+     vers="$1"
+  elif [ $1 = "-d" ]
+  then
+     shift
+     deps="$deps $1"
+  else
+     srcsystems="$srcsystems $1"
+  fi
+  shift
+done
+
+destsystem="$1"
+
+if [ -z "$destsystem" ] || [ -z "$srcsystems" ]
+then
+  $ECHO "usage: genshlib [ -h ] <srcsyspath> ... <destsyspath>"
+  exit 1
+fi
+
+
+destname="`$BASENAME $destsystem`"
+
+tmpdir="/tmp/genshlib_$$"
+
+$RM -rf $tmpdir
+mkdir $tmpdir 
+
+
+if [ ! -d "$destsystem" ] 
+then
+  mkdir $destsystem
+fi
+$RM -f $destsystem/lib${destname}.$tsosuffix
+
+for sys in $srcsystems 
+do
+  $ECHO "... incorporating subsystem $sys"
+  srcname="`$BASENAME $sys`"
+  hcsys="$sys"
+  if [ -d "$sys/OCS" ]
+  then
+     sys="$sys/OCS"
+  else
+     sys="$sys"
+  fi
+  if [ -d "$PWD/$sys" ]
+  then
+    sys="$PWD/$sys"
+  fi
+  ( cd $tmpdir; $AR x $sys/lib${srcname}.a; $RM -f __*SYMDEF* )
+  structs="`( cd $sys; $LS *.sign.inter | $SED -e 's@\([^ ][^ ]*\)\.sign.inter@\1@' \
+			   -e 's@BOOL@@' \
+			   -e 's@DENOTATION@@' \
+			   -e 's@ABORT@@' \
+			   )`"
+  if [ -z "$structs" ]
+  then
+    $ECHO "warning: no structures located in $sys"
+  fi
+
+  for s in $structs
+  do
+    if [ ! "$sys/$s.sign.inter" = "$destsystem/$s.sign.inter" ]
+    then
+      $RM -f $destsystem/$s.sign.inter 
+      if [ $symlink = "yes" ]
+      then
+        ln -s $sys/$s.sign.inter $destsystem
+	if [ -f $sys/$s.opt ]
+	then
+	  ln -s $sys/$s.opt $destsystem
+	fi
+	if [ -f $sys/$s.h ]
+	then
+	  ln -s $sys/$s.h $destsystem
+	fi
+	if [ -f $sys/$s.hc.h ]
+	then
+	  ln -s $sys/$s.hc.h $destsystem
+	elif [ -f $hcsys/$s.hc.h ]
+	then
+	  ln -s $hcsys/$s.hc.h $destsystem
+	fi
+      else
+        cp -f $sys/$s.sign.inter $destsystem
+	if [ -f $sys/$s.opt ]
+	then
+	  cp -f $sys/$s.opt $destsystem
+	fi
+	if [ -f $sys/$s.h ]
+	then
+	  cp -f $sys/$s.h $destsystem
+	fi
+	if [ -f $sys/$s.hc.h ]
+	then
+	  cp -f $sys/$s.hc.h $destsystem
+	elif [ -f $hcsys/$s.hc.h ]
+	then
+	  cp -f $hcsys/$s.hc.h $destsystem
+	fi
+      fi
+    fi
+    $ECHO "$s lib${destname}.so.$vers" >> $destsystem/lib${destname}.$tsosuffix
+  done
+done
+
+$ECHO "... generating archive $OCS/lib/$OSARCH/lib${destname}.a"
+(cd $OCS/lib/$OSARCH 1>/dev/null
+ rm -f lib${destname}.a
+ $ARQ lib${destname}.a $tmpdir/*
+ $RANLIB lib${destname}.a
+)
+
+$ECHO "... generating shared object $OCS/lib/$OSARCH/lib${destname}.so.$vers"
+mkdir $OCS/lib/$OSARCH 2>/dev/null || true
+
+#echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+#echo "$DLD -o $OCS/lib/$OSARCH/lib${destname}.so.$vers ${LDSONAME}lib${destname}.so.$vers $tmpdir/* $deps $LIBOS"
+$DLD -o $OCS/lib/$OSARCH/lib${destname}.so.$vers ${LDSONAME}lib${destname}.so.$vers $tmpdir/* $deps $LIBOS || exit 1
+
+$ECHO "... generating symbolic links"
+(cd $destsystem 1>/dev/null
+ rm -f lib${destname}.a
+ rm -f lib${destname}.so
+ ln -s ../${OSARCH}/lib${destname}.a .
+ ln -s ../${OSARCH}/lib${destname}.so.$vers lib${destname}.so
+)
+
+ 
+
+$RM -rf $tmpdir
+exit 0
+

@@ -1,0 +1,157 @@
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     actual computation of all names in global signature
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION GlobSigFix
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	GlobSig4SigAna	ONLY treatSortPNS treatInstPNS treatOnlyPNS
+			     treatParamPNS
+	MatchIdentFunDeep COMPLETELY
+	MatchIdentFunFlat COMPLETELY
+	FlattenCandidateSets COMPLETELY
+	GlobSigToText	ONLY ` -- : globSig -> () -> denotation
+	SigAnaTexts	ONLY verbBeginFixSigAna verbContFixSigAnaDeep
+				verbEndFixSigAna verbContFixSigAnaFlat
+	-- lib
+	DEBUG		ONLY PRINT string
+	Pair		COMPLETELY
+	Com		ONLY yield com data okay
+	Verbose		ONLY verb definition begVerb conVerb endVerb
+	ComCompose	COMPLETELY
+	Nat		COMPLETELY
+	Void		COMPLETELY
+	Options		ONLY cop? sign?
+
+	Objects	ONLY sortPN:SORT instPN:SORT
+	PartNameEntry	COMPLETELY
+	PartName	ONLY partName:SORT
+	Seq		ONLY seq
+	Rep		ONLY rep
+	Pos		ONLY pos
+	Option		ONLY option
+	Name		ONLY name:SORT
+	Fct		ONLY fct
+
+-- ---------------------------------------------------------------------------
+
+FUN globSigFix : options -> globSig ->com[globSig]
+DEF globSigFix(options)(sig) == 
+	  begVerb(options, definition, verbBeginFixSigAna) &
+	  -- Nudeln Opal0 + Umformen in 'flache' Kandidatenmengen
+	  (\\ _ .iterateIdentFunDeletionDeep(options, sig, false) & 
+	         globSigFix2(options))
+
+FUN globSigFix2 : options -> globSig -> com[globSig]
+DEF globSigFix2(options)(sig) ==
+	  -- Nudeln Opal1 + formale Parameter identifizieren
+	  iterateIdentFunDeletionFlat(options, gS, false) &
+	  globSigFix3(options,cop?("printGsFix",options))
+	  WHERE 
+	  gS == PRINT(cop?("printGsFixToFlat",options),`(sig),sig)
+
+FUN globSigFix3 : options ** bool -> globSig -> com[globSig]
+DEF globSigFix3(options,print?)(gSdata) == 
+	endVerb(options, definition, verbEndFixSigAna) &
+	yield(okay(gS))
+	WHERE gS == PRINT(print?,`(gSdata), gSdata) 
+
+-- ---------------------------------------------------------------------------
+
+FUN iterateIdentFunDeletionDeep : options ** globSig ** bool -> com[globSig]
+	-- Wiederholtes Durchsehen der restlichen Identifikationsfunktionen
+	-- anhand der sortPN,instPN und onlyPN Mengen solange, bis keine mehr
+	-- geloescht werden kann.
+	-- Es werden nur die 'tiefen' Mengen von Kandidaten reduziert, d.h.
+	-- 1. die Querbeziehungen zwischen den Kandidaten der Elemente einer
+	--    Instanz wird nicht ueberprueft.
+	-- 2. die Querbeziehungen zwischen den Kandidaten der Basissorten einer
+	--    Funktionalitaet wird nicht ueberprueft.
+	-- 3. Aus einer Fct wird keine Instantiierung gewonnen.
+	-- Voraussetzung ist die 'statische' Analyse der Initialierungsphase:
+	-- 1. Die Namen und Herkuenfte der partiellen Namen stimmen mit denen
+	--    der Kandidaten ueberein.
+	-- 2. Die Laenge der Instanz ist gleich und die Arten der Elemente sind
+	--    strukturgleich.
+	-- 3. Die Art ist strukturgleich.
+	-- Aufgabe dieser Schleife ist es, den 2. endgueltigen Lauf
+	-- vorzubereiten, indem die Kanditatenmengen schon moeglichst stark
+	-- reduziert werden (Effizienzgewinn), da diese dann 'flach' gemacht
+	-- werden und exponentiellen Platzaufwand bekommen. Es wird lokal
+	-- jeder partielle Name mit seinen Kandidaten verglichen und die
+	-- nicht mehr passenden weggestrichen.
+DEF iterateIdentFunDeletionDeep(options, gS, done) ==
+	(IF done THEN yield(okay(flattenCandidateSets(options sign?,gSc)))
+	   WHERE
+       gSc == PRINT(cop?("printGsFixIdentifyParameterDeep", options), `(gSb), gSb)
+	   gSb == treatParamPNS(identifyParameterDeep, gSa)
+	   gSa == PRINT(cop?("printGsFixDeep",options), `(gS),gS)
+	ELSE 
+	  conVerb(options, definition, verbContFixSigAnaDeep) &
+	  (\\ _ .iterateIdentFunDeletionDeep(options, finGS, isDone)
+	  WHERE
+	  -- Iteration ueber die sortPN
+	   finGS == PRINT(cop?("printGsFixDeepPhase",options),
+		"******* Nach matchIdentFunBySortPnDeep",finGSa)
+	  (finGSa, doneSortPN) == treatSortPNS(matchIdentFunBySortPnDeep, gS2)
+	  -- Iteration ueber die instPN
+	   gS2 == PRINT(cop?("printGsFixDeepPhase",options),
+		"******* Nach matchIdentFunByInstPnDeep",gS2a)
+	  (gS2a, doneInstPN) == treatInstPNS(matchIdentFunByInstPnDeep, gS1)
+	  -- Iteration ueber die onlyPN
+	   gS1 == PRINT(cop?("printGsFixDeepPhase",options),
+		"******* Nach matchIdentFunByOnlyPnDeep",gS1a)
+	  (gS1a, doneOnlyPN) == treatOnlyPNS(matchIdentFunByOnlyPnDeep, gS)
+	  -- Aenderungen
+	  isDone == (doneSortPN and doneInstPN) and doneOnlyPN)
+	FI)
+
+
+-- ---------------------------------------------------------------------------
+
+FUN iterateIdentFunDeletionFlat : options ** globSig ** bool -> com[globSig]
+	-- Wiederholtes Durchsehen der restlichen Identifikationsfunktionen
+	-- anhand der sortPN,instPN und onlyPN Mengen solange, bis keine mehr
+	-- geloescht werden kann.
+DEF iterateIdentFunDeletionFlat(options, gS, done) == 
+	IF done THEN yield(okay(gSb))
+	   WHERE
+	   gSb == treatParamPNS(identifyParameterFlat, gSa)
+	   gSa == PRINT(cop?("printGsFixFlat",options), `(gS),gS)
+	ELSE 
+	  conVerb(options, definition, verbContFixSigAnaFlat) &
+	  (\\ _ .iterateIdentFunDeletionFlat(options, finGS, isDone)
+	  WHERE
+	  -- Iteration ueber die sortPN
+	  (finGS, doneSortPN) == treatSortPNS(matchIdentFunBySortPnFlat, gS2)
+	  -- Iteration ueber die instPN
+	  (gS2, doneInstPN) == treatInstPNS(matchIdentFunByInstPnFlat, gS1)
+	  -- Iteration ueber die onlyPN
+	  (gS1, doneOnlyPN) == treatOnlyPNS(matchIdentFunByOnlyPnFlat, gS)
+	  -- Aenderungen
+	  isDone == (doneSortPN and doneInstPN) and doneOnlyPN)
+	FI
+
+-- ---------------------------------------------------------------------------
+
+FUN identifyParameterDeep : globSig ** onlyPNE -> globSig ** onlyPNE
+	-- Identifizierung der Parameterapplikationen
+DEF identifyParameterDeep(gS, oPN) == (1st(finGSnotChanged), finOPN)
+	  WHERE 
+	  (finGSnotChanged, finPN) == matchPNCandDeep((gS & true), pN(oPN))
+	  finOPN == onlyPNE(finPN, errInfo(oPN))
+
+FUN identifyParameterFlat : globSig ** onlyPNE -> globSig ** onlyPNE
+	-- Identifizierung der Parameterapplikationen (flache Darstellung)
+DEF identifyParameterFlat(gS, onlyPNE) == (gS, onlyPNE)
+
+-- ---------------------------------------------------------------------------
+-- Opal0-Style
+

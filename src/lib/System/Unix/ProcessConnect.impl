@@ -1,0 +1,79 @@
+IMPLEMENTATION ProcessConnect
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:20 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Com		COMPLETELY
+	EQUALITY	COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	File		COMPLETELY
+	BinFile		COMPLETELY
+	Option		COMPLETELY
+	Denotation	COMPLETELY
+	UnixFailures	COMPLETELY
+
+DEF open(Name, Role)	== IF server?(Role) THEN
+			       call(cOpen(Name ++ ".in", 
+					  Name ++ ".out", false))
+			   ELSE	 
+			       call(cOpen(Name ++ ".out", Name ++ ".in", 
+					  true))
+			   FI
+DEF close(Chan)		== call(cClose(Chan))
+DEF incoming?(Chan)	== call(cIncoming?(Chan))
+
+DATA role		== client server
+
+FUN inFile outFile	: channel	-> file
+
+FUN inKey outKey	: denotation
+DEF inKey		== "pconn-in-289"
+DEF outKey		== "pconn-in-289"
+			-- FIXME: tags should be different for in and out,
+			-- but then must be swapped according to role
+
+DEF read?(Chan)	==
+    incoming?(Chan)			& (\\ Yes .
+    IF Yes THEN
+	read(inFile(Chan), inKey)	& (\\ In .
+	succeed(avail(In))
+	)
+    ELSE
+	succeed(nil)
+    FI
+    )
+
+DEF read(Chan) ==
+    call(cWaitForRead(Chan))		& (\\ _ .
+    read(inFile(Chan), inKey)		; (\\ Ans .
+    IF okay?(Ans) THEN
+	yield(Ans)
+    OTHERWISE
+    IF "binary IO tag mismatches, found ''" <| error(Ans) THEN
+	-- FIXME: this special condition should be handled by BinFile
+	break("connection lost")
+    ELSE
+	yield(Ans)
+    FI
+    ))
+
+DEF write(Chan, Out) ==
+    call(cWaitForWrite(Chan))			& (\\ _ .
+    write(outFile(Chan), outKey, Out) 	& (\\ _ . 
+    flush(outFile(Chan))
+    ))
+
+
+FUN cOpen		: denotation ** denotation ** bool -> void -> ans[channel]
+FUN cClose		: channel	-> void -> ans[void]
+FUN cIncoming?		: channel	-> void -> ans[bool]
+FUN cWaitForRead	: channel	-> void -> ans[void]
+FUN cWaitForWrite	: channel	-> void -> ans[void]
+FUN inFile		: channel	-> file
+FUN outFile		: channel	-> file
+
+
+/$ handcoded[channel:SORT,cOpen,cClose,cIncoming?,inFile,outFile] $/

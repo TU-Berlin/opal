@@ -1,0 +1,112 @@
+IMPLEMENTATION HeapIndex
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:10 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Nat ONLY nat 0 succ double half pred odd? even? 0?
+       Heap[data, <] ONLY heap val node nil nil? :=_val heap? abs rep
+       OptionMap ONLY *
+       ABORT ONLY ABORT
+/* % das geht wegen Bug oc 1.36 leider nicht
+      Option ONLY option cont avail nil nil? avail?
+*/
+       Option[data] ONLY option cont avail nil nil? avail?
+       Option[heap[data, <]] ONLY option cont avail nil nil? avail?
+       Option[tree[data]] ONLY option cont avail nil nil? avail?
+       Tree[data] ONLY tree
+       Denotation ONLY ++
+       Compose ONLY o
+       TreeIndex[data] ONLY !?
+       IndexingOfTrees COMPLETELY
+
+
+
+-- %$Handling Indices$
+
+/* %If the index points to root, nothing happens. Otherwise, returns
+the left or right subheap according to index, and adjusts the index by
+@code{unleft} or @code{unright}. */
+FUN step: heap ** nat -> heap ** nat
+DEF step(h AS node(_, l, r), i) ==
+    IF i root? THEN (h, 0)
+    IF i left? THEN (l, unleft(i))
+    IF i right? THEN (r, unright(i))
+    FI
+DEF step(nil, succ(_)) == 
+    (ABORT("step'HeapIndex: cannot step from empty heap"), 0)
+
+-- %$Accessing Values by Indices$
+/* %@code{!} returns the value of the subheap with the given index,
+which must exist. @code{!?} returns @code{nil}, if the index does not
+exist. */
+FUN ! : heap ** nat -> data
+DEF t!i == val(t!i)
+
+FUN !? : heap ** nat -> option[data]
+DEF t!?i == val * (t!?i)
+
+/* %@code{upd} replace the val at the given index (which must exist)
+either by the given data or by the result of applying the
+function to the old value. */
+FUN upd: nat ** data ** heap -> heap
+DEF upd(i, d, t) == 
+    repl("upd", t, i, \\tr. IF tr nil? THEN 
+                              ABORT("upd'HeapIndex: cannot update empty heap")
+                            ELSE tr :=_val d FI)
+
+FUN upd: nat ** (data -> data) ** heap -> heap
+DEF upd(i, f, t) == 
+    repl("upd", t, i, \\tr. IF tr nil? THEN 
+                               ABORT("upd'HeapIndex: cannot update empty heap")
+                            ELSE tr :=_val f(val(tr)) FI)
+
+-- %$Accessing Heaps by Indices$
+/* %These functions return the subheaps instead of the values of the
+subheaps */
+FUN ! : heap ** nat -> heap
+DEF t!i == LET s == t!?i 
+           IN 
+           IF s nil? THEN ABORT("!'HeapIndex: index does not exist") 
+           ELSE (cont(s)):heap
+           FI
+
+FUN !? : heap ** nat -> option[heap]
+DEF h !? i == abs * (h rep) !? i
+
+/* % all of the following functions are replacements of subheaps and
+mapped to the internal function @code{repl} */
+
+FUN repl: heap ** nat ** heap -> heap
+DEF repl(t, i, new) == repl("repl", t, i, \\ _ . new)
+
+FUN repl: heap ** nat ** (heap -> heap) -> heap
+DEF repl(t, i, f) == repl("repl", t, i, f)
+
+FUN insert: heap ** nat ** heap -> heap
+DEF insert(t, i, new) == 
+    repl("insert", t, i, 
+         \\tr. IF tr nil? THEN new 
+               ELSE ABORT("insert'HeapIndex: must replace an empty heap") 
+               FI)
+
+FUN delete: heap ** nat -> heap
+DEF delete(t, i) == repl("delete", t, i, \\ _ . nil)
+
+
+/* % The internal function called by @code{upd}, @code{repl},
+@code{insert}, @code{delete} */
+
+FUN repl: denotation ** heap ** nat ** (heap -> heap) -> heap
+DEF repl(fctname, nil, i, f) == 
+    IF i root? THEN f(nil)
+    ELSE ABORT(fctname ++ "'HeapIndex: index does not exist")
+    FI
+/* % Test, ob Resultat tatsächlich Heap ist, steckt schon in @code{node} */
+DEF repl(fctname, t AS node(v, l, r), i, f) ==
+    IF i root? THEN f(t)
+    IF i left? THEN node(v, repl(fctname, l, unleft(i), f), r)
+    IF i right? THEN node(v, l, repl(fctname, r, unright(i), f))
+    FI
+

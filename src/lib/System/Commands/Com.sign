@@ -1,0 +1,99 @@
+/* % @noindent
+This structure defines the command monad for communicating with the
+program environment. See structure @code{ComCompose} for
+sequential composition of commands. 
+*/
+
+SIGNATURE Com[data:SORT]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:16 $ ($Revision: 1.1.1.1 $)
+
+SORT data
+
+IMPORT	Nat	ONLY nat
+
+
+/* %
+The data type of answers represents all kinds of execution results of
+commands. An answer may be either @code{okay}, in which case it 
+holds the computed data of the command, or it may be a @code{fail},
+in which case it holds a description of the failure as a denotation.
+*/
+
+TYPE ans ==
+	okay(data: data)	
+	fail(error: denotation)	
+
+
+/* %
+The data type of commands is opaque to the user. Here, two
+fundamental constructors for commands are provided. The 
+@code{yield} function constructs a command which just returns the given
+answer. The @code{exit} function constructs a command which terminates
+program execution with the given code. Many other constructor functions
+for commands are defined elsewhere in the OPAL library.
+*/
+
+
+
+SORT com
+
+FUN yield : ans -> com 		
+FUN exit  : nat -> com	
+
+/* %
+For the frequent occurence of the term @code{yield(okay(Data))}
+the abbreviation @code{succeed(Data)} is provided. The counterpart
+for the term @code{yield(fail(Message))} is @code{break(Message)}.
+*/
+
+FUN succeed : data	 -> com
+FUN break   : denotation -> com
+
+
+
+/* %
+The following function provides a crutch until the initialization
+of global constants by commands isn't supported explicitely by the
+language. It executes the given command (with side-effects!) as
+a pure function. If command execution returns a failure, program
+execution is terminated prompting the description of the failure.
+
+@b{This function may only be used as the outest call of the 
+right-hand-side of a definition of a global constant.} Any other usage
+may not be compatible with future versions of OCS.
+
+*/
+
+FUN EXEC  : com -> data
+
+/* %
+@ignore
+*/
+-- not for user purpose -------------------------------------------
+
+IMPORT 	Void		ONLY void
+	Seq[contCom]	ONLY seq
+	Seq[com]	ONLY seq
+
+TYPE com ==
+    sequence	(proc: void -> ans, conts: seq[contCom])
+    choice	(alts: seq[com])	 
+
+TYPE contCom ==
+    contCom	(cont:  ans  -> com)
+
+FUN call	: (void -> ans) -> com
+FUN followedBy	: com ** (ans -> com) -> com
+
+FUN sequenceCompose : com ** seq[contCom] -> com
+FUN choiceCompose   : com ** com	  -> com
+
+FUN execCom	    : com		  -> ans
+
+/* %
+@end ignore
+*/

@@ -1,0 +1,159 @@
+IMPLEMENTATION DbComm
+
+IMPORT	Denotation		COMPLETELY
+	Option			COMPLETELY
+	Void			COMPLETELY
+	Fmt			COMPLETELY
+	Nat			COMPLETELY
+	Pair			COMPLETELY
+	Seq			COMPLETELY
+	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	ComCheck		COMPLETELY
+	ComState		COMPLETELY
+	DbGlobalEnv		COMPLETELY
+	ProcessConnect		COMPLETELY
+	ProcessInterrupt	COMPLETELY
+	FileSystem		COMPLETELY
+	ProcessCtrl		COMPLETELY
+	Wait			COMPLETELY
+	WaitConv		COMPLETELY
+	Signal			COMPLETELY
+	File			COMPLETELY
+	FileName		COMPLETELY
+
+IMPORT	RepoEvent		COMPLETELY
+	RepoCom			COMPLETELY
+	RepoCom1		COMPLETELY
+	RepoGlobalAccess	COMPLETELY
+	RepoDiag		COMPLETELY
+
+IMPORT	InternExec		ONLY exec
+
+IMPORT	ChannelData		COMPLETELY
+
+IMPORT	DbCommFastRpc		COMPLETELY
+	DbGlobalEnv		COMPLETELY
+	DbUnitTable		COMPLETELY
+	DbIdentTable		COMPLETELY
+
+
+
+FUN theClient		: stateId[option[process]]
+DEF theClient		== EXEC(stateId(nil))
+
+DEF clientCheck? ==
+    get(theClient)			& (\\ Client? .
+    IF avail?(Client?) THEN
+	-- lets see if client is alive
+	wait(cont(Client?))			; (\\ ProcAndStat?? .
+	IF fail?(ProcAndStat??) THEN
+	    -- assume this is an extern client
+	    succeed(true)
+	ELSE
+	    LET ProcAndStat? == data(ProcAndStat??)
+	    IN
+	    IF nil?(ProcAndStat?) THEN
+		succeed(true)
+	    ELSE
+		diag(!!(warn, freeRef("evaluator"), 
+			"%s",
+			`(2nd(cont(ProcAndStat?))))) 
+							& (\\ _ .
+		theClient => (\\ _ . nil)		& (\\ _ .
+		resetGlobals				& (\\ _ .
+		succeed(false)
+		)))
+	    FI
+	FI
+	)
+    ELSE
+	succeed(false)
+    FI
+    )
+
+DEF clientCheck == clientCheck? & succeed(nil)
+
+DEF clientSync == 
+    clientCheck? & (\\Yes.
+    IF Yes THEN
+	sync[void] & succeed(true)
+    ELSE succeed(false) FI
+    )
+
+DEF ensureClient ==
+    clientCheck?			& (\\ Yes .
+    IF Yes THEN
+	succeed(nil)
+    ELSE startClient FI
+    )
+
+DEF terminateClient ==
+    clientCheck?			& (\\ Yes .
+    IF Yes THEN
+	killClient
+    ELSE succeed(nil) FI
+    )
+
+DEF externClient ==
+    terminateClient			& (\\ _ .
+    openChannel
+    )
+	
+
+FUN startClient : com[void]
+DEF startClient	 ==
+    oasysLibDir					& (\\ LibDir .
+    LET ClientName == LibDir ++ "evaluator"
+    IN
+    event(progress(repository,
+		   "starting evaluator process")) 
+						& (\\ _ .
+    clientArgs					& (\\ Args .
+    query(exec(ClientName, "evaluator" :: Args, 
+		  stdIn, stdOut, stdErr))	& (\\ P:process .
+    openChannel
+    ))))
+
+FUN openChannel : com[void]
+DEF openChannel == 
+    open("OCS/oasys.channel", server)		& (\\ Channel.
+    :=_channel(Channel)				& (\\ _ .
+    rpc(register,register?)			& (\\ Answer .
+    theClient => (\\ _ . avail(pid(Answer)))   
+    )))
+
+FUN killClient : com[void]
+DEF killClient ==
+    get(theClient)				& (\\ Client? .
+    writeChannel(exit)				; (\\ _ .
+    resetGlobals				; (\\ _ .
+    kill(cont(Client?), sigKill)		; (\\ _ .
+    wait(cont(Client?))				; (\\ ProcAndStat? 
+				  : ans[option[pair[process,childstat]]] .
+    succeed(nil)
+    )))))
+
+
+FUN resetGlobals : com[void]
+DEF resetGlobals ==
+    :=_identTable(init)				; (\\ _ .
+    :=_unitTable(init)				; (\\ _ .
+    channel					; (\\ Chan? .
+    (IF okay?(Chan?) THEN close(data(Chan?))
+		     ELSE succeed(nil) FI)	; (\\ _ .
+    resetChannel				; (\\ _ .
+    theClient => (\\ _ . nil)			
+    )))))
+
+
+DEF rpc?(Task) == rpc?(Task,(\\ _ . true))
+
+DEF rpc?(Task,P) == 
+	rpc?(Task,succeed(nil:void),P) & (\\Ans. yield(2nd(Ans)))
+
+DEF rpc(Task) == rpc(Task,(\\ _ . true))
+
+DEF rpc(Task,P) == 
+	rpc(Task,succeed(nil:void),P) & (\\Ans. yield(2nd(Ans)))
+

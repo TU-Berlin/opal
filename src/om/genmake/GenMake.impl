@@ -1,0 +1,1949 @@
+
+IMPLEMENTATION GenMake
+
+-- generate make or shape file for OPAL program or library system
+-- wg 23.8.92, 6.10.92, 4.7.93    
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/GenMake.impl,v 1.1.1.1 1998-06-16 15:59:52 wg Exp $
+
+
+IMPORT  Compose         COMPLETELY
+        Nat             COMPLETELY
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqSort         ONLY msort
+        SeqConv         ONLY `
+        Char            COMPLETELY
+        PrintableChar   ONLY / h
+        Denotation      COMPLETELY
+        String          COMPLETELY
+        StringReduce    COMPLETELY
+        StringMap       COMPLETELY
+        StringFilter    COMPLETELY
+        BTUnion         COMPLETELY
+        StringFormat    COMPLETELY
+        StringConv      ONLY `
+        Option          COMPLETELY
+        Pair            COMPLETELY
+        Bitset          COMPLETELY
+        BitsetConv      ONLY `
+        Set             ONLY set incl in {} 
+        SetConv         ONLY `
+        Map             COMPLETELY
+        MapConv         ONLY `
+        MapReduce       ONLY /
+        Void            COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        ComSeqReduce    COMPLETELY
+        ComCheck        COMPLETELY
+        ProcessArgs     COMPLETELY
+        Process         ONLY popen pclose
+        File            COMPLETELY
+        FileSystem      ONLY filestat:SORT stat mtime
+        Time            ONLY time:SORT > : time ** time -> bool
+
+        DEBUG           COMPLETELY
+
+
+IMPORT  OptionScan      COMPLETELY
+
+        
+FUN versionKey : denotation
+
+DEF versionKey == 
+   "genmake om-2.1d (bundled with ocs-2.1d)"
+
+-- =========================================================================
+-- argument processing
+
+-- -------------------------------------------------------------------------
+-- data type which holds genmakes arguments 
+
+DATA args == 
+        top(options: map[denotation,<,seq[seq[union]]],
+                struct: denotation, com: denotation) 
+        sub(options: map[denotation,<,seq[seq[union]]],
+                system: denotation, structs: seq[denotation])
+
+FUN ` : args -> string
+DEF `(top(Opts,S,C)) == format("top(%s,%s,%s)",(Opts`) u (S u (C u)))
+DEF `(sub(Opts,S,Ss)) == format("sub(%s,%s,%s)",
+                                     (Opts`) u (S u (`(\\x.x)(Ss) u)))
+
+
+-- -------------------------------------------------------------------------
+-- option specifications
+
+FUN shape om keep subsys gen rules hidden open defs verb verbS warn warnS
+    opt optS debug debugS oc1 oc2 cc recur system selfDebug 
+    deps list selfVerb optDep version cinter ctmpl noopt prop 
+    depfiles : denotation
+DEF version     == "-version"
+DEF shape       == "-shape"
+DEF om          == "-OM"
+DEF keep        == "-keep"
+DEF gen         == "-gen %d"
+DEF defs        == "-defs %d"
+DEF rules       == "-rules %d"
+DEF hidden      == "-h"
+DEF open        == "-e"
+DEF subsys      == "-s%[fdehp] %d"
+DEF verb        == "-v%[0123]"
+DEF verbS       == "-v%[0123]:%d"
+DEF warn        == "-w%[012]"
+DEF warnS       == "-w%[012]:%d"
+DEF opt         == "-o%[12seucmpgTSC]"
+DEF optS        == "-o%[12seucmpgTSC]:%d"
+DEF debug       == "-d%[tTd]"
+DEF debugS      == "-d%[tTd]:%d"
+DEF oc1         == "-oc1:%d %d"
+DEF oc2         == "-oc2:%d %d"
+DEF cc          == "-cc:%d %d"
+DEF recur       == "-R"
+DEF selfDebug   == "-DEBUG"
+DEF system      == "-S"
+DEF deps        == "-deps %d"
+DEF list        == "-list %d"
+DEF selfVerb    == "-V"
+DEF optDep      == "-optdep"
+DEF cinter      == "-cinter:%d"
+DEF ctmpl       == "-ctmpl:%d"
+DEF noopt       == "-noopt"
+DEF prop        == "-prop"
+DEF depfiles    == "-depfiles"
+
+FUN optSpecs: seq[denotation]
+DEF optSpecs ==
+    version :: (
+    selfVerb :: (
+    shape :: (
+    om :: (
+    optDep :: (
+    subsys :: (
+    hidden :: (
+    open :: (
+    oc1 :: (
+    oc2 :: (
+    cc :: (
+    verbS :: (
+    verb :: (
+    warnS :: (
+    warn :: (
+    optS :: (
+    opt  :: (
+    debugS :: (
+    debug :: (
+    cinter :: (
+    ctmpl :: (
+    keep  :: (
+    gen   :: (
+    rules :: (
+    recur :: (
+    selfDebug :: (
+    deps        :: (
+    list        :: (
+    noopt       :: (
+    prop        :: (
+    depfiles    ::
+        <> ))))))))))))))))))))))))))))))
+
+
+-- -------------------------------------------------------------------------
+-- genmakes default options
+
+FUN defaultOpts: map[denotation,<,seq[seq[union]]]
+DEF defaultOpts == 
+    def(cinter,<>,
+    def(ctmpl,<>,
+    def(verb,<>,
+    def(verbS,<>,
+    def(opt,<>,
+    def(optS,<>,
+    def(debug,<>,
+    def(debugS,<>,
+    def(warn,<>,
+    def(warnS,<>,
+    def(deps,%(%(denotation("opalimports < %s"))),
+    def(list,%(%(denotation("(cd %s; ls %s) 2>/dev/null"))),
+    {}))))))))))))
+
+-- -------------------------------------------------------------------------
+-- set some option defaults depending on other options
+
+FUN adjustOpts : map[denotation,<,seq[seq[union]]] -> map[denotation,<,seq[seq[union]]]
+DEF adjustOpts(Opts) ==
+    shapeSpecificDefault(gen,
+                %(denotation("Shapefile")),%(denotation("Makefile")),
+    shapeSpecificDefault(defs,
+                %(denotation("shapedefs")),%(denotation("makedefs")),
+    shapeSpecificDefault(rules,
+                %(denotation("shaperules")),%(denotation("makerules")),
+    Opts
+    )))
+
+    FUN shapeSpecificDefault : denotation ** seq[union] ** seq[union] 
+                                ** map[denotation,<,seq[seq[union]]] 
+                                -> map[denotation,<,seq[seq[union]]]
+    DEF shapeSpecificDefault(Opt,IfShape,IfMake,Opts) ==
+      IF ~(Opt def? Opts) THEN
+        IF shape def? Opts THEN
+            def(Opt,%(IfShape),Opts)
+        ELSE def(Opt,%(IfMake),Opts) FI
+      ELSE Opts FI
+
+-- -------------------------------------------------------------------------
+-- analyze genmakes arguments
+-- stop and print usage information on failure
+
+FUN analyzeArgs : com[args]
+DEF analyzeArgs ==
+    scanOptions(optSpecs,defaultOpts)   & (\\OptsAndRest.
+    LET (Opts0,Remain) == (1st(OptsAndRest),2nd(OptsAndRest))
+        Opts == PRINT(selfDebug def? Opts0,\\ . Opts0`,Opts0)
+    IN
+    IF version def? Opts THEN
+      writeLine(stdOut,versionKey) & exit(1)
+    ELSE
+      LET ActOpts  == adjustOpts(Opts)
+          RemainLeng    == #(Remain)
+      IN
+      IF RemainLeng > 0 THEN
+        IF ft(Remain) = system THEN
+            IF RemainLeng > 1 THEN
+                yield(okay(sub(ActOpts,ft(rt(Remain)),rt(rt(Remain)))))
+            ELSE usageError FI
+        OTHERWISE
+        IF RemainLeng = 2 THEN
+            yield(okay(top(ActOpts,ft(Remain),ft(rt(Remain)))))
+        IF RemainLeng = 1 THEN
+            yield(okay(top(ActOpts,ft(Remain),ft(Remain))))
+        ELSE usageError FI
+      ELSE usageError FI
+    FI
+    )
+
+FUN usageError : com[args]
+DEF usageError == 
+    arg(0)                      & (\\Prog.
+    writeLine(stdErr,
+      format(
+  "usage: %s [ options ...] \n" ++ (
+  "    ( <struct> [ <command> ] | -S <sysname> <struct> ... )" ++ (
+  "    where options = \n%s"
+  )),
+        baseName(Prog)  u (
+        ((\\Opt,R. format("          %s\n%s",Opt u (R u))) / empty)(optSpecs)
+        u)
+      )
+    )   & 
+    exit(1)
+    )
+
+-- ---------------------------------------------------------------------------
+-- for letter option of kind "-o[c11...c1n] ... -o[cm1..cmn]"
+-- reproduce as "-oc11 ... -oc1n ... -ocm1 ... -ocmn"
+-- but exclude some of them
+
+FUN reproduceLetterOption: args ** denotation ** denotation -> denotation
+DEF reproduceLetterOption(Args,Opt,Exclude) ==
+    ((\\Let,R. appendSpaced(slice(Opt,0,1) ++ %(Let),R)) / empty)
+       (flattenLetterOptions(options(Args)!Opt,Exclude)) 
+
+-- ---------------------------------------------------------------------------
+-- for struct specific letter option of kind "-o[c11...c1n]:Struct ... 
+-- -o[cm1..cmn]:Struct"
+-- reproduce as "-oc11 ... -oc1n ... -ocm1 ... -ocmn"
+-- but exclude some of them
+
+FUN reproduceSpecialLetterOption: 
+        args ** denotation ** denotation ** denotation -> denotation
+DEF reproduceSpecialLetterOption(Args,Struct,Opt,Exclude) ==
+    LET Special == filterStructOptions(options(Args)!Opt,Struct)
+    IN
+    ((\\Let,R. appendSpaced(slice(Opt,0,1) ++ %(Let),R)) / empty)
+    (flattenLetterOptions(Special,Exclude)) 
+
+-- ---------------------------------------------------------------------------
+-- flatten letter options in reverse order 
+-- such that most recent (right) option comes first
+-- exclude some options
+
+FUN flattenLetterOptions : seq[seq[union]] ** denotation -> string
+DEF flattenLetterOptions(Opts,Exclude) ==
+    ( ++ / <> )
+    ((\\Opt.notin(!(Exclude))|revert(!(denotation(ft(Opt))))) * Opts)
+
+  FUN notin : string -> char -> bool
+  DEF notin(Exclude)(Ch) == ~(exist?(\\Ch2. Ch2 = Ch,Exclude))
+
+-- ---------------------------------------------------------------------------
+-- filter out struct specific options
+-- where structure is the 2nd option parameter
+
+FUN filterStructOptions : seq[seq[union]] ** denotation -> seq[seq[union]]
+DEF filterStructOptions(Opts,Struct) ==
+    (\\Opt. denotation(ft(rt(Opt))) = Struct) | Opts
+
+-- ---------------------------------------------------------------------------
+-- check if a struct specific flag is set
+-- where structure is the 1st option parameter
+
+FUN structOption? : args ** denotation ** denotation -> bool
+DEF structOption?(Args,Opt,Struct) ==
+    ::?( (\\O. denotation(ft(O)) = Struct) | (options(Args)!Opt) )
+
+-- ---------------------------------------------------------------------------
+-- for struct and tool specific option of kind 
+--     "-tool:Struct denotation1 ... -tool:Struct denotationn"
+-- reproduce as "denotation1 ... denotationn"
+
+FUN reproduceSpecialToolOptions : args ** denotation ** denotation -> denotation
+DEF reproduceSpecialToolOptions(Args,Struct,Tool) ==
+    LET Opts? == options(Args)!?Tool
+    IN
+    IF avail?(Opts?) THEN
+        LET StructSpecial == (\\Us. denotation(ft(Us)) = Struct) | cont(Opts?)
+        IN
+        ((\\O,R. appendSpaced(denotation(ft(rt(O))),R)) / empty)(StructSpecial)
+    ELSE empty FI
+
+-- --------------------------------------------------------------------------
+-- select value of a denotation option
+
+FUN value : args ** denotation -> denotation
+DEF value(Args,Opt) == denotation(ft(ft(options(Args)!Opt)))
+
+-- ---------------------------------------------------------------------------
+-- append after denotation seperated by space
+
+FUN appendSpaced : denotation ** denotation -> denotation
+DEF appendSpaced(Name,Str) == Str ++ (" " ++ Name)
+
+
+
+-- =========================================================================
+-- state processing
+
+-- -------------------------------------------------------------------------
+-- state contains our program state
+
+DATA state == 
+        state(  args            : args,
+                sysorder        : seq[denotation],
+                systems         : map[denotation,<,sysinfo],
+                structs         : map[denotation,<,structinfo],
+                okay?           : bool
+        )
+
+FUN ` : state -> string
+DEF `(state(Args,Order,Systems,Structs,Okay?)) ==
+    format("args = ...\n" ++
+           "sysorder =\n  %s\n" ++
+           "systems =\n  %s\n" ++
+           "structs =\n  %s\n" ++
+           "okay = %b\n",
+      `(\\x.x)(Order)           u (
+      `(\\x. !(x), `)(Systems)  u (
+      `(\\x. !(x), `)(Structs)  u (
+      Okay?                     u ))))
+          
+
+-- -------------------------------------------------------------------------
+-- some shortcuts for updating the state
+
+FUN defStruct : denotation ** structinfo ** state -> state
+DEF defStruct(Struct,Info,state(Args,Ord,Systems,Structs,okay?)) == 
+  state(Args,Ord,Systems,def(Struct,Info,Structs),okay?)
+
+FUN defSystem : denotation ** sysinfo ** state -> state
+DEF defSystem(System,Info,state(Args,Ord,Systems,Structs,okay?)) == 
+  state(Args,Ord,def(System,Info,Systems),Structs,okay?)
+
+FUN setFail : state -> state
+DEF setFail(state(Args,Ord,Systems,Structs,_)) == 
+  state(Args,Ord,Systems,Structs,false)
+
+
+-- -------------------------------------------------------------------------
+-- sysinfo describes a system
+
+DATA sysinfo ==
+        sysinfo (
+                system          : denotation, 
+                path            : denotation, 
+                version         : denotation,   /* not used */
+                flags           : set'Bitset, 
+                structs         : seq[denotation],
+                lsStructs       : set'Set[denotation,<]
+        )
+
+FUN ` : sysinfo -> string
+DEF `(sysinfo(System,Path,_,Flags,Structs,LsStructs)) ==
+    format("system %d path %d flags %s structs %s dir %s",
+           System               u (
+           Path                 u (
+           (`(Flags)):string    u (
+           `(\\x.x)(Structs)    u (
+           `(\\x.x)(LsStructs)  u )))))
+
+-- system flags
+
+FUN hidden frozen properties : nat
+DEF hidden == 0
+DEF frozen == 1
+DEF properties == 2
+
+        
+-- -------------------------------------------------------------------------
+-- structinfo describes a structure (NYI: property parts)
+
+DATA structinfo ==      
+        structinfo (
+                struct          : denotation, 
+                system          : denotation,
+                signDeps        : seq[sysinfo], 
+                implDeps        : seq[sysinfo],
+                extpDeps        : seq[sysinfo],
+                intpDeps        : seq[sysinfo]
+        )
+        visiting
+        unknown
+
+FUN ` : structinfo -> string
+DEF `(structinfo(Struct,System,_,_,_,_)) ==
+    format("struct %d system %d ...",
+                Struct          u (
+                System          u ))
+
+DEF `(visiting) == !("visiting")
+DEF `(unknown) == !("unknown")
+
+    
+-- -------------------------------------------------------------------------
+-- initializing state from args
+
+FUN initState : args -> com[state]
+DEF initState(Args) ==
+    LET State0 == IF prop def? options(Args) THEN
+                      incl(properties,{})
+                  ELSE {} FI
+        CurrSys == sysinfo(IF top?(Args) THEN empty
+                                         ELSE dropVersion(system(Args)) FI,
+                           currentDir,
+                           IF top?(Args) THEN takeVersion(struct(Args))
+                                         ELSE takeVersion(system(Args)) FI,
+                           IF hidden def? options(Args) THEN
+                               incl(hidden,State0)
+                           IF open def? options(Args) THEN
+                               State0
+                           ELSE incl(hidden,State0) FI,
+                           <>,{})
+        SubSystems ==
+            IF subsys def? options(Args) THEN
+                (\\US. sysinfo(baseName(dropVersion(denotation(ft(rt(US))))),
+                               normPath(dropVersion(denotation(ft(rt(US))))),
+                               takeVersion(denotation(ft(rt(US)))),
+                               (getSysFlag / incl(hidden,{}))
+                                        (!(denotation(ft(US)))),
+                               <>,{}))  
+                    * (options(Args)!subsys)
+            ELSE <> FI
+    IN
+    (readDir(Args) /& <> )(CurrSys :: revert(SubSystems)) & (\\ Systems.
+    LET Order == system * revert(Systems)
+        SysMap == extend({},Order,revert(Systems))
+        FinState0 == state(Args,Order,SysMap,{},true)
+        FinState == PRINT(selfDebug def? options(Args),
+                                \\ . FinState0`,FinState0)
+    IN
+    yield(okay(FinState))
+    )
+
+  FUN getSysFlag : char ** set'Bitset -> set'Bitset
+  DEF getSysFlag(Ch,Flags) ==
+    IF Ch = !("e") THEN excl(hidden,Flags)
+    IF Ch = !("h") THEN incl(hidden,Flags)
+    IF Ch = !("f") THEN incl(frozen,Flags)
+    IF Ch = !("d") THEN excl(frozen,Flags)
+    IF Ch = !("p") THEN incl(properties,Flags)
+                   FI
+
+-- -------------------------------------------------------------------------
+-- read directory contents of system
+
+FUN readDir : args -> sysinfo ** seq[sysinfo] -> com[seq[sysinfo]]
+DEF readDir(Args)(Sys AS sysinfo(Name,Path,Vers,Flags,Structs,_),Systems) ==
+    verbose(Args,"Reading system directory '%s' ...",dropSlash(Path) u)         
+                                                                & (\\ _ .
+    LET LsCommand == value(Args,list)
+        LsArg     == IF frozen in Flags THEN expFile(Sys,"*")
+                                        ELSE signFile(Sys,"*") FI
+        LsPath    == dropSlash(dirName(LsArg))
+        LsFile    == baseName(LsArg)
+    IN
+    popen(`(format(LsCommand,(LsPath u (LsFile u)))),"r") & (\\Inp.
+    sampleLsStructs(Args,Sys,Inp,{})            & (\\LsStructs.
+    pclose(Inp)                                 & (\\ _ .
+    yield(okay(sysinfo(Name,Path,Vers,Flags,Structs,LsStructs)::Systems))
+    ))))
+
+FUN sampleLsStructs : args ** sysinfo ** file ** set'Set[denotation,<] 
+                                                -> com[set'Set[denotation,<]]
+DEF sampleLsStructs(Args,Sys,Inp,Structs) ==
+    readLine(Inp) ; (\\ Line? .
+    IF okay?(Line?) THEN 
+        LET Base == baseName(dropVersion(`(data(Line?))))
+            Suffix == IF frozen in flags(Sys) THEN expSuffix ELSE signSuffix FI
+        IN
+        sampleLsStructs(Args,Sys,Inp,
+           incl(slice(Base,0,(#(Base) - #(Suffix)) - 1),Structs))
+    ELSE
+        yield(okay(Structs))
+    FI
+    )
+
+
+-- -------------------------------------------------------------------------
+-- check if we are faced with the top-level system
+
+FUN topLevel? : state ** sysinfo -> bool
+DEF topLevel?(S,SysInfo) ==
+    (system(SysInfo) = empty) and top?(args(S))
+
+
+-- =========================================================================
+-- file name processing
+
+-- -------------------------------------------------------------------------
+-- OCS directorys and file name suffixes
+
+FUN OCS signSuffix implSuffix extpSuffix intpSuffix 
+    hccSuffix hchSuffix
+    expSuffix implExpSuffix extpExpSuffix 
+    signInterSuffix implInterSuffix extpInterSuffix intpInterSuffix
+    signDepsSuffix implDepsSuffix extpDepsSuffix intpDepsSuffix 
+    anaSuffix optSuffix cSuffix hSuffix oSuffix : denotation
+
+DEF OCS == "OCS/"
+DEF signSuffix == ".sign"
+DEF implSuffix == ".impl"
+DEF extpSuffix == ".extp"
+DEF intpSuffix == ".intp"
+DEF hccSuffix == ".hc.c"
+DEF hchSuffix == ".hc.h"
+DEF expSuffix == ".sign.inter"
+DEF implExpSuffix == ".impl.inter"
+DEF extpExpSuffix == ".extp.inter"
+DEF signInterSuffix == ".sign.inter"
+DEF implInterSuffix == ".impl.inter"
+DEF extpInterSuffix == ".extp.inter"
+DEF intpInterSuffix == ".intp.inter"
+DEF signDepsSuffix == ".sign.deps"
+DEF implDepsSuffix == ".impl.deps"
+DEF extpDepsSuffix == ".extp.deps"
+DEF intpDepsSuffix == ".intp.deps"
+DEF anaSuffix == ".ana"
+DEF optSuffix == ".opt"
+DEF cSuffix == ".c"
+DEF hSuffix == ".h"
+DEF oSuffix == ".o"
+
+-- -------------------------------------------------------------------------
+-- the current directory (UNIX ...)
+
+FUN currentDir : denotation
+DEF currentDir == "./"
+
+-- -------------------------------------------------------------------------
+-- normalize a path such that it always ends with "/"
+
+FUN normPath : denotation -> denotation
+DEF normPath(s) ==
+    IF #(s) = 0 THEN currentDir
+    OTHERWISE IF (s ! pred(#(s))) = !("/") THEN s
+                                           ELSE s ++ ("/") FI
+
+-- -------------------------------------------------------------------------
+-- kill the terminating "/" of normalized path 
+
+FUN dropSlash : denotation -> denotation
+DEF dropSlash(S) ==
+    delete(S,pred(#(S)),pred(#(S)))
+
+-- -------------------------------------------------------------------------
+-- shorten a path such "./" reduces to empty
+
+FUN shortPath : denotation -> denotation
+DEF shortPath(S) == 
+    IF S = currentDir THEN empty ELSE S FI
+
+                
+-- -------------------------------------------------------------------------
+-- give the base name of a file name
+
+FUN baseName : denotation -> denotation
+DEF baseName(S) ==
+    `(revert(take(\\C.C |= /,revert(!(S)))))
+
+-- -------------------------------------------------------------------------
+-- give the directory name of a file name
+
+FUN dirName : denotation -> denotation
+DEF dirName(S) ==
+    normPath(`(revert(drop(\\C.C |= /,revert(!(S))))))
+
+-- ------------------------------------------------------------------------
+-- drop or take version of filename
+
+FUN dropVersion takeVersion : denotation -> denotation
+
+DEF dropVersion(S) ==
+    LET S2 == revert(!(S))
+    IN
+    IF ::?(S2) ANDIF ft(S2) = !("]") THEN
+        LET S3 == drop(\\Ch. Ch |= !("["),rt(S2))
+        IN
+        IF ::?(S3) THEN `(revert(rt(S3))) ELSE empty FI
+    ELSE S FI
+
+DEF takeVersion(S) ==
+    LET S2 == revert(!(S))
+    IN
+    IF ::?(S2) ANDIF ft(S2) = !("]") THEN
+        LET S3 == take(\\Ch. Ch |= !("["),S2)
+        IN
+        `(!("[") :: revert(S3))
+    ELSE empty FI
+
+-- -------------------------------------------------------------------------
+-- produce signature / implementation / export / optim / ana / object
+-- files of structures of given system
+
+
+FUN signFile : sysinfo ** denotation -> denotation
+DEF signFile(sysinfo(_,Path,Vers,_,_,_),Struct) == 
+    shortPath(Path) ++ (Struct ++ (signSuffix ++ Vers))
+
+FUN implFile : sysinfo ** denotation -> denotation
+DEF implFile(sysinfo(_,Path,Vers,_,_,_),Struct) == 
+    shortPath(Path) ++ (Struct ++ (implSuffix ++ Vers))
+
+FUN extpFile : sysinfo ** denotation -> denotation
+DEF extpFile(sysinfo(_,Path,Vers,_,_,_),Struct) == 
+    shortPath(Path) ++ (Struct ++ (extpSuffix ++ Vers))
+
+FUN intpFile : sysinfo ** denotation -> denotation
+DEF intpFile(sysinfo(_,Path,Vers,_,_,_),Struct) == 
+    shortPath(Path) ++ (Struct ++ (intpSuffix ++ Vers))
+
+FUN hccFile : sysinfo ** denotation -> denotation
+DEF hccFile(sysinfo(_,Path,Vers,_,_,_),Struct) == 
+    shortPath(Path) ++ (Struct ++ (hccSuffix ++ Vers))
+
+FUN hchFile : sysinfo ** denotation -> denotation
+DEF hchFile(sysinfo(_,Path,Vers,_,_,_),Struct) == 
+    shortPath(Path) ++ (Struct ++ (hchSuffix ++ Vers))
+
+FUN expFile : sysinfo ** denotation -> denotation
+DEF expFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,expSuffix)
+
+FUN extpExpFile : sysinfo ** denotation -> denotation
+DEF extpExpFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,extpExpSuffix)
+
+FUN implExpFile : sysinfo ** denotation -> denotation
+DEF implExpFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,implExpSuffix)
+
+FUN signInterFile : sysinfo ** denotation -> denotation
+DEF signInterFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,signInterSuffix)
+
+FUN implInterFile : sysinfo ** denotation -> denotation
+DEF implInterFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,implInterSuffix)
+
+FUN extpInterFile : sysinfo ** denotation -> denotation
+DEF extpInterFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,extpInterSuffix)
+
+FUN intpInterFile : sysinfo ** denotation -> denotation
+DEF intpInterFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,intpInterSuffix)
+
+FUN signDepsFile : sysinfo ** denotation -> denotation
+DEF signDepsFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,signDepsSuffix)
+
+FUN implDepsFile : sysinfo ** denotation -> denotation
+DEF implDepsFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,implDepsSuffix)
+
+FUN extpDepsFile : sysinfo ** denotation -> denotation
+DEF extpDepsFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,extpDepsSuffix)
+
+FUN intpDepsFile : sysinfo ** denotation -> denotation
+DEF intpDepsFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,intpDepsSuffix)
+
+FUN optFile : sysinfo ** denotation -> denotation
+DEF optFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,optSuffix)
+
+FUN anaFile : sysinfo ** denotation -> denotation
+DEF anaFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,anaSuffix)
+
+FUN cFile : sysinfo ** denotation -> denotation
+DEF cFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,cSuffix)
+
+FUN hFile : sysinfo ** denotation -> denotation
+DEF hFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,hSuffix)
+
+
+FUN oFile : sysinfo ** denotation -> denotation
+DEF oFile(SysInfo,Struct) == 
+    derivedFile(SysInfo,Struct,OCS,oSuffix)
+
+
+-- -------------------------------------------------------------------------
+-- produce path to derived objects of a system
+
+FUN derivedPath : sysinfo -> denotation
+DEF derivedPath(SysInfo) == 
+    derivedFile(SysInfo,empty,OCS,empty)
+
+
+-- -------------------------------------------------------------------------
+-- produce a derived file name according to a system state (hidden
+-- or open)
+
+FUN derivedFile : sysinfo ** denotation ** denotation ** denotation -> denotation
+DEF derivedFile(sysinfo(_,Path,_,Flags,_,_),
+                Struct,HiddenDir,Suff) ==
+    IF hidden in Flags THEN 
+        shortPath(Path) ++ (HiddenDir ++ (Struct ++ Suff))
+    ELSE
+        shortPath(Path) ++ (Struct ++ Suff)
+    FI
+
+    
+-- =========================================================================
+-- dependency analysis
+
+-- -------------------------------------------------------------------------
+-- analyze dependencies of structure 
+--   in order to define its struct info in state
+--   in order to update structs components of the system info the 
+--   structure belongs to.
+-- for frozen systems, the dependencies are set to <>
+-- if struct has already an info this is fine
+-- unless it is "visting"
+
+FUN anaDep : nat -> denotation ** state -> com[state]
+DEF anaDep(Level)(Struct,S) ==
+  IF Struct def? structs(S) THEN 
+    IF visiting?(structs(S)!Struct) THEN
+      LET CycleDiag == 
+             ( (\\Str,Inf,Diag. 
+                  IF visiting?(Inf) THEN `(format("%s\n\t%s",Diag u (Str u)))
+                                    ELSE Diag FI
+               ) / empty )(structs(S))
+      IN
+      error(args(S),"Cycle in import relation. Members are: %s",CycleDiag u) &
+      yield(okay(setFail(S)))
+    ELSE yield(okay(S)) FI
+  ELSE
+    searchStruct(S,sysorder(S),Struct) ;
+    (\\Result?.
+       IF fail?(Result?) THEN
+         error(args(S),"Cannot locate structure '%s'",Struct u) &
+         yield(okay(setFail(defStruct(Struct,unknown,S))))
+       ELSE
+         -- recursivly analyze dependencies
+         LET Result == data(Result?)
+             S1 == defStruct(Struct,visiting,S)
+         IN
+         verbose(args(S1),Level,Struct,"in system " 
+                                ++ path(systems(S1)!system(Result))) 
+                                                        & (\\ _ .
+         LET Deps == unique(signDeps(Result) 
+                                ++ (implDeps(Result) 
+                                ++ (extpDeps(Result)
+                                ++ intpDeps(Result))))
+         IN
+         (anaDep(succ(Level)) /& S1)(Deps)              & (\\S2.
+         -- construct StructInfo
+         LET StructInfo  == structinfo(
+                                Struct,
+                                system(Result),
+                                buildSystemDeps(S2,signDeps(Result)),
+                                buildSystemDeps(S2,implDeps(Result)),
+                                buildSystemDeps(S2,extpDeps(Result)),
+                                buildSystemDeps(S2,intpDeps(Result))
+                              )
+         IN
+         -- add Struct to its SysInfo
+         LET SysInfo == systems(S2)!system(Result)
+             NewSysInfo == sysinfo(system(SysInfo),path(SysInfo),
+                                     version(SysInfo),
+                                     flags(SysInfo),
+                                     structs(SysInfo) +% Struct,
+                                     lsStructs(SysInfo))
+         IN
+         -- update NewSysInfo and StructInfo in state
+         LET FinalS == defStruct(Struct,StructInfo,
+                                 defSystem(system(Result),NewSysInfo,S2))
+         IN
+         yield(okay(FinalS))
+         ))
+       FI       
+    )
+  FI
+
+-- ------------------------------------------------------------------------
+-- having a sequence of structure names which *have* a structinfo in
+-- state, sort them according to their system origin, and construct
+-- a sequence of sysinfos which contains the structures associated
+-- with their systems
+
+FUN buildSystemDeps : state ** seq[denotation] -> seq[sysinfo]
+DEF buildSystemDeps(S,Structs) ==
+    LET Infos == ( (\\Struct,R. 
+                        IF structinfo?(structs(S)!Struct) THEN
+                            (structs(S)!Struct) :: R
+                        ELSE R FI
+                   ) / <> )(Structs)
+        Sorted == msort(\\I1,I2. system(I1) < system(I2))(Infos)
+    IN
+    buildDeps(S,Sorted)
+
+    FUN buildDeps : state ** seq[structinfo] -> seq[sysinfo]
+    DEF buildDeps(S,Info :: Infos) ==
+        LET SysInfo == systems(S)!system(Info)
+            (Same,Other) == split(\\I. system(I) = system(Info),Infos)
+            SysDep == sysinfo(system(SysInfo),path(SysInfo),
+                              version(SysInfo),flags(SysInfo),
+                              struct(Info) :: (struct * Same),{})
+        IN
+        SysDep :: buildDeps(S,Other)
+    DEF buildDeps(_,<>) == <>
+     
+
+-- ------------------------------------------------------------------------
+-- having a sequence of system names, search for the first 
+-- which contains structure
+--   if enabled, result import dependencies of the parts of
+--   the retrieved structure
+
+DATA searchResult == result(system: denotation,
+                            signDeps: seq[denotation],
+                            implDeps: seq[denotation],
+                            extpDeps: seq[denotation],
+                            intpDeps: seq[denotation]
+                           )
+
+FUN searchStruct : state ** seq[denotation] ** denotation -> com[searchResult]
+DEF searchStruct(_,<>,_) ==
+  yield(fail(empty))
+DEF searchStruct(S,Sys :: Rest,Struct) ==
+  LET SysInfo == systems(S)!Sys
+--      Sys == PRINT(selfDebug?, "searchStruct: Sys:" ++ Sys0 ++ ":Struct:" ++ Struct ++":", Sys0)
+  IN
+  IF Struct in lsStructs(SysInfo) THEN 
+    -- found
+    LET ScanDeps? ==
+                (path(SysInfo) = currentDir)
+                        or ((recur def? options(args(S))) and
+                                ~(frozen in flags(SysInfo))) 
+    IN
+    IF ScanDeps? THEN
+      scanDeps(S,SysInfo,signFile(SysInfo,Struct),
+                         signDepsFile(SysInfo,Struct))  & (\\SignDeps.
+      scanDeps(S,SysInfo,implFile(SysInfo,Struct),
+                         implDepsFile(SysInfo,Struct))  & (\\ImplDeps.
+      IF prop def? options(args(S)) THEN
+        scanDeps(S,SysInfo,extpFile(SysInfo,Struct),
+                           extpDepsFile(SysInfo,Struct)) & (\\ExtpDeps.
+        scanDeps(S,SysInfo,intpFile(SysInfo,Struct),
+                           intpDepsFile(SysInfo,Struct)) & (\\IntpDeps.
+        yield(okay(result(Sys,SignDeps,ImplDeps,ExtpDeps,IntpDeps)))
+        ))
+      ELSE
+        yield(okay(result(Sys,SignDeps,ImplDeps,<>,<>)))
+      FI
+      ))
+    ELSE
+      yield(okay(result(Sys,<>,<>,<>,<>)))
+    FI
+  ELSE
+    -- try next system
+    searchStruct(S,Rest,Struct)
+  FI
+    
+-- -------------------------------------------------------------------------
+-- scan dependencies of file 
+--  if -depfiles is enabled use the following procedure:
+--   If there is a file DepsFn, take the lines of this
+--   file as the dependencies, else,
+--   if there is no such file, scan dependencies as normally,
+--   and as a side-effect create DepsFn.
+--   This procedure serves only to "bootstrap" dependency files
+--   of newly incorporated structures. The updating of dependency
+--   files must be driven by make rules; no check is performed
+--   wether the dep-files are out of date.
+
+FUN scanDeps : state ** sysinfo ** denotation ** denotation -> com[seq[denotation]]
+DEF scanDeps(S,SysInfo,Fn,DepsFn) ==
+    IF depfiles def? options(args(S)) THEN
+      openNewer(DepsFn,Fn,"r") ; (\\DepsInp?.
+      IF okay?(DepsInp?) THEN
+        sampleDeps(data(DepsInp?),<>) & (\\Deps.
+        close(data(DepsInp?)) & (\\ _ .
+        yield(okay(dropBuiltin(Deps)))
+        ))
+      ELSE
+        scanDeps1(S,SysInfo,Fn)      & (\\Deps.
+        open(DepsFn,"w")             & (\\DepsOut.
+        ( (\\Dep,_ . writeLine(DepsOut,Dep) ) /& nil )(Deps) & (\\ _ .
+        close(DepsOut)               & (\\ _ .
+        yield(okay(dropBuiltin(Deps)))
+        ))))
+      FI
+      )
+    ELSE
+      scanDeps1(S,SysInfo,Fn)
+    FI
+
+FUN scanDeps1 : state ** sysinfo ** denotation -> com[seq[denotation]]
+DEF scanDeps1(S,SysInfo,Fn) ==
+    LET DepsCommand == value(args(S),deps)
+    IN
+    popen(`(format(DepsCommand,Fn u)),"r")      & (\\Inp.
+    sampleDeps(Inp,<>)                          & (\\Deps.
+    pclose(Inp)                                 ; (\\ Res .
+    IF okay?(Res) THEN
+        yield(okay(dropBuiltin(Deps)))
+    ELSE writeLine(stdErr,format("Error Retrieving %s",Fn u)) &
+          exit (2) FI
+    )))
+
+FUN sampleDeps: file ** seq[denotation] -> com[seq[denotation]]
+DEF sampleDeps(Inp,Deps) ==
+    readLine(Inp) ; (\\ Line? .
+    IF okay?(Line?) THEN 
+        sampleDeps(Inp,`(data(Line?))::Deps) 
+    ELSE
+        yield(okay(revert(Deps)))
+    FI
+    )
+
+FUN openNewer: denotation ** denotation ** denotation -> com[file]
+DEF openNewer(DepsFn,Fn,Kind) ==
+    newer(DepsFn,Fn)    & (\\Yes? .
+    IF Yes? THEN open(DepsFn,Kind) ELSE yield(fail("")) FI
+    )
+
+FUN dropBuiltin : seq[denotation] -> seq[denotation]
+DEF dropBuiltin(Deps) ==
+    (\\Dep. ~(Dep in builtinStructs)) | Deps
+
+FUN builtinStructs: set'Set[denotation,<]
+DEF builtinStructs ==
+    incl("BOOL",incl("DENOTATION",incl("ABORT",{})))
+
+FUN newer : denotation ** denotation -> com[bool]
+-- check if first file is newer then second
+DEF newer(Fn1,Fn2) == 
+    stat(Fn1)   & (\\St1.
+    stat(Fn2)   & (\\St2.
+    yield(okay(mtime(St1) > mtime(St2)))
+    ))
+
+-- -------------------------------------------------------------------------
+-- make a sequence of denotations unique
+
+FUN unique : seq[denotation] -> seq[denotation]
+DEF unique(S::R) == 
+    IF exist?(\\T.S=T,R) THEN unique(R) ELSE S::unique(R) FI
+DEF unique(<>) == <>
+
+-- ========================================================================
+-- messages and errors
+
+-- ------------------------------------------------------------------------
+-- verbose message 
+
+FUN verbose : args ** denotation ** seq[union] -> com[void]
+DEF verbose(Args,Patt,Vals) ==
+    IF selfVerb def? options(Args) THEN
+        writeLine(stdOut,format(Patt,Vals)) & flush(stdOut)
+    ELSE yield(okay(nil)) FI
+
+-- -------------------------------------------------------------------------
+-- produce a message with indentation
+
+FUN verbose : args ** nat ** denotation ** denotation -> com[void]
+DEF verbose(Args,Level,Name,Location) ==
+    IF selfVerb def? options(Args) THEN
+        write(stdOut,
+              format("%s %s\n",%(denotation(IndName),denotation(Location))))
+        WHERE 
+          IndName == 
+            init(max(Ind + #(Name),"26"!),
+             \\I. IF I < Ind THEN  blank
+                  OTHERWISE IF I < (Ind + #(Name)) THEN Name ! (I - Ind)
+                                                   ELSE "."! FI)
+          Ind == 2 * Level
+    ELSE yield(okay(nil)) FI
+
+-- -------------------------------------------------------------------------
+-- produce error message 
+
+FUN error : args ** denotation ** seq[union] -> com[void]
+DEF error(_,Patt,Vals) ==
+    writeLine(stdErr,format(Patt,Vals))
+
+-- ======================================================================
+-- generate & analyze flags for the diverse tools 
+
+-- -------------------------------------------------------------------------
+-- generate global flags for oc1 and oc2
+
+FUN genOc1GlobalFlags genOc2GlobalFlags : state ** sysinfo -> denotation
+DEF genOc1GlobalFlags(S,_) ==
+    reproduceLetterOption(args(S),verb,empty) ++ (
+    reproduceLetterOption(args(S),warn,empty) ++ (
+    IF prop def? options(args(S)) THEN " -zprop" 
+                                  ELSE empty FI
+    ))
+DEF genOc2GlobalFlags(S,_) ==
+    reproduceLetterOption(args(S),verb,empty) ++ (
+    reproduceLetterOption(args(S),warn,empty) ++ (
+    reproduceLetterOption(args(S),opt,"C") ++ (
+    reproduceLetterOption(args(S),debug,empty) 
+    )))
+
+-- -------------------------------------------------------------------------
+-- generate struct specific flags for oc1 and oc2 
+
+FUN genOc1SpecialFlags genOc2SpecialFlags 
+                : state ** sysinfo ** denotation -> denotation
+DEF genOc1SpecialFlags(S,_,Struct) ==
+    LET Flags == 
+          reproduceSpecialLetterOption(args(S),Struct,verbS,empty) ++ (
+          reproduceSpecialLetterOption(args(S),Struct,warnS,empty) ++ (
+          reproduceSpecialToolOptions(args(S),Struct,oc1)
+          ))
+    IN
+    IF (prop def? options(args(S))) and (#(Flags) |= 0) THEN
+        -- special options overwrite global options; so
+        -- if they are supplied, and prop is enabled, add 
+        -- -zprop flag
+        Flags ++ " -zprop"
+    ELSE Flags FI
+
+DEF genOc2SpecialFlags(S,_,Struct) ==
+    reproduceSpecialLetterOption(args(S),Struct,verbS,"m") ++ (
+    reproduceSpecialLetterOption(args(S),Struct,warnS,empty) ++ (
+    reproduceSpecialLetterOption(args(S),Struct,optS,"C") ++ (
+    reproduceSpecialLetterOption(args(S),Struct,debugS,empty) ++ (
+    reproduceSpecialToolOptions(args(S),Struct,oc2) 
+    ))))
+
+-- -------------------------------------------------------------------------
+-- check if "g" optimization flag is enabled
+
+FUN globalOptFlag? : state ** denotation -> bool
+DEF globalOptFlag?(S,Struct) ==
+    LET SpecialOpts == filterStructOptions(options(args(S))!optS,Struct)
+        Opts == IF ::?(SpecialOpts) THEN
+                    -- those overwrite default options
+                    SpecialOpts
+                ELSE options(args(S))!opt FI
+    IN
+    exist?(\\Ch. Ch = !("g") or Ch = !("2"),
+           flattenLetterOptions(Opts,empty))
+
+-- -------------------------------------------------------------------------
+-- generate global flags for cc and ld;
+-- derived from optimization and/or debugging flags of oc 
+
+FUN genCcGlobalFlags genLdGlobalFlags : state ** sysinfo -> denotation
+DEF genCcGlobalFlags(S,_) ==
+    LET OptLetters == flattenLetterOptions(options(args(S))!opt,empty)
+        DebugLetters == flattenLetterOptions(options(args(S))!debug,empty)
+        VerboseLetters == flattenLetterOptions(options(args(S))!verb,"m")
+    IN
+    genCcFlags(OptLetters,DebugLetters,VerboseLetters)
+
+DEF genLdGlobalFlags(S,_) ==
+    LET DebugLetters == flattenLetterOptions(options(args(S))!debug,empty)
+    IN
+    genLdFlags(<>,DebugLetters,<>)
+
+        
+-- -------------------------------------------------------------------------
+-- generate struct specific flags for cc;
+-- derived from optimization and debugging flags of oc 
+
+FUN genCcSpecialFlags : state ** sysinfo ** denotation -> denotation
+DEF genCcSpecialFlags(S,_,Struct) ==
+    LET OptLetters == flattenLetterOptions(Filter(options(args(S))!optS),
+                                           "gl")
+        DebugLetters == flattenLetterOptions(Filter(options(args(S))!debugS),
+                                           empty)
+        VerbLetters == flattenLetterOptions(Filter(options(args(S))!verbS),
+                                           "m")
+        Filter == \\Opts. filterStructOptions(Opts,Struct)
+    IN
+    genCcFlags(OptLetters,DebugLetters,VerbLetters)
+        ++ reproduceSpecialToolOptions(args(S),Struct,cc)
+
+-- -------------------------------------------------------------------------
+-- derive cc optimization and debugging flags from standard oc flags
+
+FUN genCcFlags genLdFlags 
+                : string ** string ** string -> denotation
+DEF genCcFlags(OptLetters,DebugLetters,VerbLetters) ==
+    LET OptFlags ==
+            IF ::?(OptLetters) THEN
+                IF (ft(OptLetters) |= !("0")) or 
+                        exist?(\\Ch. Ch = !("C"),OptLetters) THEN
+                    "$(MEDIUM_CC)"
+                ELSE empty FI
+            ELSE empty FI
+        DebugFlags == 
+            IF exist?(\\Ch. Ch = !("d"),DebugLetters) THEN
+                " $(DEBUG_CC)"
+            ELSE empty FI
+        VerbFlags ==
+            IF ::?(VerbLetters) THEN
+                IF ft(VerbLetters) |= !("0") THEN
+                    " $(VERB_CC)"
+                ELSE empty FI
+            ELSE empty FI
+    IN
+    OptFlags ++ (DebugFlags ++ VerbFlags)
+
+DEF genLdFlags(OptLetters,DebugLetters,VerbLetters) ==
+    LET OptFlags ==
+            IF ::?(OptLetters) THEN
+                IF (ft(OptLetters) |= !("0")) or 
+                        exist?(\\Ch. Ch = !("C"),OptLetters) THEN
+                    "$(MEDIUM_LD)"
+                ELSE empty FI
+            ELSE empty FI
+        DebugFlags == 
+            IF exist?(\\Ch. Ch = !("d"),DebugLetters) THEN
+                " $(DEBUG_LD)"
+            ELSE empty FI
+        VerbFlags ==
+            IF ::?(VerbLetters) THEN
+                IF ft(VerbLetters) |= !("0") THEN
+                    " $(VERB_LD)"
+                ELSE empty FI
+            ELSE empty FI
+    IN
+    OptFlags ++ (DebugFlags ++ VerbFlags)
+
+-- -------------------------------------------------------------------------
+-- generate oc system parameters from sequence of system infos
+
+FUN genOcSysParams : state ** seq[sysinfo] -> denotation
+DEF genOcSysParams(S,SysInfos) ==
+    LET gen == \\SysInfo, R. 
+                    (appendSpaced\(genOcSysLocation(S,SysInfo) ++ " -r "))
+                        (structs(SysInfo))    ++ R
+    IN
+    (gen / empty)(SysInfos)
+
+-- -------------------------------------------------------------------------
+-- generate oc system location from system info
+
+FUN genOcSysLocation : state ** sysinfo -> denotation
+DEF genOcSysLocation(_,SysInfo) ==
+    IF hidden in flags(SysInfo) THEN " -h" ++ dropSlash(path(SysInfo))
+                                ELSE " -e" ++ dropSlash(path(SysInfo)) FI
+
+
+
+-- =========================================================================
+-- generate make files 
+
+-- -------------------------------------------------------------------------
+-- generate the Make or Shape file for a system
+--   we patch the path of the Sysinfo passed to all generator functions
+--   to currentDir; in order to make -R work
+
+FUN genSys : sysinfo ** state -> com[state]
+DEF genSys(SysInfo,S) ==
+    LET MFile   == path(SysInfo) ++ value(args(S),gen)
+        CurrSysInfo == sysinfo(system(SysInfo),currentDir,version(SysInfo),
+                               flags(SysInfo),
+                               structs(SysInfo),
+                               lsStructs(SysInfo))
+        Defs    == value(args(S),defs)
+        Rules   == IF topLevel?(S,SysInfo) THEN
+                        value(args(S),rules) ++ ".top"
+                    ELSE value(args(S),rules) ++ ".sys" FI
+    IN
+    open(MFile,"w") & (\\Out.
+    genHeader(S,CurrSysInfo,Out) & (\\ _ .
+    write(Out,"include %s\n",Defs u) & (\\ _ .
+    genDefs(S,CurrSysInfo,Out) & (\\ _ .
+    write(Out,"include %s\n",Rules u) & (\\ _ .
+    genRules(S,CurrSysInfo,Out,Out) & (\\ _ .
+    close(Out) & (\\ _ .
+    yield(okay(S))
+    )))))))
+
+-- -------------------------------------------------------------------------
+-- generate defitions in OM mode
+--  options -gen, -rules, -defs do not effect
+
+
+FUN genOM : sysinfo ** state -> com[state]
+DEF genOM(SysInfo,S) ==
+    LET MFile   == path(SysInfo) ++ value(args(S),gen)
+    IN
+    open(MFile,"w")                     & (\\Out.
+    genHeader(S,SysInfo,Out)            & (\\ _ .
+    genDefs(S,SysInfo,Out)              & (\\ _ .
+    genRules(S,SysInfo,Out,Out)         & (\\ _ .
+    close(Out)                          & (\\ _ .
+    yield(okay(S))
+    )))))
+
+-- -------------------------------------------------------------------------
+-- generate header 
+
+FUN genHeader : state ** sysinfo ** file -> com[void]
+DEF genHeader(S,SysInfo,Out) ==
+    IF topLevel?(S,SysInfo) THEN
+        write(Out,
+              "# top-level command %s'%s\n",
+              com(args(S))                      u (
+              struct(args(S))                   u 
+              )
+        )
+    ELSE 
+        write(Out,
+              "# system %s\n",
+              system(SysInfo)                   u 
+        )
+    FI
+
+-- --------------------------------------------------------------------------
+-- generate definitions of makefile
+
+FUN genDefs : state ** sysinfo ** file -> com[void]
+DEF genDefs(S,SysInfo,Out) ==
+    IF topLevel?(S,SysInfo) THEN 
+        genTopDefs(S,SysInfo,Out)
+    ELSE genSysDefs(S,SysInfo,Out) FI
+
+FUN genTopDefs : state ** sysinfo ** file -> com[void]
+DEF genTopDefs(S,SysInfo,Out) ==
+    write(Out,"TOPSTRUCT = %s\nTOPCOM = %s\n",
+          struct(args(S)) u (com(args(S)) u)
+    )                                                   & (\\ _ .
+    genLdDefs(S,SysInfo,Out)                            & (\\ _ .
+    genFlagDefs(S,SysInfo,Out)                          & (\\ _ .
+    genCompDefs(S,SysInfo,Out)
+    )))
+
+    
+
+FUN genSysDefs : state ** sysinfo ** file -> com[void]
+DEF genSysDefs(S,SysInfo,Out) ==
+    write(Out,"SYSTEM = %s\n",system(SysInfo) u)        & (\\ _ .
+    genLdDefs(S,SysInfo,Out)                            & (\\ _ .
+    genFlagDefs(S,SysInfo,Out)                          & (\\ _ .
+    genCompDefs(S,SysInfo,Out)
+    )))
+
+FUN genLdDefs : state ** sysinfo ** file -> com[void]
+DEF genLdDefs(S,SysInfo,Out) ==
+    write(Out,"SYS_LDFLAGS = $(VAR_LDFLAGS) %s\n",
+          genLdGlobalFlags(S,SysInfo) u 
+    )                                                   & (\\ _ .
+    write(Out,
+    "SYS_LDLIBS = %s $(VAR_LDLIBS)\nSYS_LDLIBPATH = %s $(VAR_LDLIBPATH)\nSYS_LDLIBDEPS = %s $(VAR_LDLIBDEPS)\n",
+          (genLib  \ empty)(rt(sysorder(S))) u (
+          (genPath \ empty)(rt(sysorder(S))) u (
+          (genDep  \ empty)(evolvingSystems) u ))
+          WHERE
+            genLib  == \\Sys,R. appendSpaced("-l"++Sys,R)
+            genPath == \\Sys,R. (appendSpaced("-L" ++ Path, R)
+                                   WHERE Path == 
+                                        dropSlash(derivedPath(systems(S)!Sys)))
+            genDep  == \\Sys,R. appendSpaced(
+                                    derivedPath(systems(S)!Sys)
+                                      ++ ("lib") ++ (Sys ++ ".a"),
+                                    R)
+            evolvingSystems == 
+                     (\\Sys. ~(frozen in flags(systems(S)!Sys))) 
+                                | rt(sysorder(S))
+    )
+    )
+FUN genFlagDefs : state ** sysinfo ** file -> com[void]
+DEF genFlagDefs(S,SysInfo,Out) ==
+    write(Out,"SYS_OC1FLAGS = $(VAR_OC1FLAGS) %s\n",
+          genOc1GlobalFlags(S,SysInfo) u 
+    )                                                   & (\\ _ .
+    write(Out,"SYS_OC2FLAGS = $(VAR_OC2FLAGS) %s\n",
+          genOc2GlobalFlags(S,SysInfo) u 
+    )                                                   & (\\ _ .
+    write(Out,"SYS_CCFLAGS = $(VAR_CCFLAGS) %s\n",
+          genCcGlobalFlags(S,SysInfo) u 
+    )                                                   
+    ))
+
+FUN genCompDefs : state ** sysinfo ** file -> com[void]
+DEF genCompDefs(S,SysInfo,Out) ==
+    write(Out,"GENSTRUCTS = %s\n",
+          (appendSpaced \ empty)(structs(SysInfo)) u 
+    )                                                   & (\\ _ .
+    write(Out,"SIGNS = %s\n",
+          (appendFn(SysInfo,signFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"IMPLS = %s\n",
+          (appendFn(SysInfo,implFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"EXPS = %s\n",
+          (appendFn(SysInfo,expFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"ANAS = %s\n",
+          IF keep def? options(args(S)) THEN
+             (appendFn(SysInfo,anaFile) \ empty)
+             (structs(SysInfo)) u
+          ELSE "" u FI
+    )                                                   & (\\ _ .
+    write(Out,"OPTS = %s\n",
+          (appendFn(SysInfo,optFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"CS = %s\n",
+          IF keep def? options(args(S)) THEN
+             (appendFn(SysInfo,cFile) \ empty)
+             (structs(SysInfo)) u
+          ELSE "" u FI
+    )                                                   & (\\ _ .
+    write(Out,"OS = %s\n",
+          (appendFn(SysInfo,oFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"ESYSTEMS = %s\nFSYSTEMS = %s\n",
+          (appendSpaced / empty)((dropSlash o path) * evolvingSystems) u (
+          (appendSpaced / empty)((dropSlash o path) * frozenSystems)   u ) 
+            WHERE (frozenSystems,evolvingSystems) 
+                     == partition(\\SInfo.frozen in flags(SInfo),
+                                    (\\Sys.systems(S)!Sys) * rt(sysorder(S)))
+    )                                                   & (\\ _ .
+    (  
+    IF depfiles def? options(args(S)) THEN
+      write(Out,"SIGNDEPS = %s\nIMPLDEPS = %s\n",
+          (appendFn(SysInfo,signDepsFile) \ empty)(structs(SysInfo)) u (
+          (appendFn(SysInfo,implDepsFile) \ empty)(structs(SysInfo)) u )
+      )
+    ELSE yield(okay(nil)) FI
+    )                                                   & (\\ _ .
+    IF prop def? options(args(S)) THEN
+        genPropCompDefs(S,SysInfo,Out)
+    ELSE yield(okay(nil)) FI
+    ))))))))))
+    
+FUN genPropCompDefs : state ** sysinfo ** file -> com[void]
+DEF genPropCompDefs(S,SysInfo,Out) ==
+    write(Out,"EXTPS = %s\n",
+          (appendFn(SysInfo,extpFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"INTPS = %s\n",
+          (appendFn(SysInfo,intpFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"EXTPEXPS = %s\n",
+          (appendFn(SysInfo,extpExpFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"IMPLEXPS = %s\n",
+          (appendFn(SysInfo,implExpFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"SIGNINTERS = %s\n",
+          (appendFn(SysInfo,signInterFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"IMPLINTERS = %s\n",
+          (appendFn(SysInfo,implInterFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"EXTPINTERS = %s\n",
+          (appendFn(SysInfo,extpInterFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    write(Out,"INTPINTERS = %s\n",
+          (appendFn(SysInfo,intpInterFile) \ empty)
+          (structs(SysInfo)) u
+    )                                                   & (\\ _ .
+    (
+    IF depfiles def? options(args(S)) THEN
+      write(Out,"EXTPDEPS = %s\nINTPDEPS = %s\n",
+          (appendFn(SysInfo,extpDepsFile) \ empty)(structs(SysInfo)) u (
+          (appendFn(SysInfo,intpDepsFile) \ empty)(structs(SysInfo)) u )
+      )
+    ELSE yield(okay(nil)) FI
+    )))))))))
+    
+FUN appendFn : sysinfo ** (sysinfo ** denotation -> denotation) 
+                -> denotation ** denotation -> denotation
+DEF appendFn(SysInfo,FnGenerator)(Struct,R) ==
+    appendSpaced(FnGenerator(SysInfo,Struct),R)
+
+-- --------------------------------------------------------------------------
+-- generate rules of makefile
+
+FUN genRules : state ** sysinfo ** file ** file -> com[void]
+DEF genRules(S,SysInfo,Make,Shape) ==
+    (genRule(S,SysInfo,Make,Shape) /& nil)(structs(SysInfo))
+
+-- --------------------------------------------------------------------------
+-- generate rules of structure 
+
+FUN genRule : state ** sysinfo ** file ** file 
+                                -> denotation ** void -> com[void]
+DEF genRule(S,SysInfo,Make,Shape)(Struct,_) ==
+    LET StructInfo == structs(S)!Struct
+    IN
+    genExpRule(S,SysInfo,StructInfo,Make,Shape)         & (\\ _  .
+    (IF keep def? options(args(S)) THEN
+        genAnaRule(S,SysInfo,StructInfo,Make,Shape)             & (\\ _ .
+        genCRule(S,SysInfo,StructInfo,Make,Shape)               & (\\ _  .
+        genORule(S,SysInfo,StructInfo,Make,Shape)
+        ))
+    ELSE genCombORule(S,SysInfo,StructInfo,Make,Shape) FI)
+                                                        & (\\ _ .
+    IF prop def? options(args(S)) THEN
+        genExtpRule(S,SysInfo,StructInfo,Make,Shape)            & (\\ _ .
+        genIntpRule(S,SysInfo,StructInfo,Make,Shape)
+        )
+    ELSE yield(okay(nil)) FI
+    ))
+
+
+-- --------------------------------------------------------------------------
+-- generate rules to derive export file
+
+FUN genExpRule : state ** sysinfo ** structinfo ** file ** file
+                                                        -> com[void]
+DEF genExpRule(S,SysInfo,structinfo(Struct,_,SignDeps,_,_,_),
+                                                                Make,Shape) ==
+    LET (SpecialDef,SpecialApp,Ingredients) == 
+                genSpecial(S,SysInfo,Struct,"OC1FLAGS",genOc1SpecialFlags)
+    IN
+    write(Make,
+"%s%s: %s%s\n\t@%s$(OC1) $(OC1FLAGS) %s -s %s %s %s $(OCSYSPARAM)\n",
+          SpecialDef                            u (
+          expFile(SysInfo,Struct)               u (
+          signFile(SysInfo,Struct)              u (
+          genDeps(S,SignDeps,expFile)           u (
+          genVerbose(S,SysInfo,Struct,
+                "Checking Signature of %s ...") u (
+          SpecialApp                            u (
+          genOcSysLocation(S,SysInfo)           u (
+          Struct                                u (
+          genOcSysParams(S,SignDeps)            u 
+          ))))))))
+    ) & (\\ _ .
+    write(Make, "\t@if [ -n ""$(DOSFOPROOT)"" ] ; then %s $(ECHO) %s >> $(DOSFOPROOT)/only ; fi\n",
+          genVerbose(S, SysInfo, Struct, 
+                     "Marking %s for documentation ...") u (
+          Struct u
+          ))
+    ) & (\\ _ .
+    IF shape def? options(args(S)) THEN
+        write(Shape,"%s: : +(OC1)%s\n",
+          expFile(SysInfo,Struct)               u (
+          Ingredients                           u 
+          )
+        )
+    ELSE yield(okay(nil)) FI
+    )
+
+
+-- --------------------------------------------------------------------------
+-- generate rules to derive ana file
+
+FUN genAnaRule : state ** sysinfo ** structinfo ** file ** file -> com[void]
+DEF genAnaRule(S,SysInfo,structinfo(Struct,_,_,ImplDeps,_,_),
+                                                        Make,Shape) ==
+    LET (SpecialDef,SpecialApp,Ingredients) == 
+             genSpecial(S,SysInfo,Struct,"OC1FLAGS",genOc1SpecialFlags)
+        ImplExpFile == IF prop def? options(args(S)) THEN
+                           implExpFile(SysInfo,Struct)
+                       ELSE empty FI
+    IN
+    write(Make,
+"%s%s %s: %s %s%s\n\t@%s$(OC1) $(OC1FLAGS) %s -i %s %s %s $(OCSYSPARAM)\n",
+          SpecialDef                            u (
+          anaFile(SysInfo,Struct)               u (
+          ImplExpFile                           u (
+          implFile(SysInfo,Struct)              u (
+          expFile(SysInfo,Struct)               u (
+          genDeps(S,ImplDeps,expFile)           u (
+          genVerbose(S,SysInfo,Struct,
+                "Checking Implementation of %s ...") u (
+          SpecialApp                            u (
+          genOcSysLocation(S,SysInfo)           u (
+          Struct                                u (
+          genOcSysParams(S,ImplDeps)            u 
+          ))))))))))
+    ) & (\\ _ .
+    write(Make, "\t@if [ $(DOSFOPROOT) ] ; then %s $(ECHO) %s >> $(DOSFOPROOT)/only ; fi\n",
+          genVerbose(S, SysInfo, Struct, 
+                     "Marking %s for documentation ...") u (
+          Struct u
+          ))
+    ) & (\\ _ .
+    IF shape def? options(args(S)) THEN
+        write(Shape,"%s %s: : +(OC1)%s\n",
+          anaFile(SysInfo,Struct)               u (
+          ImplExpFile                           u (
+          Ingredients                           u 
+          ))
+        )
+    ELSE yield(okay(nil)) FI
+    )
+-- --------------------------------------------------------------------------
+-- generate rules to derive C file
+
+FUN genCRule : state ** sysinfo ** structinfo ** file ** file -> com[void]
+DEF genCRule(S,SysInfo,structinfo(Struct,_,_,ImplDeps,_,_),
+                                                        Make,Shape) ==
+    LET (SpecialDef,SpecialApp,Ingredients) == 
+                genSpecial(S,SysInfo,Struct,"OC2FLAGS",genOc2SpecialFlags)
+        (SpecialTopDef,SpecialTopApp,TopIngredients) ==
+                genOc2SpecialTop(S,SysInfo,Struct)
+        optDeps == 
+                IF (optDep def? options(args(S))) 
+                                        or globalOptFlag?(S,Struct) THEN 
+                    genDeps(S,ImplDeps,optFile)
+                ELSE empty FI
+        CFile   == cFile(SysInfo,Struct)
+        OptFile == IF noopt def? options(args(S)) THEN
+                       empty
+                   ELSE optFile(SysInfo,Struct) FI
+    IN
+    write(Make,
+ "%s%s%s %s: %s%s\n\t@if [ ""$@"" = ""%s"" ] ; then %s$(OC2) $(OC2FLAGS) %s %s %s %s %s $(OCSYSPARAM); fi\n",
+          SpecialDef                            u (
+          SpecialTopDef                         u (
+          CFile                                 u (
+          OptFile                               u (
+          anaFile(SysInfo,Struct)               u (
+          optDeps                               u (
+          CFile                                 u (
+          genVerbose(S,SysInfo,Struct,
+                "Generating C Code for %s ...") u (
+          SpecialApp                            u (
+          SpecialTopApp                         u (
+          genOcSysLocation(S,SysInfo)           u (
+          Struct                                u (
+          genOcSysParams(S,ImplDeps)            u 
+          ))))))))))))
+    )                                                   & (\\ _ .
+    IF shape def? options(args(S)) THEN
+        write(Shape,"%s %s: : +(OC2)%s%s\n",
+          CFile                                 u (
+          OptFile                               u (
+          Ingredients                           u (
+          TopIngredients                        u
+          )))
+        )                                               & (\\ _ .
+        (IF structOption?(args(S),ctmpl,Struct) THEN
+             write(Make,
+                "OCS/%s.hc.h: %s.hc.h\n\t@$(RM) -f $@; $(CP) $? $@\n",
+                Struct u (Struct u)
+             )
+        ELSE yield(okay(nil)) FI)
+        )
+    ELSE yield(okay(nil)) FI
+    )
+
+FUN genOc2SpecialTop : state ** sysinfo ** denotation -> denotation ** denotation ** denotation
+DEF genOc2SpecialTop(S,_,Struct) ==
+    IF structOption?(args(S),ctmpl,Struct)  THEN
+        IF shape def? options(args(S)) THEN
+            (format("_%s_OC2TOPFLAGS = -zgForeignTemplate\n",Struct u)`,
+             format("$(_%s_OC2TOPFLAGS)",Struct u)`,
+             format(" +(_%s_OC2TOPFLAGS)",Struct u)`)
+        ELSE
+            (empty,"-zgForeignTemplate",empty)
+        FI
+    OTHERWISE
+    IF (IF top?(args(S)) THEN (struct(args(S)) = Struct) ELSE false FI)
+        or structOption?(args(S),cinter,Struct) THEN
+        IF shape def? options(args(S)) THEN
+            (format("_%s_OC2TOPFLAGS = -zgForeignInterface\n",Struct u)`,
+             format("$(_%s_OC2TOPFLAGS)",Struct u)`,
+             format(" +(_%s_OC2TOPFLAGS)",Struct u)`)
+        ELSE
+            (empty,"-zgForeignInterface",empty)
+        FI
+    ELSE (empty,empty,empty) FI
+
+-- --------------------------------------------------------------------------
+-- generate rules to derive o file
+
+FUN genORule : state ** sysinfo ** structinfo ** file ** file -> com[void]
+DEF genORule(S,SysInfo,structinfo(Struct,_,_,_,_,_),Make,Shape) ==
+    LET (SpecialDef,SpecialApp,Ingredients) == 
+                genSpecial(S,SysInfo,Struct,"CCFLAGS",genCcSpecialFlags)
+        hcDeps ==
+          IF structOption?(args(S),ctmpl,Struct) THEN
+              appendSpaced(hchFile(SysInfo,Struct),hccFile(SysInfo,Struct))
+          ELSE empty FI
+    IN
+    write(Make,
+          "%s%s: %s %s\n\t@%s$(CC) $(CCFLAGS) %s -c %s -o %s\n",
+          SpecialDef                            u (
+          oFile(SysInfo,Struct)                 u (
+          cFile(SysInfo,Struct)                 u (
+          hcDeps                                u (
+          genVerbose(S,SysInfo,Struct,
+                "Generating $(ARCH) object code for %s ...")
+                                                u (
+          SpecialApp                            u (
+          cFile(SysInfo,Struct)                 u (
+          oFile(SysInfo,Struct)                 u 
+          )))))))
+    ) & (\\ _ .
+    IF shape def? options(args(S)) THEN
+        write(Shape,
+                "%s: : +(CC)%s\n",
+                oFile(SysInfo,Struct)           u (
+                Ingredients                     u
+                )
+        )
+    ELSE yield(okay(nil)) FI
+    )
+
+-- --------------------------------------------------------------------------
+-- generate combined rules to derive O file from impl file
+
+FUN genCombORule : 
+        state ** sysinfo ** structinfo ** file ** file -> com[void]
+DEF genCombORule(S,SysInfo,structinfo(Struct,_,_,ImplDeps,_,_),
+                                                        Make,Shape) ==
+    LET (SpecialOc2Def,SpecialOc2App,Oc2Ingredients) == 
+                genSpecial(S,SysInfo,Struct,"OC2FLAGS",genOc2SpecialFlags)
+        (SpecialOc2TopDef,SpecialOc2TopApp,Oc2TopIngredients) ==
+                genOc2SpecialTop(S,SysInfo,Struct)
+        optDeps == 
+                IF (optDep def? options(args(S))) 
+                                        or globalOptFlag?(S,Struct) THEN 
+                    genDeps(S,ImplDeps,optFile)
+                ELSE empty FI
+        OptFile ==
+                IF noopt def? options(args(S)) THEN
+                    empty
+                ELSE optFile(SysInfo,Struct) FI
+        Oc2Com ==
+          format(
+    "$(OC2) $(OC2FLAGS) %s %s %s %s %s $(OCSYSPARAM) && $(RM) -f %s",
+                        SpecialOc2App                           u (
+                        SpecialOc2TopApp                        u (
+                        genOcSysLocation(S,SysInfo)             u (
+                        Struct                                  u (
+                        genOcSysParams(S,ImplDeps)              u (
+                        anaFile(SysInfo,Struct)                 u
+                        )))))
+                )
+    IN
+    LET (SpecialOc1Def,SpecialOc1App,Oc1Ingredients) == 
+             genSpecial(S,SysInfo,Struct,"OC1FLAGS",genOc1SpecialFlags)
+        Oc1Com ==
+          format(
+    "$(OC1) $(OC1FLAGS) %s -i %s %s %s $(OCSYSPARAM)",
+                        SpecialOc1App                           u (
+                        genOcSysLocation(S,SysInfo)             u (
+                        Struct                                  u (
+                        genOcSysParams(S,ImplDeps)              u 
+                        )))
+                )
+        ImplExpFile ==
+                IF prop def? options(args(S)) THEN
+                    implExpFile(SysInfo,Struct)
+                ELSE empty FI
+    IN
+    LET (SpecialCcDef,SpecialCcApp,CcIngredients) == 
+                genSpecial(S,SysInfo,Struct,"CCFLAGS",genCcSpecialFlags)
+        CcCom ==
+          format(
+    "%s$(CC) $(CCFLAGS) %s -c %s -o %s && $(RM) -f %s",
+                        genVerbose(S,SysInfo,Struct,
+                          "Generating $(ARCH) object code for %s ...") u (
+                        SpecialCcApp                            u (
+                        cFile(SysInfo,Struct)                   u (
+                        oFile(SysInfo,Struct)                   u (
+                        cFile(SysInfo,Struct)                   u 
+                        ))))
+                )
+    IN
+    LET SpecialDef == SpecialOc1Def ++ (SpecialOc2Def 
+                                    ++ (SpecialOc2TopDef
+                                    ++  SpecialCcDef))
+    IN
+    write(Make,"%s%s %s %s: %s %s%s%s\n\t@if [ ""$@"" = ""%s"" ] ; then %s\\\n\t%s\\\n\t&& %s\\\n\t&& %s; fi\n",
+          SpecialDef                            u (
+          oFile(SysInfo,Struct)                 u (
+          ImplExpFile                           u (
+          OptFile                               u (
+          expFile(SysInfo,Struct)               u (
+          implFile(SysInfo,Struct)              u (
+          genDeps(S,ImplDeps,expFile)           u (
+          optDeps                               u (
+          oFile(SysInfo,Struct)                 u (
+          genVerbose(S,SysInfo,Struct,
+                "Compiling Implementation of %s ...") u (
+          Oc1Com                                u (
+          Oc2Com                                u (
+          CcCom                                 u
+          ))))))))))))
+    ) & (\\ _ .
+    IF shape def? options(args(S)) THEN
+        write(Shape,"%s %s: : +(OC1)%s +(OC2)%s%s +(CC)%s\n",
+          oFile(SysInfo,Struct)                 u (
+          OptFile                               u (
+          Oc1Ingredients                        u (
+          Oc2Ingredients                        u (
+          Oc2TopIngredients                     u (
+          CcIngredients                         u 
+          )))))
+        )
+    ELSE yield(okay(nil)) FI
+    )
+
+-- --------------------------------------------------------------------------
+-- generate rules to derive external properties exp file
+
+FUN genExtpRule : state ** sysinfo ** structinfo ** file ** file
+                                                        -> com[void]
+DEF genExtpRule(S,SysInfo,structinfo(Struct,_,_,_,ExtpDeps,_),
+                                                        Make,Shape) ==
+    LET (SpecialDef,SpecialApp,Ingredients) == 
+                genSpecial(S,SysInfo,Struct,"OC1FLAGS",genOc1SpecialFlags)
+    IN
+    write(Make,
+"%s%s: %s %s%s\n\t@%s$(OC1) $(OC1FLAGS) %s -E %s %s %s $(OCSYSPARAM)\n",
+          SpecialDef                            u (
+          extpExpFile(SysInfo,Struct)           u (
+          extpFile(SysInfo,Struct)              u (
+          expFile(SysInfo,Struct)               u (
+          genPropDeps(S,ExtpDeps,extpExpFile)   u (
+          genVerbose(S,SysInfo,Struct,
+                "Checking External Properties of %s ...") u (
+          SpecialApp                            u (
+          genOcSysLocation(S,SysInfo)           u (
+          Struct                                u (
+          genOcSysParams(S,ExtpDeps)            u 
+          )))))))))
+    ) & (\\ _ .
+    IF shape def? options(args(S)) THEN
+        write(Shape,"%s: : +(OC1)%s\n",
+          extpExpFile(SysInfo,Struct)           u (
+          Ingredients                           u 
+          )
+        )
+    ELSE yield(okay(nil)) FI
+    )
+
+-- --------------------------------------------------------------------------
+-- generate rules to derive internal properties inter file
+
+FUN genIntpRule : state ** sysinfo ** structinfo ** file ** file
+                                                        -> com[void]
+DEF genIntpRule(S,SysInfo,structinfo(Struct,_,_,_,_,IntpDeps),
+                                                        Make,Shape) ==
+    LET (SpecialDef,SpecialApp,Ingredients) == 
+                genSpecial(S,SysInfo,Struct,"OC1FLAGS",genOc1SpecialFlags)
+        ImplDep ==
+           /* Since shape doesn't really know about multiple targets,
+              we had to introduce those @if's in the .ana and .o rules.
+              This doesn't work together which check, though :-(. Hence
+              we fake a dependency on ana's resp. o's insted of
+              impl.exp's here. This also makes impl.exp up-to-date.
+           */
+           IF keep def? options(args(S)) THEN
+               anaFile(SysInfo,Struct)
+           ELSE oFile(SysInfo,Struct) FI
+
+    IN
+    write(Make,
+"%s%s: %s %s %s %s%s\n\t@%s$(OC1) $(OC1FLAGS) %s -I %s %s %s $(OCSYSPARAM)\n",
+          SpecialDef                            u (
+          intpInterFile(SysInfo,Struct)         u (
+          intpFile(SysInfo,Struct)              u (
+          expFile(SysInfo,Struct)               u (
+          extpExpFile(SysInfo,Struct)           u (
+          ImplDep                               u (
+          genPropDeps(S,IntpDeps,extpExpFile)   u (
+          genVerbose(S,SysInfo,Struct,
+                "Checking Internal Properties of %s ...") u (
+          SpecialApp                            u (
+          genOcSysLocation(S,SysInfo)           u (
+          Struct                                u (
+          genOcSysParams(S,IntpDeps)            u 
+          )))))))))))
+    ) & (\\ _ .
+    IF shape def? options(args(S)) THEN
+        write(Shape,"%s: : +(OC1)%s\n",
+          intpInterFile(SysInfo,Struct)         u (
+          Ingredients                           u 
+          )
+        )
+    ELSE yield(okay(nil)) FI
+    )
+
+-- --------------------------------------------------------------------------
+-- generate verbose message
+
+FUN genVerbose : state ** sysinfo ** denotation ** denotation -> denotation
+DEF genVerbose(S,_,Struct,MsgPat) ==
+    LET Special == flattenLetterOptions(
+                        filterStructOptions(options(args(S))!verbS,Struct),
+                        empty
+                   )
+        Opts == IF ::?(Special) THEN Special
+                ELSE flattenLetterOptions(options(args(S))!verb,empty) FI
+    IN
+    IF ::?(Opts) THEN
+        `(format("$(ECHO) ""%s"" && ",format(MsgPat,Struct u) u))
+    ELSE empty FI
+
+
+-- --------------------------------------------------------------------------
+-- generate special definitions, flags, and shape ingredients
+
+FUN genSpecial : state ** sysinfo ** denotation ** denotation
+                          ** (state ** sysinfo ** denotation -> denotation)
+                        -> denotation ** denotation ** denotation
+DEF genSpecial(S,SysInfo,Struct,VarBaseName,FlagGenerator) ==
+    LET SpecialFlags == FlagGenerator(S,SysInfo,Struct)
+    IN
+    IF SpecialFlags = empty THEN
+        -- no special flags; use system global flags
+        (empty, `(format("$(SYS_%s)",VarBaseName u)),
+                IF shape def? options(args(S)) THEN
+                    format(" +(SYS_%s)",VarBaseName u)`
+                ELSE empty FI
+        )
+    ELSE
+        -- special flags
+        IF shape def? options(args(S)) THEN
+            -- need to generate a special variable to make ingredients
+            -- work
+            (format("_%s_%s = %s\n",Struct u (VarBaseName u (SpecialFlags u)))`,
+             format("$(_%s_%s)",Struct u (VarBaseName u))`,
+             format(" +(_%s_%s)",Struct u (VarBaseName u))`
+            )
+        ELSE
+            (empty,format("%s",SpecialFlags u)`,empty)
+        FI
+    FI
+    
+-- --------------------------------------------------------------------------
+-- generate dependencies according to sequence of system infos
+-- and file name generator
+
+FUN genDeps genPropDeps : state ** seq[sysinfo] ** (sysinfo ** denotation -> denotation)
+                                        -> denotation
+DEF genDeps(S,Info::Infos,xFile) ==
+    IF frozen in flags(Info) THEN
+        -- dont generate dependencies
+        genDeps(S,Infos,xFile)
+    ELSE
+        ( (\\Struct,R. appendSpaced(xFile(Info,Struct),R)) \ empty )
+        (structs(Info))
+        ++
+        genDeps(S,Infos,xFile)
+    FI
+DEF genDeps(_,<>,_) == empty
+
+DEF genPropDeps(S,Info::Infos,xFile) ==
+    -- this also accounts "properties" flag
+    IF frozen in flags(Info) ORIF ~(properties in flags(Info)) THEN
+        -- dont generate dependencies
+        genDeps(S,Infos,xFile)
+    ELSE
+        ( (\\Struct,R. appendSpaced(xFile(Info,Struct),R)) \ empty )
+        (structs(Info))
+        ++
+        genDeps(S,Infos,xFile)
+    FI
+DEF genPropDeps(_,<>,_) == empty
+
+-- ----------------------------------------------------------------------
+-- write formatted
+
+FUN write: file ** denotation ** seq[union] -> com[void]
+DEF write(Out,Format,Args) ==
+    write(Out,format(Format,Args))
+
+
+-- =======================================================================
+-- top-level command
+
+DEF genmake == 
+    check(\\Msg.Msg,
+
+    analyzeArgs                                 & (\\Args.
+    initState(Args)                             & (\\State.
+
+    -- analyze dependencies of TopStructs
+    LET TopStructs ==
+            IF top?(args(State)) THEN %(dropVersion(struct(args(State))))
+                                 ELSE structs(args(State)) FI
+    IN
+    ( anaDep(0) /& State )(TopStructs)          & (\\AnaState.
+
+    IF ~(okay?(AnaState)) THEN
+        writeLine(stdErr,"errors occured, aborting ...") & exit(1)
+    ELSE
+        -- generate makefiles
+        LET GenSystems == 
+            IF recur def? options(args(AnaState)) THEN
+                ( (\\Sys,SysInfos. 
+                        IF ~(frozen in (flags(systems(AnaState)!Sys))) THEN
+                            (systems(AnaState)!Sys) :: SysInfos
+                        ELSE SysInfos FI)
+                    / <> )
+                (sysorder(AnaState))
+            ELSE
+                %(systems(AnaState)!ft(sysorder(AnaState)))
+            FI
+        IN
+        IF om def? options(args(AnaState)) THEN
+            ( genOM /& AnaState )(GenSystems)           & (\\ _ .
+            yield(okay(nil))
+            )
+        ELSE
+            ( genSys /& AnaState )(GenSystems)          & (\\ _ .
+            yield(okay(nil))
+            )
+        FI
+    FI
+    )))
+
+    )

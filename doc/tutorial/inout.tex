@@ -1,0 +1,235 @@
+% LAST EDIT: Tue May  3 13:16:41 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Fri Apr 29 16:01:13 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Tue Feb 15 12:10:10 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Mon Feb 14 16:01:55 1994 by Juergen Exner (hektor!jue) 
+% LAST EDIT: Tue Jan 12 16:35:37 1993 by Juergen Exner (hektor!jue) 
+\chapter{Input/Output in \opal}
+\label{chap:IO}
+
+\advanced
+The problem of interactive input/output (I/O) in functional languages
+is still a research topic.
+\opal\ uses continuations to support I/O.
+We won't discuss the theory of continuations here as we prefer to take a more
+intuitive approach.
+
+
+The fundamental issue of I/O in \opal\ is the {\em command\/}.
+A command is a data object that describes an interaction with the environment,
+e.g.~the terminal or the file system. Only commands do this.
+The command itself is executed by the runtime-system, which
+evaluates the commands at runtime according to the rules described in
+this chapter.
+
+Commands can be determinated by their functionality: a command is
+always a constant of type \pro{com'Com}.  Functions which yield an object
+of type \pro{com`Com} as a result are used very frequently. They can
+be regarded as parameterized commands.
+
+\section{Output}
+\label{sec:output}
+\advanced
+We have already seen some examples of commands.
+In the example program, \pro{HelloWorld} (see Chapter \ref{chap:example}), the
+function \pro{write} is a predefined function from the library
+structure \pro{Stream} with functionality
+\begin{prog}
+        FUN write : output ** denotation -> com
+\end{prog}
+
+The whole program itself interacts with the environment too.
+Therefore it is also a command (the so-called top-level command which
+is required for every program):
+\begin{prog}
+        FUN hello : com
+\end{prog}
+
+\medskip
+
+Commands can be combined to form new commands with the functions
+``\pro{;}'' and ``\pro{\&}'' from the library structure \pro{ComCompose}.
+These functions are usually written as infix operations.
+Both combination functions take two commands as arguments and combine
+them to a new one by first executing the first command and afterwards
+the second.
+To combine some write-commands you could write
+\begin{prog}
+        writeLine(stdOut, "This will be the first line") \&
+        writeLine(stdOut, "Some more output") \&
+        writeLine(stdOut, "The last line")
+\end{prog}
+which will print the three lines to standard output, i.e.~usually the terminal.
+
+We have already used command combination in the
+\pro{Rabbits} example (see Chapter~\ref{chap:example}):
+\begin{prog}
+          write(stdOut,
+                  "For which generation do you want to know ...? "!)\&
+          (readLine(stdIn) \& 
+          processInput)
+\end{prog}
+\medskip
+
+Since commands describe interactions with the environment there is no
+certainty  that the  evaluation of a
+command will always succeed (for example a requested file can't be accessed or
+the connection to an internet socket has been broken).
+Therefore there must be some error-handling.
+
+The functions ``\pro{;}'' and ``\pro{\&}'' differ in their handling of
+errors. 
+If an error occurs during the execution of the first command,  ``\pro{\&}''
+does not execute the second command, whereas
+``\pro{;}'' will.
+In this case the programmer must check within the
+second command whether an error has occurred during the execution of the first
+ and continue with an appropriate alternative (e.g.~asking the user
+for another filename if a file could not be opened).
+How to access and analyze a possible error message will be explained
+later on.
+
+Note that ``\pro{;}'' and ``\pro{\&}'' are strict. 
+The second argument will always be computed, but the resulting command
+will be executed only if execution of the first  succeeds. 
+If the execution of the first command fails, the corresponding error
+is yielded. 
+
+
+\section{Input}
+\label{sec:input}
+\advanced
+Up to now we have only dealt with commands which produced some
+output and combinations of them.
+But for real computations we will need some input too.
+
+For this reason commands are parameterized (see Section
+\ref{sec:struct.param}) and can be instantiated with the sort they
+should yield as result of an input operation.
+The command \pro{readLine'Stream(stdIn)}, for instance, reads a string from
+the terminal and delivers this string as  result:
+\begin{prog}
+        FUN readLine : input -> com[string]
+\end{prog}
+
+The result cannot be accessed directly, as \pro{readLine} yields a
+command, not a string. And a command doesn't have a
+``function result''.
+
+To access the desired string the next command to be executed has to be
+a parameterized command in the sense that is it has to
+be a function that expects a string as argument, e.g.
+\begin{prog}
+        FUN foo : string -> com
+\end{prog}
+
+The  command \pro{readLine(stdIn)} and the function \pro{foo} can then be
+combined with a variant of the ``\pro{\&}''-function:
+\begin{prog}
+        readLine(stdIn) \& foo
+\end{prog}
+This variant of the  ``\pro{\&}''-function passes the result of the
+first command (the string read from standard input) as argument to the
+function \pro{foo}, yielding a new command. 
+The argument string itself can be accessed in \pro{foo} like any
+other parameter of a function definition.
+\medskip
+
+Very often the second command will be written as a lambda-abstraction. 
+For example, a command \pro{echo} which echoes the input to the output
+can be written as
+\begin{prog}
+        FUN echo : () -> com[void]
+        DEF echo () == readLine(stdIn)      \& (\LAMBDA x. 
+                       writeLine(stdOut, x) \&
+                       echo() ))
+\end{prog}
+or---if you don't like never terminating programs---as
+\begin{prog}
+        DEF echo() == 
+              readLine(stdIn)               \& (\LAMBDA x. 
+                IF x =  empty THEN writeLine(stdOut, "End of Program")
+                IF x |= empty THEN writeLine(stdOut, x)  \& 
+                                   echo() )
+                FI
+\end{prog}
+
+The unusual functionality of \pro{echo} results from the restriction
+that constants cannot be cyclic, i.e.~the definition of a constant
+cannot be recursive.
+Therefore \pro{echo} must be defined as a function with an empty
+argument.
+
+
+\section{Error-Handling}
+\label{sec:ioerror}
+\advanced While ``\pro{\&}'' does some error-handling automatically, it is
+also possible to do error-handling by yourself with the corresponding
+ function ``\pro{;}''.  When using the function
+``\pro{;}'' instead of ``\pro{\&}'' the second command does not
+receive the required value directly, but an answer that contains the
+value if the command has been successfully executed.
+ If the execution has failed the answer contains an error message.
+
+The data type answer is declared as a parameterized data type in the library
+structure \pro{Com[data]} as
+\begin{prog}
+     TYPE ans == okay(data:data)    -- result of successful command
+                 fail(error:string) -- diagnostics of failing command
+\end{prog}
+
+\noindent In the example \pro{foo} the functionality has to be modified to 
+\begin{prog}
+        FUN foo : ans[string] -> com
+\end{prog}
+if you want to do error-checking by yourself.
+
+\medskip
+\noindent In the example \pro{echo} error-checking could be done like
+\begin{prog}
+        DEF echo ()== 
+              readLine(stdIn) \&
+                (\LAMBDA x.
+                   IF x okay? THEN 
+                      IF data(x) =  empty THEN 
+                                writeLine(stdOut, "End of Program")
+                      IF data(x) |= empty THEN 
+                                writeLine(stdOut, data(x))
+                                  \& echo () FI
+                   IF x error? THEN 
+                      writeLine(stdOut, "Some error has occurred")
+                   FI
+\end{prog}
+Note that ``\pro{x}'' now has type \pro{ans}, whereas in the first
+example ``\pro{x}'' has type \pro{string}.
+Therefore  you have to use the selector \pro{data} to access the
+desired string from the answer yielded by the command.
+
+\medskip
+This variant of command combination is also the proposed method for
+supervising  commands that only produce output. 
+Commands which don't do input (i.e.~which don't forward a value to
+subsequent commands) have functionality \pro{com[void]}.
+This means they always construct an answer of type \pro{ans} too, but
+the data-item will be \pro{void}, i.e.~useless.
+But you can check this answer to determine if an error has occurred or
+not.
+
+As an example, after executing a write-command you can check if this
+command was successful as follows:
+\begin{prog}
+  writeLine(stdOut, "This will be the first line"!) ;   (\LAMBDA x.
+        IF x okay? THEN <<<\mbox{everything all right}>>>
+        IF x error? THEN <<<\mbox{some error occurred}>>>
+        FI )
+\end{prog}
+
+The simple version of ``\pro{;}'' (as introduced at the beginning of
+this chapter),
+which combines two commands, simply ignores a failure of the first
+command.
+There is no way to check against failure, unless you use the second
+version of  ``\pro{;}''.
+% Local Variables: 
+% mode: latex
+% TeX-master: "tutorial"
+% End: 

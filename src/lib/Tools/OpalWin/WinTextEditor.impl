@@ -1,0 +1,356 @@
+IMPLEMENTATION WinTextEditor
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Char		COMPLETELY
+	Compose		COMPLETELY
+	Denotation	COMPLETELY
+	Nat		COMPLETELY
+	NatConv		COMPLETELY
+	Int		COMPLETELY
+	IntConv		COMPLETELY
+	Option		COMPLETELY
+	Real		COMPLETELY
+	RealConv	COMPLETELY
+	String		COMPLETELY
+	StringConv	COMPLETELY
+	StringIndex	COMPLETELY
+	Seq		COMPLETELY
+	SeqConv		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	Pair		COMPLETELY
+	Void		COMPLETELY
+	ABORT		COMPLETELY
+
+IMPORT	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComAction	COMPLETELY
+	ComSeqReduce	COMPLETELY
+	ComSeqAction	COMPLETELY
+	ComAgent	COMPLETELY
+	ComService	COMPLETELY
+	ComCheck	ONLY |
+	ComState	COMPLETELY
+	ComStateWith	COMPLETELY
+	ComSemaphor	COMPLETELY
+
+IMPORT  WinTag		COMPLETELY
+	WinTclTk	COMPLETELY
+	WinInternal	COMPLETELY
+	WinConfig	COMPLETELY
+	WinEvent	COMPLETELY
+	WinEmitter	COMPLETELY
+	WinRegulator	COMPLETELY
+	WinAppl		ONLY screenResolution silently
+	WinWindow	COMPLETELY
+
+
+-- %$Text Editors in General$ ===============================================
+
+DATA textEditor == editor(provider: stateId[provider])
+
+DATA provider == provided	(win: window, wid: widget) 
+		 unprovided	(sem: semaphor)
+
+DEF textEditor == 
+    semaphor 			& (\\ S. 
+    reserve(S)			& (\\ _ .
+    stateId(unprovided(S)) 	& (\\ Id .
+    succeed(editor(Id))
+    )))
+
+DEF register(Ed, Win, Wid) ==
+    with(provider(Ed), \\ Prv . 
+	IF provided?(Prv) THEN
+	    (provided(Win, Wid), done)
+	ELSE
+	    (provided(Win, Wid), release(sem(Prv)))
+	FI
+    )						& (\\ Act .
+    registerDispose(Win, Wid,
+		    semaphor & (\\ Sem . 
+		    reserve(Sem) & (\\ _ .
+		    with(provider(Ed), \\ _ . unprovided(Sem))
+		    ))
+    ) 						& (\\ _ .
+    Act
+    ))
+
+DEF edit(Ed) ==
+    configWidget(\\Win, Wid. register(Ed, Win, Wid))
+
+
+FUN provider    : textEditor -> com[provider]
+FUN request     : textEditor ** script  -> com[string]
+FUN request     : textEditor ** denotation      -> com[string]
+FUN request     : textEditor ** string  -> com[string]
+
+DEF provider(Ed) ==
+    get(provider(Ed))                           & (\\ Prv .
+    IF unprovided?(Prv) THEN
+        reserve(sem(Prv))			& (\\ _ .
+        release(sem(Prv))			& (\\ _ .
+        provider(Ed)
+        ))
+    ELSE
+        succeed(Prv)
+    FI
+    )
+
+DEF request(Ed, Den:denotation) == request(Ed, (!(Den)):string)
+DEF request(Ed, Scr) == request(Ed, format(Scr))
+
+DEF request(Ed, Str:string) == 
+    get(provider(Ed))                           & (\\ Prv .
+    IF unprovided?(Prv) THEN
+        reserve(sem(Prv))			& (\\ _ .
+        release(sem(Prv))			& (\\ _ .
+        request(Ed, Str)
+        ))
+    ELSE
+        eval("%s %s" <- wid(Prv) + Str)
+    FI
+    )
+
+
+-- %$Addressing Text$ =======================================================
+
+DATA index ==
+        pos		(line	: nat,		-- starts at 1
+        		 column	: nat)		-- starts at 0
+        point		(point  : point)	-- character below point
+	end					-- last charcter
+	chars		(index	: index, 	-- adjust count characters
+			 count	: int)
+	lines 		(index	: index, 	-- adjust count lines
+			 count	: int)
+	linestart	(index	: index) 	-- beginning of line
+	lineend		(index	: index) 	-- end of line
+	wordstart 	(index	: index) 	-- beginning of word
+	wordend		(index	: index) 	-- end of word
+
+	first		(tag	: tag)		-- first character with tag
+	last		(tag	: tag)		-- last character with tag
+
+	at		(mark	: mark)
+
+
+DATA range ==
+        range		(first	: index, 
+        		 last	: index)
+
+FUN asTk : index -> denotation
+DEF asTk(pos(L, C)) 		== `(L) ++ ("." ++ `(C))
+DEF asTk(point(@(X, Y))) 	== "@" ++ asPixel(X) ++ "," ++ asPixel(Y)
+DEF asTk(end) 			== "end"
+DEF asTk(first(Tag)) 		== name(Tag) ++ ".first"
+DEF asTk(last(Tag)) 		== name(Tag) ++ ".last"
+DEF asTk(chars(Index, Off)) 	== "{" ++ (asTk(Index) ++ " + ") ++ (`(Off) ++ " chars}")
+DEF asTk(lines(Index, Off)) 	== "{" ++ (asTk(Index) ++ " + ") ++ (`(Off) ++ " lines}")
+DEF asTk(linestart(Index)) 	== "{" ++ asTk(Index) ++ " linestart}"
+DEF asTk(lineend(Index)) 	== "{" ++ asTk(Index) ++ " lineend}"
+DEF asTk(wordstart(Index)) 	== "{" ++ asTk(Index) ++ " wordstart}"
+DEF asTk(wordend(Index)) 	== "{" ++ asTk(Index) ++ " wordend}"
+DEF asTk(at(mark(Tag)))         == name(Tag)
+
+FUN asIndex : string -> index
+DEF asIndex(Str) == pos(line, column)
+			WHERE p      == pos(_ = !("."), Den!)
+ 			      line   == !(`(slice(Den!, 0, cont(p)-1)))
+			      column == !(`(slice(Den!, cont(p)+1, #(Den))))
+			      Den    == `(Str)
+
+FUN asTk : range -> denotation
+DEF asTk(range(First, Last))   == 
+    asTk(First) ++ " " ++ asTk(Last)
+
+DEF index(Ed, Index) ==
+      request(Ed, "index %s" <- asTk(Index)) 			& (\\ Str .
+      LET
+        Pos  == pos(_ = !("."), Str)
+      IN
+        IF nil?(Pos) THEN succeed(pos(1,0))
+        ELSE 
+          LET
+            Line == slice(Str, 0, cont(Pos)-1)
+            Col  == slice(Str, cont(Pos)+1, #(Str))
+          IN  
+            succeed(pos(!(Line`), !(Col`)))
+        FI
+      )
+
+
+DATA mark == mark(tag: tag)
+DEF insert == mark(tag("insert"))
+DEF current == mark(tag("current"))
+
+DEF mark(Ed, Index) ==
+    genTag							& (\\ Tag .
+    request(Ed, "mark set %s %s" <- name(Tag) + asTk(Index))	& (\\ _ .
+    succeed(mark(Tag))
+    ))
+
+DEF move(Ed, Mark, Index) ==
+    request(Ed, "mark set %s %s" <- name(tag(Mark)) 
+    						+ asTk(Index))	& 
+    done
+
+DEF delete(Ed, Mark:mark) ==
+    request(Ed, "mark unset %s" <- name(tag(Mark))) &
+    done
+
+
+-- %$Modifying and Retrieving Text$ =========================================
+
+
+DEF Ed insert Str == 
+    Ed insert (Str, pos(1, 0))
+
+DEF Ed insert (Str, Index) == 
+    request(Ed, "insert %s {%s}" <- asTk(Index) + Str)	&
+    done
+
+DEF Ed insert (Str, Index, Config) ==   
+    genTag 						& (\\ Tag .
+    request(Ed, "insert %s {%s} {%s}" 
+    		<- asTk(Index) + Str + name(Tag))	 	& (\\ _ .
+    Ed set (Tag, Config)	        		& (\\ _ .
+    succeed(Tag)
+    )))
+
+DEF Ed delete == 
+    Ed delete range(at(insert), end) & done
+
+DEF Ed delete Index:index == 
+    request(Ed, "delete %s" <- asTk(Index))  & done
+
+DEF Ed delete Range:range == 
+    request(Ed, "delete %s" <- asTk(Range)) & done  
+
+DEF Ed delete Ranges == 
+    (\\ Range . request(Ed, "delete %s" <- asTk(Range)); done) @& Ranges
+
+
+DEF get(Ed) == 
+    Ed get range(at(insert), end)
+      
+DEF Ed get Index:index == 
+    request(Ed, "get %s" <- asTk(Index))
+
+DEF Ed get Range:range ==
+    request(Ed, "get %s" <- asTk(Range))
+
+
+DATA searchOpt == forwards backwards exact regexp nocase 
+
+DEF Ed search (Pattern, Index, Opts) ==
+      request(Ed, "search {%s} {%s} %s" <- 
+        `(""," ","")(`)(Opts) + Pattern + asTk(Index)) & (\\ Str .
+      IF Str <>? THEN succeed(nil) ELSE succeed(avail(asIndex(Str))) FI)
+
+    FUN ` : searchOpt -> denotation
+    DEF `(forwards)  == "-forwards"
+    DEF `(backwards) == "-backwards"
+    DEF `(exact)     == "-exact"
+    DEF `(regexp)    == "-regexp"
+    DEF `(nocase)    == "-nocase"
+
+DEF Ed see Index ==
+    request(Ed, "see %s" <- asTk(Index)) & done
+
+
+
+-- %$Tagging Text$ ============================================================
+
+/* %
+Each character (or embedded window) managed through a text editor may 
+have assigned a set of tags. Via configurations associated with tags, the 
+graphical appearence and the reponsive behaviour of groups of characters
+can be controlled.
+*/
+
+FUN selection	: tag
+DEF selection	== tag("sel")
+
+DEF Ed tag (Index:index, Tag) ==
+    request(Ed, "tag add %s %s" <- name(Tag) + asTk(Index)) & done
+
+DEF Ed tag (Range:range, Tag) ==
+    request(Ed, "tag add %s %s" <- name(Tag) + asTk(Range)) & done
+
+DEF Ed tag (Ranges, Tag) ==
+    LET Str == (\\ Range, R. format(" %s%s" <- asTk(Range) + R), <>)
+    						/ Ranges
+    IN
+    request(Ed, "tag add %s %s" <- name(Tag) + Str) & done
+
+DEF Ed untag (Index:index, Tag) ==
+    request(Ed, "tag remove %s %s" <- name(Tag) + asTk(Index)) & done
+
+DEF Ed untag (Range:range, Tag) ==
+    request(Ed, "tag remove %s %s" <- name(Tag) + asTk(Range)) & done
+
+DEF Ed untag (Ranges, Tag) ==
+    LET Str == (\\ Range, R. format(" %s%s" <- asTk(Range) + R), <>)
+    						/ Ranges
+    IN
+    request(Ed, "tag remove %s %s" <- name(Tag) + Str) & done
+
+DEF Ed ranges Tag ==
+    request(Ed, "tag ranges %s" <- name(Tag))			& (\\ Str .
+    succeed(asRanges(convList(Str)))
+    )
+
+    FUN asRanges : seq[string] -> seq[range]
+    DEF asRanges(X1 :: X2 :: R) == 
+	range(asIndex(X1), asIndex(X2)) :: asRanges(R)
+    DEF asRanges(_) == <>
+
+
+DEF Ed set (Tag, Config) ==
+    provider(Ed)						& (\\ Prv .
+    forceApply(win(Prv), wid(Prv), text(Tag), Config)
+    )
+
+DEF Ed lower Tag ==
+    request(Ed, "tag lower %s" <- name(Tag)) & done
+
+DEF Ed raise Tag ==
+    request(Ed, "tag raise %s" <- name(Tag)) & done
+
+
+
+
+-- %$Embedding Views$ ======================================================
+
+DEF Ed insert (View, Index) ==
+    provider(Ed)					& (\\ Prv .
+    widget(wid(Prv))					& (\\ Wid .
+    define(callback(Wid), freeWidget(Wid))		& (\\ _ .
+    displayView(win(Prv), Wid, View, false)		& (\\ _ .
+    request(Ed, "window create %s -window %s" 
+    				<- asTk(Index) + Wid) 	& (\\ _ .
+    done
+    )))))
+
+DEF Ed insert (View:view, Index, Config) ==
+    genTag						& (\\ Tag .
+    Ed insert (View, Index)				& (\\ _ .
+    Ed tag (Index, Tag)					& (\\ _ .
+    Ed set (Tag, Config)				& (\\ _ .
+    succeed(Tag)
+    ))))
+
+
+DATA align == top center bottom baseline
+
+DEF align(top) == config("-top")
+DEF align(center) == config("-center")
+DEF align(bottom) == config("-bottom")
+DEF align(baseline) == config("-baseline")
+
+DEF stretch == config("-stretch")

@@ -1,0 +1,100 @@
+
+IMPLEMENTATION RepoEvent
+
+IMPORT	Nat		COMPLETELY
+	Seq		COMPLETELY
+	SeqFilter	COMPLETELY
+	Com		COMPLETELY
+	ComCompose	COMPLETELY
+	ComPairCompose	COMPLETELY
+	ComState	COMPLETELY
+	ComStateWith	COMPLETELY
+	ComSeqReduce	COMPLETELY
+	Void		COMPLETELY
+
+IMPORT	RepoCom		COMPLETELY
+	RepoCom1	COMPLETELY
+	RepoDiag	COMPLETELY
+
+
+DATA event ==
+	-- diagnostics have been produced
+	diag		(diag	: diag)
+	-- progress message of a tool
+	progress	(target	: progressTarget,
+			 message : denotation)
+	-- unit has been added to the repository
+	newUnit		(unit	: unitName)
+	-- source of a unit has been updated
+	newSource	(unit	: unitName)
+	-- absy of a unit has been updated
+	newAbsy		(unit	: unitName)
+	-- object of a unit has been updated
+	newObject	(unit	: unitName)
+
+DATA progressTarget ==
+    repository
+    unit		(name	: unitName)
+    object		(object	: objectName)
+
+DATA callback == callback(action: event -> com[void], id: nat)
+
+FUN callbacks: stateId[seq[callback]]
+DEF callbacks == EXEC(stateId(<>))
+
+FUN idCnt: stateId[nat]
+DEF idCnt == EXEC(stateId(0))
+
+
+DEF register(ComFun) ==
+    register(\\E. upd(ComFun(E)))
+
+DEF register(Com) ==
+    with(idCnt, \\N. (succ(N), succ(N)))		& (\\ N .
+    with(callbacks, \\Seq . Seq +% callback(Com, N))	& (\\ _ .
+    succeed(callback(Com, N))
+    ))
+
+DEF unregister(callback(_, N)) ==
+    with(callbacks, \\Seq. (\\C . id(C) |= N) | Seq)
+
+
+DEF event(Event)(R) ==
+    with(R, event(Event))	& (\\ _, Repo. 
+    succeed(Repo)
+    )
+
+DEF event(Event) ==
+    ?(callbacks)				& (\\ Seq .
+    (\\Cb, _ . action(Cb)(Event), nil) /& Seq	
+    )
+
+FUN errors : stateId[bool]
+DEF errors == EXEC(stateId(false))
+
+
+DEF diag(Diag)(R) ==
+    with(R, diag(Diag))			& (\\ _, Repo.
+    succeed(Repo)
+    )
+
+DEF diag(Diag) ==
+    IF noDiag?(Diag) THEN
+	-- do nothing
+	succeed(nil)
+    ELSE
+    	event(diag(Diag))			& (\\ _ .
+	with(errors, \\B. B or ~(ok?(Diag)))
+	)
+    FI
+
+DEF errors? ==
+    get(errors)
+
+DEF clearErrors ==
+    with(errors,\\ _ . false)
+
+DEF setErrors ==
+    with(errors,\\ _ . true)
+
+

@@ -1,0 +1,740 @@
+IMPLEMENTATION Readsrc
+
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/read/Readsrc.impl,v 1.1.1.1 1998-06-16 16:00:39 wg Exp $
+
+IMPORT
+  Seq           COMPLETELY       Set            COMPLETELY
+  SeqMap        COMPLETELY       SeqFold        COMPLETELY
+  String        COMPLETELY       SetConv        COMPLETELY
+  StringConv    COMPLETELY       Map            COMPLETELY
+  Denotation    COMPLETELY       Option         COMPLETELY
+  ComCompose    COMPLETELY       InterOpal      COMPLETELY
+  Stream        COMPLETELY       InterOpalIO    COMPLETELY
+  Com           COMPLETELY       Pair           COMPLETELY
+  Void          COMPLETELY       ABORT          COMPLETELY
+  Quadruple     COMPLETELY
+
+IMPORT 
+  MyComStream   COMPLETELY       InterOpalFun   COMPLETELY
+  Config        COMPLETELY       Context        COMPLETELY
+  ConfigFun     COMPLETELY       Content        COMPLETELY
+  ConfigTest    COMPLETELY       SourceTab      COMPLETELY
+  Error         COMPLETELY       SubsystemType  COMPLETELY
+  Token         COMPLETELY       Trans          COMPLETELY
+  Scan          COMPLETELY       ReadHelp       COMPLETELY
+  MyComAction   COMPLETELY
+  ReadForeign   COMPLETELY
+
+  SubsystemFilter[usrSourceInfo, name, empty?]  ONLY reduceSubsystems
+  SubsystemFilter[libSourceInfo, name, empty?]  ONLY reduceSubsystems
+  SubsystemTemplate[usrSourceInfo, emptySource] ONLY makeSubsystemTemplate
+  SubsystemTemplate[libSourceInfo, emptySource] ONLY makeSubsystemTemplate
+       ConfigExt ONLY include?
+
+-- %$Reading Modules and Constructing a Source-Table$ 
+-- %-------------------------------------------------
+
+FUN processFiles : string ** config -> com[void]
+
+/* %Before reading any source-code information, source-table templates are 
+constructed considering the user-specified configuration database. These
+templates for user-subsystems and library-subsystems are needed for insertion
+of source-code-information and context-information for structures that are 
+determined to be member of 
+the documented project. Each structure, specified in the @c{config}-database,
+get its own placeholder which is used as a reference for insertion when the 
+structure's information is gathered. 
+
+Both templates and the @c{topLevelStructure}-name are passed to the
+second-level reading process @c{process@-Files@-Intern}. 
+
+For warning messages, the file @code{warningFile} is cleared at the beginning.
+*/
+
+DEF processFiles( topLevelStructure, config ) ==
+  readForeignCommentStrings() & (\\ fInfos .
+  ((writeLine(stdErr, "building template of user subsystems ...") &
+    (create(warningFile) & (\\wFile. close(wFile)))) &
+
+-- %Make template for user-subsystems:
+     yield(okay(makeSubsystemTemplate(subsystems(config))))
+
+  ) & 
+  (\\ usrSubsystemsTemplate.
+      (writeLine(stdErr, "building template of library subsystems ...") &
+
+-- %Make template for library subsystems:
+         yield(okay(makeSubsystemTemplate(librarySubsystems)))
+
+       WHERE
+         librarySubsystems == IF avail?(library(config)) THEN
+                                libSubsystems(cont(library(config)))
+                              ELSE
+                                <>
+                              FI
+  ) & 
+  (\\ libSubsystemsTemplate.
+        LET startSet == IF topLevelStructure |= ("*"!) THEN topLevelStructure%
+                        ELSE allUsrStructures(config)
+                        FI
+        IN
+          processFilesIntern(
+          startSet,
+          {},
+          usrInfos(
+            <>,
+            usrSubsystemsTemplate
+          ),
+          libSubsystems(
+            libSubsystemsTemplate
+          ),
+          config,
+          fInfos
+        )
+   ) -- \\ libSubsystemsTemplate
+   ) -- \\ usrSubsystemsTemplate
+   ) -- \\ _ [readForeignCommentStrings]
+
+
+
+FUN processFilesIntern : 
+     set[string,<] ** set[string,<] ** usrInfos ** libInfos ** config ** foreignInfo -> 
+       com[void]
+
+/* %If there are still @c{modulesToRead}, one structure name is picked arbitrarily.
+It is checked to be a user-implemented- or library-module and handled in the
+appropriate way in the subsequently called functions. 
+
+The structures that are member of the project are found by gathering import-information
+for each individual module. Every structure that is imported in any module has a 
+chance to become member of the project documentation, provided the configuration
+database does not reduce the extent of structure inclusion. The sets
+@c{modulesToRead} and @c{modulesAlreadyRead} are adminstered for storing the 
+information which modules are still to be read and which structures have alreadily been
+included into the source-table. No structure's code and corresponding 
+InterOpal-information
+are to be read more than once! So the two parameters are updated after each
+reading cycle and the function @c{processFilesIntern} is called recursively with
+the proper information on which modules are to be read and which modules have
+already been read. 
+
+If @c{modulesToRead} is empty, no additional reading of structures is needed as all
+transitive import-relations are resolved and the sources are included into
+the @c{usrInfos} respectively @c{libInfos} database. After a check on the
+validity of the two source-table databases is done, the next stage of DOSFOP
+processing is initiated. */
+DEF processFilesIntern( modulesToRead, modulesAlreadyRead,
+                        usrInfos, libInfos,
+                        config, fInfos ) ==
+  IF ~({}?(modulesToRead)) THEN
+    LET
+      actModule == arb(modulesToRead)
+      handleFct == IF isLibrary?(config)(actModule) THEN handleLibraryModule
+                   ELSE handleUserModule
+                   FI
+    IN
+      handleFct(
+          actModule, 
+          modulesToRead, 
+          modulesAlreadyRead, 
+          usrInfos, 
+          libInfos, 
+          config,
+          fInfos
+        )
+  ELSE
+    IF <>?(sources(usrInfos)) and <>?(subsystems(usrInfos)) THEN
+      yield(fail("fatal error: " ++
+                 "at least one non-library unit " ++
+                 "has to be specified...")
+           )
+    ELSE
+      preprocessSourcesAndTranslateProject(
+        usrInfos, 
+        libInfos, 
+        config
+      ) 
+    FI
+  FI
+
+
+
+-- %$Preparation of Source-Structures and Translation$
+-- %--------------------------------------------------
+
+/* %Not all structures mentioned and probably configured in the configuration-database
+are to be member of the project spanned by the initial @c{topLevelStructure}.
+Nevertheless the source-table templates include @emph{all} specified modules. We first 
+reduce the source-tables to valid source-code information so that the 
+translation process (@c{translateProject}) only 
+encounters valid source-code data-entries. */
+
+FUN preprocessSourcesAndTranslateProject : 
+      usrInfos ** libInfos ** config -> com[void]
+
+DEF preprocessSourcesAndTranslateProject( usrInfosArg, libInfosArg, config ) ==
+   writeLine(stdErr, "reducing user subsystems ...") & (
+-- %Reduce user-implemented subsystems:
+   succeed(usrInfos(
+                    sources(usrInfosArg),
+                    reduceSubsystems(subsystems(usrInfosArg))
+                   )
+          ) & (\\ usrInfosReducedSubsystems.
+-- %Reduce library-subsystems:
+   (writeLine(stdErr, "reducing library subsystems ...") &
+    succeed(libSubsystems(
+                          reduceSubsystems(libSubsystems(libInfosArg))
+                         )
+           )
+   ) &   (\\ libInfosReducedSubsystems.
+-- %Initiate the Translation process:
+   translateProject(
+                    usrInfosReducedSubsystems,
+                    libInfosReducedSubsystems,
+                    config
+                   )
+   ) -- \\ libInfosReducedSubsystems
+   ) -- \\ usrInfosReducedSubsystems
+   )
+
+
+-- %$Handling Single Modules$
+-- %-------------------------
+-- %$$Handling User-Modules$
+-- %-----------------------
+
+FUN handleUserModule : string ** set[string,<] ** set[string,<] ** 
+                         usrInfos ** libInfos ** config ** foreignInfo -> com[void]
+DEF handleUserModule( actUserModule,
+                      modulesToRead, modulesAlreadyRead, 
+                      usrInfos, libInfos, 
+                      config, fInfos ) ==
+
+-- %First find out, whether this is foreign module
+  isForeign?(fInfos)(actUserModule) & (\\ fInfo.
+
+/* %We do not want to read-in sources that are not displayed in the generated 
+documentation. So we check if the @c{actUserModule} is member of a subsystem
+that is @b{not} to be included in the documentation.
+
+A recursive call to @c{processFilesIn@-tern} handles the insertion of
+the remaining structures into the global source-tables: */
+  IF isSubsystem?(config)(actUserModule) and
+       ~(subsystemsInclude?(config)) THEN
+
+-- %Do not include this subsystem module but update module-sets:
+    processFilesIntern(
+      excl(actUserModule, modulesToRead),
+      incl(actUserModule, modulesAlreadyRead),
+      usrInfos,
+      libInfos,
+      config,
+      fInfos
+    )
+  ELSE
+    IF avail?(fInfo) THEN
+      progress("reading foreign module " ++
+               (actUserModule`), config) & (\\ _ .
+      LET (implFile, commentS) == unpair(cont(fInfo))
+      IN
+      readAndScanForeign(actUserModule, config, commentS) & (\\ pr.
+      IF implFile <>? THEN
+        LET restFilesToHandle == calcRestFiles(
+                                               actUserModule,
+                                               modulesToRead,
+                                               modulesAlreadyRead,
+                                               asSet(imports(pr)),
+                                               config
+                                              )    
+        IN
+        processFilesIntern(restFilesToHandle,
+                           incl(actUserModule, modulesAlreadyRead),
+                           insertUsrInfo(usrForeignInfo(actUserModule, pr),
+                                         usrInfos, config),
+                           libInfos,
+                           config,
+                           fInfos
+                          )
+      ELSE
+        LET path == cont(getPath(actUserModule)(config)) ++ ("/"!) 
+        IN
+        readAndScanForeign(path ++ implFile,
+                           implFile, config, commentS) & (\\prI.
+        LET si == sign(content(pr), imports(pr), context(pr), nil)
+            im == impl(content(prI),imports(prI),context(prI), nil)
+            restFilesToHandle == calcRestFiles(
+                                               actUserModule,
+                                               modulesToRead,
+                                               modulesAlreadyRead,
+                                               asSet(imports(pr)) +
+                                               asSet(imports(prI)),
+                                               config
+                                              )    
+        IN
+        processFilesIntern(restFilesToHandle,
+                           incl(actUserModule, modulesAlreadyRead),
+                           insertUsrInfo(usrSourceInfo(actUserModule, si, im),
+                                         usrInfos, config),
+                           libInfos,
+                           config,
+                           fInfos
+                          )
+        )
+      FI
+      ))
+    ELSE
+    readAndScanSign(actUserModule, config) ;
+    (\\ ansSign.
+       IF okay?(ansSign) THEN
+         readAndScanImpl(actUserModule, config) ;
+         (\\ ansImpl.
+           IF okay?(ansImpl) THEN
+               processFilesIntern(
+                 restFilesToHandle,
+                 incl(actUserModule, modulesAlreadyRead),
+
+-- %Insert source in template:
+                 insertUsrInfo(         
+                   usrSourceInfo(
+                     actUserModule,
+                     data(ansSign), 
+                     data(ansImpl)
+                   ),
+                   usrInfos,
+                   config
+                 ),
+                 libInfos,                -- no change for libs
+                 config,
+                 fInfos
+               )
+             WHERE
+               restFilesToHandle == calcRestFiles(
+                                      actUserModule,
+                                      modulesToRead,
+                                      modulesAlreadyRead,
+                                      data(ansSign),
+                                      data(ansImpl),
+                                      config
+                                    )
+           ELSE
+             writeLine(stdErr, error(ansImpl))
+           FI
+         )
+       ELSE
+         writeLine(stdErr, error(ansSign))
+       FI 
+    ) -- \\ ansSign
+   FI
+  FI
+  ) -- \\ fInfo
+
+
+/* %The import-relations of the structure @c{act} and the sets @c{toRead} and 
+@c{alreadyRead} provide the context for determining the names of structures
+that are still to read. The imports of signature- and implementation-parts are
+examined for imports and reduced properly.
+
+If the handling of properties is enabled, the imports of the external and internal
+property-parts are considered, too. */
+
+FUN calcRestFiles :  string ** set[string,<] ** set[string,<] ** 
+                       sign ** impl'SourceTab ** config -> set[string,<]
+DEF calcRestFiles( act, toRead, alreadyRead, sign, impl, config) ==
+  LET
+    signImports == IF sign?(sign) THEN asSet(imports(sign)) ELSE {} FI
+    implImports == IF impl?(impl) THEN asSet(imports(impl)) ELSE {} FI
+    extpImports == IF avail?(extProp(sign)) THEN
+                     asSet(imports(cont(extProp(sign))))
+                   ELSE {}
+                   FI
+    intpImports == IF avail?(intProp(impl)) THEN
+                     asSet(imports(cont(intProp(impl))))
+                   ELSE {}
+                   FI
+  IN
+
+/* %The set of modules to be read in recursive calls to @c{processFilesIntern} is 
+calculated by excluding the name of the currently read module and adding the 
+import-names of the signature and implementation part of the @c{act}ual structure.
+@c{propertyImports} are also included if property-handling is configured. In order to
+@b{not re-read} structures, this set is reduced by the set of @c{alreadyRead}
+structure-names. 
+*/   
+    excl(act, toRead) + newImportsNotAlreadyRead
+
+  WHERE
+    newImportsNotAlreadyRead ==
+      (signImports + implImports + extpImports + intpImports ) - alreadyRead 
+  
+
+FUN calcRestFiles :  string ** set[string,<] ** set[string,<] ** 
+                       set[string, <] ** config -> set[string,<]
+DEF calcRestFiles( act, toRead, alreadyRead, imports, config) ==
+    excl(act, toRead) + newImportsNotAlreadyRead
+  WHERE
+    newImportsNotAlreadyRead == imports - alreadyRead 
+  
+
+-- %$$Handling Library-Modules$
+-- %--------------------------
+/* %Import relations are not considered for libraries. The set @c{modulesAlreadyRead}
+is exactly increased by one element, whereas @c{actLibraryModule} is
+excluded from the set @c{modulesToRead}.
+
+If library-handling is not specified, no library informations are read and a 
+recursive call to @c{processFilesIntern} is induced. */
+
+FUN handleLibraryModule : string ** set[string,<] ** set[string,<] ** 
+                           usrInfos ** libInfos ** config ** foreignInfo -> com[void]
+DEF handleLibraryModule( actLibraryModule,
+                         modulesToRead, modulesAlreadyRead, 
+                         usrInfos, libInfos, 
+                         config, fInfos ) ==
+  IF libraryInclude?(config) THEN
+    readAndScanLibSign(actLibraryModule, config) ;
+    (\\ ansLibSign.
+      IF okay?(ansLibSign) THEN
+        (IF propertiesInclude?(config, actLibraryModule) THEN
+          (readAndScanLibExtp(actLibraryModule, config))
+         ELSE
+          yield(okay(nil))
+         FI) ;
+          (\\ ansLibExtp.
+             IF okay?(ansLibExtp) THEN
+               processFilesIntern(
+                 excl(actLibraryModule, modulesToRead),
+                 incl(actLibraryModule, modulesAlreadyRead),
+                 usrInfos,
+                 insertLibInfo(
+                   libSourceInfo(
+                     actLibraryModule,
+                     data(ansLibSign),
+                     data(ansLibExtp)
+                   ),
+                   libInfos
+                 ),
+                 config,
+                 fInfos
+               )
+             ELSE
+               writeLine(stdErr, error(ansLibExtp))
+             FI
+          ) -- \\ ansLibExtp
+      ELSE
+        writeLine(stdErr, error(ansLibSign))
+      FI
+    ) -- \\ ansLibSign
+  ELSE -- no libraries
+    processFilesIntern(
+      excl(actLibraryModule, modulesToRead),
+      incl(actLibraryModule, modulesAlreadyRead),
+      usrInfos,
+      libInfos,
+      config,
+      fInfos
+    )
+  FI
+
+-- %$$Read User-Implemented Structure Parts$
+-- %---------------------------------------
+-- %$$$Signature$
+-- %-----------
+/* %Signature- and Implementation-Parts are handled similarly. Due to this we
+only describe the handling of the signature part:
+
+Initially a status print is delived to standard-output in order to inform the
+user that the signature-part of structure @c{signName} is about to be handled 
+subsequently. Then the textual representation of the @OPAL-source is read
+together 
+with the corresponding InterOpal-database. If any of these part cannot be
+found in the
+filesystem and error occurs and the reading-process is cancelled. In specified
+the function @c{readExtpInfos} handles the reading of properties w.r.t. the 
+specification in the @c{config}-database.
+
+On success, the source-code is scanned by the DOSFOP-scanner and transformed
+into
+an internal (token-)representation. The names of all imported structures 
+and all other context information is extracted from the InterOpal-database
+(@c{readSignIORes}).
+
+All newly constructed data is united in a source-table entry for signatures,
+by the
+application of the @c{sign}-constructor. */
+FUN readAndScanSign : string ** config -> com[sign]
+
+DEF readAndScanSign( signName, config ) ==
+  readAndScanSignOrImpl(signName, config,
+                        sign, signInter, readExtpInfos) & (\\Q. 
+  LET (tokenSeq, imported, context, optProp) == unquad(Q)
+  IN
+  succeed(sign(token2SignContent(tokenSeq), imported, context, optProp))
+  )
+
+
+-- %$$$Implementation$
+-- %----------------   
+
+FUN readAndScanImpl : string ** config -> com[impl'SourceTab]
+
+DEF readAndScanImpl( implName, config ) ==
+  LET in == makeFileName(implName, implInter, config)`
+  IN
+  IF onlyInterfaces?(config, implName) THEN
+    readInterOpal(false, in) ;
+    (\\readImplIORes?.
+        LET implImportedModules == 
+                IF okay?(readImplIORes?) THEN
+                    getImports(data(readImplIORes?))
+                ELSE <> FI
+        IN
+        yield(okay(
+              impl(
+                token2Content(<>),
+                implImportedModules,
+                emptyContext,
+                nil
+        ) ) )
+    )
+  ELSE
+    readAndScanSignOrImpl(implName, config, impl,
+                                       implInter, readIntpInfos) & (\\ Q.
+    LET (tokenSeq, imported, context, optProp) == unquad(Q)
+    IN
+    succeed(impl(token2Content(tokenSeq), imported, context, optProp))
+    )
+  FI
+
+FUN readAndScanSignOrImpl: string ** config ** fileType ** fileType **
+                            (string ** config ->
+                               com[pair[option[prop], 
+                                        option[interOpal]]]) ->
+                            com[quad[seq[token], seq[string],
+                                     context,option[prop]]]
+DEF readAndScanSignOrImpl( unitName, config, fType,
+                           fInterType, readPropInfos ) ==
+  LET fn == makeFileName(unitName, fType, config)
+      bn == makeBFileName(unitName, fType, config)`
+      in == makeFileName(unitName, fInterType, config)`
+      ibn == makeBFileName(unitName, fInterType, config)`
+  IN
+  include?(unitName) & (\\ inc? .
+  (inc? -?-> 
+   (\\ . progress("reading unit: " ++ bn ++ " ...", config))) & (\\ _ .
+  tryReadFile(unitName, fn) & (\\ p.
+  LET (readUnitRes, newWarn) == unpair(p)
+  IN
+  readIO(config)(in, ibn, unitName) & (\\ readUnitIORes.
+  readPropInfos(unitName, config) & (\\ propAndReadIORes.
+  (inc? -?-> (\\ . progress(" scanning and constructing context: " ++
+                            bn ++ " ...", config))) & (\\ _ .
+  LET
+    (unitToken, errorState) == scan(readUnitRes, config)
+    newES == errorState <+ newWarn
+    newES2 == IF (readUnitIORes nil?) and inc? THEN
+                newES <+ "<!> could not read " ++ in ++
+                  " indexing, import links, impossible\n" 
+              ELSE newES FI
+  IN
+  (error?(errorState) -!-> (\\ . reason(errorState))) & (\\ _ .
+  (warnings?(newES2) -?-> (\\ . showWarnings(bn, newES2)) & (\\ _ .
+  (LET
+     unitImportedModules == getImports(readUnitIORes)
+     unitContext == constructContext(
+                                     readUnitIORes,
+                                     2nd(propAndReadIORes),
+                                     config
+                                    )
+     unitContext2 == addPropertyContext(unitContext, readUnitIORes, config)
+   IN
+   succeed(
+              &(
+                   unitToken,
+                   unitImportedModules,
+                   unitContext2,
+                   1st(propAndReadIORes)
+         ) )
+   )
+  )))))))))
+
+
+-- %$$$Property-Parts$
+-- %----------------
+ 
+/* %The following functions get the name of a property part to handle.
+First the property part is read, then the corresponding @c{interOpal}
+file is read. The property source is then scanned an split into sub-parts defined
+by the DOSFOP source splitting mechanism. The names of the imported files are
+extracted from the InterOpal structure.
+
+The @b{result} of both functions is a property source info structure and the
+corresponding interOpal structure. If the options indicate that no property
+handling should happen, the @nil alternatives of the options are delivered. */
+ 
+FUN readExtpInfos : 
+      string ** config -> com[pair[option[prop], option[interOpal]]]
+
+DEF readExtpInfos( extpName, config ) ==
+  readPropInfos(extpName, config, extp, extpInter)
+
+
+FUN readIntpInfos : 
+      string ** config -> com[pair[option[prop], option[interOpal]]]
+
+DEF readIntpInfos( intpName, config ) ==
+  readPropInfos(intpName, config, intp, intpInter)
+
+FUN readPropInfos: string ** config ** fileType ** fileType ->
+                    com[pair[option[prop], option[interOpal]]]
+DEF readPropInfos( propName, config, fType, fInterType ) ==
+  LET fn == makeFileName(propName, fType, config)
+      bn == makeBFileName(propName, fType, config)`
+      in == makeFileName(propName, fInterType, config)`
+      ibn == makeBFileName(propName, fInterType, config)`
+  IN
+  IF propertiesInclude?(config, propName) THEN
+    progress("reading unit: " ++ bn ++ " ...", config) & (\\ _ .
+    tryReadFile(propName, fn) & (\\ p.
+    LET (readPropRes, newWarn) == unpair(p)
+    IN
+    readIO(config)(in, ibn, propName) & (\\ readPropIORes.
+    include?(propName) & (\\ inc? . 
+    LET
+      (propToken, errorState) == scan(readPropRes, config)
+      newES == errorState <+ newWarn
+      newES2 == IF (readPropIORes nil?) and inc? THEN
+                   newES <+ "<!> could not read " ++ in ++
+                   " indexing, import links, impossible\n" 
+                ELSE newES FI
+    IN
+    (error?(errorState) -!-> (\\ . reason(errorState))) & (\\ _ .
+    (warnings?(newES2) -?-> (\\ . showWarnings(bn, newES2)) & (\\ _ .
+    LET 
+      propImports == getImports(readPropIORes)
+      propContext == addPropertyContext(emptyContext, readPropIORes, config)
+    IN
+    succeed(&(avail(prop(token2Content(propToken), propImports, propContext)),
+              readPropIORes))
+    )))))))
+  ELSE succeed(&(nil, nil))  -- not(propertiesInclude?)
+  FI
+
+-- %$$Read Library Structure Parts$
+-- %------------------------------
+-- %$$$Read Library-Signature$
+-- %-------------------------
+
+FUN readAndScanLibSign : string ** config -> com[sign]
+DEF readAndScanLibSign( libName, config ) ==
+  readAndScanLib(libName, config, libSign) & (\\ signToken.
+  succeed(sign(token2Content(signToken), <>, emptyContext, nil))
+  )
+
+-- %$$$Read Library External Property Part$
+-- %--------------------------------------
+
+FUN readAndScanLibExtp : string ** config -> com[option[prop]]
+DEF readAndScanLibExtp( libName, config ) ==
+  readAndScanLib(libName, config, libExtp) & (\\ extpToken.
+  succeed(avail(prop(token2Content(extpToken), <>, emptyContext)))
+  )
+
+-- %$$$Common Part of Reading Library Parts$
+
+FUN readAndScanLib : string ** config ** fileType -> com[seq[token]]
+DEF readAndScanLib( unitName, config, fType ) ==
+  LET fn == makeFileName(unitName, fType, config)
+      bn == makeBFileName(unitName, fType, config)`
+  IN
+  progress("reading unit: " ++ bn ++ " (LIB) ...", config) & (\\ _ .
+  tryReadFile(unitName, fn) & (\\ p.
+  LET (readRes, newWarn) == unpair(p)
+  IN
+  progress(" scanning: " ++ bn ++ " (LIB) ...", config) & (\\ _ .
+  LET 
+    (token, errorState) == scan(readRes, config)
+    newES == errorState <+ newWarn
+  IN
+  (error?(errorState) -!-> (\\ . reason(errorState))) & (\\ _ .
+  (warnings?(newES) -?->
+   (\\ . showWarnings(bn ++ " (LIB)", newES))) & (\\ _ .
+  succeed(token)
+  )))))
+
+-- %$$Read Foreign Files$
+
+FUN readAndScanForeign : string ** config ** commentStrings -> com[prop]
+DEF readAndScanForeign( fileName, config, commentS ) ==
+  LET fullName == cont(getPath(fileName)(config)) ++ ("/"!) ++ fileName
+  IN
+  readAndScanForeign(fullName, fileName, config, commentS)
+  
+
+FUN readAndScanForeign : string ** string ** config **
+                          commentStrings -> com[prop]
+DEF readAndScanForeign( fullName, fileName, config, commentS ) ==
+  progress(" reading foreign file " ++ (fileName`) ++ " ...", config) & (\\ _ .
+  tryReadFile(fileName, fullName) & (\\p.
+  LET (readRes, newWarn) == unpair(p)
+      (resToken, errorState) == scan(readRes, config, commentS)
+      newES == errorState <+ newWarn
+  IN
+  (error?(errorState) -!-> (\\ . reason(errorState))) & (\\ _ .
+  (warnings?(newES) -?-> (\\ . showWarnings(fileName`, newES))) & (\\ _ .
+  getForeignImports(fileName, config) & (\\ fileImports.
+  getForeignContext(fileName, config) & (\\ fileContext .
+  succeed(prop(token2SignContent(resToken), fileImports, fileContext))
+  ))))))
+
+-- %$Auxiliary Functions$
+
+/* %Show Warnings of the errorstate */
+
+FUN showWarnings: denotation ** error -> com[void]
+DEF showWarnings(_, _) == 
+  ABORT("showWarnings'Readsrc: called with ok or error / should never happen")
+
+DEF showWarnings(filename, warnings(messs)) ==
+        writeLine(stdErr, "WARNINGS IN " ++ filename) &
+        writeLine(stdErr, ++ / messs) &
+        ( append(warningFile) & (\\wFile.
+          writeLine(wFile, "WARNINGS IN " ++ filename) &
+          writeLine(wFile, ++ / messs) &
+          close(wFile))
+        )
+
+/* %Try to read in a file, return content and nil, or error description and a
+    warning message. */
+FUN tryReadFile: string ** string -> com[pair[string, option[denotation]]]
+DEF tryReadFile(unitname, fn) ==
+  include?(unitname) & ( \\ inc? .
+  IF inc? THEN
+    readFile(fn) ; (\\ readA.
+    LET (readRes, newWarn) ==
+        IF okay?(readA) THEN (data(readA), nil)
+        IF fail?(readA) THEN 
+          LET msg == "<!> could not read file " ++ (fn`) ++
+                     "; reason: " ++ error(readA) ++ "\n" ++
+                     "check whether the path is correct, and whether this" ++
+                     " unit is really contained in the DOSFOP project base!"
+          IN (msg!, avail(msg))
+        FI
+    IN
+    succeed(&(readRes, newWarn))
+    )
+  ELSE
+    succeed(("file not to be read" !) & nil)
+  FI
+  )
+
+FUN readIO: config ->
+             denotation ** denotation ** string -> com[option[interOpal]]
+DEF readIO(config)(filename, basename, unitname) ==
+  include?(unitname) & (\\ inc? .
+  IF inc? THEN
+    progress(" reading interOpal: " ++ basename ++ " ...", config) &
+    readInterOpal(false, filename)
+  ELSE
+    succeed(nil)
+  FI
+  )

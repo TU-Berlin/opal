@@ -1,0 +1,120 @@
+/* %This structure defines the data type of mappings from a domain to
+a codomain. 
+
+The implementation currently is based on balanced search trees, which
+gives good performance on single element operations such as
+@code{def}, @code{undef} and @code{!} (select), but not on operations
+on whole maps, such as @code{<+}.
+
+The implementation may change in future revisions. If you want to make sure 
+that you use maps based on balanced search trees, you can use the 
+@code{MapByBST} family of structures. 
+ */
+SIGNATURE Map [dom:SORT,< : dom ** dom -> bool,codom: SORT]
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:03 $ ($Revision: 1.1.1.1 $)
+
+IMPORT Nat              ONLY nat
+       Option[codom]    ONLY option
+       Set[dom,<]       ONLY set
+       Seq[dom]         ONLY seq
+       Seq[codom]       ONLY seq
+       Pair[dom, codom] ONLY pair
+       Option[pair]     ONLY option
+
+-- %$Parameter$
+/* % @code{dom} is the type of the domain, @code{codom} the type of
+the codomain. @code{<} is a total strict
+order: the formula ALL x y. ~(x < y) AND ~(y < x) => x === y must
+hold. */
+SORT dom codom
+FUN <   : dom ** dom -> bool
+
+-- %$The Type Itself$
+SORT map
+
+-- %$Nonfree Constructors$
+-- %The empty map.
+FUN {}          : map   
+-- %(Re)define map at point.
+FUN def         : dom ** codom ** map -> map
+
+
+-- %$Constructing a Map From Datas$
+-- %(Re)define resp. undefine map at point.
+FUN def         : dom ** codom ** map -> map
+    undef       : dom ** map -> map
+
+-- %In @code{upd (d, f, m)}, redefine @code{m} at @code{d} by @code{f(m!d)}
+FUN upd         : dom ** (codom -> codom) ** map -> map 
+
+/* %Best explained informally: @code{extend (M, <d1, ..., dn>, <c1,
+..., cn>)} results @code{def(d1,c1, def(..., def(dn,cn,M)...))}. */
+FUN extend      : map ** seq[dom] ** seq[codom]->map 
+
+-- %$Constructing a Map From a Function$
+-- %@code{(n1 .. n2)(f,g) == @{f(n1) -> g(f(n1)), ... , f(n2) -> g(f(n2))@}}
+FUN ..          : nat ** nat -> (nat -> dom) ** (dom -> codom) -> map
+
+/* %Generate elements of the domain from @code{start} upto (excluding)
+the first element, for which @code{P(it^x(start))} does not hold. The
+function @code{f} assigns to each element of the domain the associated
+codom element. */
+FUN iter        : dom ** (dom -> dom) ** (dom -> bool) -> (dom -> codom) -> map
+
+-- %Add for every element d of the set the maplet @code{d -> f(d)} to the map
+FUN init        : set[dom, <] ** (dom -> codom) -> map
+
+-- %$Combining Maps$
+/* % Lifting of @code{def} to maps. Informally, @code{M <+
+@{d1->c1,...,dn -> cn@} = def(d1, c1, def( ..., def(dn, cn, M)...))} */
+FUN <+          : map ** map -> map                     
+
+/* % Lifting of undef to sets. Informally, @code{M <- @{d1,...,dn@} =
+undef(d1, undef( ..., undef(dn, M)...))} */
+FUN <-          : map ** set[dom,<] -> map      
+
+-- %$Accessing Codom - Elements$
+-- %@code{m!d}: give associated value to @code{d} in @code{m} which must exist
+FUN !           : map ** dom -> codom     
+
+/* %@code{!(default)(m!d)}: return default, if @code{not d in dom(m)}.
+    Otherwise like ordinary @code{!}. */
+FUN !           : codom -> map ** dom -> codom      
+
+/* %@code{m ?! d}: give associated value to @code{d} in @code{m}, if
+it exists, else @code{nil}  */
+FUN !?          : map ** dom -> option[codom]   
+
+-- %$Information About a Map$
+
+-- %test for empty map
+FUN {}?         : map -> bool
+-- % test for definedness
+FUN def?        : dom ** map -> bool
+/* % domain of the map. Informally, @code{dom ( @{d1->c1,...,dn -> cn@}
+) = @{d1, ..., dn@}} */
+FUN dom         : map -> set[dom,<]   
+-- % Codomain of the map. Note that this is a sequence and not a set!
+FUN codom       : map -> seq[codom]
+
+-- %cardinality of @code{dom(m)}
+FUN #           : map -> nat                    
+
+/* %@code{exist?(P, M)}: is there @code{d} in @code{dom(M)} with
+@code{P(d, M!d)} ? */
+FUN exist?      : (dom ** codom -> bool) ** map -> bool
+
+/* %@code{find?(P, M)}: return @code{avail(c, d)} for some @code{c->d}
+in @code{M} for which @code{P} holds */
+FUN find?       : (dom ** codom -> bool) ** map -> option[pair]
+/* %@code{forall?(P, M)}: does @code{P} hold for every @code{(d, r)}
+in @code{M} ? */
+FUN forall?     : (dom ** codom -> bool) ** map -> bool
+
+
+-- %$not for user purpose$
+-- %see structure MapNotForUSerPurpose

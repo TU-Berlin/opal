@@ -1,0 +1,625 @@
+IMPLEMENTATION TransAdmin
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransAdmin.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  String        COMPLETELY       ComCompose     COMPLETELY
+  Seq           COMPLETELY       Stream         COMPLETELY
+  SeqOfSeq      COMPLETELY       Void           COMPLETELY
+  SeqMap        COMPLETELY       Option         COMPLETELY
+  SeqReduce     COMPLETELY       Denotation     COMPLETELY
+  Com           COMPLETELY       SeqFilter      COMPLETELY
+
+IMPORT
+  MyString      COMPLETELY       TransType      COMPLETELY
+  Config        COMPLETELY
+  ConfigFun     COMPLETELY       TransHelp      COMPLETELY
+  ConfigSearch  COMPLETELY
+  SourceTab     COMPLETELY       TransPointers  COMPLETELY
+  Language      COMPLETELY       TransMenu      COMPLETELY
+  SubsystemType COMPLETELY       TransHierarchy COMPLETELY
+       SourceTabFun COMPLETELY
+
+-- %$The Top Node$
+-- %--------------
+
+-- %The implementation of
+
+FUN buildTopNode : 
+      seq[seq[string]] ** libInfos ** usrInfos ** config ** output -> com[void]
+
+/* %assembles the parts of the first node of the generated DOSFOP documentation
+and writes them to @c{output}: */
+
+DEF buildTopNode
+      ( sortedUsrFileLevels, libInfos, usrInfos, config, outputFile ) ==
+
+  writeLine(stdErr, "building the top node ...") &
+  (\\ _ .
+    write(
+      outputFile,
+        conc(
+             dosfopPrelude,
+             nodeAdminInfo(sortedUsrFileLevels, libInfos, usrInfos, config),
+             nodeAdminTeX(sortedUsrFileLevels, libInfos, usrInfos, config),
+             headline(config),
+             topLevelHierarchyVisu(sortedUsrFileLevels, usrInfos, config),
+             topLevelSubsystemVisu(usrInfos, config),
+             menus(sortedUsrFileLevels, libInfos, usrInfos, config)
+            )
+    )
+  ) -- \\ _    
+
+
+-- %$$Components of the Top Node$
+-- %-----------------------------
+
+/* %Include the special prelude for DOSFOP. This assumes two files in
+   the include directories: @code{dosfopPrelude.tex} contains @TeX{}
+   macro files, and @code{dosfopPrelude.texi} the general
+   initialisation for texinfo.
+*/
+
+FUN dosfopPrelude: string
+DEF dosfopPrelude ==
+  line("\\input dosfopPrelude") ++
+  line("\\input texinfo") ++
+  line("@include dosfopPrelude.texi")
+  
+
+/* %-
+   These settings are now done independently from the DOSFOP
+   translator itself in two seperate include files.
+   
+   This part of the program is kept until the comments to these parts
+   have been copied to dosfopPrelude.tex and dosfopPrelude.texi.
+
+   (kd, 10 Dec 1996)
+
+/* %Specification of @TeX{}-include files and the input-specification
+of the Texinfo style that is implemented as a set of plain @TeX{}
+macros:
+
+@c{dosfopLatin1.sty} enables the direct specification of non-ASCII chars from
+ISO-8859-1 (such as german umlauts)
+
+By the inclusion of @c{psfig} the DOSFOP-user is enabled to include external
+postscript figures into the printed documentation and the @emph{PSTricks} 
+macro package provides functionalities for postscript-graphic generation
+that is needed for the construction of hierarchy visualizations. */
+
+FUN texInputFiles : config -> string
+DEF texInputFiles( config )  ==
+  line("\\input dosfopLatin1.sty") ++
+  line("\\input psfig") ++
+  line("\\input pstricks") ++ 
+  line("\\input texinfo")       
+
+/* %The definition of some global layout constants for the generation of the printed
+documentation as well as macros for the construction of used function tables
+are assembled in the following string constant. Further extension of
+DOSFOP should include the handling of standard layout-styles here: 
+@cindex Page Style Extensions */
+  
+FUN texInput : string
+DEF texInput ==
+  conc(
+    line("@tex"), 
+    line("\\nonstopmode"),         -- do not stop on errors
+    line("\\overfullrule 0cm"),    -- no markers for overfull boxes
+    line("\\global\\newbox\\mystrutbox") ++ 
+                                   -- box definitions for application tables
+         !("\\global\\setbox\\mystrutbox=\\hbox") ++
+         !("{\\vrule height5pt depth3.5pt width0pt}") ++
+         !("\\gdef\\strut{\\relax\\ifmmode\\copy") ++
+         !("\\mystrutbox\\else\\unhcopy\\mystrutbox\\fi}") ++ nl,
+
+    line("\\global\\font\\small=cmr5") ++                  
+                                   -- definition of math-font
+    line("\\gdef\\smallmath{\\scriptscriptstyle}"),  
+                                   -- font for used-function-tables
+
+    line("\\gdef\\tablerule{\\noalign{\\hrule}}"),    
+                                   -- dto.
+
+    line("\\hsize=7.0in") ++       -- page layout constants
+    line("\\hoffset=-0.2in") ++
+    line("@end tex")
+  )
+
+/* %Some macro-definitions have to be defined after the inclusion of
+   the Texinfo macro package because they are overwritten by the
+   packet inclusion otherwise. We have to redefine the headline of the
+   table of contents here because we have to modify it according to
+   the specified base-language of the documentation. Some formatting
+   commands for paragraphs are redefined here, too.
+
+   The final part of the resulting string contains Texinfo initialization
+   that have to be defined in order to produce a syntactically
+   correct Texinfo intermediate representation of the project documentation. 
+*/
+
+FUN globalTexinfoAdmin : config -> string
+DEF globalTexinfoAdmin( config ) ==
+
+-- % The following is only for @TeX{}:
+  ensureLineBreak(line("@ifclear html\n@iftex")) ++
+
+-- %Define "Table of Contents" headline:
+  conc(
+    line("@outer@def@contents{"),
+    conc(
+      "  @startcontents{"!, 
+      Table_Of_Contents(config),
+      "}"!,
+      nl
+    ),
+    line("  @input @jobname.toc"),
+    line("  @endgroup"),
+    line("  @vfill @eject"),
+    line("}")
+  ) ++
+
+-- %Specify paragraph-layout:
+  line("@parskip=0.1cm") ++
+  line("@parindent=0cm") ++
+
+-- %Now @TeX{} and info are concerned
+  ensureLineBreak(line("@end iftex\n@end ifclear")) ++
+
+-- %Specify Texinfo introductory part w.r.t. configuration:
+  conc(
+    line("@c ** start of header"),
+    conc(
+      !("@setfilename "),
+      topStructureName(config),
+      !(".info"),
+      nl
+    ),
+    !("@settitle ") ++ projectName(config), nl,
+    line("@setchapternewpage off") ++
+-- % File for customizing later
+  line("@include dosfop.switches")
+,
+    line("@c %** end of header"), nl
+  ) ++
+  conc(
+    line("@finalout"),
+    line("@titlepage"),
+    !("@title ") ++ projectName(config), nl,
+    !("@author ") ++ authorNames(config), nl,
+    !("@subtitle ") ++ date(config) ,nl,
+    line("@end titlepage")
+  ) 
+
+*/
+
+/* %Specify hierarchy visualizations for toplevel structures as well as for
+the subsystems of the complete project: */
+
+FUN topLevelHierarchyVisu : seq[seq[string]] ** usrInfos ** config -> string
+DEF topLevelHierarchyVisu( sortedUsrFileLevels, usrInfos, config ) == 
+  IF hierarchyVisu?(config) or hierarchyVisuNoSubs?(config) THEN 
+    conc(
+      constructHierarchyVisualization(
+        revert(
+          sortedUsrFileLevels
+        ),
+        config,
+        searchOptionSetting(SortStructures, \\x.x, config)
+      ),
+      line("@page")
+    )
+  ELSE
+    <>
+  FI
+
+FUN topLevelSubsystemVisu : usrInfos ** config -> string
+DEF topLevelSubsystemVisu( usrInfos, config ) ==
+  IF hierarchyVisu?(config) or hierarchyVisuNoStructs?(config) THEN
+    conc(
+      subsystemVisu(subsystems(usrInfos), config),
+      line("@page")
+    )
+  ELSE
+    <>
+  FI
+
+
+/* %Define the Info-hypertext pointers for the top-node: */
+ 
+FUN nodeAdminInfo : seq[seq[string]] ** libInfos ** 
+                                         usrInfos ** config -> string 
+DEF nodeAdminInfo( sortedUsrFileLevels, libInfos, usrInfos, config ) ==
+    conc(
+      line("@ifinfo"),
+      conc(!("@node Top,"), nextNode, ", "!, prevNode, ", "!, upNode, nl),
+      "@top "!, Survey_of_the_Project, nl,
+      line("@end ifinfo")
+    )
+  WHERE
+    nextNode == IF flat(sortedUsrFileLevels) <>? THEN
+                   ft(nodeName * subsystems2MenuEntries(
+                                   subsystems(usrInfos), 
+                                   config)
+                      )
+                IF flat(sortedUsrFileLevels) ::? THEN
+                    Overview(ft(flat(sortedUsrFileLevels)))
+                FI
+    prevNode == lastProjectNode(
+                  sortedUsrFileLevels, 
+                  usrInfos, 
+                  libInfos, 
+                  config 
+                )
+    upNode == "(dir)"!
+
+/* %Define the TeX-hypertext pointers for the top-node: */
+ 
+FUN nodeAdminTeX : seq[seq[string]] ** libInfos ** 
+                                        usrInfos ** config -> string 
+DEF nodeAdminTeX( sortedUsrFileLevels, libInfos, usrInfos, config ) ==
+    conc(
+      line("@iftex"),
+      !("@node "), Survey_of_the_Project, ", "!,
+      nextNode, ", "!,
+      prevNode, ", "!,
+      upNode  , nl) ++
+    conc(
+    "@chapter "!,
+    Survey_of_the_Project, nl ) ++
+    line("@end iftex")
+    
+  WHERE
+    nextNode == IF flat(sortedUsrFileLevels) <>? THEN
+                   ft(nodeName * subsystems2MenuEntries(
+                                   subsystems(usrInfos), 
+                                   config)
+                      )
+                IF flat(sortedUsrFileLevels) ::? THEN
+                   Overview(ft(flat(sortedUsrFileLevels)))
+                FI
+    prevNode == lastProjectNode(
+                  sortedUsrFileLevels, 
+                  usrInfos, 
+                  libInfos, 
+                  config 
+                )
+    upNode == "(dir)"!
+
+/* %Specification of the @TeX{}-headline of the top-node and extraction of the
+global project survey from the configuration database: */
+FUN headline : config -> string
+DEF headline( config ) ==
+  conc(
+    cont(cont(overviewPrefix)),
+    globalSurvey(config), 
+    cont(cont(overviewSuffix)),
+    nl,
+    optionalNewPage(config)
+  )
+
+/* %As described in the structure overview, the top node contains large menus
+that enable a directed browsing in the Info-hypertext. The derivation of the 
+menu-contents from the project source table information takes place here. As only
+menu references to existing nodes are allowed, we have to consider the contents of the
+configuration database. The names of the top-level structures are derived from the
+parameter @c{sortedUsrFileLevels} which is the result of the topological sorting 
+process. */
+
+FUN menus : seq[seq[string]] ** libInfos ** usrInfos ** config -> string 
+DEF menus( sortedUsrFileLevels, libInfos, usrInfos, config ) ==
+  LET opalSortedUsrFileLevels ==
+      (\\ x. opal?(usrInfos) | x) * sortedUsrFileLevels
+  IN
+  conc(
+    line("@menu"),
+
+-- %References to overviews of user-implemented files at top-level:
+    "  @*@i{"!, User_implemented_files_: , "}"!, 
+    conc(
+      "  @*@i{"!, MODULE_SURVEYS_:, "}"!, nl,
+      buildMenuEntries(
+        strings2MenuEntries(
+          flat(sortedUsrFileLevels),
+          Overview
+        )
+      ),
+      nl
+    ) ++
+
+-- %No references to parts if nodes are not split:
+   conc("@ifclear dfSingleNode"!,
+        nl
+       ) ++
+
+-- %References to signatures of user-implemented files at top-level:
+    conc(
+      "  @*@i{"!, MODULE_SIGNATURES_:, "}"!, nl,
+      buildMenuEntries(
+        strings2MenuEntries(
+          flat(opalSortedUsrFileLevels),
+          \\x. mkNodeName(x, sign)
+        )
+      ),
+      nl
+    ),
+
+-- %References to implementations of user-implemented files at top-level:
+    IF (or / false) 
+       ((\\ moduleName. onlyInterfaces?(config, moduleName)) * 
+           flat(opalSortedUsrFileLevels)) THEN
+      <>
+    ELSE
+      conc(
+        "  @*@i{"!, MODULE_IMPLEMENTATIONS_:, "}"!, nl,
+        (++ / <>)(
+          (\\ moduleName.
+              IF onlyInterfaces?(config, moduleName) THEN
+                <>
+              ELSE
+                buildMenuEntries(
+                  strings2MenuEntries(moduleName%, \\x. mkNodeName(x, impl))
+                )
+              FI
+          ) * flat(opalSortedUsrFileLevels)
+        ),
+        nl
+      )
+    FI,
+
+-- %References to external property parts of user-implemented files at top-level:
+    IF (or / false) 
+       ((\\ moduleName. propertiesInclude?(config, moduleName)) *
+           flat(opalSortedUsrFileLevels)) THEN
+      conc(
+        "  @*@i{"!, MODULE_EXTERNAL_PROPERTY_PARTS_:, "}"!, nl,
+        (++ / <>)(
+          (\\ moduleName.
+              IF propertiesInclude?(config, moduleName) THEN
+                buildMenuEntries(
+                  strings2MenuEntries(moduleName%, \\x. mkNodeName(x, extp))
+                )
+              ELSE
+                <>
+              FI
+          ) * flat(opalSortedUsrFileLevels)
+        ), 
+        nl
+      ) ++
+
+
+-- %References to internal property parts of user-implemented files at top-level:
+      (IF (or / false) 
+         ((\\ moduleName. onlyInterfaces?(config, moduleName) or
+                          ~(propertiesInclude?(config, moduleName))) * 
+             flat(opalSortedUsrFileLevels)) THEN
+         <>
+       ELSE
+         conc(
+           "  @*@i{"!, MODULE_INTERNAL_PROPERTY_PARTS_:, "}"!, nl,
+           (++ / <>)(
+              (\\ moduleName.
+                 IF onlyInterfaces?(config, moduleName) or
+                      ~(propertiesInclude?(config, moduleName)) THEN
+                   <>
+                 ELSE
+                   buildMenuEntries(
+                     strings2MenuEntries(moduleName%, \\x. mkNodeName(x, intp))
+                   )
+                 FI
+             ) * flat(opalSortedUsrFileLevels)
+           ),
+           nl
+         )
+       FI)
+    ELSE
+      <>
+    FI
+  ) ++
+
+-- %close ifclear from above
+    conc("@end ifclear"!,
+         nl
+         ) ++
+
+-- %References to user-implemented subsystem-overviews and subsystem-structures:
+  (IF subsystemsInclude?(config) THEN
+     conc(
+       nl, 
+       "@*@i{"!, Subsystems_used_in_Project_:, "}"!, 
+       nl,
+       buildMenuEntries(
+         subsystems2MenuEntries(subsystems(usrInfos), config)
+       ),
+       nl
+     )
+   ELSE
+     <>
+   FI) ++
+
+/* %References to the library introduction node and applied 
+library-subsystems and library-structures: */
+  (IF libraryInclude?(config) THEN
+    conc(
+      nl,
+      "* LibIntro:: "!, "@*@i{"!, Introduction_to_predefined_libraries,
+      "}  @*@i{"!, Used_libraries_:, "}"!, nl,
+      buildMenuEntries(
+        subsystems2MenuEntries(libSubsystems(libInfos), config)
+      ),
+      nl
+    )
+   ELSE
+     <>
+   FI) ++
+
+/* %References to the index-nodes: 
+ */
+   (conc("  @*@i{"!, INDICES_: , "}"!, nl) ++
+    condMenu(functionalityIndexGeneral?(config), Functionality_Index) ++
+    condMenu(functionalityIndexGeneral?(config), Sort_Index) ++
+    condMenu(applicationIndexGeneral?(config), Application_Index) ++ 
+    condMenu(conceptIndex?(config), Concept_Index) ++
+    condMenu("structureIndexFlag", Structure_Index) ++
+    condMenu("dfDomainIndexFlag", Domain_Index) ++
+    condMenu("dfCodomainIndexFlag", Codomain_Index) ++
+    condMenu("dfPropertyIndexFlag", Property_Index)
+   ) ++
+   line("@end menu") 
+
+
+FUN opal? : usrInfos -> string -> bool
+DEF opal?( uI )( name ) ==  usrSourceInfo?(cont(get(sources(uI), \\x.x, name)))
+
+FUN condMenu: denotation ** string -> string
+DEF condMenu( flag, title ) ==
+  conc("@ifset "!, flag!, nl,
+       buildMenuEntries(strings2MenuEntries(%(title))), nl,
+       "@end ifset"!, nl
+      )
+
+FUN condMenu: bool ** string -> string
+DEF condMenu( true, title ) ==
+       conc(buildMenuEntries( strings2MenuEntries(%(title))), nl)
+DEF condMenu( false, _ ) == <>
+  
+
+-- %$Constructing an Introduction to the Used Libraries$ 
+-- %----------------------------------------------------
+
+FUN buildLibIntroNode : 
+      usrInfos ** libInfos ** string ** config ** output -> com[void]
+
+DEF buildLibIntroNode
+      ( usrInfos, libInfos, lastTopUsrFile, config, outputFile ) ==
+  writeLine(stdErr, "building library introduction node ...") &
+  (\\ _ .
+      write(
+        outputFile,
+        conc(
+          conc(
+            "@node "!, libIntro, ", "!,
+            (nextNodeName ++ !(", ")),
+            (prevNodeName ++ !(", ")), 
+            upNodeName,
+            nl,
+            "@chapter "!, Library_Introduction, nl
+          ),
+          libraryIntro(config),
+          libIntroMenu(libInfos, config),
+          optionalNewPage(config), nl
+        )
+      )      
+    WHERE
+      nextNodeName == 
+        IF <>?(libSubsystems(libInfos)) THEN
+          nodeAfterLibs(config)
+        ELSE
+          LIBRARY_SUBSYSTEM(name(ft(libSubsystems(libInfos))))
+        FI 
+      prevNodeName == 
+        IF subsystemsInclude?(config) THEN
+          IF <>?(subsystems(usrInfos)) THEN
+            nodeLastName(sources(usrInfos), lastTopUsrFile, config)
+          ELSE
+            cont(lastNode(last(subsystems(usrInfos)), config))
+          FI
+        ELSE
+          nodeLastName(sources(usrInfos), lastTopUsrFile, config)
+        FI
+      upNodeName   == "Top"!
+  )
+
+
+-- %$Library Introduction Components$
+-- %---------------------------------
+
+FUN libIntroMenu : libInfos ** config -> string
+DEF libIntroMenu( libInfos, config ) ==
+  conc(
+    line("@menu"),
+    "  "!, Used_libraries_:, nl,
+    buildMenuEntries(
+      subsystems2MenuEntries(libSubsystems(libInfos), config)
+    ), nl,
+    line("@end menu"), nl 
+  )
+
+-- %$Generate Commands for Index Printing$ 
+-- %--------------------------------------
+/* %Before writing out the command for index printing, the configuration
+database is requested for the respective inclusion specification. As a consequence
+@c{buildIndices} might print an empty-@string to @c{output}: */
+
+FUN buildIndices : 
+      usrInfos ** libInfos ** string ** config ** output -> com[void]
+
+DEF buildIndices( usrInfos, libInfos, prevNode, config, outputFile ) ==
+  writeLine(stdErr, "building indices ...") &
+  (\\ _ .
+      write(
+        outputFile,
+        condIndex(functionalityIndexGeneral?(config),
+                  Functionality_Index, "fn") ++ 
+        condIndex(functionalityIndexGeneral?(config),
+                  Sort_Index, "st") ++
+        condIndex(applicationIndexGeneral?(config),
+                  Application_Index, "ap") ++
+        condIndex(applicationIndexGeneral?(config),
+                  Definition_Index, "df") ++
+        condIndex(conceptIndex?(config), Concept_Index, "cp") ++
+        condIndex("structureindexflag", Structure_Index, "pg") ++
+        condIndex("dfDomainIndexFlag", Domain_Index, "dm") ++
+        condIndex("dfCodomainIndexFlag", Codomain_Index, "cd") ++
+        condIndex("dfPropertyIndexFlag", Property_Index, "pr")
+      )
+  ) -- \\ _
+
+/* %@code{condIndex(condition, title, indextype)}:
+    Two functions which generate code for producing index @code{indextype},
+    within a node named @code{title}, and a chapter of the same name as
+    the node. The condition maybe boolean, in which case the code is
+    generated or not, or it may be a denotation, which is taken to be the
+    name of a texinfo flag which controls the inclusion of the index.
+*/
+
+FUN condIndex: bool ** string ** denotation -> string
+DEF condIndex( true, title, type ) == 
+  conc(
+       line("@page"),
+       (("@node "!) ++ title  ++ (", Top, Top, Top"!) ++ nl),
+       (("@chapter "!) ++ title ++ nl),
+       (("@printindex "!) ++ (type!) ++ nl)
+      )
+DEF condIndex( false, _ , _ ) == <>
+
+FUN condIndex: denotation ** string ** denotation -> string
+DEF condIndex( flag, title, type ) ==
+        conc(
+        line("@ifset " ++ flag),
+        line("@page"),
+        conc("@node "!, title, ", Top, Top, Top"!,nl),
+        conc("@chapter "!, title ,nl),
+        line("@printindex " ++ type),
+        line("@end ifset")
+        )
+         
+
+
+-- %$The Final Part$ 
+-- %----------------
+
+/* %The printing of a "Table of Contents" is induced and the concluding @c{@@bye} 
+is written to @c{output}: */
+
+FUN buildBottomPart : output -> com[void]
+DEF buildBottomPart( outputFile )  ==
+  writeLine(stdErr, "building final part ...") &
+  write(
+    outputFile,
+    conc(nl, line("@FINALIZEDOC{}"), line("@bye") )
+  )
+
+
+
+

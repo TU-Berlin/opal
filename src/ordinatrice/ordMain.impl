@@ -1,0 +1,93 @@
+IMPLEMENTATION ordMain
+-- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/ordinatrice/ordMain.impl,v 1.1.1.1 1998-06-16 16:00:45 wg Exp $
+--
+
+IMPORT  ordLess ONLY mkLess
+	ordUpdate ONLY mkUpdate
+    ordFmtPrint ONLY mkFmtPrint
+
+	InterOpal COMPLETELY
+	kdIOproperty ONLY typesOf flat?  sortsIn
+	kdIOname ONLY ` `` objOf
+	kdIOvariant ONLY sortsOf
+	OwnInterOpalDump ONLY dumpInterOpal
+	kdIOConv ONLY asSrc
+	AnalyzeIO COMPLETELY
+
+	Seq ONLY seq
+	SeqMap ONLY *
+	SeqReduce ONLY /
+	SeqConv ONLY `
+	SeqFilter ONLY |
+
+	Set[name,<] ONLY set + {} excl 
+	SetReduce ONLY /
+	SetConv ONLY `
+
+	Map ONLY map ! def?
+	MapConv ONLY asSeq
+
+	Denotation ONLY ++
+	String ONLY ! ++
+	StringConv ONLY string `
+	Pair COMPLETELY
+
+	Com ONLY com yield okay ans
+	ComCompose ONLY &
+	Void ONLY void nil
+	File ONLY file stdOut writeLine string
+
+DEF ordne(IO) == 
+	(&, nil) /
+	((\\ t. writeLine(stdOut, comment(IO)(t) ++ body(IO)(t) ++ ("\n\n"!)))
+	* typesOf(IO)(main)
+	) 
+/*
+&
+	(&, nil) /
+	((\\ t. writeLine(stdOut, datacomment(IO)(t) ++ databody(IO)(t) ++ ("\n\n"!)))
+	* ( (\\ ob. def(ob) data?) | 2nd * asSeq(objs(structs(IO)!main))
+	  ))
+*/
+
+/* % write some describing comment about the property in OPAL source code */
+FUN comment: interOpal -> property -> string
+DEF comment(IO)(freeType(_,_,s,_,_)) == 
+	!("-- this is output of ordinatrice verte for free type " ++ `(IO)(s) ++ "\n")
+
+/* % do something with the free type */
+FUN body: interOpal -> property -> string
+DEF body(IO)(F AS freeType(_,_,s,vs,_)) ==
+	 (IF flat?(IO)(F) THEN 
+	      LET (res, less, equal) == mkLess(IO)(s,vs)
+                  (res3, fmtprint) == mkFmtPrint(IO, s, vs)
+	      IN asSrc(res)(less) ++ !("\n") ++ asSrc(res)(equal)
+                  ++ !("\n") ++ asSrc(res3)(fmtprint)
+	 ELSE !("type " ++ `(IO)(s) ++ " is definitely not flat!\n")
+	 FI) ++
+	 (LET (res2, updseq) == mkUpdate(IO, s, vs)
+	  IN
+	  !("\n") ++ `("","\n","")(asSrc(res2))(updseq)
+         )
+
+	    
+/* % write some describing comment about the data type  in OPAL source code */
+FUN datacomment: interOpal -> object -> string
+DEF datacomment(_)(ob) == 
+	!("-- this is output of ordinatrice verte for data type " ++ symbol(ob) ++ "\n")
+
+/* % do something with the data type */
+FUN databody: interOpal -> object -> string
+DEF databody(IO)(ob) ==
+	 IF flat?(IO)(ob) THEN LET (res, less, equal) == mkLess(IO)(name(ident(ob), main, I), variants(def(ob)))
+				   I == IF formal def? insts(structs(IO)!main) THEN formal ELSE none FI
+			      IN asSrc(res)(less) ++ !("\n") ++ asSrc(res)(equal)
+	 ELSE !("data " ++ symbol(ob) ++ " is definitely not flat!\n")
+	 FI
+	    
+    
+
+/* % auxiliaries */
+
+FUN nil: com[void]
+DEF nil == yield(okay(nil))

@@ -1,0 +1,269 @@
+/* % @noindent
+This structure provides the management of windows in
+@value{OPALWIN}.
+*/
+
+SIGNATURE WinWindow
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:22 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Void			ONLY	void
+	Com[void]		ONLY	com
+	Com[state]		ONLY	com
+	Com[manager]		ONLY	com
+	Com[size]		ONLY	com
+	Com[point]		ONLY	com
+	Com[window]		ONLY	com
+
+IMPORT	WinView			ONLY	view:SORT
+	WinConfig		ONLY	size:SORT point:SORT bitmap:SORT
+
+
+-- %$Window Creation and Deletion$ ===========================================
+
+/* %
+A window is a display medium for views, which is managed by the
+underlying window manager. The sort of windows is reexported
+from the lower system level:
+*/
+
+IMPORT WinInternal ONLY window:SORT
+
+/* %
+The command @code{window} creates a window which displays
+a view:
+*/
+
+FUN  window : view 		 			-> com[window]
+FUN  window : wconfig ** view				-> com[window]
+FUN  window : denotation ** wconfig ** view		-> com[window]
+FUN  window : window ** denotation ** wconfig ** view	-> com[window]
+
+/* % @noindent
+The version @code{window(Config, View)} takes an initial window 
+configuration as described below. The version 
+@code{window(Class, Config, View)} takes a class name
+to be used used to lookup option defaults in the window servers option 
+database. The version @code{window(Master, Class, Config, View)} makes the 
+window a transient of the given master window, which is automatically deleted
+when the master is so.
+@sp 1
+*/
+
+/* %
+A given window is reconfigured by the command @code{Wd set Config}:
+*/
+
+FUN  set    : window ** wconfig		-> com[void]
+
+/* %
+A window is deleted, freeing all its resources, by the
+command @code{delete(Wd)}:
+*/
+
+FUN  delete : window -> com[void]
+
+
+-- %$Window Configuration$ ==================================================
+
+/* %
+A window configuration defines aspects such as the state of
+the window, its title, size and so on. The configuration data type
+is handled quite similar as for views: a set of basic configuration
+constructors is supported, and configurations may be combined as in
+@code{Config1 + Config2}.
+*/
+
+IMPORT	WinInternal	ONLY	wconfig:SORT
+
+FUN  {}	 : wconfig
+FUN  ++  : wconfig ** wconfig -> wconfig
+
+
+-- %$$Window State$ --------------------------------------------------------
+
+/* %
+A window is either in the state @code{normal} (mapped on the screen), 
+@code{iconic} or @code{withdrawn}. The initial state may be defined 
+by a window configuration (the initial state defaults to @code{normal}).
+*/
+
+TYPE state == normal iconic withdrawn
+
+FUN state : state -> wconfig
+
+/* %
+The state of a displayed window can be retrieved by the
+command @code{Wd get state}:
+*/
+
+FUN get           : window ** stateRequest	-> com[state]
+TYPE stateRequest == state
+
+/* %
+Here and in the sequel, a singelton type such as @code{stateRequest} 
+just serves to enable a uniform notation of retrievals such as in 
+@code{Wd get state}.
+*/
+
+-- %$$Window Management$ ----------------------------------------------------
+
+/* %
+A window may be either externally managed by the window manager
+(which includes the application of decorations) or internally by the 
+application. The last style is, for example, useful for menus.
+*/
+
+TYPE manager == external internal
+
+FUN manager : manager -> wconfig
+
+/* %
+The management of a displayed window can be retrieved by the
+command @code{Wd get manager}:
+*/
+
+FUN get           : window ** managerRequest	-> com[manager]
+TYPE managerRequest == manager
+
+
+-- %$$Window Stacking Order$ ------------------------------------------------
+
+/* %
+The stacking order of windows may be effected by the configurations
+below:
+*/
+
+FUN raise	: wconfig
+FUN lower	: wconfig
+
+
+-- %$$Window Title and Icon Name$ --------------------------------------------
+
+/* %
+The title of window is displayed in the windows title bar when the window
+is in normal state. The icon name is displayed in the associated icon when the
+window is iconified. 
+*/
+
+FUN titleName	: denotation		-> wconfig
+FUN iconName	: denotation		-> wconfig
+
+
+-- %$$Window Size$ ---------------------------------------------------------
+
+/* %
+The size of a window may be controlled either implicitely
+from the requirements of the displayed view or explicitely
+by the window manager (under instruction of the user or by commands
+issued by the application). The default is implicite sizing.
+Explicite sizing is enabled by a window configuration, which
+also sets the initial and minimum and maximum sizes.
+*/
+
+FUN size	: size ** size ** size	-> wconfig
+
+/* % @noindent
+Here, the first argument is the initial, the second the minimal and
+the third the maximal size.
+
+Once a window is configured for explicite sizing, its size may be
+changed with the following configuration:
+*/
+
+FUN size	: size 			-> wconfig
+
+/* % 
+Normally, the windows size and height is given in millimeters. However,
+if the window is gridded, then the given size is in grid units (which will
+be truncated to naturals). The gridding of windows is determined by the 
+@code{setGrid} option associated with some of its (sub)views. If, for 
+example, a window contains text views and one of them has set the option
+@code{setGrid}, then the gridding will be defined in units of the size 
+of the characters in the text view. Gridding also effects the admissable
+sizes of a window if it is sized by the user.
+@sp 1
+*/
+
+/* %
+The command @code{Wd get size} retrieves the size of a displayed
+window. 
+*/
+
+FUN get		: window ** sizeRequest  	-> com[size]
+TYPE sizeRequest == size
+
+-- %$$Window Position$ ------------------------------------------------------
+
+/* %
+The window position may be set by a configuration.  The window manager may
+refuse to let the application set the windows position, hence setting
+the position should be understood as a hint to the window manager.
+The window position is measured in coordinates (millimeters).
+*/
+
+FUN position 	: point				-> wconfig
+
+
+FUN get		: window ** positionRequest	-> com[point]
+TYPE positionRequest == position
+
+
+-- %$$Window Icon$ ----------------------------------------------------------
+
+/* %
+A window may have assigned a specific icon image. The icon is set as a 
+configuration option and specified by the bitmap data type.
+*/
+
+FUN icon 	: bitmap 		-> wconfig
+FUN icon 	: bitmap ** bitmap	-> wconfig
+
+/* % @noindent
+The version @code{icon(Image, Mask)} additionally takes a mask to be 
+applied to the icon image.
+*/
+
+
+-- %$$Window Groups$ ---------------------------------------------------------
+
+/* %
+A window may belong to a group of windows, specified by a group leader window.
+Intelligent window managers use this information, for example, to 
+unmap all windows of the group if the group leader is unmapped.
+*/
+
+FUN group	: window	-> wconfig
+
+
+-- %$Window Grabbing and Focus$ ==============================================
+
+/* %
+The pointer input of the whole application may be
+grabbed by a single window and all its transients. During the
+grab, all pointer events will be redirected to the window and its transients;
+input to other windows of the application will be ignored. This
+is useful for the implementation of modal windows.
+*/
+
+FUN grab	: window	-> com[void]
+FUN release	: window	-> com[void]
+
+
+/* %
+The keyboard input focus may be assigned to a window with 
+the function @code{focus} below. The default focus is the window
+where the keyboard input is redirected to if the window with
+the current focus is withdrawn or deleted.
+*/
+
+FUN focus	 : window	-> com[void]
+FUN defaultFocus : window	-> com[void]
+
+
+/* %
+@page
+*/

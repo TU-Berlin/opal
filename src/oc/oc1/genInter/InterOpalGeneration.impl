@@ -1,0 +1,145 @@
+IMPLEMENTATION InterOpalGeneration
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+-- ============================================================================
+-- Autor:       ralfi
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Uebersetzung der analysierten Quelle nach InterOpal
+-- ============================================================================
+
+
+IMPORT  BaseGeneration  ONLY    globSig2Part structPos updateStruct
+                                updateInst importPos
+                        
+        NameGeneration  ONLY    name2Name
+        Gen             ONLY    formParMain2IO 
+        ObjectGeneration
+                        COMPLETELY
+        Pair            COMPLETELY                        
+        InterOpalDump   ONLY    dump : interOpal -> com
+        InterOpal       COMPLETELY
+/* ONLY struct:SORT property object:SORT pos:SORT
+                                name:SORT main inst ident:SORT 
+                                < interOpal part origin origin interOpal
+                        struct:seq**origin**denotation**map**map**map**map->struct
+*/      EnvIO           COMPLETELY
+-- OC
+        Rep             ONLY    rep ` <
+        Objects         ONLY    struct
+        AGSig           COMPLETELY
+        AnalyzedGlobSig ONLY    globSig rep ide
+                                actStructIde actStructParams isFreeConstr
+                                complete minimal standard level locSig
+                                freeType impl:globSig**name->impl impl:SORT
+        Name            ONLY    name
+        OcBinStream[interOpal]  ONLY write
+        Options         ONLY    options myInterOpalFile prop?
+                                cop? sign? impl? extp? intp? verbLevel
+        Verbose         ONLY    subphase verb
+        Impl[name'Name] ONLY    law:SORT
+--      Format          ONLY    format
+-- lib
+        Nat             ONLY    nat >= 2 !
+        Seq             ONLY    seq <>? <> %
+        SeqReduce       ONLY \
+        SeqMapEnv       ONLY *  
+        Set             COMPLETELY
+        SetConv         ONLY asSet
+        Com[interOpal]  ONLY    ans yield okay com
+        Com[void]       ONLY    com
+        ComCompose[interOpal,interOpal] ONLY    &
+        ComCompose[interOpal,void]      ONLY    &
+        ComCompose[void,void]           ONLY    &
+        Void            ONLY    void
+        Map    ONLY    def {} map !
+       GlobSig ONLY pragmas impPragmas impLaws
+       MapConv ONLY asSeq
+       Map ONLY map
+       PostInterOpal ONLY postInterOpal
+
+
+
+-- ----------------------------------------------------------------------------
+
+FUN dumpInterOpal: options -> globSig -> com[void]
+
+DEF dumpInterOpal(Opts)(Sig) ==
+  verb(Opts, subphase, interOpalPhase) & (\\ _ .
+  gen(Opts)(Sig) & (\\Io. 
+  dump(Io) & (\\ _ .
+  write(Opts, myInterOpalFile(Opts), ioTypeKey, Io) & (\\ _ .
+  postInterOpal(Opts)(Sig)
+  ))))
+
+
+FUN interOpalPhase: denotation
+DEF interOpalPhase == "generating InterOpal ..."
+-- ----------------------------------------------------------------------------
+
+FUN gen: options -> globSig -> com[interOpal]
+DEF gen(Opts)(Sig) == yield(okay(gen(Opts)(Sig)))
+
+FUN gen: options -> globSig -> interOpal
+DEF gen(Opts)(Sig) ==
+   LET  Part    == globSig2Part(Opts)
+        Structs == def(origin(Struct),Struct,{})
+        Struct  == globSig2Main(Part)(Sig)
+        empIO   == interOpal(Part,Structs)
+        IO0     == &(formParMain2IO(Sig)(empIO), {})
+        IO1    == \ (\\N, IOtemp. globSig2Struct(N, Sig, IOtemp), IO0, 
+                                   getStructs(Sig))
+        IO2     == \ (addInternalName(Sig), IO1, getInternalNames(Sig))
+        IO3     == 2nd( \ ( \\P1, P2. LET NewEnv == addLaw(Sig)(unpair(P1),
+                                                   unpair(P2))
+                                     IN nextLaw(1st(P2)) & NewEnv,
+                                        ident("10000"!) & IO2, getLaws(Sig)))
+        IO4     == IF sign?(Opts) or cop?("reexport", Opts)
+                   ANDIF ~(cop?("noreexport", Opts)) THEN 
+                       io(IO3) & (dep(IO3) + asSet(getExternalNames(Sig)))
+                   ELSE IO3 FI
+        IO5     == (addGlobPragma(Sig,Part), IO4) \ pragmas(Sig)
+        IO6     == (addImpPragma(Sig,Part), IO5) \ asSeq(impPragmas(Sig))
+        IO7     == (addImpLaw(Sig), IO6) \ asSeq(impLaws(Sig))
+   IN addAllDependExtNames(Sig)(IO7)
+
+FUN globSig2Main : part -> globSig -> struct'InterOpal
+DEF globSig2Main (Part)(Sig) ==
+  LET   Pos     == structPos(Sig,Part)%
+        Origin  == main
+        Symbol  == actStructIde(Sig)`
+        Insts   == {} -- braucht schon IO als Parameter -> spaeter
+        Onlys   == {}
+        Objs    == {} -- initialer Zustand
+        Props   == {} -- initialer Zustand
+        Pragmas == <> -- initialer Zustand
+  IN
+        struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas)
+
+FUN globSig2Struct : nat ** globSig ** envIO -> envIO
+DEF globSig2Struct (N, Sig, EnvIO) ==
+  LET   Pos     == importPos(Sig,N)
+        Origin  == origin(N)
+        Symbol  == ide(Sig, struct(N))`
+        Names   == formalParams(Sig,N)
+        Insts   == {} -- braucht schon IO als Parameter -> spaeter
+        Onlys   == {}
+        Objs    == {} -- initialer Zustand
+        Props   == {} -- initialer Zustand
+        Pragmas == <> -- initialer Zustand
+        Struct  == struct(Pos,Origin,Symbol,Insts,Onlys,Objs,Props,Pragmas)
+  IN IF Names <>? THEN updateStruct(Origin, 
+              updateInst(none, <>, Struct), 
+        io(EnvIO)) & dep(EnvIO) 
+     ELSE 
+     LET -- % include formal parameters with instance "none" first 
+        NewIO          == updateStruct(Origin, Struct, io(EnvIO))
+        (EnvIO2,SName) == *(name2Name(Sig), NewIO & dep(EnvIO), Names)
+        -- % now insert formal instance 
+            IOLoc      == io(EnvIO2)
+           SameStruct  == structs(IOLoc)!Origin
+     IN &(updateStruct(Origin, updateInst(formal,SName,SameStruct),IOLoc),
+        dep(EnvIO2) + asSet(Names))
+     FI   

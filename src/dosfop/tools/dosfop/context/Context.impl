@@ -1,0 +1,135 @@
+IMPLEMENTATION Context
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/context/Context.impl,v 1.1.1.1 1998-06-16 16:00:34 wg Exp $
+
+IMPORT String       COMPLETELY
+       Set          COMPLETELY
+       Map          COMPLETELY
+       Option       COMPLETELY
+
+
+IMPORT InterOpal                COMPLETELY
+       ConfigFun                COMPLETELY
+       ContextProps             COMPLETELY
+       ContextIndex             COMPLETELY
+       ContextApplTables        COMPLETELY
+       ContextApplIndex         COMPLETELY
+       ContextFctIndex          COMPLETELY
+       MyMap COMPLETELY
+
+-- %$Basic Context Structure$ 
+-- %-------------------------
+
+DATA context == context(
+                  indexMap  : map[nat, <, seq[indexEntry]],
+                  applContextMap : map[nat, <, seq[applContextEntry]],
+                  propContextMap : map[string,<, propContextEntry]
+                ) 
+
+
+-- %$Top-Level Context Construction Functions$
+-- %-----------------------------------------
+
+FUN constructContext : interOpal ** option[interOpal] ** config -> context
+
+/* %Firstly all objects administered in the @c{signOrImplInterOpal} structure
+are extracted. They are passed to the function @c{constructContextForIdents} which
+generates a three-tuple of context information that can be extracted from the
+InterOpal structure generated for the @OPAL signature- or implementation-part.
+The three-tuple is merged with another element consisting of the context extracted
+from the optional InterOpal structure of the respective property parts. The 
+built four-tuple is the complete context structure that has to be 
+constructed for each @OPAL-module. */
+DEF constructContext( 
+      signOrImplInterOpal AS interOpal(_, actStructs), 
+      propInterOpalOpt, 
+      config ) ==
+  LET
+    mainStruct    == actStructs ! main 
+    allObjIdents  == dom(objs(mainStruct))
+  IN
+    context(
+      constructContextForIdents(
+        allObjIdents, 
+        objs(mainStruct),
+        signOrImplInterOpal,
+        config
+      ),
+      IF avail?(propInterOpalOpt) and 
+           propertiesInclude?(config,symbol(mainStruct)!) THEN
+        constructPropContext(cont(propInterOpalOpt))
+      ELSE
+        {} -- no property part context constructed
+      FI      
+    )
+
+DEF constructContext( nil, _, _ ) == emptyContext
+DEF constructContext( avail(IO), propInterOpalOpt, config ) ==
+  constructContext(IO, propInterOpalOpt, config)
+
+
+/* %For each individual object identifier the context information is extracted
+separately. This is realized by traversing the set of object identifiers
+initially passed to the function as its first parameter. By successive
+recursive calls the complete context information is gathered. */
+FUN constructContextForIdents : 
+  set[ident,<] ** map[ident,<,object]  ** interOpal ** config ->
+      map[nat,<,seq[indexEntry]] ** 
+        map[nat,<,seq[applContextEntry]]
+
+DEF constructContextForIdents
+      ( objIdentSet, identObjMap, completeInterOpal, config) ==
+
+  IF {}?(objIdentSet) THEN
+      ({}, {})  -- no object identifier -> no context ! 
+  ELSE
+    LET 
+      actObjIdent == arb(objIdentSet)
+      actObj      == identObjMap ! actObjIdent
+      indexMap1   == updateFctMap(actObj, completeInterOpal,
+                                  restIndexMap, config)
+      indexMap2   == updateApplIndexMap(actObj, completeInterOpal,
+                                        indexMap1, config)
+      (restIndexMap, restApplContextMap) ==
+        constructContextForIdents(
+          excl(actObjIdent, objIdentSet),
+          identObjMap,
+          completeInterOpal,
+          config
+        )
+    IN
+      (
+       indexMap2 ,
+       updateApplMap(actObj, completeInterOpal, restApplContextMap, config)
+      )
+   FI
+
+
+-- %$Adding Propery Indices to a Context$
+FUN addPropertyContext: context ** option[interOpal] ** config -> context
+DEF addPropertyContext( ctx, nil, _ ) == ctx
+DEF addPropertyContext( ctx, avail(IO), cf ) == addPropertyContext(ctx, IO, cf)
+
+FUN addPropertyContext: context ** interOpal ** config -> context
+DEF addPropertyContext( context(iM, aM, pM), interOpal, config ) ==
+  context(
+          merge(constructPropIndex(interOpal, config), iM),
+          aM,
+          pM
+         )
+
+-- %$Constructing Empty Context$
+-- %----------------------------
+
+DEF emptyContext == context({}, {}, {})
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,161 @@
+IMPLEMENTATION ImplGeneration
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:38 $ ($Revision: 1.1.1.1 $)
+-- ============================================================================
+-- Autor:       ralfi
+-- Projekt:     OPAL1-Compiler
+-- Zweck:       Uebersetzung der analysierten Quelle nach InterOpal
+--              Eintragen von Objekten in InterOpal
+-- ============================================================================
+IMPORT  InterOpal       COMPLETELY
+        EnvIO           COMPLETELY
+        InterOpalOption ONLY    ioImpl? printInterOpal?
+        AnalyzedGlobSig ONLY    origIdeNo
+        AGSig           ONLY    impl:globSig**name->impl'GlobSigImpl parameter?
+                                paramNo isApplied?
+        NameGeneration  ONLY    name2Name
+        BaseGeneration  ONLY    rep2Ident updateObject updateStruct pos
+        FctGeneration   ONLY    kind2Kind
+        ExprGeneration  COMPLETELY 
+
+IMPORT  Rep             ONLY    rep `
+        Pos             ONLY    pos
+        GlobSigImpl     COMPLETELY
+        Impl[name'Name] COMPLETELY
+        Name            ONLY    name
+        AnalyzedGlobSig ONLY    internal? external? impl:globSig**name->impl
+                                rep locSigComplete locSig paramNo
+        SeqMapEnv       ONLY    *
+
+IMPORT  Denotation      ONLY    ++ 
+        Nat             ONLY    nat 1 0 =
+        SeqMap          ONLY    *
+        Seq             ONLY    seq <> % ft ::
+        Map             ONLY    map {} !
+        DEBUG           ONLY    PRINT
+        String          ONLY    string
+        Pair            ONLY    pair &
+        SeqFilter       ONLY    |
+        SeqZip          ONLY    zip
+
+/*
+aus GlobSigImpl:
+TYPE impl ==
+        none                            -- ohne Implementierung
+        parameter                       -- Strukturparameter
+        canonical(pos : pos)            -- kanonische Operation
+        data(   impl : sortImpl )       -- DATA Statement
+-- def's kommen nicht mehr vor!
+        anaDef(                         -- analysierte Pattern-Definition
+                eqs : seq[eq],                  -- Gleichungen
+                locals : locSig,                -- lokale Signatur
+                freeLocal : nat,                -- kleinster freier 'local'
+                patts : seq[seq[pattDescr]],    -- fuer jede Gleichung eine
+                                                --  eine Patternsequenz
+                newEq : eq)
+*/
+
+FUN impl2Impl: globSig ** name'Name ->
+                envIO ** impl'GlobSigImpl -> envIO ** impl'InterOpal
+
+DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_),none) ==
+        IF Name internal? THEN
+          (EnvIO,PRINT(ioImpl?,"impl2Impl(none)->missing",missing))
+        OTHERWISE
+        IF Name external? THEN
+                IF Sig parameter? Name THEN
+                  LET   Pos     == pos(Sig,Name,Part) ft
+                        No      == paramNo'AGSig(Sig,Name)
+                  IN (EnvIO,PRINT(ioImpl?,"impl2Impl(none)->parameter",
+                        parameter(Pos,No)))
+                ELSE
+                  (EnvIO,PRINT(ioImpl?,"impl2Impl(none)->imported",imported))
+                FI
+        FI
+
+DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_),Parameter) ==
+   LET  Pos     == pos(Sig,Name,Part) ft
+        No      == paramNo'AnalyzedGlobSig(Sig,Name)
+   IN   -- Pattern Matching not possible (Namensueberdeckung!) 
+        IF Parameter parameter? THEN
+           (EnvIO,PRINT(ioImpl?,"impl2Impl(parameter)",
+                        parameter(Pos,No)))
+        OTHERWISE
+        IF PRINT(true,"Fehler: def not allowed",false) THEN (EnvIO,missing)
+-- ELSE -> def-impl
+        FI
+
+DEF impl2Impl(_,_)(EnvIO AS &(interOpal(Part,_),_),canonical(Pos)) ==
+        (EnvIO,PRINT(ioImpl?,"impl2Impl(canonical)",
+                missing))
+/* should be figured out correctly, tmp is bad in: induced(pos(Pos,Part),tmp)))
+   This entry will be overwritten anyway during ObjGeneration by variant2Variant
+*/
+
+DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_),
+                data(sortImpl(GSort,Variants,Pos))) ==
+  LET   (EnvIO2,SVar)   == (variant2Variant(Sig,GSort))*
+                (PRINT(ioImpl?,"impl2Impl(data)",EnvIO),
+        (\\V. isApplied?(Sig, cons(V))) | Variants)
+-- Property eintragen!??
+  IN (EnvIO2,data(SVar))
+
+/*
+DEF impl2Impl(Sig,Name)(EnvIO AS &(interOpal(Part,_),_&)
+                ,def(GSEqs,Locals,FrLocal)) ==
+  LET   (EnvIO1,SEqs)   == *(defEq2Eq(Sig,locSigComplete(Locals)))
+                (PRINT(ioImpl?,"impl2Impl(def!!!!!!!!!!!!!!!!!!)",EnvIO),GSEqs)
+  IN (EnvIO1,def(SEqs))
+*/
+
+DEF impl2Impl(Sig,_)(EnvIO AS &(interOpal(_,_),_)
+                ,anaDef(GSEqs,Locals,_,GSPatts,_)) ==
+  LET   (EnvIO1,SEqs)   == (defEq2Eq(Sig,locSigComplete(Locals)))*
+                (PRINT(ioImpl?,"impl2Impl(anaDef)",EnvIO),SeqPair)
+        SeqPair == zip(&)(GSEqs,GSPatts)
+  IN (EnvIO1,def(SEqs))
+
+
+FUN variant2Variant : globSig ** name'Name -> envIO ** variant'Impl ->
+                        envIO ** variant'InterOpal
+DEF variant2Variant(Sig,GSort)
+        (EnvIO AS &(interOpal(Part,_),_),variant(GCons,GTest,GComps,GPos)) == 
+  LET   Pos             == pos(GPos,Part)
+        (EnvIO2,Cons)   == name2Name(Sig)(EnvIO,GCons)
+        (EnvIO3,Test)   == name2Name(Sig)(EnvIO2,GTest)
+        EnvIO4          == mkInducedObj(Sig,GSort)(EnvIO3,GTest,Pos,Test)
+        EnvIO5          == mkInducedObj(Sig,GSort)(EnvIO4,GCons,Pos,Cons)
+        (EnvIO6,Comps)  == (comp2Comp(Sig,GSort))*(EnvIO5,GComps)
+  IN (EnvIO6,variant(Pos,Cons,Test,Comps))
+
+FUN comp2Comp : globSig ** name'Name -> envIO ** comp'Impl ->
+                        envIO ** comp'InterOpal
+DEF comp2Comp(Sig,GSort)(EnvIO AS &(interOpal(Part,_),_),comp(GSel,_,GPos)) ==
+  LET   Pos             == pos(GPos,Part)
+        (EnvIO1,Sel)    == name2Name(Sig)(EnvIO,GSel)
+        EnvIOOut        == mkInducedObj(Sig,GSort)(EnvIO1,GSel,Pos,Sel)
+  IN (EnvIOOut,comp(Pos,Sel))
+
+
+FUN mkInducedObj : globSig ** name'Name -> 
+        envIO ** name'Name ** pos'InterOpal ** name'InterOpal ->
+        envIO
+DEF mkInducedObj(Sig,GSort)(EnvIO,NName,Pos,Name) ==
+  LET   Ident           ==
+                PRINT(ioImpl?,\\ .("mkInducedObj: ")++Symbol,ident(Name))
+        Symbol          == (rep(Sig,NName))`
+        (EnvIO1,Kind)   == kind2Kind(Sig)(EnvIO,NName)
+        (EnvIO2,Sort)   == name2Name(Sig)(EnvIO1,GSort)
+        Def             == induced(Pos,Sort)
+        Props           == <>
+        Pragmas         == <>
+        Object          == object(Pos%,Ident,Symbol,Kind,Def,Props,Pragmas)
+        Origin          == LET No == origIdeNo(Sig,NName) IN
+                                IF No = 0 THEN main ELSE origin(No) FI
+        Struct          == (structs(EnvIO2 io))!Origin
+  IN &(updateStruct(Origin,updateObject(Object,Struct),EnvIO2 io),
+                EnvIO2 dep)
+

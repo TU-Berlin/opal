@@ -1,0 +1,108 @@
+IMPLEMENTATION TransReference
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransReference.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+
+IMPORT
+  Seq          	COMPLETELY       SeqFilter     	COMPLETELY
+  SeqSort      	COMPLETELY       String        	COMPLETELY
+  SeqMap        COMPLETELY
+
+IMPORT
+  TransType     COMPLETELY       ConfigFun     	COMPLETELY
+  MyString      COMPLETELY       ConfigTest    	COMPLETELY
+  TransHelp     COMPLETELY       Language	COMPLETELY 
+  Config        COMPLETELY       TransPointers COMPLETELY
+  SourceTab     COMPLETELY
+       SeqReduce COMPLETELY
+
+
+DEF buildImportReferences( moduleName, importNameSeq, config ) ==
+  buildImportRefsIntern( moduleName, importNameSeq,
+                         config, buildImportRefString )
+
+DEF buildImportReferencesO( moduleName, importNameSeq, config ) ==
+  buildImportRefsIntern( moduleName, importNameSeq,
+                         config, buildImportRefStringO )
+
+FUN buildImportRefsIntern : string ** seq[string] **
+                             config ** (string -> string) -> seq[outputElem]
+DEF buildImportRefsIntern( moduleName, importNameSeq, config, mkRef ) ==
+/* %Only in case import-references are generally specified for the
+    @c{moduleName}, some construction takes place: */
+
+  IF importReferencesGeneral?(config, moduleName) THEN
+    LET 
+      reducedImportNameSeq == 
+	IF libraryInclude?(config) THEN
+          IF subsystemsInclude?(config) THEN
+            IF importReferencesNoLibs?(config, moduleName) THEN
+   	       (\\x. ~(isLibrary?(config)(x))) | importNameSeq
+            ELSE
+  	      importNameSeq
+            FI
+          ELSE
+            IF importReferencesNoLibs?(config, moduleName) THEN
+              (\\x. ~(isSubsystem?(config)(x)) and
+                    ~(isLibrary?(config)(x))) | importNameSeq
+            ELSE
+              (\\x. ~(isSubsystem?(config)(x))) | importNameSeq
+            FI
+          FI
+	ELSE
+          IF subsystemsInclude?(config) THEN
+	    (\\x. ~(isLibrary?(config)(x))) | importNameSeq
+          ELSE
+            (\\x. ~(isLibrary?(config)(x)) and 
+                  ~(isSubsystem?(config)(x))) | importNameSeq
+          FI
+	FI
+      sortedImportNameSeq == msort(<)(reducedImportNameSeq)
+      importDocu == (+/+'MyString("\n"), <>) / mkRef * sortedImportNameSeq
+    IN
+      IF ~(<>?(sortedImportNameSeq)) THEN
+        %(
+          docuPrefixNoNewline,
+          texinfo(line("@noindent")),
+          texinfo(
+            ("@emph{"!) ++
+            List_of_Import_References_: ++
+            ("} @*"!) ++
+            nl
+          ),
+          documentation(importDocu),
+          docuSuffix
+        )
+      ELSE
+        <>
+      FI
+  ELSE
+    <>
+  FI
+
+/* %If no imported-structure names are given, no references can be generated: */
+DEF buildImportReferences( _, <>, _ ) == <>
+
+/* %-
+/* %Construction of a Texinfo-translateable reference for each individual 
+structure name: */
+FUN buildImportRefString : seq[string] -> string
+DEF buildImportRefString( <> ) == <>
+/* %The last reference is not to be ended with a @c{nl}-character. So we need a 
+particular variant for this case: */
+DEF buildImportRefString( singleName :: <> ) ==
+  conc("@xref{"!, mkNodeName(singleName, sign), "} @*"!) 
+DEF buildImportRefString( ftNameSeq::rtNameSeq ) ==
+  conc("@xref{"!, mkNodeName(ftNameSeq, sign), "} @*"!, nl) ++
+    buildImportRefString(rtNameSeq)
+*/
+
+FUN buildImportRefString: string -> string 
+DEF buildImportRefString( name ) == 
+  conc("@xref{"!, mkNodeName(name, sign), "} @*"!) 
+
+FUN buildImportRefStringO: string -> string 
+DEF buildImportRefStringO( name ) == 
+  conc("@xref{@Overview{"!, name, "}} @*"!) 
+
+
+
+

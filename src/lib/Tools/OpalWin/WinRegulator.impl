@@ -1,0 +1,91 @@
+
+IMPLEMENTATION WinRegulator
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:23 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Nat			COMPLETELY
+	Void			COMPLETELY
+	Pair			COMPLETELY
+	Com			COMPLETELY
+	ComCompose		COMPLETELY
+	ComAgent		COMPLETELY
+	ComService		COMPLETELY
+	ComChoice		COMPLETELY
+	ComAction		COMPLETELY
+
+IMPORT	WinInternal		COMPLETELY
+	WinConfig		COMPLETELY
+
+
+-- %$Regulator Gate$ ========================================================
+
+
+DATA regulator == 
+	abs(	set	: sap[config,config],
+		get	: sap[void,config],
+		sync	: sap[version,pair[config,version]] 
+	)
+
+
+DEF set(R, C)  == set(R) @ C & done
+DEF get(R)     == get(R) @ nil
+DEF sync(R, V) == sync(R) @ V
+
+
+DEF regulator == 
+    sap & (\\Get . sap & (\\Set . sap & (\\Sync . 
+    LET R == abs(Set, Get, Sync)
+    IN
+    agent(regulatorLogic(R, {}, first)) & succeed(R)
+    )))
+
+FUN regulatorLogic : regulator ** config ** version -> com[void]
+
+DEF regulatorLogic(R, C, V) ==
+    get(R) => (\\ _  . succeed(C))  & 
+    	(\\ _  . regulatorLogic(R, C, V))
+  + set(R) => (\\ C1 . succeed(C1)) & 
+  	(\\ C1 . regulatorLogic(R, C1, next(V)))
+  + (sync(R), _ < V) => (\\ _ . succeed(C & V)) &
+    	(\\ _  . regulatorLogic(R, C, V))
+ 
+
+
+DATA version == abs(rep: nat)
+
+FUN versionMod halfVersionMod : nat
+DEF versionMod == ("65536"!) * 2 * 2 * 2
+DEF halfVersionMod == versionMod / 2
+
+DEF first == abs(0)
+
+FUN next : version -> version 
+DEF next(abs(N)) == abs(succ(N) % versionMod)
+
+FUN < : version ** version -> bool
+DEF abs(N1) < abs(N2) == 
+    IF N1 < N2 THEN (N2 - N1) < halfVersionMod
+    IF N1 > N2 THEN (N1 - N2) > halfVersionMod
+    	       ELSE false FI
+
+
+
+-- %$Regulator Configuration$ ================================================
+
+DEF regulate(R) ==
+    config(\\Win, Wid, Mod. 
+    	agent(regulatorAgent(R, Win, Wid, Mod, first))	& (\\ Agent.
+    	registerDispose(Win, Wid, kill(Agent))
+    	)
+    )
+
+FUN regulatorAgent : regulator ** window ** widget ** modifier ** version 
+								-> com[void]
+DEF regulatorAgent(R, Win, Wid, Mod, V) ==
+    sync(R) @ V					& (\\ C_V .
+    forceApply(Win, Wid, Mod, 1st(C_V))		& (\\ _ .
+    regulatorAgent(R, Win, Wid, Mod, 2nd(C_V))
+    ))

@@ -1,0 +1,339 @@
+IMPLEMENTATION RepoObjectAccess
+
+IMPORT	Denotation		ONLY =
+	Set			COMPLETELY
+	Map			COMPLETELY
+	Seq			COMPLETELY
+	SeqMap			COMPLETELY
+	SeqReduce		COMPLETELY
+	SeqCompare		COMPLETELY
+	Option			COMPLETELY
+	OptionMap		COMPLETELY
+	Id			COMPLETELY
+	IdMap			COMPLETELY
+	IdTab			COMPLETELY
+	IdMapReduce		COMPLETELY
+	IdTabReduce		COMPLETELY
+	ABORT			COMPLETELY
+
+IMPORT	RepoInternData		COMPLETELY
+	RepoAbsy		COMPLETELY
+	RepoAn			COMPLETELY
+	RepoName		COMPLETELY
+	RepoUnitAccess		COMPLETELY
+
+-- %$Local Signatures$ ===================================================
+
+-- FIXME: removal of local signatures not possible
+
+DEF localSigns(U0)(R) ==
+    LET U == baseName(U0)
+    IN
+    (\\Id, _, Set. incl(localSignName(no(Id), U0), Set), {}) -- @? U
+	/ localSigns(unitInfo(U)(R))
+
+
+DEF newLocalSign(U)(R) ==
+    LET (Id1, R1) == 
+	    updateUnitInfo(U, \\ Info .
+		LET (Id, LocalSigns) == new(\\ _ . unitLocalSign(none, {}), 
+					    localSigns(Info))
+		IN
+		(Id, Info :=_localSigns LocalSigns)
+	    )(R)
+    IN
+    (localSignName(no(Id1), U), R1)
+
+
+DEF copyLocalSign(U, S)(R) ==
+    LET (S1, R1) == newLocalSign(U)(R)
+    IN
+    (S1,
+     updateUnitInfo(U, \\ Info .
+	Info :=_localSigns def(id(no(S1)),
+			       localSigns(unitInfo(unit(S))(R)) ! id(no(S)),
+			       localSigns(Info))
+     )(R1)
+    )
+
+DEF an(S:localSignName)(R) ==
+    an(localSigns(unitInfo(unit(S))(R)) ! id(no(S)))
+
+DEF updateAn(S:localSignName, Fun)(R) ==
+    updateUnitInfo(unit(S), \\ Info .
+	Info :=_localSigns upd(id(no(S)),
+			       \\LocalSign. LocalSign :=_an Fun(an(LocalSign)),
+			       localSigns(Info))
+    )(R)
+
+
+-- %$Objects$ ==============================================================
+
+DEF objects(U0:unitName)(R) ==
+    LET U == baseName(U0)
+    IN
+    (\\Id, Ob, S. 
+	IF removed?(Ob) THEN S
+			ELSE incl(globalObjectName(no(Id), U0), S) FI, 
+     {}) / objects(unitInfo(U)(R))
+
+DEF objects(S0:localSignName)(R) ==
+    LET S == baseName(S0)
+    IN
+    (\\Id, Ob, Set. 
+	IF removed?(Ob) THEN Set
+			ELSE incl(localObjectName(no(Id), S0), Set) FI,
+     {}) / objects(localSigns(unitInfo(unit(S))(R)) ! id(no(S)))
+
+
+DEF newObjects(U, Objects)(R) ==
+    LET (Ids1, R1) == 
+	    updateUnitInfo(U, \\ Info .
+		LET (Ids, ObjTab) == multiNew(#(Objects),
+					      \\ _ . Objects, 
+					      objects(Info))
+		IN
+		(Ids, Info :=_objects ObjTab)
+	    )(R)
+    IN
+    ((\\ Id. globalObjectName(no(Id), U)) * Ids1, R1)
+
+
+DEF newLocalObjects(S, Objects)(R) ==
+    LET (Ids1, R1) == 
+	    updateUnitInfo(unit(S), \\ Info .
+		-- cannot preserve uniqueness :-(
+		-- need update 
+		-- ... (a -> b ** a) ** idtab[a] -> b ** idtab[a]
+		-- FIXME (approach: flat storage of local signatures in
+		--	  in repo)
+		LET (Ids, NewObjects) ==
+			multiNew(#(Objects),
+				 \\ _ . Objects,
+				 objects(localSigns(Info) ! id(no(S))))
+		IN
+		(Ids, Info :=_localSigns upd(id(no(S)), 
+					     \\ LocalSign . 
+						LocalSign :=_objects 
+							NewObjects,
+					     localSigns(Info)))
+	    )(R)
+    IN
+    ((\\ Id. localObjectName(no(Id), S)) * Ids1, R1)
+
+				  
+DEF object(localObjectName(No, S))(R) ==
+    objects(localSigns(unitInfo(baseName(unit(S)))(R)) ! id(no(S)))
+	      ! id(No)
+
+DEF object(globalObjectName(No, U))(R) ==
+    objects(unitInfo(baseName(U))(R)) ! id(No)
+
+DEF updateObject(localObjectName(No, S), Fun)(R) ==
+    updateUnitInfo(unit(S), \\ Info .
+	Info :=_localSigns 
+		upd(id(no(S)), 
+		    \\ LocalSign .
+			LocalSign :=_objects upd(id(No), Fun, 
+						 objects(LocalSign)),
+		    localSigns(Info))
+    )(R)
+
+DEF updateObject(globalObjectName(No, U), Fun)(R) ==
+    updateUnitInfo(baseName(U), \\ Info .
+	Info :=_objects upd(id(No), Fun, objects(Info))
+    )(R)
+
+
+DEF removeObject(localObjectName(No, S))(R) ==
+    updateUnitInfo(baseName(unit(S)), \\ Info .
+	Info :=_localSigns 
+		upd(id(no(S)), 
+			\\ LocalSign .
+			   LocalSign :=_objects def(id(No), 
+						    removed, 
+						    objects(LocalSign)),
+		    localSigns(Info))
+
+    )(R)
+
+DEF removeObject(globalObjectName(No, U))(R) ==
+    updateUnitInfo(U, \\ Info .
+	Info :=_objects def(id(No), removed, objects(Info))
+    )(R)
+
+					
+DEF impl(O)(R) == 
+    LET Subs == makeSubs(R, O)
+    IN
+    IF {}?(Subs) THEN
+        impl(object(O)(R))
+    ELSE
+        subsImpl(R, Subs)(impl(object(O)(R)))
+    FI
+
+DEF updateImpl(O, Fun)(R) ==
+    updateObject(O, \\ Object . Object :=_impl Fun(impl(Object)))(R)
+
+DEF an(O)(R) == 
+    an(object(O)(R))
+
+DEF updateAn(O, Fun)(R) ==
+    updateObject(O, \\ Object . Object :=_an Fun(an(Object)))(R)
+
+
+DEF symbol(O)(R) == 
+    symbol(object(O)(R))
+
+DEF kind(O)(R) == 
+    LET Subs == makeSubs(R, O)
+    IN
+    IF {}?(Subs) THEN
+        kind(object(O)(R))
+    ELSE
+        subsKind(R, Subs)(kind(object(O)(R)))
+    FI
+
+DEF fct(O)(R) == 
+    LET Subs == makeSubs(R, O)
+    IN
+    IF {}?(Subs) THEN
+        fct(kind(object(O)(R)))
+    ELSE
+        subsFct(R, Subs)(fct(kind(object(O)(R))))
+    FI
+
+DEF actuals(O)(R) ==
+    IF formal?(O)(R)
+      THEN <>
+      ELSE actuals(unit(O))(R)
+    FI
+
+DEF formal?(O)(R) ==
+    parameter?(impl(object(O)(R)))
+
+DEF oper?(O)(R) ==
+    oper?(kind(object(O)(R)))
+
+DEF sort?(O)(R) ==
+    sort?(kind(object(O)(R)))
+
+DEF constructor?(O)(R) ==
+    IF induced?(impl(object(O)(R))) THEN
+	constructor?(kind(impl(object(O)(R))))
+    ELSE false FI
+
+DEF selector?(O)(R) ==
+    IF induced?(impl(O)(R)) THEN
+	selector?(kind(impl(object(O)(R))))
+    ELSE false FI
+
+DEF test?(O)(R) ==
+    IF induced?(impl(O)(R)) THEN
+	test?(kind(impl(object(O)(R))))
+    ELSE false FI
+
+
+-- %$Lookups$ =============================================================
+
+DEF lookup(U, Sym)(R) ==
+    lookup(Sym, \\ No . globalObjectName(No, U))(objects(unitInfo(U)(R)))
+
+DEF lookup(S, Sym)(R) == 
+    lookup(Sym, \\ No . localObjectName(No, S))
+	  (objects(localSigns(unitInfo(unit(S))(R)) ! id(no(S))))
+
+    FUN lookup : denotation ** (nat -> objectName) -> idtab[object]
+						   -> set[objectName,<]
+    DEF lookup(Sym, Cons)(Tab) ==
+	(\\Id, Ob, Set .
+	     IF ~(removed?(Ob)) ANDIF
+		symbol(Ob) = Sym THEN incl(Cons(no(Id)), Set)
+				 ELSE Set FI,
+	 {}) / Tab
+
+DEF lookup?(U:unitName, Sym, Kind)(R) ==
+    -- we should do this in a more efficient way ...
+    -- requires pick?: (dom ** codom -> option[data]) ** map -> option[data]
+    LET Objects == lookup(U, Sym)(R)
+    IN
+    find?(\\O . kind(O)(R) = Kind, Objects)
+
+DEF lookup?(S:localSignName, Sym, Kind)(R) ==
+    LET Objects == lookup(S, Sym)(R)
+    IN
+    find?(\\O . kind(O)(R) = Kind, Objects)
+
+DEF bool(R) ==
+    cont(lookup?(cont(lookup?("BOOL", sign)(R)), 
+		      "bool", sort)(R))
+
+DEF denotation(R) ==
+    cont(lookup?(cont(lookup?("DENOTATION", sign)(R)), 
+		    "denotation", sort)(R))
+
+
+-- %$Substitutions$ =========================================================
+
+FUN makeSubs : repo ** objectName -> map[objectName, <, objectName]
+FUN makeSubs : repo ** unitName	  -> map[objectName, <, objectName]
+
+DEF makeSubs(R, O) ==
+    IF globalObjectName?(O) THEN makeSubs(R, unit(O))
+    IF localObjectName?(O)  THEN makeSubs(R, unit(sign(O)))
+    FI
+
+DEF makeSubs(R, U) ==
+    IF derivedUnitName?(U) THEN
+	extend({},formals(U)(R), actuals(U)(R))
+    ELSE {} FI
+
+FUN subsObjectName : repo ** map[objectName, <, objectName] 
+			-> objectName -> objectName
+DEF subsObjectName(R, Subs)(O) ==
+    -- ASSERT globalObjectName?(O)
+    IF formal?(O)(R) THEN
+    	IF avail?(Subs !? O) THEN
+	    cont(Subs !? O)
+	ELSE O FI
+    ELSE
+	LET Actuals    == actuals(unit(O))(R)
+	    NewActuals == subsObjectName(R, Subs) * Actuals
+	IN
+	IF eq?(=)(Actuals, NewActuals) THEN 
+			-- FIXME: speedup things by avoiding
+			-- this comparsion
+	    O
+	ELSE
+	    LET Inst? == lookupInstance(baseName(unit(O)), NewActuals)(R)
+	    IN
+	    IF avail?(Inst?) THEN
+		globalObjectName(no(O), cont(Inst?))
+	    ELSE
+		ABORT(
+	"subsObjectName'RepoObjectAccess: instance not in the repository")
+	    FI
+	FI
+    FI
+
+FUN subsFct  : repo ** map[objectName, <, objectName] -> fct -> fct
+
+DEF subsFct(R, Subs)(name(Sort)) ==
+    name(subsObjectName(R, Subs)(Sort))
+
+DEF subsFct(R, Subs)(cart(Elems)) ==
+    cart(subsFct(R, Subs) * Elems)
+
+DEF subsFct(R, Subs)(funct(Dom, Codom)) ==
+    funct(subsFct(R, Subs)(Dom), subsFct(R, Subs)(Codom))
+
+FUN subsKind  : repo ** map[objectName, <, objectName] -> kind -> kind
+
+DEF subsKind(R, Subs)(sort) == sort
+DEF subsKind(R, Subs)(oper(Fct)) == oper(subsFct(R, Subs)(Fct))
+
+
+FUN subsImpl  : repo ** map[objectName, <, objectName] -> impl -> impl
+DEF subsImpl(R, Subs)(Impl) ==
+    -- FIXME: implement this stuff
+    Impl

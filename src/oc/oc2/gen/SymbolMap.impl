@@ -1,0 +1,342 @@
+IMPLEMENTATION SymbolMap
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+IMPORT
+  Nat                 ONLY nat 0 succ 1 2 < >= = - min max 128 16 % /
+  Char                ONLY char blank = letgit? min max > <=
+  CharConv            ONLY asNat
+  PrintableChar       ONLY A L O S X ? underscore comma rsngquote
+  Pair                ONLY & 1st 2nd
+  String              ONLY string <> <>? :: ::? ft rt % ! revert
+  StringConv          ONLY ` asSeq
+  Seq                 ONLY seq
+  SeqZip              ONLY zip
+  SeqReduce           ONLY \
+  Array               ONLY array init := !
+  ABORT               ONLY ABORT
+       Denotation ONLY !
+       NatConv ONLY asChar
+
+
+FUN specials placebos : denotation
+
+DEF specials == "!@#$%^&*+|~-=\\`{}[]:;<>./?_"
+DEF placebos == "12345678pStmebqOCocialgds_u"
+
+
+
+DEF symbolMap( Sym ) ==
+  symbolStart( Sym !, <>, 0, true )`
+
+
+FUN symbolStart : string ** string ** nat ** bool -> string
+
+DEF symbolStart( <>,               Res, Unders,  First? ) ==
+  -- end of ide; generate any underscores
+  makeUnderscores( Res, Unders, First?, true ) revert
+
+DEF symbolStart( S AS SymCh :: SymRest, Res, Unders, First? ) ==
+  IF SymCh = underscore THEN
+    -- one more _ at the beginning of the new fragment
+    symbolStart( SymRest, Res, Unders succ, First? )
+  IF SymCh letgit? THEN
+    -- start of a letgit fragment
+    LET
+      NRes == makeUnderscores( Res, Unders, First?, false )
+    IN
+      symbolLetgit( SymRest, SymCh::A::NRes )
+  IF (SymCh = comma) or (SymCh = rsngquote) THEN
+    LET
+      NRes == makeUnderscores( Res, Unders, First?, true )
+    IN
+      symbolQualifier( SymCh, SymRest, NRes )
+  IF SymCh > 127 THEN
+    symbolUpperHalf(symbolLetgit)(S, Res)
+  ELSE
+    -- start of a special segment
+    LET
+      NRes == makeUnderscores( Res, Unders, First?, true )
+    IN
+      symbolSpecial( SymRest, map(SymCh)::NRes )
+  FI
+
+
+FUN symbolLetgit : string ** string -> string
+
+DEF symbolLetgit( <>,               Res ) ==
+  -- ide ending with letgit fragment
+  Res revert
+
+DEF symbolLetgit( S AS SymCh :: SymRest, Res ) ==
+  IF SymCh = underscore THEN
+    -- _ ends letgit fragment
+    symbolStart( SymRest, Res, 1, false )
+  IF (SymCh = comma) or (SymCh = rsngquote) THEN
+    -- qualifiers end standard ides
+    symbolQualifier( SymCh, SymRest, Res )
+  IF SymCh = ? THEN
+    -- trailing question mark(s)
+    symbolQuestionMark( SymRest, mappedQuestionMark::Res )
+  IF SymCh > 127 THEN
+    symbolUpperHalf(symbolLetgit)(S, Res)
+  ELSE
+    -- some letgit; there may be no special character here
+    symbolLetgit( SymRest, SymCh :: Res )
+  FI
+
+
+FUN symbolQuestionMark : string ** string -> string
+
+DEF symbolQuestionMark( <>,               Res ) ==
+  -- ide ending with question mark(s) at end of letgit fragment
+  Res revert
+
+DEF symbolQuestionMark( SymCh :: SymRest, Res ) ==
+  IF SymCh = underscore THEN
+    -- _ ends letgit fragment
+    symbolStart( SymRest, Res, 1, false )
+  IF (SymCh = comma) or (SymCh = rsngquote) THEN
+    -- qualifiers end standard ides
+    symbolQualifier( SymCh, SymRest, Res )
+  IF SymCh = ? THEN
+    -- question marks continue
+    symbolQuestionMark( SymRest, mappedQuestionMark::Res )
+  -- there may be no letgit or special character here
+  FI
+
+
+FUN symbolSpecial : string ** string -> string
+
+DEF symbolSpecial( <>,               Res ) ==
+  -- ide ending with special fragment
+  Res revert
+
+DEF symbolSpecial( S AS SymCh :: SymRest, Res ) ==
+  IF SymCh = underscore THEN
+    IF SymRest ::? THEN
+      LET
+        Lookahead == SymRest ft
+      IN
+        IF Lookahead = underscore THEN
+          -- more underscores to come; include this one in special fragment
+          symbolSpecial( SymRest, mappedUnderscore::Res )
+        IF Lookahead letgit? THEN
+          -- this underscore separates a special from a letgit fragment
+          symbolLetgit( SymRest rt, Lookahead::A::underscore::Res )
+        IF (Lookahead = comma) or (Lookahead = rsngquote) THEN
+          -- this underscore is the last before the qualifier, include it
+          symbolQualifier( Lookahead, SymRest rt, mappedUnderscore::Res )
+        IF Lookahead > 127 THEN
+          -- need to handle 8bit character
+          symbolUpperHalf(symbolSpecial)(S, Res)
+        ELSE
+          -- this underscore is followed by some special character, include it
+          symbolSpecial( SymRest rt, map(Lookahead)::mappedUnderscore::Res )
+        FI
+    IF SymRest <>? THEN
+      -- this is the last char, include it in special fragment
+      ( mappedUnderscore::Res ) revert
+    FI
+  IF (SymCh = comma) or (SymCh = rsngquote) THEN
+    -- qualifiers end special fragments
+    symbolQualifier( SymCh, SymRest, Res )
+  IF SymCh > 127 THEN
+    symbolUpperHalf(symbolSpecial)(S, Res)
+  ELSE
+    -- other special char; there may be no letgit here
+    symbolSpecial( SymRest, map(SymCh)::Res )
+  FI
+
+
+FUN symbolQualifier : char ** string ** string -> string
+
+DEF symbolQualifier( QInd, QRest, Res ) ==
+  LET
+    NRes == underscore :: Res
+  IN
+    IF QInd = comma THEN
+      symbolQualifierO( QRest, O::NRes )
+    IF QInd = rsngquote THEN
+      symbolQualifierL( QRest, L::NRes )
+    FI
+
+
+FUN symbolQualifierO : string ** string -> string
+
+DEF symbolQualifierO( <>,           Res ) ==
+  Res revert
+ 
+DEF symbolQualifierO( QCh :: QRest, Res ) ==
+  IF QCh = rsngquote THEN
+    symbolQualifierL( QRest, L::underscore::Res )
+  ELSE
+    symbolQualifierO( QRest, QCh::Res )
+  FI
+
+
+FUN symbolQualifierL : string ** string -> string
+
+DEF symbolQualifierL( <>,           Res ) ==
+  Res revert
+
+DEF symbolQualifierL( QCh :: QRest, Res ) ==
+  symbolQualifierL( QRest, QCh::Res )
+
+
+FUN makeUnderscores : string ** nat ** bool ** bool -> string
+
+DEF makeUnderscores( Res, Unders, false, false ) ==
+  -- not at beginning and not at end
+  IF Unders = 0 THEN
+    -- nothing to do
+    Res
+  IF Unders = 1 THEN
+    -- prepend one underscore
+    underscore :: Res
+  ELSE
+    -- prepend special fragment of length Unders-2 surrounded by underscores
+    underscore :: (
+      (Unders-2) mappedUnderscoresPrependedTo (S::underscore::Res)
+    )
+  FI
+
+DEF makeUnderscores( <>,  Unders, true,  false ) ==
+  -- at beginning but not at end
+  IF Unders = 0 THEN
+    -- nothing to do
+    <>
+  ELSE
+    -- prepend special fragment of length Unders-1 followed by underscore
+    underscore :: (
+      (Unders-1) mappedUnderscoresPrependedTo (S%)
+    )
+  FI
+
+DEF makeUnderscores( Res, Unders, false, true  ) ==
+  -- not at beginning but at end
+  IF Unders = 0 THEN
+    -- nothing to do
+    Res
+  ELSE
+    -- prepend underscore followed by special fragment of length Unders-1 
+    (Unders-1) mappedUnderscoresPrependedTo (S::underscore::Res)
+  FI
+
+DEF makeUnderscores( Res, Unders, true,  true  ) ==
+  -- at beginning and at end; create special fragment of length Unders
+  Unders mappedUnderscoresPrependedTo (S%)
+
+
+FUN mappedQuestionMark : char
+DEF mappedQuestionMark == ? map
+
+
+FUN mappedUnderscore : char
+DEF mappedUnderscore == underscore map
+
+
+FUN mappedUnderscores : nat -> string
+DEF N mappedUnderscores == N mappedUnderscoresPrependedTo <>
+
+
+FUN mappedUnderscoresPrependedTo : nat ** string -> string
+DEF 0       mappedUnderscoresPrependedTo Str == Str
+DEF succ(N) mappedUnderscoresPrependedTo Str ==
+  mappedUnderscore :: (N mappedUnderscoresPrependedTo Str)
+
+
+FUN map : char -> char
+
+DEF map( Ch ) ==
+  LET
+    Index == Ch asNat
+  IN
+    IF (Index < specialsDomainMin) or (Index >= specialsDomainMax) THEN
+      ABORT("map'SymbolMap: Illegal character in special fragment!")
+    ELSE
+      LET
+        Mapped == specials ![char] (Index - specialsDomainMin)
+      IN
+        IF Mapped = blank THEN
+          ABORT("map'SymbolMap: Illegal character in special fragment!!")
+        ELSE
+          Mapped
+        FI
+    FI
+
+
+FUN specials : array[char]
+
+DEF specials ==
+  LET
+    -- allocate array large enough to hold special character mapping and
+    -- initialize all entries with " "
+    ArraySize      == specialsDomainMax - specialsDomainMin
+    InitialArray   == ArraySize init (\\ _ . blank )
+    PairedSpecials == zip(&)(specials, placebos)
+  IN
+    ( (\\Pair,Array.
+         (Array,asNat(Pair 1st)-specialsDomainMin) := 2nd(Pair)
+      ) \ InitialArray
+    ) (PairedSpecials)
+
+
+FUN specialsDomainMin specialsDomainMax : nat
+
+DEF specialsDomainMin ==
+  LET
+    MaxCh     == max asNat
+    DomainMin == ( (\\Special,Min. asNat(Special) min Min) \ MaxCh )(specials)
+  IN
+    IF DomainMin = MaxCh THEN
+      0
+    ELSE
+      DomainMin
+    FI
+
+DEF specialsDomainMax ==
+  LET
+    MinCh     == min asNat
+    DomainMax == ( (\\Special,Max. asNat(Special) max Max) \ MinCh )(specials)
+  IN
+    IF DomainMax = MinCh THEN
+      0
+    ELSE
+      DomainMax succ
+    FI
+
+
+FUN specials placebos : seq[char]
+
+DEF specials == asSeq( specials ! )
+
+DEF placebos == asSeq( placebos ! )
+
+-- %$Functions to handle characters with 8th bit set$
+FUN 127: char
+DEF 127 == asChar(128 - 1)
+
+FUN symbolUpperHalf symbolUH: (string ** string -> string) ->
+                               string ** string -> string
+-- %prepend _X to mark 8bit section
+DEF symbolUpperHalf(return)(S, Res) ==
+  symbolUH(return)(S, X :: underscore :: Res)
+
+-- %return from whence we came
+DEF symbolUH(return)(<>, Res) == return(<>, underscore :: Res)
+DEF symbolUH(return)(S AS SymCh :: SymRest, Res) ==
+  IF SymCh <= 127 THEN -- return, we're finished
+    return(S, underscore :: Res)
+  ELSE -- 8bit character
+    symbolUH(return)(SymRest, HexOne(SymCh) :: HexDec(SymCh) :: Res)
+    WHERE
+      HexOne == \\c. hex(asNat(c) % 16)
+      HexDec == \\c. hex(asNat(c) / 16)
+  FI
+
+FUN hex: nat -> char
+DEF hex(n) == "0123456789abcedef" ! n

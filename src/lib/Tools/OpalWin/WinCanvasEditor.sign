@@ -1,0 +1,319 @@
+/* %
+This structure provides the gate of canvas editors.
+
+A canvas editor gate allows the control of a complex graphic display.
+The design of the canvas editor gate is mostly oriented towards the Tk 
+canvas widget (credits to the author).
+*/
+
+SIGNATURE WinCanvasEditor
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:22 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  Nat             ONLY nat
+        Real            ONLY real
+        Void            ONLY void
+        String          ONLY string
+        Seq[point]      ONLY seq
+        Set[tag, <]     ONLY set
+        Pair[point,point] ONLY pair
+
+IMPORT  Com[tag]        ONLY com
+        Com[void]       ONLY com
+        Com[string]     ONLY com ans:SORT
+        Com[ans[string]] ONLY com
+        Com[set[tag,<]] ONLY com
+        Com[canvasEditor]       ONLY com
+        Com[pair[point,point]]  ONLY com
+
+IMPORT  WinView         ONLY view   : SORT
+        WinConfig       ONLY config : SORT
+                             point  : SORT
+                             color  : SORT
+                             bitmap : SORT
+        WinTag          ONLY tag    : SORT  < : tag ** tag -> bool
+        WinEvent        ONLY event  : SORT
+                             eventInfo : SORT
+
+
+-- %$Creating and Attaching Canvas Editors$ ==================================
+
+/* %
+A new canvas editor is constructed with the command below:
+*/
+
+SORT canvasEditor
+
+FUN canvasEditor          : com[canvasEditor]
+
+/* %
+A canvas editor is attached to a view with the configuration below:
+*/
+
+FUN edit                : canvasEditor -> config
+
+/* %
+At one time, one editor may be attached to only one view. Subsequent
+applications of the @code{editor} configuration cancel the use of the
+editor for previous views.
+
+Currently, only canvas views (@pxref{@Overview{WinCanvas}}) may have 
+attached a canvas editor.
+
+@sp 1
+
+@emph{Note that any commands on canvas editors are disabled 
+(i.e. will block) as long as the canvas editor is not attached
+to a view which is beeing displayed in a window.} To execute e.g. 
+a sequence of initialization commands on a canvas editor at a time a view
+isn't yet attached or displayed, an agent may be spawn; the commands
+will be executed as soon as the view will be displayed.
+*/
+
+
+-- %$Addressing Drawings$ =====================================================
+
+/* %
+Each drawing item of a canvas has an associated set of tags which is defined 
+via a configuration (see section about Drawings below).  A single tag 
+is used to adress drawing elements in most canvas editor 
+commands. The commands interpret the tags in one of two ways: either they 
+operate on all drawing items which have the given tag or tags, or they 
+operate on the first item in the display list which has the given tag. Hereby, 
+the order of the display list reflects the layering of drawings: a drawing
+item below another one comes first in the display list.
+
+Beside of user defined tags attached to drawing items via configurations, each
+item also has a unique basic tag which is automatically assigned
+to it at creation time. The commands below identify the basic tags
+of items in serveral ways:
+*/
+
+FUN withTag     : canvasEditor ** tag                   -> com[set[tag, <]]
+FUN above       : canvasEditor ** tag                   -> com[tag]
+FUN below       : canvasEditor ** tag                   -> com[tag]
+FUN closest     : canvasEditor ** point                 -> com[tag]
+FUN closest     : canvasEditor ** point ** real         -> com[tag]
+FUN enclosed    : canvasEditor ** point ** point        -> com[set[tag, <]]
+FUN overlapping : canvasEditor ** point ** point        -> com[set[tag, <]]
+
+
+/* %
+The command @code{withTag(Tag)} returns the set of basic tags of all
+drawing items which have the given tag. (This command is a kind of 
+idempotent.)
+
+The command @code{above(Tag)} returns the basic tag of the item which is
+displayed above of the first item which has @code{Tag}. Similar, the
+command @code{below} behaves.
+
+The command @code{closest(Pt)} return the basic tag of the item 
+which is closest to the given point. In the version with a real argument,
+the distance of items which are considered to be close enough
+is specified (in millimeters). If several items are close enough, the
+first one in the display list is chosen.
+
+The command @code{enclosed(Pt1, Pt2)} returns the basic tags of all
+items which are completely enclosed in the rectangle specified by the
+pair of points. The command @code{overlapping(Pt1, Pt2)} returns the basic 
+tags of all items which overlap the given rectangle.
+*/
+
+/* %
+@sp 1
+The following tags have a predefined meaning in canvas editors:
+*/
+
+FUN all         : tag
+FUN current     : tag
+
+/* %
+The tag @code{all} is associated with all drawing items. The tag
+@code{current} is automatically maintained such that it is associated with
+the drawing item currently below the pointer position.
+*/
+
+-- %$Displaying and Modifying Drawings$ ======================================
+
+/* %
+The following commands allow to display drawings and to modify them 
+when they are displayed.
+*/
+
+FUN display     : canvasEditor ** drawing               -> com[void]
+FUN delete      : canvasEditor ** tag                   -> com[void]
+
+FUN set         : canvasEditor ** tag ** config         -> com[void]
+
+FUN move        : canvasEditor ** tag ** point          -> com[void]
+FUN scale       : canvasEditor ** tag ** point ** real ** real -> com[void]
+
+FUN lower       : canvasEditor ** tag                   -> com[void]
+FUN raise       : canvasEditor ** tag                   -> com[void]
+
+FUN focus       : canvasEditor ** tag                   -> com[void]
+
+FUN bbox        : canvasEditor ** tag           -> com[pair[point,point]]
+
+/* %
+The command @code{displays} displays the given drawing. The command 
+@code{delete} removes all drawing items which have the given tag.
+
+The command @code{set} assigns a configuration to all drawing items which 
+have the given tag.
+See the section about individual drawing items for which
+configurations are sensitive. Note that if the configuration entails
+a dynamic behaviour, such as the binding of an event or the connection to 
+a regulator, then not only items currently associated with the given tag 
+are addressed, but also all items which will be associated in the future
+with this tag.
+
+The command @code{move} moves each of the drawing items which have
+the given tag by the relative distance specified by the given point.
+The command @code{Ed scale (Tag, Origin, XScale, YScale)} scales all drawing 
+items with the given tag: the distance of each indivudal coordinate in
+the drawing item to the @code{Origin} point is scaled by the given
+scaling factors (where a factor of @code{1.0} specifies no change).
+
+The command @code{lower} and @code{raise} change the display order
+of items.
+
+The command @code{focus} assigns the keyboard focus to the first
+item with the given tag.
+
+The command @code{bbox} returns a rectangle which solely encloses all items
+which have the given tag.
+*/
+
+/* %
+Missing: select, postscript, canvasx, canvasy. Text insertion should be 
+via a textEditor gate.
+*/
+
+
+-- %$Constructing and Configuring Drawings$ ==================================
+
+/* %
+A drawing is an object with the possibility of being displayed through
+a canvas editor. Drawings are quite similar to views: basic drawings items
+such as lines, polygons and so on are configured and combined into new 
+drawings. 
+*/
+
+SORT drawing
+FUN with                : drawing ** config     -> drawing
+FUN ++                  : drawing ** drawing    -> drawing
+FUN {}                  : drawing 
+
+/* %
+The coordinates of the elements of a given drawing may be moved by the
+function below:
+*/
+
+FUN move                : drawing ** point      -> drawing
+
+-- %$$Basic Drawing Items$
+
+/* %
+The following basic drawing items are supplied:
+*/
+
+FUN line                : seq[point]            -> drawing
+FUN arc                 : point ** point        -> drawing
+FUN pie                 : point ** point        -> drawing
+FUN chord               : point ** point        -> drawing
+FUN rectangle           : point ** point        -> drawing
+FUN oval                : point ** point        -> drawing
+FUN polygon             : seq[point]            -> drawing
+FUN text                : point                 -> drawing
+FUN bitmap              : point                 -> drawing
+FUN image               : point                 -> drawing
+FUN view                : point ** view         -> drawing
+
+
+-- %$$General Configuration$
+
+/* %
+To each drawing item, one or more tags may be attached with the
+configurations below:
+*/
+
+FUN tag                 : tag                   -> config
+FUN tags                : set[tag, <]           -> config
+FUN addTag              : tag                   -> config
+FUN addTags             : set[tag, <]           -> config
+
+
+/* %
+Furthermore, each drawing item may have attached one of the
+following configurations:
+
+@example
+  bind regulate sync
+@end example
+
+*/
+
+
+-- %$$Line Style Configurations$
+
+FUN arrow               : arrowWhere            -> config
+TYPE arrowWhere         == none first last both
+FUN arrowShape          : real ** real ** real  -> config
+
+FUN lineWidth           : real                  -> config
+
+FUN cap                 : capStyle              -> config
+TYPE capStyle           == butt projecting round
+
+FUN join                : joinStyle             -> config
+TYPE joinStyle          == bevel miter round
+
+FUN smooth              : bool                  -> config
+
+FUN splineSteps         : nat                   -> config
+
+
+-- %$$Arc Style Configurations$
+
+FUN start               : real                  -> config
+FUN extent              : real                  -> config
+FUN slice               : real ** real          -> config
+
+
+-- %$$Fill Style Configurations$
+
+FUN fill                : color                 -> config
+FUN outline             : color                 -> config
+FUN outlineStipple      : bitmap                -> config
+
+
+-- %$$Text Style Configurations$
+
+FUN justify             : justifyHow            -> config
+TYPE justifyHow         == left right center
+
+
+
+
+-- %$Providing Canvas Editors$ =================================================
+
+/* %
+Currently, the providing level of a canvas editor is completely oriented
+towards Tk canvases. The command @code{register(Win, Wid)} registers
+the Tk canvas widget @code{Wid} displayed by window @code{Win} to
+be edited by the given canvas editor. Any previous registration is
+discarded. 
+*/
+
+IMPORT  WinInternal     ONLY window:SORT 
+        WinTclTk        ONLY widget:SORT
+
+FUN register : canvasEditor ** window ** widget -> com[void]
+
+/* %
+@page
+*/

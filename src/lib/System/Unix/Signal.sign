@@ -1,0 +1,216 @@
+SIGNATURE Signal
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:18 $ ($Revision: 1.1.1.1 $)
+-- low-level access to signals & limited signal handling features
+-- NOTE that it is not possible to allow arbitraty OPAL functions of type
+-- com[void] as signal handlers. This is due to the fact that the OPAL memory
+-- management may be interrupted by signals, leaving the memory in a state
+-- of inconsistency. The memory management for the signal handling function
+-- would then crash the process.
+-- Fixing this problem would cause an inacceptable amount of overhead and
+-- only lead to the next problem, namely that not all library functions may
+-- be called from within signal handlers.
+-- However, this structure provides a basic set of signal handling activities
+-- which are safe to use and enable OPAL applications to meet some minimum
+-- standards for signal handling.
+-- NOTE that using signals may interrupt some system calls, as there are:
+-- close() creat() dup() dup2() fcntl() open() read() sleep() tcdrain()
+-- tcflow() tcgetpgrp() tcsetattr() wait() waitpid() write()
+-- as well as other non-POSIX calls which are similar.
+
+IMPORT
+  Void                ONLY void: SORT
+  Nat                 ONLY nat: SORT
+  Com[void]           ONLY com: SORT
+  Com[nat]            ONLY com: SORT
+  Com[bool]           ONLY com: SORT
+  Com[sigaction]      ONLY com: SORT
+  Com[sigmask]        ONLY com: SORT
+  ProcessCtrl         ONLY process: SORT procstat: SORT
+
+
+-- SIGNALS --
+
+-- NOTE that the signals listed below are the POSIX set of signals.
+-- Keep in mind that a given system may or may not have additional
+-- signals.
+-- Also, do not mis-use signals (e.g. use sigPipe for inter process
+-- communication).
+TYPE signal ==
+--   Name     Default action  Description; Notes
+     sigAbrt  -- Termination  Caused by abort(); DO NOT CATCH
+     sigAlrm  -- Termination  Timer expired; used by alarm()
+     sigFPE   -- Termination  Arithmetic exception
+     sigHUp   -- Termination  Hangup on controlling terminal
+     sigIll   -- Termination  Illegal instruction
+     sigInt   -- Termination  Interrupt special char typed
+     sigKill  -- Termination  Kill; CANNOT BE CAUGHT OR IGNORED
+     sigPipe  -- Termination  Broken pipeline
+     sigQuit  -- Termination  Quit special char typed
+     sigSegV  -- Termination  Illegal memory reference
+     sigTerm  -- Termination  Termination
+     sigUsr1  -- Termination  Application-defined signal
+     sigUsr2  -- Termination  Application-defined signal
+     sigChld  -- Ignored      Child process status changed
+     sigCont  -- Cont/Ignore  Continue if stopped, otherwise ignore
+     sigStop  -- Stop         Stop; CANNOT BE CAUGHT OR IGNORED
+     sigTStp  -- Stop         Stop special char typed
+     sigTTIn  -- Stop         Background read from controlling term
+     sigTTOu  -- Stop         Background write to controlling term
+
+FUN  < = : signal ** signal -> bool
+           -- orderings
+
+
+-- SIGNAL MASKS (for reasons of portability; see POSIX sigset_t) --
+
+SORT sigmask
+FUN < =     : sigmask ** sigmask -> bool
+              -- orderings
+FUN {}      : sigmask
+              -- empty set of signals; see POSIX sigemptyset()
+FUN {}?     : sigmask -> bool
+              -- {}?(SMask) => SMask={}
+FUN none?   : sigmask -> bool
+              -- none?(SMask) => SMask contains no POSIX signals
+FUN allSigs : sigmask
+              -- all valid signals, including non-POSIX; see POSIX sigfillset()
+FUN %       : signal -> sigmask
+              -- singleton; make sigmask from single signal
+FUN + -     : sigmask ** signal -> sigmask
+              -- add/delete signal to/from mask; see POSIX sig[add|del]set()
+FUN +       : signal ** signal -> sigmask
+              -- for convenient infix notation; {} + S1 + S2 ... == S1 + S2 ...
+--  + - *   : sigmask ** sigmask -> sigmask
+              -- union/difference/intersection of signal masks cannot be
+              -- provided. For reasons of portability, of course.
+FUN in      : signal ** sigmask -> bool
+              -- is signal in set?; see POSIX sigismember()
+
+
+-- SENDING SIGNALS --
+
+FUN kill     : process -> com[void]
+               -- test if a signal can be sent to the specified process
+    kill     : process ** signal -> com[void]
+               -- send signal to the given process
+FUN killPGrp : process -> com[void]
+               -- test if a signal can be sent to the specified process group
+    killPGrp : process ** signal -> com[void]
+               -- send signal to all processes of the specified process group
+
+
+-- ALARMS --
+
+FUN alarm : nat -> com[nat]
+            -- causes a sigAlrm to be sent to this process after about n secs
+            -- 0 disables any set alarm
+            -- only one alarm is possible at any given time
+            -- retuns number of seconds left in previous request or 0
+            -- NOTE that the maximum portable argument is 65535
+            -- see POSIX alarm()
+
+
+-- SIGNAL HANDLING --
+
+TYPE sighandler ==
+--   a fine selection of signal handling functions
+     _exit (status: procstat)
+     -- terminates the process with the given status using POSIX _exit().
+     -- NOTE that, unlike exit(), this call does neither delete temporary files
+     -- nor close buffered streams, as doing so might crash the process. For
+     -- details, see POSIX _exit().
+     message (message: denotation)
+     -- write message to stderr.
+     unlink (file: denotation)
+     -- remove the specified file.
+     rmDir (directory: denotation)
+     -- remove the specified directory.
+     kill (process: process, signal: signal)
+     -- sends a signal to the specified process
+     killPGrp (pGroup: process, signal: signal)
+     -- sends a signal to all processes in the specified process group
+     wait
+     -- collect a zombie or, if there is none,
+     -- wait for termination of some child process and discard its status
+     collectZombies
+     -- collect all zombies which are to be collected at the moment,
+     -- but do not wait
+
+     ; (first: sighandler, second: sighandler)
+      -- compose two signal handlers
+      -- NOTE that, unlike ;'ComCompose, return values of signal handling
+      -- activities are ignored and do not influence the execution of the
+      -- next activity.
+
+FUN exec : sighandler -> com[void]
+           -- for convenience, this function allows you to execute your signal
+           -- handler at any time.
+           -- NOTE that successful execution is yielded under all
+           -- circumstances.
+
+TYPE sigaction == default                      -- default action
+                  ignore                       -- ignore signal
+                  catch                        -- catch signal for polling
+                  handle(handler: sighandler,  -- execute signal handler,
+                         blockSigs: sigmask )  -- additionally blocking signals
+
+FUN caught? : signal -> com[bool]
+             -- true if given signal was caught or handled at least once;
+             -- resets the information to false
+             -- NOT YET IMPLEMENTED
+
+FUN sigAction : signal -> com[sigaction]
+                -- return the current action on signal
+                -- see POSIX sigaction()
+                -- NOT YET IMPLEMENTED
+
+FUN sigAction : signal ** sigaction -> com[sigaction]
+                -- change process action on signal to sigaction
+                -- and return the former action. NOTE that sigChld
+                -- will always be generated when child processes stop.
+                -- see POSIX sigaction()
+                -- NOT YET IMPLEMENTED
+
+
+-- BLOCK, UNBLOCK & WAIT for signals --
+
+-- If a signal is caused and not ignored by the receiving process, the signal
+-- usually is delivered. Blocking a signal is a way to delay its delivery and
+-- is essential if a process would like to fall asleep until a signal is
+-- delivered. The only safe way to do this is:
+-- 1) block the signal(s) and store the original signal mask
+-- 2) test if the signal(s) occured
+-- 3) call sigsuspend() with the original signal mask (which causes blocked
+--    signals to be delivered right now)
+-- Otherwise, if the signal is delivered between 2) and 3), the process
+-- might sleep forever.
+-- Signals which occured but are blocked are said to be pending.
+-- NOTE that the signal mask is inherited by child processes.
+-- NOTE that it is not possible, but does not cause an error, to block
+--      sigKill or sigStop.
+-- NOTE that it is not portable to block sigFPE, sigIll or sigSegV.
+
+FUN sigMask : com[sigmask]
+              -- return the current signal mask
+              -- see POSIX sigprocmask()
+FUN sigBlock
+    sigUnblock
+    sigMask    : sigmask -> com[sigmask]
+                 -- blocks/unblocks/sets_as_blocked the given signals
+                 -- and returns the original signal mask
+                 -- see POSIX sigprocmask()
+
+FUN sigPending : com[sigmask]
+                 -- return all pending signals
+                 -- see POSIX sigpending()
+
+FUN sigSuspend : sigmask -> com[void]
+                 -- set the signal mask according to sigset and
+                 -- wait for a signal which either is caught or leads to
+                 -- termination. NOTE that this function always returns
+                 -- successfully (if it returns at all).
+                 -- see POSIX sigsuspend()

@@ -1,0 +1,196 @@
+-- LAST EDIT: Tue Aug 29 23:28:52 1995 by Christian Maeder (troilos!maeder) 
+-- ============================================================================
+-- Author:      mija
+-- Project:     OPAL1-Compiler (signature analysis)
+-- Purpose:     insert imported structures into global signature
+-- Changes:     af, Jun 23 1993: adapted to new structuring of Rep/RepTab
+-- ============================================================================
+
+IMPLEMENTATION StructLookup
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:44 $ ($Revision: 1.1.1.1 $)
+
+IMPORT  
+        DEBUG           ONLY    FIELD? PRINT string
+        Denotation      ONLY    ++
+        Fct             ONLY    fct
+        GlobSig         ONLY    globSig
+        ImpDecl4SigAna  ONLY    addOnlyMap getDelReExports getFormParams 
+                                getOtherInst eqBaseA
+        ImpExpEntry     ONLY    instAppl:SORT instOf
+        Maps4SigAna     ONLY    ! addOnly instDecTab mtOnlyMap onlyMap 
+                                strDecTab
+        MySeqFun2       ONLY    in
+        MySeqFun3       ONLY    /
+        Name            ONLY    = ` extName? inst intName? name struct
+        Name4SigAna     ONLY    genericTransitive? genericTransitives? 
+                                getCands getInsts onlyApplied updCands 
+        Nat             ONLY    nat 
+        NatConv         ONLY    `
+        Objects         COMPLETELY
+        Option          ONLY    option
+        Pair            COMPLETELY
+        PartName        ONLY    ide partName:SORT pos `
+        PartNameEntry   ONLY    pN:SORT ` onlyPNE:SORT flatPnEle:SORT 
+                                instPNE sortPNE instCand & cands
+        PartNamePrep    ONLY    convMatchInstPartName convMatchPartName
+        Pos             ONLY    pos
+        Rep             ONLY    rep
+        Seq             COMPLETELY
+        SeqFilter       ONLY    |
+        SeqMap          ONLY    *
+        SeqOfSeq        ONLY    flat
+        SeqReduce       ONLY    /
+        SeqZip          ONLY    zip
+        Struct          COMPLETELY
+        Triple          COMPLETELY
+       GlobSigToText ONLY `
+
+-- ---------------------------------------------------------------------------
+
+FUN importsStaticLookup 
+        : triple[seq[pair[import,bool]],strDecTab,seq[instAppl]] ** globSig
+          -> globSig
+        -- Hinzufuegen der expliziten Instanzapplikationen und der Onlys
+DEF importsStaticLookup(triple, gS) == 
+        (importStaticLookup(struct, reExports) / finGS)
+           (zip(&[pair[import,bool],instAppl])(importS,instApplS))
+        WHERE
+        -- Auspacken
+        importS == 1st(triple)                  -- Importe Stats. d. Struktur
+        (struct, _) == 2nd(triple) ! mainStruct 
+        instApplS == 3rd(triple)                -- die Importeintraege
+        (finGS, reExports) == getDelReExports(gS,struct)
+
+
+FUN importStaticLookup : struct'Objects ** seq[name]
+                         -> pair[pair[import,bool],instAppl] ** globSig 
+                         -> globSig
+        -- Hinzufuegen der Instanzapplikationen und des ONLYs
+DEF importStaticLookup(struct, reExports)(importInstApplP, gS) ==
+        IF formParamS <>? THEN                  -- unparametrisierte Struktur
+          addOnlyMap(gS1, struct, onlyMap)
+        ELSE
+          IF pNS <>? THEN                       -- uninstantiierte Struktur
+            addOnlyMap(gS1, struct, inst, onlyMap)
+          ELSE
+            addOnlyMap(gS2, struct, inst, onlyMap, instPN, pos(origin(import)))
+            WHERE 
+            (gS2, instPN) == convMatchInstPartName(gS1, formParamS,pNS,instPos)
+          FI
+          WHERE
+          pNS == paramS(origin(import))
+        FI
+        WHERE
+        -- Auspacken
+        inst == instOf(2nd(importInstApplP))    -- der Instanzeintrag
+        import == 1st(1st(importInstApplP))     -- der explizite Import
+        formParamS == getFormParams(gS, struct)
+        instPos == pos(origin(import))
+        -- Only-Tabelle
+        (gS1, onlyMap) == 
+          IF complete?(import) THEN (gS, mtOnlyMap)
+          ELSE (1st(gSoM), 2nd(gSoM))
+            WHERE 
+            gSoM == (convertOnlyPartName(struct,inst,reExports)/
+                    (gS & mtOnlyMap))(only(import))
+          FI
+
+
+FUN convertOnlyPartName : struct'Objects ** inst ** seq[name]
+                          -> partName ** pair[globSig, onlyMap]
+                          -> pair[globSig, onlyMap]
+        -- Eintragen und Umwandeln einer Only-Applikatione
+DEF convertOnlyPartName(struct,inst,reExports)(partName0,gSonlyMP) == 
+        finGS & finOnlyMap
+        WHERE
+        -- Bestimmen einer ersten Menge
+        (gS1, pN0) == convMatchPartName(false)(1st(gSonlyMP), partName)
+        -- Herausfiltern aller Kandidaten, die nicht die Instanz haben.
+        -- Herausfiltern aller Kandidaten, die nicht explizit oder transitiv
+        -- importiert sind.
+        finPN == updCands(pN, newCands)
+        (gS2, newCands) == (filterOnlys(struct,inst,reExports) / 
+                              (gS1,<>[instCand]))
+                             (getCands(pN))
+        -- Eintragen des partiellen Namen in die Liste der ONLY-Applikationen
+        (finOnlyMap) == 2nd(gSonlyMP) addOnly 
+                        (ide(partName),pos(partName), finPN)
+        -- Markieren der gefundenen Kandidaten als Only-Appliziert
+        finGS0 == (onlyApplied / gS2)
+                 (flat(cands * newCands))
+    -- debug
+    partName == PRINT(FIELD?[bool]("-zconvertOPN"), \\ . "convertOPN: "++ `(partName0), partName0)
+    finGS == PRINT(FIELD?[bool]("-zconvertOPN"), `(finGS0), finGS0)
+    pN == PRINT(FIELD?[bool]("-zconvertOPN"), \\ . `(pN0), pN0)
+
+FUN noFilterOnly? : bool
+DEF noFilterOnly? == FIELD?[bool]("-znoFilterOnly")
+
+FUN filterOnlys : struct'Objects ** inst ** seq[name]
+        -> globSig ** instCand ** seq[instCand] -> globSig ** seq[instCand]
+  -- Herausfiltern aller Kandidaten, die weder aus der importierten Struktur
+  -- stammen, noch in der Menge der Reexportierten Namen sind.
+DEF filterOnlys(Struct, inst, reExports)
+             (gS, InstCand AS Cands & instPN, okCands) == 
+        -- Erst sehen, ob es Kandidaten aus der imp. Struktur sind
+        IF noFilterOnly? THEN (gS, InstCand :: okCands)
+        OTHERWISE
+        IF ft(Cands) intName? THEN (gS, okCands)
+        OTHERWISE
+        IF struct(ft(Cands)) = Struct THEN 
+          -- Ist es dieselbe Instanz ?
+          IF newCands <>? THEN (gS, okCands)
+          ELSE (gS, (newCands & instPN) :: okCands) FI
+          WHERE newCands == eqInst(inst) | Cands
+        ELSE                    -- Reexporte testen
+          -- Was bleibt nach dem Herausfiltern der Nicht-Kandidaten ueber?
+          IF newCands <>? THEN (gS, okCands)
+          ELSE (gS, (newCands & instPN) :: okCands) FI
+          WHERE 
+          newCands0 == in(eqGenTrans(gS,Struct),reExports) | Cands
+          newCands == testGeneric(gS,inst) | newCands0
+        FI
+
+FUN eqGenTrans? : bool
+DEF eqGenTrans? == FIELD?[bool]("-zeqGenTrans")
+
+FUN eqGenTrans : globSig ** struct'Objects -> name ** name -> bool
+-- normaler Vergleich, aber expandieren von genericTransitives
+DEF eqGenTrans(gS,struct)(n10,n2) ==
+        LET n1 == PRINT(eqGenTrans?,!!(n10,n2,struct), n10) IN
+        IF n1 = n2 THEN true
+        OTHERWISE
+        IF n1 eqBaseA n2 THEN 
+          -- wenn identisch, dann nur unterschiedliche Instanz
+          IF n1 extName? THEN
+            IF inst(n1) = unparam'Objects THEN false
+            OTHERWISE
+            IF genericTransitives?(gS,n1) THEN
+              in(= :inst**inst->bool,inst(n2))(getInsts(gS,n1))
+            ELSE false FI
+          ELSE false FI
+        ELSE false FI
+
+        FUN !! : name ** name ** struct'Objects -> () -> denotation
+        DEF !!(n1,n2,struct)() == 
+                "eqGenTrans  struct: " ++ `(no(struct)) ++ 
+                " - " ++ `'Name(n1) ++ " , " ++ `(n2)
+
+FUN testGeneric : globSig ** inst -> name -> bool
+  -- wenn der Name aus einer generischen Instanz kommt, muss sein Verweis
+  -- auf die andere Instanz mit der aktuellen identisch sein.
+DEF testGeneric(gS, ownInst)(name) ==
+        IF inst(name) = unparam'Objects THEN true
+        OTHERWISE
+        IF genericTransitive?(gS, name) THEN ownInst = oInst
+        WHERE (_ ,oInst) == getOtherInst(gS, struct(name), inst(name))
+        ELSE true FI
+
+
+        FUN eqInst : inst -> name -> bool
+        DEF eqInst(Inst)(name) == Inst = inst(name)
+

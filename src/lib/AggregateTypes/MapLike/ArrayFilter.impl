@@ -1,0 +1,73 @@
+IMPLEMENTATION ArrayFilter
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:05 $ ($Revision: 1.1.1.1 $)
+--
+
+IMPORT Array[data] COMPLETELY
+IMPORT Nat ONLY nat 0 1 succ = > pred
+
+
+DEF P|A == IF empty?(A) THEN empty
+	   ELSE LET new == init(#(A), A!0)
+		IN copyP(P, A, 0, new, 0)
+	   FI
+
+FUN copyP: (data -> bool) ** array ** nat ** array ** nat -> array
+DEF copyP(P, A, i, N, j) ==
+	IF i = #(A) THEN delete(N,j,#(A))
+	ELSE
+	  LET (NN, jj) == IF P(A!i) THEN (upd(j, A!i, N), succ(j))
+			  ELSE (N, j) FI
+          IN copyP(P, A, succ(i), NN, jj)
+        FI
+
+DEF P partition A == IF empty?(A) THEN (empty, empty)
+	   	     ELSE LET newP == init(#(A), A!0)
+			      newNP == init(#(A), A!0)
+		          IN copyP(P, A, 0, newP, 0, newNP, 0)
+	             FI
+
+FUN copyP: (data -> bool) ** array ** nat ** 
+			array ** nat ** array ** nat-> array ** array
+DEF copyP(P, A, i, N, j, NP, k) ==
+	IF i = #(A) THEN (delete(N,j,#(N)), delete(NP, k, #(NP)))
+	ELSE
+	  LET (NN, jj, PP, kk) == 
+	      IF P(A!i) THEN (upd(j, A!i, N), succ(j), NP, k)
+			ELSE (N, j, upd(k, A!i, NP), succ(k))
+	      FI
+             
+          IN copyP(P, A, succ(i), NN, jj, PP, kk)
+        FI
+
+DEF take(P, A) == IF empty?(A) THEN empty
+		  OTHERWISE
+		  IF ~(P(A!0)) THEN empty
+		  ELSE take(P, A, 1) 
+                  FI
+
+FUN take: (data -> bool) ** array ** nat -> array
+DEF take(P, A, i) == IF i = #(A) THEN A
+		     ELSE
+		     IF P(A!i) THEN take(P, A, succ(i))
+		     ELSE delete(A, i, #(A))
+		     FI
+		      FI
+
+DEF drop(P, A) == IF empty?(A) THEN empty
+		  ELSE drop(P, A, 0)
+		  FI
+
+FUN drop: (data -> bool) ** array ** nat -> array
+DEF drop(P, A, i) == IF i = #(A) THEN empty
+		     ELSE
+		     IF P(A!i) THEN drop(P, A, succ(i))
+		     ELSE
+		     IF i > 0 THEN delete(A, 0, pred(i)) ELSE A FI
+		     FI
+		     FI
+
+DEF split(P, A) == (take(P, A), drop(P, A))

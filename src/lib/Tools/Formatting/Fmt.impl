@@ -1,0 +1,685 @@
+/* %
+Generic pretty-printing via abstract data type (linear time).
+*/
+IMPLEMENTATION Fmt
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 16:00:24 $ ($Revision: 1.1.1.1 $)
+
+
+IMPORT
+  Nat		      ONLY nat 0 1 2 3 4 5 6 7 8 9 10 100 max min
+			   succ pred + - * / < <= = |= >= > !
+  Char		      ONLY char = blank tab newline printable? whitespace?
+  String	      ONLY string <> :: <>? ! # take ++ revert last
+  StringConv	      ONLY `
+  Seq		      ONLY seq <> :: <>? ::? ++ ft # rt front last +%
+  SeqMap	      ONLY *
+  SeqReduce	      ONLY / \
+  SeqFold	      ONLY / 
+  Option	      ONLY option nil? avail? nil avail cont
+  Denotation	      ONLY init
+
+
+
+/* %
+The pretty printer is based on an underlying "engine" which performs
+somewhat "imperative" commands. Thus, a "functional" as well as an
+"imperative" interface may be provided.
+
+This free data type represents the engine's instruction set. All other
+interface functions are easily mapped to it.
+*/
+
+DATA fmt ==
+  <>				  -- empty output
+  <__>	 ( space   : nat )	  -- white space (usually N blanks)
+  |<<-				  -- force new line
+  ->|				  -- tabulator (every 8 columns)
+  ->!	 ( col	   : nat )	  -- proceed to specified column (1 .. margin)
+  x	 ( fmt	   : fmt,	  -- n-fold repetition
+	   times   : nat ) 
+  !!	 ( string  : string )	  -- literal string, unbreakable
+  ..	 ( fmt1	   : fmt,
+	   fmt2	   : fmt)	  -- concat 
+  >.	 ( glue	   : nat )	  -- add glue factor
+  .<				  -- remove glued block
+  -|	 ( dec	   : nat )	  -- decrease indentation by so many characters
+  |.	 ( indent  : fmt )	  -- add indentation
+  .|				  -- remove indentation
+  |!	 ( fmt	   : fmt )	  -- add indentation to current column
+
+  <|	 ( nat	   : nat )	  -- begin block 
+  |>				  -- end block 
+
+
+/* %
+These functions map those interface functions which do not correspond to
+the engine's instructions.
+*/
+DEF <_>	      == <__>(1)
+DEF <~>	      == !(" ")
+DEF !(Deno)   == !!(Deno !)
+DEF !-(Deno)  == !!-(Deno !)
+DEF !_(Deno)  == !!_(Deno !)
+DEF !!-(Str)  == linenize(Str)
+DEF !!_(Str)  == tokenize(Str)
+DEF <> ..*    == <>
+DEF Fmts ..*  == .. / Fmts
+DEF Sep ..|..* <> == <>
+DEF Sep ..|..* Fmts == (\\L, R. L .. Sep .. R) / Fmts
+DEF H >.< O   == |.(H) .. >.(2) .. O .. .< .. .|
+DEF H >>.< O  == |.(H) .. >.(4) .. O .. .< .. .|
+DEF H >>>.< O == |.(H) .. >.(maxglue) .. O .. .< .. .|
+DEF >>>>.<(O) == |<<- ..|..* (!! * flatten(initialState, O :: <>))
+DEF H |.| O   == |.(H) .. O .. .|
+
+DEF none      == <>
+DEF spc(N)    == <__>(N)
+DEF brk	      == |<<-
+DEF lit(Deno) == !-(Deno)
+DEF lit(Str)  == !!-(Str)
+DEF Hd ; Tl   == Hd .. Tl
+DEF beg(N)    == <|(N) -- .(<~> x N) .. >.(maxglue)
+DEF end	      == |> -- .< .. .|
+DEF H block O == beg(H) ; O ; end
+DEF inc(N)    == |.(<~> x N)
+DEF dec(N)    == -|(N)
+
+
+/* %
+The formatting engine works on a state with the following components: 
+
+- the current column (0 .. margin)
+- the right margin
+- a stack of glue factors with the current glue factor on top, where the
+  empty stack stands for a glue factor of 1
+- a sequence of strings that represent the current line up to the point
+  where it is best broken, where the first string is last in the sequence
+- the penalty for breaking the line after that point
+- a sequence of strings representing the rest of the line after the best
+  point to break it, where the first string is last in the sequence
+- a sequence of sequences of strings, where one sequence of strings
+  represents a single line with the first string last, and the first line
+  is last in the sequence
+- a sequence of strings that represent the current indentation, where the
+  first indentation is last in the sequence
+- flag which is true iff a space was output last, to suppress superfluent
+  white space output
+- a flag which is true iff an automatic line break took place last, to
+  suppress superfluent newlines
+- an optional saved state belonging to a an outer formatting block  
+*/
+
+DATA state ==
+    state	(column		: nat,
+		 margin		: nat,
+		 glues		: seq[nat],
+		 left		: seq[string],
+		 penalty	: nat,
+		 right		: seq[string],
+		 previous	: seq[seq[string]],
+		 indent		: seq[string],
+		 space?		: bool,
+		 break?		: bool,
+		 saved		: option[savedState])
+
+DATA savedState ==
+    savedState	(state		: state,
+		 indent		: nat)
+    ignored	(state		: state)
+
+
+FUN initialState : state
+
+FUN :=_column		: state ** nat -> state
+FUN :=_margin		: state ** nat -> state
+FUN :=_glues		: state ** seq[nat] -> state
+FUN :=_left		: state ** seq[string] -> state
+FUN :=_penalty		: state ** nat -> state
+FUN :=_right		: state ** seq[string] -> state
+FUN :=_previous		: state ** seq[seq[string]] -> state
+FUN :=_indent		: state ** seq[string] -> state
+FUN :=_space?		: state ** bool -> state
+FUN :=_break?		: state ** bool -> state
+FUN :=_saved		: state ** option[savedState] -> state
+
+DEF state(_, M, G, L, P, R, A, I, W, X, S) :=_column C ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, _, G, L, P, R, A, I, W, X, S) :=_margin M ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, _, L, P, R, A, I, W, X, S) :=_glues G ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, _, P, R, A, I, W, X, S) :=_left L ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, L, _, R, A, I, W, X, S) :=_penalty P ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, L, P, _, A, I, W, X, S) :=_right R ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, L, P, R, _, I, W, X, S) :=_previous A ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, L, P, R, A, _, W, X, S) :=_indent I ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, L, P, R, A, I, _, X, S) :=_space? W ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, L, P, R, A, I, W, _, S) :=_break? X ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+DEF state(C, M, G, L, P, R, A, I, W, X, _) :=_saved S ==
+    state(C, M, G, L, P, R, A, I, W, X, S) 
+
+
+FUN initialState : state
+
+DEF initialState == state(0, maxcol, <>, <>, inipen, <>, <>, <>, true, false,
+			  nil)
+
+
+/* % The function which drives the formatting engine takes
+a state and a sequence of fmt items to process. It returns the
+final result: */
+
+
+FUN flatten : state ** seq[fmt] -> seq[string]
+
+/* 
+
+FIXME: there is an unsolved problem w.r.t. a soft-space 
+which starts a nested block, such as in @code{<|(_) .. <__>(_) .. X .. |>}.
+The problem is that we flatten the nested block under the premise
+that no white space has been output, in order to allow the block,
+if it dont needs a break, to be merged with correct spacing
+to the current line. But then, if the block needs a break, a superfluous
+space is generated:
+
+@example
+  xxxxxxxxxxxxx
+    bbbbbbbbbbb
+   bbbbbbb
+@end example
+
+The below 4 definitions, which try to shift leading spaces (and, for similar
+reasons, breaks) out of blocks don't work; I suspect because
+of other formats such as @code{<>} between the block border and the
+space. 
+
+No time to fix this currently, hence left for future tuning.
+*/
+
+
+DEF flatten( S, (Beg AS <|(_)) :: (Shift AS <__>(_)) :: F ) ==
+    -- rippling: shift a space at block start out of block
+    flatten ( S, Shift :: Beg :: F ) 
+
+DEF flatten( S, (Beg AS <|(_)) :: (Shift AS |<<-) :: F ) ==
+    -- rippling: shift a break at block start out of block
+    flatten ( S, Shift :: Beg :: F ) 
+
+DEF flatten( S, (Shift AS <__>(_)) :: (End AS |>) :: F ) ==
+    -- rippling: shift a space at block end out of block
+    flatten ( S, End :: Shift :: F ) 
+
+DEF flatten( S, (Shift AS |<<-) :: (End AS |>) :: F ) ==
+    -- rippling: shift a break at block end out of block
+    flatten ( S, End :: Shift :: F ) 
+
+
+
+DEF flatten( S, <|(N) :: F ) ==
+    -- begin of nested block
+    IF column(S) < minblockcol THEN
+	-- a block at the very beginning of a line is ignored to prevent
+	-- breaks such as:
+	--  (
+	--   (
+	--    ( ...
+	LET SubS == S :=_saved avail(ignored(S))
+	IN
+	flatten( SubS, F )
+    ELSE
+	LET I	 == IF ::?(indent(S)) THEN leng(indent(S)) ELSE 0 FI
+	    ActN == IF margin(S) - I < minblockind THEN 0 ELSE N FI
+	    ActI == min(margin(S) - 1, I + ActN)
+	    SubS == initialState :=_saved  avail(savedState(S, ActI)) 
+				 :=_column 0
+				 :=_margin margin(S) - ActI
+				 :=_space? false
+	IN
+	flatten( SubS, F )
+    FI
+
+DEF flatten( S, |> :: F ) ==
+    -- end of nested block
+    IF nil?(saved(S)) THEN
+	-- ... hmmm, better ABORT?
+	flatten( S, F )
+    OTHERWISE
+    IF ignored?(cont(saved(S))) THEN
+	-- ignored block
+	flatten( S :=_saved saved(state(cont(saved(S)))), F )
+    ELSE
+	LET MaxWidth == (max, leng(left(S)) + leng(right(S)))
+					\ (leng * previous(S))
+				-- FIXME: for efficiency,
+				-- this value should be incrementally 
+				-- maintained in the state
+	    Saved    == cont(saved(S))
+	    PS	     == state(Saved)
+	IN
+	IF column(PS) + MaxWidth >= margin(PS) THEN
+	    -- break is necessary
+	    LET S1 == S :=_previous  (doIndent(indent(Saved)) * previous(S)) ++
+				     (right(PS) ++ left(PS)) :: previous(PS)
+			:=_left	     doIndent(indent(Saved))(left(S))
+			:=_column    indent(Saved) + column(S) 
+			:=_margin    margin(PS)
+			:=_glues     glues(PS)
+			:=_saved     saved(PS)
+	    IN
+	    flatten( S1, F )
+	OTHERWISE
+	-- break is not necessary, merge block to the current line
+	IF ::?(previous(S)) THEN
+	    -- there have been more then one line in the block
+	    LET (Ind1, Ind2) == 
+	    	       IF column(PS) = 0 THEN
+	    		   (indent(Saved), indent(Saved))
+		       ELSE (column(PS), 0) FI
+	        S1 == S :=_previous (doIndent(Ind1) * front(previous(S)))
+					++
+				    ((last(previous(S)) ++ right(PS) 
+						++ doIndent(Ind2)(left(PS))) 
+					 :: previous(PS))
+			:=_left	     doIndent(Ind1)(left(S))
+			:=_column    Ind1 + column(S)
+			:=_margin    margin(PS)
+			:=_glues     glues(PS)
+			:=_saved     saved(PS)
+	    IN
+	    flatten( S1, F )
+	ELSE  
+	    LET Ind == IF column(PS) = 0 THEN
+	    		   indent(Saved)
+		       ELSE 0 FI
+	        S1 == S :=_previous  previous(PS)
+			:=_left	     doIndent(Ind)(left(PS))
+			:=_right     right(S) ++ left(S) 
+					      ++ right(PS)
+					-- FIXME: setup right line split??
+			:=_column    column(PS) + Ind + column(S)
+			:=_margin    margin(PS)
+			:=_glues     glues(PS)
+			:=_saved     saved(PS)
+	    IN
+	    flatten( S1, F )
+	FI
+    FI
+
+
+DEF flatten( S, <> ) ==
+  -- nothing left to format, return result
+  format( right(S) ++ left(S) :: previous(S) )
+
+DEF flatten( S, <> :: F ) ==
+  -- empty output, no action
+  flatten( S, F )
+
+DEF flatten( S, <__>(N) :: F ) ==
+  -- output blanks or new line if no white space before
+  IF N = 0 or space?(S) THEN
+    flatten( S, F )
+  ELSE
+    IF column(S) + N >= margin(S) THEN
+      LET S1 == S :=_column    0
+		  :=_left      <>
+		  :=_penalty   inipen
+		  :=_right     <>
+		  :=_previous  (right(S) ++ left(S)) :: previous(S)
+		  :=_space?    true
+		  :=_break?    true
+      IN
+      flatten( S1, F )
+    ELSE
+      flatten( S, (<~> x N) :: F )
+    FI
+  FI
+
+DEF flatten( S, |<<- :: F ) ==
+  -- end current line if previous action was not automatic line break
+  IF break?(S) THEN
+    flatten( S :=_break? false, F )
+  ELSE
+    LET S1 == S :=_column    0
+		:=_left	     <>
+		:=_penalty   inipen
+		:=_right     <>
+		:=_previous  (right(S) ++ left(S)) :: previous(S)
+		:=_space?    true
+		:=_break?    false	
+    IN
+    flatten( S1, F )
+  FI
+      
+
+DEF flatten( S, ->| :: F ) ==
+  -- map tabulator to single spaces
+  LET C == column(S)
+  IN
+  flatten( S, (<~> x (((C+tab)/tab)*tab)-C) :: F )
+
+DEF flatten( S, ->!(N) :: F ) ==
+  -- map to blanks if possible
+  IF N <= margin(S)  and  column(S) < ((N max 1) pred) THEN
+    flatten( S, (<~> x (N pred) - column(S)) :: F )
+  ELSE
+    flatten( S, F)
+  FI
+
+DEF flatten( S, (_ x 0) :: F ) ==
+  -- zero times some item is empty output
+  flatten( S, F )
+
+DEF flatten( S, (O x T) :: F ) ==
+  -- process item once and decrease factor
+  flatten( S, O :: (O x (T pred)) :: F )  
+
+DEF flatten( S, (Str !!) :: F ) ==
+  LET
+    EscS == escape(Str)
+    SLen == #(EscS)
+    NC	 == column(S) + SLen
+  IN
+    IF NC > margin(S)  and  penalty(S) |= inipen THEN
+      -- string does not fit in line and is not the first to be output
+      LET S1 == S :=_column    0
+		  :=_left      <>
+		  :=_penalty   inipen
+		  :=_right     <>
+		  :=_previous  left(S) :: previous(S)
+		  :=_space?    true
+		  :=_break?    true
+      IN
+      flatten( S1, right(S) prepend ((Str !!) :: F) )
+    ELSE
+      -- string fits in line or is the first to be output
+      LET
+	GLev	== IF glues(S) <>? THEN 1 ELSE ft(glues(S)) FI
+	WhS?	== IF EscS <>? THEN space?(S) ELSE last(EscS) whitespace? FI
+	(NB,IC) == IF penalty(S) = inipen THEN
+		     LET Ind == mkIndent(indent(S)) 
+		     IN 
+		     (Ind :: left(S), NC + #(Ind))
+		   ELSE
+		     (left(S), NC)
+		   FI
+	NP	== (((((margin(S) - (IC min margin(S))) max 1) * 100) 
+				/ margin(S) ) 
+					* GLev) min maxpen
+      IN
+	IF NP <= penalty(S) THEN 
+		-- FIXME: unexpected interleaving with <| ... |>??
+	  -- it is better to break the line here
+	  LET S1 == S :=_column	   IC
+		      :=_left	   EscS :: (right(S) ++ NB)
+		      :=_penalty   NP
+		      :=_right	   <>
+		      :=_space?	   WhS?
+		      :=_break?	   false
+	  IN
+	  flatten( S1, F )
+	ELSE
+	  -- it is worse to break the line here
+	  LET S1 == S :=_column	   IC
+		      :=_left	   NB
+		      :=_right	   EscS :: right(S)
+		      :=_space?	   WhS?
+		      :=_break?	   false
+	  IN
+	  flatten( S1, F )
+	FI
+    FI
+
+DEF flatten( S, Fmt1 .. Fmt2 :: F ) ==
+  -- decompose concat
+  flatten( S, Fmt1 :: Fmt2 :: F)
+
+DEF flatten( S, >.(L) :: F ) ==
+  -- increase glue level
+  LET G == IF ::?(glues(S)) THEN
+	       (ft(glues(S))+(L min maxglue)) min maxglue
+	   ELSE (1+(L min maxglue)) min maxglue	 FI
+      S1 == S :=_glues G :: glues(S)
+  IN
+  flatten( S1, F )
+
+DEF flatten( S, .< :: F ) ==
+  -- decrease glue level
+  LET S1 == IF <>?(glues(S)) THEN
+		-- glue level cannot be decreased, ignore
+		S
+	    ELSE
+		S :=_glues rt(glues(S))
+	    FI
+  IN
+  flatten( S1, F )
+
+DEF flatten( S, -|(N) :: F ) ==
+    IF <>?(indent(S)) THEN
+      -- indentation cannot be popped, ignore
+      flatten( S, F )
+    ELSE
+      -- pop exactly so many characters from indentation
+      LET IL == #(ft(indent(S)))
+      IN
+      IF IL = N THEN
+	-- pop exactly the last indentation
+	flatten( S :=_indent rt(indent(S)), F)
+      IF IL > N THEN
+	-- pop a part of the last indentation
+	flatten( S :=_indent ((IL-N) take ft(indent(S)))::rt(indent(S)), F )
+      IF IL < N THEN
+	-- pop the last indentation and more
+	flatten( S :=_indent rt(indent(S)), -|(N - IL) :: F )
+      FI
+    FI
+
+DEF flatten( S, |.(O) :: F ) ==
+  -- add one indentation, ignore anything after and inclusive newline
+  LET
+    InLen == #(mkIndent(indent(S)))
+    Lines == flatten( initialState :=_column InLen,
+		      O :: <> )
+    Ind	  == IF Lines <>? THEN <> ELSE ft(Lines) FI
+  IN
+    flatten( S :=_indent Ind :: indent(S), F )
+
+DEF flatten( S, .| :: F ) ==
+  -- pop one indentation
+  IF ::?(indent(S)) THEN
+      flatten( S :=_indent rt(indent(S)), F )
+  ELSE
+      flatten( S, F )
+  FI
+
+DEF flatten( S, (O |!) :: F ) ==
+  -- add column indentation for object
+  flatten( S, |.(->!(column(S) succ)) :: O :: .| :: F )
+
+
+/* %
+These functions generate the correct indentation as a single string.
+*/
+FUN mkIndent: seq[string] -> string
+DEF mkIndent( Inds ) == mkIndent( Inds, <> )
+
+FUN mkIndent: seq[string] ** string -> string
+DEF mkIndent( <>,	   A ) == A
+DEF mkIndent( Ind :: Rest, A ) == mkIndent( Rest, Ind ++ A )
+
+/* %
+This function adds indentation to a line represented as a sequence of strings.
+*/
+
+FUN doIndent : nat -> seq[string] -> seq[string]
+
+DEF doIndent(N)(SS) ==
+    SS +% !(init(N, blank))
+
+/* %
+This function calculates the length of a line represented as a sequence of 
+strings.
+*/
+
+FUN leng: seq[string] -> nat
+
+DEF leng(SS) ==
+    (\\S, L. #(S) + L, 0) \ SS
+
+
+/* %
+These functions generate the correct sequence of strings from a
+sequence of sequence of strings where everything is reverted.
+*/
+FUN format: seq[seq[string]] -> seq[string]
+DEF format( Lines ) == format( Lines, <> )
+
+FUN format: seq[seq[string]] ** seq[string] -> seq[string]
+DEF format( <> :seq[seq], A ) == A
+DEF format( Line :: Rest, A ) == format( Rest, format(Line, <>) :: A )
+
+FUN format: seq[string] ** string -> string
+DEF format( <> :seq,	 A ) == A :string
+DEF format( Str :: Rest, A ) == format( Rest, format(Str, A) )
+
+FUN format: string ** string -> string
+DEF format( <> :string,	  A ) == A
+DEF format( Char :: Rest, A ) == Char :: format( Rest, A )
+
+
+/* %
+This function prepends strings in reverse order to formats.
+*/
+FUN prepend: seq[string] ** seq[fmt] -> seq[fmt]
+DEF <>	   prepend F == F
+DEF (S::R) prepend F == R prepend ((S !!) :: F)
+
+
+/* %
+This function escapes a given string.
+*/
+FUN escape: string -> string
+DEF escape(<>) == <>
+DEF escape(Char :: Rest) ==
+  LET NChar == IF Char printable? THEN Char ELSE blank FI
+  IN
+    NChar :: escape(Rest)
+
+
+/* %
+These functions lift newlines and tabs in the given string to the
+pretty printing level so they will be dealt with.
+*/
+FUN linenize: string -> fmt
+DEF linenize( Str ) == ..*(linenize( <>, Str ))
+
+FUN linenize: string ** string -> seq[fmt]
+DEF linenize( A, <> ) == ((A revert)!!) :: <>
+DEF linenize( A, C :: R ) ==
+  IF C = tab	 THEN ((A revert)!!) :: ->|  :: linenize(<>, R)
+  IF C = newline THEN ((A revert)!!) :: |<<- :: linenize(<>, R)
+		 ELSE linenize(C :: A, R) FI
+
+/* %
+These functions lift white space in the given string to the pretty printing
+level so floating text may be formatted nicely.
+*/
+FUN tokenize: string -> fmt
+DEF tokenize( Str ) == <_> ..|..* tokenize( false, <>, Str )
+
+FUN tokenize: bool ** string ** string -> seq[fmt]
+DEF tokenize( _,     A, <> ) == ((A revert)!!) :: <>
+DEF tokenize( true,  A, C :: R ) ==
+  IF C whitespace? THEN ((A revert)!!) :: tokenize(false, <>, R)
+		   ELSE tokenize(true, C :: A, R) FI
+DEF tokenize( false, _, C :: R ) ==
+  IF C whitespace? THEN tokenize(false, <>, R)
+		   ELSE tokenize(true, <>, C :: R) FI
+
+  
+/* %
+This function makes a single string from a sequence of strings.
+*/
+FUN unify: seq[string] -> string
+DEF unify(<>)	       == <>
+DEF unify(Str :: <>)   == Str
+DEF unify(Str :: Rest) == Str ++ (newline :: unify(Rest))
+
+/* %
+These function provide the general entry points.
+*/
+DEF pretty( Ind, Cols, Fmt ) ==
+  LET S == initialState :=_margin (Cols min maxcol) max 1
+  IN
+  flatten( S, |.(Ind) :: Fmt :: .| :: <> )
+
+DEF pretty( Spc, Cols, Fmt ) ==
+  LET S == initialState :=_margin (Cols min maxcol) max 1
+  IN
+  flatten( S, |.(<~> x pred(Spc max 1)) :: Fmt :: .| :: <> )
+
+DEF pretty( Ind :fmt, Cols, Fmt ) ==
+  pretty( Ind, Cols, Fmt ) unify
+
+DEF pretty( Spc :nat, Cols, Fmt ) ==
+  pretty( Spc, Cols, Fmt ) unify
+
+DEF pretty( Fmt ) ==
+  pretty( <>, !("75"), Fmt )
+
+DEF pretty( Fmt ) ==
+  pretty( Fmt ) `
+
+
+/* %
+Implementation constants.
+
+maxcol is the maximal output width. If the user specifies a higher value,
+it is lowered. This limit exists due to arithmetic constraints.
+
+tab is the hardwired tabbing space.
+
+inipen is the initial line break penalty value, also uesed when a new line
+is required by the format.
+
+maxpen is the upper bound for the penalty value.
+
+maxglue is the upper bound for the glue factor.
+
+minblockcol is the minimal column where block-oriented flatting is
+performed.
+
+minblockind is the minimal space where block-oriented indentation
+is performed.
+
+*/
+FUN maxcol tab inipen maxpen maxglue minblockcol minblockind: nat
+
+DEF maxcol  == 100 + 100 + (100/2)
+DEF tab	    == 8
+DEF inipen  == 100 + 100
+DEF maxpen  == 100
+DEF maxglue == 100
+
+DEF minblockcol == 2
+DEF minblockind == 10

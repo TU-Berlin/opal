@@ -1,0 +1,269 @@
+/* % This structure defines the terms of the abstract syntax of OPAL
+in the repository. */
+
+SIGNATURE RepoAbsy
+
+IMPORT	Seq[fct]		ONLY seq
+	Seq[eqn]		ONLY seq
+	Seq[objectName]		ONLY seq
+	Seq[pragmaComp]		ONLY seq
+	Seq[guard]		ONLY seq
+	Seq[expr]		ONLY seq
+	Seq[component]		ONLY seq
+	Seq[variant]		ONLY seq
+	Seq[formula]		ONLY seq
+	Option[expr]		ONLY option
+	Option[denotation]	ONLY option
+	Set[propertyName,<]	ONLY set
+	Set[itemName,<]		ONLY set
+	Fmt			ONLY fmt:SORT
+
+IMPORT	RepoAn			ONLY an:SORT
+	RepoName		ONLY objectName:SORT
+				     itemName:SORT
+				     < : itemName ** itemName -> bool
+				     propertyName:SORT
+				     < : propertyName ** propertyName -> bool
+				     localSignName:SORT
+				      
+	
+
+
+
+-- %$Pragmas$ =============================================================
+
+/* % Pragmas are defined by the types below: */
+
+TYPE pragma ==
+	pragma		(an		: an,
+			 comps		: seq[pragmaComp])
+	-- special variant for internal purposes
+	removed	   
+
+     FUN fmtPragma	: pragma			-> fmt
+
+
+TYPE pragmaComp ==
+	token		(text		: denotation)
+	objects		(objects	: seq[objectName])
+
+     FUN fmtPragmaComp	: pragmaComp			-> fmt
+
+			 
+-- %$Properties$ ===========================================================
+
+/* % Properties are defined by the types below: */
+
+TYPE property ==
+	freeType	(an		: an,
+			 sort		: objectName,
+					  -- sort associated with free type
+			 variants	: seq[variant])
+					  -- variants of free type
+	law		(an		: an,
+			 symbol		: option[denotation],
+					 -- symbolic identifier of law 
+			 formula	: formula)
+	-- special variant for internal purposes
+	removed	   
+
+	FUN :=_an	: property ** an	       -> property
+	FUN fmtProperty : property		       -> fmt
+
+TYPE formula ==
+	atomic		(an		: an,
+			 kind		: atomicKind,
+			 exprs		: seq[expr])
+	connect		(an		: an,
+			 kind		: connectKind,
+			 formulas	: seq[formula])
+	quant		(an		: an,
+			 kind		: quantKind,
+			 sign		: localSignName,
+					  -- signature of local variables
+			 vars		: seq[objectName],
+			 range		: formula)
+
+     FUN :=_an		: formula ** an			-> formula
+     FUN fmtFormula	: formula			-> fmt
+
+
+TYPE atomicKind	   == dfd approx cong other(id: denotation)
+TYPE connectKind   == neg conj disj impl equiv other(id: denotation)
+TYPE quantKind	   == forall exist other(id: denotation)
+
+     FUN fmtAtomicKind	: atomicKind			 -> fmt
+     FUN fmtConnectKind : connectKind			 -> fmt
+     FUN fmtQuantKind	: quantKind			 -> fmt
+
+
+			
+-- %$Objects$ =============================================================
+
+/* % Objects are defined by the types below: */
+
+TYPE object == 
+	object		(an		: an,
+			 symbol		: denotation,
+					-- symbolic identifier
+			 kind		: kind,
+					-- kind 
+			 impl		: impl,
+					-- implementation
+			 properties	: set[propertyName,<],
+					-- base names of related properties 
+			 items		: set[itemName,<])
+					-- base names of related items
+	-- special variant for internal purposes
+	removed	   
+
+     FUN :=_an		: object ** an			-> object
+     FUN :=_symbol	: object ** denotation		-> object
+     FUN :=_kind	: object ** kind		-> object
+     FUN :=_impl	: object ** impl		-> object
+     FUN :=_properties	: object ** set[propertyName,<] -> object
+     FUN :=_items	: object ** set[itemName,<]	-> object
+     FUN fmtObject	: object			-> fmt
+
+
+TYPE kind == 
+	sort
+	oper		(fct		: fct)
+
+     FUN =		: kind ** kind			-> bool
+     FUN fmtKind	: kind				-> fmt
+	
+
+TYPE impl == 
+	missing		(an		: an)
+					-- missing implementation 
+	hidden		(an		: an)
+					-- implementation may exists but 
+					-- not visible here
+	variable	(an		: an)
+					-- variable
+	parameter	(an		: an)
+					-- parameter 
+	induced		(an		: an,
+			 sort		: objectName,
+			 kind		: inducedKind)
+					-- induced implementation
+					-- from given sortName
+	data		(an		: an,
+			 variants	: seq[variant])
+				       -- data definition with variants
+	def		(an		: an,
+			 eqns		: seq[eqn])
+					-- function definition
+
+
+     FUN :=_an		: impl ** an			-> impl
+     FUN fmtImpl	: impl				-> fmt
+
+TYPE inducedKind ==
+	constructor selector test other(id: denotation)
+
+     FUN fmtInducedKind : inducedKind			-> fmt
+
+
+TYPE variant == 
+	variant		(an		: an,
+			 constructor	: objectName,
+					-- constructor function
+			 test		: objectName,
+					-- test function
+			 components	: seq[component])
+					-- components
+
+     FUN :=_an		: variant ** an			-> variant
+     FUN fmtVariant	: variant			-> fmt
+
+
+TYPE component == 
+	component	(an		: an,
+			 selector	: objectName)
+					-- base name of selector
+
+     FUN :=_an		: component ** an		-> component
+     FUN fmtComponent	: component			-> fmt
+
+				
+TYPE eqn == 
+	eqn		(an		: an,
+			 sign		: localSignName,
+					-- env of local pattern variables
+			 lhs		: expr,
+					-- original pattern (represented 
+					-- as expr)
+			 patterns	: seq[expr], 
+					-- minimal complete set of
+					-- perfect-fit patterns
+			 rhs		: expr) 
+					-- rhs of expression
+
+     FUN :=_an		: eqn ** an			-> eqn
+     FUN fmtEqn		: eqn				-> fmt
+
+
+-- %$Expressions$ =======================================================
+
+TYPE expr == 
+	name		(an		: an,
+			 oper		: objectName)
+	apply		(an		: an,
+			 funct		: expr,
+			 arg		: expr)
+	tuple		(an		: an,
+			 elems		: seq[expr])
+
+	-- for right hand side expressions only:
+	den		(an		: an,
+			 text		: denotation)
+	cases		(an		: an,
+			 guards		: seq[guard], 
+			 else		: option[expr])
+	lambda		(an		: an,
+			 sign		: localSignName,
+					-- env of local abstraction variables
+			 vars		: seq[objectName],
+			 body		: expr)
+	let		(an		: an,
+			 eqns		: seq[eqn],
+			 body		: expr)
+
+	-- for patterns only:
+	as		(an		: an,
+			 var		: objectName,
+					-- always a local name and member of
+					-- eqn-env
+			 expr		: expr)
+	any		(an		: an)
+					-- wildcard
+
+
+     FUN :=_an		: expr ** an		-> expr
+     FUN fmtExpr	: expr			-> fmt
+
+
+TYPE guard == 
+	guard		(an		: an,
+			 if		: expr, 
+			 then		: expr)
+
+     FUN :=_an		: guard ** an		-> guard
+     FUN fmtGuard	: guard			-> fmt
+
+
+-- %$Functionalities$ ======================================================
+
+TYPE fct == 
+	name		(sort		: objectName)
+	cart		(elems		: seq[fct])
+	funct		(dom		: fct, 
+			 codom		: fct)
+
+     FUN =		: fct ** fct		-> bool
+     FUN fmtFct		: fct			-> fmt
+
+
+

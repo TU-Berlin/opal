@@ -1,0 +1,89 @@
+SIGNATURE DbConvEnv
+
+IMPORT	RepoInternData	ONLY repo:SORT
+	DbIdentTable	ONLY identTable:SORT
+	DbNameStack	ONLY nameStack:SORT
+	Expression	ONLY tpos:SORT bindOffset:SORT expr:SORT
+	RepoAn		ONLY an:SORT
+	RepoAbsy	ONLY objectName:SORT 
+	Nat		ONLY nat:SORT
+	Option[nameStack] ONLY	option:SORT
+
+
+-- %$Defintion des Environments$
+-- %----------------------------
+/* % 
+ @code{env} ist ein Datum, das die wesentlichen Daten zur Analyse
+zusammenfaßt. 
+ */
+SORT env
+
+/* %
+ Ein Environment kann aus einem Repository und einer IdentTable konstruiert
+werden.
+ */
+FUN init :	   repo ** identTable			-> env
+
+/* %
+ @code{initForQuery} bietet ein Environment an, das bei Verwendung in der
+Transformation @code{impl2expr'Impl2expr} den Kontext der Termposition
+@code{tpos} ausrechnet (siehe unten).
+ */
+FUN initForQuery : repo ** identTable ** tpos		-> env
+
+-- %$Kontext-Information$
+-- %---------------------
+
+/* %
+ @code{context?} liefert den Kontext des Environments. Der Kontext enthält nach
+einer Transformation durch @code{impl2expr'Impl2expr} den NameStack aller
+lokalen Variablen, die bis zu der Termposition @code{tpos(termId,nat)}, die bei
+@code{initForQuery} angegeben wurde, auf den Stack gelegt wurden. (@code{nil}
+wenn nichts gefunden wurde.}
+ */
+FUN context?	  : env				-> option[nameStack]
+
+-- %$Interne Zugriffsfunktionen$
+-- %----------------------------
+
+-- %$$$Allgemeine Selektoren$
+-- %-------------------------
+FUN repo	  : env				-> repo
+FUN identTable	  : env				-> identTable
+FUN nameStack	  : env				-> nameStack
+-- FUN tpos	  : env				-> tpos
+FUN actBindOffset : env				-> bindOffset
+
+-- %$$$Update der Termposition und des Kontextes$
+-- %---------------------------------------------
+/* %
+ @code{@@} klebt an eine Expression die aktuelle Position aus dem Environment
+und überprüft gleichzeitig, ob diese Position gleich der gesuchten Termposition
+ist. Wenn ja, wird im resultierenden Environment der aktuelle NameStack als
+Kontext eingetragen und das aktuelle Absy-Argument annotiert (siehe
+@code{ContextLayer}). @code{@@} zählt außerdem die aktuelle Termposition des
+Environments weiter.
+ */
+FUN pushAn	  : env ** an			-> env
+FUN popAn	  : env				-> env ** an
+
+FUN @ : env ** (tpos -> expr'Expression)	-> env ** expr'Expression
+FUN @ : env ** (tpos -> expr'Expression) ** an	-> env ** expr'Expression ** an
+-- "E @ (MkExpr,An) === ((E pushAn An) @ MkExpr) popAn"
+
+
+-- %$$$BindingOffset und NameStack$
+-- %-------------------------------
+FUN actBindOffset : env				-> bindOffset
+
+/* %
+ @{pushItem} legt ein neues BindItem (siehe Struktur @code{Expression}) an. Mit
+@code{push} kann ein Objekt-Name in das oberste BindItem gepusht werden.
+  */
+FUN :=_nameStack  : env ** nameStack		-> env
+FUN pushItem	  : env				-> env
+FUN popItem	  : env				-> env
+FUN push	  : env ** objectName		-> env
+
+
+

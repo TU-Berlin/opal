@@ -1,0 +1,172 @@
+
+IMPLEMENTATION GenEvalMethod
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:49 $ ($Revision: 1.1.1.1 $)
+
+-- subject: Generate closure evaluation methods 
+-- project: ac/gen
+-- author:  wg
+
+IMPORT	Nat		COMPLETELY
+	Triple		COMPLETELY
+	Seq		COMPLETELY
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqZip		COMPLETELY
+
+IMPORT	BoxedText	COMPLETELY
+	Store 		ONLY store:SORT someClos some
+	Macros		COMPLETELY
+
+-- -----------------------------------------------------------------------
+FUN genEvalMethod : popts ** triple[nat,nat,nat] -> box
+DEF genEvalMethod(Opts,&(R,M,N)) ==
+    IF (M + N) < R THEN
+	genUnderfullMethod(R,M,N)
+    IF (M + N) > R THEN
+	genOverfullMethod(R,M,N)
+    ELSE
+	genFullMethod(R,M,N)
+    FI
+
+
+FUN genUnderfullMethod : nat ** nat ** nat -> box
+DEF genUnderfullMethod(R,M,N) ==
+    cProc("",false,false,cMethodName(R,M,N),c::as,1,body)
+      WHERE
+	c         == cTmp(0)
+	as	  == cTmp * ((1 .. N)(\\X.X))
+        body 	  == cBlock(<>,alloc::(next::extend))
+
+	alloc	  == IF M = 0 THEN
+			 -- never exclusive
+			 copyClos
+		     ELSE
+			 cIte(cExclClos(c),reuseClos,copyClos)
+		     FI
+
+	reuseClos == cAssign(c,cResult)
+
+	copyClos  == cBlock(<>,cDupClos(c,cResult)::(assigns++copys))
+	assigns   == zip(cAssign)(srcFields,dstFields)
+	copys	  == cCopy1 * dstFields
+        srcFields == (c cClosField _)*indices
+	dstFields == (cResult cClosField _)*indices
+	indices	  == (1 .. M)(\\X.X)
+
+	next	  == cIncrClos(cResult,M,N)
+
+	extend	  == zip(cAssign)(as,(cResult cClosField _)
+				       * ((succ(M) .. (M + #(as)))(\\X.X)))
+
+FUN genOverfullMethod : nat ** nat ** nat -> box
+DEF genOverfullMethod(R,M,N) ==
+    cProc("",false,false,cMethodName(R,M,N),c::as,1,body)
+      WHERE
+	c 	== cTmp(0)
+	as	== cTmp * ((1 .. N)(\\X.X))
+
+	body	== cBlock(%(cDec(cType(someClos),t)),%(free,call,eval))
+	
+	free    == IF M = 0 THEN
+		       -- special case: never exclusive, but
+		       -- no closured arguments
+		       lines(%(cDecr(c,someClos,1)))
+		   ELSE
+		       cIte(cExclClos(c),lines(exclCase),lines(sharCase))
+		       WHERE
+		 	exclCase == %(cDisposeFlat(c,someClos))
+			sharCase == (cCopy1 * cas) ++ %(cDecr(c,someClos,1))
+		   FI
+
+   	call    == cAssign(cCallMethod(c,cas++as1,1),t)
+	eval	== cAssign(cEval(t,as2,1),cResult)
+
+	t	== cTmp(succ(N))
+	cas	== (c cClosField _) * ((1 .. M)(\\X.X))
+	as1	== take(R-M,as)
+	as2	== drop(R-M,as)
+
+
+FUN genFullMethod : nat ** nat ** nat -> box
+DEF genFullMethod(r,m,n) ==
+    IF n = 1 THEN
+       lines(%(genPlainFullMethod(r,m,n),genLazyFullMethod(r,m,n)))
+    ELSE
+       genPlainFullMethod(r,m,n)
+    FI
+
+FUN genPlainFullMethod : nat ** nat ** nat -> box
+DEF genPlainFullMethod(r,m,n) ==
+    cProc("",false,false,cMethodName(r,m,n),c::as,1,body)
+      WHERE
+	c 	== cTmp(0)
+	as	== cTmp * ((1 .. n)(\\X.X))
+	
+	body	== IF m = 0 THEN
+		       -- special case: never exclusive,
+		       -- no closured arguments
+		       lines(%(cDecr(c,someClos,1),call))
+		   ELSE
+		       lines(%(cIte(cExclClos(c),
+				    lines(exclCase),lines(sharCase)),
+			       call))
+		       WHERE
+		 	exclCase == %(cDisposeFlat(c,someClos))
+			sharCase == (cCopy1 * cas) 
+			         ++ %(cDecr(c,someClos,1))
+		   FI
+
+	call    == cAssign(cCallMethod(c,cas++as,1),cResult)
+	cas	== (c cClosField _) * ((1 .. m)(\\X.X))
+
+FUN genLazyFullMethod : nat ** nat ** nat -> box
+DEF genLazyFullMethod(r,m,n) ==
+    cProc("",false,false,words(%(cMethodName(r,m,n),cLazySuffix)),
+				    c::as,1,body)
+      WHERE
+	c 	== cTmp(0)
+	as	== cTmp * ((1 .. n)(\\X.X))
+	
+	body	== IF m = 0 THEN
+		       -- special case: never exclusive,
+		       -- no closured arguments
+		       lines(%(decr,call,update))
+		   ELSE
+		       lines(%(call,cIte(cExclClos(c),
+				    lines(exclCase),lines(sharCase))))
+		       WHERE
+		 	exclCase == %(cDisposeFlat(c,someClos))
+			sharCase == %(decr,clear,update)
+		   FI
+	
+	decr	== cDecr(c,someClos,1)
+	call    == cAssign(cCallMethod(c,cas++as,1),cResult)
+	clear	== words((\\ca. cAssign(cNil,ca)) * cas)
+	update	== words(%(cCopy(cResult,some,1),cLazyMethod(c,cResult)))
+
+	cas	== (c cClosField _) * ((1 .. m)(\\X.X))
+      
+
+FUN cCopy1 : box -> box
+DEF cCopy1(b) == cCopy(b,some,1)
+
+
+-- -----------------------------------------------------------------------
+
+
+FUN genEvalMethodTabInit : popts ** triple[nat,nat,nat] -> box
+DEF genEvalMethodTabInit(Opts,&(R,M,N)) ==
+  LET NormalMethod == cMethodName(R,M,N)
+      LazyMethod   == IF ((M+N) = R) and (N = 1) THEN
+			words(%(NormalMethod,cLazySuffix))
+		      ELSE NormalMethod FI
+  IN
+  words(%(cInitMethod(R,M,N,NormalMethod),cInitLazyMethod(R,M,N,LazyMethod)))
+
+
+
+

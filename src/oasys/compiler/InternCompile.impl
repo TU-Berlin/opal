@@ -1,0 +1,575 @@
+IMPLEMENTATION InternCompile
+
+IMPORT  Nat                     COMPLETELY
+        Int                     COMPLETELY
+        Char                    COMPLETELY
+        String                  COMPLETELY
+        StringConv              COMPLETELY
+        Pair                    COMPLETELY
+        Seq                     COMPLETELY
+        SeqMap                  COMPLETELY
+        SeqReduce               COMPLETELY
+        Set                     COMPLETELY
+        SetConv                 COMPLETELY
+        SetFilter               COMPLETELY
+        SetReduce               COMPLETELY
+        Denotation              COMPLETELY
+        FileName                COMPLETELY
+        Void                    COMPLETELY
+        Option                  COMPLETELY
+
+IMPORT  Com                     COMPLETELY
+        ComCompose              COMPLETELY
+        ComPairCompose          COMPLETELY
+        File                    COMPLETELY
+        FileName                COMPLETELY
+        Stream                  COMPLETELY
+        ProcessCtrl             COMPLETELY
+        FileSystem              COMPLETELY
+        Wait                    COMPLETELY
+        Signal                  COMPLETELY
+        ProcessArgs             COMPLETELY
+        ProcessComInterrupt     COMPLETELY
+        UnixFailures            COMPLETELY
+
+        
+IMPORT  -- oc admin
+        Options                 COMPLETELY
+        Error                   COMPLETELY
+        Pos                     COMPLETELY
+
+IMPORT  -- oc1
+        RepTab                  ONLY repTab
+        Token                   ONLY token:SORT
+        Struct                  ONLY struct 
+        Scanner                 ONLY scan
+        Parser                  ONLY parseSign parseImpl parseIntp parseExtp 
+        GlobSig                 ONLY globSig
+        SigAna                  ONLY sigAna
+        ImplementationAnalysis  ONLY implAna
+        PatternAnalysis         ONLY pattAna
+        InterOpalGeneration     ONLY dumpInterOpal gen
+        Translation             ONLY trans
+        InterOpal               COMPLETELY
+
+IMPORT  -- oc2
+        PreparedOptions         ONLY popts prepareOptions options
+        Ac                      ONLY unit:SORT
+        AcIO                    ONLY readUnit
+        Ic                      ONLY mod:SORT
+        Optimize                ONLY optimize
+        Translate               ONLY translate
+        Generate                ONLY generate
+
+IMPORT  -- oasys
+	RepoDiag                COMPLETELY
+        RepoName                COMPLETELY
+        RepoAdmin               COMPLETELY
+        RepoSource              COMPLETELY
+        RepoGlobalAccess        COMPLETELY
+        RepoUnitAccess          COMPLETELY
+        RepoInternData          COMPLETELY
+        RepoEvent               COMPLETELY
+	InternExec		COMPLETELY
+
+
+IMPORT  DEBUG                   COMPLETELY
+        RepoNameConv            COMPLETELY
+        ComSeqReduce            COMPLETELY
+
+FUN traceCompile : bool
+DEF traceCompile == FIELD?[bool]("-ztraceCompile")
+
+FUN diagFile : bool
+DEF diagFile == FIELD?[bool]("-zdiagFile")
+
+FUN dontEvalAll : bool
+DEF dontEvalAll == FIELD?[bool]("-zoldOc2")
+
+
+-- %$Checking Entire Units$ =================================================
+
+DEF checkUnit(U)(R) ==
+    LET Deps == related(direct, imports)(U)(R) 
+                        + lookup(%("BOOL", "DENOTATION"), sign)(R)
+    IN
+    /*
+    (\\D, _ . writeLine'File(stdErr, asDeno(symbolic)(D)(R)), nil)
+                        /& asSeq(Deps)          & (\\ _ .
+    */
+    makeCheckOptions(U, Deps)(R)                & (\\ Opts .
+    breakOnInterrupt(
+       checkUnit1(U, Deps, Opts)(R)
+    )                                           ; (\\ Ans .
+    makeDiags(Opts, U, 
+              \\ Loc. unitRef(Loc, U),
+              IF fail?(Ans) THEN error(Ans)
+                            ELSE "" FI)         & (\\ Diag .
+    succeed(Diag & R)
+    )))
+
+FUN checkUnit1 : unitName ** set[unitName,<] ** options -> repo -> com[void]
+DEF checkUnit1(Name, Deps, Opts)(R) ==
+    scan(Opts)                                  & (\\ Tokens .
+    (IF sign?(part(Name)) THEN
+        parseSign(Opts)(Tokens)                     
+     ELSE
+        parseImpl(Opts)(Tokens)
+     FI)                                        & (\\ StructAndTab .
+    sigAna(Opts)(StructAndTab)                  & (\\ SignGlobSig .
+    implAna(Opts,1st(StructAndTab))
+           (SignGlobSig)                        & (\\ ImplGlobSig .
+    pattAna(Opts)(ImplGlobSig)                  & (\\ PattGlobSig .
+    dumpInterOpal(Opts)(PattGlobSig)            & (\\ _ .
+    IF impl?(part(Name)) THEN
+        trans(Opts)(PattGlobSig)
+    ELSE
+        succeed(nil)
+    FI
+    ))))))
+
+
+
+-- %$Checking Unit Extensions$ =============================================
+
+FUN extendUnit : unitName ** denotation ** set[unitName,<]
+                                        -> repo 
+                                        -> com[pair[extendResult,repo]]
+
+DATA extendResult ==
+        failure (diag           : diag'RepoDiag)
+        success (diag           : diag'RepoDiag,
+                 absy           : interOpal)
+
+DEF extendUnit(U, Text, Deps)(R) ==
+    makeExtendOptions(U, Deps +
+                         lookup(%("BOOL", "DENOTATION"),sign)(R))(R) &(\\ Opts.
+    breakOnInterrupt(
+        extendUnit1(U, Text, Deps, Opts)(R)
+    )                                           ; (\\ Ans .
+    makeDiags(Opts, U, \\ Loc. textRef(Loc),
+                 IF fail?(Ans) THEN error(Ans)
+                               ELSE "" FI)      & (\\ Diag .
+    LET TransDiag == transDiag(trans, Diag)
+    IN
+    IF ok?(TransDiag) THEN
+        succeed(success(TransDiag, data(Ans)) & R)
+    ELSE
+        succeed(failure(TransDiag) & R)
+    FI
+    )))
+
+    FUN trans : diag'RepoDiag -> option[diag'RepoDiag]
+    DEF trans(Diag) ==
+        LET Msg == msg(Diag)
+        IN
+        IF #(Msg) > #(notImplemented) ANDIF
+           slice(Msg, #(Msg) - #(notImplemented), #(Msg) - 1) 
+                        = notImplemented THEN
+            nil
+        ELSE
+            LET Ref == ref(Diag)
+            IN
+            IF textRef?(Ref) 
+                   ANDIF locator(Ref) in region(pos(0,0), pos(1,!("200"))) THEN
+                nil
+            ELSE
+                avail(shift(!("-1"), 0)(Diag))
+            FI
+        FI
+
+    FUN notImplemented : denotation
+    DEF notImplemented == "is not implemented"
+        
+
+FUN extendUnit1 : unitName ** denotation ** set[unitName,<] 
+                        ** options -> repo -> com[interOpal]
+DEF extendUnit1(Name, Text, Deps, Opts)(R) ==
+    LET Struct0 == "IMPLEMENTATION " ++ symbol(Name)(R) ++ "\n" ++ Text
+        Struct  == PRINT(traceCompile,
+                         \\ . "Extend:\n" ++ Struct0,
+                         Struct0)
+    IN
+    scan(Opts, !(Struct))                       & (\\ Tokens .
+    parseImpl(Opts)(Tokens)                     & (\\ StructAndTab .
+    sigAna(Opts)(StructAndTab)                  & (\\ SignGlobSig .
+    implAna(Opts,1st(StructAndTab))
+           (SignGlobSig)                        & (\\ ImplGlobSig .
+    pattAna(Opts)(ImplGlobSig)                  & (\\ PattGlobSig .
+    LET IO == gen(Opts)(PattGlobSig)
+    IN
+    -- patch part of IO according to part of Name
+    LET IO1 == IF sign?(part(Name)) THEN
+                   interOpal(signature, structs(IO))
+               ELSE
+                   interOpal(implementation, structs(IO))
+               FI
+    IN
+    succeed(IO1)
+    )))))
+
+        
+-- %$Compiling Units$ ===================================================
+
+DEF compileUnit(U)(R) ==
+    LET Deps == related(direct, implImports, \\UI. library?(UI)(R) 
+                                                        or released?(UI)(R))
+                       (U)(R) 
+                   + lookup(%("BOOL", "DENOTATION"), sign)(R)
+    IN
+    makeCompileOptions(U, Deps)(R)              & (\\ Opts .
+    breakOnInterrupt(
+       compileUnit1(U, Deps, Opts)(R)   
+    )                                           ; (\\ Ans .
+    makeDiags(Opts, U, 
+              \\Loc. unitRef(Loc, U),
+              IF fail?(Ans) THEN error(Ans)
+                            ELSE "" FI)         & (\\ Diag .
+    IF ok?(Diag) THEN
+        LET R1 == updateUnitInfo(U, 
+                    \\ Info . Info :=_objectVersion succ(objectVersion(Info))
+                  )(R)
+        IN
+        codeUnit(U)(R1)                             & (\\ Diag1, R2 .
+        IF ok?(Diag1) THEN
+            LET R3 == updateUnitInfo(U,
+                        \\Info. Info :=_state compiled
+                      )(R2)
+            IN
+            event(newObject(U))(R3)                     & (\\ R4 .
+            succeed(Diag <+ Diag1 & R4)
+            )
+        ELSE
+            LET R3 == updateUnitInfo(U,
+                        \\Info. Info :=_objectVersion pred(objectVersion(Info))
+                      )(R2)
+            IN
+            succeed(Diag <+ Diag1 & R3)
+        FI
+        )
+    ELSE
+        succeed(Diag & R)
+    FI
+    )))
+
+FUN compileUnit1 : unitName ** set[unitName,<] ** options -> repo -> com[void]
+DEF compileUnit1(Name, Deps, DraftOpts)(R) ==
+    LET Opts == prepareOptions(DraftOpts)
+    IN
+    readUnit(options(Opts), myAnaFile(options(Opts)))   & (\\ AnaUnit? .
+    IF avail?(AnaUnit?) THEN
+        optimize(Opts)(cont(AnaUnit?))                  & (\\ OptUnit_+_Err.
+        failOnError(Opts,2nd(OptUnit_+_Err))            & (\\ _ .
+        translate(Opts)(1st(OptUnit_+_Err))             & (\\ TransMod_+_Err .
+        failOnError(Opts,2nd(TransMod_+_Err))           & (\\ _ .
+        generate(Opts)(1st(OptUnit_+_Err),
+                       1st(TransMod_+_Err))             & (\\ GenErr .
+        failOnError(Opts,GenErr)                        
+        )))))
+    ELSE
+        yield(fail("cannot locate intermediate checking result"))
+    FI
+    )
+
+FUN failOnError: popts ** err -> com[void]
+DEF failOnError(Opts,Err) ==
+    errors(options(Opts),Err) & (\\Ok? .
+    IF Ok? THEN yield(okay(nil)) 
+           ELSE yield(fail("compilation errors"))  FI
+    )
+
+    
+
+
+-- %$Oc Options$ ============================================================
+
+FUN makeCheckOptions : unitName ** set[unitName,<] -> repo -> com[options]
+FUN makeExtendOptions : unitName ** set[unitName,<] -> repo -> com[options]
+FUN makeCompileOptions : unitName ** set[unitName,<] -> repo -> com[options]
+
+DEF makeCheckOptions(U, Deps)(R) ==
+    LET Args == defaultCheckPrefix ++ 
+                makeCheckOptionMode(part(U)) ++
+                makeOptionStruct(U)(R) ++
+                ((\\IU, Res . makeOptionStruct(IU)(R) ++ Res, <>) 
+                                / asSeq(Deps))
+    IN
+    analyzeOptionsInline(
+        PRINT(traceCompile, \\ . "oc1" ++ (\\Arg, D. " " ++ Arg ++ D, "") / Args,
+              Args)
+    )                                                   & (\\ Opts .
+    LET DiagName ==
+            IF diagFile THEN
+                LET (Base, _ ) == splitSuffix(path(absyFile(U)(R)), ".")
+                IN
+                Base ++ ".diag"
+            ELSE "/dev/null" FI
+    IN
+    create(DiagName)                                    & (\\ Diag .
+    succeed(file(Opts, Diag))
+    ))       
+                                
+
+DEF makeExtendOptions(U, Deps)(R) ==
+    LET Args == defaultExtendPrefix ++ 
+                makeExtendOptionMode(part(U)) ++
+                %("-zforeignExp:" ++ path(absyFile(U)(R))) ++
+                makeOptionStruct(U)(R) ++
+                ((\\IU, Res . makeOptionStruct(IU)(R) ++ Res, <>) 
+                                / asSeq(Deps))
+    IN
+    analyzeOptionsInline(
+        PRINT(traceCompile,\\ . "oc1" ++ (\\Arg, D. " " ++Arg++D, "") / Args,
+              Args)
+    )                                                   & (\\ Opts .
+    create("/dev/null")                                 & (\\ Diag .
+    succeed(file(Opts, Diag))
+    ))
+
+DEF makeCompileOptions(U, Deps)(R) ==
+    -- FIXME: clean solution for identifcation of handcoded structures
+    --        (use a unitFlag to determine if a structure is handcoded?)
+    LET (Base, _) == splitSuffix(path(sourceFile(U)(R)), ".")
+        HcFile    == Base ++ ".hc.c"
+    IN
+    stat(HcFile)                                        ; (\\ Ans .
+    LET HcOpts    == IF okay?(Ans) THEN 
+                         %("-zgForeignTemplate")
+                     ELSE
+                         %("-zgForeignInterface")
+                     FI
+        OptOpts   == IF released?(U)(R) THEN
+                         %("-o1", "-og", "-oT")
+                     OTHERWISE
+                     IF dontEvalAll THEN
+                        <>
+                     ELSE
+                         %("-zevalAll")
+                     FI
+        Args == defaultCompilePrefix ++ 
+                OptOpts ++
+                HcOpts ++
+                makeOptionStruct(U)(R) ++
+                ((\\IU, Res . makeOptionStruct(IU)(R) ++ Res, <>) 
+                                / asSeq(Deps))
+    IN
+    analyzeOptionsInline(
+        PRINT(traceCompile, 
+              \\ . "oc2" ++ (\\Arg, D. " " ++ Arg ++ D, "") / Args,
+              Args)
+    )                                                   & (\\ Opts .
+    create("/dev/null")                                 & (\\ Diag .
+    succeed(file(Opts, Diag))
+    )))
+
+FUN defaultCheckPrefix : seq[denotation]
+FUN defaultExtendPrefix : seq[denotation]
+FUN defaultCompilePrefix : seq[denotation]
+
+DEF defaultCheckPrefix ==
+    "-zprop" ::
+    "-zinterOpal" ::
+    "-zinternDiag" ::
+    "-zetaEnrichment" ::
+    "-zreexport" ::
+    "-zforceUsedForAc" ::
+    "-zUninstImport" ::
+    "-zlatin1" :: 
+    (IF traceCompile THEN
+        "-ztraceIO" :: "-v2" :: "-w2" :: <>
+     ELSE "-v0" :: "-w0" :: <> FI)
+
+DEF defaultExtendPrefix ==
+    "-zprop" ::
+    -- "-zinterOpal" ::
+    "-zinternDiag" ::
+    "-zetaEnrichment" ::
+    "-zlatin1" ::
+    -- "-zreexport" ::
+    (IF traceCompile THEN
+        "-ztraceIO" :: "-v2" :: "-w2" :: <>
+     ELSE "-v0" :: "-w0" :: <> FI)
+
+DEF defaultCompilePrefix ==
+    -- FIXME: in order to realize -zgForeign:STRUCT, the according
+    -- structures must be considered as released to get the .h
+    -- files created before the refering object
+    "-zprop" ::
+    "-zinterOpal" ::
+    "-zinternDiag" ::
+    "-zetaEnrichment" ::
+    "-zreexport" ::
+    "-zlatin1" ::
+--    "-zgForeign:Nat" ::
+--    "-zgForeign:Int" ::
+--    "-zgForeign:Real" ::
+--    "-zgForeign:SmallReal" ::
+--    "-zgForeign:NatConv" ::
+--    "-zgForeign:RealConv" ::
+--    "-zgForeign:IntConv" ::
+--    "-zgForeign:Char" ::
+--    "-zgForeign:CharConv" ::
+--    "-zgForeign:Denotation" ::
+--    "-zgForeign:Array" ::
+--    "-zgForeign:Bitset" ::
+    "-dd" ::                    -- FIXME: real option data base !!!
+    (IF traceCompile THEN
+        "-v2" :: "-w2" :: <>
+     ELSE "-v0" :: "-w0" :: <> FI)
+    
+
+
+FUN makeCheckOptionMode : part'RepoName -> seq[denotation]
+DEF makeCheckOptionMode(sign) == %("-s")
+DEF makeCheckOptionMode(impl) == %("-i")
+
+FUN makeExtendOptionMode : part'RepoName -> seq[denotation]
+DEF makeExtendOptionMode(_) == %("-i")
+
+FUN makeOptionStruct : unitName -> repo -> seq[denotation]
+DEF makeOptionStruct(U)(R) ==
+    -- FIXME: oc options require source to be in <dir> and
+    -- objects either in <dir> (-e) or <dir>/OCS (-h)
+    -- that makes our objectPath in folders obsolet currently
+    LET MkPath == \\Path . LET D == dirName1(Path)
+                           IN 
+                           IF #(D) = 0 THEN "."
+                                       ELSE D FI
+    IN
+    IF library?(U)(R) THEN
+        %("-e" ++ MkPath(path(objectFile(U)(R))), "-r", symbol(U)(R))
+    OTHERWISE
+    IF released?(U)(R) THEN
+        %("-h" ++ MkPath(path(sourceFile(U)(R))), "-r", symbol(U)(R))
+    ELSE
+        %("-h" ++ MkPath(path(sourceFile(U)(R))), symbol(U)(R))
+    FI
+
+
+
+-- %$Oc Diagnostics$ ========================================================
+
+FUN makeDiags : options ** unitName ** (locator -> ref'RepoDiag) ** 
+                        denotation -> com[diag'RepoDiag]
+DEF makeDiags(Opts, U, MkRef, IoMsg) ==
+    close(file(Opts))                   & (\\ _ .
+    getAndClearInternDiag               & (\\ OcDiags .
+    LET RepoDiags ==
+        (\\ D, R . 
+            !!(getKind(kind(D)), getRef(MkRef, pos(D)), `(msg(D))) <+ R,
+          ok) / OcDiags
+    IN
+    IF #(IoMsg) > 0 THEN 
+        succeed(RepoDiags <+ !!(error, freeRef("check"), IoMsg))
+    ELSE
+        succeed(RepoDiags)
+    FI
+    ))
+
+FUN getKind : errKind -> mode
+DEF getKind(error) == error
+DEF getKind(warning) == warn
+DEF getKind(hint) == hint
+
+FUN getRef : (locator -> ref'RepoDiag) ** pos'Pos -> ref'RepoDiag
+DEF getRef(MkRef, Pos) ==
+    MkRef(pos(pos(lin(Pos), col(Pos)), unspecified))
+    
+        
+-- %$Calling the C Compiler$ ==============================================
+
+FUN codeUnit    : unitName -> repo -> com[pair[diag,repo]]
+
+DEF codeUnit(U)(R) ==
+    LET ObjFile    == path(objectFile(U)(R))
+        (Base, _)  == splitSuffix(ObjFile, ".")
+        SrcFile    == Base ++ ".c"
+        IncludePath == (\\F, P. 
+			   IF sourcePath(F) |= objectPath(F) THEN
+			       dirName1(sourcePath(F)) ::
+			       dirName1(objectPath(F)) :: P
+			   ELSE
+			       dirName1(sourcePath(F)) :: P
+			   FI,
+			<>) / searchPath(R)
+    IN
+    oasysLibDir						& (\\ Dir.
+    call(normPath(Dir) ++ "ccompiler", 
+         "ccompiler" :: SrcFile :: ObjFile :: IncludePath, 
+	 stdIn, stdOut, stdErr)(R) 			; (\\ Ans .
+    IF okay?(Ans) THEN
+        succeed(ok & R)
+    ELSE
+        succeed(!!(error,freeRef("C compiler"), error(Ans)) & R)
+    FI
+    ))
+
+
+
+/*
+DATA objDeps ==
+        objDeps         (usrIncls       : seq[denotation],
+                         libIncls       : seq[denotation],
+                         usrObjs        : seq[denotation],
+                         libObjs        : seq[denotation])
+
+FUN objDeps : unitName -> repo -> objDeps
+
+DEF objDeps(U)(R) ==
+    LET Deps       == related(direct, implImports)(U)(R)
+        (UsrDeps, LibDeps) == partition(\\Ui. ~(library?(Ui)(R)), Deps)
+        UsrFolders:set[denotation,<] 
+                   == (\\Ui, S. incl(dirName1(path(sourceFile(Ui)(R))), S), 
+                        {}) / incl(U, UsrDeps)
+        UsrObjFolders:set[denotation,<] 
+                   == (\\Ui, S. incl(dirName1(path(objectFile(Ui)(R))), S), 
+                        {}) / incl(U, UsrDeps)
+        LibFolders:set[denotation,<]
+                   == (\\Ui, S. incl(dirName1(path(objectFile(Ui)(R))), S), 
+                        {}) / LibDeps
+        UsrIncls   == (\\Fi.  "-I" ++ Fi) * asSeq(UsrFolders + UsrObjFolders)
+        LibIncls   == (\\Fi. "-I" ++ Fi) * asSeq(LibFolders)
+        UsrObjs    == (\\Ui, S. IF compiled?(Ui)(R) THEN
+                                    objectFileVersion(Ui)(R) :: S
+                                ELSE S FI,
+                       <>) / UsrDeps
+        LibObjs    == (\\Fi, S. (normPath(Fi) ++ "lib" ++ baseName(Fi) 
+                                              ++ ".so")
+                                        :: S,
+                       <>) / LibFolders
+    IN
+    objDeps(UsrIncls, LibIncls, UsrObjs, LibObjs)
+
+*/
+
+/*
+FUN call : denotation ** seq[denotation] -> com[void]
+DEF call(Prog, Args) ==
+    fork                                        & (\\ Fission .
+    IF parent?(Fission) THEN
+        breakOnInterrupt(
+           wait(child(Fission))
+        )                                       ; (\\ Res? .
+        IF okay?(Res?) THEN
+            LET Res == data(Res?)
+            IN
+            IF exited?(2nd(Res)) ANDIF success?(status(2nd(Res))) THEN
+                succeed(nil)
+            ELSE
+                break(Prog ++ " exited abnormally")
+            FI
+        OTHERWISE
+        IF interrupted?(Res?) or
+                interruptedSystemCall?(Res?) THEN
+            kill(child(Fission), sigKill)       ; (\\ _ .
+            break(error(Res?))
+            )
+        ELSE
+            break(error(Res?))
+        FI
+        )
+    ELSE
+        execP(Prog, Args) -- never returns
+    FI
+    )
+*/

@@ -1,0 +1,135 @@
+-- LAST EDIT: Wed Feb  2 10:02:35 1994 by Juergen Exner (hektor!jue) 
+-- LAST EDIT: Mon Jan 31 21:06:19 1994 by Juergen Exner (hektor!jue) 
+-- LAST EDIT: Mon Jan 24 18:55:08 1994 by Juergen Exner (hektor!jue) 
+-- LAST EDIT: Wed Jan 19 21:31:04 1994 by Juergen Exner (hektor!jue) 
+-- LAST EDIT: Mon Jan 17 17:48:20 1994 by Juergen Exner (hektor!jue) 
+-- Adapted to new library "Bibliotheca Opalica
+-- Version of January, the 17, 1994
+--
+
+IMPLEMENTATION Driver
+
+-- subject: driver
+-- project: acc/driver
+-- author:  ws+wg 2-92
+-- version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/oc2/driver/Driver.impl,v 1.1.1.1 1998-06-16 15:59:50 wg Exp $
+
+IMPORT	DENOTATION	ONLY denotation
+	Denotation	ONLY  ++
+	String 		ONLY string
+	StringConv	ONLY `
+	Nat		ONLY nat 0 1
+	Char		ONLY char  -- COMPLETELY
+	Compose		COMPLETELY
+	Com 		ONLY ans:SORT com data yield exit okay fail okay? error
+	Void		ONLY void nil	
+	DEBUG		ONLY PRINT FIELD?
+	Option		COMPLETELY
+	Pair		COMPLETELY
+        Triple		COMPLETELY
+
+IMPORT	File 		ONLY file stdOut writeLine
+
+IMPORT 	Options		ONLY options analyzeOptions myAnaFile myStruct cop?
+	Verbose		COMPLETELY
+	ComCompose	COMPLETELY
+	OcStream	ONLY output stdOut stdErr write 
+	OcSetup		COMPLETELY
+	OcExit		ONLY ioError languageError exit
+	Error		ONLY err:SORT errors
+
+IMPORT	NatMap		ONLY natMap def
+
+IMPORT	PreparedOptions ONLY popts prepareOptions options
+	Ac		ONLY unit:SORT
+	AcIO		ONLY readUnit
+	AcDump		ONLY dump
+	DumpToFile	ONLY dumpToFile
+	Ic		ONLY mod:SORT
+
+IMPORT	Optimize	ONLY optimize
+	Translate	ONLY translate
+	Generate	ONLY generate
+	
+	UnitAndErr	ONLY UnitAndErr unitOf errOf
+	ModAndErr	ONLY ModAndErr modOf errOf
+	CommandAsProcess ONLY  callAsProcess phase optim trans gen
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+-- The base command
+
+DEF oc2 == (init(oc2) & drive) ; exit'OcExit
+
+FUN seperateProcesses : options -> bool
+DEF seperateProcesses (o)== 
+	cop?("SeparateProcesses", o)
+
+
+FUN drive : options -> com[void]
+DEF drive(DraftOpts) ==
+    LET Opts == prepareOptions(DraftOpts)
+    IN
+    readUnit(options(Opts),myAnaFile(options(Opts))) & (\\AnaUnit?.
+    IF avail?(AnaUnit?) THEN 
+      	dumpToFile(Opts,"AnaFile",\\U.dump(U)())(okay(cont(AnaUnit?))) 
+							& (\\ AnaUnit.
+	(IF seperateProcesses(options(Opts)) THEN
+           driveSeperateProcs(Opts, AnaUnit) 
+        ELSE  
+           driveSingleProc(Opts, AnaUnit)
+        FI)
+	)
+    ELSE
+	yield(fail(ioError)) 
+    FI
+   )
+ 
+
+
+FUN driveSingleProc : popts ** unit -> com[void]
+DEF driveSingleProc(Opts, AnaUnit) == 
+        optimize(Opts)(AnaUnit) 			& (\\ OptUnit_+_Err.
+	failOnError(Opts,2nd(OptUnit_+_Err)) 		& (\\ _ .
+	translate(Opts)(1st(OptUnit_+_Err)) 		& (\\ TransMod_+_Err .
+	failOnError(Opts,2nd(TransMod_+_Err))		& (\\ _ .
+	generate(Opts)(1st(OptUnit_+_Err),
+		       1st(TransMod_+_Err)) 		& (\\ GenErr .
+	failOnError(Opts,GenErr)			& (\\ _ .
+	finit(options(Opts))(okay(nil))
+	))))))
+
+
+FUN failOnError: popts ** err -> com[void]
+DEF failOnError(Opts,Err) ==
+    errors(options(Opts),Err) & (\\Ok? .
+    IF Ok? THEN yield(okay(nil)) 
+	   ELSE	finit(options(Opts))(fail(languageError))  FI
+    )
+
+-- ------------------------------------------------------------
+-- seperate Processes
+-- ------------------------------------------------------------
+
+
+FUN  driveSeperateProcs : popts ** unit -> com[void]
+DEF driveSeperateProcs(Opts, AnaUnit) == 
+     LET structName == myStruct(options(Opts))
+	IN
+        callAsProcess[pair[popts,unit], UnitAndErr]
+		(optim, 
+                 structName, 
+                 &(Opts, AnaUnit))  			& (\\ OptUnit_+_Err.
+	failOnError(Opts,errOf(OptUnit_+_Err)) 		& (\\ _ .
+	callAsProcess[pair[popts,unit],ModAndErr]
+	  (trans,
+           structName, &(Opts,unitOf(OptUnit_+_Err)))	& (\\ TransMod_+_Err .
+	failOnError(Opts,errOf(TransMod_+_Err))		& (\\ _ .
+	callAsProcess[triple[popts,unit,mod],err]
+	  (gen,
+           structName, 
+           &(Opts, unitOf(OptUnit_+_Err), modOf(TransMod_+_Err))) 
+							& (\\ GenErr .
+	failOnError(Opts,GenErr)			& (\\ _ . 
+	finit(options(Opts))(okay(nil))
+	)))))) 
+

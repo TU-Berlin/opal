@@ -1,0 +1,75 @@
+#!/bin/sh
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/cpocstree,v 1.1.1.1 1998-06-16 15:59:51 wg Exp $
+
+if [ "$1" = "-sharecache" ] 
+then
+   owncache=no; shift
+else
+   owncache=yes
+fi
+
+if [ $# -ne 2  ]
+then
+  echo usage: $0 [-sharecache] '<srctree>' '<targetdir>'
+  exit 1
+fi
+
+srcdir=$1
+targetdir=$2
+
+if [ ! -d $srcdir ] || [ ! -r $srcdir ] || [ ! -x $srcdir ]
+then
+  echo Can\'t access $srcdir
+  exit 1
+fi;
+
+dirs=`find $srcdir -type d \( -name OCS -prune -o -name AtFS -prune -o -print \)`
+
+for s in $dirs;
+do
+  t=`echo $s | sed -e "s+$srcdir+$targetdir+"`;
+  if [ ! -d $s/AtFS ] || [ ! -r $s/AtFS ] || [ ! -x $s/AtFS ]
+  then
+    echo "ignoring $s, has no accessible AtFS"
+  else
+    if [ ! -d $t ] && [ ! -f $t ]
+    then
+      echo "creating directory $t"
+      mkdir -p $t
+    else
+      echo "updating directory $t"
+    fi
+    if [ -d $t/AtFS ] && [ ! -h $t/AtFS ]
+    then
+      echo " ... hard wired AtFS, nothing changed"
+    else
+      if [ -h $t/AtFS ]
+      then
+        echo " ... unlinking old AtFS"
+	rm -f $t/AtFS
+      fi
+      echo " ... linking AtFS"
+      if [ ! -w $s/AtFS ]
+      then echo " ... you have no write access!"; fi
+      ln -s $s/AtFS $t
+      if [ $owncache = "no" ] && [ -d $s/OCS ] && [ -d $s/OCS/AtFS ]
+      then
+	if [ ! -w $s/OCS ] && [ ! -w $s/OCS/AtFS ] 
+	then
+	  echo " ... dont create shared OCS cache, not writable"
+	else
+	  if [ -d $t/OCS ]
+	  then
+	    echo " ... removing old OCS cache"
+	    rm -rf $t/OCS
+	  fi
+	  echo " ... creating new shared OCS cache"
+	  mkdir $t/OCS 
+          ln -s $s/OCS/AtFS $t/OCS
+        fi
+      fi
+    fi
+  fi
+done
+
+exit 0

@@ -1,0 +1,83 @@
+
+IMPLEMENTATION IdeMSC 
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:36 $ ($Revision: 1.1.1.1 $)
+
+/*
+adaption of Wolfram Schultes MSC version 
+which on the turn was adapted from 
+	Cormen, Leiserson, Rivest: Introduction to Algorithm Design.
+*/
+
+IMPORT	Ide	ONLY ide
+	IdeSet	ONLY ideSet {} incl in explode implode
+	IdeMap	ONLY ideMap {} def ! !? dom
+
+IMPORT	Option	COMPLETELY
+	Seq	COMPLETELY
+	SeqOfSeq ONLY flat 
+	SeqReduce COMPLETELY
+
+
+-- ========================================================================
+
+DEF ideMSC(G) ==
+    LET s    == state({}'IdeSet,<>[seq[ide]])
+	s1   == (dfs(G) \ s)(dom(G))
+	s2   == (dfs(invert(G)) \ s)(flat(forests(s1)))
+    IN
+    forests(s2)
+
+-- ........................................................................
+
+DATA state ==
+    state(visited: ideSet, forests: seq[seq[ide]])
+    
+-- ........................................................................
+
+FUN dfs dfsVisit : ideMap[ideSet] -> ide ** state -> state
+
+DEF dfs(G)(i,s AS state(v,fs)) == 
+    IF i in v THEN s
+    ELSE 
+	dfsVisit(G)(i,state(v,<> :: fs)) 
+    FI
+
+DEF dfsVisit(G)(i,s AS state(v,fs)) == 
+    IF i in v THEN s
+    ELSE
+	LET adj? == G!?i
+	IN
+	IF avail?(adj?) THEN
+	    LET s1 == state(incl(i,v),fs)
+	        s2 == (dfsVisit(G)\s1)(explode(cont(adj?)))
+	    IN
+	    state(visited(s2),(i::ft(forests(s2)))::rt(forests(s2)))
+	ELSE
+	    state(incl(i,v),(i::ft(fs))::rt(fs))
+	FI
+    FI
+
+-- ........................................................................
+
+FUN invert : ideMap[ideSet] -> ideMap[ideSet]
+DEF invert(G) ==
+    (inv(G) \ {}[ideSet])(dom(G))
+
+FUN inv: ideMap[ideSet] -> ide ** ideMap[ideSet] -> ideMap[ideSet]
+DEF inv(G)(i,iG) ==
+    (inv1(i) \ iG)(explode(G!i))
+
+FUN inv1: ide -> ide ** ideMap[ideSet] -> ideMap[ideSet]
+DEF inv1(src)(dst,iG) ==
+    LET adj? == iG !? dst
+    IN
+    IF avail?(adj?) THEN
+	def(dst,incl(src,cont(adj?)),iG)
+    ELSE
+	def(dst,incl(src,{}'IdeSet),iG)
+    FI
+    

@@ -1,0 +1,80 @@
+-- ============================================================================
+-- Projekt:     OPAL1-Compiler
+-- ============================================================================
+-- ============================================================================
+
+IMPLEMENTATION OcSetup
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:35 $ ($Revision: 1.1.1.1 $)
+
+IMPORT	Void	COMPLETELY
+	Char	ONLY char newline
+	Denotation ONLY ++
+	Com	COMPLETELY
+	ComCompose COMPLETELY
+	DEBUG[bool] ONLY FIELD?
+
+	Stream   ONLY output stdOut writeLine:output**denotation->com[void]
+	OcStream ONLY output create append close:options**output->com[void]
+    Verbose ONLY finishU initU
+
+	OcExit	ONLY exit
+	Options	ONLY options analyzeOptions myDiagFile file
+
+-- ---------------------------------------------------------------------------
+
+
+-- ---------------------------------------------------------------------------
+
+FUN banner: part -> denotation
+
+DEF banner(oc1) == 
+   "Opal to AC compiler oc1\n" ++ version
+
+DEF banner(oc2) == 
+   "AC to C compiler oc2\n" ++ version
+
+-- ---------------------------------------------------------------------------
+
+DATA part == oc1 oc2
+
+FUN init: part -> com[options]
+
+DEF init(part) ==
+  printVersion(part) &
+  (\\ _ .analyzeOptions &
+         prepareDiagFile(part) & (\\o .
+         initU(o, IF part oc1? THEN "oc1" ELSE "oc2" FI) &
+         succeed(o)
+         )
+  )
+
+FUN printVersion: part -> com[void]
+
+DEF printVersion(part) ==
+  IF FIELD?("-zversion") THEN writeLine(stdOut,banner(part))
+  			 ELSE yield(okay(nil)) FI
+
+FUN prepareDiagFile: part -> options -> com[options]
+
+DEF prepareDiagFile(part)(options) ==
+  LET diagOpen == IF part oc1? THEN create
+                  IF part oc2? THEN append
+                  FI
+  IN (diagOpen(options,myDiagFile(options)) ;
+      (\\a.IF a okay? THEN yield(a)
+	   IF a fail? THEN diagOpen(options,"/dev/null")
+	   FI)) &
+	   (\\f.yield(okay(file(options,f))))
+
+-- ---------------------------------------------------------------------------
+
+DEF finit(options)(ans) == finishU(options) & 
+                           (finitDiagFile(options) ; exit(ans))
+
+FUN finitDiagFile: options -> com[void]
+
+DEF finitDiagFile(options) == close(options,file(options))

@@ -1,0 +1,476 @@
+
+IMPLEMENTATION OptimPrepare
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-16 15:59:48 $ ($Revision: 1.1.1.1 $)
+
+-- subject: Preparation phase of optimization
+-- project: acc
+-- author:  wg 1-92
+
+IMPORT	Nat		COMPLETELY
+	Void		ONLY void
+	Option		COMPLETELY
+	Pair		COMPLETELY
+	Seq		COMPLETELY
+	SeqZip		COMPLETELY
+	SeqSort		ONLY msort
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	Denotation	ONLY  ++  = < >
+	String		ONLY !
+	NatConv		ONLY ` : nat -> denotation 
+	Compose		ONLY o
+	Com		ONLY com ans:SORT yield data okay exit okay? error
+	ComCompose	COMPLETELY
+	ComSeqReduce	ONLY / /&
+
+IMPORT	-- Fun3		ONLY >>
+	-- SeqFun0		ONLY ..
+	-- SeqFun1		ONLY find?
+	NatMap		ONLY natMap {} def ! !? new
+	NatMapReduce    ONLY /
+
+IMPORT	Verbose		ONLY verb phase definition subphase begVerb endVerb
+	Options		ONLY options myAnaFile optFile
+	Error		COMPLETELY
+	Pos		ONLY pos firstPos
+
+IMPORT 	Ide		COMPLETELY
+	IdeSet		ONLY ideSet {} incl implode explode
+	IdeMap		ONLY ideMap {} def !? ! explode
+	Ac		COMPLETELY
+	AcIO		ONLY readUnit
+	TypeAn		COMPLETELY
+	TypeAnFun	ONLY typeOfDec
+	OptimAn		COMPLETELY
+	SourceAn	COMPLETELY
+	SourceAnFun	ONLY symbol
+	An		ONLY an none type set:an**typeAn->an
+				     optim set:an**optimAn->an
+				     source set:an**sourceAn->an
+	Builtin		ONLY builtinUnit
+	PreparedOptions ONLY popts options importOptim? 
+	AcFun		ONLY decs dec setDec global?
+	
+-- ------------------------------------------------------------------------
+
+FUN optimPrepare : popts -> unit -> com[pair[unit,err]]
+DEF optimPrepare(o)(T) ==
+    LET T1 	   == enrichBuiltin(T)
+	sortedDecs == msort(symOrder)(decs(anyDec?,T1))
+	T2	   == annotateDecs(o,T1,sortedDecs,0)
+	UsesSyms   == /(\\Unit,Syms. symbol(Unit)::Syms, <>, uses(T2))
+    IN	
+    (importOptimFile(o) /& (T2 & ok))(UsesSyms)
+
+FUN anyDec? : dec -> bool
+DEF anyDec?(_) == true 
+
+FUN symOrder : dec ** dec -> bool
+DEF symOrder(d1,d2) ==
+    IF symbol(source(an(d1)),ide(d1)) < symbol(source(an(d2)),ide(d2)) THEN
+	true
+    IF symbol(source(an(d1)),ide(d1)) > symbol(source(an(d2)),ide(d2)) THEN
+	false
+    ELSE
+	ide(d1) < ide(d2)
+    FI
+
+
+-- ------------------------------------------------------------------------
+-- Annotate declarations with minimal informations
+
+FUN annotateDecs : popts ** unit ** seq[dec:SORT] ** nat -> unit
+DEF annotateDecs(o,T,ds,ovlNo) ==
+    IF <>?(ds) THEN T
+    ELSE
+	LET d 	     == ft(ds) 
+	    oldSym   == symbol(source(an(d)),ide(d))
+	    newSym   == IF ovlNo > 0 THEN oldSym ++ ((",") ++ (ovlNo`))
+				     ELSE oldSym FI
+	    newOvlNo == IF ::?(rt(ds)) THEN
+			    IF symbol(source(an(ft(rt(ds)))),ide(ft(rt(ds))))
+							= oldSym THEN
+				succ(ovlNo)
+			    ELSE 0 FI
+			ELSE 0 FI
+	IN
+	IF binding?(d) THEN
+	    LET c        == IF error?(def(d)) THEN max:nat
+					      ELSE approxComp(T)(def(d),0) FI
+	        (r,df,t) == norm(def(d),typeOfDec(d))
+		optAn    == bindingAn(c,r,0)
+		typeAn   == typing(t)
+		srcAn    == symbol(newSym)
+	        a        == (((an(d) set srcAn) set typeAn) set optAn)
+	        T1       == setDec(T,ide(d),binding(a,ide(d),mode(d),df))
+	    IN
+	    annotateDecs(o,T1,rt(ds),newOvlNo)
+	IF constructor?(d) THEN
+	    LET a        == an(d) set symbol(newSym)
+		T1       == setDec(T,ide(d),constructor(a,ide(d),mode(d),
+				                        order(d)))
+	    IN
+	    annotateDecs(o,T1,rt(ds),newOvlNo)
+	FI
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+FUN approxComp : unit -> exp ** nat -> nat
+DEF approxComp(T)(e,c) ==
+    /* This sets complexity to max:nat if non-constructors are
+       applied.
+    */
+    IF c = max:nat THEN
+	-- stop it
+	c
+    OTHERWISE
+    IF apply?(e)  THEN 
+   	LET f  == fun(e)
+	    c1 == (approxComp(T) / approxComp(T)(f,c))(args(e))
+	IN
+	IF c1 = max:nat THEN c1
+	OTHERWISE
+	IF global?(f) THEN
+	    LET d == dec(T,ide(f))
+	    IN
+	    IF constructor?(d) THEN
+		max(c1,1)
+	    ELSE
+		max:nat
+	    FI
+	ELSE max:nat FI
+    IF lambda?(e) THEN approxComp(T)(scope(e),c)
+    IF block?(e)  THEN 
+   	LET c1 == ((\\X,Y.approxComp(T)( def:dec -> exp(X), Y ))/c)(binds(e))
+	IN
+	IF c1 = max:nat THEN c1 
+			ELSE approxComp(T)(scope(e),c1) FI
+    IF case?(e)   THEN 
+   	LET c1 == ((\\X,Y. approxComp(T)(scope:match -> exp(X),Y))/c)(matches(e))
+	IN
+	IF c1 = max:nat THEN c1
+		        ELSE approxComp(T)(discr(e),
+					   approxComp(T)(default(e),c1))
+		        FI
+    ELSE
+	c
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+FUN norm : exp ** type -> nat ** exp ** type
+DEF norm(e,t) ==
+    LET (r,e1) == normExp(e) t1 == flatType(t)
+	t2 == IF gen?(t1) THEN scope(t1) ELSE t1 FI
+    IN
+    IF error?(e1) and fun?(t2) THEN
+	-- unimplemented function: perform eta-enrichment
+	LET r1   == #(args(t2))
+--	    vars == zip(mkVar)(args(t2),1 ..'SeqFun0 r1)
+	    vars == zip(mkVar)(args(t2),(1 .. r1)(\\X.X))
+	    lam  == lambda(none:an,vars,error(set(an(e1),typing(res(t2)))))
+	IN
+	(r1,lam,t)
+    ELSE
+	(r,e1,t)
+    FI
+
+    FUN mkVar : type ** nat -> dec
+    DEF mkVar(t,n) == variable(set(none:an,typing(t)),local(n))
+
+FUN normExp : exp -> nat ** exp
+DEF normExp(e) ==
+    IF lambda?(e) THEN
+	IF lambda?(scope(e)) THEN
+	    (#(vars(e))+r,
+	     lambda(an(e),vars(e)++vars(e1),scope(e1)))
+	    WHERE
+	      (r,e1) == normExp(scope(e))
+	ELSE
+	    (#(vars(e)),e)
+	FI
+    ELSE
+	(0,e)
+    FI
+
+FUN flatType : type -> type
+DEF flatType(t) ==
+    IF gen?(t)  THEN gen(vars(t),flatType(scope(t)))
+    IF fun?(t)  THEN 
+	IF fun?(res(t)) THEN
+	    fun(args(t)++args(t1),res(t1))
+	      WHERE t1 == flatType(res(t))
+	ELSE t FI
+    ELSE t FI
+
+-- ------------------------------------------------------------------------
+-- Import optimization files
+
+FUN importOptimFile : popts -> denotation ** pair[unit,err] -> com[pair[unit,err]]
+DEF importOptimFile(o)(sym,T & Err) == 
+    IF importOptim?(o,sym) THEN
+        readUnit(options(o),optFile(sym,options(o))) & processOptim(o,T,Err)
+    ELSE
+	yield(okay(T & Err))
+    FI
+
+FUN processOptim : popts ** unit ** err -> option[unit] -> com[pair[unit,err]]
+DEF processOptim(o,T,Err)(oU) == 
+    IF avail?(oU) THEN
+        LET U		 == cont(oU)
+	    U1	         == U -- enrichBuiltin(U) not necessary currently (?)
+	    units        == U1 :: /(::[unit], <>, uses(U1))
+            (T1,origMap,errs) == extendUses(units,T,{}[origin],ok)
+   	    /* 1st pass: build mapping of origins in U to origins in T 
+	       and eventually create empty entrys for imported units.
+	    */
+	    T2           == (mergeUnit(origMap) / T1)(units)
+	IN
+	yield(okay(T2 & (Err + errs)))
+    ELSE
+	yield(okay(T & Err))
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+FUN extendUses : seq[unit] ** unit ** natMap[origin] ** err
+		       	        -> unit ** natMap[origin] ** err
+DEF extendUses(Us,T,origMap,errs) ==
+    IF <>?(Us) THEN (T,origMap,errs)
+	       ELSE extendUses(rt(Us),extendUse(ft(Us),T,origMap,errs)) FI
+
+  FUN extendUse : unit ** unit ** natMap[origin] ** err
+		       -> unit ** natMap[origin] ** err
+  DEF extendUse(U,T,origMap,errs) ==
+    LET	newVers? == 
+		IF version?(source(an(U))) THEN
+		    avail(version(source(an(U))))
+		ELSE nil FI
+        oldU? == find?((_ = symbol(U)) o symbol:unit->denotation ,
+		        /(::[unit], <>, uses(T)))
+    IN
+    IF avail?(oldU?) THEN
+	-- unit is already in uses of T
+	LET oldU == cont(oldU?)
+	    newOrigMap == def(#(origin(U)),origin(oldU),origMap)
+	IN
+	IF version?(source(an(oldU))) THEN
+	    -- version assigned
+	    IF nil?(newVers?) THEN
+		-- new unit comes from oc1, no version check
+	        (T,newOrigMap,errs)
+	    OTHERWISE
+	    IF version(source(an(oldU))) = cont(newVers?) THEN
+	        (T,newOrigMap,errs)
+	    ELSE
+		-- version error
+		(T,newOrigMap,
+		   errs + err(warning,
+			  "conflicting versions of optimization export of %s",
+			     symbol(U)!,firstPos)
+		)
+	    FI
+	ELSE
+	    -- old unit comes from oc1
+	    IF avail?(newVers?) THEN
+	        -- take over version from new unit
+	        LET oldNewU == unit(an(oldU) set version(cont(newVers?)),
+				    symbol(oldU),origin(oldU),
+				    uses(oldU),decs(oldU))
+		    newUses == def(#(origin(oldU)),oldNewU,uses(T))
+	        IN
+	        (unit(an(T),symbol(T),origin(T),newUses,decs(T)),
+	         newOrigMap,
+	         errs
+	        )
+	    ELSE
+	        (T,newOrigMap,errs)
+	    FI
+	       
+	FI
+    ELSE
+	LET newOrig == origin(new(uses(T)))
+	    newOrigMap == def(#(origin(U)),newOrig,origMap)
+	    a == IF avail?(newVers?) THEN none set version(cont(newVers?))
+				     ELSE none FI
+	    newU  == unit(a,symbol(U),newOrig,{},{})
+			  -- initial empty entry
+	    newUses == def(#(newOrig),newU,uses(T))
+	IN
+	(unit(an(T),symbol(T),origin(T),newUses,decs(T)),
+	 newOrigMap,
+	 errs
+	)
+    FI
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+FUN mergeUnit : natMap[origin] -> unit ** unit -> unit
+DEF mergeUnit(origMap)(U,T) ==
+    LET orig == origMap ! #(origin(U))
+	old  == uses(T) ! #(orig)
+	ds   == /(mergeDec(origMap), decs(old), decs(U))
+	tds  == /(mergeTypeDec(origMap), decsOrNew(type(an(old))),
+				       decsOrNew(type(an(U))))
+	prps == (mergeProp(origMap) / propsOrNew(optim(an(old))))
+				    (explode(propsOrNew(optim(an(U)))))
+	newAn == an(old) set typeDecs(tds)
+			 set unitAn(prps)
+	new  == unit(newAn,symbol(old),origin(old),uses(old),ds)
+    IN
+    unit(an(T),symbol(T),origin(T),def(#(orig),new,uses(T)),decs(T))
+
+  FUN decsOrNew : typeAn -> natMap[typeDec]
+  DEF decsOrNew(ta) ==
+    IF typeDecs?(ta) THEN decs(ta) ELSE {}[typeDec] FI
+
+  FUN propsOrNew : optimAn -> ideMap[seq[prop]]
+  DEF propsOrNew(An) ==
+    IF unitAn?(An) THEN props(An) ELSE {} FI
+
+  FUN mergeDec : natMap[origin] -> dec ** natMap[dec] 
+				     -> natMap[dec]
+  DEF mergeDec(origMap)(dec,decs) ==
+    LET old? == decs !? #(ide(dec))
+	better? == IF avail?(old?) THEN hidden?(cont(old?))
+				   ELSE true FI
+    IN
+    IF better? THEN
+	def(#(ide(dec)),remap(origMap)(dec),decs)
+    ELSE
+	decs
+    FI
+
+  FUN mergeProp : natMap[origin] -> pair[ide,seq[prop]] ** ideMap[seq[prop]] 
+				         -> ideMap[seq[prop]]
+  DEF mergeProp(OrigMap)(Ide & Props, PropMap) ==
+    LET CurrProps? == PropMap !? remap(OrigMap)(Ide)
+    IN 
+    IF avail?(CurrProps?) THEN
+	-- information is discret; already have it
+	PropMap
+    ELSE
+	def(remap(OrigMap)(Ide), remap(OrigMap) * Props, PropMap)
+    FI
+
+  FUN mergeTypeDec : natMap[origin] -> typeDec ** natMap[typeDec] 
+				         -> natMap[typeDec]
+  DEF mergeTypeDec(origMap)(dec,decs) ==
+    LET old? == decs !? #(ide(dec))
+	better? == IF avail?(old?) THEN actHidden?(cont(old?))
+				   ELSE true FI
+    IN
+    IF better? THEN
+	def(#(ide(dec)),remap(origMap)(dec),decs)
+    ELSE
+	decs
+    FI
+	
+  FUN actHidden? : typeDec -> bool
+  DEF actHidden?(dec) ==
+      IF hidden?(dec) THEN
+          true
+      IF binding?(dec) THEN
+          -- fettis rule ...
+          IF some?(def(dec)) THEN
+              true
+          IF gen?(def(dec)) THEN
+              some?(scope(def(dec)))
+          ELSE false FI
+      ELSE false FI
+       
+
+  FUN remap : natMap[origin] -> dec -> dec
+  DEF remap(origMap)(d:dec) ==
+    IF binding?(d) THEN binding(remap(origMap)(an(d)),remap(origMap)(ide(d)),
+				mode(d),remap(origMap)(def(d)))
+    IF hidden?(d)  THEN hidden(remap(origMap)(an(d)),remap(origMap)(ide(d)),
+			       mode(d))
+    IF constructor?(d) THEN constructor(remap(origMap)(an(d)),
+					remap(origMap)(ide(d)),
+					mode(d),
+					order(d))
+    IF variable?(d) THEN variable(remap(origMap)(an(d)),ide(d))
+    FI
+
+  FUN remap : natMap[origin] -> typeDec -> typeDec
+  DEF remap(origMap)(d:typeDec) ==
+    IF hidden?(d)  THEN hidden(remap(origMap)(ide(d)))
+    IF binding?(d) THEN binding(remap(origMap)(ide(d)),
+				remap(origMap)(def(d)))
+    IF foreign?(d) THEN foreign(remap(origMap)(ide(d)),order(d),store(d))
+    FI			    
+    
+  FUN remap : natMap[origin] -> an -> an
+  DEF remap(origMap)(a:an) ==
+    LET a1 == IF typing?(type(a)) THEN 
+		  set(a,typing(remap(origMap)(type(type(a)))))
+    	      IF spec?(type(a))   THEN 
+		  set(a,spec(remap(origMap) * subs(type(a))))
+	      ELSE a FI
+    IN
+    a1
+
+  FUN remap : natMap[origin] -> type -> type
+  DEF remap(origMap)(t:type) ==
+    LET f == (remap(origMap)):type->type
+    IN
+    IF ide?(t)  THEN ide(remap(origMap)(ide(t)))
+    IF fun?(t)	THEN fun(f * args(t),f(res(t)))
+    IF tup?(t)  THEN tup(f * comps(t))
+    IF prod?(t) THEN prod(remap(origMap)(cons(t)),f * comps(t))
+    IF sum?(t)  THEN sum(f * members(t))
+    IF spec?(t) THEN spec(f(gen(t)),f * subs(t))
+    IF gen?(t)  THEN gen(vars(t),f(scope(t)))
+		ELSE t FI
+
+  FUN remap : natMap[origin] -> exp -> exp
+  DEF remap(origMap)(e:exp) ==
+    LET f == (remap(origMap)):exp->exp
+	g == (remap(origMap)):an->an
+	h == (remap(origMap)):dec->dec
+    IN
+    IF deno?(e)	  THEN deno(g(an(e)),repr(e))
+    IF ide?(e)    THEN ide(g(an(e)),remap(origMap)(ide(e)))
+    IF apply?(e)  THEN apply(g(an(e)),f(fun(e)),f * args(e))
+    IF lambda?(e) THEN lambda(g(an(e)),h * vars(e),f(scope(e)))
+    IF block?(e)  THEN block(g(an(e)),h * binds(e),f(scope(e)))
+    IF case?(e)   THEN case(g(an(e)),f(discr(e)),
+			     remap(origMap) * matches(e),
+			     f(default(e)))
+    IF error?(e)  THEN error(g(an(e))) FI 
+
+  FUN remap : natMap[origin] -> match -> match
+  DEF remap(origMap)(m:match) ==
+    match(remap(origMap)(cons(m)),
+	  remap(origMap) * vars(m),
+	  remap(origMap)(scope(m)))
+
+  FUN remap : natMap[origin] -> ide -> ide
+  DEF remap(origMap)(i:ide) ==
+    IF global?(i) THEN
+	LET newOrig? == origMap !? #(origin(i))
+	IN
+	IF avail?(newOrig?) THEN global(#(i),cont(newOrig?))
+			    ELSE i FI
+    ELSE
+	i
+    FI
+
+  FUN remap : natMap[origin] -> prop -> prop
+  DEF remap(OrigMap)(inverse(Fun)) == 
+      inverse(remap(OrigMap)(Fun))
+  DEF remap(_)(Prop:prop) == Prop
+
+-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+-- Builtin units
+
+FUN enrichBuiltin : unit -> unit
+DEF enrichBuiltin(U) ==
+    LET units == def(#(origin(builtinUnit())),builtinUnit(),
+			uses(U))
+    IN
+    unit(an(U),symbol(U),origin(U),units,decs(U))
+
+
