@@ -6,7 +6,7 @@ IMPLEMENTATION OptimCse
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-03-09 11:59:18 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-08 10:33:52 $ ($Revision: 1.3 $)
 
 -- subject: cse detection by constructing non-strict equation system 
 -- subject: from expression
@@ -26,7 +26,7 @@ IMPORT  Nat             ONLY nat = 0? > < 2 0 <=
 
 IMPORT  SeqMapEnv       ONLY *
 
-IMPORT  Error           ONLY ok
+IMPORT  Error           ONLY err:SORT ok
 
 IMPORT  Ide             ONLY ide local? global? global
                                 origin:SORT origin:ide->origin
@@ -53,7 +53,7 @@ IMPORT  EqnSys          ONLY eqnSys newSys newVar newEqn mergeAn an
 -- ------------------------------------------------------------------------
 
 FUN optimCse : popts ** unit ** dec -> eqnSys ** exp ** err
-DEF optimCse(Opts,U,binding(An,Id,Md,Def)) ==
+DEF optimCse(Opts,U,binding(An,_,_,Def)) ==
     LET C == ctx(Opts,U,An,~(lambda?(Def)),{})
         S == thr(newSys,{})
         (S1,NewDef) == enter(C)(S,Def)
@@ -90,7 +90,7 @@ DEF thr(_,u) upd s == thr(s,u)
 DEF thr(s,_) upd u == thr(s,u)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF enter(C)(S,e) ==
+DEF enter(_)(S,e) ==
     (S,e)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -110,7 +110,7 @@ DEF enter(C)(S,apply(a,f,as)) ==
 
     FUN enterApply : ctx ** thr ** an ** exp ** seq[exp:SORT] 
                                 -> thr ** exp
-    DEF enterApply(C,S,a,apply(a1,f1,as1),as) ==
+    DEF enterApply(C,S,_,apply(a1,f1,as1),as) ==
         enterApply(C,S,a1,f1,as1++as)
     DEF enterApply(C,S,a,f,as) ==
         IF abort?(C,f) ANDIF deno?(ft(as)) THEN
@@ -162,12 +162,12 @@ DEF enter(C)(S,apply(a,f,as)) ==
         FI
 
     FUN abort? : ctx ** exp -> bool
-    DEF abort?(C,ide(_,id)) ==
+    DEF abort?(_,ide(_,id)) ==
         id = ABORT
-    DEF abort?(C,_) == false
+    DEF abort?(_,_) == false
                 
     FUN shallUnfold? : ctx ** thr ** exp ** seq[exp:SORT] -> bool
-    DEF shallUnfold?(C,S,f,as) == 
+    DEF shallUnfold?(C,_,f,as) == 
         IF ~(unfold?(popts(C))) THEN false
         OTHERWISE
         IF global?(f) THEN
@@ -188,7 +188,7 @@ DEF enter(C)(S,apply(a,f,as)) ==
 
     FUN unfold : ctx ** an ** exp ** seq[exp] ** dec -> ctx ** exp
     DEF unfold(C,AppAn,Fun,Args,
-                 Dec AS binding(DecAn,Id,Mode,lambda(LamAn,Vars,Scope))) ==
+                 Dec AS binding(_,_,_,lambda(_,Vars,Scope))) ==
         LET (PropPos?,MapPos) == 
                 IF (pos?(source(AppAn)) and positions?(popts(C))) THEN
                      -- position has to be propagated into Exps of Scope
@@ -276,7 +276,7 @@ DEF enter(C)(S,case(a,ds,ms,df)) ==
         structure(typeDecAss(unit(C)))(t)
 
     FUN genMatch : ctx ** exp -> thr ** type -> thr ** match
-    DEF genMatch(C,e)(S,prod(c,ts)) == 
+    DEF genMatch(_,e)(S,prod(c,ts)) == 
         LET (S1,vs) == (genVar)*(S,ts)  -- generate dummy variables
         IN
         (S1,match(c,vs,e))
@@ -289,7 +289,7 @@ DEF enter(C)(S,case(a,ds,ms,df)) ==
         (S upd newsys,variable(a,i))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF enter(C)(S,block(a,bs,s)) == 
+DEF enter(C)(S,block(_,bs,s)) == 
     LET (newC,S1,dps) == enterBinds(C,C,S,{},bs)
         (S2,s1)       == enter(newC)(S1,s)
     IN

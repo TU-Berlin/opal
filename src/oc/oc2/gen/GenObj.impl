@@ -5,7 +5,7 @@ IMPLEMENTATION GenObj
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-03-09 11:59:04 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-08 10:35:17 $ ($Revision: 1.3 $)
 
 -- %- author:  wg 6-92
 
@@ -153,7 +153,7 @@ DEF undefDecMap(T,i) ==
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genDec : popts ** mod ** obj -> box
-DEF genDec(o,M,procedure(i,st,md,sy,is,os,s)) ==
+DEF genDec(o,M,procedure(i,st,md,sy,_,_,_)) ==
     words(%(entryDec,varDec))
     WHERE entryDec == cProcDec(external?(o,md),entry,inTypes,resArity)
           inTypes  == cType * ins(st)
@@ -167,7 +167,7 @@ DEF genDec(o,M,procedure(i,st,md,sy,is,os,s)) ==
                     (cEntrySym(msy,i,osy),cGlobalSym(msy,i,osy))
                 ELSE (cEntry(msy,i),cGlobal(msy,i)) FI
 
-DEF genDec(o,M,constant(i,st,md,sy,s)) ==
+DEF genDec(o,M,constant(i,st,md,sy,_)) ==
     cVar(sy,external?(o,md),cType(st),global)
     WHERE msy      == symbolMap(symbol(M,origin(i)))
           global   ==
@@ -175,7 +175,7 @@ DEF genDec(o,M,constant(i,st,md,sy,s)) ==
                     cGlobalSym(msy,i,symbolMap(sy))
                 ELSE cGlobal(msy,i) FI
 
-DEF genDec(o,M,Ob AS denotation(i,st,md,sy,s)) ==
+DEF genDec(o,M,denotation(i,st,md,sy,_)) ==
     cVar(sy,external?(o,md),cType(st),global)
     WHERE msy      == symbolMap(symbol(M,origin(i)))
           global   ==
@@ -186,7 +186,7 @@ DEF genDec(o,M,Ob AS denotation(i,st,md,sy,s)) ==
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genExternDec : popts ** mod ** obj -> box
-DEF genExternDec(o,M,ob) ==
+DEF genExternDec(_,M,ob) ==
     /* Will not be called for foreign declarations.
     */
     IF clos?(st) THEN
@@ -203,7 +203,7 @@ DEF genExternDec(o,M,ob) ==
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genInterfaceDec : popts ** mod ** obj -> box
-DEF genInterfaceDec(o,M,procedure(i,st,md,sy,is,os,s)) ==
+DEF genInterfaceDec(o,M,procedure(i,st,md,sy,_,os,_)) ==
     lines(%(varAlias,entryAlias) ++ macroAlias ++ decs)
     WHERE varAlias   == cAlias(cGlobalSym(msy,i,osy),cGlobal(msy,i))
           entryAlias == cAlias(cEntrySym(msy,i,osy),cEntry(msy,i))
@@ -224,7 +224,7 @@ DEF genInterfaceDec(o,M,procedure(i,st,md,sy,is,os,s)) ==
           msy        == symbolMap(symbol(M))
           osy        == symbolMap(sy)
 
-DEF genInterfaceDec(o,M,constant(i,st,md,sy,s)) ==
+DEF genInterfaceDec(o,M,constant(i,st,md,sy,_)) ==
     lines(%(varAlias) ++ varDec)
     WHERE varAlias   == cAlias(cGlobalSym(msy,i,osy),cGlobal(msy,i))
           varDec     == IF external?(o,md) THEN
@@ -233,7 +233,7 @@ DEF genInterfaceDec(o,M,constant(i,st,md,sy,s)) ==
           msy        == symbolMap(symbol(M))
           osy        == symbolMap(sy)
 
-DEF genInterfaceDec(o,M,Ob AS denotation(i,st,md,sy,r)) ==
+DEF genInterfaceDec(o,M,denotation(i,st,md,sy,_)) ==
     lines(%(varAlias) ++ varDec)
     WHERE varAlias   == cAlias(cGlobalSym(msy,i,osy),cGlobal(msy,i))
           varDec     == IF external?(o,md) THEN
@@ -245,7 +245,7 @@ DEF genInterfaceDec(o,M,Ob AS denotation(i,st,md,sy,r)) ==
 
 FUN external? : popts ** mode -> bool
 DEF external?(_,external) == true
-DEF external?(Opts,_) == true -- ... for the moment, because of 
+DEF external?(_,_) == true -- ... for the moment, because of 
                               -- dynamic linking
         -- foreignTemplate?(Opts)
         -- when generating templates, we treat anything as external,
@@ -255,7 +255,7 @@ DEF external?(Opts,_) == true -- ... for the moment, because of
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genMacroDef : popts ** mod ** obj -> box
-DEF genMacroDef(o,M,procedure(i,st,md,sy,is,os,s)) ==
+DEF genMacroDef(_,M,procedure(i,_,_,sy,is,os,_)) ==
     cMacroDef(macro,cIns,cOuts,entry)
     WHERE
         cIns  == cLocal * is
@@ -267,7 +267,7 @@ DEF genMacroDef(o,M,procedure(i,st,md,sy,is,os,s)) ==
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genProcCode : popts ** mod ** obj -> box
-DEF genProcCode(opts,M,ob AS procedure(p,st,md,sy,is,os,s)) == 
+DEF genProcCode(opts,M,ob AS procedure(p,_,md,sy,is,os,s)) == 
     LET r    == analyzeRecursion(ob)    
         C    == newInh(opts,M,p,r,is,os,genCOrigins(M)) 
         T    == newThr
@@ -360,7 +360,7 @@ DEF genModCode(o,M,Methods,Consts) ==
 
 
   FUN genInit : popts ** mod -> obj ** seq[box] -> seq[box]
-  DEF genInit(o,M)(procedure(p,st,md,sy,is,os,s),rest) ==
+  DEF genInit(o,M)(procedure(p,st,_,sy,is,os,_),rest) ==
     LET (entry,var) ==
                 IF false and foreignTemplate?(o) THEN
                     (cEntrySym(msy,p,symbolMap(sy)),
@@ -385,9 +385,9 @@ DEF genModCode(o,M,Methods,Consts) ==
     ELSE 
         cClos(msy,actEntry,#(is),#(os),var)::rest 
     FI
-  DEF genInit(o,M)(Ob AS denotation(d,st,md,sy,r),rest) ==
+  DEF genInit(_,M)(denotation(d,_,_,_,r),rest) ==
     cDeno(cString(r),cGlobal(symbolMap(symbol(M)),d))::rest
-  DEF genInit(o,M)(constant(c,st,md,sy,s),rest) ==
+  DEF genInit(o,M)(constant(c,_,_,_,s),rest) ==
     LET C      == newInh(o,M,c,someRec,<>[ide:SORT],%(c),genCOrigins(M))
         T      == newThr
         (_,init) == gen(C)(T,s)
@@ -403,17 +403,17 @@ DEF genModCode(o,M,Methods,Consts) ==
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genConstInitFun : popts ** mod ** seq[box] -> box
-DEF genConstInitFun(Opts,Mod,InitCode) ==
+DEF genConstInitFun(_,Mod,InitCode) ==
     cConstInit(symbolMap(symbol(Mod)),InitCode)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genConstInitCall : popts ** mod -> box
-DEF genConstInitCall(Opts,Mod) ==
+DEF genConstInitCall(_,Mod) ==
     cConstInitCall(symbolMap(symbol(Mod)))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genConstCode : popts ** mod ** obj -> box
-DEF genConstCode(Opts,Mod,Const AS constant(Id, St, M, Sym, Init)) ==
+DEF genConstCode(Opts,Mod,constant(Id, St, M, Sym, Init)) ==
     IF complexConst?(Init)
     THEN
         -- init code in auxiliary function: call it  
@@ -431,7 +431,7 @@ DEF genConstCode(Opts,Mod,Const AS constant(Id, St, M, Sym, Init)) ==
   DEF HaltToWarn(_else) == _else
 
 FUN genConstAuxCode : popts ** mod ** obj -> box
-DEF genConstAuxCode(Opts,Mod,Const AS constant(Id, _, _, Sym, Init)) ==
+DEF genConstAuxCode(Opts,Mod,Const AS constant(Id, _, _, _, Init)) ==
     IF complexConst?(Init) 
     THEN
         -- generate init code
@@ -450,28 +450,28 @@ DEF complexConst?(_) == false
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genInterfaceImport : popts ** mod -> box
-DEF genInterfaceImport(o,M) == 
+DEF genInterfaceImport(_,M) == 
     lines(%(cInclude(symbol(M) ++ (".h"))))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genHcInclude : popts ** mod -> box
-DEF genHcInclude(o,M) == 
+DEF genHcInclude(_,M) == 
     lines(%(cInclude(symbol(M) ++ (".hc.c"))))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genHcInterfaceInclude : popts ** mod -> box
-DEF genHcInterfaceInclude(o,M) == 
+DEF genHcInterfaceInclude(_,M) == 
     lines(%(cInclude(symbol(M) ++ (".hc.h"))))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genHeader genFooter : popts ** mod -> box
 DEF genHeader(o,M) == cHeader(symbol(M),positions?(o))
-DEF genFooter(o,M) == cFooter(symbol(M))
+DEF genFooter(_,M) == cFooter(symbol(M))
     
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FUN genInterfaceHeader genInterfaceFooter : popts ** mod -> box
-DEF genInterfaceHeader(o,M) == cInterfaceHeader(symbol(M))
-DEF genInterfaceFooter(o,M) == cInterfaceFooter(symbol(M))
+DEF genInterfaceHeader(_,M) == cInterfaceHeader(symbol(M))
+DEF genInterfaceFooter(_,M) == cInterfaceFooter(symbol(M))
     
 -- ===========================================================================
 -- Identifiers
@@ -493,7 +493,7 @@ DEF genIde(C,T)(i) ==
     FI
 
 FUN genEntry : inh ** thr -> ide -> box
-DEF genEntry(C,T)(i) ==
+DEF genEntry(C,_)(i) ==
     IF foreignTemplate?(popts(C)) and (origin(i) = target) THEN
         cEntrySym(msy,i,osy) 
         WHERE osy == symbolMap(symbol(obj(mod(C),i)))
@@ -503,7 +503,7 @@ DEF genEntry(C,T)(i) ==
     WHERE msy == corigins(C) ! #(origin(i))
 
 FUN genMacro : inh ** thr -> ide -> box
-DEF genMacro(C,T)(i) ==
+DEF genMacro(C,_)(i) ==
     IF foreignTemplate?(popts(C)) and (origin(i) = target) THEN
         cMacroSym(msy,i,osy) 
         WHERE osy == symbolMap(symbol(obj(mod(C),i)))
@@ -535,19 +535,19 @@ FUN gen : inh -> thr ** stm -> thr ** box
 -- Trivial
 -- ===========================================================================
 
-DEF gen(C)(T,nop) ==
+DEF gen(_)(T,nop) ==
     (T,cNop)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF gen(C)(T,pos(p)) == 
+DEF gen(_)(T,pos(p)) == 
     (T,cPos(p)) 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF gen(C)(T,halt(m,k)) == 
+DEF gen(_)(T,halt(m,_)) == 
     (T,lines(%(cHalt(cString(m)))))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF gen(C)(T,warn(m,k)) == 
+DEF gen(_)(T,warn(m,_)) == 
     (T,lines(%(cWarn(cString(m)))))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -573,7 +573,7 @@ DEF gen(C)(T,block(vs,ss)) ==
 
 
   FUN genDecs : inh ** thr ** seq[obj:SORT] -> thr ** seq[box:SORT]
-  DEF genDecs(C,T,<>) ==
+  DEF genDecs(_,T,<>) ==
     (T,<>)
   DEF genDecs(C,T,v::vs) ==
     LET cd? == decMap(T) !? ide(v)
@@ -591,11 +591,11 @@ DEF gen(C)(T,block(vs,ss)) ==
 
 FUN genSequ : inh ** thr ** bool ** seq[ide:SORT] ** seq[stm:SORT] 
                                                 -> thr ** seq[box:SORT]
-DEF genSequ(C,T,lastAfter?,is,<>) ==
+DEF genSequ(_,T,_,_,<>) ==
     (T,<>[box:SORT])
 DEF genSequ(C,T,lastAfter?,is,(p AS pos(_)) :: (pos(_) :: ss)) ==
     genSequ(C,T,lastAfter?,is,p :: ss)
-DEF genSequ(C,T,lastAfter?,is,pos(_) :: <>) ==
+DEF genSequ(_,T,_,_,pos(_) :: <>) ==
     (T,<>[box:SORT])
 DEF genSequ(C,T,lastAfter?,is,nop::ss) ==
     genSequ(C,T,lastAfter?,is,ss)
@@ -651,9 +651,7 @@ DEF genSequ(C,T,lastAfter?,is,s::ss) ==
 
 FUN prepareTmc : inh ** thr ** stm ** stm -> inh ** thr
 DEF prepareTmc(C,T,call,cons) ==
-    LET os         == outs(call) 
-        is         == ins(cons)
-        (T1,tmcis) == prepTmc(C,T,outs(call),
+    LET (T1,tmcis) == prepTmc(C,T,outs(call),
                                   store(cons),ins(cons),
                                   genIde(C,T)(out(cons)),1)
     IN
@@ -971,7 +969,7 @@ DEF gen(C)(T,case(i,st,ms,df)) ==
   FUN genSwitch : box ** store ** nat ** nat **
                   seq[triple[set[nat,<],store,box]] ** 
                   seq[triple[set[nat,<],store,box]] ** box -> box
-  DEF genSwitch(ci,caseSt,n,m,primPathes,prodPathes,default) ==
+  DEF genSwitch(ci,caseSt,_,_,primPathes,prodPathes,default) ==
     genItes(ci,caseSt,primPathes,
              genItes(ci,caseSt,prodPathes,default))
 
@@ -979,7 +977,7 @@ DEF gen(C)(T,case(i,st,ms,df)) ==
   DEF genItes(ci,caseSt,&(tags,matchSt,path) :: rest,default) ==
     cIte(cTestTag(ci,caseSt,tags,matchSt),path, 
          genItes(ci,caseSt,rest,default))
-  DEF genItes(ci,caseSt,<>,default) ==
+  DEF genItes(_,_,<>,default) ==
     default
 
 
@@ -1145,7 +1143,7 @@ DEF genMatch(C,ob)(T,match(tags,st,sls,ss)) ==
             (n,s%,rt(ss))
         OTHERWISE
         IF block?(s) and <>?(rt(ss)) THEN
-            LET (n1,ss1,ss2) == findFreeOrReuse(C,i,stms(s))
+            LET (n1,_,ss2) == findFreeOrReuse(C,i,stms(s))
             IN
             IF (n1 > 0) and (ss2<>?) THEN
                 (n1,ss,<>[stm:SORT])

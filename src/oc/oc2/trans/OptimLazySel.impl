@@ -4,7 +4,7 @@ IMPLEMENTATION OptimLazySel
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-06 21:28:28 $ ($Revision: 1.3 $)
+-- % $Date: 1999-10-08 10:34:38 $ ($Revision: 1.4 $)
 
 -- subject: Selection optimization on AC 
 -- author:  wg 6-93
@@ -31,20 +31,10 @@ IMPORT  Ide             ONLY ide local local? = : ide ** ide -> bool
                              error error? kind errorKind never never?
         OptimAn         ONLY optimAn bindingAn? bindingAn complexity rank
                              maxIdeNo
+        PreparedOptions ONLY popts
         Ac              COMPLETELY
         AcFun           ONLY =
-
-
-/*
-IMPORT AcAnaScheme[void,thr,ideSet,
-                   leaf,
-                   enterBlock,returBlock,exitBlock,
-                   enterBind,exitBind,
-                   enterCase,returCase,exitCase,
-                   enterMatch,exitMatch] ONLY df
-*/
-
-IMPORT AcAnaScheme COMPLETELY
+        AcAnaScheme     COMPLETELY
 
 -- ==========================================================================
 -- Data Type to represent strict-sets of local ides
@@ -66,13 +56,13 @@ DEF S + all == S
 DEF some(S1) + some(S2) == some(S1 + S2)
 
 FUN \ : sset ** sset -> sset
-DEF all \ S == some({}) -- this is counter-intuitive, but serves well
+DEF all \ _ == some({}) -- this is counter-intuitive, but serves well
                         -- for our application
-DEF some(S) \ all == some({})
+DEF some(_) \ all == some({})
 DEF some(S1) \ some(S2) == some(S1 - S2)
 
 FUN incl : ide ** sset -> sset
-DEF incl(Ide,all) == all
+DEF incl(_,all) == all
 DEF incl(Ide,some(S)) == IF local?(Ide) THEN some(incl(Ide,S)) ELSE some(S) FI
 
 FUN explode : sset -> seq[ide]
@@ -127,53 +117,53 @@ FUN enterDefault: void ** natMap[sset] ** nat ** exp  -> void ** natMap[sset]
 -- leaf expressions
 
 
-DEF leaf(_,Map,Node,apply(An,Fun,Args),Strict) ==
+DEF leaf(_,Map,_,apply(_,Fun,Args),Strict) ==
     LET NewStrict ==
          ((\\E,S. incl(ide(E),S)) / incl(ide(Fun),Strict))(Args)
     IN
     (Map,NewStrict)
 
-DEF leaf(_,Map,Node,ide(An,Ide),Strict) ==
+DEF leaf(_,Map,_,ide(_,Ide),Strict) ==
     LET NewStrict == incl(Ide,Strict)
     IN
     (Map,NewStrict)
 
-DEF leaf(_,Map,Node,error(An),Strict) ==
+DEF leaf(_,Map,_,error(_),_) ==
     (Map,all)
 
-DEF leaf(X : void,Map,Node,Exp,Strict) ==
+DEF leaf(_ : void,Map,_,_,Strict) ==
     (Map,Strict)
 
 
 -- blocks
 
 
-DEF enterBlock(X : void,Map,Node,An) == (X,Map)
-DEF returBlock(X : void,Map,An) == Map
-DEF exitBlock(X : void,Map,Node,An,Strict) == (Map,Strict)
+DEF enterBlock(X : void,Map,_,_) == (X,Map)
+DEF returBlock(_ : void,Map,_) == Map
+DEF exitBlock(_ : void,Map,_,_,Strict) == (Map,Strict)
 
 
 
-DEF enterBind(X : void,Map,Node,An,Lhs) == (X,Map)
-DEF exitBind(X : void,Map,Node,An,Lhs,Strict) == (Map,Strict)
+DEF enterBind(X : void,Map,_,_,_) == (X,Map)
+DEF exitBind(_ : void,Map,_,_,_,Strict) == (Map,Strict)
 
 
 -- cases
 
 
-DEF enterCase(X : void,Map,Node,An,Discr) == (X,Map)
-DEF returCase(X : void,Map,An,Discr) == Map
-DEF exitCase(X : void,Map,Node,An,Discr,MatchesStrict,DefaultStrict) ==
+DEF enterCase(X : void,Map,_,_,_) == (X,Map)
+DEF returCase(_ : void,Map,_,_) == Map
+DEF exitCase(_ : void,Map,_,_,Discr,MatchesStrict,DefaultStrict) ==
     (Map, incl(ide(Discr),(* / DefaultStrict)(MatchesStrict)))
 
 
-DEF enterMatch(X : void,Map,Node,Discr,Cons,Vars) == (X,Map)
-DEF exitMatch(X : void,Map,Node,Discr,Cons,Vars,Strict) ==
+DEF enterMatch(X : void,Map,_,_,_,_) == (X,Map)
+DEF exitMatch(_ : void,Map,Node,_,_,_,Strict) ==
     -- Store strictness info of this path in Map
     (def(Node,Strict,Map),Strict)
     
-DEF enterDefault(X : void,Map,Node,Discr) == (X,Map)
-DEF exitDefault(X,Map,Node,Discr,Strict) ==
+DEF enterDefault(X : void,Map,_,_) == (X,Map)
+DEF exitDefault(_,Map,Node,_,Strict) ==
     -- Store strictness info of this path in Map
     (def(Node,Strict,Map),Strict)
 
@@ -224,44 +214,43 @@ FUN enterDefault: inh ** thr ** nat ** exp  -> inh ** thr
 
 -- leafs
 
-DEF leaf(I,thr(Rest,Free),Node,apply(An,Fun,Args),S) ==
+DEF leaf(I,thr(Rest,Free),_,apply(An,Fun,Args),S) ==
     LET NewApply == apply(An,substitute(subs(I))(Fun),
                              substitute(subs(I)) * Args)
     IN
     (thr(NewApply :: Rest,Free),S)
 
-DEF leaf(I,thr(Rest,Free),Node,Ide AS ide(_,_),S) ==
+DEF leaf(I,thr(Rest,Free),_,Ide AS ide(_,_),S) ==
     LET NewIde == substitute(subs(I))(Ide)
     IN
     (thr(NewIde :: Rest, Free),S)
 
-DEF leaf(I,thr(Stack,Free),Node,Exp,S) ==
+DEF leaf(_,thr(Stack,Free),_,Exp,S) ==
     (thr(Exp :: Stack,Free),S)
 
 -- blocks
 
-DEF enterBlock(I:inh,T,Node,An) == (I,T)
+DEF enterBlock(I:inh,T,_,_) == (I,T)
 
-DEF returBlock(I,thr(Scope :: Rest,Free),An) ==
+DEF returBlock(_,thr(Scope :: Rest,Free),An) ==
     thr(block(An,<>,Scope) :: Rest,Free)
 
-DEF exitBlock(I:inh,T,Node,An,S) == (T,S)
+DEF exitBlock(_ :inh,T,_,_,S) == (T,S)
 
-DEF enterBind(I:inh,T,Node,An,Lhs) == (I,T)
+DEF enterBind(I:inh,T,_,_,_) == (I,T)
 
-DEF exitBind(I,thr(Rhs :: (block(BlkAn,Binds,Scope) :: Rest),Free),
-                                                        Node,An,Lhs,S) ==
+DEF exitBind(_,thr(Rhs::(block(BlkAn,Binds,Scope)::Rest),Free),_,An,Lhs,S) ==
     (thr(block(BlkAn,binding(An,Lhs,local,Rhs) :: Binds,Scope) :: Rest,Free),
      S)
 
 -- cases
 
-DEF enterCase(I:inh,T,Node,An,Discr) == (I,T)
+DEF enterCase(I:inh,T,_,_,_) == (I,T)
 
 DEF returCase(I,thr(Default :: Rest,Free),An,Discr) ==
     thr(case(An,substitute(subs(I))(Discr),<>,Default) :: Rest,Free)
 
-DEF exitCase(I,T,Node,An,Discr,MSs,DS) == (T,nil)
+DEF exitCase(_,T,_,_,_,_,_) == (T,nil)
 
 DEF enterMatch(inh(Map,Strict,Sels,Subs,_),thr(Stack,Free),
                                         Node,Discr,Cons,Vars) ==
@@ -272,9 +261,9 @@ DEF enterMatch(inh(Map,Strict,Sels,Subs,_),thr(Stack,Free),
     IN
     (inh(Map,NewStrict,NewSels,NewSubs,LazySels),thr(Stack,NewFree))
 
-DEF exitMatch(inh(Map,Strict,Sels,Subs,LazySels),
+DEF exitMatch(inh(_,_,_,Subs,LazySels),
               thr(Scope :: (case(An,Discr,Matches,Default) :: Rest),Free),
-              Node,_,Cons,Vars,S) ==
+              _,_,Cons,Vars,S) ==
     LET NewScope == (genLazySel(Subs) / Scope)(LazySels)
     IN
     (thr(case(An,Discr,match(Cons,Vars,NewScope) :: Matches,Default) :: Rest,
@@ -282,14 +271,14 @@ DEF exitMatch(inh(Map,Strict,Sels,Subs,LazySels),
      S)
 
 DEF enterDefault(inh(Map,Strict,Sels,Subs,_),thr(Stack,Free),
-                                        Node,Discr) ==
+                                        Node,_) ==
     LET (NewStrict,NewFree,LazySels,NewSubs) ==
                 calcLazySels(Map!Node,Strict,Free,Sels,Subs)
     IN
     (inh(Map,NewStrict,Sels,NewSubs,LazySels),thr(Stack,NewFree))
 
-DEF exitDefault(inh(Map,Strict,Sels,Subs,LazySels),
-                thr(Default ::  Rest,Free),Node,_,S) ==
+DEF exitDefault(inh(_,_,_,Subs,LazySels),
+                thr(Default ::  Rest,Free),_,_,S) ==
     LET NewDefault == (genLazySel(Subs) / Default)(LazySels)
     IN
     (thr(NewDefault :: Rest,Free),S)
@@ -328,7 +317,7 @@ DEF exitDefault(inh(Map,Strict,Sels,Subs,LazySels),
         IN
         mergeLazySels(Sels,NewFree,NewSel::CurrSels,def(Ide,NewIde,Subs),Ides)
     FI
-  DEF mergeLazySels(Sels,Free,CurrSels,Subs,<>) ==
+  DEF mergeLazySels(_,Free,CurrSels,Subs,<>) ==
     (Free,CurrSels,Subs)
 
   FUN genLazySel : ideMap[ide] -> sel ** exp -> exp
@@ -343,7 +332,8 @@ DEF exitDefault(inh(Map,Strict,Sels,Subs,LazySels),
 -- ==========================================================================
 
 FUN optimLazySel : popts ** unit ** dec -> dec
-DEF optimLazySel(Opts,Unit,Dec AS binding(An,Lhs,Mode,Rhs)) ==
+DEF optimLazySel(_,_,Dec) == Dec
+DEF optimLazySel(_,_,Dec AS binding(An,Lhs,Mode,Rhs)) ==
     IF deno?(Rhs) THEN Dec
     OTHERWISE
     IF ~(bindingAn?(optim(An))) THEN
@@ -372,7 +362,7 @@ DEF optimLazySel(Opts,Unit,Dec AS binding(An,Lhs,Mode,Rhs)) ==
 -- ==========================================================================
 
 FUN pos : ide ** seq[dec] -> nat
-DEF pos(Ide,variable(An,VarIde)::Vars) ==
+DEF pos(Ide,variable(_,VarIde)::Vars) ==
     IF Ide = VarIde THEN 0 ELSE succ(pos(Ide,Vars)) FI
 
 -- to be moved to AcFun
@@ -406,6 +396,6 @@ DEF substitute(Subs)(ide(An,Ide)) ==
     LET NewIde? == Subs !? Ide
     IN
     IF avail?(NewIde?) THEN ide(An,cont(NewIde?)) ELSE ide(An,Ide) FI
-DEF substitute(Subs)(Exp) == 
+DEF substitute(_)(Exp) == 
     Exp
     

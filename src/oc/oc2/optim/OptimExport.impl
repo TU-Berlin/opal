@@ -4,7 +4,7 @@ IMPLEMENTATION OptimExport
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-03-09 11:59:21 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-08 10:33:52 $ ($Revision: 1.3 $)
 
 -- subject: Finitialization phase of optimization
 -- project: acc
@@ -20,6 +20,7 @@ IMPORT  Nat             ONLY nat = 0 1 > <= max:nat |=
         Denotation      ONLY ++  =
         String          ONLY string
         Void            ONLY void nil
+        Char            ONLY char
         Com             ONLY com ans:SORT yield data okay exit okay? error
         ComCompose      COMPLETELY
         ComSeqReduce    ONLY /
@@ -32,8 +33,9 @@ IMPORT  NatMap          ONLY natMap {} def ! !?
 
 IMPORT  Verbose         ONLY verb definition subphase
         Options         ONLY options myOptFile
-        OcStream        ONLY output stdErr write        char
-        Error           ONLY ok
+        Stream          ONLY output stdErr
+        OcStream        ONLY write
+        Error           ONLY err:SORT ok
 
 IMPORT  Ide             COMPLETELY
         IdeSet          ONLY ideSet {} incl in implode explode
@@ -413,8 +415,8 @@ DEF diff?(U1,U2) ==
     ELSE diffDecs?(asSeq(decs(U1)),asSeq(decs(U2))) FI
 
 FUN diffUses? : seq[pair[nat,unit]] ** seq[pair[nat,unit]] -> bool
-DEF diffUses?((No1 & unit(An1,Sym1,Orig1,Uses1,Decs1)) :: Rest1,
-              (No2 & unit(An2,Sym2,Orig2,Uses2,Decs2)) :: Rest2) ==
+DEF diffUses?((No1 & unit(An1,Sym1,_,_,_)) :: Rest1,
+              (No2 & unit(An2,Sym2,_,_,_)) :: Rest2) ==
     IF (No1 = No2) and (Sym1 = Sym2) THEN
         IF version?(source(An1) ) and version?(source(An2)) THEN
             IF version(source(An1)) = version(source(An2)) THEN
@@ -427,22 +429,20 @@ DEF diffUses?(_,<>) == true
 DEF diffUses?(<>,<>) == false
 
 FUN diffDecs? : seq[pair[nat,dec]] ** seq[pair[nat,dec]] -> bool
-DEF diffDecs?((No1 & hidden(An1,Id1,Mod1)) :: Rest1,
-              (No2 & hidden(An2,Id2,Mod2)) :: Rest2) ==
+DEF diffDecs?((No1 & hidden(An1,_,_)) :: Rest1,
+              (No2 & hidden(An2,_,_)) :: Rest2) ==
     IF (No1 |= No2) or diffAn?(An1,An2) THEN
         true
     ELSE diffDecs?(Rest1,Rest2) FI
-DEF diffDecs?((No1 & constructor(An1,Id1,Mod1,Ord1)) :: Rest1,
-              (No2 & constructor(An2,Id2,Mod2,Ord2)) :: Rest2) ==
+DEF diffDecs?((No1 & constructor(An1,_,_,Ord1)) :: Rest1,
+              (No2 & constructor(An2,_,_,Ord2)) :: Rest2) ==
     IF (No1 |= No2) or ((Ord1 |= Ord2) or diffAn?(An1,An2)) THEN true
     ELSE diffDecs?(Rest1,Rest2) FI
-DEF diffDecs?((No1 & binding(An1,Id1,Mod1,Exp1)) :: Rest1,
-              (No2 & binding(An2,Id2,Mod2,Exp2)) :: Rest2) ==
+DEF diffDecs?((No1 & binding(An1,_,_,Exp1)) :: Rest1,
+              (No2 & binding(An2,_,_,Exp2)) :: Rest2) ==
     IF (No1 |= No2) or (diffAn?(An1,An2) or diffExp?(Exp1,Exp2)) THEN true
     ELSE diffDecs?(Rest1,Rest2) FI
-DEF diffDecs?(P1 :: Rest1,P2 :: Rest2) == true
-DEF diffDecs?(<>,_)  == true
-DEF diffDecs?(_,<>)  == true
+DEF diffDecs?(_,_)  == true
 DEF diffDecs?(<>,<>) == false
 
 FUN diffAn? : an ** an -> bool
@@ -458,20 +458,19 @@ DEF diffTypeAn?(_,_) == true
 
 
 FUN diffTypeDecs? : seq[pair[nat,typeDec]] ** seq[pair[nat,typeDec]] -> bool
-DEF diffTypeDecs?((No1 & hidden(Id1)) :: Rest1,
-                  (No2 & hidden(Id2)) :: Rest2) == 
+DEF diffTypeDecs?((No1 & hidden(_)) :: Rest1,
+                  (No2 & hidden(_)) :: Rest2) == 
     IF (No1 |= No2) THEN true
     ELSE diffTypeDecs?(Rest1,Rest2) FI
-DEF diffTypeDecs?((No1 & binding(Id1,Def1)) :: Rest1,
-                  (No2 & binding(Id2,Def2)) :: Rest2) ==
+DEF diffTypeDecs?((No1 & binding(_,Def1)) :: Rest1,
+                  (No2 & binding(_,Def2)) :: Rest2) ==
     IF (No1 |= No2) or diffType?(Def1,Def2) THEN true
     ELSE diffTypeDecs?(Rest1,Rest2) FI
-DEF diffTypeDecs?(P1 :: Rest1, P2 :: Rest2) == true
-DEF diffTypeDecs?(<>,_) == true
-DEF diffTypeDecs?(_,<>) == true
+DEF diffTypeDecs?(_,_) == true
 DEF diffTypeDecs?(<>,<>) == false
 
 FUN diffType? : type ** type -> bool
+DEF diffType?(_,_) == true
 DEF diffType?(some,some) == false
 DEF diffType?(ide(Id1),ide(Id2)) == ~(Id1 = Id2)
 DEF diffType?(tup(Comps1),tup(Comps2)) == diffTypes?(Comps1,Comps2)

@@ -3,7 +3,7 @@ IMPLEMENTATION OptimEval
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-06 23:19:05 $ ($Revision: 1.3 $)
+-- % $Date: 1999-10-08 10:33:52 $ ($Revision: 1.4 $)
 
 -- subject: partial evaluation of expressions
 -- project: acc
@@ -20,7 +20,7 @@ IMPORT  Nat             COMPLETELY
         Pair            COMPLETELY
         Compose         ONLY o
 
-IMPORT  Error           ONLY ok
+IMPORT  Error           ONLY err:SORT ok
 
 IMPORT  Ide             ONLY ide global? local? global local = : ide**ide->bool
         Ac              COMPLETELY
@@ -37,7 +37,7 @@ IMPORT  Ide             ONLY ide global? local? global local = : ide**ide->bool
         IdeBag          ONLY ideBag {} incl + - * ct in
         AcFun           ONLY = atomic? global? local? ide dec
                              neverReached?
-        PreparedOptions ONLY distribCase? distribCaseAlways?
+        PreparedOptions ONLY popts distribCase? distribCaseAlways?
                              completeCase? completeCaseAlways?
         Builtin         ONLY consTuple
 
@@ -123,7 +123,7 @@ FUN {} : discrBag
 DEF {} == ideBag({})
 
 FUN incl : ide ** discrBag -> discrBag
-DEF incl(Ide, all) == all
+DEF incl(_, all) == all
 DEF incl(Ide, ideBag(Bag)) == ideBag(incl(Ide, Bag))
 
 FUN + - * : discrBag ** discrBag -> discrBag
@@ -144,22 +144,22 @@ DEF all * B   == B
 DEF ideBag(Bag1) * ideBag(Bag2) == ideBag(Bag1 * Bag2)
 
 FUN ct : ide ** discrBag -> nat
-DEF Ide ct all == 1000  -- this is a pragamtic value which still
+DEF _ ct all == 1000  -- this is a pragamtic value which still
                         -- allows arithmetic with the result but
                         -- is large enough to serve for our purposes
 DEF Ide ct ideBag(Bag) == Ide ct Bag
 
 FUN in : ide ** discrBag -> bool
-DEF Ide in all == true
+DEF _ in all == true
 DEF Ide in ideBag(Bag) == Ide in Bag
 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF eval(C)(T,e) ==
+DEF eval(_)(T,e) ==
     (T,e)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF eval(C)(T,e AS error(_)) ==
+DEF eval(_)(T,e AS error(_)) ==
     (T setDiscrs all,e)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -168,13 +168,12 @@ DEF eval(C)(T,lambda(a,vs,sc)) ==
         es       == (ide:ide->exp o ide:dec->ide) * vs1
         subs1    == extend(subs(C),ide * vs,es)
         types1   == extend(types(C),ide * vs1,typeOfDec * vs1)
-        C1       == (C setSubs subs1) setTypes types1
         (T2,sc1) == eval((C setSubs subs1) setTypes types1)(T1,sc)
     IN
     (T2,lambda(a,vs1,sc1))
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF eval(C)(T,e AS ide(a,id)) == 
+DEF eval(C)(T,e AS ide(_,id)) == 
     IF id def? subs(C) THEN
         (T,subs(C)!id)
     OTHERWISE
@@ -286,7 +285,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
 
   FUN evalBlock : inh ** inh ** thr ** seq[dec] ** exp 
                         -> thr ** seq[dec] ** seq[pair[discrBag,dec]] ** exp
-  DEF evalBlock(C,newC,T,<>,s) ==
+  DEF evalBlock(_,newC,T,<>,s) ==
     LET (T1,news) == eval(newC)(T,s)
     IN
     (T1,<>,<>,news)
@@ -360,7 +359,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
 
 
   FUN shallSubstitute? : inh ** ide ** exp ** exp -> bool
-  DEF shallSubstitute?(C,i,d,s) ==
+  DEF shallSubstitute?(_,_,d,s) ==
     /* Decide if d should be substituted for v instead of binding d to v,
        where s is the scope of the binding.  
     */
@@ -378,7 +377,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
 
 
   FUN shallSampleEqu? : inh ** ide ** exp -> bool
-  DEF shallSampleEqu?(C,i,d) ==
+  DEF shallSampleEqu?(_,_,_) ==
     /* Decide if d should be sampled as equality for v.
        This is always save, but only exploited currently for 
        constructions during case simplification.
@@ -399,7 +398,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
 
   DEF lookupBestDistribCand
         (C,discrs,(b AS 
-                   (ds & binding(ba,id,mode,case(ca,ide(ia,dsc),ms,df))))::bs,
+                   (_ & binding(_,id,_,case(_,ide(_,dsc),ms,df))))::bs,
                                                             s,cand,weight) ==
     LET tupcnt  == (dsc ct discrs)
                    -- the number of times dsc is discriminated
@@ -431,13 +430,13 @@ DEF eval(C)(T,block(a,bs,s)) ==
                  lookupBestDistribCand(C,discrs,bs,s,cand,weight)
     IN
     (finalcand,b::rest)
-  DEF lookupBestDistribCand(C,discrs,<>,s,cand,weight) == 
+  DEF lookupBestDistribCand(_,_,<>,_,cand,_) == 
     (cand,<>)
     
 
   FUN distribWeightFun : inh ** ide ** nat ** ide ** nat ** nat 
                                            ** exp ** exp -> nat
-  DEF distribWeightFun(C,dsc,tupcnt,id,fusecnt,noOfMatches,default,scope) ==
+  DEF distribWeightFun(C,_,tupcnt,id,fusecnt,noOfMatches,default,scope) ==
      IF (noOfMatches = 1) and error?(default) THEN
          -- no code duplication; wins always
          max
@@ -467,7 +466,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
 
   FUN directCons? directSel? : inh -> exp -> bool
 
-  DEF directCons?(C)(error(_)) == 
+  DEF directCons?(_)(error(_)) == 
     true
   DEF directCons?(C)(apply(_,ide(_,id AS global(_,_)),as)) ==
     IF constructor?(d) THEN #(as) = order(d) ELSE false FI
@@ -475,12 +474,12 @@ DEF eval(C)(T,block(a,bs,s)) ==
   DEF directCons?(C)(ide(_,id AS global(_,_))) ==
     IF constructor?(d) THEN order(d) = 0 ELSE false FI
         WHERE d == dec(unit(C),id)
-  DEF directCons?(C)(e) == 
+  DEF directCons?(_)(_) == 
     false
 
-  DEF directSel?(C)(error(_)) == true
-  DEF directSel?(C)(ide(_,local(_))) == true
-  DEF directSel?(C)(e) == false
+  DEF directSel?(_)(error(_)) == true
+  DEF directSel?(_)(ide(_,local(_))) == true
+  DEF directSel?(_)(_) == false
 
 
   FUN distribToMatch : an ** seq[dec] ** dec ** exp -> match -> match
@@ -488,8 +487,8 @@ DEF eval(C)(T,block(a,bs,s)) ==
     match(cons,vars,distrib(a,bs,v,s,scope))
 
   FUN distrib : an ** seq[dec] ** dec ** exp ** exp -> exp
-  DEF distrib(a,bs,v,s,e AS error(ea)) == e
-  DEF distrib(a,bs,v,s,e AS block(ea,binds,scope)) ==
+  DEF distrib(_,_,_,_,e AS error(_)) == e
+  DEF distrib(a,bs,v,s,block(_,binds,scope)) ==
         -- prevent blocks in bindings.
         block(a,binds,distrib(a,bs,v,s,scope))  
   DEF distrib(a,bs,v,s,e) ==
@@ -517,7 +516,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
   FUN sampleTupleCands: inh ** ideMap[seq[dec]] ** seq[dec] ** seq[dec]
                                 -> ideMap[seq[dec]] ** seq[dec]
   DEF sampleTupleCands(C,candsMap,rest,
-                 (b AS binding(a,lhs,m,case(ca,dsc,ms,df)))::bs) ==
+                 (b AS binding(_,_,_,case(_,dsc,_,_)))::bs) ==
     LET type == structure(typeDecAss(unit(C)))(typeOfDec(b)) 
     IN
     IF tup?(type) THEN
@@ -533,7 +532,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
     FI
   DEF sampleTupleCands(C,candsMap,rest,b::bs) ==
     sampleTupleCands(C,candsMap,b::rest,bs)
-  DEF sampleTupleCands(C,candsMap,rest,<>) ==
+  DEF sampleTupleCands(_,candsMap,rest,<>) ==
     (candsMap,rest)
 
 
@@ -544,7 +543,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
         (T2,restInfos,restTupled) == tupleCands(C,T1,rest)
     IN
     (T2,info::restInfos,tupled::restTupled)
-  DEF tupleCands(C,T,<>) ==
+  DEF tupleCands(_,T,<>) ==
     (T,<>,<>)
 
   FUN tuple: inh ** thr ** seq[dec] -> thr ** pair[ide,seq[dec]] ** dec
@@ -573,23 +572,23 @@ DEF eval(C)(T,block(a,bs,s)) ==
     (T3,info,tupled)
 
   FUN calcAllMatches : seq[dec] ** ideSet ** seq[match] -> seq[match]
-  DEF calcAllMatches(binding(a,lhs,mode,case(ca,dsc,ms,df))::bs,sofar,allMs) ==
+  DEF calcAllMatches(binding(_,_,_,case(_,_,ms,_))::bs,sofar,allMs) ==
     LET R == ( (\\m,P. IF cons(m) in 1st(P) THEN P
                        ELSE incl(cons(m),1st(P)) & (m::2nd(P)) FI)
                                                    / (sofar & allMs)) (ms)
     IN
     calcAllMatches(bs,1st(R),2nd(R))
-  DEF calcAllMatches(<>,sofar,allMs) == allMs
+  DEF calcAllMatches(<>,_,allMs) == allMs
     
   FUN tupleBinds : inh ** seq[dec] -> exp
-  DEF tupleBinds(C,bs) ==
+  DEF tupleBinds(_,bs) ==
     block(none,bs,
           apply(none,ide(a,consTuple(#(bs))),(\\b.ide(none,ide(b))) * bs))
         WHERE a == none set spec(typeOfDec * bs) 
                         -- specialization of generic tuple constructor
 
   FUN genTupledMatch : inh ** exp -> thr ** match -> thr ** match
-  DEF genTupledMatch(C,scope)(T,match(c,vs,_)) ==
+  DEF genTupledMatch(_,scope)(T,match(c,vs,_)) ==
     -- generate tupled match, taken supplied match as "pattern"
     LET (T1,renVs) == (rename)*(T,vs)   -- new pattern variables
     IN
@@ -604,7 +603,7 @@ DEF eval(C)(T,block(a,bs,s)) ==
         decons   == match(consTuple(#(origVars)),origVars,newScope)
     IN
     case(none,ide(none,lhs),%(decons),default) 
-  DEF deconsTupledLhs(C,<>,scope) ==
+  DEF deconsTupledLhs(_,<>,scope) ==
     scope
     
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -793,7 +792,7 @@ DEF simplifyCase(C,T,a,dsc,ms,df) ==
 
   FUN completeMatches : inh ** thr ** seq[type] ** exp ** seq[match] ** exp ->
                                 thr ** seq[match] ** exp
-  DEF completeMatches(C,T,notHandled,dsc,ms,df) ==
+  DEF completeMatches(C,T,notHandled,_,ms,df) ==
     IF #(notHandled) = 0 THEN
         -- no completion necessary, but set default to never reached
         (T,ms,newDf)
@@ -807,7 +806,7 @@ DEF simplifyCase(C,T,a,dsc,ms,df) ==
     ELSE (T,ms,df) FI
 
   FUN shallCompleteMatches : inh ** nat ** exp -> bool
-  DEF shallCompleteMatches(C,noOfNotHandled,df) ==
+  DEF shallCompleteMatches(C,noOfNotHandled,_) ==
     -- elaborate !!!
     completeCaseAlways?(popts(C)) or 
         (completeCase?(popts(C)) and (noOfNotHandled < 2))
@@ -823,7 +822,7 @@ DEF simplifyCase(C,T,a,dsc,ms,df) ==
                      ELSE typeOfDec(dec(unit(C),i)) FI
             
   FUN genMatch : inh ** exp -> thr ** type -> thr ** match
-  DEF genMatch(C,e)(T,prod(c,ts)) ==
+  DEF genMatch(_,e)(T,prod(c,ts)) ==
         LET (T1,vs) == (genVar)*(T,ts)  -- generate dummy pattern variables
         IN
         (T1,match(c,vs,e))

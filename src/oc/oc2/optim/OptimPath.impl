@@ -4,7 +4,7 @@ IMPLEMENTATION OptimPath
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-03-09 11:59:23 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-08 10:33:52 $ ($Revision: 1.3 $)
 
 -- subject: optimization of evaluation path
 -- project: acc
@@ -28,8 +28,8 @@ IMPORT  Ide             COMPLETELY
         IdeMap          ONLY ideMap {} def ! <+ def? !? 
         IdeSet          ONLY ideSet {} {}? incl excl in + - * explode | *-
                              implode <=
-        PreparedOptions ONLY liftMFE?
-        Error           ONLY ok
+        PreparedOptions ONLY popts liftMFE?
+        Error           ONLY err:SORT ok
 
 IMPORT  IdeOrd          ONLY ideOrd {} arc point topSort extract format uppers
         EqnSys          ONLY eqnSys equated? rhs an deps
@@ -138,7 +138,7 @@ DEF analyzePath(I,T,ide(_,id AS local(_))) ==
         (T updDeps {}) updFree incl(id,{})
     FI
         
-DEF analyzePath(I,T,e) ==
+DEF analyzePath(_,T,_) ==
     (T updDeps {}) updFree {}
     
 DEF analyzeSubPath(I,T,lhs,ide(_,id AS local(_))) == 
@@ -151,7 +151,7 @@ DEF analyzeSubPath(I,T,lhs,ide(_,id AS local(_))) ==
         (T updDeps {}) updFree incl(id,{})
     FI
         
-DEF analyzeSubPath(I,T,lhs,e) ==
+DEF analyzeSubPath(_,T,_,_) ==
     (T updDeps {}) updFree {}
 
 -- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
@@ -190,10 +190,10 @@ DEF analyzeIndir(I,T,id AS local(_)) ==
         IN
         (T2,forcedClos + incl(id,deps(T2)))
     ELSE (T1,forcedClos) FI
-  DEF analyzeForced(I,T,<>) == (T,{})
+  DEF analyzeForced(_,T,<>) == (T,{})
 
 -- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-DEF analyzeRhs(I,lhs)(e,T) == 
+DEF analyzeRhs(_,_)(_,T) == 
     -- deno, error, ide(_,global(...)) -- hoff. auch warn (kd)
     T
 
@@ -220,7 +220,7 @@ DEF analyzeRhs(I,lhs)(apply(_,f,as),T) ==
 -- -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   -   - 
 DEF analyzeRhs(I,lhs)(case(_,ds,ms,df),T) ==
     LET T1 == analyzeRhs(I,lhs)(ds,T)
-        (T2,strictEqns,freeEqns,allEqns) == analyzeCase(I,T1,lhs,ms,df)
+        (T2,strictEqns,freeEqns,_) == analyzeCase(I,T1,lhs,ms,df)
         lift == forceNoTargetLift(I,T2,
                    IF avail?(strictEqns) THEN cont(strictEqns) + freeEqns
                                          ELSE freeEqns FI
@@ -248,7 +248,7 @@ DEF analyzeRhs(I,lhs)(case(_,ds,ms,df),T) ==
         (T2,avail(strictEqns),freeEqns,strictEqns)
     FI
 
-  DEF analyzeCase(I,T,lhs,match(c,vs,s)::ms,df) ==
+  DEF analyzeCase(I,T,lhs,match(_,vs,s)::ms,df) ==
     LET (T1,strictEqns,freeEqns,allEqns) == analyzeCase(I,T,lhs,ms,df)
     IN
     IF neverReached?(popts(I),s) THEN
@@ -276,7 +276,7 @@ DEF analyzeRhs(I,lhs)(case(_,ds,ms,df),T) ==
   DEF s * avail(s1) == s * s1
 
   FUN liftCand? : inh ** thr ** ideSet -> ide -> bool
-  DEF liftCand?(I,T,bound)(id) ==
+  DEF liftCand?(_,T,bound)(id) ==
     -- cand is regarded as liftable if there is no intersection
     -- of its free vars with bound
     {}?(bound * free(atrs(T)!id))
@@ -363,7 +363,7 @@ DEF generatePath(S,atrs,ord,e AS ide(_,id)) ==
         ELSE e FI
     ELSE e FI
 
-DEF generatePath(S,atrs,ord:seq[ideSet],e) == 
+DEF generatePath(_,_,_ :seq[ideSet],e) == 
     e
 
   FUN splitTodo : eqnSys ** ideMap[atr] ** seq[ideSet] ** ideSet 
@@ -420,10 +420,10 @@ DEF generateSequ(S,atrs,ord,ids :: <>,res) ==
     IN
     IF bs <>? THEN s ELSE block(none,bs,s) FI
 
-DEF generateSequ(S,atrs,ord,<>,res) == res
+DEF generateSequ(_,_,_,<>,res) == res
 
 -- --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-DEF generateRhs(S,atrs,ord,e) ==
+DEF generateRhs(_,_,_,e) ==
     -- error, deno, ide, apply -- hoffentlich auch warn
     e
 
@@ -443,7 +443,7 @@ DEF generateRhs(S,atrs,ord,lambda(a,vs,s)) ==
 -- --------------------------------------------------------------------------
 
 FUN analyzeImpliedStrict: eqnSys ** ideMap[atr] ** ideSet ** ideSet -> ideSet
-DEF analyzeImpliedStrict(Sys,atrs,NonStrictDeps,StrictDeps) ==
+DEF analyzeImpliedStrict(Sys,_,NonStrictDeps,StrictDeps) ==
     /* Having a set of strict dependencies, we calculate from a
        set of non-strict dependencies which ones can
        be savely evaluated, since the undefindness of a none-strict

@@ -3,7 +3,7 @@ IMPLEMENTATION OptimLift
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-06 23:19:05 $ ($Revision: 1.3 $)
+-- % $Date: 1999-10-08 10:33:52 $ ($Revision: 1.4 $)
 
 -- subject: lifting constants & lambda expression 
 -- project: acc
@@ -37,8 +37,8 @@ IMPORT  Ide             COMPLETELY
         TypeAnFun       ONLY typeDec
         SourceAnFun     ONLY symbol
         Builtin         ONLY tuple consTuple consTuple?  INLINE
-        PreparedOptions ONLY liftConst? shareConst? shareExternConst?
-        Error           ONLY ok
+        PreparedOptions ONLY popts liftConst? shareConst? shareExternConst?
+        Error           ONLY err:SORT ok
 
 
 -- -------------------------------------------------------------------------
@@ -105,17 +105,17 @@ DEF optimLiftCon(o,U,i,e) ==
 FUN lift : inh -> thr ** exp -> thr ** exp
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF lift(I)(T,e AS error(a)) ==
+DEF lift(_)(T,e AS error(_)) ==
     (T,e)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF lift(I)(T,e AS deno(a,r)) ==
+DEF lift(I)(T,e AS deno(_,_)) ==
     /* Introduce new combinator for denotation.
     */
     newStrictCombinator(I,T,e)
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF lift(I)(T,e AS ide(a,i)) == 
+DEF lift(I)(T,e AS ide(_,i)) == 
     /* If local ide: if in const and atomic, substitute, otherwise
        include in free set.
     */
@@ -132,7 +132,7 @@ DEF lift(I)(T,e AS ide(a,i)) ==
     FI
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF lift(I)(T,e AS apply(a,f,as)) == 
+DEF lift(I)(T,apply(a,f,as)) == 
     /* If liftConst? enabled, check if (lifted) function and arguments are
        constant, and if so introduce combinator for application.
     */
@@ -190,7 +190,8 @@ DEF lift(I)(T,e AS apply(a,f,as)) ==
     FI
 
     FUN consLike? : unit ** exp -> bool
-    DEF consLike?(Unit,ide(An,Id)) ==
+    DEF consLike?(_,_) == false
+    DEF consLike?(Unit,ide(_,Id)) ==
         IF global?(Id) THEN
             constructor?(dec(Unit,Id)) or
                exist?(primary?, props(Unit, Id))
@@ -199,20 +200,20 @@ DEF lift(I)(T,e AS apply(a,f,as)) ==
 
     DATA constKind == none lazy strict
     FUN constKind : inh -> exp -> constKind
-    DEF constKind(I)(ide(a,i)) ==
+    DEF constKind(I)(ide(_,i)) ==
         IF global?(i) THEN strict
         IF local?(i)  THEN LET df? == const(I)!?i 
                            IN
                            IF avail?(df?) THEN constKind(I)(cont(df?))
                                           ELSE none FI
                       ELSE none FI
-    DEF constKind(I)(apply(a,ide(ia,i),ide(aa,ai) :: <>)) ==
+    DEF constKind(_)(apply(_,ide(_,i),ide(_,ai) :: <>)) ==
         IF global?(i) and (ai = consTuple(0)) THEN
             -- application of global function to (): 
             -- lazy constant
             lazy
         ELSE none FI
-    DEF constKind(I)(_) == none
+    DEF constKind(_)(_) == none
 
     FUN meet : constKind ** constKind -> constKind
     DEF strict meet strict == strict
@@ -225,7 +226,7 @@ DEF lift(I)(T,e AS apply(a,f,as)) ==
 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF lift(I)(T,e AS lambda(a,vs,s)) == 
+DEF lift(I)(T,lambda(a,vs,s)) == 
     /* Apply lift to scope of lambda with free set reset, and
        use returned free set to introduce a new combinator for
        lambda abstraction.
@@ -255,7 +256,7 @@ DEF typedVar(I)(i) ==
             )
      
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-DEF lift(I)(T,e AS block(a,bs,s)) == 
+DEF lift(I)(T,block(a,bs,s)) == 
     /* Lift each of the bindings (see below) and then s.
        From the resulting free set exclude all variables introduced 
        by bindings.
@@ -273,7 +274,7 @@ DEF lift(I)(T,e AS block(a,bs,s)) ==
 
   FUN liftBinds : inh ** inh ** thr ** seq[dec:SORT] 
                                 -> inh ** thr ** seq[dec:SORT]
-  DEF liftBinds(I,newI,T,<>) ==
+  DEF liftBinds(_,newI,T,<>) ==
     (newI,T,<>[dec:SORT])
   DEF liftBinds(I,newI,T,(b AS binding(a,lhs,md,rhs))::bs) ==
     /* Lift rhs. Sample type of bounded ide. If newrhs is a constant, 
@@ -370,7 +371,7 @@ DEF newCombinator(I,T,e,freeCnt) ==
     DEF flattenFct(Fct AS fun(As,fun(As1,R)),N) ==
         IF N >= #(As1) THEN flattenFct(fun(As ++ As1,R),N - #(As1))
                        ELSE Fct FI
-    DEF flattenFct(Fct,N) == Fct
+    DEF flattenFct(Fct,_) == Fct
         
         
 
@@ -379,7 +380,7 @@ DEF newStrictCombinator(I,T,e) ==
        IF shareConst? enabled, check all global declarations if it can 
        be shared (this is expensive currently!)
     */
-    LET (ideCnt,flat) == flattenConstExp(I,T)(0,e)
+    LET (_,flat) == flattenConstExp(I,T)(0,e)
         sharedComb?   == searchCombinator(I,T,flat)
     IN
     IF avail?(sharedComb?) THEN
@@ -429,25 +430,25 @@ DEF newLazyCombinator(I,T,e) ==
   DEF searchLazy(I,T,Exp,Dec :: Decs) ==
     IF Exp = scope(def(Dec)) THEN avail(ide(Dec)) 
                              ELSE searchLazy(I,T,Exp,Decs) FI
-  DEF searchLazy(I,T,Exp,<>) == nil
+  DEF searchLazy(_,_,_,<>) == nil
   DEF searchStrict(I,T,Exp,Dec :: Decs) ==
     IF Exp = def(Dec) THEN avail(ide(Dec)) 
                       ELSE searchStrict(I,T,Exp,Decs) FI
-  DEF searchStrict(I,T,Exp,<>) == nil
+  DEF searchStrict(_,_,_,<>) == nil
 
   FUN lazyBinding? strictBinding? : dec -> bool
-  DEF lazyBinding?(binding(An,Lhs,Mode,lambda(LAn,Vars,Scope))) ==
+  DEF lazyBinding?(binding(_,_,_,lambda(_,Vars,_))) ==
     IF #(Vars) = 1 THEN
       LET t == typeOfDec(ft(Vars)) IN
       IF ide?(t) THEN ide(t) = tuple(0) ELSE false FI
     ELSE false FI
   DEF lazyBinding?(_) == false
-  DEF strictBinding?(binding(An,Lhs,Mode,Exp)) == ~(lambda?(Exp))
+  DEF strictBinding?(binding(_,_,_,Exp)) == ~(lambda?(Exp))
   DEF strictBinding?(_) == false
 
 
   FUN flattenConstExp : inh ** thr -> nat ** exp -> nat ** exp 
-  DEF flattenConstExp(I,T)(ideCnt,e AS ide(a,id)) == 
+  DEF flattenConstExp(I,T)(ideCnt,e AS ide(_,id)) == 
     IF global?(id) THEN (ideCnt,e)
     IF local?(id)  THEN flattenConstExp(I,T)(ideCnt,const(I)!id)
                                         -- must be in const(I)
@@ -467,13 +468,13 @@ DEF newLazyCombinator(I,T,e) ==
     (succ(ideCnt2),
      ((\\bs,r. IF <>?(bs) THEN r ELSE block(none,bs,r) FI) / blk)(binds)
     )
-  DEF flattenConstExp(I,T)(ideCnt,e AS deno(a,r)) ==
+  DEF flattenConstExp(_,_)(ideCnt,e AS deno(_,_)) ==
     (ideCnt,e)
-  DEF flattenConstExp(I,T)(ideCnt,e) ==
+  DEF flattenConstExp(_,_)(ideCnt,_) ==
     (ideCnt,ABORT("flattenConstExp'OptimLift: unexpected expression"))
 
   FUN extractBinds : seq[seq[dec]] ** exp -> seq[seq[dec]] ** exp
-  DEF extractBinds(binds,block(a,bs,s)) ==
+  DEF extractBinds(binds,block(_,bs,s)) ==
     LET (innerbinds,s1) == 
           IF <>?(rt(binds)) THEN extractBinds(%(<>),s)
                             ELSE extractBinds(rt(binds),s) FI
