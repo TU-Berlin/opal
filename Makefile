@@ -24,13 +24,14 @@ GZIP=/usr/bin/gzip -f
 #.. Non-vital components of the Opal system
 STDPACKAGES =  lib.opal_parserlight lib.opal_readline \
 		lib.opal_tcl lib.opal_tk lib.opal_win \
+		 pkg.dynamite lib.oc_reflections \
 		pkg.browser pkg.emacs pkg.dosfop pkg.doc pkg.ordinatrice \
 		pkg.oasys pkg.tivi2 
 
 ## don't change anything beyond this line ##############################
 
 #.. Version of the Opal distribution
-VERSION=2.3d.beta
+VERSION=2.3d.gamma
 
 #.. name of the distribution archives
 SRCDISTR=ocs-$(VERSION)-src
@@ -68,8 +69,8 @@ boot: $(MINPACKAGES)
 complete: $(STDPACKAGES)
 
 distclean:
-	$(OCSADMIN) ocs -command cleanobjall $(MINPACKAGES)
-	$(OCSADMIN) ocs -command cleanall $(MINSRCPACKAGES) $(STDPACKAGES)
+	$(OCSADMININIT) ocs -command cleanobjall $(MINPACKAGES)
+	$(OCSADMININIT) ocs -command cleanall $(MINSRCPACKAGES) $(STDPACKAGES)
 
 sourcedistr:
 	cp -f ignore1  /tmp; cp -f ignore2  /tmp; \
