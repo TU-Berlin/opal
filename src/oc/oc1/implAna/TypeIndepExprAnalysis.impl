@@ -1,10 +1,10 @@
 -- LAST EDIT: Mon Jun 28 02:28:09 1993 by Andreas Fett (paris!fetti) 
 -- ============================================================================
--- Autor:	af
--- Projekt:	OPAL1-Compiler
--- Changes:	af, Jun 23 1993: adapted to new absy
---		af, Jun 24 1993: no hints for unused generated identifiers
---		af, Jun 27 1993: added handling of mix expressions
+-- Autor:       af
+-- Projekt:     OPAL1-Compiler
+-- Changes:     af, Jun 23 1993: adapted to new absy
+--              af, Jun 24 1993: no hints for unused generated identifiers
+--              af, Jun 27 1993: added handling of mix expressions
 -- ============================================================================
 
 IMPLEMENTATION TypeIndepExprAnalysis
@@ -12,29 +12,28 @@ IMPLEMENTATION TypeIndepExprAnalysis
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:46 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 2000-04-14 21:20:56 $ ($Revision: 1.2 $)
 
-IMPORT	Nat		COMPLETELY
-	Denotation	ONLY ++ empty
-	Pair		COMPLETELY
-	Seq		COMPLETELY
-	SeqReduce	COMPLETELY
-	SeqMap		COMPLETELY
-	SeqFilter	ONLY | partition
-	SeqZip		COMPLETELY
-        Compose		COMPLETELY
+IMPORT  Nat             COMPLETELY
+        Denotation      ONLY ++ empty
+        Pair            COMPLETELY
+        Seq             COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+        SeqFilter       ONLY | partition
+        SeqZip          COMPLETELY
+        Compose         COMPLETELY
 
-	Pos		ONLY pos `
-	Error		ONLY err ok + errKind error hint
-			     string
+        OcPos             ONLY pos `
+        OcError           ONLY err ok + errKind error hint string
 
-	Rep		ONLY rep ` generated?
+        Rep             ONLY rep ` generated?
 
-	PartName	ONLY partName:SORT ide pos
-	Fct[partName]	ONLY fct
-	Impl[partName]	COMPLETELY
+        PartName        ONLY partName:SORT ide pos
+        Fct[partName]   ONLY fct
+        Impl[partName]  COMPLETELY
 
-	RepSet		COMPLETELY
+        RepSet          COMPLETELY
 
 -- ----------------------------------------------------------------------------
 
@@ -65,9 +64,9 @@ DEF rearrange(tuple(exprS,pos),lets) ==
 
 DEF rearrange(apply(funct,arg,pos),lets) ==
   LET (newFun,usedLetsFun,boundVarsFun,usedRepsFun,errorsFun) ==
-							rearrange(funct,lets)
+                                                        rearrange(funct,lets)
       (newArg,usedLetsArg,boundVarsArg,usedRepsArg,errorsArg) ==
-							rearrange(arg,lets)
+                                                        rearrange(arg,lets)
   IN (apply(newFun,newArg,pos),
       usedLetsFun+usedLetsArg,
       boundVarsFun+boundVarsArg,
@@ -81,9 +80,9 @@ DEF rearrange(mix(exprBitsetS,pos),lets) ==
 
 DEF rearrange(cases(guards,else,pos),lets) ==
   LET (newGuards,usedLetsGuards,boundVarsGuards,usedRepsGuards,errorsGuards) ==
-						rearrangeSeq(guards,lets)
+                                                rearrangeSeq(guards,lets)
       (newElse,usedLetsElse,boundVarsElse,usedRepsElse,errorsElse) ==
-						rearrange(else,lets)
+                                                rearrange(else,lets)
   IN (cases(newGuards,newElse,pos),
       usedLetsGuards+usedLetsElse,
       boundVarsGuards+boundVarsElse,
@@ -92,7 +91,7 @@ DEF rearrange(cases(guards,else,pos),lets) ==
 
 DEF rearrange(lambda(pnames,body,pos),lets) ==
   LET (newBody,usedLetsBody,boundVarsBody,usedRepsBody,errorsBody) ==
-							rearrange(body,lets)
+                                                        rearrange(body,lets)
       (boundVars,scopeErrors) == addLocalsToSignature(pnames,boundVarsBody)
   IN (lambda(pnames,newBody,pos),
       usedLetsBody,
@@ -105,7 +104,7 @@ DEF rearrange(block(defs,body,pos),lets) ==
       ownLets == toRepSet(pnames)
       innerLets == lets+ownLets
       (newBody,usedLetsBody,boundVarsBody,usedRepsBody,errorsBody) ==
-						rearrange(body,innerLets)
+                                                rearrange(body,innerLets)
       (newDefs,usedLetsDefs,boundVarsRhss,usedRepsDefs,
        scopeAndRecursiveErrors) == rearrangeDefs(defs,innerLets)
       innerBoundVars == boundVarsRhss+boundVarsBody
@@ -138,7 +137,7 @@ DEF rearrangeSeq(<>[expr],lets) == (<>,{},{},{},ok)
 DEF rearrangeSeq(e1 ::[expr] eR,lets) ==
   LET (newE1,usedLetsE1,boundVarsE1,usedRepsE1,errorsE1) == rearrange(e1,lets)
       (newER,usedLetsER,boundVarsER,usedRepsER,errorsER) ==
-							rearrangeSeq(eR,lets)
+                                                        rearrangeSeq(eR,lets)
   IN (newE1::newER,
       usedLetsE1+usedLetsER,
       boundVarsE1+boundVarsER,
@@ -152,7 +151,7 @@ FUN rearrange: guard**repSet -> guard**repSet**repSet**repSet**err
 DEF rearrange(guard(if,then,pos),lets) ==
   LET (newIf,usedLetsIf,boundVarsIf,usedRepsIf,errorsIf) == rearrange(if,lets)
       (newThen,usedLetsThen,boundVarsThen,usedRepsThen,errorsThen) ==
-							rearrange(then,lets)
+                                                        rearrange(then,lets)
   IN (guard(newIf,newThen,pos),
       usedLetsIf+usedLetsThen,
       boundVarsIf+boundVarsThen,
@@ -165,7 +164,7 @@ DEF rearrangeSeq(<>[guard],lets) == (<>,{},{},{},ok)
 DEF rearrangeSeq(g1 ::[guard] gR,lets) ==
   LET (newG1,usedLetsG1,boundVarsG1,usedRepsG1,errorsG1) == rearrange(g1,lets)
       (newGR,usedLetsGR,boundVarsGR,usedRepsGR,errorsGR) ==
-							rearrangeSeq(gR,lets)
+                                                        rearrangeSeq(gR,lets)
   IN (newG1::newGR,
       usedLetsG1+usedLetsGR,
       boundVarsG1+boundVarsGR,
@@ -178,7 +177,7 @@ FUN rearrangeDefs: seq[eq]**repSet -> seq[eq]**repSet**repSet**repSet**err
 
 DEF rearrangeDefs(defs,lets) ==
   LET (analDefs,usedLets,boundVarsRhss,usedReps,scopeErrors) ==
-						rearrangeSeq(0,defs,lets)
+                                                rearrangeSeq(0,defs,lets)
       (newDefs,recursiveErrors) == sort(analDefs)
   IN (eq*newDefs,usedLets,boundVarsRhss,usedReps,scopeErrors+recursiveErrors)
 
@@ -186,7 +185,7 @@ FUN rearrange: nat**eq**repSet -> analEq**repSet**repSet**repSet**err
 
 DEF rearrange(id,eq(left,right,pos),lets) ==
   LET (newRight,usedLets,boundVarsRight,usedReps,errorsRight) ==
-							rearrange(right,lets)
+                                                        rearrange(right,lets)
       ownLets == toRepSet(partNames(left))
   IN (eq(id,ownLets,usedLets,eq(left,newRight,pos)),
       usedLets,
@@ -195,13 +194,13 @@ DEF rearrange(id,eq(left,right,pos),lets) ==
       errorsRight)
 
 FUN rearrangeSeq: nat**seq[eq]**repSet ->
-				seq[analEq]**repSet**repSet**repSet**err
+                                seq[analEq]**repSet**repSet**repSet**err
 DEF rearrangeSeq(id,<>,lets) == (<>,{},{},{},ok)
 DEF rearrangeSeq(id,eq1::eqR,lets) ==
   LET (newEq1,usedLetsEq1,boundVarsEq1,usedRepsEq1,errorsEq1) ==
-						rearrange(id,eq1,lets)
+                                                rearrange(id,eq1,lets)
       (newEqR,usedLetsEqR,boundVarsEqR,usedRepsEqR,errorsEqR) ==
-						rearrangeSeq(succ(id),eqR,lets)
+                                                rearrangeSeq(succ(id),eqR,lets)
   IN (newEq1::newEqR,
       usedLetsEq1+usedLetsEqR,
       boundVarsEq1+boundVarsEqR,

@@ -4,37 +4,37 @@ IMPLEMENTATION OptimMergeMatch
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-08 18:21:30 $ ($Revision: 1.5 $)
+-- % $Date: 2000-04-14 21:20:59 $ ($Revision: 1.6 $)
 
 -- subject: Merging of simular matches of Ic cases
 -- project: acc
 -- author:  wg
 
-IMPORT	Nat		ONLY nat < = 0 
-	Denotation	ONLY =
-	Seq		COMPLETELY
-	SeqMap		COMPLETELY
-	SeqCompare	ONLY eq?
-	Set[nat,<]	ONLY set + = <=
-	Option		COMPLETELY
-	Char		ONLY char
-	PrintableChar	ONLY T
-	String		ONLY string
+IMPORT  Nat             ONLY nat < = 0 
+        Denotation      ONLY =
+        Seq             COMPLETELY
+        SeqMap          COMPLETELY
+        SeqCompare      ONLY eq?
+        Set[nat,<]      ONLY set + = <=
+        Option          COMPLETELY
+        Char            ONLY char
+        PrintableChar   ONLY T
+        String          ONLY string
 
-IMPORT	Ide		ONLY ide = :ide**ide->bool local? local
-	IdeMap		ONLY ideMap {} def <+ !? 
-	Ic		COMPLETELY
-	SourceAn	COMPLETELY
-	Store		COMPLETELY
-	PreparedOptions ONLY popts options weakError?
-	Options		ONLY options optimKind?
-	
+IMPORT  Ide             ONLY ide = :ide**ide->bool local? local
+        IdeMap          ONLY ideMap {} def <+ !? 
+        Ic              COMPLETELY
+        SourceAn        COMPLETELY
+        Store           COMPLETELY
+        PreparedOptions ONLY popts options weakError?
+        OcOptions         ONLY options optimKind?
+        
 
 /* this optimization should have been performed on the level of Ac.
    it is performed here because of a bug appearent in the 
    design of Ac: the lack of "multi-matches" of the kind
 
-	case e of c1(x,y)|c2(x,y,_,_) => E[x,y] ....
+        case e of c1(x,y)|c2(x,y,_,_) => E[x,y] ....
 
 */   
 
@@ -45,7 +45,7 @@ IMPORT	Ide		ONLY ide = :ide**ide->bool local? local
 
 DATA inh ==
     inh (
-	popts: 		popts			-- compilation options
+        popts:          popts                   -- compilation options
     )
 
 -- ============================================================================
@@ -70,13 +70,13 @@ FUN merge : inh -> stm -> stm
 
 DEF merge(C)(case(Discr,Store,Matches,Default)) ==
     LET NewDefault == merge(C)(Default)
-	NewMatches == mergeMatches(C,Discr,merge(C) * Matches)
+        NewMatches == mergeMatches(C,Discr,merge(C) * Matches)
     IN
     case(Discr,Store,NewMatches,NewDefault)
 
     FUN merge: inh -> match -> match
     DEF merge(C)(match(Tags,Store,Sels,Stms)) == match(Tags,Store,Sels,
-						    merge(C) * Stms)
+                                                    merge(C) * Stms)
 
 DEF merge(C)(block(Decs,Stms)) == block(Decs,merge(C) * Stms)
 
@@ -96,48 +96,48 @@ DEF mergeMatches(C,Discr,Cand::Rest) ==
 DEF mergeMatches(_,_,<>) == <>
 
 FUN mergeMatch : inh ** ide ** match ** seq[match] ->
-			       match ** seq[match]
+                               match ** seq[match]
 DEF mergeMatch(C,Discr,Merge AS match(Tags,Store,Sels,Stms),
-	      (Cand AS match(CandTags,CandStore,CandSels,CandStms))::Rest) ==
+              (Cand AS match(CandTags,CandStore,CandSels,CandStms))::Rest) ==
     IF CandTags <= Tags THEN
-	-- forget unreachable match
-	mergeMatch(C,Discr,Merge,Rest)
+        -- forget unreachable match
+        mergeMatch(C,Discr,Merge,Rest)
     ELSE
     LET MergedStore? == mergeStores(Store,CandStore)
     IN
     IF avail?(MergedStore?) THEN
-	-- stores are compatible
-	LET Subst? == mergeSels(Sels,CandSels)
-	IN
-	IF avail?(Subst?) THEN
-	    -- selections are compatible. cont(Subst?) tells now
-	    -- which selected ides from Cand shall be substitued
-	    -- by those of the merged match
-	    LET MergedPath? == mergePathes(C,Discr,
-					     cont(MergedStore?),
-					     cont(Subst?),
-					     Stms,CandStms)
-	    IN
-	    IF avail?(MergedPath?) THEN
-		-- merging finally sucessfull
-		mergeMatch(C,Discr,
-		  match(Tags + CandTags,cont(MergedStore?),
-		        Sels,cont(MergedPath?)),
-		  Rest)
-	    ELSE
-		LET (Merged,NotMerged) == mergeMatch(C,Discr,Merge,Rest)
-		IN
-		(Merged,Cand::NotMerged)
-	    FI
-	ELSE
-	    LET (Merged,NotMerged) == mergeMatch(C,Discr,Merge,Rest)
-	    IN
-	    (Merged,Cand::NotMerged)
-	FI
+        -- stores are compatible
+        LET Subst? == mergeSels(Sels,CandSels)
+        IN
+        IF avail?(Subst?) THEN
+            -- selections are compatible. cont(Subst?) tells now
+            -- which selected ides from Cand shall be substitued
+            -- by those of the merged match
+            LET MergedPath? == mergePathes(C,Discr,
+                                             cont(MergedStore?),
+                                             cont(Subst?),
+                                             Stms,CandStms)
+            IN
+            IF avail?(MergedPath?) THEN
+                -- merging finally sucessfull
+                mergeMatch(C,Discr,
+                  match(Tags + CandTags,cont(MergedStore?),
+                        Sels,cont(MergedPath?)),
+                  Rest)
+            ELSE
+                LET (Merged,NotMerged) == mergeMatch(C,Discr,Merge,Rest)
+                IN
+                (Merged,Cand::NotMerged)
+            FI
+        ELSE
+            LET (Merged,NotMerged) == mergeMatch(C,Discr,Merge,Rest)
+            IN
+            (Merged,Cand::NotMerged)
+        FI
     ELSE
-	LET (Merged,NotMerged) == mergeMatch(C,Discr,Merge,Rest)
-	IN
-	(Merged,Cand::NotMerged)
+        LET (Merged,NotMerged) == mergeMatch(C,Discr,Merge,Rest)
+        IN
+        (Merged,Cand::NotMerged)
     FI
     FI
 DEF mergeMatch(_,_,Merge,<>) == (Merge,<>)
@@ -146,7 +146,7 @@ FUN mergeStores : store ** store -> option[store]
 DEF mergeStores(Store,CandStore) ==
     IF isPrim?(Store) and isPrim?(CandStore) THEN avail(somePrim)
     IF isProd?(Store) and isProd?(CandStore) THEN avail(someProd)
-					     ELSE nil FI
+                                             ELSE nil FI
 
 FUN mergeSels : seq[sel] ** seq[sel] -> option[ideMap[ide]]
     -- we do not compare any store or times information
@@ -157,34 +157,34 @@ DEF mergeSels(plain(Id,_,_)::Sels,plain(CandId,_,_)::CandSels) ==
     LET Subst? == mergeSels(Sels,CandSels)
     IN
     IF avail?(Subst?) THEN avail(def(CandId,Id,cont(Subst?)))
-		      ELSE Subst? FI
+                      ELSE Subst? FI
 DEF mergeSels(borrow(Id,_,_)::Sels,borrow(CandId,_,_)::CandSels) ==
     -- this function itself shall be subject of our optimization ...
     LET Subst? == mergeSels(Sels,CandSels)
     IN
     IF avail?(Subst?) THEN avail(def(CandId,Id,cont(Subst?)))
-		      ELSE Subst? FI
+                      ELSE Subst? FI
 DEF mergeSels(Sels,CandSels) == 
     IF forall?(dead?,Sels) and forall?(dead?,CandSels) THEN avail({}) 
-						       ELSE nil FI
+                                                       ELSE nil FI
 
 
 FUN mergePathes : inh ** ide ** store ** ideMap[ide] ** seq[stm] ** seq[stm] 
-				-> option[seq[stm]]
+                                -> option[seq[stm]]
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		nop :: Stms, nop :: CandStms) ==
+                nop :: Stms, nop :: CandStms) ==
     nop ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
     
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS pos(_)) :: Stms, pos(_) :: CandStms) ==
+                (Stm AS pos(_)) :: Stms, pos(_) :: CandStms) ==
     -- maybe we should ignore second pos only with a specific option enabled?
     -- but anyway, we are compiling with -o
     Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
     
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS halt(Msg,Kind)) :: Stms, 
-			halt(CandMsg,CandKind) :: CandStms) ==
+                (Stm AS halt(Msg,Kind)) :: Stms, 
+                        halt(CandMsg,CandKind) :: CandStms) ==
     IF Msg = CandMsg and Kind = CandKind THEN
         Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
     ELSE nil FI
@@ -196,119 +196,119 @@ DEF mergePathes(C,Discr,DiscrStore,Subst,
     DEF _ = _ == false
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS ass(Ins,Outs)) :: Stms, 
-		        ass(CandIns,CandOuts) :: CandStms) ==
+                (Stm AS ass(Ins,Outs)) :: Stms, 
+                        ass(CandIns,CandOuts) :: CandStms) ==
     IF eq?(=)(Ins,subst(Subst) * CandIns) 
-			and eq?(=)(Outs,subst(Subst) * CandOuts) THEN
+                        and eq?(=)(Outs,subst(Subst) * CandOuts) THEN
         Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
     ELSE nil FI
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS call(Proc,Ins,Outs)) :: Stms, 
-		        call(CandProc,CandIns,CandOuts) :: CandStms) ==
+                (Stm AS call(Proc,Ins,Outs)) :: Stms, 
+                        call(CandProc,CandIns,CandOuts) :: CandStms) ==
     IF Proc = CandProc 
-		and eq?(=)(Ins,subst(Subst) * CandIns) 
-		and eq?(=)(Outs,subst(Subst) * CandOuts) THEN
+                and eq?(=)(Ins,subst(Subst) * CandIns) 
+                and eq?(=)(Outs,subst(Subst) * CandOuts) THEN
         Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
     ELSE nil FI
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS eval(Clos,Ins,Outs)) :: Stms, 
-		        eval(CandClos,CandIns,CandOuts) :: CandStms) ==
+                (Stm AS eval(Clos,Ins,Outs)) :: Stms, 
+                        eval(CandClos,CandIns,CandOuts) :: CandStms) ==
     IF Clos = subst(Subst)(CandClos) 
-		and eq?(=)(Ins,subst(Subst) * CandIns) 
-		and eq?(=)(Outs,subst(Subst) * CandOuts) THEN
+                and eq?(=)(Ins,subst(Subst) * CandIns) 
+                and eq?(=)(Outs,subst(Subst) * CandOuts) THEN
         Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
     ELSE nil FI
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS copy(Id,_,Times)) :: Stms, 
-		        copy(CandId,_,CandTimes) :: CandStms) ==
+                (Stm AS copy(Id,_,Times)) :: Stms, 
+                        copy(CandId,_,CandTimes) :: CandStms) ==
     IF Id = subst(Subst)(CandId) and Times = CandTimes THEN
-	IF Id = Discr THEN
-	    -- store of discrimantor attached to this copy is not 
-	    -- longer valid. fallback to merged store.
+        IF Id = Discr THEN
+            -- store of discrimantor attached to this copy is not 
+            -- longer valid. fallback to merged store.
             copy(Id,DiscrStore,Times) ?:: 
-		mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
-	ELSE
+                mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
+        ELSE
             Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
-	FI
+        FI
     ELSE nil FI
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS free(Id,_,Times)) :: Stms, 
-		        free(CandId,_,CandTimes) :: CandStms) ==
+                (Stm AS free(Id,_,Times)) :: Stms, 
+                        free(CandId,_,CandTimes) :: CandStms) ==
     IF Id = subst(Subst)(CandId) and Times = CandTimes THEN
-	IF Id = Discr THEN
+        IF Id = Discr THEN
             free(Id,DiscrStore,Times) ?:: 
-		mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
-	ELSE
+                mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
+        ELSE
             Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
-	FI
+        FI
     ELSE nil FI
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(Stm AS cons(Store,Ins,Out)) :: Stms, 
-		        cons(CandStore,CandIns,CandOut) :: CandStms) ==
+                (Stm AS cons(Store,Ins,Out)) :: Stms, 
+                        cons(CandStore,CandIns,CandOut) :: CandStms) ==
     IF eq?(=)(Ins,subst(Subst) * CandIns) 
-		and Out = subst(Subst)(CandOut) 
-		and Store = CandStore THEN
+                and Out = subst(Subst)(CandOut) 
+                and Store = CandStore THEN
         Stm ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
     ELSE nil FI
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(block(Decs,InnerStms)) :: Stms, 
-		        block(CandDecs,CandInnerStms) :: CandStms) ==
+                (block(Decs,InnerStms)) :: Stms, 
+                        block(CandDecs,CandInnerStms) :: CandStms) ==
     LET DecsSubst? == mergeDecs(Decs,CandDecs)
     IN
     IF avail?(DecsSubst?) THEN
         LET MergedPathes? == mergePathes(C,Discr,DiscrStore,
-					 Subst <+ cont(DecsSubst?),
-					 InnerStms,CandInnerStms)
+                                         Subst <+ cont(DecsSubst?),
+                                         InnerStms,CandInnerStms)
         IN
         IF avail?(MergedPathes?) THEN
-	    block(Decs,cont(MergedPathes?)) ?::
-        	mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
+            block(Decs,cont(MergedPathes?)) ?::
+                mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
         ELSE nil FI
     ELSE nil FI
 
     FUN mergeDecs : seq[obj] ** seq[obj] -> option[ideMap[ide]]
     DEF mergeDecs(variable(Id,_)::Decs,variable(CandId,_)::CandDecs) ==
-	LET Subst? == mergeDecs(Decs,CandDecs)
-	IN
-	IF avail?(Subst?) THEN avail(def(CandId,Id,cont(Subst?)))
-			  ELSE nil FI
+        LET Subst? == mergeDecs(Decs,CandDecs)
+        IN
+        IF avail?(Subst?) THEN avail(def(CandId,Id,cont(Subst?)))
+                          ELSE nil FI
     DEF mergeDecs(_,_) == avail({})
 
 DEF mergePathes(C,Discr,DiscrStore,Subst,
-		(case(Ide,Store,Matches,Default)) :: Stms, 
-		        case(CandIde,_,CandMatches,CandDefault) :: CandStms) ==
+                (case(Ide,Store,Matches,Default)) :: Stms, 
+                        case(CandIde,_,CandMatches,CandDefault) :: CandStms) ==
     -- we walk only over cases if time consuming optimizations are
     -- enabled ...
     IF optimKind?(T,options(popts(C))) THEN
-	IF Ide = subst(Subst)(CandIde) THEN
-	    LET (InhDiscr,ActStore) == 
-			IF Ide = Discr THEN
-			    -- ActStore to be build in merged match
-			    -- falls back to DiscrStore. On the other
-			    -- hand, Discr becomes newly examinied,
-			    -- so dont inherit it to mergeMatches
-			    (local(0),DiscrStore)
-			ELSE (Discr,Store) FI
-		MergedMatches? == mergeMatches(C,InhDiscr,DiscrStore,Subst,
-					       Matches,CandMatches)
-	    IN
-	    IF avail?(MergedMatches?) THEN
-		LET MergedDefault? == mergePathes(C,Discr,DiscrStore,Subst,
-						  Default%,CandDefault%)
-		IN
-		IF avail?(MergedDefault?) THEN
-		    case(Ide,ActStore,cont(MergedMatches?),
-				  ft(cont(MergedDefault?)))
-        		?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
-		ELSE nil FI
-	    ELSE nil FI
-	ELSE nil FI
+        IF Ide = subst(Subst)(CandIde) THEN
+            LET (InhDiscr,ActStore) == 
+                        IF Ide = Discr THEN
+                            -- ActStore to be build in merged match
+                            -- falls back to DiscrStore. On the other
+                            -- hand, Discr becomes newly examinied,
+                            -- so dont inherit it to mergeMatches
+                            (local(0),DiscrStore)
+                        ELSE (Discr,Store) FI
+                MergedMatches? == mergeMatches(C,InhDiscr,DiscrStore,Subst,
+                                               Matches,CandMatches)
+            IN
+            IF avail?(MergedMatches?) THEN
+                LET MergedDefault? == mergePathes(C,Discr,DiscrStore,Subst,
+                                                  Default%,CandDefault%)
+                IN
+                IF avail?(MergedDefault?) THEN
+                    case(Ide,ActStore,cont(MergedMatches?),
+                                  ft(cont(MergedDefault?)))
+                        ?:: mergePathes(C,Discr,DiscrStore,Subst,Stms,CandStms)
+                ELSE nil FI
+            ELSE nil FI
+        ELSE nil FI
     ELSE nil FI
 
 DEF mergePathes(_,_,_,_,_,_) == nil
@@ -316,28 +316,28 @@ DEF mergePathes(_,_,_,_,<>,<>) == avail(<>)
 
 
 FUN mergeMatches : inh ** ide ** store ** ideMap[ide] 
-		** seq[match] ** seq[match] -> option[seq[match]]
+                ** seq[match] ** seq[match] -> option[seq[match]]
 
 DEF mergeMatches(C,Discr,DiscrStore,Subst,
-		 match(Tags,Store,Sels,MatchStms) :: Matches,
-		 match(CandTags,_,CandSels,CandMatchStms) :: CandMatches) ==
+                 match(Tags,Store,Sels,MatchStms) :: Matches,
+                 match(CandTags,_,CandSels,CandMatchStms) :: CandMatches) ==
     -- tries for unifying matches have already been performed innermost-out;
     -- hence we check only syntactic equalitys here. But we extend our
     -- substitution using mergeSels.
     IF Tags = CandTags THEN
-	LET NewSubst? == mergeSels(Sels,CandSels)
-	IN
-	IF avail?(NewSubst?) THEN
-	    LET MergedMatchStms? == mergePathes(C,Discr,DiscrStore,
-						Subst <+ cont(NewSubst?),
-						MatchStms,CandMatchStms)
-	    IN
-	    IF avail?(MergedMatchStms?) THEN
-		match(Tags,Store,Sels,cont(MergedMatchStms?))
-			?:: mergeMatches(C,Discr,DiscrStore,Subst,
-					 Matches,CandMatches)
-	    ELSE nil FI
-	ELSE nil FI
+        LET NewSubst? == mergeSels(Sels,CandSels)
+        IN
+        IF avail?(NewSubst?) THEN
+            LET MergedMatchStms? == mergePathes(C,Discr,DiscrStore,
+                                                Subst <+ cont(NewSubst?),
+                                                MatchStms,CandMatchStms)
+            IN
+            IF avail?(MergedMatchStms?) THEN
+                match(Tags,Store,Sels,cont(MergedMatchStms?))
+                        ?:: mergeMatches(C,Discr,DiscrStore,Subst,
+                                         Matches,CandMatches)
+            ELSE nil FI
+        ELSE nil FI
     ELSE nil FI
 
 DEF mergeMatches(_,_,_,_,_,_) == nil
@@ -355,5 +355,5 @@ DEF Match ?:: avail(Matches) == avail[seq[match]](Match::Matches)
 
 FUN subst: ideMap[ide] -> ide -> ide
 DEF subst(Subst)(Id) == IF local?(Id) ANDIF avail?(Subst!?Id) THEN
-			    cont(Subst!?Id)
-			ELSE Id FI
+                            cont(Subst!?Id)
+                        ELSE Id FI

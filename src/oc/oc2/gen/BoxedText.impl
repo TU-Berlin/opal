@@ -4,39 +4,39 @@ IMPLEMENTATION BoxedText
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-08 10:35:17 $ ($Revision: 1.3 $)
+-- % $Date: 2000-04-14 21:20:58 $ ($Revision: 1.4 $)
 
 -- subject: block structured string 
 -- project: oc1
 -- author:  wg+ws 2-92
 
-IMPORT	Denotation	COMPLETELY
-	NatConv		COMPLETELY
-	Char		ONLY char blank newline tab
-	Nat		COMPLETELY
-	Seq		COMPLETELY
-	Com		ONLY com ans:SORT yield okay okay?
-	Void		COMPLETELY
-	ComCompose	COMPLETELY
-	ComSeqReduce	COMPLETELY
-	
-	OcStream	ONLY write writeLine
-	Options		ONLY options
-	Stream		ONLY output
-	String 		ONLY string
+IMPORT  Denotation      COMPLETELY
+        NatConv         COMPLETELY
+        Char            ONLY char blank newline tab
+        Nat             COMPLETELY
+        Seq             COMPLETELY
+        Com             ONLY com ans:SORT yield okay okay?
+        Void            COMPLETELY
+        ComCompose      COMPLETELY
+        ComSeqReduce    COMPLETELY
+        
+        OcStream        ONLY write writeLine
+        OcOptions         ONLY options
+        Stream          ONLY output
+        String          ONLY string
 -- ------------------------------------------------------------------------
 
 DATA box ==
-	lineNo  (no: nat)
--- 	word	(string: string)  -- old library style
-	word	(word: denotation)
-	words   (words: seq[box])
-	block	(indent: nat, open: box, close: box, cont:  box)
-	lines	(lines: seq[box])
+        lineNo  (no: nat)
+--      word    (string: string)  -- old library style
+        word    (word: denotation)
+        words   (words: seq[box])
+        block   (indent: nat, open: box, close: box, cont:  box)
+        lines   (lines: seq[box])
 
 
 DEF write(O,f,b) == write(O,f,newline) 
-		      & (putUnboxed(O,f,0,b)(0) & yield(okay(nil)))
+                      & (putUnboxed(O,f,0,b)(0) & yield(okay(nil)))
 
 FUN putUnboxed : options ** output ** nat ** box -> nat -> com[nat]
 
@@ -51,15 +51,15 @@ DEF putUnboxed(O,f,i,words(ws))(l) ==
 
     FUN putNextWord : options ** output ** nat -> box ** nat -> com[nat]
     DEF putNextWord(O,f,i)(b,l) ==
-	putUnboxed(O,f,i,b)(l)
+        putUnboxed(O,f,i,b)(l)
 
 DEF putUnboxed(O,f,i,block(i1,o,c,b1))(l) == 
     IF empty?(c) THEN
          (putUnboxed(O,f,i,o)(l) & putUnboxed(O,f,i+i1,b1)) 
-				 & putUnboxed(O,f,i,c)
+                                 & putUnboxed(O,f,i,c)
     ELSE
-	 (putUnboxed(O,f,i,o)(l) & putUnboxed(O,f,i+i1,b1))
-				 & putUnboxed(O,f,i,c)
+         (putUnboxed(O,f,i,o)(l) & putUnboxed(O,f,i+i1,b1))
+                                 & putUnboxed(O,f,i,c)
     FI
 
 DEF putUnboxed(O,f,i,lines(ls))(l) == 
@@ -67,41 +67,41 @@ DEF putUnboxed(O,f,i,lines(ls))(l) ==
 
     FUN putLine : options ** output ** nat -> box ** nat -> com[nat]
     DEF putLine(O,f,i)(b,l) ==
-	IF lines?(b) THEN
-	    (putLine(O,f,i) /& l)(lines(b))
-	OTHERWISE
-	IF lineNo?(b) THEN
-	    yield(okay(no(b)))
-	OTHERWISE
-	IF empty?(b) THEN
-	    yield(okay(l))
-	ELSE
-	    putWrap(O,f,i)(l) & putUnboxed(O,f,i,b)
-	FI
+        IF lines?(b) THEN
+            (putLine(O,f,i) /& l)(lines(b))
+        OTHERWISE
+        IF lineNo?(b) THEN
+            yield(okay(no(b)))
+        OTHERWISE
+        IF empty?(b) THEN
+            yield(okay(l))
+        ELSE
+            putWrap(O,f,i)(l) & putUnboxed(O,f,i,b)
+        FI
 
     FUN empty? : box -> bool
     DEF empty?(b) ==
-	IF words?(b) THEN forall?(empty?,words(b))
-	IF word?(b)  THEN #(word(b)) = 0
-	IF lineNo?(b) THEN true
-		     ELSE false FI
+        IF words?(b) THEN forall?(empty?,words(b))
+        IF word?(b)  THEN #(word(b)) = 0
+        IF lineNo?(b) THEN true
+                     ELSE false FI
 
 FUN putWrap : options ** output ** nat -> nat -> com[nat]
 DEF putWrap(O,f,i)(l) ==
     LET (tabs,blanks) == (i / tabWidth,i % tabWidth)
-	nextLine == 
-    		IF l > 0 THEN
-		    -- generate logical line information
-		    write(O,f,newline) & (
-		    write(O,f,"#line ") & (
-		    writeLine(O,f,`(l))
-		    ))
-		ELSE
-		    write(O,f,newline)
-		FI
+        nextLine == 
+                IF l > 0 THEN
+                    -- generate logical line information
+                    write(O,f,newline) & (
+                    write(O,f,"#line ") & (
+                    writeLine(O,f,`(l))
+                    ))
+                ELSE
+                    write(O,f,newline)
+                FI
     IN
     nextLine & (write(O,f,gen(tab,tabs,gen(blank,blanks,empty)))
-	& yield(okay(l)))
+        & yield(okay(l)))
 
 FUN gen : char ** nat ** denotation -> denotation
 DEF gen(c,n,t) ==
