@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.8 1999-03-09 11:51:06 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.9 1999-03-25 10:44:16 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -875,8 +875,16 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   " *[0-9]+\\. *<\\([0-9]+\\),\\([0-9]+\\)>\\( \\)"
   "regexp to match suberrors")
 
+(defconst opal-diag-parse-suberror-line-region-regexp
+  " *[0-9]+\\. *<\\([0-9]+\\),\\([0-9]+\\)-\\([0-9]+\\)>\\( \\)"
+  "regexp to match suberrors")
+
+(defconst opal-diag-parse-suberror-region-regexp
+  " *[0-9]+\\. *<\\([0-9]+\\)-\\([0-9]+\\),\\([0-9]+\\)-\\([0-9]+\\)>\\( \\)"
+  "regexp to match suberrors")
+
 (defconst opal-diag-error-regexp 
-  "\\([0-9]+\\(\\.\\|,\\)[0-9]+[]>]\\)\\|unknown location"
+  "\\([0-9]+[]>]\\)\\|unknown location\\|unknown>"
   "lowest common denominator to match errors or suberrors")
   
 
@@ -925,6 +933,10 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 	  (opal-diag-handle-oasys-eval-region))
 	 ((looking-at opal-diag-parse-suberror-regexp) 
 	  (opal-diag-handle-suberror))
+	 ((looking-at opal-diag-parse-suberror-line-region-regexp) 
+	  (opal-diag-handle-suberror-line-region))
+	 ((looking-at opal-diag-parse-suberror-region-regexp) 
+	  (opal-diag-handle-suberror-region))
 	 ((looking-at "Checking Signature of \\(.*\\) \\.\\.\\.")
 	  (opal-diag-handle-checking))
 	 ((looking-at "\\(Compiling\\|Checking\\) Implementation of \\(.*\\) \\.\\.\\.")
@@ -1082,6 +1094,26 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   (setq src curr-src-buf)
   (setq line (string-to-int (opal-diag-match 1)))
   (setq col (string-to-int (opal-diag-match 2)))
+  (setq type "suberror")
+  (setq true-error t)
+)
+
+(defun opal-diag-handle-suberror-line-region ()
+  (setq src curr-src-buf)
+  (setq line (string-to-int (opal-diag-match 1)))
+  (setq col (string-to-int (opal-diag-match 2)))
+  (setq eLine line)
+  (setq eCol (string-to-int (opal-diag-match 3)))
+  (setq type "suberror")
+  (setq true-error t)
+)
+
+(defun opal-diag-handle-suberror-region ()
+  (setq src curr-src-buf)
+  (setq line (string-to-int (opal-diag-match 1)))
+  (setq col (string-to-int (opal-diag-match 2)))
+  (setq eLine (string-to-int (opal-diag-match 3)))
+  (setq eCol (string-to-int (opal-diag-match 4)))
   (setq type "suberror")
   (setq true-error t)
 )
@@ -1262,7 +1294,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.8 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.9 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
