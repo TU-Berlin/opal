@@ -1,0 +1,109 @@
+# -*- makefile -*-
+# Generic rules for generating documentation for Opal systems
+# included from GlobalRules if PROJECTROOT is set
+
+DOSFOPROOT = $(PROJECTROOT)/DOSFOP
+
+DOSFOPFILES = $(DOSFOPROOT) $(DOSFOPROOT)/Toplevel.config $(DOSFOPROOT)/$(DOSFOPNODENAME).structures.config $(DOSFOPROOT)/$(DOSFOPNODENAME).structures.names $(DOSFOPROOT)/$(DOSFOPNODENAME).subsystems.config $(DOSFOPROOT)/$(DOSFOPNODENAME).subsystems.names  $(CONFIGS)
+
+
+ifdef TOPSTRUCT
+#MAIN = $(TOPSTRUCT) # cannot use TOPSTRUCT for incremental documentation
+DOCSIGNS = $(patsubst %.sign,%,$(wildcard *.sign))
+else
+DOCSIGNS = $(STRUCTS) $(NORMSTRUCTS) $(FOREIGNSTRUCTS)
+endif
+MAIN = *
+
+ifeq ($(TOPCOM), )
+DOSFOPPROJECT := $(NODENAME)
+else
+DOSFOPPROJECT = $(TOPCOM)
+endif
+
+ifneq ($(SUBMAKE),sub)
+DOSFOPNODENAME = Toplevel
+else
+DOSFOPNODENAME = $(NODENAME)
+endif
+
+CONFIGS = $(patsubst %,$(DOSFOPROOT)/%.config,$(DOCSIGNS))
+TODAY := $(shell $(PERL) $(OCSOM)/etc/today)
+REALNAME := $(shell $(PERL) $(OCSOM)/etc/myrealname)
+LANGUAGE := $(shell $(PERL) $(OCSOM)/etc/language)
+
+ifneq ($(SUBMAKE),sub)
+$(DOSFOPROOT):
+	@$(MKDIR) $(DOSFOPROOT)
+
+$(PROJECTROOT)/doc:
+	@$(MKDIR) $(PROJECTROOT)/doc
+
+$(DOSFOPROOT)/Toplevel.config:
+	@$(SED) -e s/Main/$(MAIN)/g \
+	 -e s%DIRDEFAULT%$(PROJECTROOT)%g  \
+	 -e s%OUTPUTDEFAULT%$(DOSFOPROOT)/out.texi%g  \
+	 -e s%DATE%$(TODAY)%g  \
+	 -e s%AUTHORS%$(REALNAME)%g  \
+	 -e s/Project/$(DOSFOPPROJECT)/g \
+	 -e s/english/$(LANGUAGE)/g \
+	$(DOSFOP)/defaults/Toplevel.config.default \
+		 > $@ 
+else
+$(DOSFOPROOT):
+	@$(MKDIR) $(DOSFOPROOT)
+
+$(DOSFOPROOT)/Toplevel.config:
+endif
+
+$(DOSFOPROOT)/config: $(DOSFOPROOT)/Toplevel.config $(CONFIGS)
+	@($(CD) $(PROJECTROOT); pureDosfop -config)
+
+$(DOSFOPROOT)/$(DOSFOPNODENAME).structures.config:
+	@$(ECHO) "OPTIONAL" > $@
+
+$(DOSFOPROOT)/$(DOSFOPNODENAME).structures.names:
+	@touch $@
+
+$(DOSFOPROOT)/$(DOSFOPNODENAME).subsystems.config:
+	@$(ECHO) "name = {$(DOSFOPNODENAME)}" > $@
+	@$(ECHO) "directory = $(PWD)" >> $@
+
+$(DOSFOPROOT)/$(DOSFOPNODENAME).subsystems.names: 
+	@touch $@
+	@__subsystems="$(SUBNODES)"; \
+	for i in $$__subsystems; do $(ECHO) `$(BASENAME) $$i` >> $@; done
+
+$(DOSFOPROOT)/options.data:
+	@$(CP) -f $(DOSFOP)/defaults/options.data $@
+
+$(CONFIGS):
+	@$(ECHO) "STRUCTURE" > $@
+	@$(ECHO) $(patsubst $(DOSFOPROOT)/%.config, name = {%},$@) >> $@
+	@$(ECHO) "OPTIONAL" >> $@
+	@$(ECHO) $(patsubst $(DOSFOPROOT)/%.config, %, $@) >> $(DOSFOPROOT)/$(DOSFOPNODENAME).structures.names
+
+.PHONY : $(DOSFOPROOT)/out.texi
+$(DOSFOPROOT)/out.texi:
+	@($(CD) $(PROJECTROOT) ; pureDosfop; $(RM) -f $(DOSFOPROOT)/only )
+
+ifneq ($(SUBMAKE),sub)
+_texi: $(DOSFOPFILES) $(DOSFOPROOT)/options.data $(DOSFOPROOT)/config $(DOSFOPROOT)/out.texi $(PROJECTROOT)/doc
+else
+_texi: $(DOSFOPFILES)
+endif
+
+_only:
+	@($(CD) $(PROJECTROOT) ; $(RM) -f $(DOSFOPROOT)/only ; pureDosfop -addonly $(DOCSIGNS))
+
+_thisdoc: _only $(DOSFOPFILES) $(DOSFOPROOT)/options.data $(DOSFOPROOT)/config $(DOSFOPROOT)/out.texi $(PROJECTROOT)/doc
+
+_html: texi
+	@($(CD) $(PROJECTROOT) ; pureDosfop -html)	
+
+_dvi: texi
+	@($(CD) $(PROJECTROOT) ; pureDosfop -dvi)	
+
+_cleandoc:
+	@($(CD) $(DOSFOPROOT); $(RM) -f *.old *.ap *.aux *.cd *.dp *.df *.dm *.fn *.ky *.log *.pg *.pgs *.pr *.st *.texi *.toc *.tp *.vr config diagnostics dosfop.switches ; $(RM) -f $(PROJECTROOT)/doc/* )
+
