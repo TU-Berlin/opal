@@ -1,5 +1,36 @@
 ;; support for certification of proofs
 
+(provide 'opal-certify)
+
+(defconst opal-certify-extent-keymap nil)
+
+(defun opal-certify-keymap ()
+  "define keycodes for certifications" 
+  (interactive)
+
+  (define-key opal-mode-map "\C-c\C-c?" 'opal-certify-check-proof)
+  (define-key opal-mode-map "\M-?" 'opal-certify-check-proof)
+  (define-key opal-mode-map "\C-c\C-c!" 'opal-certify-sign-proof)
+  (define-key opal-mode-map "\M-!" 'opal-certify-sign-proof)
+
+  (setq opal-certify-extent-keymap (make-sparse-keymap))
+  (define-key opal-certify-extent-keymap [(button1)]
+    'opal-certify-check-proof-mouse)
+
+  (make-face 'opal-certify-extent-face)
+  (set-face-background 'opal-certify-extent-face
+		       (face-property 'default 'background))
+  (set-face-foreground 'opal-certify-extent-face
+   (face-property 'font-lock-string-face 'foreground))
+  )
+
+
+(defvar opal-certify-menu 
+  (list "Certify"
+	["Sign this proof" opal-certify-sign-proof t]
+	["Check signature" opal-certify-check-proof t]
+	)
+  )
 
 (defconst opal-certify-tmp-buffer "*opal-certify*")
 
@@ -66,6 +97,17 @@ by the Opal compiler and return name of property"
    (buffer-substring (point-min) (point))
 )    
 
+(defun opal-certify-check-for-proofhead ()
+  "throw error message if not in line which starts a proof head"
+  
+  (save-excursion
+    (beginning-of-line)
+    (if (not (looking-at ".*\\(PROOF\\|PROP\\)[ \t]+.*:"))
+	(error "must be at line with proof head / proposition")
+      )
+    )
+  )
+
 (defun opal-certify-remove-old-jstf (propname buf)
   "remove this justification in given buffer"
 
@@ -82,6 +124,21 @@ by the Opal compiler and return name of property"
 	    )
 	  )
       )
+    )
+  )
+
+(defun opal-certify-set-extent ()
+  "set extent in following PGP-Signature; goto end of this signature"
+
+  (let (ext)
+    (if (re-search-forward "-----BEGIN PGP SIGNATURE-----.*-----END PGP SIGNATURE-----" nil t)
+	(progn 
+	  (setq ext (make-extent (match-beginning 0) (match-end 0)))
+	  (set-extent-keymap ext opal-certify-extent-keymap)
+	  (set-extent-mouse-face ext 'highlight)
+	  t
+	  )
+      nil)
     )
   )
 
@@ -110,8 +167,10 @@ by the Opal compiler and return name of property"
   (interactive "sPassword:")
 
   (save-excursion
-    (let (start end thisbuf proc procbuf result sign startsign endsign propname)
+    (let (start end thisbuf proc procbuf result
+		sign startsign endsign propname)
       (setq thisbuf (current-buffer))
+      (opal-certify-check-for-proofhead)
       (setq propname (opal-certify-initialize-tmp))
       (opal-certify-remove-old-jstf propname thisbuf)
       (setq procbuf (get-buffer-create "*GPG*"))
@@ -155,6 +214,15 @@ by the Opal compiler and return name of property"
 	(forward-line)
 	(insert (buffer-string nil nil opal-certify-tmp-buffer))
 	(kill-buffer procbuf)
+	(goto-char end)
+	(opal-certify-set-extent)
+	(if (fboundp 'opal-outline-extent)
+	    (progn
+	      (goto-char end)
+	      (forward-line)
+	      (opal-outline-extent nil)
+	      )
+	  )
 	)
       )
     )
@@ -165,8 +233,9 @@ by the Opal compiler and return name of property"
 
   (interactive)
   (save-excursion
-    (let (start end thisbuf cert result ok)
+    (let (start end thisbuf cert result ok okstring)
       (setq thisbuf (current-buffer))
+      (opal-certify-check-for-proofhead)
       (setq propname (opal-certify-initialize-tmp))
       (write-file ".proof")
       (set-buffer thisbuf)
@@ -201,10 +270,13 @@ by the Opal compiler and return name of property"
       (kill-buffer ".signature")
       (cond ((and (numberp result) (= result 0))
 	     (message "Verification succeeded")
+	     (setq okstring ["ok" 'opal-info-nil t])
 	     (setq ok t))
 	    ((numberp result)
+	     (setq okstring ["INVALID SIGNATURE" 'opal-info-nil t])
 	     (message"Signature not verified (%d)" result))
 	    (t
+	     (setq okstring ["INVALID SIGNATURE" 'opal-info-nil t])
 	     (message "Signature not verified (%s)" result))
 	    )
       (popup-dialog-box 
@@ -212,7 +284,16 @@ by the Opal compiler and return name of property"
 		     (buffer-string (point-min opal-certify-tmp-buffer) 
 				    (point-max opal-certify-tmp-buffer) 
 				    opal-certify-tmp-buffer))
-	     ["OK" 'opal-info-nil t]))
+	     okstring)
+       )
       )
     )
   )
+
+(defun opal-certify-check-proof-mouse (event)
+  (interactive "e")
+
+  (mouse-set-point event)
+  (forward-line -2)
+  (opal-certify-check-proof)
+)

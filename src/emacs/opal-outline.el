@@ -236,6 +236,14 @@ definition or proof body"
 	  )
 	)
       )
+    (if (fboundp 'opal-certify-set-extent)
+	(progn
+	  (goto-char (point-min))
+	  (while (opal-certify-set-extent)
+	    nil
+	    )
+	  )
+      )
     )
   )
 

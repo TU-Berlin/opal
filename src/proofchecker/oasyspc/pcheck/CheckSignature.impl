@@ -1,0 +1,59 @@
+IMPLEMENTATION CheckSignature
+
+DEF checkSignature(R, main, pN, r, sigexpr) ==
+  progress(6, \\ . pretty("extracting proof source ..."))(R) & (\\ R1.
+  extractProofSource(R1, main, r, pN) && (\\ R2, d1.
+  IF ~(d1 ok?) THEN clean & succeed(R2 & d1)
+  ELSE
+    progress(6, \\ . pretty("extracting signature ..."))(R2) & (\\ R3.
+    extractSignature(R3, main, r, sigexpr) && (\\R4, d2.
+    IF ~(d2 ok?) THEN clean & succeed(R4 & d1 <+ d2)
+    ELSE
+      progress(6, \\ . pretty("checking signature ..."))(R4) & (\\ R5.
+      internalCheck(R5, main, r) && (\\ R6, d3.
+      IF ~(d3 ok?) THEN clean & succeed(R6, d1 <+ d2 <+ d3)
+      ELSE
+        progress(6, \\ . pretty("checking authority ..."))(R6) & (\\ R7.
+        checkAuthor(R6, main, r) && (\\ R8, d4.
+        clean & succeed(R8, d1 <+ d2 <+ d3 <+ d4)
+        ))
+      FI
+      ))
+    FI
+    ))
+  FI
+  ))
+
+/* %extract proof source for given proofname and write it to
+    file @file{.proof} */
+FUN extractProofSource: repo ** unitName ** ref ** proofName ->
+                         com[pair[repo, diag]]
+DEF extractProofSource(R, main, r, pN) ==
+  IF pN ordinary? THEN
+    LET pName == symbol(name(pN))(R)
+        allPrags == 
+        srcPrag == 
+  ELSE
+    succeed(R & (error, r) !! "no ordinary proof found ?!?")
+  FI
+      
+/* %extract signature of given expression and write it to
+    file @file{.signature} */
+FUN extractSignature: repo ** unitName ** ref ** expr -> 
+                       com[pair[repo, diag]]
+
+/* %call gpg to verify @file{.proof} with signature in @file{.signature}.
+    write output to file @file{.gpg} */
+FUN internalCheck: repo ** unitName ** ref -> com[pair[repo, diag]]
+
+/* %check author in output from previous call to gpg */
+FUN checkAuthor: repo ** unitName ** ref -> com[pair[repo, diag]]
+
+/* %remove all intermediate files */
+FUN clean: com[void]
+
+-- %$Auxiliary functions$
+FUN srcPragmas: repo ** unitName -> seq[pragma]
+-- DEF srcPragmas(R, uN) ==
+  
+--  (::, <>) / pragmas(unitInfo(baseName(uN))(R))
