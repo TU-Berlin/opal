@@ -1,0 +1,222 @@
+
+Opal with integrated Proof-Checker
+==================================
+
+Note: This is alpha software, which proved to be quite useful for
+demonstrating the benefits of such a tool, but which has not been tested
+thoroughly and which is not as efficient as it could and should be.
+
+This README describes the state of October 1999. Comments and suggestions to 
+Klaus Didrich, kd@cs.tu-berlin.de
+
+1. Contents
+-----------
+
+oasyspc/     The oasys tool with the integrated proof checker.
+prooflib/    Libraries for the notation of laws (REFLEXION) 
+	       and the definition of proof tactics (Tactics).
+pcexamples/  Some small example programs with proofs.
+
+
+2. Installation
+---------------
+
+Installation is still incomplete. The installation will add some files 
+to the ocs/bin and ocs/lib/oasys directories, but the programs and the
+libraries still rely on files in the ocs source tree.
+
+For a successful installation you must have installed oasys successfully.
+You must not have removed the sources of oasys or the compiler-generated
+files in the OCS subdirectories. You may likewise not remove the sources or
+the compiler-generated files from the proofchecker tree.
+
+The easiest way to install is to add the option "--enable-proofchecker" to
+the configure command, before installing OCS. The following "make install"
+will take care of the installation.
+
+If you already have installed OCS and want to add the proofchecker, you
+should still begin with "./configure --enable-proofchecker" to create the
+system-dependent files. Then call make with the names of the packages:
+"make pkg.oasys pkg.oasyspc pkg.prooflib". The first name will recreate the
+compiler output of the oasys package.
+
+The Opal-mode has been extended by an opal-trace-mode -- currently only for
+XEmacs. Insert the line "(setq opal-pchecker t)" before the opal-mode is
+actually loaded.
+
+3. Examples
+-----------
+
+The examples directory contains some small exercises to show the basic usage.
+Change to the examples directory, and call oasyspc. Then issue the command
+"pc Sort.impl" or "pc Small.impl". This will first context check these units
+(and the units they depend on), then perform the proofs contained in these
+units. Note that after calling the evaluator (output "evaluator started
+after xxx sec"), there will be a long pause (even on fast systems about 15
+sec) during the necessary object files are dynamically linked one by one.
+
+Note that both example structures contain erroneous proofs / tests. 
+
+4. New Commandline Calls
+------------------------
+
+oasyspc extends the normal oasys commands by a new set of calls, most of
+which start with "pcheck" or "p". Information can be queried using the
+"oasys-help" command. The most important commands are:
+
+4a. general control
+...................
+
+pcheck-verbosity ( LEVEL | "show" )      
+        Set verbosity to LEVEL or show current level. Default level is
+	maximum!, a good value is 2. (This is taken care of by the
+	config.oasys file in the examples directory.)
+
+pcheck-log ( "on" | "off" )
+        Start or stop logging proofchecker output to file "oasyslog".
+
+4b. compiling and proving
+.........................
+
+If no context errors are found, a file OCS/<unitname>.trace is created which 
+contains output from the prover. If the opal-trace-mode is available, 
+you can use the command "M-x opal-pcheck-trace" to load this file.
+If the proof does not terminate, you must kill the evaluator process.
+
+pc [ UNITNAME ]
+        Perform all proofs in given unit. Uses current focus by default.
+pcc [ UNITNAME ]
+        Like pc, but compile unit, if all proofs are successful.
+pp PREFIX [ UNITNAME ]
+        Like pc, but perform only those proofs whose names have prefix PREFIX.
+
+4c. interactive proof
+.....................
+
+Interactive proof relies on XEmacs running a gnu-server and on the
+opal-trace-mode. XEmacs is only used for display and not for control.
+Control is done on the oasyspc commandline only.
+
+goal PROOFNAME [ UNITNAME ]
+        Start interactive proof of PROOFNAME in UNITNAME or current focus.
+	You must finish an interactive proof before you can start a new one, 
+	unless the evaluator has terminated.
+by PROOFSCRIPT
+        Apply PROOFSCRIPT to current proof state. Since PROOFSCRIPT will
+	frequently contain semicolons, you should enclose PROOFSCRIPT in
+	curly brackets, otherwise the Tcl commandline parser will interpret
+	them as command terminators.
+show-proof
+	Show (again) current proof state. Normally invoked automatically.
+back-proof
+	Revert to proof state before last "by" command
+finish-proof
+        Finish current interactive proof, prints previous commands.
+abort-proof
+	Finish current interactive proof.
+
+5. Opal Extensions
+------------------
+
+Opal units which should be handled by the proof checker must contain the
+pragma "/$ PROOFCHECK $/". Laws must be given a name.
+
+Proofs are declared and defined by the keyword "PROOF":
+
+proofdecl ::= "PROOF" name : lawname* "|-" lawname
+proofdef  ::= "PROOF" name "==" proofscript
+
+proofscript must be of the pre-defined type "proofscript'PROOFSCRIPT".
+
+lawname ::= identifier    -- identifier of a law in current unit
+	|   Def[f]        -- definitional equation of function f
+			     (which must have a DEF in current unit)
+        |   Spc[f]        -- Specification of function f
+        |   Restr[l]      -- Restriction of law l from the interface
+			     to the implementation (l needs probably an
+			     explicitly given kind ":LAW")
+        |   Copy[l]       -- Copy of law l from the interface into
+			     the implementation (l needs probably an
+			     explicitly given kind ":LAW")
+	|   Gen[t]        -- generation law of type t
+        |   Discr[c, d]   -- discriminator law of constructor c and
+			     discriminator d
+        |   Sel[c, s]     -- selector law of constructor c and selector s
+        |   Equiv[c1, c2] -- equivalence law of constructors c1 and c2
+        |   CDfd[c]       -- definedness law of constructor c
+	|   DDfd[d]       -- definedness law of discriminator d
+        |   SDfd[s]       -- definedness law of selector s
+
+Gen, Discr, Sel, Equiv are available for all free types, CDfd, DDfd, SDfd
+are available for DATA types only. The special names Def, Spc, ... must be
+introduced by "IMPORT REFLEXIONS COMPLETELY".
+	
+assume ::= "ASSUME" Ide "COMPLETELY"
+assert ::= "ASSERT" Ide "COMPLETELY"
+
+Assume introduces restrictions on a parameter. Ide must name a theory, the
+actual parameters must be formal parameters of the current unit.
+Assert introduces restrictions on functions and sorts from the current
+unit. Ide must name a theory, at least one of the actual parameters must
+name a sort or a function which is declared in the current unit.
+
+A theory is syntactically a signature which is introduced with the keyword 
+"THEORY" instead of "SIGNATURE". The file extension is ".sign" and the
+corresponding implementation file must exist and contain a valid opal
+implementation (possibly and most often empty, since it is discarded
+anyway). 
+
+5. Proof Types
+--------------
+
+5a. Certification
+.................
+
+Certification is done by a special proofscript.
+
+FUN trust: denotation -> proofscript
+
+5b. Test
+........
+
+Tests are integrated by a special proofscript test. The proof
+declaration just defines the target. The target law must have the form
+"ALL x1 ... xn . FORMULA", where FORMULA does not contain
+quantifiers. The proofscript has the following form
+
+test[f, t](f(v1) :: f(v2) :: ... :: <>)
+
+where f is a function with type t1, t2, ..., tn -> t, ti is the type of xi,
+and vj are the test data vectors. Typically, the law to be proven is a
+specification. In this case, f is the specified function.
+
+5c. Formal Tactical Proof
+.........................
+
+The directory prooflib/Tactics contains many structures which declare tactics
+and tacticals. A proofscript should have one of the forms
+
+statP(script)
+traceP(script)
+
+The functions "statP" and "traceP" ensure that output from the proof is
+added to the corresponding .trace file. "statP" just keeps the statistics,
+"traceP" prints every proofstate in full and may produce very large output.
+If a proof is traced, more than 50% of the time are spent generating the
+readable trace.
+
+The "goal" command for an interactive proof takes care of the "traceP"
+functionality. 
+
+5d. Synthesising Functions from Proofs
+......................................
+
+Synthesis is integrated in the form of a special formal proof. The formal
+proof must have a specification as its target. The first tactic performed
+must be "unskolem'CalcPP", this will replace the function variable from the
+proof state with a new unknown variable. During the proof this variable must 
+be instantiated. On return of the proof, the result is inserted into the
+intermediate compiler output (this takes some time).
+
+
+

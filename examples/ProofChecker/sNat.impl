@@ -1,0 +1,177 @@
+IMPLEMENTATION sNat
+/$ PROOFCHECK $/
+
+IMPORT pABORT[nat'sNat] COMPLETELY
+       pBOOL COMPLETELY
+
+DATA nat == 0
+            succ(pred: nat'sNat)
+
+DEF a + 0 == a
+DEF a + succ(b) == succ(a + b)
+
+DEF 0 - succ(b) == ABORT("-'sNat: right operand greater than left")
+DEF a - 0 == a
+DEF succ(a) - succ(b) == a - b
+
+DEF 0 < 0 == false
+DEF 0 < succ(b) == true
+DEF succ(a) < 0 == false
+DEF succ(a) < succ(b) == a < b
+
+-- %$Proofs$
+IMPORT BasicTac COMPLETELY
+       Strategies COMPLETELY
+       CalcInduct COMPLETELY
+       CalcComputational COMPLETELY
+       CalcLogical COMPLETELY
+       CalcDomain COMPLETELY
+       CalcStructural COMPLETELY
+       REFLEXIONS COMPLETELY
+       ProofAn COMPLETELY
+       ProofTactics COMPLETELY
+       CalcLogicalForward COMPLETELY
+       Nat ONLY nat 1 2 4 6 8 23
+
+/* %Proofs of type properties */
+PROOF dfd_0 : CDfd[0] |- Copy[dfd_0:LAW]
+PROOF dfd_0 == trivial
+
+PROOF dfd_succ : CDfd[succ] |- Copy[dfd_succ:LAW]
+PROOF dfd_succ == trivial
+
+/* %Proofs of properties of @code{+} */
+
+PROOF dfd_+ : Def[+] CDfd[0] CDfd[succ] |- Copy[dfd_+ :LAW]
+PROOF dfd_+ == statP(mInduct; rewriter30)
+
+PROOF +_assoc : Def[+] Copy[neutral_l[nat, +, 0]:LAW]
+                 CDfd[0] CDfd[succ] Copy[dfd_+ :LAW]
+                 |- Copy[assoc'BinAssoc[nat'sNat, +'sNat]:LAW]
+PROOF +_assoc == statP(mInduct; rewriter30)
+
+PROOF +_neutral_r : Def[+] |- Copy[neutral_r[nat, +, 0]:LAW]
+PROOF +_neutral_r == trivial
+
+PROOF +_neutral_l : Def[+] CDfd[0] |- Copy[neutral_l[nat, +, 0]:LAW]
+PROOF +_neutral_l == statP(mInduct; rewriter30)
+
+/* %Proofs for properties of @code{-} */
+
+PROOF dfd_- : Def[-] Def[<'sNat] Equiv[0, succ] Equiv[succ, succ]
+               CDfd[0] CDfd[succ] Copy[dfd_< :LAW] dfd_ABORT
+               |- Copy[dfd_- :LAW]
+PROOF dfd_- == statP(mInduct; rewriter30;
+                     subgoal(mp_r; tApartS; contrawrite_r_deep; tApartS; QED);
+                     subgoal(mp_r; tApartS; biimpl_r; tApartS; QED);
+                     subgoal(mp_r; tApartS; contrawrite_r_deep; tApartS; QED);
+                     subgoal(mp_r; tApartS; biimpl_r; tApartS; QED)
+                    )
+
+
+LAW spc_-_l1 == ALL a b. succ(a) < succ(b) ==> DFD b - a
+PROOF spc_-_l1 : Copy[dfd_- :LAW] Def[<'sNat] |- spc_-_l1
+PROOF spc_-_l1 == statP(tApartM; contrawrite_r_deep; tApartS)
+
+LAW spc_-_l2 == ALL a b. succ(a) === succ(b) ==> DFD b - a
+PROOF spc_-_l2 : Copy[dfd_- :LAW]  Equiv[succ, succ] |- spc_-_l2
+PROOF spc_-_l2 == statP(tApartM; biimpl_r; tApartS)
+
+PROOF <_succ : Def[<'sNat] CDfd[0] CDfd[succ] |- Copy[<_succ:LAW]
+PROOF <_succ == statP(mInduct; rewriter30)
+
+
+PROOF spc_- : spc_-_l1 spc_-_l2 Copy[<_succ:LAW] 
+               <_succ Def[-] Def[<'sNat] Def[+]
+               Equiv[0, succ] Equiv[succ, succ] CDfd[0] CDfd[succ]
+               Copy[dfd_+ :LAW]
+               |- Copy[Spc[-]:LAW]
+PROOF spc_- == statP(opalR; mInduct; rewriter30; 
+                     subgoal(tApartM);
+                     subgoal(biimpl_r; mp_r3; tApartS;
+                             det(2, contrawrite_r_deep); tApartM; QED);
+                     subgoal(tApartM);
+                     subgoal(tApartM;QED);
+                     subgoal(det(23, contrawrite_r_deep); tApartS; QED);
+                     subgoal(tApartM;QED);
+                     subgoal(tApartM;QED);
+                     subgoal(biimpl_r; mp_r3; tApartS;
+                             det(2, contrawrite_r_deep); tApartM; QED);
+                     subgoal(tApartM;QED);
+                     subgoal(tApartM;QED);
+                     det(6, biimpl_l); subgoal(rewrite_r_deep); 
+                     biimpl_r; subgoal(mp_r3); tApartS;
+                     subgoal(tApartM;QED);
+                     subgoal(tApartM;QED)
+                    )
+
+/* %Proofs for properties of @code{<} */
+
+PROOF dfd_< : Def[<'sNat] dfd_true dfd_false |- Copy[dfd_< :LAW]
+PROOF dfd_< == statP(mInduct; rewriter30)
+
+PROOF antisymmetric_< : Def[<'sNat] Equiv[0, succ] Equiv[succ, succ]
+                         |- Copy[antisymmetric[nat, <'sNat]:LAW]
+PROOF antisymmetric_< == 
+  statP(mInduct; rewriter30; 
+        subgoal(biimpl_r; tApartS; biimpl_r; tApartS; QED);
+        subgoal(biimpl_r; tApartS; contrawrite_r_deep; tApartS; QED);
+        subgoal(det(1,rewrite_l_deep); biimpl_l; tApartS;
+                det(4, contrawrite_r_deep); det(4, biimpl_r); tApartS; QED);
+        subgoal(biimpl_r; tApartS; biimpl_r; tApartS; QED);
+        subgoal(biimpl_r; tApartS; contrawrite_r_deep; tApartS; QED);
+        subgoal(rewrite_l_deep; biimpl_l; tApartS; biimpl_r; tApartS; QED);
+        subgoal(biimpl_r; tApartS; biimpl_r; tApartS; QED);
+        subgoal(biimpl_r; tApartS; contrawrite_r_deep; tApartS; QED);
+        rewrite_l_deep; biimpl_l; tApartS; biimpl_r; tApartS; QED
+       )
+        
+
+PROOF irreflexive_< : Def[<'sNat] |- Copy[irreflexive[nat, <'sNat]:LAW]
+PROOF irreflexive_< == statP(mInduct; rewriter30)
+
+PROOF total_< : dfd_< |- Copy[total[nat, <'sNat]:LAW]
+PROOF total_< == trivial
+
+LAW spc_<_l1 == ALL a b. succ(a) + b === succ(a + b)
+PROOF spc_<_l1 : Def[+] CDfd[0] CDfd[succ] |- spc_<_l1
+PROOF spc_<_l1 == statP(mInduct; rewriter30)
+
+LAW spc_<_a == ALL a b. a < b ==> (EX x. succ(a + x) === b AND (DFD a < b))
+PROOF spc_<_a: Def[<'sNat] Def[+] spc_<_l1 Copy[neutral_l[nat, +, 0]:LAW]
+                Equiv[succ, succ]
+                dfd_true CDfd[succ] Copy[dfd_+ :LAW] |- spc_<_a
+PROOF spc_<_a == statP(mInduct; tApartS;
+                       (ex_r; logic; rewrite_r_deep;
+                        equiv_refl_u; rewrite_r_deep; tApartS);
+                       (ex_r; logic; rewrite_r_deep;
+                        equiv_refl_u; rewrite_r_deep; tApartS);
+                       (rewrite_l_deep; impl_l_deep; tApartS;
+                        ex_r; logic; det(6, subgoal(rewrite_r_deep));
+                        det(2, biimpl_r); assume; tApartS);
+                       subgoal(rewriter30);
+                       rewrite_l_deep; impl_l_deep; tApartS;
+                       ex_r; logic; det(8, subgoal(rewrite_r_deep));
+                       det(2, biimpl_r); assume;
+                       rewriter30
+                      )
+                       
+
+LAW spc_<_b == ALL a b. (EX x. succ(a + x) === b AND (DFD a < b)) ==> a < b
+PROOF spc_<_b: spc_<_l1 Def[<'sNat] Def[+] Equiv[0, succ] Equiv[succ, succ] 
+                CDfd[0] CDfd[succ] Copy[dfd_+ :LAW] |- spc_<_b
+PROOF spc_<_b == statP(mInduct;tApartS;
+                       rewrite_r_deep; mp_r; ex_r; logic; biimpl_r;
+                       subgoal(det(8, contrawrite_r_deep); assume;
+                               tApartS; QED);
+                       tApartS;
+                       subgoal(contrawrite_r_deep; tApartS; QED);
+                       rewrite_r_deep; mp_r; ex_r; logic;
+                       biimpl_r; det(8, contrawrite_r_deep); assume; tApartS;
+                       contrawrite_r_deep; assume; tApartS; QED
+                      )
+
+PROOF spc_< : spc_<_a spc_<_b |- Copy[Spc[<'sNat]:LAW]
+PROOF spc_< == statP(opalR; tApartS; mp_r; tApartS;
+                     mp_r; ex_r; logic; assume; tApartS)
+

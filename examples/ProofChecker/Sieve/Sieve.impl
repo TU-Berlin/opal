@@ -1,0 +1,800 @@
+IMPLEMENTATION Sieve
+/$ PROOFCHECK $/
+
+IMPORT Nat COMPLETELY
+       Pair COMPLETELY
+       Set[nat, <] ONLY set in <=
+
+IMPORT Num COMPLETELY
+IMPORT NSet COMPLETELY
+
+IMPORT Strategies COMPLETELY
+       CalcDomain COMPLETELY
+       CalcLogical COMPLETELY
+       CalcLogicalForward COMPLETELY
+       CalcStructural COMPLETELY
+       CalcComputational COMPLETELY
+       BasicTac COMPLETELY
+       CalcInduct COMPLETELY
+       CalcInformal COMPLETELY
+       CalcPP COMPLETELY       
+       REFLEXIONS COMPLETELY
+
+
+/* %@ORIG{}
+Some important properties of the algorithm are that it never removes a prime
+from the sieve, and that it never adds to the sieve a number outside the
+range 2 to @MATH{N}. These properties may be formally defined by stating
+invariants of the algorithm -- that is, facts which are true of the
+variables of the program throughout its execution, except possibly
+in certain critical regions, or action clusters (Naur, 1969), in which
+the individual variables of a structure  are update piecemeal. These
+invariants are
+@DISPLAY{primes(N) <= sieve <= range(N)}
+where @MATH{range(k)} is the set of numbers between 2 and @MATH{k} inclusive.
+
+The sieve is said to be `sifted' with respect to a number @MATH{q} if all
+multiples of @MATH{q} have been removed from it:
+@DISPLAY{sifted(q) =df forall n in sieve (q divides n ==> q === n)}
+@ENDORIG{}
+*/
+FUN sifted: nat ** set[nat, <] -> bool
+SPC sifted(q, S) == b
+PRE q >= 2
+POST b <=> ALL n. n in S ==> (q divides n ==> q === n)
+
+LAW dfd_sifted == ALL q. q >= 2 ==> ALL S. DFD sifted(q, S)
+
+/* %@ORIG{}
+The sieve is said to be `sifted up to @MATH{p}' if all multiples of any
+prime less than @MATH{p} have been removed from it:
+@DISPLAY{sifted up to (p) =df forall q in primes(p-1) (sifted(q))}
+@ENDORIG{}
+*/
+FUN siftedUpTo: nat ** set[nat, <] -> bool
+SPC siftedUpTo(p, S) == b
+PRE p >= 3
+POST b <=> ALL q. q in primes(pred(p)) ==> sifted(q, S)
+
+LAW dfd_siftedUpTo == ALL p S. p >= 3 ==> DFD siftedUpTo(p, S)
+
+/* %@ORIG{}
+We now prove the elementary lemmas on which the algorithm is based.
+@LEMMA{1}
+@DISPLAY{sieve = @{2@} + {n in range(N) | n is odd} => sifted up to (3).}
+@PROOF{}
+No odd number is divisible by 2, so the only number in the sieve
+divisible by 2 is 2 itself. Therefore @MATH{sifted(2)}, which implies the
+conclusion.
+@ENDORIG{}
+*/
+
+LAW sub1_1 == ALL N. N >= 2 ==> DFD 2 incl odd? | range(N)
+PROOF sub1_1: dfd_odd dfd_odd2 dfd2 dfd_range dfd_incl dfd_filter |- sub1_1
+PROOF sub1_1 == statP(tApartM)
+
+LAW sub1_2 == 2 >= 2
+PROOF sub1_2: reflexive[nat, >=] dfd2 |- sub1_2
+PROOF sub1_2 == trivial
+
+LAW sub1_3 == DFD primes(2)
+PROOF sub1_3: reflexive[nat, >=] dfd2 dfd_primes|- sub1_3
+PROOF sub1_3 == statP(mp_r; tApart)
+
+
+LAW lemma1a == ALL N x. N >= 2 ==>
+                 (x in 2 incl odd? | range(N) AND 2 divides x ==> x === 2)
+PROOF lemma1a: odd1 in1 filter1 
+                 dfd_filter dfd_odd dfd_odd2 dfd2 dfd_range |- lemma1a
+PROOF lemma1a == statP(tApartS; conseq; tApartS; conseq; tApartS; tApartM)
+
+LAW lemma1b == ALL N. N >= 2 ==> sifted(2, 2 incl odd? | range(N))
+PROOF lemma1b: lemma1a Spc[sifted] dfd_sifted in2
+                 reflexive[nat, divides] dfd2 dfd_range dfd_filter 
+                 dfd_odd dfd_odd2 reflexive[nat, >=]
+                 dfd_incl |- lemma1b
+PROOF lemma1b == statP(opalLs; match_deep; tApartS; conseq; tApartM)
+
+LAW lemma1c == ALL q. q in primes(2) ==> q === 2
+PROOF lemma1c: sub1_2 sub1_3 Spc[primes] reflexive[nat, <=] reflexive[nat, >=]
+                >=_<=  <=_reduce dfd_primes dfd2 |- lemma1c
+PROOF lemma1c == statP(opalLs; conseq; *(logicL); conseq; tApartS)
+
+LAW lemma1d == ALL S. sifted(2, S) ==> siftedUpTo(3, S)
+PROOF lemma1d: lemma1c Spc[siftedUpTo] 3_def Sel[succ, pred] reflexive[nat, >=]
+                 dfd_succ dfd2  |- lemma1d
+PROOF lemma1d == statP(opalLs; match_deep; rewriterO4; 
+                       *(subgoal(rewrite_l_deep)); impl_l; rewriterO4)
+
+LAW lemma1 == ALL N. N >= 2 ==> siftedUpTo(3, 2 incl odd? | range(N))
+PROOF lemma1: sub1_1 lemma1b lemma1d dfd2 dfd_range dfd_filter 
+                 dfd_odd dfd_odd2 |- lemma1
+PROOF lemma1 == statP(tApartS; conseq)
+
+/* %@ORIG{}
+@LEMMA{2}
+@DISPLAY{p² > N & sifted up to (p) & primes(N) <= sieve <= range(N) ==> 
+                 sieve = primes(N)}
+@PROOF{}
+Let @MATH{s in sieve - primes(N)} and let @MATH{q} be its smallest prime
+factor. 
+@table @i
+@Mitem :. q² <= s <= N < p²  
+since @MATH{s} is a non-prime in @MATH{range(N)}
+@Mitem :. q <= p - 1
+@Mitem :. sifted(q)
+since @MATH{sifted up to (p) & q is prime}
+@Mitem :. s ~in sieve
+since @MATH{q} divides @MATH{s} (by hypothesis) and @MATH{q /= s}
+@end table
+The contradiction shows that @MATH{sieve - primes(N)} is empty. The 
+conclusion follows from @MATH{primes(N) <= sieve}.
+@ENDORIG{}
+*/
+
+LAW sub2_1 == ALL N. N >= 2 ==>
+                   ALL n. n >= 2 AND n <= N AND prime(n) ==> n in primes(N)
+PROOF sub2_1: Spc[primes] dfd_primes |- sub2_1
+PROOF sub2_1 == statP(opalLs; conseq; biimpl_r; tApartS)
+
+LAW sub2_2 == ALL x y. x < y ==> DFD pred(y)
+PROOF sub2_2: <_succ? SDfd[pred] |- sub2_2
+PROOF sub2_2 == statP(tApartM)
+
+LAW sub2_3 == ALL x. x >= 3 ==> x >= 2
+PROOF sub2_3: 3_def transitive[nat, >=] >=_succ_mono dfd2 |- sub2_3
+PROOF sub2_3 == statP(tApartS; rewrite_l_deep; tApartM)
+                   
+
+LAW sub2_4 == ALL x. x >= 3 ==> pred(x) >= 2
+PROOF sub2_4: 3_def Sel[succ, pred] >=_succ1 >=_succ? 
+                  Discr[succ, succ?] dfd2 dfd_succ SDfd[pred] |- sub2_4
+PROOF sub2_4 == statP(tApartS; *(rewrite_l_deep); conseq; 
+                          subgoal(rewrite_l_deep; subgoal(assume; QED));
+                          rewriter)
+
+LAW sub2_5 == ALL x. x >= 3 ==> DFD pred(x)
+PROOF sub2_5: 3_def SDfd[pred] >=_succ? |- sub2_5
+PROOF sub2_5 == statP(tApartS; *(rewrite_l_deep); tApartM)
+
+LAW sub2_6 == ALL x N. N >= 2 ==> x in range(N) ==> x >= 2
+PROOF sub2_6: Spc[range'NSet] dfd_range dfd2 |- sub2_6
+PROOF sub2_6 == statP(opalLs; conseq; *(logicL); assume)
+
+LAW sub2_7 == ALL x S N. N >= 2 ==> S <= range(N) ==> x in S ==> spf(x) >= 2
+PROOF sub2_7: sub2_6 in3 spf3 dfd2 dfd_range |- sub2_7
+PROOF sub2_7 == statP(tApartM; impl_l; mp_r; tApartM)
+
+LAW sub2_8 == ALL x S N. N >= 2 ==>
+                 S <= range(N) ==> x in S ==> spf(x) === x ==> x in primes(N)
+PROOF sub2_8: sub2_6 Spc[range'NSet] Spc[primes] spf5a in3
+              dfd_range dfd_primes |- sub2_8
+PROOF sub2_8 == statP(opalLs; conseq; *(logicL); biimpl_r; *(logic_r);
+                      *(assume))
+
+LAW sub2_9 == ALL x S N. 
+                (spf(x) >= 2 AND (NOT spf(x) === x) ==> (NOT x in S)) ==>
+                N >= 2 ==> S <= range(N) ==> x in S ==> x in primes(N)
+PROOF sub2_9: sub2_6 sub2_7 sub2_8 in3 dfd_spf dfd_range |- sub2_9
+PROOF sub2_9 == statP(tApartS; conseq)
+
+LAW lemma2a == ALL N. N >= 2 ==> 
+                 ALL S. S <= range(N) ==>
+                   ALL s. s in S - primes(N) ==> (spf(s)²) <= s AND s <= N 
+PROOF lemma2a: Spc[range'NSet] sub2_1 sub2_6 spf1 minus1 in3
+                 dfd_range dfd_primes dfd_minus'NSet |- lemma2a
+PROOF lemma2a == 
+  LET conseqL == conseq; subgoal(logicL*)
+  IN
+  statP(opalLs; conseqL; conseqL; conseq; mp_r; *(logic_r); subgoal(conseq);
+        subgoal(tApartS); 
+        conseqL; conseqL; assume; tApartS
+       )
+
+LAW lemma2b == ALL a b c d. (a²) <= b AND b <= c AND c < (d²) ==> a <= pred(d)
+PROOF lemma2b: sub2_2 transitive[nat, <=] <=_1 <=_2 <_sqr_mono 
+                 dfd_sqr |- lemma2b
+PROOF lemma2b == statP(tApartS; 
+                        det(1, mp_r); tApartS; mp_r; tApartS;
+                        det(1, mp_r); tApartS; mp_r; tApartS;
+                        QED
+                       )
+
+LAW lemma2c == ALL N. N >= 2 ==> 
+                 ALL p S. S <= range(N) AND N < (p²) ==> 
+                    ALL s.  s in S - primes(N) ==> spf(s) <= pred(p)
+PROOF lemma2c: lemma2b lemma2a dfd_spf |- lemma2c
+PROOF lemma2c == statP(tApartS; conseq)
+
+LAW lemma2d == ALL N. N >= 2 ==>
+                 ALL p S. p >= 3 AND siftedUpTo(p, S) ==>
+                  ALL q. prime(q) AND q <= pred(p) ==>
+                   sifted(q, S)
+PROOF lemma2d: Spc[siftedUpTo] sub2_3 sub2_1 sub2_4 prime_size
+               sub2_5 dfd_primes dfd_siftedUpTo  |- lemma2d
+PROOF lemma2d == statP(opalLs; conseq; subgoal(logicL; tApartS);
+                       *(subgoal(mp_r; tApartS))
+                      )
+
+LAW lemma2e == ALL N. N >= 2 ==> 
+                 ALL p S. N < (p²) AND siftedUpTo(p, S) AND S <= range(N)  ==>
+                   ALL s q. s in (S - primes(N)) AND sifted(q, S) AND 
+                     q >= 2 AND q divides s AND (NOT q === s) ==>
+                     NOT s in S
+PROOF lemma2e: Spc[sifted] minus1 Spc[range'NSet]
+                 dfd_sifted dfd_primes|- lemma2e
+PROOF lemma2e == statP(opalLs; conseq; tApartS)
+
+LAW lemma2f == ALL N. N >= 2 ==> 
+                 ALL p S. p >= 3 AND N < (p²) AND siftedUpTo(p, S) AND
+                   S <= range(N)  ==> ALL s. NOT s in (S - primes(N))
+PROOF lemma2f: lemma2c lemma2d lemma2e sub2_6 sub2_9
+                minus1 spf2 spf4 in3
+                dfd_minus'NSet dfd_primes dfd_spf dfd_range |- lemma2f
+PROOF lemma2f == statP(opalLs; conseq; subgoal(logicL*); subgoal(conseq);
+                       subgoal(*(assume|logic_r));
+                       mp_r; mp_r; mp_r;
+                       subgoal(impl_l; (logicL*); subgoal(assume));
+                       *(assume|logic_r)
+                      )
+
+LAW lemma2g == ALL N. N >= 2 ==> 
+                 ALL p S. p >= 3 AND N < (p²) AND siftedUpTo(p, S) AND
+                   S <= range(N)  ==> {}?(S - primes(N))
+PROOF lemma2g: lemma2f minus1  empty dfd_primes dfd_minus'NSet |- lemma2g
+PROOF lemma2g == statP(tApartI; mp_r; mp_r; tApartS)
+
+LAW lemma2h == ALL N. N >= 2 ==> 
+                 ALL p S. p >= 3 AND N < (p²) AND siftedUpTo(p, S) AND
+                   S <= range(N)  ==> S <= primes(N)
+PROOF lemma2h: lemma2g minus2 dfd_primes |- lemma2h
+PROOF lemma2h == statP(tApartI; tApartM)
+              
+LAW lemma2 == ALL N. N >= 2 ==> 
+                ALL p S. p >= 3 AND N < (p²) AND siftedUpTo(p, S) AND
+                          primes(N) <= S AND S <= range(N)  ==> primes(N) = S
+PROOF lemma2: eq lemma2h dfd_primes |- lemma2
+PROOF lemma2 == statP(tApartI; tApartM)
+
+/* %@ORIG{}
+The algorithm can be based on these two theorems:
+@example
+begin p: integer;
+      sieve := {2} + {n in range(n) | n is odd};
+      p := 3;
+      while p² <= N do
+        begin sift(p);
+              p := next prime after (p)
+        end
+end
+@end example
+@ENDORIG{} */
+
+LAW sub_sieve_0 == ALL x N. N >= 2 ==> 
+                     (x in primes(N) ==> prime(x) AND x in range(N))
+PROOF sub_sieve_0: Spc[primes] Spc[range'NSet] 
+                     dfd_primes dfd_range |- sub_sieve_0
+PROOF sub_sieve_0 == statP(opalL; tApartS; 
+                           subgoal(conseq; tApartL);
+                           subgoal(conseq; biimpl_r; tApartS))
+
+LAW sub_sieve_1 == ALL N. N >= 2 ==> primes(N) <= 2 incl odd? | range(N)
+PROOF sub_sieve_1: sub1_1 sub_sieve_0 filter2 in2 subseteq1 prime_char
+                   dfd2 dfd_primes dfd_range dfd_odd dfd_odd2 dfd_filter 
+                   |- sub_sieve_1
+PROOF sub_sieve_1 == statP(tApartS(mp_r | impl_l))
+
+
+LAW sub_sieve_2 == ALL N. N >= 2 ==> 2 incl odd? | range(N) <= range(N)
+PROOF sub_sieve_2: sub1_1 subseteq1 Spc[range'NSet] reflexive[nat, >=]
+                     in1 filter3 <=_reduce 
+                     dfd2 dfd_range dfd_filter dfd_odd dfd_odd2 |- sub_sieve_2
+PROOF sub_sieve_2 == statP(opalL; tApartM; conseq; biimpl_r;
+                           subgoal(tApartS);
+                           subgoal(assume;QED);
+                           tApartM)
+
+LAW dfd_sieve == ALL N. N >= 2 ==> DFD sieve(N)
+PROOF dfd_sieve: Def[sieve] lemma1 sub_sieve_1 sub_sieve_2 sub1_1 
+                  reflexive[nat, >=] dfd_sieveI dfd3 |- dfd_sieve
+PROOF dfd_sieve == statP(opalL; tApartS; rewrite_r_deep; tApartM)
+
+DEF sieve(N) == sieveI(3, N, 2 incl odd? | range(N))
+PROOF spc_sieve: lemma1 Spc[sieveI] Def[sieve] 
+                    sub_sieve_1 sub_sieve_2 sub1_1 reflexive[nat, >=] 
+                    dfd_sieve dfd3
+                 |- Copy[Spc[sieve]:LAW]
+PROOF spc_sieve == statP(opalL; *(opalR); tApartS; subgoal(tApartM);
+                         rewrite_r_deep; match_deep; tApartM)
+
+FUN sieveI: nat ** nat ** set[nat, <] -> set[nat, <]
+SPC sieveI(p, N, S) == P
+PRE p >= 3 AND N >= 2 AND primes(N) <= S AND
+       S <= range(N) AND siftedUpTo(p, S)
+POST primes(N) = P
+/* %-primes(N) <= S AND S <= range(N)
+   AND siftedUpTo(nextPrimeAfter(p, N, S), S) */
+
+LAW sub_dfd_sieveI_1 == ALL p N S. p>=3 AND N>=2 AND 
+                          (p²) <= N AND primes(N) <= S ==> 
+                         EX m. m in S AND prime(m) AND m > p
+PROOF sub_dfd_sieveI_1: sub2_1 sub2_3 prime_ex in3 >_>=_>= <_<=_<= dfd2
+                         |- sub_dfd_sieveI_1
+PROOF sub_dfd_sieveI_1 == statP(tApartS; all_l; ex_l; ex_r; 
+                               *(bLogic); subgoal(2, assume);
+                               tApartS; mp_r; tApartS;
+                               impl_l; det(1, impl_l); 
+                               tApartM
+                               )
+
+LAW sub_dfd_sieveI_2 ==
+  ALL p N S. p >= 3 AND DFD nextPrimeAfter(p, N, S) ==> 
+                                 nextPrimeAfter(p, N, S) >= 3
+PROOF sub_dfd_sieveI_2: Spc[nextPrimeAfter] transitive[nat, >=] >_>= dfd3
+                           dfd_nextPrimeAfterR |- sub_dfd_sieveI_2
+PROOF sub_dfd_sieveI_2 == statP(tApartS; opalL; mp_r; *(bLogic);
+                                subgoal(1, assume); det(1, mp_r3); 
+                                mp_r3; mp_r3; tApartS)
+
+LAW sub_dfd_sieveI_3 ==
+  ALL p N S. DFD nextPrimeAfter(p, N, S) ==> p < nextPrimeAfter(p, N, S)
+PROOF sub_dfd_sieveI_3: dfd_nextPrimeAfterR 
+                          Spc[nextPrimeAfter] >_< |- sub_dfd_sieveI_3
+PROOF sub_dfd_sieveI_3 == statP(tApartS; opalL;
+                                mp_r; mp_r3; mp_r; tApartS)
+
+LAW dfd_sieveI == 
+   ALL p N S. p >= 3 AND N >= 2 AND primes(N) <= S AND 
+                 S <= range(N) AND siftedUpTo(p, S) ==> DFD sieveI(p, N, S)
+
+PROOF dfd_sieveI: Def[sieveI] tau_sieveI sub_dfd_sieveI_1 sub_dfd_sieveI_2
+                  sub_dfd_sieveI_3 lemma3 Spc[sift] 
+                  Spc[nextPrimeAfter] dfd_sift
+                  dfd_nextPrimeAfter dfd_<= dfd_sqr|- dfd_sieveI
+PROOF dfd_sieveI == statP(noetherInduct(^[tau_sieveI]);
+                          opalL; tApartS; rewrite_r_deep; opalR; tApartS;
+                          *(subgoal(mp_r3; tApartS))
+                         )
+                          
+DEF sieveI(p, N, S) ==
+  IF (p²) <= N THEN
+    sieveI(nextPrimeAfter(p, N, sift(p, N, S)), N, sift(p, N, S))
+  ELSE 
+    S
+  FI
+
+LAW sub_spc_sieveI == ALL x y. y <= x === false ==> x < y
+PROOF sub_spc_sieveI: >_< partNat |- sub_spc_sieveI
+PROOF sub_spc_sieveI == statP(tApartM; match_deep; tApartS(equiv_false); QED)
+
+PROOF spc_sieveI: Def[sieveI] lemma2 lemma3 tau_sieveI sub_dfd_sieveI_1
+                  sub_dfd_sieveI_2 sub_dfd_sieveI_3 Spc[sift] 
+                  sub_spc_sieveI dfd_sift
+                  dfd_sieveI dfd_nextPrimeAfter dfd_sqr dfd_<= |- Spc[sieveI]
+PROOF spc_sieveI == statP(noetherInduct(^[tau_sieveI]);
+                          opalL; *(opalR); tApartM;
+                          rewrite_r_deep; opalR; tApartS;
+                          tApartS(mp_r3); (impl_l; mp_r3); tApartS(mp_r3))
+
+FUN tau_sieveI: nat ** nat ** set[nat, <] -> nat
+SPC tau_sieveI(p, N, S) == #
+PRE true
+POST DFD #
+DEF tau_sieveI(p, N, S) == IF (p²) <= N THEN (N - (p²)) + 1 ELSE 0 FI
+PROOF spc_tau_sieveI: Def[tau_sieveI] dfd1 dfd_<=
+                       dfd0 dfd_plus dfd_minus'Num dfd_sqr |- Spc[tau_sieveI]
+PROOF spc_tau_sieveI == statP(rewriterO4; tApartS(mp_r3))
+
+LAW tau_sieveI == ALL p1 N S1 p2 S2. (p1²) <= N ==>
+                    p1 < p2 ==> tau_sieveI(p2, N, S2) < tau_sieveI(p1, N, S1) 
+PROOF tau_sieveI: Def[tau_sieveI] <_plus_l <_plus_r <_minus <_sqr_monoR
+                    <_plus_split <_succ 1_def dfd_succ
+                    dfd_sqr dfd_<= dfd0 dfd1 dfd_minus'Num |- tau_sieveI
+PROOF tau_sieveI == statP(rewriterO4; tApartS(mp_r3))
+
+/* %@ORIG{}
+where @MATH{sift(p)} is assumed to have the result 
+@DISPLAY{sifted(p)}
+and to preserve the invariance of
+@DISPLAY{I & sifted up to (p)}
+@ENDORIG{} */
+
+FUN sift: nat ** nat ** set[nat, <] -> set[nat, <]
+SPC sift(p, N, s) == S
+PRE siftedUpTo(p, s) AND primes(N) <= s AND s <= range(N)  
+POST siftedUpTo(p, S) AND primes(N) <= S AND S <= range(N) AND sifted(p, S)  
+
+LAW dfd_sift == 
+ ALL p N s. siftedUpTo(p, s) AND 
+              primes(N) <= s AND s <= range(N) ==> DFD sift(p, N, s)
+/* %@ORIG{}
+The correctness of the loop in preserving the invariance of 
+@MATH{sifted up to (p)} now depends on the lemma.
+@LEMMA{3}
+@DISPLAY{p² <= N & sifted up to(p) & sifted(p) => sifted up to (next prime after(p))}
+@PROOF{}
+Let @MATH{q in primes(next prime after (p) - 1)}
+@enumerate
+@item
+if @MATH{q <= p - 1}, @MATH{sifted(q)} follows from @MATH{sifted up to (p)}
+@item
+if @MATH{q = p}, @MATH{sifted(q)} follows from @MATH{sifted(p)}
+@item
+since @MATH{q} is prime, it is impossible that
+@DISPLAY{p < q <= next prime after(p) - 1.}
+@end enumerate
+@MATH{sifted(q)} follows in both possible cases, and consequently 
+@MATH{sifted up to (next prime after (p))}. 
+@ENDORIG{} */
+
+LAW sub3_1 == ALL p N S. p >= 3 AND DFD nextPrimeAfter(p, N, S) ==> 
+                pred(nextPrimeAfter(p, N, S)) >= 2
+PROOF sub3_1: sub2_4 sub_dfd_sieveI_2 |- sub3_1
+PROOF sub3_1 == statP(tApartM)
+
+LAW sub3_2 == ALL n N. N >= 2 ==> 
+                n in primes(N) ==> n >= 2 AND n <= N AND prime(n)
+PROOF sub3_2: Spc[primes] dfd_primes |- sub3_2
+PROOF sub3_2 == statP(opalL; tApartS;
+                      *(subgoal(impl_l; match_deep; tApartM; QED)))
+
+LAW sub3_3 == ALL p N S. p >= 3 AND DFD nextPrimeAfter(p, N, S) ==>
+                DFD pred(nextPrimeAfter(p, N, S))
+PROOF sub3_3: sub_dfd_sieveI_2 sub2_5 |- sub3_3
+PROOF sub3_3 == statP(tApartM)
+
+LAW sub3_4 == ALL n N. N >= 2 ==> n in range(N) ==> n <= N
+PROOF sub3_4: Spc[range'NSet] dfd_range |- sub3_4
+PROOF sub3_4 == statP(opalL; tApartS; *(subgoal(impl_l)); 
+                        match_deep; tApartS)
+
+LAW sub3_5 == ALL x y z. x <= pred(y) AND y <= z ==> x <= z
+PROOF sub3_5: transitive[nat, <=] <=_1R <_<= |- sub3_5
+PROOF sub3_5 == statP(tApartS; det(2, conseqQ1); det(2, conseqQ1); conseqQ1)
+
+LAW sub3_6 == ALL q x S N. N >= 2 AND q <= pred(x) AND x in S AND
+                 prime(q) AND primes(N) <= S AND S <= range(N) ==> q in S
+PROOF sub3_6: sub2_1 in3 sub3_4 sub3_5 prime_size dfd_range |- sub3_6
+PROOF sub3_6 == statP(tApartS; mp_r; tApartS;
+                       det(1, impl_l; mp_r); tApartS;
+                       subgoal(tApartM); mp_r; tApartS;
+                       tApartS(mp_r3); QED)
+
+LAW sub3_7 == ALL p N S q. N >=2 AND p >= 3 AND 
+                DFD nextPrimeAfter(p, N, S) ==>
+                q <= pred(nextPrimeAfter(p, N, S)) AND
+                prime(q) AND primes(N) <= S AND S <= range(N) ==> q <= p
+PROOF sub3_7: Spc[nextPrimeAfter] sub3_6 dfd_nextPrimeAfterR
+                partNat2 <=_3 dfd3 dfd2 |- sub3_7
+PROOF sub3_7 == statP(opalL; tApartS; *(subgoal(impl_l));
+                      tApartLL; conseqQ;
+                      mp_r; tApartL;
+                      (impl_l; cAssume); tApartS)
+
+LAW sub3_8 == ALL p q N S. p >= 3 AND N >= 2 AND (p²) <= N AND
+                 primes(N) <= S AND 
+                 q in primes(pred(nextPrimeAfter(p, N, S))) AND 
+                 q <= pred(p) ==> q in primes(pred(p))
+PROOF sub3_8: sub2_1 sub2_4 sub2_5 sub3_2 
+                sub_dfd_sieveI_1 sub_dfd_sieveI_2 prime_size
+                dfd_nextPrimeAfter |- sub3_8
+PROOF sub3_8 == statP(tApartS; impl_l; impl_l; mp_r; tApartM;
+                      det(5, conseqQ1); det(6, conseqQ1); det(5, conseqQ1);
+                      det(3, conseqQ1); impl_l; mp_r3; tApartM;
+                      det(5, conseqQ1); det(6, conseqQ1); det(5, conseqQ1);
+                      det(3, conseqQ1); impl_l; mp_r3; tApartM
+                     )
+
+LAW sub3_9 == ALL p S. p >=3 AND 
+                (ALL q. q in primes(pred(p)) ==> sifted(q, S)) ==>
+                siftedUpTo(p, S)
+PROOF sub3_9: Spc[siftedUpTo] dfd_siftedUpTo |- sub3_9
+PROOF sub3_9 == statP(opalL; tApartS; impl_l; impl_l; tApartM)
+
+LAW lemma3a == ALL p q N S. p >= 3 AND N >= 2 AND (p²) <= N AND
+                 primes(N) <= S AND 
+                 q in primes(pred(nextPrimeAfter(p, N, S))) AND 
+                 q <= pred(p) AND siftedUpTo(p, S) ==> sifted(q, S)
+PROOF lemma3a: sub3_8 Spc[siftedUpTo] |- lemma3a
+PROOF lemma3a == statP(opalL; tApartS; impl_l; tApartS(mp_r3))
+
+LAW lemma3b == ALL p q S. q === p AND sifted(p, S) ==> sifted(q, S)
+PROOF lemma3b: |- lemma3b
+PROOF lemma3b == statP(tApartS; rewriter)
+
+LAW lemma3c  == ALL p q N S. p >= 3 AND N >= 2 AND 
+                  (p²) <= N AND primes(N) <= S AND S <= range(N) ==> 
+                  q in primes(pred(nextPrimeAfter(p, N, S))) ==> q <= p
+PROOF lemma3c: sub3_1 sub3_2 sub3_3 sub3_7 sub_dfd_sieveI_1
+                 dfd_nextPrimeAfter |- lemma3c
+PROOF lemma3c == statP(tApartS; det(1, mp_r3); tApartS;
+                       subgoal(1, mp_r3; tApartS);
+                       subgoal(mp_r3; mp_r3; tApartS);
+                       subgoal(mp_r3; tApartS);
+                       subgoal(mp_r3; mp_r3; tApartS);
+                       subgoal(mp_r3; tApartS);
+                       subgoal(mp_r3; mp_r3; tApartS);
+                       subgoal(mp_r3; bLogic); subgoal(1, assume);
+                       subgoal(mp_r3); tApartS;
+                       subgoal(mp_r3; mp_r3); tApartS
+                      )
+
+LAW lemma3 == ALL p N S. p >= 3 AND N >= 2 AND (p²) <= N AND
+                siftedUpTo(p, S) AND sifted(p, S) AND primes(N) <= S AND
+                S <= range(N) ==> siftedUpTo(nextPrimeAfter(p, N, S), S)
+PROOF lemma3: lemma3a lemma3b lemma3c sub3_9 sub_dfd_sieveI_1
+                sub_dfd_sieveI_2 <=_4R dfd_nextPrimeAfter dfd_sqr|- lemma3
+PROOF lemma3 == statP(tApartS; mp_r; tApartS; subgoal(tApartM); 
+                      conseqQ; tApartM)
+
+/* %@ORIG{}
+Of course, this algorithm would be rather pointless unless there were
+some especially fast way of computing the next prime after @MATH{p} in
+the context in which it is required. Summarising all facts known at this
+stage we get:
+@DISPLAY{I & p² <= N & sifted up to (next prime after (p)) ... P}
+Now we can rely on the theorem
+@LEMMA{4}
+@MATH{P => next prime after (p) = next after(p, sieve)}@*
+where @MATH{next after (n, s)} is the smallest element of @MATH{s}
+which is greater than @MATH{n}. 
+@ENDORIG{} */
+
+LAW lemma4 == ALL p N S. p >= 3 AND N >= 2 AND primes(N) <= S AND
+                S <= range(N) AND (p²) <= N AND siftedUpTo(p, S) ==>
+                nextPrimeAfter(p, N, sift(p, N, S)) ===
+                  nextAfter(p, sift(p, N, S))
+
+/* %@ORIG{}
+@PROOF{}
+Let @MATH{p' = next after (p, sieve)} @*
+Since
+@DISPLAY{primes(N) <= sieve, and p' in sieve,}
+it follows that
+@DISPLAY{p < p' <= next prime after (p)}
+To establish equality, it is sufficient to prove that @MATH{p'} is prime.
+Let @MATH{r} be the smallest prime factor of @MATH{p'}, so @MATH{r <= p'}.
+
+Assume @MATH{r < p'}
+@itemize
+@item
+then @MATH{sifted(r)} follows from @MATH{r < p' <= next prime after(p)}
+and @MATH{sifted up to(next prime after(p))}.
+@item
+@MATH{:. r = p'} since @MATH{p' in sieve & r divides p'}
+@end itemize
+
+Therefore @MATH{p'} is equal to its smallest prime factor.
+
+It remains to prove that @MATH{next after(p, sieve)} actually exists;
+this follows from @MATH{p² <= N} and the fact that there is always a
+prime between @MATH{p} and @MATH{p²}, This is a deep result in number
+theory, and will not be proved here.
+@ENDORIG{}
+*/
+
+PROOF lemma4: lemma4a lemma4b lemma4c lemma3 Spc[sift] sub_dfd_sieveI_1
+               dfd_sift dfd_nextPrimeAfter |- lemma4
+PROOF lemma4 == statP(opalL; tApartS(mp_r3))
+
+LAW sub4_1 == ALL p N S. DFD nextPrimeAfter(p, N, S) ==> DFD nextAfter(p, S)
+PROOF sub4_1: Spc[nextAfter] dfd_nextPrimeAfterR |- sub4_1
+PROOF sub4_1 == statP(opalL; tApartS; match_deep;
+                      impl_l; tApartS; ex_r; tApartS)
+
+LAW sub4_2 == ALL a b. a <= b AND NOT(a < b) ==> a === b
+PROOF sub4_2: <=_4R <=_1R |- sub4_2
+PROOF sub4_2 == statP(tApartI)
+
+LAW sub4_3 == ALL p N S. p >= 3 AND
+                DFD nextPrimeAfter(p, N, S) ==> nextAfter(p, S) >= 3
+PROOF sub4_3: sub4_1 Spc[nextAfter] >_>= transitive[nat, >=]
+               dfd3 dfd_nextAfterR|- sub4_3
+PROOF sub4_3 == statP(opalL; tApartS; mp_r; tApartS; det(1, mp_r);
+                      mp_r3; tApartM)
+
+LAW sub4_4 == ALL a b c. a >= b AND a <= c ==> c >= b
+PROOF sub4_4: <=_>= transitive[nat, >=] |- sub4_4
+PROOF sub4_4 == statP(tApartS; mp_r; tApartS; det(1, mp_r); tApartS)
+
+LAW sub4_5 == ALL a b c. a <= b AND c <= pred(a) ==> c <= pred(b)
+PROOF sub4_5: <=_1 <=_1R <_<=_< |- sub4_5
+PROOF sub4_5 == statP(tApartS; mp_r; tApartS; det(1, mp_r); tApartM)
+
+LAW sub4_6 == ALL a b x. a >= 3 AND a <= b AND x in primes(pred(a)) ==>
+                 x in primes(pred(b))
+PROOF sub4_6: sub3_2 sub2_1 sub2_4 sub2_5 sub4_4 sub4_5 dfd3 |- sub4_6
+PROOF sub4_6 == statP(tApartS; conseqQ1; conseqQ1; det(2, conseqQ1);
+                       conseqQ1; det(4, conseqQ1); det(1, conseqQ1);
+                       det(2, conseqQ1); mp_r; tApartM)
+
+LAW sub4_7 == ALL p q S. p >= 3 ==> p <= q ==>
+                siftedUpTo(q, S) ==> siftedUpTo(p, S)
+PROOF sub4_7: Spc[siftedUpTo] sub4_4 sub4_6 sub2_1 sub3_2
+               dfd3 dfd_siftedUpTo |- sub4_7
+PROOF sub4_7 == statP(opalL; tApartS; conseqQ1; conseqQ1; conseqQ1;
+                     det(2, conseqQ1); det(2, conseqQ1); conseqQ1;
+                     conseqQ1; conseqQ1; det(3, conseqQ1); conseqQ1;
+                     biimpl_r; all_r; *(logic_r); eq_assume; *(logicL);
+                     det(3, conseqQ1); conseqQ1; logicL; assume)
+
+LAW sub4_8 == ALL p N S. DFD nextPrimeAfter(p, N, S) ==> nextAfter(p, S) in S
+PROOF sub4_8: sub4_1 dfd_nextAfterR Spc[nextAfter] |- sub4_8
+PROOF sub4_8 == statP(opalL; tApartS; impl_l; impl_l; impl_l;
+                      tApartS; mp_r3; tApartS)
+
+LAW sub4_9 == ALL p. p >= 3 AND spf(p) < p ==> spf(p) in primes(pred(p))
+PROOF sub4_9: sub2_1 sub2_3 sub2_4 sub2_5 spf2 spf3 <=_1 dfd_spf |- sub4_9
+PROOF sub4_9 == statP(tApartS; impl_l; impl_l; subgoal(mp_r); tApartS;
+                       subgoal(tApartM; QED); tApartM)
+
+LAW sub4_10 == ALL p S. p >= 3 AND spf(p) < p AND p in S ==>
+                 NOT sifted(spf(p), S)
+PROOF sub4_10: Spc[sifted] dfd_sifted sub2_3 spf3 spf4 <_not dfd_spf |- sub4_10
+PROOF sub4_10 == statP(opalL; tApartS; conseqQ1; tApartM; impl_l; impl_l;
+                      impl_l; impl_l; impl_l; det(3, impl_l); tApartS;
+                      match_deep; tApartM)
+
+LAW sub4_11 == ALL p S. p >= 3 ==>
+                spf(p) < p AND p in S ==> NOT siftedUpTo(p, S)
+PROOF sub4_11: Spc[siftedUpTo] sub4_9 sub4_10 sub2_3
+               dfd_siftedUpTo dfd_spf |- sub4_11
+PROOF sub4_11 == statP(opalL; tApartS; conseqQ1; conseqQ1; conseqQ1; conseqQ1; 
+                      conseqQ1; conseqQ1; conseqQ1; conseqQ1; 
+                      *(logicL); assume)
+
+LAW lemma4a == ALL p N S. N >= 2 AND DFD nextPrimeAfter(p, N, S) AND 
+                 primes(N) <= S  ==>
+                 p < nextAfter(p, S) AND
+                 nextAfter(p, S) <= nextPrimeAfter(p, N, S)
+PROOF lemma4a: Spc[nextPrimeAfter] dfd_nextPrimeAfterR
+               Spc[nextAfter] sub4_1 >_< >=_<=_1 dfd_nextAfterR|- lemma4a
+PROOF lemma4a == statP(opalL; tApartS; mp_r; mp_r3; mp_r; mp_r; tApartS;
+                      mp_r; tApartS;
+                      mp_r; det(2, impl_l); impl_l; impl_l; *(logicL);
+                      mp_r3; det(3, impl_l); impl_l; tApartS; mp_r; tApartS)
+
+LAW lemma4b == ALL p N S. N >= 2 AND DFD nextPrimeAfter(p, N, S) AND 
+                 primes(N) <= S  AND prime(nextAfter(p,S)) ==>
+                 nextAfter(p, S) === nextPrimeAfter(p, N, S)
+PROOF lemma4b: lemma4a Spc[nextPrimeAfter] sub4_1 >=_<= >=_<=_1
+                Spc[nextAfter] dfd_nextAfterR dfd_nextPrimeAfterR |- lemma4b
+PROOF lemma4b == statP(opalL; tApartS; mp_r; tApartS; det(1, mp_r3); tApartS;
+                      det(1, impl_l); impl_l; mp_r; tApartS;
+                      mp_r3; tApartS;
+                      det(2, impl_l); impl_l; impl_l; subgoal(tApartS);
+                      mp_r3; tApartS;
+                      det(2, impl_l); impl_l; impl_l; subgoal(tApartS);
+                      tApartM)
+
+LAW lemma4c == ALL p N S. p >= 3 AND N >= 2 AND DFD nextPrimeAfter(p, N, S) AND
+                  nextAfter(p, S) <= nextPrimeAfter(p, N, S) AND
+                  siftedUpTo(nextPrimeAfter(p, N, S), S) ==>
+                  prime(nextAfter(p, S))
+PROOF lemma4c: sub4_1 sub4_2 sub4_3 sub4_7 sub4_8 sub4_11 sub2_3
+                spf1a spf5a dfd_spf |- lemma4c
+PROOF lemma4c == statP(tApartS(mp_r3); det(6, conseqQ1); det(10, conseqQ1);
+                       det(10, conseqQ1); tApartS(mp_r3))
+
+
+-- %return the smallest prime greater than n in the set
+FUN nextPrimeAfter: nat ** nat ** set[nat, <] -> nat
+SPC nextPrimeAfter(n, N, S) == p
+PRE EX m. m in S AND prime(m) AND m > n
+POST p > n AND (ALL m. m in S AND prime(m) AND m > n ==> m >= p) AND
+       prime(p) AND p in S
+
+LAW dfd_nextPrimeAfter == ALL n N S. (EX m. m in S AND prime(m) AND m > n) ==>
+                            DFD nextPrimeAfter(n, N, S)
+LAW dfd_nextPrimeAfterR == ALL n N S. DFD nextPrimeAfter(n, N, S) ==>
+                             (EX m. m in S AND prime(m) AND m > n) 
+             
+
+LAW prime_ex == ALL p. EX m. m > p AND m < (p²) AND prime(m)
+PROOF prime_ex:  |- prime_ex
+PROOF prime_ex == trust("»deep result in number theory« (Hoare 1972)")
+
+/* %@ORIG{}
+A second obvious improvement in efficiency is to replace the test
+@DISPLAY{p² <= N}
+by 
+@DISPLAY{p <= rootN}
+where @MATH{rootN} has been precomputed as the highest integer not greater
+than @MATH{sqrt(N)}.
+@ENDORIG{} */
+
+/* %We present as an alternative implementation ``quick'' variants
+    of the above implementations. */
+
+FUN sieveQ: nat -> set[nat, <]
+SPC sieveQ(N) == S
+PRE N >= 2
+POST primes(N) = S
+DEF sieveQ(N) == sieveQI(3, N, root(N), 2 incl odd? | range(N))
+
+LAW dfd_sieveQ == ALL N. N >= 2 ==> DFD sieveQ(N)
+PROOF dfd_sieveQ: Def[sieveQ] lemma1 sub_sieve_1 sub_sieve_2 sub1_1 root1
+                   reflexive[nat, >=] dfd_sieveQI dfd_root dfd3 |- dfd_sieveQ
+PROOF dfd_sieveQ == statP(tApartS; rewrite_r_deep; tApartM)
+
+PROOF spc_sieveQ: lemma1 Spc[sieveQI] Def[sieveQ] sub_sieve_1
+                   sub_sieve_2 sub1_1 root1 reflexive[nat, >=]
+                   dfd_sieveQ dfd3 dfd_root |- Spc[sieveQ]
+PROOF spc_sieveQ == statP(opalL; *(opalR); tApartM;
+                          rewrite_r_deep; match_deep; tApartM)
+
+
+FUN sieveQI: nat ** nat ** nat ** set[nat, <] -> set[nat, <]
+SPC sieveQI(p, N, rootN, S) == P
+PRE p >= 3 AND N >= 2 AND primes(N) <= S AND
+       S <= range(N) AND siftedUpTo(p, S) AND ALL x. x <= rootN <=> (x²) <= N
+POST primes(N) = P
+
+DEF sieveQI(p, N, rootN, S) ==
+  IF p <= rootN THEN
+    sieveQI(nextAfter(p, sift(p, N, S)), N, rootN, sift(p, N, S))
+  ELSE 
+    S
+  FI
+PROOF spc_sieveQI: Def[sieveQI] lemma2 lemma3 tau_sieveQI sub_dfd_sieveI_1
+                  sub_dfd_sieveI_2 sub_dfd_sieveI_3 Spc[sift] 
+                  sub_spc_sieveI sub_sieveQI_1 dfd_sift
+                  dfd_sieveQI dfd_nextPrimeAfter dfd_sqr dfd_<= |- Spc[sieveQI]
+PROOF spc_sieveQI == statP(noetherInduct(^[tau_sieveQI]); opalL; *(opalR);
+                           tApartM; rewrite_r_deep; opalR; tApartS;
+                           crewrite_r_deep;
+                           subgoal(tApartS(biimpl_l); QED);
+                           mp_r3; tApartS; det(1, mp_r3); tApartS;
+                           subgoal(tApartS(biimpl_l));
+                           subgoal(biimpl_l; tApartS(mp_r3); QED);
+                           subgoal(biimpl_l; tApartS(mp_r3); QED);
+                           subgoal(tApartS(mp_r3));
+                           subgoal(biimpl_l; tApartS(mp_r3); QED);
+                           subgoal(tApartS(mp_r3));
+                           subgoal(tApartS(mp_r3));
+                           subgoal(biimpl_l; tApartS(mp_r3); QED);
+                           subgoal(biimpl_l; tApartS(mp_r3); QED);
+                           subgoal(biimpl_l; tApartS(mp_r3); QED);
+                           impl_l; tApartS(mp_r3);
+                           equiv_false; equiv_false; biimpl_l; tApartS
+                          )
+
+LAW dfd_sieveQI == ALL p N rootN S. p >= 3 AND N >= 2 AND primes(N) <= S AND
+                     S <= range(N) AND siftedUpTo(p, S) AND
+                     (ALL x. x <= rootN <=> (x²) <= N) ==>
+                     DFD sieveQI(p, N, rootN,S)
+PROOF dfd_sieveQI: Def[sieveQI] tau_sieveQI sub_dfd_sieveI_1 sub_dfd_sieveI_2
+                    sub_dfd_sieveI_3 lemma3 Spc[sift] sub_sieveQI_1
+                    Spc[nextPrimeAfter] dfd_sift dfd_nextPrimeAfter
+                    dfd_<= dfd_sqr |- dfd_sieveQI
+PROOF dfd_sieveQI == statP(noetherInduct(^[tau_sieveQI]);
+                          opalL; tApartS;
+                          rewrite_r_deep; opalR; tApartS;
+                          crewrite_r_deep; biimpl_l; tApartS;
+                          biimpl_l; mp_r3; tApartS;
+                          tApartS(mp_r3)
+                          )
+
+
+LAW sub_sieveQI_1 == ALL p N S. p >= 3 AND N >= 2 AND primes(N) <= S AND
+                S <= range(N) AND (p²) <= N AND siftedUpTo(p, S) ==>
+                  nextAfter(p, sift(p, N, S)) ===
+                  nextPrimeAfter(p, N, sift(p, N, S))
+PROOF sub_sieveQI_1: lemma4 |- sub_sieveQI_1
+PROOF sub_sieveQI_1 == trivial
+
+FUN tau_sieveQI: nat ** nat ** nat ** set[nat, <] -> nat
+SPC tau_sieveQI(p, N, rootN, S) == #
+PRE true
+POST DFD #
+DEF tau_sieveQI(p, N, rootN, S) == tau_sieveI(p, N, S)
+
+PROOF spc_tau_sieveQI: Def[tau_sieveQI] Spc[tau_sieveI] |- Spc[tau_sieveQI]
+PROOF spc_tau_sieveQI == statP(opalL; *(opalR); rewriterO4; tApartS(mp_r3))
+
+LAW tau_sieveQI == ALL p1 N rootN S1 p2 S2. (p1²) <= N ==>
+                    p1 < p2 ==> tau_sieveQI(p2, N, rootN, S2) <
+                                   tau_sieveQI(p1, N, rootN, S1) 
+
+PROOF tau_sieveQI: Def[tau_sieveQI] tau_sieveI |- tau_sieveQI
+PROOF tau_sieveQI == statP(rewriterO4; tApartS(mp_r3))
