@@ -1,0 +1,394 @@
+#! @ac_cv_path_PERL@
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/bin/dosfopMacroExpander.in,v 1.1 1999-09-18 20:13:44 kd Exp $
+
+# This is a small replacement for makeinfo -E to expand macros and process
+# the output further with texi2dvi or texi2html
+
+
+
+# this script recognizes the following options:
+# -E output 	the output file name, stdout is default
+# -I dir	additional paths to search for included files
+# --help
+# --version
+
+# Macros defined in texinfo @macro
+%mcbody = ();
+%mcargs = ();
+%unusedmacs = ();
+# the include directories
+@inclDirs = (".");
+# the name of the outputfile
+$outputfile = undef;
+# the array to store the lines
+@inputlines = ();
+# verbosity
+$verbose = 0; $xverbose = 0;
+# debugging
+$debug = 0;
+# set/clear variables (we just record them in the array)
+%texivars = ();
+# stack where we mark what to expect
+@ifstack = ();
+# only list of files
+%onlylist = ();
+# filename of these 
+$onlyfile = undef;
+
+while(@ARGV) {
+  $_ = shift;
+  print STDERR "processing option $_\n" if $debug;
+  if (/^ *$/) {
+      next;
+  } elsif (/-E/) {
+    $outputfile = shift;
+    next;
+  } elsif (/^-I(.+)/) {
+    push(@inclDirs, $1); 
+  } elsif (/^-I/) {
+    push(@inclDirs, shift);
+    next;
+  } elsif (/^-[DUo]/) { # unsupported single-letter options with one argument
+    shift;
+  } elsif (/^--help/) {
+    print "expandmacros [-E <outputfile>] [-I <incldir>]* <inputfile>\n" ; 
+    exit 0;
+  } elsif (/^--version/) {
+    print "expandmacros Revison $revision"; 
+    exit 0; 
+  } elsif (/^--verbose/) {
+    $verbose = 1;
+  } elsif (/^--verbose2/) {
+    $verbose = 1;
+    $xverbose = 1;
+  } elsif (/^--debug/) {
+    $debug = 1;
+  } elsif (/^--only/) {
+    $onlyfile = shift;
+    next;
+  } elsif (/^--(error-limit|fill-column|output|paragraph-indent|reference-limit)/) { # unsupported long options with one argument
+    shift;
+  } elsif (/^--(footnote-style=end|footnote-style=separate|no-validate|no-warn|no-split|no-headers)/) {
+    # unsupported long options with zero arguments
+    # nothing
+  } elsif (/^--(.*)/) { # options not supported by makeinfo 1.67
+    print STDERR "unrecognized option $1\n";
+  } elsif (/^--/) {
+    last;
+  } elsif (/[^-]/) { # filename 
+    unshift(@ARGV, $_);
+    last;
+  }; 
+};
+
+print STDERR "dosfopMacroExpander v 1.2b \n" if $verbose;
+$atime = (times)[0];
+$inputfile = shift;
+if (defined($outputfile)) {
+  open(OUT, ">" . $outputfile) || die "couldn't open output $outputfile";
+  select(OUT);
+};
+
+
+if (defined($onlyfile)) {
+    print STDERR "reading only list...\n" if $verbose;
+    open(ONLY, $onlyfile) || die "couldn't open onlyfile $onlyfile";
+    while (<ONLY>) {
+	chop;
+	print STDERR "add structure :$_: to only list\n" if $debug;
+	$onlylist{$_} = 1;
+    };
+    close(ONLY);
+    print STDERR "only file = " if $debug;
+    print STDERR keys(%onlylist) if $debug;
+    print STDERR "\n" if $debug;
+};
+
+print STDERR "starting\n" if $verbose;
+&processtexinfo($inputfile);
+#print STDERR "end of pass 1\n" if $verbose;
+
+# closing OUT implicitly
+### END ###
+print STDERR "exiting dosfopMacroExpander\n" if $verbose ;
+$etime = (times)[0];
+print STDERR "unused macros:\n" . join(", ", keys(%unusedmacs)) . "\n" if $verbose && !defined($onlyfile);
+printf STDERR "time: %.2f cpu\n", $etime - $atime if $verbose;
+exit;
+
+# process a single texinfofile
+sub processtexinfo {
+  local ($filename) = @_ ;
+  local ($filepos,$filelines);
+
+  print STDERR "%% opening $filename\n" if $verbose;
+  open(IN, $filename) || die "couldn't open input file $filename";
+  @inputlines = <IN> ;
+  close(IN);
+  INLINE: while(@inputlines) {
+    $_ = shift(@inputlines);
+    print "##input:$_:\n" if $debug;
+    if(/^\@c /) {
+      print ;
+      next INLINE;
+    };
+    print "1" if $debug;
+    ## first expand all macros
+    if(/@([A-Z][A-Za-z0-9_]*)[ \{]/) { # we insist on macronames starting
+                                 # with uppercase letter
+      $mname = $1 ;
+      print "\nrecognized macro `$1'\n " if $debug;
+      # do not consider lines, in which these command occur
+      if (($mname eq "TeX") || ($mname eq "AA") || ($mname eq "AE")) {
+      } else {
+	&insertmacro($mname, $_);
+	redo INLINE;
+      }
+    };
+    print "2" if $debug;
+    if(/^\@macro ([a-zA-Z_0-9]+){(.*)}/) {
+      &processmacro($1, $2);
+      next INLINE;
+    };
+    print "3" if $debug;
+    if(/^\@macro ([a-zA-Z0-9_]+)/) {
+      &processmacro($1, "");
+      next INLINE;
+    };
+    print "4" if $debug;
+    if(/^\@end macro/) {
+      warn "lonely \@end macro discarded";
+      next INLINE;
+    };
+    print "5" if $debug;
+    if(/^\@unmacro ([a-zA-Z_0-9]+)/) {
+      delete $mcargs{$1};
+      delete $mcbody{$1};
+      delete $unusedmacs{$1};
+      next INLINE;
+    };
+#      study($_); # study takes a little more time actually
+      # check for invocation of macro
+#      foreach $mname (keys(%mcargs)) {
+#	if (/@$mname[ \{]/) {  # 
+#	  &insertmacro($mname, $_);
+#	  redo INLINE;
+#	};
+#      };
+#    };
+#     if(/^@ENDEXPAND/) { # do not process lines after @ENDEXPAND 
+#                         # until next @END... 
+# #      print ;
+#       while(1) {
+# 	$_ = shift(@inputlines);
+# 	if (/^@END/) {
+# 	  unshift(@inputlines, $_);
+# 	  redo INLINE;
+# 	};
+# 	print ;
+#       };
+#       next INLINE;
+#    };
+    s/\@ENDEXPAND//g;
+    print "6a" if $debug;
+    if(defined($onlyfile)) {
+	print "6aa" if $debug;
+	if(m!^\@include +([a-zA-Z0-9_\./]+/([a-zA-Z0-9]+)\.doc\.texi)!) { 
+	    # include .doc.texi files
+	    print "6ab" if $debug;
+	    print STDERR "checking only file for structure $2\n" if $debug;
+	    if (defined(@onlylist{$2})) {
+		$inclfile = &findfile($1);
+		if (defined($inclfile)){
+		    open(IN, $inclfile) || die "couldn't open include file $inclfile";
+		    print STDERR "++ including $inclfile\n" if $verbose;
+		    @inputlines = ("\@c START PROCESSING\n", <IN>, "\@c STOP PROCESSING\n", @inputlines);
+		    close(IN) || die "problems closing $inclfile";
+		    next INLINE;
+		} else {
+		    die "couldn't open included file $1";
+		};
+	    } else {
+		print STDERR "skipping include file $1\n" if $xverbose;
+	    };
+	    next INLINE;
+	}; # end include doctexi and onlyfile
+    };
+    print "6b" if $debug;
+    if(m!^\@include +([a-zA-Z0-9_\./-]+)!) { #include files
+      $inclfile = &findfile($1);
+      if (defined($inclfile)){
+	open(IN, $inclfile) || die "couldn't open include file $inclfile";
+	print STDERR "++ including $inclfile\n" if $verbose;
+	@inputlines = (<IN>, @inputlines);
+	close(IN) || die "problems closing $inclfile";
+	next INLINE;
+      } else {
+	die "couldn't open included file $1";
+      };
+    }; # end include
+    print "7" if $debug;
+    if(/^\@ifset ([a-zA-Z0-9_]+)/) {
+      if(defined($texivars{$1})) {
+	push(@ifstack, "\@end ifset");
+	print STDERR "%% +entering \@ifset $1\n" if $xverbose;
+      } else {
+	&skipuntil("\@end ifset");
+	print STDERR "%% -skipping \@ifset $1\n" if $xverbose;
+	next INLINE;
+      };
+    }
+    print "8" if $debug;
+    if(/^\@ifclear ([a-zA-Z0-9_]+)/) {
+      unless(defined($texivars{$1})) {
+	push(@ifstack, "\@end ifclear");
+	print STDERR "%% +entering \@ifclear $1\n" if $xverbose;
+      } else {
+	&skipuntil("\@end ifclear");
+	print STDERR "%% -skipping \@ifclear $1\n" if $xverbose;
+	next INLINE;
+      };
+    };
+    print "9" if $debug;
+    if(/^\@set ([a-zA-Z0-9_]+)/) {
+      $texivars{$1} = $' ;
+    } elsif(/^\@clear ([a-zA-Z0-9_]+)/) {
+      delete($texivars{$1});
+    } elsif(/^\@end if(set|clear)/) {
+      $expect = pop(@ifstack);
+      if ($expect ne $&) {
+	warn "expected $expect, found instead $&";
+      };
+    };
+    print "## $_\n" if $debug ;
+    if ($verbose && /^\@node/) { print STDERR "."; }
+    print $_ ;
+  };
+}
+
+# search for a file in paths @inclDirs, return full name or undefined
+sub findfile {
+  local($name) = @_ ;
+  if (substr($name, 0, 1) eq "/" ) {
+      if (-e $name) {
+	  warn "file exists: $name" if $debug;
+	  return $name;
+      } else {
+	  warn "file does not exist: $name" if $debug;
+	  return undef;
+      };
+  } else {
+      foreach $path (@inclDirs) {
+	  warn "testing for >$name< in >$path<" if $debug;
+	  if (-e "$path/$name") {
+	      warn "file exists: $path/$name" if $debug;
+	      return "$path/$name";
+	  } else {
+	      warn "file does not exist: $path/$name" if $debug;
+	  };
+      };
+      return undef;
+  }
+}
+
+# scan a macro and store its definition in %mcargs, %mcbody
+sub processmacro {
+  local ($name, $args) = @_ ;
+  local ($body, $l);
+
+  print ">> processmacro $name" if $debug;
+  warn "!!! macro $name will not be recognized" if ($name !~ /^[A-Z]/);
+  $body = "";
+ MACROLINE: while (1) {
+    $l = shift(@inputlines) ;
+    print ">> >$l<" if $debug ;
+    unless(defined($l)){
+      die "unexpected end of file while scanning macro $name";
+    };
+    last MACROLINE if $l =~ /^\@end macro/ ;
+    $body .= $l;
+  };
+  chop($body);
+  $args =~ s/ +//g;
+  $mcargs{$name} = $args;
+  $mcbody{$name} = $body;
+  $unusedmacs{$name} = $body;
+}
+  
+
+# replace macro invocation of $mname in $curr 
+# and insert result at beginning of @inputlines 
+sub insertmacro {
+  local ($mname, $curr) = @_ ;
+  local (@formalargs,$premacro,$postmacro,$actargs,@actargs,
+	 $premacro,$postmacro,$body,$f,$a);
+
+  print "]] insertmacro $mname in >$curr<\n" if $debug;
+  delete($unusedmacs{$mname});
+  if ($mcargs{$mname} eq "") {
+    @formalargs = ();
+  } else {
+    @formalargs = split (/,/ , $mcargs{$mname});
+  };
+  if ($curr =~ /\@$mname *{([^}]*)}/) {
+    # ordinary macro invocation
+    $premacro = $` ;
+    $postmacro = $' ;
+    $actargs = $1;
+    print "]]ordinary macro invocation of $mname:\npremacro:$premacro\npostmacro:$postmacro\nactargs:>$actargs<\n" if $debug;
+    $actargs =~ s/, +/, /g;
+    if ($actargs =~ /^ *$/) {
+      @actargs = ();
+    } else {
+      @actargs = split(/,/ , $actargs);
+    };
+    print "]] {" . join(", ", @actargs) . "}$#actargs/$#formalargs  \n" if $debug; 
+} else {
+    $curr =~ /\@$mname +/ ;
+    $premacro = $` ;
+    $actargs = $' ;
+    chop($actargs);
+    @actargs = ($actargs) ;
+    $postmacro = "" ;
+    print "]]special macro invocation of $mname:\n$premacro:$premacro\npostmacro$postmacro\nactargs:$#actargs/$#formalargs>$actargs<\n" if $debug;
+  };
+  if ($#formalargs == $#actargs) {
+    $body = $mcbody{$mname} ;
+    print "]]start replacing in body:>$body<\n" if $debug;
+    while(@formalargs) {
+      print "]] replacing in >$body<\n" if $debug;
+      $f = shift(@formalargs);
+      $a = shift(@actargs);
+      print "  >$f< --> >$a<\n" if $debug;
+      $body =~ s/\\$f\\/$a/g;
+    };
+    unshift(@inputlines, "$premacro$body$postmacro");
+  } else {
+    $f = "macro $mname expects " . (1 + $#formalargs) . " arguments, called with " . (1 + $#actargs). " arguments: {" . join(", ", @actargs) . "} \n macro invocation ignored\n";
+    warn $f;
+    unshift(@inputlines, "$premacro$postmacro");
+  };
+}
+    
+# skip current input file until expected line occurs
+sub skipuntil {
+  local ($what) = @_ ;
+
+  SKIPLINE: while(@inputlines){
+      $_ = shift(@inputlines);
+      print ">> skip: >$_<>$what<\n" if $debug;
+      last if (/^$what/) ;
+      if (/^\@ifset/) {
+	print STDERR "%% >>skipping $_\n" if $debug;
+	&skipuntil("\@end ifset");
+	next SKIPLINE;
+      } elsif (/^\@ifclear/) {
+	print STDERR "%% >>skipping $_\n" if $debug;
+	&skipuntil("\@end ifclear");
+	next SKIPLINE;
+      } elsif (/^\@macro/) {
+	print STDERR "%% >>skipping @_\n" if $debug;
+	&skipuntil("\@end macro");
+      };
+    }
+}
