@@ -3,15 +3,17 @@ IMPLEMENTATION Signal
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 16:00:19 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-06 15:08:53 $ ($Revision: 1.2 $)
 -- low-level access to signals
-   /$ handcoded $/
 
 IMPORT
+  Com                 ONLY com ans call
   Nat                 ONLY nat 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18
                            < =
   Option              ONLY option nil avail
-  Com                 ONLY com ans call
+  ProcessCtrl         ONLY process: SORT procstat: SORT
+  Void                ONLY void: SORT
+
 
 
 -- EXPORTED TYPES --
@@ -49,7 +51,7 @@ DATA sighandler == _exit          (status:    procstat)
                    ;              (first:     sighandler,
                                    second:    sighandler)
 
--- DATA sigmask == handcoded
+/$ handcoded [sigmask:SORT] $/
 
 DATA sigaction == default
                   ignore
@@ -65,22 +67,23 @@ DATA maskaction == ma_block
 
 -- EXPORTED FUNCTIONS --
 
--- FUN < : signal ** signal -> bool
+FUN < : signal ** signal -> bool
 DEF Sig1 < Sig2 == ord(Sig1) < ord(Sig2)
 
--- FUN = : signal ** signal -> bool
+FUN = : signal ** signal -> bool
 DEF Sig1 = Sig2 == ord(Sig1) = ord(Sig2)
 
--- FUN < = : sigmask ** sigmask -> sigmask
--- DEF ... == handcoded
+FUN < = : sigmask ** sigmask -> bool
+/$ handcoded [< : sigmask ** sigmask -> bool, 
+              = : sigmask ** sigmask -> bool] $/
 
--- FUN {} : sigmask
+FUN {} : sigmask
 DEF {} == hc_sigemptyset
 
--- FUN {}? : sigmask -> bool
+FUN {}? : sigmask -> bool
 DEF {}?(Mask) == Mask = {}
 
--- FUN none? : sigmask -> bool
+FUN none? : sigmask -> bool
 DEF none?(Mask) ==
   ~(
     (sigAbrt in Mask) or (
@@ -105,67 +108,67 @@ DEF none?(Mask) ==
     )))))))))))))))))
   )
 
--- FUN allSigs : sigmask
+FUN allSigs : sigmask
 DEF allSigs == hc_sigfillset
 
--- FUN % : signal -> sigmask
+FUN % : signal -> sigmask
 DEF Sig % == {} + Sig
 
--- FUN + : sigmask ** signal -> sigmask
+FUN + : sigmask ** signal -> sigmask
 DEF Mask + Sig == hc_sigaddset(Mask,Sig)
 
--- FUN - : sigmask ** signal -> sigmask
+FUN - : sigmask ** signal -> sigmask
 DEF Mask - Sig == hc_sigdelset(Mask,Sig)
 
--- FUN + : signal ** signal -> sigmask
+FUN + : signal ** signal -> sigmask
 DEF Sig1 + Sig2 == %(Sig1) + Sig2
 
--- FUN in : signal ** sigmask -> bool
+FUN in : signal ** sigmask -> bool
 DEF Sig in Mask == hc_sigismember(Mask,Sig)
 
--- FUN kill : process -> com[void]
+FUN kill : process -> com[void]
 DEF Proc kill == call( hc_kill_p(Proc,nil) )
 
--- FUN kill : process ** signal -> com[void]
+FUN kill : process ** signal -> com[void]
 DEF Proc kill Sig == call( hc_kill_p(Proc,Sig avail) )
 
--- FUN killPGrp : process -> com[void]
+FUN killPGrp : process -> com[void]
 DEF PGrp killPGrp == call( hc_kill_grp(PGrp,nil) )
 
--- FUN killPGrp : process ** signal -> com[void]
+FUN killPGrp : process ** signal -> com[void]
 DEF PGrp killPGrp Sig == call( hc_kill_grp(PGrp,Sig avail) )
 
--- FUN alarm : nat -> com[nat]
+FUN alarm : nat -> com[nat]
 DEF Secs alarm == call( hc_alarm(Secs) )
 
--- FUN exec : sighandler -> com[void]
+FUN exec : sighandler -> com[void]
 DEF Handler exec == call( hc_exec_sh(Handler) )
 
--- FUN caught? : signal -> com[bool]
+FUN caught? : signal -> com[bool]
 DEF Sig caught? == call( hc_caught?(Sig) )
 
--- FUN sigAction : signal -> com[sigaction]
+FUN sigAction : signal -> com[sigaction]
 DEF Sig sigAction == call( hc_sigaction(Sig,nil) )
 
--- FUN sigAction : signal ** sigaction -> com[sigaction]
+FUN sigAction : signal ** sigaction -> com[sigaction]
 DEF Sig sigAction Action == call( hc_sigaction(Sig,Action avail) )
 
--- FUN sigMask : com[sigmask]
+FUN sigMask : com[sigmask]
 DEF sigMask == call( hc_sigprocmask(ma_set,nil) )
 
--- FUN sigBlock : sigmask -> com[sigmask]
+FUN sigBlock : sigmask -> com[sigmask]
 DEF Mask sigBlock == call( hc_sigprocmask(ma_block,Mask avail) )
 
--- FUN sigUnblock : sigmask -> com[sigmask]
+FUN sigUnblock : sigmask -> com[sigmask]
 DEF Mask sigUnblock == call( hc_sigprocmask(ma_unblock,Mask avail) )
 
--- FUN sigMask : sigmask -> com[sigmask]
+FUN sigMask : sigmask -> com[sigmask]
 DEF Mask sigMask == call( hc_sigprocmask(ma_set,Mask avail) )
 
--- FUN sigPending : com[sigmask]
+FUN sigPending : com[sigmask]
 DEF sigPending == call( hc_sigpending )
 
--- FUN sigSuspend : sigmask -> com[void]
+FUN sigSuspend : sigmask -> com[void]
 DEF Mask sigSuspend == call( hc_sigsuspend(Mask) )
 
 
@@ -193,46 +196,24 @@ DEF sigTTIn ord == 17
 DEF sigTTOu ord == 18
 
 FUN hc_sigemptyset : sigmask
--- DEF hc_sigemptyset == handcoded
-
 FUN hc_sigfillset : sigmask
--- DEF hc_sigfillset == handcoded
-
 FUN hc_sigaddset : sigmask ** signal -> sigmask
--- DEF hc_sigaddset(Mask,Sig) == handcoded
-
 FUN hc_sigdelset : sigmask ** signal -> sigmask
--- DEF hc_sigdelset(Mask,Sig) == handcoded
-
 FUN hc_sigismember : sigmask ** signal -> bool
--- DEF hc_sigismember(Mask,Sig) == handcoded
-
 FUN hc_kill_p : process ** option[signal] -> void -> ans[void]
--- DEF hc_kill_p(Proc,SigOpt)(_) == handcoded
-
 FUN hc_kill_grp : process ** option[signal] -> void -> ans[void]
--- DEF hc_kill_grp(Proc,SigOpt)(_) == handcoded
-
 FUN hc_alarm : nat -> void -> ans[nat]
--- DEF hc_alarm(Secs)(_) == handcoded
-
 FUN hc_exec_sh : sighandler -> void -> ans[void]
--- DEF hc_exec_sh(Handler)(_) == handcoded
-
 FUN hc_caught? : signal -> void -> ans[bool]
--- DEF hc_caught?(Sig)(_) == handcoded
-
 FUN hc_sigaction : signal ** option[sigaction] -> void -> ans[sigaction]
--- DEF hc_sigaction(Sig,OptAction)(_) == handcoded
-
 FUN hc_sigprocmask : maskaction ** option[sigmask] -> void -> ans[sigmask]
--- DEF hc_sigprocmask(Action,OptMask)(_) == handcoded
-
 FUN hc_sigpending : void -> ans[sigmask]
--- DEF hc_sigpending(_) == handcoded
-
 FUN hc_sigsuspend : sigmask -> void -> ans[void]
--- DEF hc_sigsuspend(Mask)(_) == handcoded
+
+/$ handcoded[hc_sigemptyset, hc_sigfillset, hc_sigaddset, hc_sigdelset,
+   hc_sigismember, hc_kill_p, hc_kill_grp, hc_alarm, hc_exec_sh, 
+   hc_caught?, hc_sigaction, hc_sigprocmask, hc_sigpending, 
+   hc_sigsuspend] $/
 
 -- DUE TO COMPILER BUG: USE MASKACTION DISCRIMINATORS --
 FUN foo1 foo2 foo3 : maskaction -> bool
