@@ -1,0 +1,300 @@
+IMPLEMENTATION InterOpalAccess
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1998-06-22 12:33:06 $ ($Revision: 1.1 $)
+
+IMPORT  
+        Compose ONLY o
+		Denotation ONLY = ++
+        InterOpal       COMPLETELY
+        Map     COMPLETELY
+        MapConv COMPLETELY
+        MapReduce COMPLETELY
+        Nat     COMPLETELY
+		Pair	COMPLETELY
+        Seq     COMPLETELY
+		SeqConv	COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqMap          COMPLETELY
+		SeqOfSeq		COMPLETELY
+        SeqReduce       COMPLETELY
+		SeqZip			COMPLETELY
+        SetConv         COMPLETELY
+
+
+-- Accessing InterOpal
+
+FUN symbol: interOpal ** name -> denotation
+DEF symbol(Inter, Name) == symbol(object(Inter, Name))
+
+FUN printFct: interOpal ** name -> denotation
+DEF printFct(Inter, Name) ==
+	symbol(Inter, Name) ++ "'" ++ symbol(struct(Inter, Name)) ++
+	":" ++ `(symbol(Inter, _), false)(instFct(Inter, Name))
+	
+FUN ` : (name -> denotation) ** bool -> fct -> denotation
+
+DEF `(``,_)(sort(O))    == ``(O)
+DEF `(_,_)(cart(<>))     == "()"
+DEF `(``,paren?)(cart(FS)) == 
+  (IF paren? THEN "(" ELSE "" FI) ++
+  `("", "**" , "")(`(``, true))(FS) ++
+  (IF paren? THEN ")" ELSE "" FI) 
+
+DEF `(``,paren?)(funct(A, R)) == 
+  (IF paren? THEN "(" ELSE "" FI) ++
+  `(``, A funct?)(A) ++ "->" ++ `(``,false)(R) ++
+  (IF paren? THEN ")" ELSE "" FI) 
+
+FUN instFct: interOpal ** name -> fct
+-- instantiated functionality
+DEF instFct(Inter, Name) ==
+	LET Fct == fct(Inter, Name)
+	IN 
+	IF inst?(inst(Name)) THEN 
+		LET Struct == struct(Inter, Name)
+		    Formals == formals(Struct)
+		    Insts == origInst(Inter, Name)
+		    Map == asMap(zip(&)(Formals, Insts))
+		IN subst(Inter, Name, Map, Fct)
+	ELSE Fct FI
+
+FUN subst: interOpal ** name ** map[name,<,name] ** fct -> fct
+DEF subst(Inter, TopName, Map, sort(Name)) == 
+	sort(subst(Inter, TopName, Map, Name))
+DEF subst(Inter, TopName, Map, cart(Elems)) == 
+	cart(subst(Inter, TopName, Map, _) * Elems)
+DEF subst(Inter, TopName, Map, funct(Dom, Codom)) ==
+	funct(subst(Inter, TopName, Map, Dom), 
+		subst(Inter, TopName, Map, Codom))
+
+FUN subst: interOpal ** name ** map[name,<,name] ** name -> name
+DEF subst(Inter, TopName, Map, Name) ==
+	IF origin(TopName) = origin(Name) THEN	
+		IF def?(Name, Map) THEN Map!Name
+		ELSE 
+		-- take same instance
+		name(ident(Name), origin(Name), inst(TopName))
+		FI
+	ELSE Name FI
+		/* don't look deeper into instantiated names, otherwise
+		IF inst?(inst(Name)) THEN
+		LET Struct == struct(Inter, Name)
+		    Formals == formals(Struct)
+		    Insts == origInst(Inter, Name)
+		    SubstInsts == subst(Inter, TopName, Map, _) * Insts 
+		-- for SubstInsts an inst must be found (or created)
+		*/ 
+
+FUN bestPos: object -> pos
+DEF bestPos(Obj) == bestPos(pos(Obj), unknown)
+
+FUN bestPos: seq[pos] ** pos -> pos
+DEF bestPos(<>, p) == p
+DEF bestPos(p1 :: ps, p) ==
+	IF p <= p1 THEN bestPos(ps, p1) ELSE bestPos(ps, p) FI
+
+FUN <= : pos ** pos -> bool
+DEF <= (unknown, _) == true
+DEF <= (part(_), unknown) == false
+DEF <= (part(_), _) == true
+DEF <= (pos(_,_,_), unknown) == false 
+DEF <= (pos(_,_,_), part(_)) == false
+DEF <= (pos(_,r1,c1), pos(_,r2,c2)) == 
+	IF r1 < r2 THEN true
+	IF r1 = r2 THEN c1 <= c2
+	ELSE false FI
+DEF <= (pos(_,_,_), _) == true
+DEF <= (region(p1,r1,c1,_,_), region(p2,r2,c2,_,_)) == 
+	pos(p1,r1,c1) <= pos(p2,r2,c2)
+DEF <= (region(_,_,_,_,_), _) == false
+
+FUN formParams: interOpal -> seq[name] 
+-- formal parameters of main structure
+DEF formParams(Inter) == formParams(structs(Inter) ! main)
+
+FUN typeOpParams: interOpal -> seq[name] ** seq[name]
+-- formal type and function parameters of main structure
+DEF typeOpParams(Inter) == typeOpParams(structs(Inter) ! main)
+
+FUN formParams: struct -> seq[name]
+DEF formParams(Struct) == 
+	IF param?(Struct) THEN formals(Struct)
+	ELSE <> FI
+
+FUN typeOpParams: struct -> seq[name] ** seq[name]
+DEF typeOpParams(Struct) ==
+	LET FormParams == formParams(Struct)
+	    Objs == objs(Struct)
+            (Types, NoTypes) == 
+        	partition(\\F. sort?(kind(Objs!ident(F))), FormParams)
+            Ops == (\\F. fct?(kind(Objs!ident(F)))) | NoTypes
+	IN (Types, Ops)
+
+FUN fct: interOpal ** name -> fct
+-- pre: fct?
+DEF fct(Inter, Name) == fct(kind(object(Inter, Name)))
+
+FUN sort? fct?: interOpal ** name -> bool
+DEF sort?(Inter, Name) == sort?(kind(object(Inter, Name)))
+DEF fct?(Inter, Name) == fct?(kind(object(Inter, Name)))
+
+FUN origInst: interOpal ** name -> seq[name]
+-- pre external?(Name)
+DEF origInst(Inter, Name) == 
+	IF none?(inst(Name)) THEN <> -- unparameterized
+        ELSE -- hopefully this works correct for formal or generic instances 
+           insts(struct(Inter, Name)) ! inst(Name)
+        FI
+
+FUN internal? external? local? global? : name -> bool
+DEF internal? == main? o origin
+DEF external? == origin? o origin
+DEF local? == local? o origin
+DEF global? == ~ o local?
+
+-- Structures
+FUN structs : interOpal -> seq[struct]
+DEF structs(Inter) == codom(structs(Inter))
+
+FUN mainStruct : interOpal -> struct
+DEF mainStruct(Inter) == structs(Inter) ! main
+
+FUN transStructs : interOpal -> seq[struct]
+DEF transStructs(Inter) == (origin? o origin) | structs(Inter)
+
+FUN struct : interOpal ** origin -> struct
+DEF struct(Inter, Orig) == structs(Inter) ! Orig
+
+FUN struct : interOpal ** name -> struct
+DEF struct(Inter, Name) == struct(Inter, origin(Name))
+
+-- Objects
+
+FUN objects : struct -> seq[object]
+DEF objects(Struct) == codom(objs(Struct))
+
+FUN objects : interOpal ** origin -> seq[object]
+DEF objects(Inter, Orig) == objects(structs(Inter) ! Orig)
+        
+FUN objects : interOpal -> seq[object]
+DEF objects(Inter) == objects(mainStruct(Inter))
+
+FUN object : struct ** ident -> object
+DEF object(Struct, Ident) == objs(Struct) ! Ident
+
+FUN object : interOpal ** name -> object
+DEF object(Inter, Name) == object(struct(Inter, Name), ident(Name))
+
+-- Parameter
+
+FUN param? : struct -> bool
+DEF param?(Struct) == def?(formal, insts(Struct))
+
+FUN param? : interOpal -> bool
+DEF param?(Inter) == param?(mainStruct(Inter))
+
+FUN formals : struct -> seq[name]
+DEF formals(Struct) == insts(Struct)!formal
+
+FUN param? : struct ** ident -> bool
+DEF param?(Struct, Ide) == 
+        IF param?(Struct) THEN
+                exist?(\\F.ident(F) = Ide, formParams(Struct))
+        ELSE false FI
+
+FUN param? : struct ** object -> bool
+DEF param?(Struct, Obj) == param?(Struct, ident(Obj))
+
+FUN param? : interOpal ** name -> bool
+DEF param?(Inter, Name) == param?(struct(Inter, Name), ident(Name))
+
+-- Parameter position
+
+FUN paramNo : struct ** ident -> nat
+DEF paramNo(Struct, Ide) ==
+        succ(#(take(\\F. ~(ident(F)=Ide), formals(Struct))))
+
+FUN paramNo : interOpal ** name -> nat
+DEF paramNo(Inter, Name) == paramNo(struct(Inter, Name), ident(Name))
+
+-- %$Laws$
+DEF laws(IO) == laws(structs(IO)!main)
+DEF laws(str) == law? | codom(props(str))
+
+-- Symbols
+
+FUN symbol : interOpal -> denotation
+DEF symbol(Inter) == symbol(mainStruct(Inter))
+
+-- equality for names (to find free types) 
+
+FUN = : origin ** origin -> bool
+DEF main = main == true
+DEF origin(o1) = origin(o2) == o1 = o2
+DEF local = local == true
+DEF _ : origin = _ == false
+
+FUN = : ident ** ident -> bool
+DEF i1:ident = i2 == no(i1) = no(i2)
+
+FUN = : name ** name -> bool
+DEF n1:name = n2 == ~(n1 < n2) and ~(n2 < n1)
+
+-- Free Types 
+
+FUN freeTypes : struct -> seq[property]
+DEF freeTypes(Struct) == freeType? | codom(props(Struct))
+
+FUN freeTypes : origin ** seq[property] ** object -> seq[property]
+DEF freeTypes(Orig, FreeTypes, Obj) ==
+        IF sort?(kind(Obj)) ANDIF ::?(props(Obj)) THEN 
+                LET -- Props == props(Obj)
+                    Ide == ident(Obj)
+                IN
+                        (\\F. -- exist?(ident(F) = _, Props) and 
+                                ident(sort(F)) = Ide and origin(sort(F)) = Orig
+                                ) | FreeTypes
+        ELSE <> FI
+
+FUN freeType? : struct ** object -> bool
+DEF freeType?(Struct, Obj) == 
+        ::?(freeTypes(origin(Struct), freeTypes(Struct), Obj))
+
+FUN freeType : struct ** object -> property
+DEF freeType(Struct, Obj) == 
+        ft(freeTypes(origin(Struct), freeTypes(Struct), Obj))
+
+-- Constructors 
+
+FUN constructors : seq[property] ** object -> seq[variant]
+DEF constructors(FreeTypes, Obj) ==
+        LET Kind == kind(Obj) IN
+        IF sort?(Kind) THEN <>
+        IF other?(Kind) THEN <>
+        ELSE LET Fct == fct(Kind) 
+                 ResultFct == IF funct?(Fct) THEN codom(Fct)
+                              ELSE Fct FI
+             IN
+             IF sort?(ResultFct) THEN 
+               LET Ide == ident(Obj) 
+                   Result == sort(ResultFct)
+                   Rest == (\\F. ident(sort(F)) = ident(Result)) | FreeTypes
+                   Variants == flat(variants * Rest)
+               IN (\\V. Ide = ident(cons(V))) | Variants
+             ELSE <> 
+             FI
+        FI
+
+FUN constructor? : struct ** object -> bool
+DEF constructor?(Struct, Obj) == 
+        ::?(constructors(freeTypes(Struct), Obj))
+
+FUN variant : struct ** object -> variant
+DEF variant(Struct, Obj) == 
+        ft(constructors(freeTypes(Struct), Obj))
+
+
+
