@@ -1,19 +1,19 @@
--- LAST EDIT: Tue May 18 18:29:47 1993 by OPAL compiler (athene!opal) 
+/*
 -- ============================================================================
 -- Autor:	af/wg/cm
 -- Projekt:	OPAL1-Compiler
 -- ============================================================================
-
+*/
 IMPLEMENTATION OcBinStream [data]
 /* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-06 21:22:31 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-11 15:06:45 $ ($Revision: 1.3 $)
 
 SORT data
 
-IMPORT 	Void 		ONLY void nil
+IMPORT 	Void 		COMPLETELY
 	Char		COMPLETELY
        	String 		COMPLETELY
 	Denotation	COMPLETELY
@@ -21,53 +21,54 @@ IMPORT 	Void 		ONLY void nil
 	Option		COMPLETELY
 	Com	 	COMPLETELY
 	ComCompose	COMPLETELY
-	Stream		ONLY input output stdErr write writeLine
+	Stream		ONLY output stdOut stdErr writeLine
 	BinStream	COMPLETELY
 
 IMPORT	OcExit		ONLY ioError
-	OcStream	ONLY open tryOpen create close
 
+FUN traceIO: denotation
+DEF traceIO == "traceIO"
 
-/* MISSING: adaption to openBin / createBin */
+FUN trace: options**denotation**denotation -> com[void]
+
+DEF trace(options,mode,fn) ==
+  IF cop?(traceIO,options) THEN writeLine(stdOut, mode++fn)
+  ELSE yield(okay(nil))
+  FI
 
 FUN write: options**denotation**denotation**data -> com[void]
 
 DEF write(options,fn,tag,data) ==
-  create(options,fn) &
-  (\\output.write(output,tag,data) ;
-            (\\a.IF a okay? THEN close(options,output)
-                 IF a fail? THEN (writeErr(fn,error(a)) ;
-                                  close(options,output)) ;
+  trace(options,"writing binary", fn) ; (\\ _ . 
+  store(fn,tag,data) ;
+            (\\a.IF a okay? THEN yield(a)
+                 IF a fail? THEN writeErr(fn,error(a)) ;
                                   yield(fail(ioError))
                  FI))
 
 FUN read: options**denotation**denotation -> com[data]
 
 DEF read(options,fn,tag) ==
-  open(options,fn) &
-  (\\input.read(input,tag) ;
-           (\\a.IF a okay? THEN close(options,input) &
-                                yield(a)
-                IF a fail? THEN (writeErr(fn,error(a)) ;
-                                 close(options,input)) ;
+  trace(options,"reading binary ", fn) ; (\\ _ . 
+  load(fn,tag) ;
+           (\\a.IF a okay? THEN yield(a)
+                IF a fail? THEN writeErr(fn,error(a)) ;
                                  yield(fail(ioError))
                 FI))
 
 FUN optread: options**denotation**denotation -> com[option[data]]
 
 DEF optread(options,fn,tag) ==
-  tryOpen(options,fn) &
-  (\\optIn.IF optIn nil? THEN yield(okay(nil))
-           IF optIn avail? THEN
-             LET input == cont(optIn)
-             IN read(input,tag) ;
-                (\\a.IF a okay? THEN close(options,input) ;
-                                     yield(okay(avail(data(a))))
-                     IF a fail? THEN (writeErr(fn,error(a)) ;
-                                      close(options,input)) ;
-                                      yield(fail(ioError))
-                     FI)
-           FI)
+   trace(options,"try reading binary ", fn) ; (\\ _ . 
+   load(fn,tag) ;
+  (\\optIn.IF optIn okay? THEN 
+		trace(options,"successful reading ", fn) ; (\\ _ .
+		yield(okay(avail(data(optIn)))))
+	   IF optIn fail? THEN 
+		trace(options,"failed reading ", fn ++ " : " ++
+			error(optIn)) ; (\\ _ .
+		yield(okay(nil)))
+           FI))
 
 -- ---------------------------------------------------------------------------
 
@@ -75,23 +76,3 @@ FUN writeErr: denotation**denotation -> com[void]
 
 DEF writeErr(fn,msg) ==
   writeLine(stdErr,"I/O error: " ++ fn ++ ": " ++ msg) 
-
--- cm ------------------- optional write ---------------------------------------
-
-FUN checkDiffObject : denotation
-DEF checkDiffObject == "checkDiffObject"
-
-FUN optwrite: (data ** data -> bool) ->
-	options**denotation**denotation**data -> com[void]
-
-DEF optwrite(eqData)(options, fn, tag, data) ==
-    IF cop?(checkDiffObject, options) THEN 
-      optread(options, fn, tag) & (\\Ans.
-        IF Ans nil? THEN write(options, fn, tag, data)
-        IF Ans avail? THEN 
-	    IF eqData(data, cont(Ans)) THEN yield(okay(nil))
-            ELSE write(options, fn, tag, data)
-	    FI
-        FI)
-    ELSE write(options, fn, tag, data)
-    FI
