@@ -6,27 +6,28 @@ default: usage
 
 ## define these variables to match your system
 #.. Path to the source of the distribution
-OCSSRC=/home/shome/kd/ocs/src
+OCSSRC=/home/uebb/kd/ocs/src
 #.. Absolute path to the ProjectDefs file in this directory
-OCSPROJECT=/home/shome/kd/ocs/ProjectDefs
+OCSPROJECT=/home/uebb/kd/ocs/ProjectDefs
 #.. Path to the place where the distribution is to be installed
 OCSHDIR=ocs-$(VERSION)
-OCSHOME=/usr/local/$(OCSHDIR)
+OCSHOME=/home/sol2/ocs/$(OCSHDIR)
 #.. Description of your system (see also in $OCSSRC/om/specs/Specs.basic)
 #.. use something like `uname -s`-`uname -m`
-OSARCH=linux2-i586
+OSARCH=sol2-sparc
 #.. Path to the GNU sed program
-SED=/usr/bin/sed
+SED=/usr/gnu/bin/gsed
 #.. Path to the GNU tar program
-TAR=/bin/tar
+TAR=/usr/local/bin/tar
 #.. Path to the GNU zip program
-GZIP=/usr/bin/gzip -f 
+GZIP=/usr/local/bin/gzip -f 
 #.. Non-vital components of the Opal system
 STDPACKAGES =  lib.opal_parserlight lib.opal_readline \
 		lib.opal_tcl lib.opal_tk lib.opal_win \
 		 pkg.dynamite lib.oc_reflections \
 		pkg.browser pkg.emacs pkg.dosfop pkg.doc pkg.ordinatrice \
 		pkg.oasys pkg.tivi2 
+
 
 ## don't change anything beyond this line ##############################
 
@@ -91,9 +92,9 @@ distclean:
 	(cd $(OCSSRC)/tivi2; ocs cleanall)
 
 preparedist:
-	(cd $(OCSSRC)/lib; ocs cleanall; export OCSSRC=$(OCSSRC); ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
-	(cd $(OCSSRC)/om; ocs cleanall; export OCSSRC=$(OCSSRC); ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
-	(cd $(OCSSRC)/oc; ocs cleanall; export OCSSRC=$(OCSSRC); ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
+	(cd $(OCSSRC)/lib; ocs cleanall; OCSSRC=$(OCSSRC); export OCSSRC; ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
+	(cd $(OCSSRC)/om; ocs cleanall; OCSSRC=$(OCSSRC); export OCSSRC; ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
+	(cd $(OCSSRC)/oc; ocs cleanall; OCSSRC=$(OCSSRC); export OCSSRC; ocs -P $(OCSSRC)/ProjectDefs.bootstrap)
 
 sourcedistr:
 	cp -f ignore1  /tmp; cp -f ignore2  /tmp; \
