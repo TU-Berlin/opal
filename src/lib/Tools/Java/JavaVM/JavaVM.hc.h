@@ -1,10 +1,5 @@
 /* hand-coded interface part of JavaVM */
 
-/* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
-   See OCSHOME/etc/LICENSE or 
-   http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 16:00:28 $ ($Revision: 1.1.1.1 $)
-*/
 #include "jni.h"
 
 #include "Int.h"
@@ -14,6 +9,8 @@
 #include "Com.h"
 
 
+/* #undef JAVABIND_GLOBALREFS */
+
 /* Representation of Java Objects */
 
 typedef struct sJOBJECT {
@@ -21,7 +18,6 @@ typedef struct sJOBJECT {
     jobject object;
 } * JOBJECT;
 
-/* FIXME */
 #define jobject_size sizeof_foreign(struct sJOBJECT)
 
 /* Global Variables */
@@ -50,31 +46,21 @@ extern void _javabind_dispose(OBJ);
 #define decr_jobject(o,n) decr_structured(o,n)
 #define excl_jobject(o,n) excl_structured(o,n)
 
-#define make_jobject(jo,r){\
-    alloc_jobject(r); \
-    if (jo != NULL){\
-      jobject _globalRef = (*javabind_env)->NewGlobalRef(javabind_env, jo);\
-      (*javabind_env)->DeleteLocalRef(javabind_env, jo); \
-      ((JOBJECT)(r))->object=_globalRef;\
-    } else {\
-      ((JOBJECT)(r))->object=NULL;\
-    }\
-}
-
 #define get_jobject(o)   (((JOBJECT)(o))->object)
+#define make_jobject(jo,r) {alloc_jobject(r); get_jobject(r)=jo;}
 
-
-#define free_jobject_after(o,n){\
-    if (excl_jobject(o,n)){\
-	_setLink(_header(o), javabind_freeafter);\
-	javabind_freeafter = o;\
-    } else {\
-	decr_jobject(o,n);\
-    }\
+#define javabind_free_temp(x) {\
+  if(x!=NULL)(*javabind_env)->DeleteLocalRef(javabind_env,x);\
+}
+	
+#define javabind_free_arg(x) {\
+  if (excl_jobject(x, 1)){\
+    _javabind_dispose(x);\
+  } else {\
+    decr_jobject(x, 1);\
+  }\
 }
 
-#define javabind_free_arg(x) {if(x!=NULL)(*javabind_env)->DeleteLocalRef(javabind_env,x);}
-	
 
 /* Type Conversions for JNI calls */
 
@@ -85,13 +71,20 @@ extern OBJ _javabind_fromObject(jobject);
 extern jobject _javabind_asObjectArray(int, jclass, jobject (*)(OBJ), OBJ);
 extern OBJ _javabind_fromObjectArray(int, jclass, OBJ (*)(jobject), jobject);
 
-#define javabind_asObject(x,j){\
-    j=get_jobject(x); free_jobject_after(x,1);\
-}
+#define javabind_asObject(x,j){j=get_jobject(x);}
 
+#ifdef JAVABIND_GLOBALREFS
 #define javabind_fromObject(j,x){\
-    make_jobject(j,x);\
+  jobject __gj = (*javabind_env)->NewGlobalRef(javabind_env, j);\
+  (*javabind_env)->DeleteLocalRef(javabind_env, j);\
+  make_jobject(__gj,x);\
 }
+#else
+#define javabind_fromObject(j,x){\
+  make_jobject(j,x);\
+}
+#endif
+
 
 #define javabind_asObjectArray(d,c,f,x,j) {j=_javabind_asObjectArray(d,c,f,x);}
 #define javabind_fromObjectArray(d,c,f,j,x) {x=_javabind_fromObjectArray(d,c,f,j);}

@@ -1,20 +1,18 @@
 /* hand-coded implementation part of JavaVM */
 /* coding scheme version acc-2.1 */
 
-/* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
-   See OCSHOME/etc/LICENSE or 
-   http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 16:00:28 $ ($Revision: 1.1.1.1 $)
-*/
 #include "unixconfig.h"
 #include "Array.h"
 #include "Denotation.h"
+
+#include <stdio.h>
+
+#define DEBUG(stm) 
 
 /* ---------------------------------------------------------------------- */
 /* Variables */
 
 JNIEnv *javabind_env;
-OBJ javabind_freeafter;
 jthrowable javabind_last_exception;
 OBJ javabind_exception_ans;
 
@@ -36,16 +34,37 @@ static jclass array_type(int dim, jclass);
 /* ---------------------------------------------------------------------- */
 /* Initialization */
 
+#define MEGABYTE (1024*1024)
+
+static void vmExits(jint code){
+    exit(code);
+}
+
+static void vmAborts(){
+    abort();
+}
+
 static init_const_AJavaVM(){
     JDK1_1InitArgs vm_args;
     jint res;
     JNI_GetDefaultJavaVMInitArgs(&vm_args);
+    vm_args.version = 0x00010001;
     vm_args.classpath = getenv("CLASSPATH");
+    vm_args.minHeapSize = 2 * MEGABYTE; 
+    vm_args.maxHeapSize = 48 * MEGABYTE; 
+    /* vm_args.nativeStackSize = 4 * MEGABYTE; */
+    /* vm_args.javaStackSize = 2 * MEGABYTE; */
+    vm_args.checkSource = 0;
+    vm_args.verifyMode = 0;
+    vm_args.exit = vmExits;
+    vm_args.abort = vmAborts;
+    vm_args.enableClassGC = 1;
+    vm_args.disableAsyncGC = 0;
+    vm_args.enableVerboseGC = 0;
     res = JNI_CreateJavaVM(&jvm,&javabind_env,&vm_args);
     if (res < 0) {
         HLT("Can't create Java VM");
     }
-    javabind_freeafter = NULL;
     javabind_last_exception = NULL;
     javabind_exception_ans = declare_failure_answer("JavaVM exception");
 
@@ -73,26 +92,20 @@ static init_const_AJavaVM(){
 /* ---------------------------------------------------------------------- */
 /* Garbage Collection */
 
+
 extern void _javabind_dispose(OBJ o){
     jobject jo = get_jobject(o);
     if (jo != NULL){
-      (*javabind_env)->DeleteGlobalRef(javabind_env, jo);
+#ifdef JAVABIND_GLOBALREFS
+      (*javabind_env)->DeleteGlobalRef(javabind_env, jo); 
+#else
+      (*javabind_env)->DeleteLocalRef(javabind_env, jo);
+#endif
     }
     dispose_foreign_mem(o,jobject_size);
 }
 
-#define freeafter(){\
-    while (javabind_freeafter != NULL){\
-	OBJ o = javabind_freeafter;\
-        jobject jo = get_jobject(o);\
-	javabind_freeafter = _link(_header(javabind_freeafter));\
-        if (jo != NULL){\
-	  (*javabind_env)->DeleteGlobalRef(javabind_env, jo);\
-	}\
-	dispose_foreign_mem(o,jobject_size);\
-    }\
-}
-	
+
 
 /* ---------------------------------------------------------------------- */
 /* JNI Call Abstractions */
@@ -102,6 +115,7 @@ extern jclass javabind_FindClass(const char *name){
     c = (*javabind_env)->FindClass(javabind_env, name);
     javabind_catch_abort();
     if (c == NULL){
+        fprintf(stderr, "JNI FindClass returns NULL for class `%s'\n", name);
 	HLT("JavaVM: class not found but no exception??");
     }
     return c;
@@ -155,36 +169,30 @@ extern jfieldID javabind_GetStaticFieldID(jclass clazz, const char *name,
 #define JNIPRIMDEF(TYPE,QUAL)\
   extern TYPE javabind_Get##QUAL##Field(jobject ob, jfieldID id){\
     TYPE res = (*javabind_env)->Get##QUAL##Field(javabind_env, ob, id);\
-    freeafter();\
     return res;\
   }\
   extern void javabind_Set##QUAL##Field(jobject ob, jfieldID id, TYPE x){\
     (*javabind_env)->Set##QUAL##Field(javabind_env, ob, id, x);\
-    freeafter();\
   }\
   extern TYPE javabind_GetStatic##QUAL##Field(jclass clazz, jfieldID id){\
     TYPE res = (*javabind_env)->GetStatic##QUAL##Field(javabind_env,\
 						      clazz, id);\
-    freeafter();\
     return res;\
   }\
   extern void javabind_SetStatic##QUAL##Field(jclass clazz, jfieldID id, \
 					     TYPE x){\
     (*javabind_env)->SetStatic##QUAL##Field(javabind_env, clazz, id, x);\
-    freeafter();\
   }\
   extern TYPE javabind_Call##QUAL##MethodA(jobject ob, jmethodID id, \
 					  jvalue argv[]){\
     TYPE res = (*javabind_env)->Call##QUAL##MethodA(javabind_env, ob, \
 						   id, argv);\
-    freeafter();\
     return res;\
   }\
   extern TYPE javabind_CallStatic##QUAL##MethodA(jclass clazz, jmethodID id, \
 						jvalue argv[]){\
     TYPE res = (*javabind_env)->CallStatic##QUAL##MethodA(javabind_env, \
 							 clazz, id, argv);\
-    freeafter();\
     return res;\
   }
 
@@ -201,19 +209,16 @@ JNIPRIMDEF(jobject,Object)
 
 extern jobject javabind_NewObjectA(jclass clazz, jmethodID id, jvalue argv[]){
     jobject res = (*javabind_env)->NewObjectA(javabind_env, clazz, id, argv);
-    freeafter();
     return res;
 }
 
 extern void javabind_CallVoidMethodA(jobject ob, jmethodID id, jvalue argv[]){
     (*javabind_env)->CallVoidMethodA(javabind_env, ob, id, argv);
-    freeafter();
 }
 
 extern void javabind_CallStaticVoidMethodA(jclass clazz, jmethodID id, 
 					  jvalue argv[]){
     (*javabind_env)->CallStaticVoidMethodA(javabind_env, clazz, id, argv);
-    freeafter();
 }
 
 		     
@@ -225,7 +230,7 @@ extern OBJ _javabind_fail(){
     /* DEBUG */
     /* (*javabind_env)->ExceptionDescribe(javabind_env); */
     if (javabind_last_exception != NULL){
-	(*javabind_env)->DeleteGlobalRef(javabind_env,javabind_last_exception);
+	(*javabind_env)->DeleteLocalRef(javabind_env,javabind_last_exception);
     }
     javabind_last_exception = (*javabind_env)->ExceptionOccurred(javabind_env);
     /*
@@ -264,10 +269,9 @@ extern OBJ _javabind_fromString(jobject jstr){
       l = (*javabind_env)->GetStringUTFLength(javabind_env, jstr);
       bytes = (*javabind_env)->GetStringUTFChars(javabind_env, jstr, &isCopy);
       str = alloc_denotation(l);
-      for (i = 0; i < l; i++){
-  	data_denotation(str)[i] = bytes[i];
-      }
+      memcpy(data_denotation(str), bytes, l);
       (*javabind_env)->ReleaseStringUTFChars(javabind_env, jstr, bytes);
+      (*javabind_env)->DeleteLocalRef(javabind_env, jstr); 
       return str;
     } else {
       str = make_denotation("");
@@ -277,18 +281,19 @@ extern OBJ _javabind_fromString(jobject jstr){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Code entries for Object Conversions (used for object arrays) */
+/* Object Conversions */
 
 extern jobject _javabind_asObject(OBJ x){
-    jobject r;
-    javabind_asObject(x,r);
-    return r;
+  jobject j;
+  javabind_asObject(x, j);
+  return j;
 }
 
-extern OBJ _javabind_fromObject(jobject x){
-    OBJ r;
-    javabind_fromObject(x,r);
-    return r;
+
+extern OBJ _javabind_fromObject(jobject j){
+  OBJ x;
+  javabind_fromObject(j, x);
+  return x;
 }
 
 
@@ -296,33 +301,63 @@ extern OBJ _javabind_fromObject(jobject x){
 /* Array Conversions */
 
 extern jobject _javabind_asObjectArray(int dim, jclass clazz, 
-				      jobject (*conv)(OBJ),
+				      jobject (*asJava)(OBJ),
 				      OBJ arr){
-   jsize leng,i; jarray jarr;
-   leng = leng_array(arr);
-   jarr = (*javabind_env)->NewObjectArray(javabind_env, leng,
+
+  jsize leng,i, excl; jarray jarr; 
+  excl = excl_array(arr, 1); 
+  leng = leng_array(arr);
+  jarr = (*javabind_env)->NewObjectArray(javabind_env, leng,
 					 array_type(dim-1, clazz),
 					 NULL);
-   javabind_catch_abort();
-   for (i = 0; i < leng; i++){
-       OBJ elem = data_array(arr)[i];
-       jobject jo;
-       copy_some(elem,1);
-       if (dim > 1){
-         jo = _javabind_asObjectArray(dim-1, clazz,
-	 			      conv,
-				      elem);
-       } else {
-         jo = (*conv)(elem);
-       }
-       (*javabind_env)->SetObjectArrayElement(javabind_env,
-					     jarr,
-					     i,
-					     jo);
-       javabind_catch_abort();
-   }
-   free_array(arr,1);
-   return jarr;
+  javabind_catch_abort();
+  if (dim > 1){
+    for (i = 0; i < leng; i++){
+      OBJ subArr = data_array(arr)[i];
+      jobject jo;
+      if (!excl) copy_array(subArr, 1);
+      jo = _javabind_asObjectArray(dim-1, clazz, asJava, subArr);
+      (*javabind_env)->SetObjectArrayElement(javabind_env, jarr, i, jo);
+      javabind_catch_abort();
+      (*javabind_env)->DeleteLocalRef(javabind_env, jo);
+    }
+  } else {
+    /* passing asJava alone doesnt works anymore since 1.1b (the free method
+       is required as well). Yet, the only unregular treatment of free
+       currently is for _javabind_asObject; so a quick hack
+       checking for the function address helps out. */
+    if (asJava == _javabind_asObject){
+      for (i = 0; i < leng; i++){
+	OBJ elem = data_array(arr)[i];
+	(*javabind_env)->SetObjectArrayElement(javabind_env, jarr, i,
+					       get_jobject(elem));
+	javabind_catch_abort();
+	if (excl){
+	  if (excl_jobject(elem, 1)){
+	    _javabind_dispose(elem);
+	  } else {
+	    decr_jobject(elem, 1);
+	  }
+	}
+      }
+    } else {
+      for (i = 0; i < leng; i++){
+	OBJ elem = data_array(arr)[i];
+	jobject jo;
+	if (!excl) copy_some(elem, 1);
+	jo = (*asJava)(elem);
+	(*javabind_env)->SetObjectArrayElement(javabind_env, jarr, i, jo);
+	javabind_catch_abort();
+	(*javabind_env)->DeleteLocalRef(javabind_env, jo);
+      }
+    }
+  }
+  if (excl){
+    dispose_array_flat(arr);
+  } else {
+    decr_array(arr,1);
+  }
+  return jarr;
 }       
        
 extern OBJ _javabind_fromObjectArray(int dim, jclass clazz,
@@ -388,6 +423,7 @@ extern OBJ _javabind_from##QUAL##Array(jarray jarr){\
    }\
    (*javabind_env)->Release##QUAL##ArrayElements(javabind_env, jarr, buf,\
 						 0);\
+   (*javabind_env)->DeleteLocalRef(javabind_env, jarr);\
    return arr;\
  } else {\
    arr = alloc_array(0);\
@@ -422,6 +458,8 @@ extern OBJ _AJavaVM_AEQUALS(OBJ x1,OBJ x2) /* EQUALS */
 				    &argv[1]);
   javabind_catch_abort();
   javabind_fromBoolean(res, y);
+  javabind_free_arg(x1);
+  javabind_free_arg(x2);
   javabind_immutable_return(y);
 }
 
@@ -433,7 +471,8 @@ static jclass array_type(int dim, jclass clazz){
     if (dim == 0){
 	return clazz;
     } else {
-        /* FIXME: this is a bit inefficient */
+        /* FIXME: this is a bit inefficient -- buts its only effective for
+	   nested arrays. */
 	OBJ y;
 	OBJ den;
 	jobject res;
@@ -459,3 +498,38 @@ static jclass array_type(int dim, jclass clazz){
 	return clazz;
     }
 }
+
+/* ---------------------------------------------------------------------- */
+/* OPAL functions */
+
+static int count_fl(OBJ l){
+  int c = 0;
+  while (l != NULL){
+    c++; l = _link(_header(l));
+  }
+  return c;
+}
+
+extern OBJ _AJavaVM_AGcOpal(OBJ dummy){
+  int i;
+  _forceAllNoneFlats();
+  _forceAllBigs();
+  /*
+  for (i = 0; i < flat_offset_ssize; i++){
+    if (_freeList[i] != NULL){
+      fprintf(stderr, "non-flat #%d ct %d\n", i, count_fl(_freeList[i]));
+    }
+  }
+  for (i = flat_offset_ssize; i < 2*flat_offset_ssize; i++){
+    if (_freeList[i] != NULL){
+      fprintf(stderr, "flat #%d ct %d\n", i-flat_offset_ssize, 
+	      count_fl(_freeList[i]));
+    }
+  }
+  */
+  return_okay_nil;
+}
+
+  
+  
+
