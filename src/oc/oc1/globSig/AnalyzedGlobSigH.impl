@@ -1,21 +1,11 @@
--- LAST EDIT: Mon Aug 12 15:57:02 1996 by Christian Maeder (andromache!maeder) 
--- ============================================================================
--- Author:      mija
--- Project:     OPAL1-Compiler (context analysis)
--- Purpose:     
--- Changes:     af, Jun 21 1993: added handling of variable names in function
---                               eqBaseA (used by eqInstName) to fix bug oc1.34
--- ============================================================================
-
 IMPLEMENTATION AnalyzedGlobSigH
 /* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1998-06-22 13:09:55 $ ($Revision: 1.2 $)
 
 IMPORT  AbsyFun2        ONLY    * / = com
-        Ac              ONLY    dec unit:SORT
         Attributes      ONLY    attr isUsed4Generated isUsed4Op
         BoolConv        ONLY    `
         Compose         ONLY    o
@@ -24,7 +14,7 @@ IMPORT  AbsyFun2        ONLY    * / = com
         DeclEntry       COMPLETELY
         Denotation      ONLY    ++
         Error           ONLY    + err:SORT
-        Fct             ONLY    ` fct anyFct =
+        Fct             ONLY    ` fct
         GlobSig         COMPLETELY
         ImpDecl4SigAna  COMPLETELY
         ImpExpEntry     COMPLETELY
@@ -38,7 +28,6 @@ IMPORT  AbsyFun2        ONLY    * / = com
         Pair            COMPLETELY
         PartNameEntry   COMPLETELY
         Pragma          ONLY    pragma
-        Quadruple       COMPLETELY
         Rep             ONLY    lexem rep
         Seq             COMPLETELY
         SeqCompare      ONLY    eq?
@@ -50,8 +39,7 @@ IMPORT  AbsyFun2        ONLY    * / = com
         SeqReduce       ONLY    \
         SeqZip          ONLY    zip
         Table           ONLY    ! table
-        Triple          COMPLETELY
-        TypeAn          ONLY    typeDec
+
 
 -- ----------------------------------------------------------------------------
 
@@ -394,8 +382,6 @@ DEF instGenTrans(gS,nameS,oStruct,oInst)
         ELSE name FI
     ELSE name FI
 
-FUN traceCheckInst? : bool
-DEF traceCheckInst? == FIELD?[bool]("-ztraceCheckInst")
 
 FUN checkInst : globSig ** seq[name:SORT] 
                 -> seq[name:SORT] ** seq[seq[name:SORT]] -> seq[seq[name:SORT]]
@@ -408,12 +394,11 @@ DEF checkInst(gS, inst)(nameS, nameSS) ==
         IF notParametrized?(gS, struct(cand)) THEN nameSS
         IF #(inst) = #(getFormParams(gS,struct(cand))) THEN
           LET
-          TCI == \\label, N. PRINT(traceCheckInst?, \\ . label ++ ": " ++ ``(gS, N)(), N)
-          identUninsts == TCI("iU", checkIdentUninst?(gS) | nameS)
-          genericTransitives == TCI("gT", checkGenericTransitive?(gS,inst)| nameS)
-          identInsts == TCI("iI", checkIdentInst?(gS,inst) | nameS)
+          identUninsts == checkIdentUninst?(gS) | nameS
+          genericTransitives == checkGenericTransitive?(gS,inst)| nameS
+          identInsts == checkIdentInst?(gS,inst) | nameS
           nameS1 == (identUninsts ++ (genericTransitives ++ identInsts))
-          finNameS == TCI("fN", checkContext(gS,inst) | nameS1)
+          finNameS == checkContext(gS,inst) | nameS1
           IN finNameS :: nameSS
         ELSE nameSS FI
 
@@ -454,26 +439,17 @@ FUN noMatch : globSig ** seq[name:SORT]
                 -> pair[option[fct[name:SORT]],name:SORT] -> bool
   -- liefert true, wenn Parameter und Instanz nicht matchen
 DEF noMatch(gS, cand)(p) == 
-        LET (instEleCtxt, instEle) == (1st(p),2nd(p)) 
-        IN
+        LET (instEleCtxt, instEle) == (1st(p),2nd(p)) IN
         IF instEleCtxt nil? THEN sort?(gS,instEle) ~
-        ELSE 
-          IF sort?(gS,instEle) THEN true 
-          ELSE
-            IF cont(instEleCtxt) anyFct? THEN false
-            ELSE
-              ~(='AbsyFun2(====(gS,cand))
+        ELSE IF sort?(gS,instEle) THEN true ELSE
+          ~(=(====(gS,cand))
                 (cont(instEleCtxt),fct'AnalyzedGlobSigH(gS,instEle)))
-            FI
-          FI
+             FI
         FI
 
         FUN ==== : globSig ** seq[name:SORT] -> name ** name -> bool
         DEF ====(gS,inst)(n1,n2) == =(gS)(finN1,n2)
           WHERE finN1 == IF n1 formParam? THEN inst ! pred(no(n1)) ELSE n1 FI
-
-        FUN anyFct? : fct[name] -> bool
-        DEF anyFct?(f) == ='Fct(\\x,y. true)(anyFct[name], f)
 
 
 FUN checkIdentInst? : globSig ** seq[name:SORT] -> name -> bool
@@ -570,64 +546,6 @@ DEF setAttr(F,T)(name0,gS) ==
         FI
     ELSE gS
     FI
-
-
-FUN FInternalName: (name**nat->option[typeDec]**seq[dec]**nat)**
-                   (name->option[dec])
-                        -> nat**declE**triple[seq[typeDec],seq[dec],nat]
-                                -> triple[seq[typeDec],seq[dec],nat]
-
-DEF FInternalName(FSort,FOp)(n,declE,t) ==
-  LET (prevTypeDecs,prevDecs,oldNo) == (1st(t),2nd(t),3rd(t))
-      name == intName(decl(n)) IN
-  IF declE sort? THEN
-    LET (optTypeDec,newDecs,newNo) == FSort(name,oldNo)
-        newTypeDecs == IF optTypeDec nil? THEN prevTypeDecs
-                       IF optTypeDec avail? THEN cont(optTypeDec)::prevTypeDecs
-                       FI
-    IN &(newTypeDecs,newDecs++prevDecs,newNo)
-  IF (declE op?) or (declE opCons?) THEN
-    LET optDec == FOp(name)
-        newDecs == IF optDec nil? THEN prevDecs
-                   IF optDec avail? THEN cont(optDec)::prevDecs
-                   FI
-    IN &(prevTypeDecs,newDecs,oldNo)
-  IF declE double? THEN t                       -- ueberfluessig?
-  FI
-
-DEF FInternalName(FSort,FOp:name->option[dec]**err)(n,declE,t) ==
-  LET (prevTypeDecs,prevDecs,oldErr,oldNo) == (1st(t),2nd(t),3rd(t),4th(t))
-      name == intName(decl(n)) IN
-  IF declE sort? THEN
-    LET (optTypeDec,newDecs,newErr,newNo) == FSort(name,oldNo)
-        newTypeDecs == IF optTypeDec nil? THEN prevTypeDecs
-                       IF optTypeDec avail? THEN cont(optTypeDec)::prevTypeDecs
-                       FI
-    IN &(newTypeDecs,newDecs++prevDecs,oldErr+newErr,newNo)
-  IF (declE op?) or (declE opCons?) THEN
-    LET (optDec,newErr) == FOp(name)
-        newDecs == IF optDec nil? THEN prevDecs
-                   IF optDec avail? THEN cont(optDec)::prevDecs
-                   FI
-    IN &(prevTypeDecs,newDecs,oldErr+newErr,oldNo)
-  IF declE double? THEN t                       -- ueberfluessig?
-  FI
-
-FUN FStructure: (struct->unit) -> nat**structE**seq[unit] -> seq[unit]
-
-DEF FStructure(F)(n,structE,s) ==
-  IF n > 2 THEN F(struct(n))::s ELSE s FI
-
-FUN FExternalName: struct**(name->typeDec)**(name**fct[name:SORT]->dec)
-                        -> nat**impDeclE**pair[seq[typeDec],seq[dec]]
-                                -> pair[seq[typeDec],seq[dec]]
-
-DEF FExternalName(struct,FSort,FOp)(n,impDeclE,p) ==
-  LET (prevTypeDecs,prevDecs) == (1st(p),2nd(p))
-      name == extName(struct,impDecl(n),unparam'Objects)
-        -- ist unparam ok, wenn man nicht auf Instanzen oder Fct zugreift???
-  IN   IF impDeclE sort? THEN &(FSort(name)::prevTypeDecs,prevDecs)
-       ELSE &(prevTypeDecs,FOp(name,fct(impDeclE))::prevDecs) FI
 
   FUN implFct? : bool
   DEF implFct? == FIELD?[bool:SORT]("-zimplFct")

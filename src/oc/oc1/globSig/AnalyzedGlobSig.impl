@@ -1,26 +1,11 @@
--- LAST EDIT: Thu Aug  8 13:22:43 1996 by Christian Maeder (andromache!maeder) 
--- ============================================================================
--- Author:      af / mija
--- Project:     OPAL1-Compiler (context analysis)
--- Purpose:     general interface to access globSig
--- Changes:     af, 18 May 1993: changed local '0' to local '00' in
---                               'treatExternalNames' to avoid crash
---                               when using lazy candidate sets
---              af, Jul  5 1993: added handling of laws
--- ============================================================================
-/*
-*/
--- ============================================================================
-
 IMPLEMENTATION AnalyzedGlobSig
 /* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1998-06-22 13:09:53 $ ($Revision: 1.2 $)
 IMPORT  AbsyFun2        ONLY    * = 
         AbsyFun3        ONLY    \*
-        Ac              ONLY    dec unit:SORT
         AnalyzedGlobSigH        COMPLETELY
         Attributes      COMPLETELY
         Com             ONLY    com
@@ -54,7 +39,6 @@ IMPORT  AbsyFun2        ONLY    * =
         Poly4SigAna     ONLY    /
         Pos             ONLY    pos
         Pragma          ONLY    pragma
-        Quadruple       COMPLETELY
         Rep             COMPLETELY
         Seq             COMPLETELY
         SeqConv         ONLY    `
@@ -65,8 +49,6 @@ IMPORT  AbsyFun2        ONLY    * =
         SeqReduce       ONLY    /
         Table           COMPLETELY
         TableFun2       ONLY    /
-        Triple          COMPLETELY
-        TypeAn          ONLY    typeDec
        ABORT ONLY ABORT
        GlobPragma COMPLETELY
 
@@ -202,31 +184,24 @@ DEF matchingSorts(gS, ideP0, origO, insts, unusedLoc) == (nameSP, newLoc)
         ideP == PRINT(lookupIn?,```("Sorts",ideP0,origO,insts,nil[fct[name]]),ideP0)
         nameSP == PRINT(lookup?,``(gS, nameS), nameS)
         nameS == flat(checkGenericInst(gS, insts) * 3rdNames)
-        (newLoc,3rdNames0) == \*(\*(checkNameSet(gS)))(unusedLoc, 2ndNames)
-        2ndNames0 == IF insts <>? THEN 1stNames
+        (newLoc,3rdNames) == \*(\*(checkNameSet(gS)))(unusedLoc, 2ndNames)
+        2ndNames == IF insts <>? THEN 1stNames
                     ELSE (checkInst(gS,insts) / <>[seq[name]])(1stNames) FI
-        1stNames0 == delInstPointer(gS) *
+        1stNames == delInstPointer(gS) *
                     matchSortByIdeOrig(gS, ideP, origO,applied?)
-        3rdNames == PRINT(lookup?, \\ . "3rd: " ++ ``(gS, flat(3rdNames0))(), 3rdNames0)
-        2ndNames == PRINT(lookup?, \\ . "2nd: " ++ ``(gS, flat(2ndNames0))(), 2ndNames0)
-        1stNames == PRINT(lookup?, \\ . "1st: " ++ ``(gS, flat(1stNames0))(), 1stNames0)
 
 DEF matchingOps(gS, ideP0, origO, insts, fctO, unusedLoc) == (nameSP, newLoc)
         WHERE
         ideP == PRINT(lookupIn?,```("Ops",ideP0,origO,insts,fctO),ideP0)
         nameSP == PRINT(lookup?,``(gS, nameS), nameS)
         nameS == flat(checkGenericInst(gS, insts) * 4thNames)
-        4thNames0 == (IF fctO nil? THEN 3rdNames
+        4thNames == (IF fctO nil? THEN 3rdNames
                     ELSE /(eqFct1(gS,cont(fctO)),<>) * 3rdNames FI)
-        (newLoc, 3rdNames0) == \*(\*(checkNameSet(gS)))(unusedLoc, 2ndNames)
-        2ndNames0 == IF insts <>? THEN 1stNames
+        (newLoc, 3rdNames) == \*(\*(checkNameSet(gS)))(unusedLoc, 2ndNames)
+        2ndNames == IF insts <>? THEN 1stNames
                     ELSE (checkInst(gS,insts) / <>[seq[name]])(1stNames) FI
-        1stNames0 == delInstPointer(gS) *
+        1stNames == delInstPointer(gS) *
                         matchOpByIdeOrig(gS, ideP, origO,applied?)
-        4thNames == PRINT(lookup?, \\ . "4th: " ++ ``(gS, flat(4thNames0))() , 4thNames0)
-        3rdNames == PRINT(lookup?, \\ . "3rd: " ++ ``(gS, flat(3rdNames0))(), 3rdNames0)
-        2ndNames == PRINT(lookup?, \\ . "2nd: " ++ ``(gS, flat(2ndNames0))(), 2ndNames0)
-        1stNames == PRINT(lookup?, \\ . "1st: " ++ ``(gS, flat(1stNames0))(), 1stNames0)
 
 FUN eqFct1 : globSig ** fct[name] -> name ** seq[name] -> seq[name] 
 DEF eqFct1(gS,f1)(Name, Rt) == 
@@ -660,45 +635,6 @@ DEF formParamKinds(gS,struct) ==
      IF structE unparam?      THEN <>
      ELSE 2nd(formParamS(structE))
      FI
-
-FUN treatInternalNames: globSig ->
-                         (name**nat->option[typeDec]**seq[dec]**nat)**
-                           (name->option[dec]) ->
-                         nat -> seq[typeDec]**seq[dec]
--- bearbeitet alle internen Namen einer Signatur
---  getrennt nach Sorten und Operationen mit einer Zahl beginnend
-
-DEF treatInternalNames(gS)(FSort,FOp)(start) ==
-  LET X == /
-             (FInternalName(FSort,FOp),&(<>[typeDec],<>[dec],start))(decls(gS))
-  IN (1st(X),2nd(X))
-
-DEF treatInternalNames(gS)(FSort,FOp:name->option[dec]**err)(start) ==
-  LET X == /
-             (FInternalName(FSort,FOp),&(<>[typeDec],<>[dec],ok,start))
-                (decls(gS))
-  IN (1st(X),2nd(X), 3rd(X))
-
-
-FUN treatImportedStructs: globSig -> (struct->unit) -> seq[unit]
--- bearbeitet alle importierten Strukturen
-DEF treatImportedStructs(gS)(F) ==
-  /(FStructure(F),<>[unit])(structures(gS))
-
-
-FUN treatExternalNames: globSig**struct ->
-                         (name->typeDec)**(name**fct[name]->dec) ->
-                         seq[typeDec]**seq[dec]
--- bearbeitet alle Namen einer importierten Struktur
---  getrennt nach Sorten und Operationen (mit ihrer uninst. Funktionalitaet)
-
-DEF treatExternalNames(gS,struct)(FSort,FOp) ==
-  LET F == FExternalName(struct,FSort,FOp)
-      00 == &(<>[typeDec],<>[dec])
-      tab == impDecls(no(struct) ! structures(gS))
-      X == /(F,00)(tab)
-  IN (1st(X),2nd(X))
-
 
 -- -------------------------------------------------------------------------
 -- accessing global pragmas 
