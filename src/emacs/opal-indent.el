@@ -117,7 +117,7 @@ Return the amount the indentation changed by."
     (setq letindent nil)
     (cond ((looking-at "^\\(FUN[ \t]*.*:\\).*\\(\\*\\*\\|->\\)[ \t]*$")
 	   (setq newindent (+ opal-indent-width (opal-match-len 1))))
-	  ((looking-at "^\\(PROOF[ \t]*.*:\\)")
+	  ((looking-at "^\\(PROOF[ \t]*[^:]*:\\)")
 	   (setq newindent (+ opal-indent-width (opal-match-len 1))))
 	  ((looking-at "^\\([ \t]*IMPORT[ \n]+\\)[^ \t]")
 	   (setq newindent (opal-match-len 1)))

@@ -42,6 +42,8 @@ IMPORT RepoAbsy COMPLETELY
        SeqSupplements ONLY sd idx idxL
        TripleMapPlus ONLY map1 map2
        PairMapPlus ONLY map1 map2
+       Quadruple COMPLETELY
+       QuadrupleMapPlus ONLY map1 map2
 
 DEF equiv_false == 
   pscript(\\st.
@@ -261,21 +263,21 @@ DEF subst_r(K)(R, unknownSig, freeSig)(tuple(a, es), F) ==
   FI
 
 
-DEF crewrite_r_deep == liftU(lit("crewrite_r_deep"), crewrite_r_deep)
+DEF crewrite_r_deep == liftUT(lit("crewrite_r_deep"), crewrite_r_deep)
 
 FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
-                sequent -> lseq[pair[seq[sequent], subst]]
+                sequent -> lseq[triple[seq[sequent], subst, fmt]]
 DEF crewrite_r_deep(R, unknownSig, freeSig)(sq) ==
   LET crewrites == msort(<(R))(checkF(forall?)(crewrite?)(hyps(sq)))
       res == crewrite_r_deep(R, unknownSig, freeSig)(crewrites)(<>, props(sq))
-      mk == \\t. %(sq :=_props %(1st(t)),
-                   sq :=_props 2nd(t)) & 3rd(t)
+      mk == \\q. &(%(sq :=_props %(1st(q)), sq :=_props 2nd(q)),
+                   3rd(q), 4th(q))
   IN
   mk * res
 
 FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
                       seq[formula] -> seq[formula] ** seq[formula] ->
-                      lseq[triple[formula, seq[formula], subst]]
+                      lseq[quad[formula, seq[formula], subst, fmt]]
 DEF crewrite_r_deep(_,_,_)(_)(_, <>) == <>
 DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites)
   (preProp, currProp :: postProp) ==
@@ -293,7 +295,7 @@ DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites)
   
 FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
                       seq[formula] -> formula -> 
-                      lseq[triple[formula, formula, subst]]
+                      lseq[quad[formula, formula, subst, fmt]]
 DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites)(atomic(a, k, exx)) ==
   crewrite_r_deep(R, unknownSig, freeSig)(crewrites)(a, k, <>, exx)
 DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites:seq[formula])(connect(a, k, fs)) ==
@@ -310,28 +312,33 @@ DEF crewrite_r_deep(R, unknownSig, freeSig)
 
 FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
               seq[formula] -> an ** atomicKind ** seq[expr] ** seq[expr] ->
-              lseq[triple[formula, formula, subst]]
+              lseq[quad[formula, formula, subst, fmt]]
 DEF crewrite_r_deep(_, _, _)(_)(_, _, _, <>) == <>
 DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites)
                    (a, k, preEx, currEx :: postEx) ==
   LET res == crewrite_r_deep(R, unknownSig,
                                 freeSig)(currEx) * asLSeq(crewrites)
-      mk == map2(\\e. atomic(a, k, preEx ++ e :: postEx))
+      mk == map2(\\e. clearFormAn(atomic(a, k, preEx ++ e :: postEx)))
   IN
   mk * flat(res) ++
   (\\ . crewrite_r_deep(R, unknownSig, freeSig)(crewrites)
                        (a, k, preEx +% currEx, postEx))
 
 FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
-              expr -> formula -> lseq[triple[formula, expr, subst]]
+              expr -> formula -> lseq[quad[formula, expr, subst, fmt]]
 DEF crewrite_r_deep(R, unknownSig, freeSig)(ex)
               (F AS connect(_, impl, c ::
                             atomic(_, cong, f1 :: f2 :: _) :: _)) ==
-  (\\sb. &(c, f2, sb)) * unify(R)(freeSig, unknownSig)(ex, f1) ++
+  LET info == \\ sb. IF longInfo?(R) THEN prettyFormula(R)(F);
+                                         (spc(1); prettySubst(R)(sb))
+                    ELSE none
+                    FI
+  IN                
+  (\\sb. &(c, f2, sb, info(sb))) * unify(R)(freeSig, unknownSig)(ex, f1) ++
   (\\ . crewrite_r_deep(R, unknownSig, freeSig)(ex, F))
 
 FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
-              expr ** formula  -> lseq[triple[formula, expr, subst]]
+              expr ** formula  -> lseq[quad[formula, expr, subst, fmt]]
 DEF crewrite_r_deep(R, unknownSig, freeSig)(_else:expr, _) == <>
 DEF crewrite_r_deep(R, unknownSig, freeSig)(apply(a, fu, ar), F) ==
   (map2(\\e. apply(a, e, ar)) *

@@ -96,6 +96,7 @@
    '("finished subgoals?, [1-9].*$" (0 'font-lock-comment-face t t))   
    '("FAILURE PATH" (0 'font-lock-comment-face t t))   
    '("bt #[0-9].*$" (0 'font-lock-comment-face t t))   
+   '("^[0-9][0-9][0-9][0-9]*\\.[0-9]*" (0 'font-lock-comment-face t t))   
    '("[a-z]+¿" (0 'font-lock-function-name-face t t))
    )
   )
@@ -282,7 +283,7 @@
   "find next subgoal"
 
   (interactive)
-  (search-forward-regexp "^ *Subgoal")
+  (search-forward-regexp "^ *subgoal")
   (beginning-of-line)
   (set-window-start (selected-window) (point))
   (forward-line 1)
@@ -292,7 +293,7 @@
   "find previous subgoal"
 
   (interactive) 
-  (search-backward-regexp "^ *Subgoal" )
+  (search-backward-regexp "^ *subgoal" )
   (beginning-of-line)
   (set-window-start (selected-window) (point))
   (forward-line 1)
@@ -355,10 +356,12 @@
 	  )
       (setq b (find-file-noselect fn t))
       (pop-to-buffer b)
+      (font-lock-mode 0)
       (toggle-read-only 0)
       (revert-buffer t t t)
       (goto-char (point-max))
       (opal-trace-previous-proofstate)
+      (font-lock-mode 1)
       (opal-trace-fontify-proofstate)
       )
     (display-buffer b)

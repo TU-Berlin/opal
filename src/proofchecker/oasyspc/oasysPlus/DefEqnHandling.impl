@@ -6,7 +6,7 @@ IMPORT SeqMapEnv ONLY *
        RepoAn ONLY none
        Repo ONLY repo
        RepoAbsy COMPLETELY
-       Seq ONLY <> :: seq <>? % find? ft rt ++ forall? exist?
+       Seq ONLY <> :: seq <>? % find? ft rt ++ forall? exist? # ::?
        RepoName COMPLETELY
        SeqReduce ONLY /
        SeqOfSeq ONLY combinations flat
@@ -18,7 +18,7 @@ IMPORT SeqMapEnv ONLY *
        SeqFilter ONLY partition
        RepoObjectAccess ONLY symbol kind
        SeqMap ONLY *
-       Nat ONLY nat
+       Nat ONLY nat 1 >
        OptionMap ONLY *
        DEBUG ONLY PRINT
        String ONLY string
@@ -36,15 +36,23 @@ DEF transDefEqn(R)(eqs) ==
   (R1, conj1(none, forms))
 
 -- %translate a single definitional equation
+FUN traceSimplify1? : bool
+DEF traceSimplify1? == false
+
 FUN transDefEqn: repo ** eqn -> repo ** formula
 DEF transDefEqn(R, eqn(a, sig, lhs, pats, rhs)) ==
   LET locals == IF apply?(lhs) THEN lVars(arg(lhs)) ELSE <> FI
   IN
   IF generated?(locals)(R) ANDIF apply?(lhs) ANDIF name?(funct(lhs)) THEN
-    LET rhs1 == PRINT(traceSimplify?, \\ . "defeqn:" ++ pretty(prettyExpr(R)(rhs)), rhs) IN
+    LET rhs1 == PRINT(traceSimplify1?, \\ . "defeqn:" ++
+                      pretty(prettyExpr(R)(rhs)), rhs)
+    IN
     transDefEqnGen(lhs, locals, rhs1)(R)
   ELSE
-    (R, forall1(a, locals, atomic(a, cong, lhs :: rhs :: <>))) 
+    LET rhs1 == PRINT(traceSimplify1?, \\ . "defeqn(NO):" ++
+                      pretty(prettyExpr(R)(rhs)), rhs) 
+    IN
+    (R, forall1(a, locals, atomic(a, cong, lhs :: rhs1 :: <>))) 
   FI
 
 -- %$Core$
@@ -55,11 +63,33 @@ DEF transDefEqnGen(lhs, leftVars, rhs)(R) ==
   LET (R1, cTerms) == (getConstrTerms(rhs1), R) * leftVars
       rhs1 == simplify(R)(rhs)
       substSeq == (\\c. (<+, <&>) / c) * combinations(cTerms)
-  IN (R1, conj1(none, flat(mkForm(lhs, rhs, _, R1) * substSeq)))
+      recur? == #(substSeq) > 1
+      (R2, newForms) == (mkForm(recur?)(lhs, rhs1), R1) * substSeq
+  IN (R2, conj1(none, newForms))
 
-FUN mkForm: expr ** expr ** pair[subst, seq[objectName]] **
-             repo -> seq[formula]
-DEF mkForm(lhs, rhs, S & vars, R) ==
+FUN mkForm: bool -> expr ** expr -> repo ** pair[subst, seq[objectName]] ->
+             repo ** formula
+DEF mkForm(recur?)(lhs, rhs)(R, S & vars) ==
+  LET lhs1 == simplify(R)(S <$ lhs)
+      rhs1 == simplify(R)(S <$ rhs)
+  IN
+  IF recur? ANDIF apply?(lhs1) THEN
+    LET locals == lVars(arg(lhs1))
+    IN
+    IF locals ::? THEN
+      transDefEqnGen(lhs1, locals, rhs1)(R)
+    ELSE
+      LET innerF == atomic(none, cong, %(lhs1, rhs1))
+      IN
+        (R, forall1(vars, innerF))      
+    FI
+  ELSE
+    LET innerF == atomic(none, cong, %(lhs1, rhs1))
+    IN
+    (R, forall1(vars, innerF))
+  FI
+
+/* %-    
   IF vars <>? THEN undoCases(atomic(none, cong,
                                     simplify(R) *
                                     (S <$ _) *
@@ -69,7 +99,7 @@ DEF mkForm(lhs, rhs, S & vars, R) ==
                       atomic(none, cong, simplify(R) *
                                          (S <$ _) * %(lhs, rhs))))(R)
   FI
-
+*/
 
 /* %Object is a variable. If type of the variable is a free type,
     return a sequence of substitutions, which will replace the variable
@@ -99,11 +129,11 @@ DEF getConstrTerms(rhs)(R, var) ==
 /* %return true, iff variable is argument of a discriminator in
     a condition of a cases term */
 FUN discrApplied: repo -> expr ** objectName -> bool
-DEF discrApplied(R)(name(_, _), _) == false
+DEF discrApplied(_)(name(_, _), _) == false
 DEF discrApplied(R)(apply(_, f, a), V) ==
   discrApplied(R)(f, V) or discrApplied(R)(a, V)
 DEF discrApplied(R)(tuple(_, els), V) == exist?(discrApplied(R)(_, V), els)
-DEF discrApplied(R)(den(_, _), _) == false
+DEF discrApplied(_)(den(_, _), _) == false
 DEF discrApplied(R)(cases(_, gs, el), V) ==
   IF exist?(discrAppliedHere(R)(_, V), if * gs) THEN true
   ELSE
@@ -113,7 +143,7 @@ DEF discrApplied(R)(cases(_, gs, el), V) ==
 DEF discrApplied(R)(lambda(_, _, _, bd), V) == discrApplied(R)(bd, V)
 DEF discrApplied(R)(let(_, _, bd), V) == discrApplied(R)(bd, V)
 DEF discrApplied(R)(as(_, _, ex), V) == discrApplied(R)(ex, V)
-DEF discrApplied(R)(any(_), V) == false
+DEF discrApplied(_)(any(_), _) == false
 
 FUN discrAppliedHere: repo -> expr ** objectName -> bool
 DEF discrAppliedHere(R)(apply(_, name(_, f), name(_, arg)), V) ==
@@ -199,7 +229,7 @@ DEF simplify(R)(apply(an, f, a)) ==
           PRINT(traceSimplify?, \\ . "sel/constr/name!", apply(an, f1, a1))
         ELSE
           LET res == checkSel(selector * components(c), oper(f1),
-                              IF arg(a1) tuple? THEN elems(a1)
+                              IF arg(a1) tuple? THEN elems(arg(a1))
                               ELSE %(arg(a1)) 
                               FI)
           IN
@@ -221,7 +251,7 @@ DEF simplify(R)(apply(an, f, a)) ==
   FI
 
 FUN checkSel: seq[objectName] ** objectName ** seq[expr] -> option[expr]
-DEF checkSel(<>, sel, exprS) == nil
+DEF checkSel(<>, _, _) == nil
 DEF checkSel(sel1 :: selS, sel, expr :: exprS) ==
   IF sel1 = sel THEN avail(expr) ELSE checkSel(selS, sel, exprS) FI
 DEF checkSel(_ :: _, _, <>) == nil

@@ -15,6 +15,11 @@ IMPORT
        NameHandling ONLY instantiate
        RepoAbsy ONLY variant component
        RepoAn ONLY an
+       Denotation ONLY ++
+       FmtSeq ONLY fmtSeq
+       PrettyFormatting ONLY fmtObjectNameLong fmtUnitNameLong
+       Fmt ONLY pretty
+       FmtMap ONLY fmtMap
 
 DEF deriveLike(Main)(R, uN) == 
   IF Main basicUnitName? THEN (R, uN)
@@ -52,14 +57,28 @@ FUN derive: map[objectName, <, objectName] ->
              repo ** propertyName -> repo ** propertyName
 FUN derive: map[objectName, <, objectName] -> 
              repo ** objectName -> repo ** objectName
+-- % if bool is true, then don't recurse
+FUN derive: map[objectName, <, objectName] ** bool -> 
+             repo ** objectName -> repo ** objectName
 FUN derive: map[objectName, <, objectName] -> 
              repo ** localSignName -> repo ** localSignName
+
+FUN debugDerive: bool
+DEF debugDerive == false
 
 
 DEF derive(M)(R, uN) ==
   IF (uN monomorphic?)(R) THEN (R, uN)
   ELSE
-    LET (R2, instance) == derive(M) * (R, actuals(uN)(R))
+    LET (R2, instance) == derive(M, uN basicUnitName?) * (R, acts)
+        acts == PRINT(debugDerive, \\ . 
+                      "derive/unitName:" ++ pretty(fmtUnitNameLong(R)(uN)) ++
+                      "\nderive/actuals:" ++ 
+                      pretty(fmtSeq(fmtObjectNameLong(R))(actuals(uN)(R))) ++
+                      "\nderive/Map:" ++
+                      pretty(fmtMap(fmtObjectNameLong(R),
+                                    fmtObjectNameLong(R))(M))
+                      , actuals(uN)(R))
         swap == \\a, b. (b, a)
     IN 
     swap(enterInstance(baseName(uN), instance)(R2))
@@ -70,23 +89,35 @@ DEF derive(M)(R, pN) ==
   IN
   (newR, propertyName(no(pN), newU))
 
-DEF derive(M)(R, O AS globalObjectName(no, uN)) ==
+DEF derive(M)(R, oN) == derive(M, false)(R, oN)
+
+DEF derive(M, break?)(R, O AS globalObjectName(no0, uN)) ==
+  LET
+    no == PRINT(debugDerive, "derive/globalObjectName:" ++ 
+                pretty(fmtObjectNameLong(R)(O)), no0)
+  IN
   IF avail?(M !? O) THEN (R, M ! O)
   ELSE
-    LET (newR, newU) == derive(M)(R, uN)
+    LET (newR, newU) == IF break? THEN (R, uN) ELSE derive(M)(R, uN) FI
     IN
     (newR, instantiate(M)(globalObjectName(no, newU)))
   FI
-DEF derive(M)(R, O AS localObjectName(no, lsN)) ==
+DEF derive(M, break?)(R, O AS localObjectName(no0, lsN)) ==
+  LET
+    no == PRINT(debugDerive, "derive/localObjectName:" ++ 
+                pretty(fmtObjectNameLong(R)(O)), no0)
+  IN
   IF avail?(M !? O) THEN (R, M ! O)
   ELSE
-    LET (newR, newLS) == derive(M)(R, lsN)
+    LET (newR, newLS) == IF break? THEN (R, lsN) ELSE derive(M)(R, lsN) FI
     IN
     (newR, instantiate(M)(localObjectName(no, newLS)))
   FI
 
-DEF derive(M)(R, localSignName(no, uN)) ==
+DEF derive(M)(R, localSignName(no, uN0)) ==
   LET (newR, newU) == derive(M)(R, uN)
+      uN == PRINT(debugDerive, "derive/localSignName:" ++
+                  pretty(fmtUnitNameLong(R)(uN0)), uN0)
   IN
   (newR, localSignName(no, newU))
 
@@ -127,6 +158,15 @@ DEF deriveLike(uN)(R, pN) ==
     FI
 
 DEF deriveLike(uN)(R, oN) ==
+  LET debug == debugDerive
+      oN1 == PRINT(debug, \\ . pretty(fmtObjectNameLong(R)(oN)), oN)
+      (Rnew, oNnew) == deriveLike(uN)(R, oN1)
+      oN2 == PRINT(debug, \\ . pretty(fmtObjectNameLong(Rnew)(oNnew)), oNnew)
+  IN
+  (Rnew, oN2)
+
+FUN deriveLikeI: unitName -> repo ** objectName -> repo ** objectName
+DEF deriveLikeI(uN)(R, oN) ==
     IF monomorphic?(uN)(R) THEN (R, oN)
     OTHERWISE
     IF oN localObjectName? THEN

@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.21 1999-10-25 19:09:16 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.22 2000-01-27 20:50:58 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -952,9 +952,9 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 	  (opal-diag-handle-ocs-line-region))
 	 ((looking-at opal-diag-parse-ocs-region-regexp)
 	  (opal-diag-handle-ocs-region))
-	 ((looking-at opal-diag-parse-oasys-regexp) (opal-diag-handle-oasys))
 	 ((looking-at opal-diag-parse-oasys-region-regexp) 
 	  (opal-diag-handle-oasys-region))
+	 ((looking-at opal-diag-parse-oasys-regexp) (opal-diag-handle-oasys))
 	 ((looking-at opal-diag-parse-oasys-unknown-regexp)
 	  (opal-diag-handle-oasys-unknown))
 	 ((looking-at opal-diag-parse-oasys-eval-regexp)
@@ -1347,7 +1347,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.21 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.22 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)

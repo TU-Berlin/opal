@@ -25,11 +25,18 @@ IMPORT
         RepoAbsy COMPLETELY
        RepoNameConv ONLY opalName
 
+FUN debug: bool
+DEF debug == false
+
 DEF asExpr(Repo,ITab,ObjName) ==
-    LET ObjectId == ITab ! ObjName
-        E == init(Repo,ITab)
+    LET -- ObjectId == ITab ! ObjName
+        E == PRINT(debug, \\ . "asExpr'DbConversion: objname(" ++
+                                 symbol(ObjName)(Repo) ++ ") is " ++
+                   pretty(fmtObjectName(ObjName)),
+                   init(Repo,ITab))
         (_,Expr,Rank,_) == fun2expr(E,ObjName)
-        Fct == fct(ObjName)(Repo)
+        -- Fct muß aber noch um die Funktionsparameter erweitert werden!
+        Fct == extendByParas(Repo, ObjName, fct(ObjName)(Repo))
     IN (Expr,Rank,dim(applyWith(Fct,Rank)))
 
 DEF asExpr(Repo,ITab,Expr) ==
@@ -95,7 +102,7 @@ DEF asDefine(Repo,ITab,ObjName,interpreted) ==
     IN interpreted(ObjectId,Rank,Dim,Expr)
 
 DEF lookFor?(Repo,ITab,ObjName,Tpos) ==
-    LET ObjectId == ITab ! ObjName
+    LET -- ObjectId == ITab ! ObjName
         E == initForQuery(Repo,ITab,Tpos)
         (E1,_,_,MImpl) == fun2expr(E,ObjName)
     IN (context?(E1),MImpl)
@@ -104,3 +111,17 @@ DEF lookFor?(Repo,ITab,Expr,Tpos) ==
     LET E    == initForQuery(Repo,ITab,Tpos)
         (E1,_,MExpr) == expr2expr(E,Expr)
     IN (context?(E1),MExpr)
+
+FUN extendByParas: repo ** objectName ** fct'RepoAbsy -> fct'RepoAbsy
+DEF extendByParas(R, oN, fc) ==
+  LET paraFuns == (\\N. oper?(N)(R)) | actuals(oN)(R)
+  IN
+  IF paraFuns <>? THEN fc
+  ELSE
+    LET getFct == \\ o. fct(o)(R)
+        paraFcts == getFct * paraFuns
+    IN
+    IF #(paraFcts) = 1 THEN funct(ft(paraFcts), fc)
+    ELSE funct(cart(paraFcts), fc)
+    FI
+  FI

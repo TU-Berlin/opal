@@ -175,8 +175,8 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (defvar opal-font-lock-keywords-simple
 
   (list
-   '("\\(IMPORT\\|SORT\\|FUN\\|TYPE\\|DATA\\|DEF\\|IMPLEMENTATION\\|SIGNATURE\\|EXTERNAL\\|INTERNAL\\|PROPERTIES\\|LAW\\)" (0 'font-lock-function-name-face t t))
-   '("\\<ALL\\>\\|\\<AND\\>\\|\\<ANDIF\\>\\|\\<AS\\>\\|\\<COMPLETELY\\>\\|\\<DFD\\>\\|\\<ELSE\\>\\|\\<EX\\>\\|\\<FI\\>\\|\\<IF\\>\\|\\<IN\\>\\|\\<LET\\>\\|\\<NOT\\>\\|\\<ONLY\\>\\|\\<ORIF\\>\\|\\<OR\\>\\|\\<OTHERWISE\\>\\|\\<THEN\\>\\|\\<WHERE\\>\\|\\*\\*\\|->\\|\\<\\.\\>\\|:\\|_\\|===\\|<<=\\|==>\\|<=>\\|==\\|\\\\\\\\\\>" (0 'font-lock-keyword-face nil t))
+   '("\\(IMPORT\\|SORT\\|FUN\\|TYPE\\|DATA\\|DEF\\|IMPLEMENTATION\\|SIGNATURE\\|EXTERNAL\\|INTERNAL\\|PROPERTIES\\|LAW\\|PROOF\\|SPC\\|PRE\\|POST\\|THEORY\\|ASSERT\\|ASSUME\\)" (0 'font-lock-function-name-face t t))
+   '("\\<ALL\\>\\|\\<AND\\>\\|\\<ANDIF\\>\\|\\<AS\\>\\|\\<COMPLETELY\\>\\|\\<DFD\\>\\|\\<ELSE\\>\\|\\<EX\\>\\|\\<FI\\>\\|\\<IF\\>\\|\\<IN\\>\\|\\<LET\\>\\|\\<NOT\\>\\|\\<ONLY\\>\\|\\<ORIF\\>\\|\\<OR\\>\\|\\<OTHERWISE\\>\\|\\<THEN\\>\\|\\<WHERE\\>\\|\\*\\*\\|->\\|\\<\\.\\>\\|:\\|_\\|==[=>?]\\|<<=\\|<=>\\|\\\\\\\\\\||-\\>" (0 'font-lock-keyword-face nil t))
 ;   '("/\\* %.*\\*/" (0 'font-lock-doc-string-face nil t))
 ;   '("/\\* [^%][^\\$].*\\*/" (0 'font-lock-comment-face t t))
    '("-- %.*$" (0 'font-lock-doc-string-face t t))

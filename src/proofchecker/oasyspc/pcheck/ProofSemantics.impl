@@ -17,7 +17,7 @@ IMPORT Seq ONLY seq <> % ft rt ++ ::
        FormulaHandling COMPLETELY
        RepoDiag ONLY error freeRef !! diag mode ref ok unitRef <+ < warn hint
        Fmt ONLY pretty fmt
-       PrettyFormatting ONLY fmtUnitNameLong fmtObjectName fmtObjectNameLong fmtPropertyName
+       PrettyFormatting COMPLETELY
        Nat ONLY nat 10 3 4 5 1 2 max 6
        String ONLY string
        ProofHandling ONLY codedProof? decode codedProofUniq?
@@ -62,6 +62,7 @@ IMPORT Seq ONLY seq <> % ft rt ++ ::
        TypeLaws ONLY getDatatypeLaws getFreetypeLaws
        FormInclusion ONLY includable?
        ObjectNameMap ONLY <*
+       NameHandling ONLY parameter?
 
 DEF proofSemantics(uN)(R0) ==
   LET oldE? == get(uN)(R0)
@@ -226,22 +227,25 @@ DEF checkImport(rType, main, uN)(R0)(oN) ==
     LET pN0 == decode(oN)(R1)
         pN == propertyName(no(pN0), uN)
         lN == ordinary(none, pN)
-        (R2, newE) == IF import?(rType)THEN (R1, %!(lN))
+    IN 
+    debugMsg("checkImport", \\ . "computed pN0, pN, lN")(R1) & (\\ R1a.
+    LET
+        (R2, newE) == IF import?(rType)THEN (R1a, %!(lN))
                       IF assert?(rType) THEN
-                        LET (Rx, pr) == property(pN)(R)
+                        LET (Rx, pr) == property(pN)(R1a)
                         IN
                         IF mandatory?(main, pr)(Rx) THEN (Rx, %!(lN))
                         ELSE (Rx, %(lN))
                         FI
-                      IF indirectAssert?(rType) THEN (R1, %!(lN))
-                      IF (assume? or indirectAssume?)(rType) THEN
-                        (R1, %!(lN) <+_ass %(lN))
+                      IF indirectAssert?(rType) THEN (R1a, %!(lN))
+                      IF indirectAssume?(rType) THEN (R1a, %(lN))
+                      IF assume?(rType) THEN (R1a, %!(lN) <+_ass %(lN))
                       FI
     IN
     debugMsg("checkImport", \\ . fmtLatin1(pretty(max)(newE)
                                            (main)(R2)))(R2) & (\\ R3.
     succeed(R3 & newE)
-    ))
+    )))
   IF codedProofUniq?(oN)(R) THEN
     LET (prems, concl, script) == decode(oN)(R)
         inst == instantiate(instanceMap(uN,R))
@@ -301,8 +305,8 @@ DEF realizationSemantic(uN)(R0) ==
     LET interface == uN :=_part sign
     IN
     proofSemantics(interface)(R0) && (\\ pce, R.
-    LET sorts == trueSorts(interface)(R)
-        inclLaws == copy(none, _) * laws(pce) -- toImpl(uN, R) * laws(pce)
+    LET sorts == (~ o parameter?(R)) | trueSorts(interface)(R)
+        inclLaws == copy(none, _) * laws(pce) -- toImpl(uN, R) * laws(pce) -- 
         newLaws == restrict(R)(uN, sorts) * laws(pce)
         newAssumes == restrict(R)(uN, sorts) * assumes(pce)
         newResolved == restrict(R)(uN, sorts) * resolved(pce)
@@ -332,7 +336,9 @@ DEF realizationSemantic(uN)(R0) ==
                               axiom(none)) incl
                           e
     IN
-    progress(3, \\ . "realization of " ++ !(R)(interface))(R) & (\\ R1.
+    debugMsg("realizationSemantic", \\ . "trueSorts:" ++
+             pretty(fmtSet(fmtObjectName(R))(sorts)))(R) & (\\R0a.
+    progress(3, \\ . "realization of " ++ !(R0a)(interface))(R0a) & (\\ R1.
     succeed(R1 & hintsNonAuto :=_laws newLaws
                               :=_extraLaws inclLaws + newExtras
                               :=_assumes newAssumes
@@ -341,7 +347,7 @@ DEF realizationSemantic(uN)(R0) ==
                               :=_pBodies newBodies
                               <+ (autolaw, {}) / autoLaws
                               <+ (ftlaw, {}) / ft? | laws(pce))
-    ))
+    )))
   FI
 
 FUN mkNonAutoHint: unitName -> repo -> lawName -> diag
