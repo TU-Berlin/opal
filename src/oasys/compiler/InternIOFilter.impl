@@ -1,0 +1,111 @@
+IMPLEMENTATION InternIOFilter
+
+IMPORT ComState ONLY stateId => get
+       Com ONLY EXEC succeed com break okay? ans error
+       Seq ONLY seq <> +% # split ++ ::
+       Pair ONLY pair & 2nd
+       Nat ONLY <
+       SeqIndex ONLY delete
+       Void ONLY void nil
+       ProcessCtrl COMPLETELY
+       Wait ONLY wait exited? status childstat
+       ComAction ONLY done
+       Repo ONLY repo
+       RepoEvent ONLY event progress repository progressTarget diag
+       ComCompose ONLY ; &
+       RepoDiag ONLY error freeRef !! diag mode ref ok
+       RepoComAbort ONLY abort
+       Option ONLY option
+       String ONLY string
+       WaitConv ONLY `
+       Denotation ONLY ++
+       SeqConv ONLY `
+       FileName ONLY baseName
+       Stream ONLY writeLine stdErr output
+       ColourText ONLY errorText: denotation -> denotation
+
+FUN filterFlag: stateId[bool]
+DEF filterFlag == EXEC(stateId(false))
+
+FUN filterProgs: stateId[seq[pair[denotation, seq[denotation]]]]
+DEF filterProgs == EXEC(stateId(<>))
+
+DEF enableFilter  == filterFlag => (\\ _ . true)
+DEF disableFilter == filterFlag => (\\ _ . false)
+
+DEF addFilter(prog, args) == filterProgs => (\\ progs. progs +% prog & args)
+
+DEF addFilterAt(prog, args, idx) ==
+  filterProgs => (\\progs.
+  IF idx < #(progs) THEN
+    LET (preProgs, postProgs) == split(idx, progs)
+    IN
+    preProgs ++ prog & args :: postProgs
+  ELSE
+    progs +% prog & args
+  FI)
+
+DEF delFilterAt(idx) ==
+  filterProgs => (\\progs.
+  IF idx < #(progs) THEN
+    delete(progs, idx, idx)
+  ELSE
+    progs
+  FI)
+
+DEF queryFilters ==
+  get(filterProgs) & (\\ progs.
+  get(filterFlag) & (\\ flags.
+  succeed(flags & progs)))
+
+/* %Call program with specified arguments and wait for its termination.
+    If result is not zero, fail. */
+    
+FUN system: denotation ** seq[denotation] -> com[void]
+DEF system(prog, args) ==
+  fork & (\\ me.
+  IF child?(me) THEN
+    execP(prog, baseName(prog) :: args) ; (\\ a. 
+    writeLine(stdErr, errorText(prog ++": " ++ error(a))) & exit(failure))
+  IF parent?(me) THEN
+    wait(child(me)) & (\\xStat.
+    LET cStat == 2nd(xStat) 
+    IN
+    IF exited?(cStat) THEN
+      IF success?(status(cStat)) THEN succeed(nil)
+      IF failure?(status(cStat)) THEN break("returned failure")
+      FI
+    ELSE break(cStat`)
+    FI
+    )
+  FI)
+
+DEF callFilters(fname)(R) == 
+  get(filterFlag) & (\\ok? .
+  IF ok? THEN
+    get(filterProgs) & (\\ progs.
+    callFilters(fname)(R)(progs)
+    )
+  ELSE
+    succeed(ok & R)
+  FI
+  )
+
+FUN callFilters: denotation -> repo ->
+                  seq[pair[denotation, seq[denotation]]] ->
+                  com[pair[diag, repo]]
+DEF callFilters(_)(R)(<>) == succeed(ok & R)
+DEF callFilters(absy)(R)(prog & args :: filters) ==
+  event(progress(repository, info))(R) & (\\R1.
+  system(prog, absy :: args); (\\res.
+  IF res okay? THEN callFilters(absy)(R1)(filters)
+  ELSE
+    LET msg == (error, freeRef("InterOpal filter")) !!
+                  (prog ++ ": `" ++ error(res) ++ "'")
+    IN
+    succeed(msg & R1)
+  FI    
+  ))
+  WHERE info == "calling " ++ prog ++ `(" "," ","")(\\x.x)(absy::args)
+
+

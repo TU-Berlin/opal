@@ -1,0 +1,77 @@
+IMPLEMENTATION ColourText
+
+IMPORT Denotation ONLY ++ =
+       Com ONLY EXEC okay? data succeed com ans
+       ProcessArgs ONLY env
+       Fmt ONLY fmt ; lit pretty
+       String ONLY string !
+       ComCompose ONLY ;
+       Char ONLY = char !
+       StringMap ONLY *
+       StringConv ONLY `
+       Nat ONLY nat
+       Seq ONLY seq
+
+DEF title(X) == fgbg(green,black) ++ X ++ reset
+DEF prompt(X) == boldfg(blue) ++ X ++ reset
+DEF prompt2(X) == fg(blue) ++ X ++ reset
+DEF errorText(X) == fg(red) ++ X ++ reset
+DEF warnText(X) == fg(magenta) ++ X ++ reset
+DEF hintText(X) == fg(blue) ++ X ++ reset
+DEF limitText(X) == fg(green) ++ X ++ reset
+
+DEF title(X) == litC(fgbg(green,black)); X ; reset
+DEF prompt(X) == litC(boldfg(blue)); X ; reset
+DEF prompt2(X) == litC(fg(blue)); X; reset
+DEF errorText(X) == litC(fg(red)); X; reset
+DEF warnText(X) == litC(fg(magenta)); X; reset
+DEF hintText(X) == litC(fg(blue)); X; reset
+DEF limitText(X) == litC(fg(green)); X; reset
+
+FUN bg fg boldfg: colour -> denotation
+DEF bg(c) == IF useColours THEN "\033[4" ++ `(c) ++ "m" ELSE "" FI
+DEF fg(c) == IF useColours THEN "\033[3" ++ `(c) ++ "m" ELSE "" FI
+DEF boldfg(c) == IF useColours THEN "\033[01;3" ++ `(c) ++ "m" ELSE "" FI
+FUN fgbg: colour ** colour -> denotation
+DEF fgbg(fc, bc) ==
+  IF useColours THEN "\033[3" ++ `(fc) ++ ";4" ++ `(bc) ++ "m" ELSE "" FI
+
+DATA colour == black red green yellow blue magenta cyan white
+FUN ` : colour -> denotation
+DEF black` == "0"
+DEF red` == "1"
+DEF green` == "2"
+DEF yellow` == "3"
+DEF blue` == "4"
+DEF magenta` == "5"
+DEF cyan` == "6"
+DEF white` == "7"
+
+FUN ; : denotation ** denotation -> denotation
+DEF a ; b == a ++ ";" ++ b
+
+FUN reset: denotation
+DEF reset == IF useColours THEN "\033[0m" ELSE "" FI
+
+FUN reset: fmt
+DEF reset == litC(reset)
+
+FUN useColours: bool
+DEF useColours ==
+  EXEC(env("OPAL_COLOR"); (\\r. IF okay?(r) THEN
+                                  IF data(r) = "no" THEN succeed(false)
+                                  IF data(r) = "yes" THEN succeed(true)
+                                  ELSE succeed(false)
+                                  FI
+                                ELSE
+                                  succeed(false)
+                                FI))
+
+FUN litC: denotation -> fmt
+DEF litC(X) == lit(`((\\c. IF c = esc THEN ersatz ELSE c FI) * (X!)))
+
+DEF prettyC(F) == (\\c. IF c = ersatz THEN esc ELSE c FI) * pretty(F)
+
+FUN esc ersatz: char
+DEF esc == "\033"!
+DEF ersatz == "ÿ"!
