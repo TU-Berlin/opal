@@ -98,10 +98,6 @@ DEF checkUnit(U)(R) ==
     LET Deps == related(direct, imports)(U)(R) 
                         + predefinedStructs(R)
     IN
-    /*
-    (\\D, _ . writeLine'File(stdErr, asDeno(symbolic)(D)(R)), nil)
-                        /& asSeq(Deps)          & (\\ _ .
-    */
     makeCheckOptions(U, Deps)(R)                & (\\ Opts .
     breakOnInterrupt(
        checkUnit1(U, Deps, Opts)(R)
@@ -382,7 +378,7 @@ DEF makeCompileOptions(U, Deps)(R) ==
 
 FUN predefinedStructs: repo -> set[unitName, <]
 DEF predefinedStructs ==
-  lookup(IF pchecker? THEN %("BOOL", "DENOTATION", "PROOFSCRIPT")
+  lookup(IF pchecker THEN %("BOOL", "DENOTATION", "PROOFSCRIPT")
          ELSE %("BOOL", "DENOTATION") FI, sign)
 
 FUN defaultCheckPrefix : seq[denotation]
@@ -390,12 +386,9 @@ FUN defaultExtendPrefix : seq[denotation]
 FUN defaultCompilePrefix : seq[denotation]
 
 DEF defaultCheckPrefix ==
-    "-zprop" ::
-    "-zinterOpal" ::
     "-zinternDiag" ::
     "-zetaEnrichment" ::
     "-zreexport" ::
-    "-zforceUsedForAc" ::
     "-zUninstImport" ::
     "-zlatin1" :: 
     (IF traceCompile THEN
@@ -403,12 +396,9 @@ DEF defaultCheckPrefix ==
      ELSE "-v0" :: "-w0" :: <> FI)
 
 DEF defaultExtendPrefix ==
-    "-zprop" ::
-    -- "-zinterOpal" ::
     "-zinternDiag" ::
     "-zetaEnrichment" ::
     "-zlatin1" ::
-    -- "-zreexport" ::
     (IF traceCompile THEN
         "-ztraceIO" :: "-v2" :: "-w2" :: <>
      ELSE "-v0" :: "-w0" :: <> FI)
@@ -417,24 +407,10 @@ DEF defaultCompilePrefix ==
     -- FIXME: in order to realize -zgForeign:STRUCT, the according
     -- structures must be considered as released to get the .h
     -- files created before the refering object
-    "-zprop" ::
-    "-zinterOpal" ::
     "-zinternDiag" ::
     "-zetaEnrichment" ::
     "-zreexport" ::
     "-zlatin1" ::
---    "-zgForeign:Nat" ::
---    "-zgForeign:Int" ::
---    "-zgForeign:Real" ::
---    "-zgForeign:SmallReal" ::
---    "-zgForeign:NatConv" ::
---    "-zgForeign:RealConv" ::
---    "-zgForeign:IntConv" ::
---    "-zgForeign:Char" ::
---    "-zgForeign:CharConv" ::
---    "-zgForeign:Denotation" ::
---    "-zgForeign:Array" ::
---    "-zgForeign:Bitset" ::
     "-dd" ::                    -- FIXME: real option data base !!!
     (IF traceCompile THEN
         "-v2" :: "-w2" :: <>
@@ -549,77 +525,6 @@ DEF codeUnit(U)(R) ==
     FI
     ))
   
-
-
-
-/*
-DATA objDeps ==
-        objDeps         (usrIncls       : seq[denotation],
-                         libIncls       : seq[denotation],
-                         usrObjs        : seq[denotation],
-                         libObjs        : seq[denotation])
-
-FUN objDeps : unitName -> repo -> objDeps
-
-DEF objDeps(U)(R) ==
-    LET Deps       == related(direct, implImports)(U)(R)
-        (UsrDeps, LibDeps) == partition(\\Ui. ~(library?(Ui)(R)), Deps)
-        UsrFolders:set[denotation,<] 
-                   == (\\Ui, S. incl(dirName1(path(sourceFile(Ui)(R))), S), 
-                        {}) / incl(U, UsrDeps)
-        UsrObjFolders:set[denotation,<] 
-                   == (\\Ui, S. incl(dirName1(path(objectFile(Ui)(R))), S), 
-                        {}) / incl(U, UsrDeps)
-        LibFolders:set[denotation,<]
-                   == (\\Ui, S. incl(dirName1(path(objectFile(Ui)(R))), S), 
-                        {}) / LibDeps
-        UsrIncls   == (\\Fi.  "-I" ++ Fi) * asSeq(UsrFolders + UsrObjFolders)
-        LibIncls   == (\\Fi. "-I" ++ Fi) * asSeq(LibFolders)
-        UsrObjs    == (\\Ui, S. IF compiled?(Ui)(R) THEN
-                                    objectFileVersion(Ui)(R) :: S
-                                ELSE S FI,
-                       <>) / UsrDeps
-        LibObjs    == (\\Fi, S. (normPath(Fi) ++ "lib" ++ baseName(Fi) 
-                                              ++ ".so")
-                                        :: S,
-                       <>) / LibFolders
-    IN
-    objDeps(UsrIncls, LibIncls, UsrObjs, LibObjs)
-
-*/
-
-/*
-FUN call : denotation ** seq[denotation] -> com[void]
-DEF call(Prog, Args) ==
-    fork                                        & (\\ Fission .
-    IF parent?(Fission) THEN
-        breakOnInterrupt(
-           wait(child(Fission))
-        )                                       ; (\\ Res? .
-        IF okay?(Res?) THEN
-            LET Res == data(Res?)
-            IN
-            IF exited?(2nd(Res)) ANDIF success?(status(2nd(Res))) THEN
-                succeed(nil)
-            ELSE
-                break(Prog ++ " exited abnormally")
-            FI
-        OTHERWISE
-        IF interrupted?(Res?) or
-                interruptedSystemCall?(Res?) THEN
-            kill(child(Fission), sigKill)       ; (\\ _ .
-            break(error(Res?))
-            )
-        ELSE
-            break(error(Res?))
-        FI
-        )
-    ELSE
-        execP(Prog, Args) -- never returns
-    FI
-    )
-*/
-
 -- %$User-definable compiler options$
 
 FUN optionsId: stateId[seq[denotation]]
