@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.19 1999-05-31 08:32:08 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.20 1999-10-22 23:28:35 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -418,13 +418,15 @@
   (define-key opal-mode-map "\C-c\C-d\C-h" 'opal-toggle-extended-flag)
   (define-key opal-mode-map "\C-c\C-d\C-m" 'opal-diag-insert-missing-item)
   (define-key opal-mode-map "\C-c\C-d0" 'opal-diag-clear-diags)
-  (if (and (boundp 'emacs-major-version)
-	   (>= emacs-major-version 20))
-      (define-key opal-mode-map [mouse-1] 'opal-diag-mouse-select-error)
-    (define-key opal-mode-map [down-mouse-1] 'opal-diag-mouse-select-error)
-    )
-  (define-key opal-mode-map [mouse-2] 'opal-diag-mouse-hide-diags)
-  (define-key opal-mode-map [mouse-3] 'opal-diag-mouse-help)
+;; binding general mouse events is too confusing
+;; since it hides normal processing of mouse events everywhere
+;;  (if (and (boundp 'emacs-major-version)
+;;	   (>= emacs-major-version 20))
+;;      (define-key opal-mode-map [mouse-1] 'opal-diag-mouse-select-error)
+;;    (define-key opal-mode-map [down-mouse-1] 'opal-diag-mouse-select-error)
+;;    )
+;;  (define-key opal-mode-map [mouse-2] 'opal-diag-mouse-hide-diags)
+;;  (define-key opal-mode-map [mouse-3] 'opal-diag-mouse-help)
 
   (opal-diag-fsfemacs-menu)
   (opal-diag-define-faces)
@@ -449,7 +451,9 @@ over an overlay which has err-no set, select that error"
 	      (opal-diag-not-found)
 	      )
 	    (setq ovl nil)
-	    )))))
+	    )))
+    )
+  )
 
 (defun opal-diag-mouse-hide-diags (event)
   "set point to position where event occurred. if event occurred 
@@ -470,7 +474,8 @@ over an overlay which has err-no set, hide-diagnostics"
 	      (opal-diag-not-found)
 	      )
 	    (setq ovl nil)
-	    )))))
+	    )))
+    ))
 
 (defun opal-diag-mouse-help (event)
   "set point to position where event occurred. if event occurred 
@@ -1335,7 +1340,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.19 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.20 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)
@@ -1442,6 +1447,7 @@ match 1 to this word"
   (let ((cline (opal-current-line)))
     (or
      (string-match "unused pattern variable \\(.*\\)$" cline)
+     (string-match "local name \\(.*\\) is not used$" cline)
     )
    )
 )
@@ -1459,7 +1465,7 @@ match 1 to this word"
   
 
 (defun opal-diag-insert-missing-item ()
-  "insert last missing item as import"
+  "previously, insert last missing item as import; now perform default action for current diagnostic"
 
   (interactive)
   (save-excursion
@@ -1501,6 +1507,9 @@ match 1 to this word"
 	     (opal-diag-select-source)
 	     (re-search-forward (regexp-quote ide))
 	     (replace-match "_")
+	     (if (not (opal-diag-is-delimiter (point)))
+		 (insert " ")
+	       )
 	     )
 	   )
 	  ((opal-diag-expected-p)
@@ -1510,12 +1519,30 @@ match 1 to this word"
 	     (opal-diag-select-source)
 	     (insert it)
 	     ))
-	  (t (message "%s" (opal-current-line)))
+	  (t ;(message "%s" (opal-current-line))
+	     (ding)
+	     (message "no default action for current diagnotic")
+	     )
 	  )
   )
     ;(pop-to-buffer (opal-diag-select-source))
 ;  (opal-diag-next-main-error)
   (opal-diag-show-error t)
+)
+
+(defun opal-diag-is-delimiter (pos)
+  "t, iff pos points to a Opal delimiter in current buffer"
+ 
+  (let ((c (buffer-substring pos (+ pos 1))))
+    (or (string-equal c " ")
+	(string-equal c ",")
+	(string-equal c "[")
+	(string-equal c "]")
+	(string-equal c "'")
+	(string-equal c "(")
+	(string-equal c ")")
+	)
+    )
 )
 
 (defun opal-diag-ask-compare (&optional sort)

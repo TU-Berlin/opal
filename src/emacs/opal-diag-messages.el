@@ -24,6 +24,9 @@ spelling of `\\1'.
 If you actually do not want to use the variable `\\1', better rename 
 it to `_' and the compiler will not complain again.")
 
+("missing pattern for \\(.*\\)" .
+           "There is no DEF which covers the pattern `\\1'. This may lead to a runtime error.")
+
 ("unused operation \\(.*\\)" .
             "The operation \\1 was declared at the indicated place but never 
 used or exported for further use. 

@@ -9,7 +9,7 @@ IMPLEMENTATION Impl[obj]
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-09-13 22:10:51 $ ($Revision: 1.3 $)
+-- % $Date: 1999-10-22 23:28:35 $ ($Revision: 1.4 $)
 
 IMPORT  -- absy
         Fct[obj]        COMPLETELY
@@ -313,103 +313,112 @@ DEF extractVarsI(typed(e, _, _)) == extractVarsI(e)
 DEF extractVarsI(_) == <>
 
 -- %$Positionen erweitern$
-DEF extendPos(e:expr) == IF region?(pos(e)) THEN e ELSE extendPos1(e) FI
+DEF extendPos(e:expr) == extendPos(\\ _ . unknown)(e)
+DEF extendPos(g:guard) == extendPos(\\ _ . unknown)(g)
+DEF extendPos(q:eq) == extendPos(\\ _ . unknown)(q)
+DEF extendPos(f: formula) == extendPos(\\ _ . unknown)(f)
+DEF extendPos(l: law) == extendPos(\\ _ . unknown)(l)
 
-FUN extendPos1: expr -> expr
-DEF extendPos1(E AS none(_)) == E
-DEF extendPos1(E AS rtError(_, _)) == E
-DEF extendPos1(E AS den(_, _)) == E
-DEF extendPos1(tuple(els, p)) ==
-  LET els1 == extendPos * els
+
+DEF extendPos(P)(e:expr) == IF region?(pos(e)) THEN e ELSE extendPos1(P)(e) FI
+
+FUN extendPos1: (obj -> pos) -> expr -> expr
+DEF extendPos1(P)(E AS none(_)) == E
+DEF extendPos1(P)(E AS rtError(_, _)) == E
+DEF extendPos1(P)(E AS den(_, _)) == E
+DEF extendPos1(P)(tuple(els, p)) ==
+  LET els1 == extendPos(P) * els
   IN
   tuple(els1, +/(pos * els) + p)
-DEF extendPos1(apply(f, a, p)) ==
-  LET f1 == extendPos1(f)
-      a1 == extendPos1(a)
+DEF extendPos1(P)(apply(f, a, p)) ==
+  LET f1 == extendPos1(P)(f)
+      a1 == extendPos1(P)(a)
   IN
   apply(f1, a1, pos(f1) + pos(a1) + p)
-DEF extendPos1(cases(gs, e, p)) ==
-  LET gs1 == extendPos * gs
-      e1 == extendPos1(e)
+DEF extendPos1(P)(cases(gs, e, p)) ==
+  LET gs1 == extendPos(P) * gs
+      e1 == extendPos1(P)(e)
   IN
   cases(gs1, e1, +/(pos * gs1) + pos(e1) + p)
-DEF extendPos1(lambda(vs, bd, p)) ==
-  LET bd1 == extendPos1(bd)
+DEF extendPos1(P)(lambda(vs, bd, p)) ==
+  LET bd1 == extendPos1(P)(bd)
   IN
-  lambda(vs, bd1, pos(bd1) + p)
-DEF extendPos1(E AS val(_, _)) == E
-DEF extendPos1(as(pN, e, p)) ==
-  LET e1 == extendPos1(e)
+  lambda(vs, bd1, +/(P * vs) + pos(bd1) + p)
+DEF extendPos1(P)(E AS val(_, _)) == E
+DEF extendPos1(P)(as(pN, e, p)) ==
+  LET e1 == extendPos1(P)(e)
   IN
-  as(pN, e1, pos(e1) + p)
-DEF extendPos1(block(dfs, bd, p)) ==
-  LET dfs1 == extendPos * dfs
-      bd1 == extendPos1(bd)
+  as(pN, e1, P(pN) + pos(e1) + p)
+DEF extendPos1(P)(block(dfs, bd, p)) ==
+  LET dfs1 == extendPos(P) * dfs
+      bd1 == extendPos1(P)(bd)
   IN
   block(dfs1, bd1, +/(pos * dfs1) + pos(bd1) + p)
-DEF extendPos1(typed(e, fc, p)) ==
-  LET e1 == extendPos1(e)
+DEF extendPos1(P)(typed(e, fc, p)) ==
+  LET e1 == extendPos1(P)(e)
   IN
   typed(e1, fc, pos(e1) + p)
-DEF extendPos1(mix(f, p)) ==
+DEF extendPos1(P)(mix(f, p)) ==
   LET f1 == (\\es. LET (e, s) == unpair(es) 
-                      e1 == extendPos1(e)
+                      e1 == extendPos1(P)(e)
                   IN
                   e1 & s) * f
   IN  
   mix(f1, +/(pos * 1st * f) + p)
 
-DEF extendPos(guard(i, t, p)) ==
-  LET i1 == extendPos1(i)
-      t1 == extendPos1(t)
+DEF extendPos(P)(guard(i, t, p)) ==
+  LET i1 == extendPos1(P)(i)
+      t1 == extendPos1(P)(t)
   IN
   guard(i1, t1, pos(i1) + pos(t1) + p)
 
-DEF extendPos(eq(l, r, p)) ==
-  LET l1 == extendPos1(l)
-      r1 == extendPos1(r)
+DEF extendPos(P)(eq(l, r, p)) ==
+  LET l1 == extendPos1(P)(l)
+      r1 == extendPos1(P)(r)
   IN
   eq(l1, r1, pos(l1) + pos(r1) +p)
 
 
-DEF extendPos(dfd(e, p)) == LET e1 == extendPos(e) IN dfd(e1, pos(e1) + p)
-DEF extendPos(equal(l, r, p)) ==
-  LET l1 == extendPos(l)
-      r1 == extendPos(r)
+DEF extendPos(P)(dfd(e, p)) ==
+  LET e1 == extendPos(P)(e) IN dfd(e1, pos(e1) + p)
+DEF extendPos(P)(equal(l, r, p)) ==
+  LET l1 == extendPos(P)(l)
+      r1 == extendPos(P)(r)
   IN
   equal(l1, r1, pos(l1) + pos(r1) + p)
-DEF extendPos(ineq(l, r, p)) ==
-  LET l1 == extendPos(l)
-      r1 == extendPos(r)
+DEF extendPos(P)(ineq(l, r, p)) ==
+  LET l1 == extendPos(P)(l)
+      r1 == extendPos(P)(r)
   IN
   ineq(l1, r1, pos(l1) + pos(r1) + p)
-DEF extendPos(neg(f, p)) == LET f1 == extendPos(f) IN neg(f1, pos(f1) + p)
-DEF extendPos(and(l, r, p)) ==
-  LET l1 == extendPos(l)
-      r1 == extendPos(r)
+DEF extendPos(P)(neg(f, p)) ==
+  LET f1 == extendPos(P)(f) IN neg(f1, pos(f1) + p)
+DEF extendPos(P)(and(l, r, p)) ==
+  LET l1 == extendPos(P)(l)
+      r1 == extendPos(P)(r)
   IN
   and(l1, r1, pos(l1) + pos(r1) + p)
-DEF extendPos(or(l, r, p)) ==
-  LET l1 == extendPos(l)
-      r1 == extendPos(r)
+DEF extendPos(P)(or(l, r, p)) ==
+  LET l1 == extendPos(P)(l)
+      r1 == extendPos(P)(r)
   IN
   or(l1, r1, pos(l1) + pos(r1) + p)
-DEF extendPos(imply(l, r, p)) ==
-  LET l1 == extendPos(l)
-      r1 == extendPos(r)
+DEF extendPos(P)(imply(l, r, p)) ==
+  LET l1 == extendPos(P)(l)
+      r1 == extendPos(P)(r)
   IN
   imply(l1, r1, pos(l1) + pos(r1) + p)
-DEF extendPos(eqv(l, r, p)) ==
-  LET l1 == extendPos(l)
-      r1 == extendPos(r)
+DEF extendPos(P)(eqv(l, r, p)) ==
+  LET l1 == extendPos(P)(l)
+      r1 == extendPos(P)(r)
   IN
   eqv(l1, r1, pos(l1) + pos(r1) + p)
-DEF extendPos(all(vs, e, p)) ==
-  LET e1 == extendPos(e) IN all(vs, e1, pos(e1) + p)
-DEF extendPos(ex(vs, e, p)) ==
-  LET e1 == extendPos(e) IN ex(vs, e1, pos(e1) + p)
-DEF extendPos(F AS informal(_, _)) == F
-DEF extendPos(F AS none(_)) == F:formula
+DEF extendPos(P)(all(vs, e, p)) ==
+  LET e1 == extendPos(P)(e) IN all(vs, e1, +/(P * vs) + pos(e1) + p)
+DEF extendPos(P)(ex(vs, e, p)) ==
+  LET e1 == extendPos(P)(e) IN ex(vs, e1, +/(P * vs) + pos(e1) + p)
+DEF extendPos(P)(F AS informal(_, _)) == F
+DEF extendPos(P)(F AS none(_)) == F:formula
 
 
-DEF extendPos(law(i, f, p)) == law(i, extendPos(f), p)
+DEF extendPos(P)(law(i, f, p)) == law(i, extendPos(P)(f), p)
