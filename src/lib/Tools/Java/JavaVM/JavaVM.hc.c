@@ -18,9 +18,9 @@ OBJ javabind_exception_ans;
 
 static JavaVM *jvm;
 
-jclass javabind_class_java_lang_String;
-jclass javabind_class_java_lang_Object;
-jclass javabind_class_java_lang_Class;
+extern jclass javabind_class_java_lang_String;
+extern jclass javabind_class_java_lang_Object;
+extern jclass javabind_class_java_lang_Class;
 jmethodID javabind_equals_method;
 static jmethodID javabind_getName_method;
 

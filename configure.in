@@ -1,5 +1,5 @@
 # Process this file with autoconf to produce a configure script.
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.17 1999-10-20 13:04:48 kd Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/configure.in,v 1.18 1999-10-21 13:56:13 kd Exp $
 
 AC_INIT(ocs-version)
 
@@ -233,6 +233,9 @@ OCS_CHECK_FEATURE(opalwin, opalwin, yes,
 OCS_CHECK_FEATURE(reflections, reflections, yes,
         [  --enable-reflections    install Dynamite Opal reflection library])
 
+OCS_CHECK_FEATURE(opaljava, opaljava, no,
+        [  --enable-opaljava       install Opal/Java library])
+
 OCS_CHECK_FEATURE(oc5, oc5, no,
         [  --enable-oc5            install alternative frontend])
 
@@ -294,11 +297,14 @@ OCS_CHECK_WITH(tk-incl, tk_incl, "yes",
   [  --with-tk-incl=INCLFLAGS        how to include tk.h])
 
 # java
-OCS_CHECK_WITH(java-lib, java_lib, "no",
+OCS_CHECK_WITH(java-lib, java_lib, "yes",
   [  --with-java-lib=LIBFLAGS        how to link Java library])
 
-OCS_CHECK_WITH(java-incl, java_incl, "no",
+OCS_CHECK_WITH(java-incl, java_incl, "yes",
   [  --with-java-incl=INCLFLAGS      how to include jni.h])
+
+OCS_CHECK_WITH(pizzahome, pizzahome, "yes",
+  [  --with-pizzahome=PATH           path to pizza home directory])
 
 AC_CACHE_SAVE
 
@@ -312,7 +318,13 @@ ocs_lib_tcl=X
 ocs_lib_tk=X
 
 OCS_CHECK_LIB_X(readline, lib.opal_readline, ocs_lib_readline)
-OCS_CHECK_LIB_X(java, lib.opal_java, ocs_lib_java)
+
+if test "$ocs_cv_feature_opaljava" = "yes"
+then
+  ocs_std_packages="$ocs_std_packages pkg.javabind lib.opal_java pkg.javaexamples"
+fi
+
+
 OCS_CHECK_LIB_X(tcl, lib.opal_tcl, ocs_lib_tcl)
 OCS_CHECK_LIB_X(tk, lib.opal_tk, ocs_lib_tk)
 
@@ -938,11 +950,62 @@ OCS_CHECK_OPT_PROGS(ac_cv_path_XDVI,xdvi)
 OCS_CHECK_OPT_PROGS(ac_cv_path_TEXINDEX,texindex)
 OCS_CHECK_OPT_PROGS(ac_cv_path_MAKEINFO,makeinfo)
 
-if test "$ocs_cv_with_java_lib" != "no" -a "$ocs_cv_with_java_incl" != "no"
+if test "$ocs_cv_feature_opaljava" = "yes"
 then
   OCS_CHECK_PROGS_ABORT(ac_cv_path_JAVA, java, Opal-Java needs jvm)
   OCS_CHECK_PROGS_ABORT(ac_cv_path_JAVACC, javacc, Opal-Java needs java parser generator javacc)
-  OCS_CHECK_PROGS_ABORT(ac_cv_path_PIZZAPC, pc, Opal-Java needs pizza compiler)
+  AC_SUBST(ac_cv_path_PIZZAHOME)
+  ac_cv_path_PIZZAHOME=""
+  if test "$ocs_cv_with_pizzahome" = "yes"
+  then
+    tmp_dir=/usr/local/pizza
+    AC_MSG_CHECKING(for pizza in $tmp_dir)
+    if test -f "$tmp_dir/classes/pizza/compiler/Main.class"
+    then
+      ac_cv_path_PIZZAHOME=$tmp_dir
+      AC_MSG_RESULT(yes)
+    else
+      AC_MSG_RESULT(no)
+    fi
+    if test -z "$ac_cv_path_PIZZAHOME"
+    then
+      tmp_dir=/usr/local/java/pizza
+      AC_MSG_CHECKING(for pizza in $tmp_dir)
+      if test -f "$tmp_dir/classes/pizza/compiler/Main.class"
+      then
+        ac_cv_path_PIZZAHOME=$tmp_dir
+        AC_MSG_RESULT(yes)
+      else
+        AC_MSG_RESULT(no)
+      fi
+    fi
+    if test -z "$ac_cv_path_PIZZAHOME"
+    then
+      tmp_dir=/usr/java/pizza
+      AC_MSG_CHECKING(for pizza in $tmp_dir)
+      if test -f "$tmp_dir/classes/pizza/compiler/Main.class"
+      then
+        ac_cv_path_PIZZAHOME=$tmp_dir
+        AC_MSG_RESULT(yes)
+      else
+        AC_MSG_RESULT(no)
+      fi
+    fi
+  else
+    AC_MSG_CHECKING(for pizza in given $tmp_dir)
+    if test -f "$ocs_cv_with_pizzahome/classes/pizza/compiler/Main.class"
+    then
+      ac_cv_path_PIZZAHOME=$ocs_cv_with_pizzahome
+      AC_MSG_RESULT(yes)
+    else
+      AC_MSG_RESULT(no)
+    fi
+  fi
+  if test -z "$ac_cv_path_PIZZAHOME"
+  then
+    AC_MSG_ERROR(cannot find pizza home directory)
+  fi
+# if with-java    	
 fi
 
 ## make version available
@@ -1155,103 +1218,106 @@ fi
 AC_CACHE_SAVE
 ## ----------------------------------------------------------------------
 ## check for java
-ocs_lib_java=
-if test "$ocs_cv_with_java_lib" != "no"
+if test "$ocs_cv_feature_opaljava" = "yes"
 then
-  dnl currently not used
-  AC_SUBST(ocs_lib_java)
-  if test "$ocs_cv_with_java_lib" = "yes"
+  ocs_lib_java=
+  if test "$ocs_cv_with_java_lib" != "no"
   then
-    ocs_lib_java=
-    AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-ljava")
-    if test -z "$ocs_lib_java"
+    dnl currently not used
+    AC_SUBST(ocs_lib_java)
+    if test "$ocs_cv_with_java_lib" = "yes"
     then
-      unset ac_cv_lib_java_JNI_CreateJavaVM
-      ocs_save_LIBS="$LIBS"
-      tmp_path=/usr/lib/java/lib/i686/green_threads
-      LIBS="$LIBS -L$tmp_path"
-      AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-L$tmp_path $ocs_cv_with_ldrpath$tmp_path -ljava")
+      ocs_lib_java=
+      AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-ljava")
+      if test -z "$ocs_lib_java"
+      then
+        unset ac_cv_lib_java_JNI_CreateJavaVM
+        ocs_save_LIBS="$LIBS"
+        tmp_path=/usr/lib/java/lib/i686/green_threads
+        LIBS="$LIBS -L$tmp_path"
+        AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-L$tmp_path $ocs_cv_with_ldrpath$tmp_path -ljava")
+      fi
+      if test -z "$ocs_lib_java"
+      then
+        unset ac_cv_lib_java_JNI_CreateJavaVM
+        ocs_save_LIBS="$LIBS"
+        tmp_path=/usr/lib/jdk1.1.7/lib/i686/green_threads
+        LIBS="$LIBS -L$tmp_path"
+        AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-L$tmp_path $ocs_cv_with_ldrpath$tmp_path -ljava")
+      fi
+      if test -z "$ocs_lib_java"
+      then
+        unset ac_cv_lib_java_JNI_CreateJavaVM
+        ocs_save_LIBS="$LIBS"
+        tmp_path=/usr/java/jre/lib/sparc
+        LIBS="$LIBS -L$tmp_path"
+        AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-L$tmp_path $ocs_cv_with_ldrpath$tmp_path -ljava")
+      fi
+    else
+      ocs_svae_LIBS="$LIBS"
+      LIBS="$LIBS $ocs_cv_with_java_lib"
+      AC_TRY_LINK_FUNC(JNI_CreateJavaVM,ocs_lib_java=$ocs_cv_with_java_lib)
+      LIBS="$ocs_save_LIBS"
     fi
-    if test -z "$ocs_lib_java"
+    if test -z "ocs_lib_java"
     then
-      unset ac_cv_lib_java_JNI_CreateJavaVM
-      ocs_save_LIBS="$LIBS"
-      tmp_path=/usr/lib/jdk1.1.7/lib/i686/green_threads
-      LIBS="$LIBS -L$tmp_path"
-      AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-L$tmp_path $ocs_cv_with_ldrpath$tmp_path -ljava")
+      AC_ERROR(cannot link java library)
     fi
-    if test -z "$ocs_lib_java"
-    then
-      unset ac_cv_lib_java_JNI_CreateJavaVM
-      ocs_save_LIBS="$LIBS"
-      tmp_path=/usr/java/jre/lib/sparc
-      LIBS="$LIBS -L$tmp_path"
-      AC_CHECK_LIB(java, JNI_CreateJavaVM, ocs_lib_java="-L$tmp_path $ocs_cv_with_ldrpath$tmp_path -ljava")
-    fi
-  else
-    ocs_svae_LIBS="$LIBS"
-    LIBS="$LIBS $ocs_cv_with_java_lib"
-    AC_TRY_LINK_FUNC(JNI_CreateJavaVM,ocs_lib_java=$ocs_cv_with_java_lib)
-    LIBS="$ocs_save_LIBS"
   fi
-  if test -z "ocs_lib_java"
+  
+  if test "$ocs_cv_with_java_incl" != "no"
   then
-    AC_ERROR(cannot link java library)
+    AC_SUBST(ocs_incl_java)
+    not_found=no
+    if test "$ocs_cv_with_java_incl" = "yes"
+    then
+      AC_CHECK_HEADER(jni.h,ocs_incl_java="",not_found=yes)
+      if test "$not_found" = "yes"
+      then
+        not_found=no
+        unset ac_cv_header_jni_h
+        ocs_save_CPPFLAGS=$CPPFLAGS
+        tmp_path=/usr/lib/java
+        tmp_flags="-I$tmp_path/include -I$tmp_path/include/genunix"
+        CPPFLAGS="$CPPFLAGS $tmp_flags"
+        AC_CHECK_HEADER(jni.h,ocs_incl_java="$tmp_flags",not_found=yes)
+        CPPFLAGS=$ocs_save_CPPFLAGS
+      fi
+      if test "$not_found" = "yes"
+      then
+        not_found=no
+        unset ac_cv_header_jni_h
+        ocs_save_CPPFLAGS=$CPPFLAGS
+        tmp_path=/usr/lib/jdk1.1.7
+        tmp_flags="-I$tmp_path/include -I$tmp_path/include/genunix"
+        CPPFLAGS="$CPPFLAGS $tmp_flags"
+        AC_CHECK_HEADER(jni.h,ocs_incl_java="$tmp_flags",not_found=yes)
+        CPPFLAGS=$ocs_save_CPPFLAGS
+      fi
+      if test "$not_found" = "yes"
+      then
+        not_found=no
+        unset ac_cv_header_jni_h
+        ocs_save_CPPFLAGS=$CPPFLAGS
+        tmp_path=/usr/java
+        tmp_flags="-I$tmp_path/include -I$tmp_path/include_solaris"
+        CPPFLAGS="$CPPFLAGS $tmp_flags"
+        AC_CHECK_HEADER(jni.h,ocs_incl_java="$tmp_flags",not_found=yes)
+        CPPFLAGS=$ocs_save_CPPFLAGS
+      fi
+    else
+      ocs_save_CPPFLAGS=$CPPFLAGS
+      CPPFLAGS="$CPPFLAGS $ocs_cv_with_java_incl"
+      AC_CHECK_HEADER(jni.h,ocs_incl_java="$ocs_cv_with_java_incl",not_found=yes)
+      CPPFLAGS=$ocs_save_CPPFLAGS
+    fi
+    if test "$not_found" = "yes"
+    then
+      AC_MSG_ERROR(cannot find java includes)
+    fi
   fi
+# enable java
 fi
-
-if test "$ocs_cv_with_java_incl" != "no"
-then
-  AC_SUBST(ocs_incl_java)
-  not_found=no
-  if test "$ocs_cv_with_java_incl" = "yes"
-  then
-    AC_CHECK_HEADER(jni.h,ocs_incl_java="",not_found=yes)
-    if test "$not_found" = "yes"
-    then
-      not_found=no
-      unset ac_cv_header_jni_h
-      ocs_save_CPPFLAGS=$CPPFLAGS
-      tmp_path=/usr/lib/java
-      tmp_flags="-I$tmp_path/include -I$tmp_path/include/genunix"
-      CPPFLAGS="$CPPFLAGS $tmp_flags"
-      AC_CHECK_HEADER(jni.h,ocs_incl_java="$tmp_flags",not_found=yes)
-      CPPFLAGS=$ocs_save_CPPFLAGS
-    fi
-    if test "$not_found" = "yes"
-    then
-      not_found=no
-      unset ac_cv_header_jni_h
-      ocs_save_CPPFLAGS=$CPPFLAGS
-      tmp_path=/usr/lib/jdk1.1.7
-      tmp_flags="-I$tmp_path/include -I$tmp_path/include/genunix"
-      CPPFLAGS="$CPPFLAGS $tmp_flags"
-      AC_CHECK_HEADER(jni.h,ocs_incl_java="$tmp_flags",not_found=yes)
-      CPPFLAGS=$ocs_save_CPPFLAGS
-    fi
-    if test "$not_found" = "yes"
-    then
-      not_found=no
-      unset ac_cv_header_jni_h
-      ocs_save_CPPFLAGS=$CPPFLAGS
-      tmp_path=/usr/java
-      tmp_flags="-I$tmp_path/include -I$tmp_path/include_solaris"
-      CPPFLAGS="$CPPFLAGS $tmp_flags"
-      AC_CHECK_HEADER(jni.h,ocs_incl_java="$tmp_flags",not_found=yes)
-      CPPFLAGS=$ocs_save_CPPFLAGS
-    fi
-  else
-    ocs_save_CPPFLAGS=$CPPFLAGS
-    CPPFLAGS="$CPPFLAGS $ocs_cv_with_java_incl"
-    AC_CHECK_HEADER(jni.h,ocs_incl_java="$ocs_cv_with_java_incl",not_found=yes)
-    CPPFLAGS=$ocs_save_CPPFLAGS
-  fi
-  if test "$not_found" = "yes"
-  then
-    AC_MSG_ERROR(cannot find java includes)
-  fi
-fi
-
 AC_CACHE_SAVE
 ## documentation ------------------------------------------------------------
 AC_SUBST(ocs_doc_new23b)
@@ -1293,7 +1359,7 @@ then
   OCS_OUTPUT(src/om/specs/Specs.lib.opal_tk)
 fi
 
-if test "$ocs_cv_with_java_lib" != "no" -a "$ocs_cv_with_java_incl" != "no"
+if test "$ocs_cv_feature_opaljava" = "yes"
 then
   OCS_OUTPUT(src/om/specs/Specs.lib.opal_java)
 fi
