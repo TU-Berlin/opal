@@ -70,6 +70,7 @@
   (use-local-map opal-trace-mode-map)         ; This provides the local keymap
   (setq buffer-read-only t)
   (opal-trace-mode-set-menu)
+  (lazy-lock-mode 1)
 
 ;  (run-hooks 'opal-trace-mode-hook)
 )
@@ -86,8 +87,8 @@
 ;   '("^Trace of \\(.*\\)" (1 'font-lock-comment-face t t))
    '("[a-zA-Z]+[¡¿]" (0 'italic t t))
    '("§[0-9]+" (0 'font-lock-reference-face t t))
-   '("§[0-9]+ [^¤§]*¤" (0 'secondary-selection t t))
-   '("§[0-9]+ [^ø§]*ø" (0 'font-lock-string-face t t))
+   '("§[0-9]+ [^¤§]*¤" (0 'secondary-selection t t))   ;; new formula
+   '("§[0-9]+ [^ø§]*ø" (0 'font-lock-string-face t t)) ;; original formula
    '("subgoal #.*$" (0 'italic t t)) 
    '("finished subgoal, 0.*$" (0 'italic t t))
    '("finished subgoal, [1-9].*$" (0 'font-lock-comment-face t t))   
@@ -307,5 +308,27 @@
 		)
 	    (error "File `%s' does not exist or is not readable" b)
 	    )))
+    )
+  )
+
+(defun opal-trace-interactive-init ( path )
+  "load .trace file in given path"
+
+  (interactive)
+
+  (let (fn b pop-up-frames font-lock-maximum-size)
+    (setq pop-up-frames t)
+    (setq fn (concat path "/.trace"))
+    (if (not (file-readable-p fn))
+	(error "File `%s' does not exist or is not readable" fn)
+      (setq b (find-file-noselect fn t))
+      (pop-to-buffer b)
+      (revert-buffer t t t)
+      (goto-char (point-max))
+      (opal-trace-previous-proofstate)
+      (opal-trace-fontify-proofstate)
+      (display-buffer b)
+      (raise-frame (car (frames-of-buffer b)))
+      )
     )
   )
