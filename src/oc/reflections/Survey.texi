@@ -1,0 +1,244 @@
+@ignore
+
+  $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/reflections/Survey.texi,v 1.1 1999-03-23 12:36:43 kd Exp $
+  $Author: kd $
+  $Date: 1999-03-23 12:36:43 $
+  $State: Exp $
+
+  $Locker:  $
+  $Revision: 1.1 $
+  $Name: not supported by cvs2svn $
+
+  $Log: not supported by cvs2svn $
+  Revision 1.1  1999/03/20 22:49:02  opaladm
+  *** empty log message ***
+
+  Revision 1.4  1998/11/03 14:16:46  silver
+  Finalized first version of documentation.
+
+  Revision 1.3  1998/10/09 16:03:12  silver
+  Minor additions.
+
+  Revision 1.2  1998/09/28 15:34:02  silver
+  Wrote an introduction to the project.
+
+  Revision 1.1  1998/06/24 13:27:48  silver
+  Initial revision
+
+
+@end ignore
+
+@section Introduction
+
+The aim of this project is to implement an extension of the Opal compiler,
+that allows the use of @emph{reflections}. Reflections have surfaced
+recently in various imperative and object orientated programming
+languages. For a functional programming language like Opal, the
+implementation of a reflection facility is both challenging and educative:
+In a strictly typed functional programming language the management of
+@emph{runtime type information} seems to be an alien objective -- however it
+turns out that such information can be incorporated in a very elegant
+fashion into the strict type system.
+
+Informally, a @emph{reflection} is an object which allows you to enquire
+information about a @emph{value} at runtime. The information that can be
+enquired encompasses
+
+@itemize @bullet
+@item the value's type,
+@item in the polymorphic case the actual type of instantiation,
+@item for a function object the actual implementation of the function. 
+@end itemize
+
+@section Reflections and formal types
+
+We will now have a look at the way types are expressed in functional
+programming languages and we will see how reflections fit into this
+framework formally. Consider a normal object like the value @code{5} of type
+@code{nat}. This value has one specific atomic type, namely @code{nat}. Now,
+consider the function @code{succ} which has type @code{nat -> nat}. Still,
+@code{succ} can be thought of as a value which has one specific type, namely
+@code{nat -> nat}. 
+
+Contrast this with the identity function @code{id[alpha]} which has type
+@code{alpha -> alpha} @emph{regardless of the actual value of}
+@code{alpha}. In this case, one says that @code{id[alpha]} is
+@emph{polymorphic} and we can no longer assign a basic type to the
+expression. However, the identity function obviously has a well defined
+type, namely @code{alpha -> alpha} for any specific @code{alpha}. This
+is expressed formally, by saying that the identity function has type
+@code{forall alpha. alpha -> alpha}. 
+
+So what about reflections? A reflection of a @code{nat} value does not have
+type @code{nat} itself. However, there is a @code{nat} stored somewhere in
+the reflection. This is a little bit like the identity function: By itself,
+it does not have type @code{nat -> nat} -- but if you provide the type
+@code{nat}, the compiler can turn the general @code{forall alpha. alpha ->
+alpha} into the specific @code{nat -> nat}. Likewise, a reflection of a
+@code{nat} can be turned into a @code{nat} if you let the compiler apply the
+same unpacking operation as for the identity function. @emph{However}, this
+works only for one type, namely @code{nat}. Formally, a reflection is an 
+existentially bound type: a reflection has type @code{exists
+alpha. alpha}. A reflection is simply the assertion that there exists at
+least one type (in our case @code{nat}) which we can instantiate the
+reflection with, yielding a value of that type. For all wrong types, this
+instantiation will not be possible.
+
+@section Usage of reflections
+
+In our implementation, we did not change the existing Opal system any more
+than necessary. Specifically, we did not make the compiler aware of
+existentially bound types. Instead, reflections are build on top of the
+existing system. 
+
+A reflection has type @code{reflection} (this is just a normal Opal type and
+its our way of expressing that something actually has type @code{exists
+alpha. alpha}). If you @code{reflect} a value like @code{5} you get such a
+@code{reflection} of the value @code{5}. Thus the expression 
+@code{reflect(5)} has type @code{reflection}. 
+
+A reflection is a normal Opal value which you can pass around as any other
+value. Applying the function @code{type} to a reflection yields the
+reflected value's type. A simple usage of reflections is given in the
+following code:
+
+@example
+FUN tellType : reflection -> denotation
+-- This functions returns a verbal description of the type of
+-- some given value, using the reflection mechanism
+
+DEF tellType (refl) ==
+  IF type (refl) = type (reflect (0))  THEN "natural number"
+  IF type (refl) = type (reflect ("")) THEN "denotation"
+  -- ...
+  FI
+
+
+DEF main ==
+  writeLine (stdOut, "5 has type " ++ tellType (reflect (5)));
+  writeLine (stdOut, "'Hallo' has type " 
+                     ++ tellType (reflect ("Hallo")))
+@end example
+
+Essentially, the function @code{tellType} checks whether the type of the
+value reflected by the variable @code{refl} is the same type of the value 0
+(which we know to have type @code{nat}). Note, that you could not have
+written something like @code{IF type(relf) = nat THEN ...}. The reason is,
+that reflections are implemented and used like any other Opal value. So, the
+function @code{type} returns a value of type @code{typeReflection} (our
+abstraction of the Opal type system), whereas @code{nat} is an actual Opal
+type and no Opal value of type @code{typeReflection}.
+
+The most important operation you will be interested in, is instantiating a
+given reflection with the type hidden by the existential quantor and getting
+the original value. This operation is done by asking a reflection, if it
+@code{reflects?} a given type. If so, the original value is
+returned (and otherwise the operation fails gracefully). Testing numerous
+different types, allows you to construct very general function which work
+for many different types.
+
+We can now give a nice example of the usage of reflections:
+
+@example
+FUN print : reflection -> com[void]
+DEF print (refl) ==
+  IF i   avail? THEN writeLine (stdOut, `(cont(i)))
+  IF c   avail? THEN writeLine (stdOut, `(cont(c)))
+  IF str avail? THEN writeLine (stdOut, cont(str))
+                ELSE writeLine (stdOut, "unknown type")
+  FI 
+    WHERE i   == refl reflects? [int]       
+          c   == refl reflects? [char]     
+          str == refl reflects? [string]
+
+DEF PrettyPrint ==
+  writeLine (stdOut, "Writing an integer: ") &
+  print (reflect (5)) &
+
+  writeLine (stdOut, "Writing a string: ") &
+  print (reflect (!("Yes!")))
+@end example
+
+As can be seen, we can essentially write a single function @code{print}
+which will print objects of just about any type. This allows you to write
+functions that will operate differently for different input types in a
+statically typed language like Opal.
+
+The curious usage of square brackets for the function @code{reflects?} is
+explained later. 
+
+
+@section Reflections of objects with polymorphic type
+
+Until now, we have had to call the function @code{reflect} every time we
+wanted to use a reflection. This may become bothersome, especially with
+functions like @code{print} which we intend to use often.
+
+We might come up with the following idea: Let @code{print} do the reflection
+itself! Thus, we would like to have @code{print} have type @code{forall
+alpha. alpha -> com[void]}. Then, @code{print} could reflect its parameter
+and then use the reflection mechanism to find out what @code{alpha} actually
+is. The nice thing is, this actually works, provided you add a the special
+pragma @code{DYNAMIC} to the signature of @code{Print}. This pragma is only
+needed if you intend to reflect values of parameter types (like @code{alpha}
+in our case).
+
+@example
+IMPLEMENTATION Print [alpha]
+ 
+/$ DYNAMIC [alpha] $/
+
+FUN print : alpha -> com[void]
+DEF print (a) ==
+  IF d avail? THEN write (stdOut, cont(d))
+  IF n avail? THEN write (stdOut, `(cont(n)))
+  -- ...
+              ELSE write (stdOut, "unknown type")
+  FI
+    WHERE
+      refl == reflect[alpha] (a)
+      d    == refl reflects? [denotation]
+      n    == refl reflects? [nat]
+      -- ...
+
+
+
+IMPLEMETATION Main
+
+IMPORT Print COMPLETELY
+
+DEF main == 
+  print ("Hello World");
+  print (" 3 + 3 = ");
+  print (3+3);
+  print ("\n")
+@end example
+
+If you take this to its extreme, you wind up with interfaces in the Service
+subproject. 
+
+
+@section Structure of the documentation
+
+The documentation of the project is structured into several part:
+
+@itemize @bullet
+@item 
+this introduction,
+
+@item 
+the documentation of the central reflection system,
+
+@item
+a documentation of several service systems, which are build on top of the
+reflection system,
+
+@item 
+the documentation of several example programs that use reflections and finally
+
+@item
+a documentation of the compiler modifications introduced by the reflection
+project. 
+@end itemize
+
+
