@@ -1,0 +1,415 @@
+IMPLEMENTATION CalcInduct
+
+IMPORT LSeq ONLY lseq <> make ++ asLSeq :: %
+       RepoName COMPLETELY
+       RepoAbsy COMPLETELY
+       Seq ONLY seq <> :: ++ <>? +% # % ft forall?
+       ProofTactics ONLY addError :=_repo :=_subgoals pscript addTrace
+       Sequent ONLY sequent :=_props hyps props an
+       Denotation ONLY ++
+       SetFilter ONLY |
+       Set ONLY set {}? arb - {} + % exist?
+       DEBUG ONLY PRINT FIELD?
+       VarHandling ONLY newVars asVar
+       LSeqMap ONLY *
+       Fmt ONLY pretty lit
+       Option ONLY avail option nil nil? cont
+       RepoAn ONLY an none
+       Pair ONLY & pair
+       NatConv ONLY `
+       FormulaHandling ONLY property propertyS
+       OSubstitution ONLY subst <$
+       AbsySC ONLY tuple1 forall1 conj1 apply1 forall? impl cong
+       Nat ONLY nat 1 =
+       String ONLY string
+       RepoObjectAccess ONLY fct kind object newLocalSign
+       SeqMap ONLY *
+       PrettyFormatting ONLY prettyFormula
+       SeqFilter ONLY | partition
+       Predicate ONLY or
+       SetConv ONLY asSeq
+       SetMap ONLY *
+       ObjectNameMap ONLY checkNames
+       SetReduce ONLY /
+       LSeqOfLSeq ONLY flat
+       SeqReduce ONLY /
+       Triple ONLY & triple untriple
+       SeqMapMapX ONLY *#
+       SortHandling ONLY variants freeTV?
+       SeqMapEnv ONLY *
+       ObjectNameReduce ONLY checkNames
+       PredefEntities ONLY proofscript nat < true
+       SeqZip ONLY zip
+
+FUN traceInduct? : bool
+DEF traceInduct? == false -- FIELD?[bool]("-ztraceInduct")
+
+/* %Since the difference between the two variants is small, we introduce an
+    parameter to distinguish induct and cases at the proper places. */
+DATA iKind == induct cases xInduct
+
+DEF cases(sort) == gInduct(cases, sort)
+DEF induct(sort) == gInduct(induct, sort)
+DEF xInduct(sort) == gInduct(xInduct, sort)
+
+FUN gInduct: iKind ** object -> proofscript
+DEF gInduct(k, sort) ==
+  abs(\\st. IF kind(sort) oper? THEN
+              fail(addError("""" ++ symbol(sort) ++ """ is no sort!")(st))
+            ELSE
+              LET fT == (\\p. freeType?(propertyS(p)(repo(st)))) |
+                          properties(sort)
+              IN
+              IF fT {}? THEN
+                fail(addError("""" ++ symbol(sort) ++
+                              """ is no free type!")(st))
+              ELSE
+                LET prop0 == propertyS(arb(fT))(repo(st))
+                    prop == PRINT(traceInduct?, \\ . "property found...", prop0)
+                    (R1, lS0) == newVars(repo(st), variants(prop))
+                    lS == PRINT(traceInduct?, \\ . "localSign computed...",
+                                lS0)
+                    
+                IN
+                okay(byL(st :=_repo R1,
+                         gInduct(repo(st:=_repo R1), lS, k) (prop)))
+              FI
+            FI)
+-- %$Induction-Tactic$
+-- %gInduct in every possible way (lazy Minitactic)
+FUN gInduct: repo ** localSignName ** iKind ->
+              property -> sequent -> lseq[sequent]
+DEF gInduct(R, lS, k)(freetype)(sq) ==
+           gInduct(R, lS, k)(freetype)(an(sq),hyps(sq),<>,props(sq))
+
+FUN gInduct: repo ** localSignName ** iKind -> property ->
+             an ** seq[formula] ** seq[formula] ** seq[formula] ->
+             lseq[sequent]
+DEF gInduct(_, _, _)(_)(_, _, _, <>) == <>
+DEF gInduct(R, lS, k)(freetype)(a, hyps, preProps, currProp :: postProps) ==
+  (\\newProp. sequent(a, hyps, preProps ++ newProp :: postProps)) *
+    gInduct(R, lS, k)(freetype)(currProp)
+
+FUN gInduct: repo ** localSignName ** iKind ->
+              property -> formula -> lseq[formula]
+DEF gInduct(_, _, _)(_)(_else) == <>[formula]
+DEF gInduct(R, lS, k)(freeType(_, sort, variants))
+                     (quant(a, forall, lSv, lVars, range)) ==
+  gInduct(R, lS, k)(sort, variants, a, lSv, <>, lVars, range)
+
+FUN gInduct: repo ** localSignName ** iKind ->
+             objectName ** seq[variant] ** an ** localSignName **
+             seq[objectName] ** seq[objectName] ** formula -> lseq[formula]
+DEF gInduct(_, _, _)(_,_,_,_,_,<>,_) == <>
+DEF gInduct(R, lS, k)
+          (srt, variants, a, lSv, preVars, currVar :: postVars, range) ==
+  LET vSort0 == sort(fct(currVar)(R))
+      vSort ==  PRINT(traceInduct?,
+                      \\ . ("gInduct on sort " ++ (pretty(fmtObjectName(srt))
+                            ++ " var: ")) ++
+                           ((pretty(fmtObjectName(currVar)) ++ ":") ++
+                            (pretty(fmtObjectName(vSort0)))),
+                       vSort0)
+
+  IN
+  IF srt = vSort THEN
+    LET mk == IF (cases? or induct?)(k) THEN 
+                \\f. IF (preVars <>?) and (postVars <>?) THEN f
+                     ELSE quant(a, forall, lSv, preVars ++ postVars, f) FI
+              ELSE
+                \\ x. x
+              FI
+        inner == IF (cases? or induct?)(k) THEN
+                   range
+                 ELSE
+                   IF (preVars <>?) and (postVars <>?) THEN range
+                   ELSE quant(a, forall, lSv, preVars ++ postVars, range) FI
+                 FI
+    IN
+    make(\\ . avail(mk(conj1(mkVariant(R, lS, k)
+                                      (currVar, inner) * variants)) &
+                    gInduct(R, lS, k)
+                           (srt, variants, a, lSv, preVars +% currVar,
+                            postVars, range)))
+  ELSE
+    PRINT(traceInduct?,
+          \\ .  "no gInduction",
+          gInduct(R, lS, k)(srt, variants, a, lS,
+                        preVars +% currVar, postVars, range)
+    )
+  FI
+
+/* %Constructs specialization of variable by variant.
+    @code{mkVariant(R, lS,iK)(var, F[var])(con(n1, ..., nk))} becomes
+    @code{ALL n1 ... nk. F[con(n1, ..., nk)]} Let @code{nj} and
+    @code{nk} be variables with the same sort as @code{var}, then
+    result is @code{ALL n1 ... nk. F[nj] AND F[nk] ==> F[con(n1, .., nk)]},
+    if iKind is induct */
+
+FUN mkVariant: repo ** localSignName ** iKind -> objectName ** formula ->
+                variant -> formula
+DEF mkVariant(R, lS, k)(var, F)(variant(_,con0,_,comps)) ==
+  LET con== PRINT(traceInduct?,
+                  \\ . "mkVariant@:" ++ pretty(fmtObjectName(con0)),
+                  con0)
+      lVars0 == (\\s. asVar(R)(lS, s)) * selector * comps
+      lVars == PRINT(traceInduct?, \\ . "found lVars #" ++ `(#(lVars0)), lVars0)
+  res == 
+  IF lVars <>? THEN
+    subst(var, name(none, con))(F)
+  ELSE
+    LET
+      replacement == apply1(none, con, lVars)
+    IN
+    IF k cases? THEN
+      forall1(lVars, subst(var, replacement)(F))
+    IF (induct? or xInduct?)(k) THEN
+      LET
+        getSort == \\ v. sort(fct(v)(R))
+        (lVars1, iVars) == partition(\\v. getSort(v) = getSort(var), lVars)
+      IN
+      IF iVars <>? THEN
+        forall1(lVars, subst(var, replacement)(F))
+      ELSE
+        LET inner == IF lVars1 <>? THEN subst(var, replacement)(F)
+                     ELSE forall1(lVars1, subst(var, replacement)(F))
+                     FI
+        IN
+        forall1(iVars,
+                impl(conj1((\\ v. subst(var, name(none, v))(F)) * iVars),
+                     inner))
+      FI
+    FI
+  FI
+  IN
+  PRINT(traceInduct?, \\ . "result of mkVariant:\n" ++ pretty(prettyFormula(R)(res)), res)
+
+
+DEF rInduct(sort) ==
+    abs(\\st. IF kind(sort) oper? THEN
+              fail(addError("""" ++ symbol(sort) ++ """ is no sort!")(st))
+            ELSE
+              LET fT == (\\p. freeType?(propertyS(p)(repo(st)))) |
+                          properties(sort)
+              IN
+              IF fT {}? THEN
+                fail(addError("""" ++ symbol(sort) ++
+                              """ is no free type!")(st))
+              ELSE
+                LET prop == propertyS(arb(fT))(repo(st))
+                    (R1, lS) == newVars(repo(st), variants(prop))
+                    st1 == st :=_repo R1
+                IN
+                okay(byL(st1, rInduct(repo(st1), lS, freeVarSig(st1)) (prop)))
+              FI
+            FI)
+
+FUN rInduct: repo ** localSignName ** localSignName ->
+              property -> sequent -> lseq[sequent]
+DEF rInduct(R, lS, freeSig)(freeType)(sq) ==
+  LET freeVars == \\oN. IF globalObjectName?(oN) THEN {}
+                        IF localObjectName?(oN) THEN 
+                          IF sign(oN) = freeSig THEN %(oN) ELSE {} FI
+                        FI
+     getFreeVars == checkNames(freeVars, +, {})
+     leftVars == (+, {}) / getFreeVars * hyps(sq)
+     res == rInduct(R, lS, getFreeVars, freeType, leftVars)(<>, props(sq))
+  IN
+  (\\p. sq :=_props p) * res
+
+FUN rInduct: repo ** localSignName ** (formula -> set[objectName, <]) **
+              property ** set[objectName, <] ->
+              seq[formula] ** seq[formula] -> lseq[seq[formula]]
+DEF rInduct(R, lS, getFreeVars, freeType, leftVars)
+           (preProp, currProp :: postProp) ==
+  LET rightVars == getFreeVars(currProp)
+      candVars == asLSeq(asSeq(rightVars - leftVars))
+      lSdummy == lS
+      res == flat((\\ v. gInduct(R, lS, xInduct)(freeType)
+                         (quant(none, forall, lSdummy,
+                                %(v), currProp))) * candVars)
+  IN
+  (\\f. preProp ++ f :: postProp) * res ++
+  rInduct(R, lS, getFreeVars, freeType, leftVars)
+         (preProp +% currProp, postProp)
+DEF rInduct(_, _, _, _, _)(_, <>) == <>
+
+-- %$Multi-Induction$
+DEF mInduct == 
+  pscript(\\st.
+  LET (newR, newSubgoals) == *#(mInduct, repo(st), subgoals(st))(\\x.x)
+      st1 == addTrace(lit("mInduct"))(st :=_repo newR)
+  IN
+  (\\sg. st1 :=_subgoals sg) * newSubgoals
+  )
+
+FUN mInduct: repo ** sequent -> repo ** lseq[sequent]
+DEF mInduct(R, sq) == *#(mInduct, R, props(sq))(sq :=_props _)
+
+FUN mInduct: repo ** formula -> repo ** lseq[formula]
+DEF mInduct(R, f) ==
+  IF f forall? THEN
+    LET (fTvars, others) == partition(freeTV?(R), vars(f))
+    IN
+    IF fTvars <>? THEN (R, <>)
+    ELSE
+      LET (R1, f1) == IF others <>? THEN mInduct(R, range(f), fTvars)
+                      ELSE mInduct(R, quant(an(f), kind(f), sign(f),
+                                            others, range(f)), fTvars)
+                      FI
+      IN
+      (R1, %(f1))
+    FI
+  ELSE (R, <>)
+  FI
+
+FUN mInduct: repo ** formula **
+              seq[objectName] -> repo ** formula
+DEF mInduct(R, f, <>) == (R, f)
+DEF mInduct(R, f, v :: rest) ==
+  LET vSort == sort(fct(kind(v)(R)))
+      vns == variants(vSort, R)
+      (R1, lS) == newVars(R, vns)
+      triples == mkVariant(R1, lS)(rest, v, f) * vns
+      mkParts == (\\Ry, tr. LET (iVars, pre?, range) == untriple(tr)
+                             (Rx, newRange) == mInduct(Ry, range, rest)
+                             IN
+                             IF pre? nil? THEN
+                               (Rx, newRange)
+                             ELSE
+                               (Rx, forall1(iVars, impl(cont(pre?), newRange)))
+                             FI)
+      (R2, parts) == (mkParts, R1) * triples
+  IN
+  (R2, conj1(parts))
+      
+FUN mkVariant: repo ** localSignName ->
+                seq[objectName] ** objectName ** formula ->
+                variant -> triple[seq[objectName], option[formula], formula]
+DEF mkVariant(R, lS)(restVars, var, F)(variant(_,con0,_,comps)) ==
+  LET con== PRINT(traceInduct?,
+                  \\ . "mkVariant@:" ++ pretty(fmtObjectName(con0)),
+                  con0)
+      lVars0 == (\\s. asVar(R)(lS, s)) * selector * comps
+      lVars == PRINT(traceInduct?, \\ .
+                     "found lVars #" ++ `(#(lVars0)), lVars0)
+  IN
+  IF lVars <>? THEN
+    &(<>, nil, subst(var, name(none, con))(F))
+  ELSE
+    LET
+      replacement == apply1(con, lVars)
+      getSort == \\ v. sort(fct(v)(R))
+      (iVars, lVars1) == partition(\\v. getSort(v) = getSort(var), lVars)
+    IN
+    IF iVars <>? THEN
+      &(iVars, nil, forall1(lVars1, subst(var, replacement)(F)))
+    ELSE
+      &(iVars, avail(conj1((\\ v. forall1(restVars,
+                                           subst(var, name(none, v))(F))) *
+                           iVars)),
+        forall1(lVars1, subst(var, replacement)(F)))
+    FI
+  FI
+
+
+
+
+-- %Lifting of gInduct
+FUN byL: state ** (sequent -> lseq[sequent]) -> lseq[state]
+DEF byL(st, f) == byL(st, f, <>, subgoals(st))
+
+FUN byL: state ** (sequent -> lseq[sequent]) **
+          seq[sequent] ** seq[sequent] -> lseq[state]
+DEF byL(_, _,_, <>) == <>
+DEF byL(st, f, preSq, currSq :: postSq) ==
+  ((\\ sq. st :=_subgoals(preSq ++ sq :: postSq)) * f(currSq)) ++
+  byL(st, f, preSq +% currSq, postSq)
+
+
+-- %$Noetherian Induction$
+DEF noetherInduct(fun) ==
+  abs(\\st.
+  LET (nnat, <<) == (nat(repo(st)), <(repo(st)))
+  IN
+  IF nil?(nnat) or nil?(<<) THEN
+    fail(addError("noetherInduct: nat:SORT or <'Nat not found")(st))
+  ELSE
+    LET nat == cont(nnat)
+        < == cont(<<)
+        k == kind(fun)(repo(st))
+    IN
+    IF k sort? THEN fail(addError("noetherInduct: argument is sort")(st))
+    IF k oper? THEN
+      IF (name? or cart?)(fct(k)) THEN
+        fail(addError("noetherInduct: argument no function")(st))
+      IF fct(k) funct? THEN
+        IF ~(codom(fct(k)) name?) THEN
+          fail(addError("noetherInduct: codomain no sort")(st))
+        ELSE
+          IF ~(sort(codom(fct(k))) = nat) THEN
+            fail(addError("noetherInduct: codomain not nat")(st))
+          ELSE
+            okay(doNI(st, fun, <))
+          FI
+        FI
+      FI
+    FI
+  FI
+  )
+
+FUN doNI: state ** objectName ** objectName -> lseq[state]
+DEF doNI(st, fun, <) ==
+  LET (lS, R1) == newLocalSign(proofscript(repo(st)))(repo(st))
+      (R2, nVars) == newVars(R1, lS, "ª")(functs(dom(fct(fun)(R1))))
+      res == doNI(R2, fun, <, nVars)(<>, subgoals(st))
+      st1 == addTrace(lit("noetherInduct"))(st :=_repo R2)
+      mk == \\sg. st1 :=_subgoals sg
+  IN
+  mk * res
+
+
+FUN doNI: repo ** objectName ** objectName ** seq[objectName] ->
+           seq[sequent] ** seq[sequent] -> lseq[seq[sequent]]
+DEF doNI(R, fun, <, nVars)(preSqs, <>) == <> : lseq[seq[sequent]]
+DEF doNI(R, fun, <, nVars)(preSq, currSq :: postSq) ==
+  LET res == doNI(R, fun, <, nVars)(<>, props(currSq))
+      mk == \\newProps. preSq ++ sequent(an(currSq),
+                                         hyps(currSq), newProps) :: postSq
+  IN
+  mk * res ++ doNI(R, fun, <, nVars)(preSq +% currSq, postSq)
+
+FUN doNI:  repo ** objectName ** objectName ** seq[objectName] ->
+           seq[formula] ** seq[formula] -> lseq[seq[formula]]
+DEF doNI(R, fun, <, nVars)(_, <>) == <> : lseq[seq[formula]]
+DEF doNI(R, fun, <, nVars)(preFs, currF :: postFs) ==
+  IF checkF(R, nVars, currF) THEN
+    LET Px == range(currF)
+        Py == subst(vars(currF), nVars) <$ Px
+        less0 == apply1(<, tuple1(%(apply1(fun, nVars),
+                                    apply1(fun, vars(currF)))))
+        less == cong(less0, true(R))
+        newF == forall1(vars(currF), impl(forall1(nVars, impl(less, Py)), Px))
+    IN
+    (preFs ++ newF :: postFs) :: doNI(R, fun, <, nVars)(preFs +% currF, postFs)
+  ELSE
+    doNI(R, fun, <, nVars)(preFs +% currF, postFs)
+  FI
+
+FUN checkF: repo ** seq[objectName] ** formula -> bool
+DEF checkF(R, nVars, F) ==
+  IF forall?(F) THEN
+    IF #(vars(F)) = #(nVars) THEN
+      LET ~~ == \\oN1, oN2. kind(oN1)(R) = kind(oN2)(R)
+      IN
+      forall?(\\x.x, zip(~~)(vars(F), nVars))
+    ELSE
+      false
+    FI
+  ELSE
+    false
+  FI
+
+
+FUN functs: fct -> seq[fct]
+DEF functs(f) == IF f cart? THEN elems(f) ELSE %(f) FI

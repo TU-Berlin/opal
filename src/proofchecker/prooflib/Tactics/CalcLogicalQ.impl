@@ -1,0 +1,103 @@
+IMPLEMENTATION CalcLogicalQ
+
+IMPORT CalcLogical COMPLETELY
+       ProofTactics COMPLETELY
+       Seq ONLY seq <> :: ++ % revert
+       Sequent ONLY sequent an hyps props :=_props :=_hyps
+       SeqMapEnv ONLY *
+       SeqOfSeq ONLY flat
+       Denotation ONLY ++
+       SeqMap ONLY *
+       Option ONLY option avail? nil? nil cont
+       Pair ONLY pair 1st 2nd
+       AnonPair ONLY 2nd
+       Fmt ONLY fmt lit:denotation->fmt
+       RepoAn ONLY an:SORT none
+       LSeq ONLY lseq %
+
+
+DEF logicQ == qlift("logicQ",%(standardL), %(standardR))
+
+DEF logicQ_r == qlift("logicQ_r", <>, %(standardR))
+
+DEF logicQL == qlift("logicQL", 
+                     %(andL, implNotNotL, notL), %(orR, implR, notR))
+
+
+
+FUN qlift: denotation ** seq[microtactic] ** seq[microtactic] -> proofscript
+DEF qlift(tag, leftRules, rightRules) ==
+  abs(\\ st.
+  LET (changed, newSubgoals) == 
+                       (qlift(leftRules, rightRules), false) * subgoals(st)
+  IN
+  IF changed THEN okay(%(addTrace(lit(tag))(st :=_subgoals flat(newSubgoals))))
+  ELSE fail(addError("no rule applicable for " ++ tag)(st))
+  FI
+  )
+
+FUN qlift: seq[microtactic] ** seq[microtactic] ->
+            bool ** sequent -> bool ** seq[sequent]
+DEF qlift(leftRules, rightRules)(changed, sq) ==
+  LET (ch, sqq) == qlift(leftRules, rightRules)(changed, hyps(sq), props(sq))
+                        (%(sequent(none, <>, <>)))
+  IN
+  (ch, sqq)
+/*
+  IF ch THEN (true, flat(2nd((qlift(leftRules, rightRules), false) * sqq)))
+  ELSE (false, sqq)
+  FI
+*/
+
+FUN qlift: seq[microtactic] ** seq[microtactic] ->
+            bool ** seq[formula] ** seq[formula] ->
+            seq[sequent] ->
+            bool ** seq[sequent]
+DEF qlift(_, _)(changed, <>, <>)(currSqq) ==
+  (changed, revert * currSqq)
+
+DEF qlift(leftRules, rightRules)(changed, h :: hyps, props)(currSqq) ==
+  LET res == try(leftRules, h)
+  IN
+  IF res nil? THEN
+    qlift(leftRules, rightRules)(changed, hyps, props)(addHyp(h) * currSqq)
+  ELSE
+    qlift(leftRules, rightRules)(true, hyps, props)
+         (flat(split(cont(res)) * currSqq))
+  FI
+
+DEF qlift(leftRules, rightRules)(changed, <>, p :: props)(currSqq) ==
+  LET res == try(rightRules, p)
+  IN
+  IF res nil? THEN
+    qlift(leftRules, rightRules)(changed, <>, props)(addProp(p) * currSqq)
+  ELSE
+    qlift(leftRules, rightRules)(true, <>, props)
+         (flat(split(cont(res)) * currSqq))
+  FI
+
+
+FUN try: seq[microtactic] ** formula -> 
+          option[seq[pair[seq[formula], seq[formula]]]]
+DEF try(<>, _) == nil
+DEF try(mt :: R, f) ==
+  IF avail?(rep(mt)(f)) THEN rep(mt)(f) ELSE try(R, f) FI
+
+FUN revert: sequent -> sequent
+DEF revert(sq) == sq :=_hyps revert(hyps(sq)) :=_props revert(props(sq))
+
+FUN addHyp: formula -> sequent -> sequent
+DEF addHyp(f)(sq) == sq :=_hyps f :: hyps(sq)
+
+FUN addHyps: seq[formula] -> sequent -> sequent
+DEF addHyps(fs)(sq) == sq :=_hyps fs ++ hyps(sq)
+
+FUN addProp: formula -> sequent -> sequent
+DEF addProp(f)(sq) == sq :=_props f :: props(sq)
+
+FUN addProps: seq[formula] -> sequent -> sequent
+DEF addProps(fs)(sq) == sq :=_props fs ++ props(sq)
+
+FUN split: seq[pair[seq[formula], seq[formula]]] -> sequent -> seq[sequent]
+DEF split(p)(sq) ==
+  (\\ pp. addHyps(1st(pp))(addProps(2nd(pp))(sq))) * p

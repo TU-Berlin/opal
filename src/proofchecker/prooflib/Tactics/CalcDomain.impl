@@ -1,0 +1,543 @@
+IMPLEMENTATION CalcDomain
+
+IMPORT RepoAbsy COMPLETELY
+       Option ONLY option:SORT avail? cont avail nil nil?
+       ProofTactics COMPLETELY
+       LSeq ONLY % <> lseq asLSeq <>? ++ |
+       Seq ONLY ft rt exist? forall? ++ seq :: <> % +% # ..
+       Equiv ONLY equiv equal
+       Pair ONLY & pair 1st 2nd unpair
+       SeqOfSeq ONLY combinations flat
+       RepoAn ONLY none
+       Set ONLY arb
+       RepoObjectAccess ONLY lookup
+       RepoName ONLY unitName sign
+       RepoUnitAccess ONLY lookup?
+       SeqFilter ONLY |
+       SeqMap ONLY *
+       OSubstitution ONLY subst <$ prettySubst
+       Minitactic ONLY liftU liftUL liftUT liftULT liftUFT
+       SeqPermu ONLY nTuples
+       Nat ONLY 2 1 0 pred <
+       Shadow ONLY checkF
+       PredicateX ONLY or and
+       Unify ONLY unify
+       ProofAn ONLY clearShadow clearFormAn new?
+       LSeqMap ONLY *
+       LSeqOfLSeq ONLY flat
+       DEBUG ONLY PRINT string FIELD?
+       Fmt ONLY pretty fmt lit <> spc ; none
+       FmtSeq ONLY fmtSeq
+       FmtPair ONLY fmtPair
+       PrettyFormatting ONLY prettyExpr prettyFormula
+       Denotation ONLY ++
+       SeqIndex ONLY ! upd
+       Triple COMPLETELY
+       Predicate ONLY or
+       SeqSort ONLY msort
+       Weight ONLY <
+       Sequent ONLY prettySequent props hyps :=_props :=_hyps
+       PredefEntities ONLY false true
+       AbsySC ONLY dfd? cong? dfd impl?
+       SeqSupplements ONLY sd idx idxL
+       TripleMapPlus ONLY map1 map2
+       PairMapPlus ONLY map1 map2
+
+DEF equiv_false == 
+  pscript(\\st.
+  LET iRes == by(lift(equiv_false_L(R)) | lift(equiv_false_R(R)),
+                 subgoals(st))
+      R == repo(st)
+  IN
+  IF avail?(iRes) THEN %(addTrace(lit("equiv_false"))
+                         (st :=_subgoals cont(iRes)))
+  ELSE <>
+  FI)
+
+FUN equiv_false_L equiv_false_R: repo -> microtactic
+DEF equiv_false_L(R) == 
+  left(\\ f.
+  IF f cong? THEN
+    LET (e1, e2) == (ft(exprs(f)), sd(exprs(f)))
+    IN
+    IF e1 equiv false(R) THEN
+      avail(%(<> & %(clearFormAn(atomic(an(f), cong, %(e2, true(R)))))))
+    IF e2 equiv false(R) THEN
+      avail(%(<> & %(clearFormAn(atomic(an(f), cong, %(e1, true(R)))))))
+    ELSE nil
+    FI
+  ELSE
+    nil
+  FI)
+
+DEF equiv_false_R(R) == 
+  right(\\ f.
+  IF f cong? THEN
+    LET (e1, e2) == (ft(exprs(f)), sd(exprs(f)))
+    IN
+    IF e1 equiv false(R) THEN
+      avail(%(%(clearFormAn(atomic(an(f), cong, %(e2, true(R))))) & <>))
+    IF e2 equiv false(R) THEN
+      avail(%(%(clearFormAn(atomic(an(f), cong, %(e1, true(R))))) & <>))
+    ELSE nil
+    FI
+  ELSE
+    nil
+  FI)
+
+DEF equiv_refl == by(lit("equiv_refl"), equiv_refl)
+
+FUN equiv_refl: minitactic
+DEF equiv_refl ==
+  abs(\\sq. IF exist?(equal?, props(sq)) THEN avail(<>) ELSE nil FI)
+
+FUN equal? : formula -> bool
+DEF equal?(f) == 
+  IF f cong? THEN equal(ft(exprs(f)), sd(exprs(f))) ELSE false FI
+
+FUN traceequ? : bool
+DEF traceequ? == false
+
+DEF equiv_refl_u == liftUT(lit("equiv_refl_u"), equiv_refl_u)
+
+FUN equiv_refl_u: repo ** localSignName ** localSignName ->
+                   sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF equiv_refl_u(R, unknownSig, freeSig)(sq) ==
+  LET congs0 == PRINT(traceequ?, \\ . "---", checkF(exist?)(Xcong?)(props(sq)))
+      congs == PRINT(traceequ?, \\ . pretty:fmt->denotation(fmtSeq(prettyFormula(R))(congs0)), congs0)
+      uC == \\f. LET e1 == PRINT(traceequ?,
+                                 \\ . pretty:fmt->denotation
+                                            (prettyExpr(R)(ft(exprs(f)))),
+                                            ft(exprs(f)))
+                     e2 == PRINT(traceequ?,
+                                 \\ . pretty:fmt->denotation
+                                      (prettyExpr(R)(sd(exprs(f)))),
+                                  sd(exprs(f)))
+                 IN unify(R)(freeSig, unknownSig)(e1, e2)
+      mk == \\sb. &(<>, sb, (IF longInfo?(R) THEN prettySubst(R)(sb)
+                             ELSE none FI))
+  IN
+  mk * flat((uC * asLSeq(congs)))
+
+-- %$Substitutions$
+
+DATA substKind == shallow deep rewrite_deep contrawrite_deep
+
+FUN traceRW? : bool
+DEF traceRW? == false -- FIELD?[bool]("-ztraceRW")
+
+FUN rewrite? contrawrite? : substKind -> bool
+DEF rewrite? == rewrite_deep?
+DEF contrawrite? == contrawrite_deep?
+
+DEF subst_r == liftUT(lit("subst_r"), subst_r(shallow))
+DEF subst_r_deep == liftUT(lit("subst_r_deep"), subst_r(deep))
+DEF rewrite_r_deep == liftUT(lit("rewrite_r_deep"), subst_r(rewrite_deep))
+DEF contrawrite_r_deep ==
+  liftUT(lit("contrawrite_r_deep"), subst_r(contrawrite_deep))
+
+FUN subst_r: substKind -> repo ** localSignName ** localSignName ->
+                sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF subst_r(K)(R, unknownSig, freeSig)(sq) ==
+  LET congs == msort(<(R))(checkF(forall?)(Xcong?)(hyps(sq)))
+      res == subst_r(K)(R, unknownSig, freeSig)(congs)(<>, props(sq))
+      mk == map1(\\fs. %(sq :=_props(fs)))
+  IN
+  mk * res
+
+FUN subst_r: substKind -> repo ** localSignName ** localSignName ->
+              seq[formula] -> seq[formula] ** seq[formula] ->
+              lseq[triple[seq[formula], subst, fmt]]
+DEF subst_r(K)(R, unknownSig, freeSig)(congs)(preProp, currProp:: postProp) ==
+  (LET f == checkF(exist?)(atomic? or connect? or quant?)(currProp)
+   IN
+   IF f nil? THEN <>
+   IF f avail? THEN
+     LET res == subst_r(K)(R, unknownSig, freeSig)(congs)(f cont)
+         mk == map1(\\f1. preProp ++ clearFormAn(f1) :: postProp)
+     IN
+     mk * res
+   FI)
+  ++ (\\ . subst_r(K)(R, unknownSig, freeSig)(congs)
+                  (preProp  +% currProp, postProp))
+DEF subst_r(_)(_, _, _)(_)(_, <>) == <>
+
+/* %common functions for left and right substitution. Gets the
+    congruence formulae and the formula within which they are
+    applied if possible. */
+FUN subst_r: substKind -> repo ** localSignName ** localSignName ->
+              seq[formula] -> formula -> 
+              lseq[triple[formula, subst, fmt]]
+DEF subst_r(K)(R, unknownSig, freeSig)(congs)(atomic(a, k, exx)) ==
+  subst_r(K)(R, unknownSig, freeSig)(congs)(a, k, <>, exx)
+DEF subst_r(K)(R, unknownSig, freeSig)(congs)(connect(a, k, fs)) ==
+  IF #(fs) < 1 THEN <>
+  ELSE 
+    LET sbP == map2(\\ex. subst_r(K) (R, unknownSig, freeSig)(congs)(ex))
+        ins == \\p. map1(\\ f. connect(a, k, (1st(p), f) upd fs)) * 2nd(p)
+    IN
+    flat(ins * (sbP * idxL(fs)))
+  FI
+/* %Preisfrage: wieso keine Behandlung von Quantoren? 
+    Evtl. werden Variablen falsch umbenannt?
+*/
+/*
+DEF subst_r(K)(R, unknownSig, freeSig)(congs:seq[formula])(quant(a, k, lS, vs, r)) == <>
+*/
+DEF subst_r(K)(R, unknownSig, freeSig)(congs:seq[formula])
+           (quant(a, k, lS, vs, r)) ==
+   LET res == subst_r(K)(R, unknownSig, freeSig)(congs)(r)
+       mk == map1(\\ f. quant(a, k, lS, vs, f))
+   IN
+   mk * res
+
+/* %finally got an atomic formula with expressions, which are 
+    treated by congruence formulae. */
+FUN subst_r: substKind -> repo ** localSignName ** localSignName ->
+              seq[formula] -> an ** atomicKind ** seq[expr] ** seq[expr] ->
+              lseq[triple[formula, subst, fmt]]
+DEF subst_r(_)(_, _, _)(_)(_, _, _, <>) == <>
+DEF subst_r(K)(R, unknownSig, freeSig)(congs)(a, k, preEx, currEx :: postEx) ==
+  LET res == subst_r(K)(R, unknownSig, freeSig)(currEx) * asLSeq(congs)
+      mk == map1(\\e. atomic(a, k, preEx ++ e :: postEx))
+  IN
+  IF flat(res) <>? THEN 
+    PRINT(traceRW?,  \\ . "congs: " ++
+                      pretty(fmtSeq(prettyFormula(R))(congs)) ++
+                      "currEx: " ++ pretty(prettyExpr(R)(currEx)) ++
+                      "\nno solution",
+    subst_r(K)(R, unknownSig, freeSig)(congs)(a, k, preEx +% currEx, postEx))
+  ELSE
+    PRINT(traceRW?, \\ . "congs: " ++
+                      pretty(fmtSeq(prettyFormula(R))(congs)) ++
+                      "currEx: " ++ pretty(prettyExpr(R)(currEx)) ++
+                      "\nhas solutions",
+    (mk * flat(res)) ++
+    (\\ . subst_r(K)(R, unknownSig, freeSig)(congs)
+                 (a, k, preEx +% currEx, postEx)))
+  FI
+
+/* %try to apply congruence formula to expression. */
+FUN subst_r: substKind -> repo ** localSignName ** localSignName ->
+              expr -> formula -> lseq[triple[expr, subst, fmt]]
+DEF subst_r(K)(R, unknownSig, freeSig)(ex)(F) ==
+  LET info == \\ p. IF longInfo?(R) THEN prettyFormula(R)(F);
+                                         (spc(1); prettySubst(R)(2nd(p)))
+                    ELSE none
+                    FI
+      res == subst_r(K)(R, unknownSig, freeSig)(ex)(F)
+  IN
+  IF res <>? THEN PRINT(traceRW?, \\ . "subst_r / no ex", <>)
+  ELSE
+    (\\p. unpair(p) & info(p)) * res
+  FI
+
+FUN subst_r: substKind -> repo ** localSignName ** localSignName ->
+              expr -> formula -> lseq[pair[expr, subst]]
+DEF subst_r(K)(R, unknownSig, freeSig)(ex)
+              (F AS atomic(_, cong, f1 :: f2 :: _)) ==
+  (IF K contrawrite? THEN <>
+   ELSE (\\sb. f2 & sb) * unify(R)(freeSig, unknownSig)(ex, f1) FI) ++
+  (\\ . IF K rewrite? THEN <> 
+   ELSE (\\sb. f1 & sb) * unify(R)(freeSig, unknownSig)(ex, f2) FI) ++
+  (\\ . IF K shallow? THEN <>
+   ELSE subst_r(K)(R, unknownSig, freeSig)(ex, F) FI)
+
+FUN subst_r: substKind -> repo ** localSignName ** localSignName ->
+              expr ** formula  -> lseq[pair[expr, subst]]
+DEF subst_r(_)(R, unknownSig, freeSig)(_else, _) == <>
+DEF subst_r(K)(R, unknownSig, freeSig)(apply(a, fu, ar), F) ==
+  (map1(\\e. apply(a, e, ar)) *
+     subst_r(K)(R, unknownSig, freeSig)(fu)(F)) ++
+  (\\ . map1(\\e. apply(a, fu, e)) *
+        subst_r(K)(R, unknownSig, freeSig)(ar)(F))
+DEF subst_r(K)(R, unknownSig, freeSig)(tuple(a, es), F) ==
+  IF #(es) < 1 THEN <>
+  ELSE
+    LET sbP == map2(\\e. subst_r(K)(R, unknownSig, freeSig)(e)(F))
+        ins == \\p. map1(\\e. tuple(a, (1st(p), e) upd es)) * 2nd(p)
+    IN
+    flat(ins * (sbP * idxL(es)))
+  FI
+
+
+DEF crewrite_r_deep == liftU(lit("crewrite_r_deep"), crewrite_r_deep)
+
+FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
+                sequent -> lseq[pair[seq[sequent], subst]]
+DEF crewrite_r_deep(R, unknownSig, freeSig)(sq) ==
+  LET crewrites == msort(<(R))(checkF(forall?)(crewrite?)(hyps(sq)))
+      res == crewrite_r_deep(R, unknownSig, freeSig)(crewrites)(<>, props(sq))
+      mk == \\t. %(sq :=_props %(1st(t)),
+                   sq :=_props 2nd(t)) & 3rd(t)
+  IN
+  mk * res
+
+FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
+                      seq[formula] -> seq[formula] ** seq[formula] ->
+                      lseq[triple[formula, seq[formula], subst]]
+DEF crewrite_r_deep(_,_,_)(_)(_, <>) == <>
+DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites)
+  (preProp, currProp :: postProp) ==
+  (LET f == checkF(exist?)(atomic? or connect?)(currProp)
+   IN
+   IF f nil? THEN <>
+   IF f avail? THEN
+     LET res == crewrite_r_deep(R, unknownSig, freeSig)(crewrites)(f cont)
+         mk == map2(\\f1. preProp ++ f1 :: postProp)
+     IN
+     mk * res
+   FI)
+  ++ (\\ . crewrite_r_deep(R, unknownSig, freeSig)
+                          (crewrites)(preProp  +% currProp, postProp))
+  
+FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
+                      seq[formula] -> formula -> 
+                      lseq[triple[formula, formula, subst]]
+DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites)(atomic(a, k, exx)) ==
+  crewrite_r_deep(R, unknownSig, freeSig)(crewrites)(a, k, <>, exx)
+DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites:seq[formula])(connect(a, k, fs)) ==
+  IF #(fs) < 1 THEN <>
+  ELSE 
+    LET sbP == map2(\\f. crewrite_r_deep (R, unknownSig, freeSig)
+                                         (crewrites)(f))
+        ins == \\p. map2(\\ f. connect(a, k, (1st(p), f) upd fs)) * 2nd(p)
+    IN
+    flat(ins * (sbP * idxL(fs)))
+  FI
+DEF crewrite_r_deep(R, unknownSig, freeSig)
+                   (congs:seq[formula])(quant(a, k, lS, vs, r)) == <>
+
+FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
+              seq[formula] -> an ** atomicKind ** seq[expr] ** seq[expr] ->
+              lseq[triple[formula, formula, subst]]
+DEF crewrite_r_deep(_, _, _)(_)(_, _, _, <>) == <>
+DEF crewrite_r_deep(R, unknownSig, freeSig)(crewrites)
+                   (a, k, preEx, currEx :: postEx) ==
+  LET res == crewrite_r_deep(R, unknownSig,
+                                freeSig)(currEx) * asLSeq(crewrites)
+      mk == map2(\\e. atomic(a, k, preEx ++ e :: postEx))
+  IN
+  mk * flat(res) ++
+  (\\ . crewrite_r_deep(R, unknownSig, freeSig)(crewrites)
+                       (a, k, preEx +% currEx, postEx))
+
+FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
+              expr -> formula -> lseq[triple[formula, expr, subst]]
+DEF crewrite_r_deep(R, unknownSig, freeSig)(ex)
+              (F AS connect(_, impl, c ::
+                            atomic(_, cong, f1 :: f2 :: _) :: _)) ==
+  (\\sb. &(c, f2, sb)) * unify(R)(freeSig, unknownSig)(ex, f1) ++
+  (\\ . crewrite_r_deep(R, unknownSig, freeSig)(ex, F))
+
+FUN crewrite_r_deep: repo ** localSignName ** localSignName ->
+              expr ** formula  -> lseq[triple[formula, expr, subst]]
+DEF crewrite_r_deep(R, unknownSig, freeSig)(_else:expr, _) == <>
+DEF crewrite_r_deep(R, unknownSig, freeSig)(apply(a, fu, ar), F) ==
+  (map2(\\e. apply(a, e, ar)) *
+     crewrite_r_deep(R, unknownSig, freeSig)(fu)(F)) ++
+  (map2(\\e. apply(a, fu, e)) *
+     crewrite_r_deep(R, unknownSig, freeSig)(ar)(F))
+DEF crewrite_r_deep(R, unknownSig, freeSig)(tuple(a, es), F) ==
+  IF #(es) < 1 THEN <>
+  ELSE
+    LET sbP == map2(\\e. crewrite_r_deep (R, unknownSig, freeSig)(e)(F))
+        ins == \\p. map2(\\ e. tuple(a, (1st(p), e) upd es)) * 2nd(p)
+    IN
+    flat(ins * (sbP * idxL(es)))
+  FI
+
+
+-- %left-hand side versions
+DEF subst_l == liftULT(lit("subst_l"), subst_l(shallow, \\ _ . true))
+DEF subst_l_deep == liftULT(lit("subst_l_deep"), subst_l(deep, \\ _ . true))
+DEF rewrite_l_deep ==
+  liftULT(lit("rewrite_l_deep"), subst_l(rewrite_deep, \\ _ . true))
+DEF rewrite_l_deepN ==
+  liftULT(lit("rewrite_l_deepN"), subst_l(rewrite_deep, new?))
+DEF rewrite_l_deepF ==
+  liftUFT(lit("rewrite_l_deepF"), subst_l(rewrite_deep, \\ _ . true))
+DEF rewrite_l_deepNF ==
+  liftUFT(lit("rewrite_l_deepNF"), subst_l(rewrite_deep, new?))
+
+FUN subst_l: substKind ** (formula -> bool) ->
+              repo ** localSignName ** localSignName ->
+                sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF subst_l(K, check)(R, unknownSig, freeSig)(sq) ==
+  LET congs == msort(<(R))(checkF(forall?)(Xcong?)(hyps(sq)))
+      res == subst_l(K, check)(R, unknownSig, freeSig)(congs)(<>, hyps(sq))
+      mk == map1(\\fs. %(sq :=_hyps(fs)))
+  IN
+  IF res <>? THEN PRINT(traceRW?, \\ . "subst_l / sequent", <>)
+  ELSE mk * res
+  FI
+
+FUN subst_l: substKind ** (formula -> bool) ->
+              repo ** localSignName ** localSignName ->
+              seq[formula] -> seq[formula] ** seq[formula] ->
+              lseq[triple[seq[formula], subst, fmt]]
+DEF subst_l(K, check)
+           (R, unknownSig, freeSig)(congs)(preHyp, currHyp:: postHyp) ==
+  (IF (atomic? or connect?)(currHyp) and check(currHyp) THEN
+     LET res == subst_r(K)(R, unknownSig, freeSig)(congs)(currHyp)
+         mk == map1(\\f1. preHyp ++ clearFormAn(f1) :: postHyp)
+     IN
+     mk * res
+   ELSE <>
+   FI) ++
+  (\\ . subst_l(K, check)(R, unknownSig, freeSig)(congs)
+               (preHyp  +% currHyp, postHyp))
+DEF subst_l(_, _)(_, _, _)(_)(_, <>) == <>
+
+
+-- %$Definedness$
+DEF dfd_equiv == liftU(lit("dfd_equiv"), dfd_equiv)
+
+
+FUN dfd_equiv: repo ** localSignName ** localSignName ->
+                sequent -> lseq[pair[seq[sequent], subst]]
+DEF dfd_equiv(R, unknownSig, freeSig)(sq) ==
+  LET pairs == nTuples(2, hyps(sq))
+      res == dfd_equiv(R, unknownSig, freeSig) * asLSeq(pairs)
+      checkNew == \\ p. forall?(\\f. ~(ft(p 1st) equal f), rt(p 1st))
+      mk == map1(\\ fs. %(sq :=_hyps(fs)))
+  IN
+  mk * (checkNew | flat(res))
+
+/* %A pair of a pair of formula to test for dfd_equiv and the rest hypotheses.
+    Return a sequence of possible hypotheses and substitutions. 
+
+    Since nTuples returns all possible tuples, we check the first formula
+    for equivalence and the second for definedness.
+
+    First formula of the result is the new formula.
+*/
+FUN dfd_equiv:repo ** localSignName ** localSignName ->
+                pair[seq[formula], seq[formula]] ->
+                lseq[pair[seq[formula], subst]]
+DEF dfd_equiv(R, unknownSig, freeSig)(F1 :: F2 :: _ & rest) ==
+  LET G1 == checkF(forall?)(cong?)(F1)
+      G2 == checkF(forall?)(dfd?)(F2)
+  IN
+  IF (G1 or G2)(nil?) THEN <>
+  ELSE
+    LET g11 == ft(exprs(G1 cont))
+        g12 == sd(exprs(G1 cont))
+        g2 == ft(exprs(G2 cont))
+        res1 == unify(R)(freeSig, unknownSig)(g11, g2)
+        res2 == unify(R)(freeSig, unknownSig)(g12, g2)
+    IN
+    IF (res1 and res2)(<>?) THEN <>
+    ELSE
+      (\\ sbst. dfd(sbst <$ g12) :: clearShadow(F1) ::
+                clearShadow(F2) :: rest & sbst) * res1   ++
+      (\\ sbst. dfd(sbst <$ g11) :: clearShadow(F1) ::
+                clearShadow(F2) :: rest & sbst) * res2
+    FI
+  FI
+
+
+FUN traceD? : bool
+DEF traceD? == false
+
+DEF dfd_equiv_r == liftUT(lit("dfd_equiv_r"), dfd_equiv_r)
+
+FUN dfd_equiv_r: repo ** localSignName ** localSignName ->
+                  sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF dfd_equiv_r(R, unknownSig, freeSig)(sq) ==
+  LET dfdLs == checkF(forall?)(dfd?)(hyps(sq))
+      dfdRs == checkF(exist?)(dfd?)(props(sq))
+      congLs == checkF(forall?)(Xcong?)(hyps(sq))
+      triples == combinations(%(dfdRs, congLs, dfdLs))
+      res == flat(dfd_equiv_r(R, unknownSig, freeSig) * asLSeq(triples))
+  IN
+  IF res <>? THEN <>
+  ELSE (\\sbst. <> & unpair(sbst)) * res
+  FI
+  
+/* %Input a triple @code{DFD E, F1 === F2, DFD G}, output
+    a sequence of substitutions such that either E~F1 and F2~G, or
+    E~F2 and F1~G. */
+FUN dfd_equiv_r: repo ** localSignName ** localSignName ->
+                  seq[formula] -> lseq[pair[subst, fmt]] 
+DEF dfd_equiv_r(R, unknownSig, freeSig)
+               (atomic(_, dfd, E :: _) ::
+                atomic(_, cong, F1 :: F2 :: _) ::
+                atomic(_, dfd, G :: _) :: _) ==
+  LET res == unify(R)(freeSig, unknownSig)(%(E & F1, F2 & G)) ++
+               unify(R)(freeSig, unknownSig)(%(E & F2, F1 & G)) 
+      info == IF longInfo?(R) THEN 
+                fmtSeq(fmtPair(prettyExpr(R), prettyExpr(R)))
+                      (%(E & F1, F2 & G))
+               ELSE <> FI
+  IN
+  (\\sb. sb & info) * res
+  
+
+/*
+FUN dfd_equiv: minitactic
+DEF dfd_equiv ==
+  abs(\\sq.
+  LET atomicFs == atomic? | hyps(sq)
+      dfds == (\\f. kind(f) dfd?) | atomicFs
+      congs == (\\f. kind(f) cong?) | atomicFs
+      newDfds == checkDfd * combinations(%(dfds, congs))
+  IN
+  IF forall?(nil?, newDfds) THEN nil
+  ELSE
+    avail(%(sq :=_hyps hyps(sq) ++ cont * avail? | newDfds))
+  FI)
+
+FUN checkDfd: seq[formula] -> option[formula]
+DEF checkDfd(atomic(_, dfd, e1 :: _) ::
+             atomic(_, cong, f1 :: f2 :: _) :: _) ==
+  IF equal(e1, f1) THEN avail(atomic(none, dfd, %(f2)))
+  IF equal(e1, f2) THEN avail(atomic(none, dfd, %(f1)))
+  ELSE nil
+  FI
+
+*/
+
+DEF undefinedness == liftU(lit("undefinedness"), undefinedness)
+
+
+FUN traceUndefd? : bool
+DEF traceUndefd? == false
+
+FUN undefinedness: repo ** localSignName ** localSignName -> 
+                    sequent -> lseq[pair[seq[sequent], subst]]
+DEF undefinedness(R, unknownSig, freeSig)(sq) == 
+  LET dfds0 == checkF(exist?)(dfd?)(props(sq))
+      congs0 == Xcong? | props(sq)
+      dfds == PRINT(traceUndefd?, \\ . "undefinedness: DFDs are " ++
+                    pretty(fmtSeq(prettyFormula(R))(dfds0)), dfds0)
+      congs == PRINT(traceUndefd?, \\ . "undefinedness: ===s are " ++
+                     pretty(fmtSeq(prettyFormula(R))(congs0)), congs0) 
+  IN
+  (\\sb. <> & sb) *
+  flat(checkUndfd(R, unknownSig, freeSig)(ft * exprs * dfds) * asLSeq(congs))
+
+
+FUN checkUndfd: repo ** localSignName ** localSignName ->
+                 seq[expr] -> formula -> lseq[subst]
+DEF checkUndfd(R, unknownSig, freeSig)
+              (dfds)(atomic(_, cong, e1 :: e2 :: <>)) ==
+  LET e1P == (\\e. e1 & e) * dfds
+      e2P == (\\e. e2 & e) * dfds
+      combs == combinations(%(e1P, e2P))
+  IN
+  flat((\\ c. unify(R)(freeSig, unknownSig)(c)) * asLSeq(combs))
+
+
+FUN Xcong? crewrite? : formula -> bool
+DEF Xcong?(f) == 
+  IF f cong? THEN
+    ~(equal(ft(exprs(f)), sd(exprs(f))))
+  ELSE false 
+  FI
+DEF crewrite?(f) == 
+  IF f impl? THEN
+    Xcong?(sd(formulas(f)))
+  ELSE
+    false
+  FI

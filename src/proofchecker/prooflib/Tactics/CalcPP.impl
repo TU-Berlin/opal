@@ -1,0 +1,208 @@
+IMPLEMENTATION CalcPP
+
+IMPORT ProofTactics COMPLETELY
+       Option ONLY nil? cont option avail? nil
+       Seq ONLY <> # ft % seq :: exist? +%
+       Nat ONLY |= 1 12 !
+       RepoObjectAccess ONLY kind object fct newLocalSign
+       OSubstitution ONLY def {} subst !? dom
+       SubstitutionFun ONLY <$ <$$
+       Sequent ONLY :=_props sequent
+       AbsySC ONLY dfd  apply1 tuple1 conj1
+       Fmt ONLY lit ; spc pretty none
+       PrettyFormatting ONLY fmtObjectNameLong fmtObjectName prettyExpr
+       RepoAbsy COMPLETELY
+       String ONLY string
+       RepoAn ONLY none
+       ProofAn ONLY clearFormAn setFVct :=_types
+       LSeq ONLY lseq % <> asLSeq
+       DEBUG ONLY PRINT
+       Denotation ONLY ++ < : denotation ** denotation -> bool
+       FmtOption ONLY fmtOption
+       RepoName ONLY fmtObjectName globalObjectName impl basicUnitName
+       RepoInternData COMPLETELY
+       IdTab ONLY idtab !
+       RepoAdmin ONLY repoFile
+       IdMap ONLY idmap
+       Set ONLY set exist?
+       RepoSource ONLY item:SORT
+       Id ONLY id
+       FmtSeq ONLY fmtSeq
+       BasicSupplements ONLY asDeno
+       SortHandling ONLY freeTV? variants
+       SeqOfSeq ONLY combinations
+       PredefEntities ONLY and proofscript
+       FormulaHandling ONLY propertyS
+       LSeqMap ONLY *
+       SeqFilter ONLY |
+       SeqMap ONLY *
+       Pair ONLY 1st 2nd & pair
+       SeqZip ONLY zip
+       ABORT ONLY ABORT
+       VarHandling ONLY newVars
+       RepoPropertyAccess ONLY properties
+       SetConv ONLY asSeq
+       SeqMapEnv ONLY *
+
+FUN tracePP: bool
+DEF tracePP == false
+
+DEF unskolem == pscript(\\st:state.
+  LET sF0 == PRINT(tracePP, "unskolem", getSpecFun(st))
+      sF == PRINT(tracePP, \\ . "sF == " ++
+                  pretty(fmtOption(fmtObjectNameLong(repo(st)))(sF0))
+                  ++ " intern: " ++
+                  pretty(fmtOption(fmtObjectName)(sF0)),
+                  sF0)
+  IN
+  IF nil?(sF) THEN <>
+  IF #(subgoals(st)) |= 1 THEN <>
+  ELSE
+    LET (st1, fVar0) == newUN(st)
+        fVar == PRINT(tracePP, \\ . "fVar == " ++ 
+                      pretty(fmtObjectNameLong(repo(st1))(fVar0)), fVar0)
+        R1a == setFVct(fCt(st1))(fVar, repo(st1))
+        i == IF longInfo?(R1a) THEN
+             lit("hint: "); fmtObjectNameLong(R1a)(fVar);
+             lit(" may not be replaced by free variables ");
+             lit(asDeno(fCt(st1))); lit("¡ and later")
+           ELSE none
+           FI
+        st1a == addTrace(i)(st1 :=_repo R1a)
+        st1b == st1a °=_subst subst(fVar %, fVar %)
+        k == kind(cont(sF))(repo(st1a))
+        st2 == setKind(st1b, fVar, k)
+        newSq == def(cont(sF), name(none, fVar), {}) <$$[clearFormAn]
+                    ft(subgoals(st2))
+        dfdSq == newSq :=_props %(dfd(fVar))
+        st3 == setUnskol(st2, fVar)
+        st4 == st3 :=_subgoals %(newSq, dfdSq)
+    IN
+    %(addTrace(lit("unskolem"); spc(1); fmtObjectNameLong(repo(st4))(cont(sF));
+               spc(1); lit("->"); spc(1);
+               fmtObjectNameLong(repo(st4))(fVar))(st4))
+  FI
+  )
+
+DEF case_intro == pscript(\\ st.
+  LET s == getSubst(st)
+      gVars == checkUn(repo(st), s) | asSeq(dom(s))
+      st1 == IF longInfo?(repo(st)) THEN
+                addTrace(lit("found these variables:"); 
+                         fmtSeq(fmtObjectName(repo(st)))(gVars))(st)
+             ELSE st FI
+  IN
+  case_intro(st1) * asLSeq(gVars)
+  )
+  
+/* %perform a case split on the given unknown variable */
+FUN case_intro: state -> objectName -> state
+DEF case_intro(st)(un) ==
+  LET (R1, args, types) == getArgs(repo(st), un)
+      ftArgs == freeTV?(R1) | args
+      preGuards == combinations(variants(R1) * ftArgs)
+      st1 == st :=_repo R1
+      (st2, newUns) == (getUn(un), st1) * preGuards
+      P == zip(&)(newUns, preGuards)
+      newExpr == lambda(none :=_types types, sign(ft(args)), args, 
+                        cases(none, mkGuard(repo(st2))(ftArgs, args) * P, nil))
+      newSubst == def(un, newExpr, subst(newUns, newUns))
+      st3 == st2 °=_subst newSubst
+      dfdSq == sequent(none, <>, %(conj1(dfd * newUns)))
+  IN
+  st3 :=_subgoals ((getSubst(st3) <$[clearFormAn] _ ) * subgoals(st3)) +% dfdSq
+
+FUN mkGuard: repo -> seq[objectName] ** seq[objectName] ->
+              pair[objectName, seq[variant]] -> guard
+DEF mkGuard(R)(ftArgs, args)(f & vars) ==
+  guard(none, boolConj(R)((\\p. apply1(1st(p), 2nd(p))) * 
+                                  zip(&)(test * vars, ftArgs)), 
+        apply1(f, args))
+
+FUN boolConj: repo -> seq[expr] -> expr
+DEF boolConj(_)(<>) == ABORT("boolConj'CalcPP: empty argument")
+DEF boolConj(_)(e :: <>) == e
+DEF boolConj(R)(e :: E) == apply1(and(R), tuple1(%(e, boolConj(R)(E))))
+  
+
+/* % return a new objectName with the same functionality*/
+FUN getUn: objectName -> state ** seq[variant] -> state ** objectName
+DEF getUn(un)(st, _vs) ==
+  LET (st1, newUn) == newUN(st)
+      st2 == setKind(st1, newUn, kind(un)(repo(st1)))
+  IN
+  (st2, newUn)
+
+
+/* %return variants for sort */
+FUN variants: repo -> objectName -> seq[variant]
+DEF variants(R)(tVar) ==
+  IF name?(fct(tVar)(R)) THEN variants(sort(fct(tVar)(R)), R)
+  ELSE <> FI
+
+
+/* %return new repository and variable names */
+FUN getArgs: repo ** objectName -> repo ** seq[objectName] ** seq[fct]
+DEF getArgs(R, un) ==
+  LET aTypes == IF cart?(dom(fct(un)(R))) THEN elems(dom(fct(un)(R)))
+                ELSE %(dom(fct(un)(R))) FI
+      (newLS, R1) == newLocalSign(proofscript(R))(R)
+  IN
+  (newVars(R1, newLS, "_ð")(aTypes), aTypes)
+                  
+
+/* %true, iff objectname is undefiend or points to itself in substitution
+    and the type is a function type with at least one free type
+*/
+FUN checkUn: repo ** subst -> objectName -> bool
+DEF checkUn(R, s)(oN) ==
+  LET df == s !? oN
+      ok? == IF avail?(df) THEN
+               IF name?(cont(df)) THEN oper(cont(df)) = oN ELSE false FI
+             ELSE
+               true
+             FI
+  IN
+  IF ok? THEN
+    IF funct?(fct(oN)(R)) THEN
+      checkForFT(R)(dom(fct(oN)(R)))
+    ELSE
+      false
+    FI
+  ELSE
+    false
+  FI
+
+FUN checkForFT: repo -> fct -> bool
+DEF checkForFT(R)(name(s)) ==
+  exist?(\\pN. freeType?(propertyS(pN)(R)), properties(s)(R))
+  
+DEF checkForFT(R)(cart(elems)) == exist?(checkForFT(R), elems)
+DEF checkForFT(_)(funct(_, _)) == false
+
+-- %$unskolem$
+-- %aus Minitactic
+DEF checkSkolem == pscript(checkSkolem)
+
+DEF checkSkolem(st) == 
+  LET sb == getSubst(st)
+  IN
+  IF avail?(getUnskol(st)) ANDIF
+    avail?(sb !? cont(getUnskol(st))) THEN
+    LET unskolVar == cont(getUnskol(st))
+         unskolEx == cont(sb !? unskolVar)
+         i == \\ . lit("note: unskolem variable"); spc(1);
+                   fmtObjectNameLong(repo(st))(unskolVar); spc(1);
+                   lit("set to"); spc(1);
+                   prettyExpr(repo(st), main(st))(unskolEx)
+    IN
+    IF longInfo?(repo(st)) THEN
+      addTrace(i())(setSpecExpr(st, cont(sb !? cont(getUnskol(st)))))
+    ELSE
+      setSpecExpr(st, cont(sb !? cont(getUnskol(st))))
+    FI
+  ELSE
+    IF longInfo?(repo(st)) THEN
+      addTrace(lit("no definition for unskolem variable"))(st)
+    ELSE st FI
+  FI

@@ -1,0 +1,86 @@
+IMPLEMENTATION Shadow
+
+IMPORT Pair ONLY & 1st 2nd pair
+       SeqMap ONLY *
+       ProofTactics ONLY :=_repo :=_uCt :=_subgoals asUN
+       Sequent ONLY sequent :=_hyps :=_props hyps props
+       RepoAbsy COMPLETELY
+       ProofAn ONLY shadow? :=_shadow getShadow getShadowF
+       RepoAn ONLY none
+       OSubstitution ONLY def {} <$ subst
+       RepoName ONLY localSignName objectName
+       Nat ONLY nat succ
+       Seq ONLY % seq ft
+       RepoObjectAccess ONLY updateObject kind newLocalObjects
+       Option ONLY avail avail? cont nil option
+       SeqFilter ONLY |
+       SeqMapEnv ONLY *
+       DEBUG ONLY PRINT
+       Denotation ONLY ++
+       Fmt ONLY pretty
+       PrettyFormatting ONLY prettyFormula
+       String ONLY string
+
+FUN traceESH? : bool
+DEF traceESH? == false
+
+DEF ensureShadow(st) ==
+  LET (P, newSq) == (ensureShadow(unknownSig(st)),
+                     repo(st) & uCt(st)) * subgoals(st)
+  IN
+  st :=_repo 1st(P) :=_uCt 2nd(P) :=_subgoals newSq
+
+DEF ensureShadow(lS)(Pair, sq) ==
+  LET (P1, nHyps) == (ensureShadow(lS), Pair) * hyps(sq)
+      (P2, nProps) == (ensureShadow(lS), P1) * props(sq)
+  IN
+  (P2, sq :=_hyps nHyps :=_props nProps)
+
+DEF ensureShadow(lS)(Pair, F0) ==
+  LET F1 == PRINT(traceESH?,
+                  \\ . "ensuring shadow of " ++
+                  pretty(prettyFormula(1st(Pair))(F0)), F0)
+      F == PRINT(traceESH?, \\ . "ensuring shadow of " ++
+                 pretty(fmtFormula(F1)), F1)
+  IN
+  IF F atomic? THEN (Pair, F)
+  IF F connect? THEN (Pair, F)
+  ELSE
+    IF shadow?(F) THEN (Pair, F)
+    ELSE
+      LET (newP, newObs) == (shadowVar(lS), Pair) * vars(F)
+          ObsAsExpr == name(none, _) * newObs
+          newF0 == def(vars(F), ObsAsExpr, {}) <$ range(F)
+          newF1 == PRINT(traceESH?, \\ . "result is " ++
+                         pretty(fmtFormula(newF0)), newF0)
+          newF == PRINT(traceESH?, \\ . "result is " ++
+                        pretty(prettyFormula(1st(newP))(newF1)), newF1) 
+      IN
+      (newP, F :=_shadow (newF, newObs))
+    FI
+  FI
+
+FUN shadowVar: localSignName ->
+                pair[repo, nat] ** objectName -> pair[repo, nat] ** objectName
+DEF shadowVar(lS)(R & uCt, var) ==
+  LET (nObj, R1) == newLocalObjects(lS, %(asUN(uCt)))(R)
+      R2 == updateObject(ft(nObj), _ :=_kind kind(var)(R1))(R1)
+  IN
+  (R2 & succ(uCt), ft(nObj))
+
+DEF checkF(q?)(P?)(F) ==
+  IF P?(F) THEN avail(F)
+  IF F quant? ANDIF q?(kind(F)) THEN
+    IF avail?(getShadowF(F)) ANDIF P?(cont(getShadowF(F))) THEN
+      getShadowF(F)
+    ELSE nil FI
+  ELSE
+    nil
+  FI
+
+DEF checkF(q?)(P?)(s) == cont * (avail? | checkF(q?)(P?) * s)
+
+DEF shadows(q?)(s) == 
+  cont * avail? | getShadowF * F(q?) | s
+  WHERE F == \\P. \\f. IF f quant? THEN P(kind(f)) ELSE false FI
+   

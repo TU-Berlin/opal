@@ -1,0 +1,330 @@
+IMPLEMENTATION ProofTactics
+
+IMPORT RepoDiag ONLY mode:SORT error warn hint <+ freeRef !! ref
+       Fmt ONLY pretty fmt lit brk ; spc
+       FmtSeq ONLY fmtSeq list
+       Seq ONLY <>? ::? # split ft rt forall? :: revert ++ seq % <> iter
+       LSeq ONLY % <>? ft <> pull ++ lseq make rt split
+       Option ONLY avail? nil? nil cont option avail
+       LSeqOfLSeq ONLY flat
+       Nat ONLY nat succ < % max 0 <= 6 1 3
+       SeqMap ONLY *
+       SeqZip ONLY zip
+       Pair ONLY & pair
+       Denotation ONLY ++ init
+       Sequent ONLY fmtSequent prettySequent props hyps sequent an
+       SeqFilter ONLY |
+       SeqOfSeq ONLY flat
+       NatConv ONLY asChar
+       CharConv ONLY asNat
+       RepoAbsy COMPLETELY
+       RepoAn ONLY none
+       DynConv ONLY pack
+       Set ONLY {} set
+       RepoObjectAccess ONLY newLocalObjects updateObject
+       Char ONLY char !
+       Dyn ONLY dyn
+       ProofAn COMPLETELY
+       FmtBasicTypes ONLY fmtNat
+       SeqReduce ONLY /
+       Compose ONLY o
+       PrettyFormatting ONLY prettyFormula
+       RepoInternData COMPLETELY
+       BasicSupplements ONLY # fmtReal
+       String ONLY string
+       Stat ONLY stat tCt ct maxSq maxHyp maxProp
+       Stopwatch ONLY iElapsed
+       RealConv ONLY ``
+       Real ONLY real -
+
+
+-- %Wrapper for error check and propagation
+FUN pscript: (state -> lseq[state]) -> proofscript
+DEF pscript(f) == 
+  abs(\\st. IF f(st) <>? THEN fail(st) ELSE okay(f(st)) FI)
+                 
+FUN pscript: (state -> state) -> proofscript
+DEF pscript(f) == abs(\\st. okay(%(f(st))))
+
+
+
+
+-- %$Mini-Tactic$
+-- %Work on a single sequent
+
+DATA minitactic == abs(rep: sequent -> option[seq[sequent]])
+
+
+
+-- %$$Mini-Tacticals$
+-- %alternative
+FUN | : minitactic ** minitactic -> minitactic
+DEF abs(m1) | abs(m2) ==
+  abs(\\s. IF avail?(m1(s)) THEN m1(s) ELSE m2(s) FI)
+
+FUN ; : minitactic ** minitactic -> minitactic
+DEF abs(m1) ; abs(m2) ==
+  abs(\\s. IF m1(s) nil? THEN nil
+           ELSE LET mids == cont(m1(s))
+                    ress == avail? | m2 * mids
+                IN
+                IF (mids ::?) and (ress <>?) THEN nil
+                ELSE avail(flat(cont * ress))
+                FI
+           FI)
+
+FUN done fail: minitactic
+DEF done == abs(\\s. avail(%(s)))
+DEF fail == abs(\\ _ . nil)
+
+-- %repeat while applicable
+-- FUN * : (() -> minitactic) -> minitactic
+-- DEF m * == (m() ; *(m) ) | done
+
+
+-- %$$lift to full tactic$
+-- %apply to given subgoal
+DEF by(abs(mi), idx) == 
+  pscript(\\st. IF #(subgoals(st)) <= idx THEN <>
+            ELSE 
+              LET (before, after0) == split(idx, subgoals(st))
+                  (rdx, after) == (ft(after0), rt(after0))
+              IN
+              IF avail?(mi(rdx)) THEN
+                %(st :=_subgoals before ++ cont(mi(rdx)) ++ after)
+              ELSE
+                <>
+              FI
+            FI)
+
+-- %apply to all subgoals
+DEF by(abs(mi)) ==
+  pscript(\\st. LET olds == % * subgoals(st)
+                news == mi * subgoals(st)
+                result == zip(\\o, x. cont(o)(x))(olds, news)
+            IN 
+               IF forall?(nil?, news) THEN <>
+               ELSE %(st :=_subgoals flat(result))
+               FI)
+
+DEF by(name, abs(mi)) ==
+  pscript(\\st. LET olds == % * subgoals(st)
+                news == mi * subgoals(st)
+                result == zip(\\o, x. cont(o)(x))(olds, news)
+            IN 
+               IF forall?(nil?, news) THEN <>
+               ELSE %(addTrace(name)(st :=_subgoals flat(result)))
+               FI)
+
+DEF by(abs(mi), subgoals) ==
+  LET olds == % * subgoals
+      news == mi * subgoals
+      result == zip(\\o, x. cont(o)(x))(olds, news)
+  IN 
+     IF forall?(nil?, news) THEN nil
+     ELSE avail(flat(result))
+     FI
+
+
+-- %$Micro-Tactics$
+-- %work on formula level
+DATA microtactic == 
+  left(rep: formula -> option[seq[pair[seq[formula], seq[formula]]]])
+  right(rep: formula -> option[seq[pair[seq[formula], seq[formula]]]])
+
+
+
+
+-- %$$Microtacticals$
+-- %alternative (may not combine microtactics for different sides)
+FUN | : microtactic ** microtactic -> microtactic
+DEF left(mu1) | left(mu2) == 
+  left(\\f. IF avail?(mu1(f)) THEN mu1(f) ELSE mu2(f) FI)
+DEF right(mu1) | right(mu2) == 
+  right(\\f. IF avail?(mu1(f)) THEN mu1(f) ELSE mu2(f) FI)
+
+-- %$$Lifting to minitactics$
+-- %apply microtactic to first applicable formula
+FUN lift: microtactic -> minitactic
+DEF lift(mu AS left(_)) == abs(\\s. tryH(an(s), props(s), <>, mu)(hyps(s)))
+DEF lift(mu AS right(_)) == abs(\\s. tryP(an(s), hyps(s), <>, mu)(props(s)))
+
+FUN tryH: an ** seq[formula] ** seq[formula] ** microtactic ->
+           seq[formula] -> option[seq[sequent]]
+DEF tryH(_, _, _,left(_))(<>) == nil
+DEF tryH(a, props, revBeforeHyps, left(mu))(F :: Fs) ==
+  IF avail?(mu(F)) THEN
+    avail(mkSeqH(a, revert(revBeforeHyps), Fs, props) * cont(mu(F)))
+  ELSE
+    tryH(a, props, F :: revBeforeHyps, left(mu))(Fs)
+  FI
+  
+FUN tryP: an ** seq[formula] ** seq[formula] ** microtactic ->
+           seq[formula] -> option[seq[sequent]]
+DEF tryP(_, _, _,right(_))(<>) == nil
+DEF tryP(a, hyps, revBeforeProps, right(mu))(F :: Fs) ==
+  IF avail?(mu(F)) THEN
+    avail(mkSeqP(a, hyps, revert(revBeforeProps), Fs) * cont(mu(F)))
+  ELSE
+    tryP(a, hyps, F :: revBeforeProps, right(mu))(Fs)
+  FI
+ 
+-- %as above, but only to specified index
+FUN lift: microtactic ** nat -> minitactic
+DEF lift(left(mu), idx) ==
+  abs(\\s. IF #(hyps(s)) <= idx THEN nil
+           ELSE
+             LET (before, after0) == split(idx, hyps(s))
+                 (rdx, after) == (ft(after0), rt(after0))
+             IN
+             IF avail?(mu(rdx)) THEN
+               avail(mkSeqH(an(s), before, after, props(s)) * cont(mu(rdx)))
+             ELSE nil FI
+           FI)
+
+DEF lift(right(mu), idx) ==
+  abs(\\s. IF #(props(s)) <= idx THEN nil
+           ELSE
+             LET (before, after0) == split(idx, props(s))
+                 (rdx, after) == (ft(after0), rt(after0))
+             IN
+             IF avail?(mu(rdx)) THEN
+               avail(mkSeqP(an(s), hyps(s), before, after) * cont(mu(rdx)))
+             ELSE nil FI
+           FI)
+FUN mkSeqH: an ** seq[formula] ** seq[formula] ** seq[formula] ->
+            pair[seq[formula], seq[formula]] -> sequent
+DEF mkSeqH(a, before, after, props)(nHyps & nProps) ==
+  sequent(a, before ++ nHyps ++ after, props ++ nProps)
+FUN mkSeqP: an ** seq[formula] ** seq[formula] ** seq[formula] ->
+            pair[seq[formula], seq[formula]] -> sequent
+DEF mkSeqP(a, hyps, before, after)(nHyps & nProps) ==
+  sequent(a, hyps ++ nHyps, before ++ nProps ++ after)
+
+
+-- %$Manipulating the types from PROOFSCRIPT$
+-- %$$Functions on state$
+-- FUN {} : state
+-- DEF {} == state(none, ok, <>, nil)
+
+FUN :=_fCt : state ** nat -> state
+DEF :=_fCt(state(1,2,3,4,5,6,7,_,9,10,11,12,13),new) == state(1,2,3,4,5,6,7,new,9,10,11,12,13)
+
+FUN :=_freeVarSig : state ** localSignName -> state
+DEF :=_freeVarSig(state(1,2,3,4,5,6,_,8,9,10,11,12,13),new) == state(1,2,3,4,5,6,new,8,9,10,11,12,13)
+
+FUN :=_uCt : state ** nat -> state
+DEF :=_uCt(state(1,2,3,4,5,_,7,8,9,10,11,12,13),new) == state(1,2,3,4,5,new,7,8,9,10,11,12,13)
+
+FUN :=_unknownSig : state ** localSignName -> state
+DEF :=_unknownSig(state(1,2,3,4,_,6,7,8,9,10,11,12,13),new) == state(1,2,3,4,new,6,7,8,9,10,11,12,13)
+
+FUN :=_repo : state ** repo -> state
+DEF :=_repo(state(1,2,3,_,5,6,7,8, 9,10,11,12,13),new) == state(1,2,3,new,5,6,7,8,9,10,11,12,13)
+
+FUN :=_subgoals : state ** seq[sequent] -> state
+DEF :=_subgoals(state(1,2,_,4,5,6,7,8,9,10,11,12,13),new) == state(1,2,new,4,5,6,7,8,9,10,11,12,13)
+
+FUN :=_diags : state ** diag -> state
+DEF :=_diags(state(1,_,3,4,5,6,7,8,9,10,11,12,13),new) == state(1,new,3,4,5,6,7,8,9,10,11,12,13)
+
+FUN :=_an : state ** an -> state
+DEF :=_an(state(_,2,3,4,5,6,7,8,9,10,11,12,13),new) == state(new,2,3,4,5,6,7,8,9,10,11,12,13)
+
+FUN :=_trace : state ** seq[fmt] -> state
+DEF :=_trace(state(1,2,3,4,5,6,7,8,9,10,_,12,13),new) == state(1,2,3,4,5,6,7,8,9,10,new,12,13)
+
+FUN :=_stat : state ** stat -> state
+DEF :=_stat(state(1,2,3,4,5,6,7,8,9,_,11,12,13),new) == state(1,2,3,4,5,6,7,8,9,new,11,12,13)
+
+FUN :=_atexit : state ** (state -> state) -> state
+DEF :=_atexit(state(1,2,3,4,5,6,7,8,9,10,11,12,_),new) == state(1,2,3,4,5,6,7,8,9,10,11,12,new)
+
+FUN :=_every : state ** (state -> state) -> state
+DEF :=_every(state(1,2,3,4,5,6,7,8,9,10,11,_,13),new) == state(1,2,3,4,5,6,7,8,9,10,11,new,13)
+
+FUN lift: (an -> an) -> (state -> state)
+DEF lift(f)(st) == st :=_an f(an(st))
+
+DEF tCt(st) == tCt(stat(st))
+
+DEF setTCT(st, n) == st :=_stat stat(ct(stat(st)), n, maxSq(stat(st)),
+                                     maxHyp(stat(st)), maxProp(stat(st)))
+
+DEF setSCS(st) == st :=_an (an(st) :=_shortcutSwitch true)
+                     :=_repo (repo(st) :=_an
+                                   (an(repo(st)):=_shortcutSwitch true))
+DEF clearSCS(st) == st :=_an (an(st) :=_shortcutSwitch false)
+                       :=_repo (repo(st) :=_an
+                                  (an(repo(st)):=_shortcutSwitch false))
+
+DEF useSC(st:state) == LET s? == getShortcutSwitch(an(st))
+                       IN
+                       cont(false)(s?)
+
+DEF useSC(R:repo) == LET s? == getShortcutSwitch(an(R))
+                     IN
+                     cont(false)(s?)
+DEF longInfo? == useSC
+
+DEF getSpecFun(st) == getSpecFun(an(st))
+DEF setUnskol(st, v) == st :=_an (an(st) :=_unskol v)
+DEF getUnskol(st) == getUnskol(an(st))
+DEF setSpecExpr(st, ex) == st :=_an(an(st) :=_specExpr ex)
+
+
+-- %$$$Handle Diagnostics$
+FUN :=_diags: state ** diag -> lseq[state]
+DEF st :=_diags d == %(st :=_diags d)
+
+FUN addError addWarn addHint: denotation -> state -> state
+DEF addError == addDiag(error)
+DEF addWarn == addDiag(warn)
+DEF addHint == addDiag(hint)
+
+FUN addDiag: mode -> denotation -> state -> state
+DEF addDiag(k)(msg)(st) ==
+  st :=_diags diags(st) <+ ((k, getCanRef(an(st))) !! msg)
+
+DEF addTrace(tr)(st) == 
+  LET now == iElapsed(false, tr)
+      prev == cont(now)(getTime(an(st)))
+  IN
+  st :=_trace fmtReal(now - prev, 3); spc(1); tr :: trace(st)
+     :=_an setTime(now)(an(st))
+
+DEF st °=_subst s ==  st :=_an (an(st) °=_subst s)
+DEF getSubst(st) == getCurrSubst(an(st))
+
+-- %$$$New variables$
+
+-- %return an object with specified name and "any" kind
+FUN preObject: denotation -> object
+DEF preObject(sym) == object(none, sym, other("any", pack(true, "bool")),
+                             variable(none), {}, {})
+
+DEF asFV(n) == preObject(n # "¡")
+
+DEF asUN(n) == preObject(n # "¿")
+
+FUN newFV: state -> state ** objectName
+DEF newFV(s) ==
+  LET (nObj, R1) == newLocalObjects(freeVarSig(s), %(asFV(fCt(s))))(repo(s))
+  IN
+  (s :=_repo R1
+     :=_fCt succ(fCt(s)),
+   ft(nObj))
+
+FUN newUN: state -> state ** objectName
+DEF newUN(s) ==
+  LET (nObj, R1) == newLocalObjects(unknownSig(s), %(asUN(uCt(s))))(repo(s))
+  IN
+  (s :=_repo R1
+     :=_uCt succ(uCt(s)),
+   ft(nObj))
+
+FUN setKind: state ** objectName ** objectName -> state
+DEF setKind(s, var, sort) ==
+  s :=_repo updateObject(var, _ :=_kind oper(name(sort)))(repo(s))
+
+DEF setKind(s, var, k) == s :=_repo updateObject(var, _ :=_kind k)(repo(s))

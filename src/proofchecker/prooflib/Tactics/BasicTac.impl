@@ -1,0 +1,355 @@
+IMPLEMENTATION BasicTac
+
+IMPORT Seq ONLY seq <>? % ft split # :: <> rt ++ ::? forall?
+       SeqFilter ONLY partition
+       ProofTactics COMPLETELY
+       Fmt ONLY fmt lit brk ; inc spc none
+       NFmt ONLY fmtLatin1
+       FmtSeq ONLY fmtSeq list
+       Sequent COMPLETELY
+       Compose ONLY o
+       Nat ONLY nat max 0 succ < 0? > 2 3 1 <= =
+       SeqReduce ONLY /
+       FmtBasicTypes ONLY fmtNat
+       PrettyFormatting ONLY prettyFormula 
+       SeqMap ONLY *
+       LSeq ONLY lseq <> ft <>? pull ++ make % split rt +^+
+       Option ONLY option avail nil
+       Pair ONLY pair &
+       LSeqMap ONLY *
+       String ONLY string
+       Denotation ONLY ++
+       DEBUG ONLY PRINT
+       ProofAn COMPLETELY
+       Stat ONLY maxSq maxHyp maxProp ct stat
+       NatConv ONLY `
+       SeqSupplements ONLY fmtIdxSeq
+       Stopwatch ONLY iStart iElapsed
+       RealConv ONLY ``
+       Real ONLY real
+       ObjectNameMap ONLY checkNames
+       RepoAbsy ONLY eqn:SORT guard:SORT property:SORT
+       RepoName ONLY =
+       SubstitutionFun ONLY <$
+       OSubstitution ONLY prettySubst dom !?
+       Set ONLY = forall?
+       Equiv ONLY equal
+       BasicSupplements ONLY fmtBool
+
+-- %$Special Proofscripts$
+
+DEF done == pscript(\\x.x)
+DEF fail == abs(\\ st . fail(st))
+DEF print(tag) ==
+  pscript(\\ st. addHint("Proofstate \"" ++ tag ++ "\" is\n" ++
+                         fmtLatin1(fmtSeq(prettySequent(repo(st), main(st)))
+                                       (subgoals(st))) ++
+                         "\nEnd of Proofstate\n")(st)
+         )
+
+DEF iprint(tag) ==
+  pscript(\\ st. addHint("Proofstate \"" ++ tag ++ "\" is\n" ++
+                         fmtLatin1(fmtSeq(fmtSequent)(subgoals(st))) ++
+                         "\nEnd of Proofstate\n")(st))
+
+
+DEF QED == abs(\\st. IF subgoals(st) <>? THEN
+                       okay(%(addTrace(lit("QED"))(st)))
+                     ELSE fail(addError("proof not successful")(st)) FI)
+
+DEF #<=(no) == abs(\\st. IF #(subgoals(st)) <= no THEN
+                           okay(%(addTrace(lit("# <= "); fmtNat(no))(st)))
+                         ELSE fail(addError("more than " ++
+                                            `(no) ++ " subgoals!")(st))
+                         FI)
+  
+DEF #=(no) == abs(\\st. IF #(subgoals(st)) = no THEN
+                           okay(%(addTrace(lit("# = "); fmtNat(no))(st)))
+                         ELSE fail(addError("must have exactly " ++
+                                            `(no) ++ " subgoals here!")(st))
+                         FI)
+
+DEF trust(reason) == 
+  pscript(\\st.
+    addHint("informal proof: " ++ reason)(st :=_subgoals <>)
+  )
+
+DEF det(abs(f)) ==
+  abs(\\st. IF f(st) fail? THEN f(st) 
+            ELSE IF <>?(data(f(st))) THEN fail(st)
+                 ELSE okay(%(ft(data(f(st))))) FI
+            FI)
+
+DEF det(n, abs(f)) ==
+  abs(\\st. IF f(st) fail? THEN f(st) 
+            ELSE LET (_, r) == split(n, data(f(st)))
+                 IN IF r <>? THEN fail(st) ELSE okay(%(ft(r))) FI
+            FI)
+
+-- %@emph{very} special proofscripts
+
+DEF every(f) == pscript(\\st. st :=_every every(st) o f)
+DEF atexit(f) == pscript(\\st. st :=_atexit atexit(st) o f)
+
+DEF stat(st) ==
+  LET cSq == max(#(subgoals(st)), maxSq(stat(st)))
+      maxH == max((max, 0) / # * hyps * subgoals(st), maxHyp(stat(st)))
+      maxP == max((max, 0) / # * props * subgoals(st), maxProp(stat(st)))
+  IN
+  st :=_stat stat(succ(ct(stat(st))), 0, cSq, maxH, maxP)
+
+
+FUN xtrace: (sequent -> fmt) -> state -> state
+DEF xtrace(f)(st) == 
+  st :=_trace (lit("Proofstate at step #");
+               fmtNat(ct(stat(st)));
+               lit(" is "); brk; 
+               fmtIdxSeq(f)(subgoals(st));
+               brk; lit("end of proofstate"); brk) :: trace(st)
+
+DEF traceProof(st0) == 
+  LET st == setSCS(ensureShortcut(st0))
+  IN
+  xtrace(prettySequentS(repo(st), main(st)))(st)
+DEF ltraceProof(st) == xtrace(prettySequent(repo(st), main(st)))(st)
+DEF itraceProof == xtrace(fmtSequent)
+
+FUN ensureShortcut: state -> state
+DEF ensureShortcut(st) ==
+  IF useSC(st) THEN
+    st :=_subgoals ensureShortcut(repo(st), main(st)) * subgoals(st)
+  ELSE
+    st
+  FI
+
+FUN ensureShortcut: repo ** unitName -> sequent -> sequent
+DEF ensureShortcut(R, main)(sq) ==
+  sq :=_hyps ensureShortcut(R, main) * hyps(sq)
+     :=_props ensureShortcut(R,main) * props(sq)
+
+FUN ensureShortcut: repo ** unitName -> formula -> formula
+DEF ensureShortcut(R, main)(F) ==
+  IF shortcut?(F) THEN clearNewSC(F)
+  ELSE setNewSC(F :=_shortcut prettyFormula(R, main)(F))
+  FI
+
+DEF debugProof(st) == 
+  LET f == prettySequent(repo(st), main(st))
+  IN
+  PRINT(true, (fmtLatin1(lit("Proofstate at step #");
+               fmtNat(ct(stat(st)));
+               lit(" is "); brk; 
+               fmtSeq(f)(subgoals(st));
+               brk; lit("end of proofstate"); brk)):string, st)
+
+DEF blip(st) ==
+  PRINT(true, (fmtLatin1(lit("Proofstate at step #");
+               fmtNat(ct(stat(st))); brk)):string, st)
+
+
+DEF finalize(st0) ==
+  LET st == setSCS(ensureShortcut(st0))
+  IN
+  IF subgoals(st) <>? THEN st
+  ELSE
+    addTrace(lit("final proofstate is:"); brk;
+             fmtIdxSeq(prettySequentS(repo(st), main(st)))(subgoals(st));
+             brk; lit("end of final proofstate"); brk)(st)
+  FI
+
+DEF finishedCheck(st) ==
+  IF subgoals(st) ::? THEN
+    addError(fmtLatin1(lit("unfinished proof"); brk; inc(2);
+                       lit("unresolved subgoals are:"); brk;
+                       list(fmtSeq(prettyFormula(repo(st), main(st))),
+                            brk,
+                            (props * subgoals(st)))))(st)
+  ELSE
+    st
+  FI
+
+DEF breakAfter(n)(st) ==
+  IF ct(stat(st)) > n THEN
+    addError("stopped after " ++
+             `(ct(stat(st))) ++ " steps")(st) :=_subgoals <>
+  ELSE
+    st
+  FI
+
+-- %$$Tacticals$
+DEF abs(f);abs(g) == 
+  abs(\\st. IF subgoals(st) <>? THEN okay(%(st))
+            ELSE
+              LET res == f(st)
+              IN
+              IF fail?(res) THEN res
+              IF <>?(data(res)) THEN fail(st)
+              ELSE LET res2 == combine(0, data(res), g)
+                   IN
+                   IF res2 <>? THEN 
+                     -- return some information about failure
+                     -- fail(ft(data(res))) 
+                     LET try == addTrace(lit("FAILURE PATH"))(ft(data(res)))
+                         arg == every(try)(try)
+                     IN
+                     g(arg)
+                   ELSE okay(res2) FI
+              FI
+            FI)
+
+-- evtl. Fehlerinformation zurückgeben?
+FUN combine: nat ** lseq[state] ** (state -> result) -> lseq[state]
+DEF combine(no, s, cont) ==
+  IF s <>? THEN <>
+  ELSE 
+    LET (f0, R) == pull(s)
+    IN 
+    IF subgoals(f0) <>? THEN %(addTrace(lit(";/<>"))(f0)) -- already finished
+    ELSE
+      LET f == IF 0?(no) THEN f0 ELSE addTrace(lit("bt #"); fmtNat(no))(f0) FI
+          res == cont(every(f)(f)) -- cont(f) -- cont(execEvery(f))
+      IN
+      IF res fail? THEN combine(succ(no), R, cont)
+      ELSE  data(res) ++ (\\ . combine(succ(no), R, cont))
+      FI
+    FI
+  FI
+
+DEF p1 ;! p2 == det(p1); p2
+
+DEF abs(f) | abs(g) ==
+  abs(\\st. IF okay?(f(st)) THEN f(st) ELSE g(st) FI)
+
+DEF abs(f) +^+ abs(g) ==
+  abs(\\st. IF fail?(f(st)) THEN g(st)
+            IF fail?(g(st)) THEN f(st)
+            ELSE okay(data(f(st)) +^+ data(g(st)))
+            FI
+     )
+
+DEF f ? == f | done
+
+DEF *(abs(f)) ==
+  pscript(\\st. IF longInfo?(repo(st)) THEN 
+                  repeat(<>, true, f, st)
+                ELSE
+                  addTrace(lit("* finished")) * repeat(<>, true, f, st)
+                FI)
+
+FUN repeat: seq[lseq[state]] ** bool ** (state -> result) ** state ->
+             lseq[state]
+DEF repeat(acc, first?, f, st) ==
+  IF subgoals(st) <>? THEN %(st) -- ready!
+  ELSE
+    LET st1 == IF first? THEN f(st) ELSE f(every(st)(st)) FI
+    IN
+    IF fail?(st1) THEN %(st) ++ (\\ . repeatq(acc, f))
+    ELSE LET (a, R) == pull(data(st1))
+         IN
+         repeat(R :: acc, false, f, a)
+    FI
+  FI
+
+FUN repeatq: seq[lseq[state]] ** (state -> result)-> lseq[state]
+DEF repeatq(acc, f) ==
+  IF acc <>? THEN <>
+  IF acc ::? THEN
+    IF ft(acc) <>? THEN repeatq(rt(acc), f)
+    ELSE repeat(rt(ft(acc)) :: rt(acc), false, f, ft(ft(acc)))
+    FI
+  FI
+  
+DEF subgoal(P) == subgoal(0, P)
+
+DEF subgoal(n, abs(f)) == 
+  abs(\\st.
+    IF n < #(subgoals(st)) THEN
+      LET (preSub, postSub0) == split(n, subgoals(st))
+          (currSub, postSub) == (ft(postSub0), rt(postSub0))
+          st1 == addTrace(lit("subgoal #"); fmtNat(n))
+                         (st :=_subgoals %(currSub))
+          res == f(st1)
+      IN
+      IF res fail? THEN res
+      ELSE
+        LET rres == data(res)
+            mk == \\stX. addTrace(lit("finished subgoal, ");
+                                  fmtNat(#(subgoals(stX)));
+                                  lit(" subgoals remaining")
+                                  ; substInfo(repo(stX),getCurrSubst(an(st1)),
+                                              getCurrSubst(an(stX))) 
+                                 )
+                         (stX :=_subgoals 
+                            (IF nothingNew(getCurrSubst(an(st1)),
+                                           getCurrSubst(an(stX))) THEN
+                               preSub ++ subgoals(stX) ++ postSub
+                             ELSE
+                               (getCurrSubst(an(stX)) <$[clearFormAn] _) * 
+                               (preSub ++ subgoals(stX) ++ postSub)
+                             FI))
+       IN
+        okay(mk * rres)
+      FI
+    ELSE fail(addError("subgoal # does not exist!")(st))
+    FI
+  )
+
+FUN substInfo: repo ** subst ** subst -> fmt
+DEF substInfo(R, oldS, newS) == none
+/* %-
+  spc(1); lit("substInfo:"); spc(1);
+  lit("old:"); prettySubst(R)(oldS); brk; 
+  lit("new:"); prettySubst(R)(newS); brk;
+  lit("nothingNew: "); fmtBool(nothingNew(oldS, newS))
+*/
+
+FUN nothingNew: subst ** subst -> bool
+DEF nothingNew(oldS, newS) ==
+  forall?(\\n. oldS !? n = newS !? n, dom(oldS))
+
+FUN = : option[expr] ** option[expr] -> bool
+DEF nil = nil == true
+DEF avail(_) = nil == false
+DEF nil = avail(_) == false
+DEF avail(e1) = avail(e2) == e1 equal e2
+
+      
+DEF subgoals(P, ps) == subgoals(P, false, ps)
+
+DEF subgoals(P, error?, abs(f)) ==
+  abs(\\st.
+    LET (goodSubs, badSubs) == partition(P(st), subgoals(st))
+    IN
+    IF goodSubs <>? THEN
+      IF error? THEN fail(addError("no subgoals fulfill predicate")(st))
+      ELSE okay(%(addHint("no subgoals fulfill predicate")(st)))
+      FI
+    ELSE
+      LET
+        st1 == addTrace(lit("subgoals by predicate: selected ");
+                        fmtNat(#(goodSubs)))(st :=_subgoals(goodSubs))
+        res == f(st1)
+      IN
+      IF res fail? THEN res
+      ELSE
+        LET rres == data(res)
+            mk == \\stX. addTrace(lit("finished subgoals, ");
+                                  fmtNat(#(subgoals(stX)));
+                                  lit(" subgoals remaining"))
+                                 (stX :=_subgoals 
+                                   (getCurrSubst(an(stX)) <$[clearFormAn] _) * 
+                                      (subgoals(stX) ++ badSubs))
+        IN
+        okay(mk * rres)
+      FI
+    FI
+  )
+
+DEF noUnknowns?(st)(sq) == forall?(noUnkowns?(st), props(sq) ++ hyps(sq))
+
+FUN noUnkowns? : state -> formula -> bool
+DEF noUnkowns?(st)(f) ==
+  checkNames(\\oN. IF globalObjectName?(oN) THEN true
+                   IF localObjectName?(oN) THEN ~(sign(oN) = unknownSig(st))
+                   FI
+            )(f)

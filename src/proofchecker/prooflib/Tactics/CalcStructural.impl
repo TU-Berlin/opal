@@ -1,0 +1,237 @@
+IMPLEMENTATION CalcStructural
+
+IMPORT ProofTactics COMPLETELY
+       SeqOfSeq ONLY combinations flat partition
+       Seq ONLY seq % ft rt exist? <> :: +% ++ #
+       Equiv ONLY equal:formula**formula->bool  equiv
+       Option ONLY avail nil option cont avail?
+       Nat ONLY nat 1 < min
+       OSubstitution ONLY subst:SORT | {}? <$ fmtSubst codom prettySubst
+       AbsySC ONLY = conj1 neg? forall? exist? cong? dfd
+       Pair COMPLETELY
+       Unify ONLY unify
+       RepoName ONLY localSignName:SORT
+       LSeqMap ONLY *
+       LSeq ONLY lseq <> ++ asLSeq <>? ft %
+       RepoAbsy COMPLETELY
+       LSeqOfLSeq ONLY flat
+       SeqMap ONLY *
+       UnitHandling ONLY true false
+       Denotation ONLY ++
+       Fmt ONLY fmt pretty string lit <> spc ;
+       DEBUG ONLY PRINT FIELD?
+       PrettyFormatting ONLY prettyExpr prettyFormula
+       FmtSeq ONLY fmtSeq
+       FmtPair ONLY fmtPair
+       ProofAn ONLY getShadow clearFormAn clearShadow getShadowF
+       Shadow ONLY checkF ensureShadow
+       SeqFilter ONLY |
+       Minitactic ONLY liftU liftUT
+       Triple ONLY triple &
+       RepoAn ONLY none
+       SubstitutionFun ONLY <$
+       Sequent ONLY hyps props sequent :=_hyps :=_props
+       PredefEntities ONLY true false
+       Compose ONLY o
+       SeqSupplements ONLY sd
+       SeqIndex ONLY !
+       ColourText ONLY hintText
+       BasicSupplements ONLY fmtBool
+
+FUN traceCA? : bool
+DEF traceCA? == false -- FIELD?[bool]("-ztraceCA")
+
+FUN traceU? : bool
+DEF traceU? == false
+
+-- %$Base rule$
+
+DEF eq_assume == by(lit("eq_assume"), eq_assume)
+
+FUN eq_assume: minitactic
+DEF eq_assume == 
+  abs(\\s : sequent.
+  LET pairs == combinations(%(hyps(s), props(s)))
+      ok? == \\ p. equal(ft(p), sd(p))
+  IN
+  IF exist?(ok?, pairs) THEN avail(<>) ELSE nil FI
+  )
+
+
+DEF assume == liftUT(lit("assume"), assume)
+
+/* %try to match every sequent in every possible way by unification.
+    return the resulting subgoals plus the substitutions on unknowns */
+
+FUN assume: repo ** localSignName ** localSignName ->
+             sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF assume(R, unknownSig, freeSig)(currSq) ==
+  LET procHyps == cont * avail? | getShadowF * forall? | hyps(currSq)
+      procProps == cont * avail? | getShadowF * exist? | props(currSq)
+  IN
+  unifyCombinations(R, unknownSig, freeSig)
+                   (procHyps ++ hyps(currSq), procProps ++ props(currSq))
+
+
+DEF cAssume == liftUT(lit("cAssume"), cAssume)
+
+FUN cAssume:repo ** localSignName ** localSignName  ->
+              sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF cAssume(R, unknownSig, freeSig)(currSq) ==
+  LET tCands == true(R) :: flat(xTrue(R) * hyps(currSq))
+      fCands == flat(xFalse(R) * hyps(currSq))
+  IN
+  unifyCombinations(R, unknownSig, freeSig)(tCands, fCands)
+
+DEF cAssumeR == liftUT(lit("cAssumeR"), cAssumeR)
+
+FUN cAssumeR:repo ** localSignName ** localSignName  ->
+              sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF cAssumeR(R, unknownSig, freeSig)(currSq) ==
+  LET tCands == flat(xTrue(R) * props(currSq))
+      fCands == flat(xFalse(R) * props(currSq))
+  IN
+  unifyCombinations(R, unknownSig, freeSig)(tCands, fCands)
+
+DEF nAssume == liftUT(lit("nAssume"), nAssume)
+
+FUN nAssume: repo ** localSignName ** localSignName ->
+           sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF nAssume(R, unknownSig, freeSig)(sq) ==
+  LET nots == ft * formulas * checkF(forall?)(neg?)(hyps(sq))
+      inners == checkF(forall?)(\\ _ . true)(hyps(sq))
+  IN
+  unifyCombinations(R, unknownSig, freeSig)(nots, inners)
+
+/* %Input consists of two sets of formulae. Return a sequence of
+    substitutions which make some pair of the cross product identical.
+    First member of the triple is always @code{<>}, because these
+    tactics make sequents vanish. */
+
+FUN unifyCombinations: repo ** localSignName ** localSignName ->
+                        seq[formula] ** seq[formula] ->
+                        lseq[triple[seq[sequent], subst, fmt]]
+DEF unifyCombinations(R, unknownSig, freeSig)(fs1, fs2) ==
+  LET pairs == combinations(%(fs1, fs2))
+      mk == \\ p. (\\sb. &(<>, unknownSig | sb, info(ft(p), sd(p), sb))) *
+                         unify(R)(freeSig, unknownSig)(ft(p), sd(p))
+      info == \\f1, f2, S. IF longInfo?(R) THEN
+                          lit("#1 "); prettyFormula(R)(f1); spc(1);
+                          lit("#2 "); prettyFormula(R)(f2); spc(1);
+                          prettySubst(R)(S)
+                        ELSE <> FI
+  IN
+  flat(mk * asLSeq(pairs))
+
+-- %The same with expressions to be unified
+FUN unifyCombinations: repo ** localSignName ** localSignName ->
+                        seq[expr] ** seq[expr] ->
+                        lseq[triple[seq[sequent], subst, fmt]]
+DEF unifyCombinations(R, unknownSig, freeSig)(es1, es2) ==
+  LET pairs == combinations(%(es1, es2))
+      mk == \\ p. (\\sb. &(<>, unknownSig | sb, info(ft(p), sd(p), sb))) *
+                         unify(R)(freeSig, unknownSig)(ft(p), sd(p))
+      info == \\e1, e2, S. IF longInfo?(R) THEN
+                          lit("#1 "); prettyExpr(R)(e1); spc(1);
+                          lit("#2 "); prettyExpr(R)(e2); spc(1);
+                          prettySubst(R)(S)
+                        ELSE <> FI
+  IN
+  flat(mk * asLSeq(pairs))
+
+
+FUN xTrue: repo -> formula -> seq[expr]
+DEF xTrue(R) == xCmp(true(R))
+
+FUN xFalse: repo -> formula -> seq[expr]
+DEF xFalse(R) == xCmp(false(R))
+
+FUN xCmp: expr -> formula -> seq[expr]
+DEF xCmp(cmpExp)(f) ==
+  LET f2? == checkF(forall?)(cong?)(f)
+  IN
+  IF avail?(f2?) THEN
+    LET e1 == ft(exprs(cont(f2?)))
+        e2 == sd(exprs(cont(f2?)))
+    IN
+    IF e1 = cmpExp THEN %(e2)
+    IF e2 = cmpExp THEN %(e1)
+    ELSE <>
+    FI
+  ELSE
+    <>
+  FI
+
+
+-- %$Substitution on sequents$
+FUN clearXtras: formula -> formula
+DEF clearXtras == clearFormAn
+
+
+/* %Get the substitution (restricted to the unknwonSig) and the
+    hypotheses from a
+    sequent. If any unknowns are in the domain of the substitution, 
+    returns a (one!) sequence with the hypotheses and definedness
+    conditions of the corresponding codomain expressions. Otherwise,
+    the empty sequence is returned. (seq fits better than option
+                                     in the callers context).
+    */
+FUN dfdSeq: subst ** seq[formula] -> seq[sequent] 
+DEF dfdSeq(f, hyps) ==
+  IF f {}? THEN <>
+  ELSE
+    %(sequent(none, hyps, %(conj1(dfd(_) * codom(f)))))
+  FI
+
+-- %$Thinning$
+DEF contract == by(lit("contract"), contract)
+
+FUN contract: minitactic
+DEF contract == abs(\\sq.
+  avail(%(sq :=_hyps flat(contract * partition(~)(hyps(sq)))
+             :=_props flat(contract * partition(~)(props(sq)))))
+  )
+
+FUN contract: seq[formula] -> seq[formula]
+DEF contract(<>) == <>
+DEF contract(f :: fs) ==
+  IF exist?(\\f1. f1 equal f, fs) THEN contract(fs) ELSE f :: contract(fs) FI
+  
+  
+/* equivalence of formulae - just compares the outermost constructor */
+FUN ~ : formula ** formula -> bool
+DEF atomic(_, k1, _) ~ atomic(_, k2, _) == k1 = k2
+DEF connect(_, k1, _) ~ connect(_, k2, _) == k1 = k2
+DEF quant(_, k1, _, _, _) ~ quant(_, k2, _, _, _) == k1 = k2
+DEF _else1 ~ _else2 == false
+
+
+-- %$Debugging$
+DEF contractH(no, f1 & f2) ==
+  abs(\\ st.
+  IF #(subgoals(st)) < no THEN fail(st)
+  ELSE
+    LET sq == subgoals(st)!no
+    IN
+    IF #(hyps(sq)) < min(f1, f2) THEN fail(st)
+    ELSE
+      IF equivC(repo(st), unknownSig(st), freeVarSig(st))
+               (hyps(sq)!f1, hyps(sq)!f2) THEN
+        fail(st)
+      ELSE
+        okay(%(st))
+      FI
+    FI
+  FI
+  )
+
+-- %check closed formulas for equivalence
+FUN equivC: repo ** localSignName ** localSignName ->
+             formula ** formula -> bool
+DEF equivC(R, unknownSig, freeSig)(f1, f2) == 
+  LET res == equiv(freeSig)(f1, f2)
+  IN
+  PRINT(false, \\ . "equivC: " ++ pretty(prettyFormula(R)(f1)) ++ 
+                    hintText(" <$> ") ++ pretty(prettyFormula(R)(f2)) ++
+                    hintText(pretty(fmtBool(res))),
+        res)

@@ -1,0 +1,715 @@
+IMPLEMENTATION CalcLogical
+
+IMPORT ProofTactics COMPLETELY
+       RepoAbsy COMPLETELY
+       Option ONLY avail nil option nil? avail? cont
+       Seq ONLY % <> ft rt seq # :: ++ +% <>?
+       LSeq ONLY % <> ft rt lseq <>? ++ :: asLSeq
+       Pair ONLY & pair 1st 2nd unpair
+       Triple ONLY triple & 1st 2nd 3rd
+       Nat ONLY nat 1 =
+       SeqMap ONLY *
+       LSeqMap ONLY *
+       RepoObjectAccess ONLY fct object newLocalObjects
+       OSubstitution ONLY subst  def {} <$  prettySubst
+       AbsySC COMPLETELY
+       RepoAn ONLY none
+       Fmt ONLY fmt lit pretty <> ; none spc
+       String ONLY string
+       Minitactic ONLY liftU liftUF liftUT liftUFT 
+       Shadow ONLY checkF ensureShadow shadows
+       Unify ONLY unify
+       DEBUG ONLY PRINT
+       PrettyFormatting ONLY prettyFormula fmtObjectNameLong
+       Denotation ONLY ++
+       Predicate ONLY or
+       SeqMapEnv ONLY *
+       ProofAn ONLY getShadow clearFormAn clearShadow new? setFVct getShadowF
+       Sequent ONLY hyps sequent an props :=_props :=_hyps
+       PairMapPlus ONLY map2 map1
+       SeqSupplements ONLY sd
+       TripleMapPlus ONLY map1
+       SeqReduce ONLY /
+       FmtSeq ONLY fmtSeq
+       BasicSupplements ONLY asDeno
+       SeqFilter ONLY |
+       Subform ONLY env subformula findSubform
+       LSeqOfLSeq ONLY flat
+
+-- %$Tactics$
+DEF logic == by(lit("logic"), lift(standardL) | lift(standardR))
+DEF logic_r == by(lit("logic_r"), lift(standardR))
+DEF logicAlt == by(lit("logicAlt"), lift(standardLalt) | lift(standardRalt))
+
+DEF logicL == by(lit("logicL"), lift(notL | andL | implNotNotL) | 
+                                lift(notR | orR | implR))
+
+DEF all_r == quantX(lit("all_r"), allR)
+DEF all_l == allLi(\\ _ . true, true, lit("all_l"))
+DEF all_lA == allLi(\\ _ . true, false, lit("all_lA"))
+DEF all_lN == allLi(new?, true, lit("all_lN"))
+DEF all_lNA == allLi(new?, false, lit("all_lNA"))
+FUN allLi: (formula -> bool) ** bool ** fmt -> proofscript
+DEF allLi(f, std?, t) == 
+  pscript(\\ st0.
+  LET st == ensureShadow(st0)
+      res == liftByL(allL(f, std?, repo(st)))(<>, subgoals(st))
+      mk == \\sg. addTrace(t)(addUN(st, 2nd(sg)) :=_subgoals(1st(sg)))
+  IN
+  mk * res
+  )
+
+FUN liftByL: (formula -> newSQ) ->
+              seq[sequent] ** seq[sequent] ->
+              lseq[pair[seq[sequent], seq[objectName]]]
+DEF liftByL(_)(_, <>) == <>[pair[seq[sequent], seq[objectName]]]
+DEF liftByL(mu)(preSq, currSq :: postSq) ==
+  LET res == liftByL(mu)(currSq)
+  IN
+  map1(\\ sq. preSq ++ sq ++ postSq) * res
+
+FUN liftByL : (formula -> newSQ) ->
+               sequent -> lseq[pair[seq[sequent], seq[objectName]] ]
+DEF liftByL(mu)(sq) ==
+  LET res == liftByL(mu)(<>, hyps(sq))
+      mk == \\ ns. 
+             (\\p. sequent(an(sq), 1st(p),
+                           props(sq) ++ 2nd(p))) * preSq(ns) & sV(ns)
+  IN
+  mk * res
+
+FUN liftByL: (formula -> newSQ) ->
+              seq[formula] ** seq[formula] -> lseq[newSQ]
+DEF liftByL(_)(_, <>) == <>[newSQ]
+DEF liftByL(mu)(preHyp, currHyp :: (postHyp:seq[formula])) ==
+  LET res == mu(currHyp)
+  IN
+  IF avail?(res) THEN
+    ((map1(\\p. preHyp ++ p ++ postHyp)) *'CalcLogical res) ::
+    liftByL(mu)(preHyp +% currHyp, postHyp)
+  ELSE
+    liftByL(mu)(preHyp +% currHyp, postHyp)
+  FI
+          
+DEF ex_l == quantX(lit("ex_l"), exL)
+DEF ex_r == exRi(\\ _ . true, lit("ex_r"))
+DEF ex_rN == exRi(new?, lit("ex_rN"))
+FUN exRi: (formula -> bool) ** fmt -> proofscript
+DEF exRi(f, t) == 
+  pscript(\\ st0.
+  LET st == ensureShadow(st0)
+      res == liftByR(exR(f, repo(st)))(<>, subgoals(st))
+      mk == \\sg. addTrace(t)(addUN(st, 2nd(sg)) :=_subgoals(1st(sg)))
+  IN
+  mk * res
+  )
+FUN liftByR: (formula -> newSQ) -> seq[sequent] ** seq[sequent] ->
+              lseq[pair[seq[sequent], seq[objectName]]]
+DEF liftByR(_)(_, <>) == <>[pair[seq[sequent], seq[objectName]]]
+DEF liftByR(mu)(preSq, currSq :: postSq) ==
+  LET res == liftByR(mu)(currSq)
+  IN
+  map1(\\ sq. preSq ++ sq ++ postSq) * res
+
+FUN liftByR : (formula -> newSQ) -> 
+                sequent -> lseq[pair[seq[sequent], seq[objectName]]]
+DEF liftByR(mu)(sq) ==
+  LET res == liftByR(mu)(<>, props(sq))
+      mk == \\ ns. 
+             (\\p. sequent(an(sq),
+                           hyps(sq) ++ 1st(p), 2nd(p))) * preSq(ns) & sV(ns)
+  IN
+  mk * res
+
+FUN liftByR: (formula -> newSQ) -> 
+              seq[formula] ** seq[formula] -> lseq[newSQ]
+DEF liftByR(_)(_, <>) == <>[newSQ]
+DEF liftByR(mu)(preProp, currProp :: (postProp:seq[formula])) ==
+  LET r == mu(currProp)
+  IN
+  IF avail?(r) THEN
+    map2(\\f. preProp ++ f ++ postProp) * r :: 
+    liftByR(mu)(preProp +% currProp, postProp)
+  ELSE
+    liftByR(mu)(preProp +% currProp, postProp)
+  FI
+
+-- %match
+DEF match_deep == liftUT(lit("match_deep"), match_deep)
+
+FUN match_deep: repo ** localSignName ** localSignName -> 
+                 sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF match_deep(R, unknownSig, freeSig)(sq) ==
+  LET testHs == (cont * avail? | getShadowF * hyps(sq)) ++ hyps(sq)
+  IN
+  flat((match_deep(R, unknownSig, freeSig)(sq, testHs)) * asLSeq(props(sq)))
+
+FUN match_deep: repo ** localSignName ** localSignName -> 
+                 sequent ** seq[formula] ->
+                 formula -> lseq[triple[seq[sequent], subst, fmt]]
+DEF match_deep(R, unknownSig, freeSig)(sq, testHs)(prop) ==
+  LET check == \\ f. LET res == unifyX(R)(freeSig, unknownSig)(f, prop)
+                     IN IF res <>? THEN nil ELSE avail(res) FI
+      mk == \\ p. LET (f, subfs) == unpair(p) IN (\\ s. f & s) * subfs
+      mk2 == \\ p. LET (orig, subf) == unpair(p)
+                       newSq == sq :=_hyps orig :: hyps(sq)
+                       infoFmt == \\ s. 
+                                  IF longInfo?(R) THEN
+                                     lit("prop: "); prettyFormula(R)(prop);
+                                     spc(1); lit("orig: ");
+                                     prettyFormula(R)(orig); spc(1);
+                                     lit("sub: "); 
+                                     prettyFormula(R)(subformula(subf));
+                                     spc(1); lit("subst: ");
+                                     prettySubst(R)(s)
+                                  ELSE none
+                                  FI
+                   IN
+                   (\\ s. &(%(newSq), s, infoFmt(s))) * env(subf)
+  IN
+  flat(mk2 * flat(mk * (\\ f. f & findSubform(check, f)) * asLSeq(testHs)))
+
+
+-- %Call function for all sequents
+FUN quantX: fmt ** (objectName ** repo ->
+                    sequent -> lseq[pair[sequent, objectName]]) -> proofscript
+DEF quantX(name, f) ==
+  abs(\\st.
+  LET (st1, lV) == newFV(st)
+      iRes == by(<>, subgoals(st1), f(lV, repo(st1)))
+      mk == \\p. addTrace(name)(setKind(st1 :=_subgoals 1st(p), lV, 2nd(p)))
+  IN
+  IF iRes <>? THEN fail(st1)
+  ELSE okay(mk * iRes)
+  FI)
+
+/* %Handle single sequent. Arguments are new global variable, repository
+    and the sequent. Returns a lazy sequence of new sequents and the 
+    sort required for the global variable. */
+FUN allR: objectName ** repo -> sequent -> lseq[pair[sequent, objectName]]
+DEF allR(lV, R)(sq) ==
+  LET iRes == lift(<>, props(sq), quantX(forall?)(lV, R))
+      newHyps == dfd(lV) :: hyps(sq)
+      mk == map1(\\ fs. sq :=_props fs :=_hyps newHyps)
+  IN
+  mk * iRes
+
+FUN exL: objectName ** repo -> sequent -> lseq[pair[sequent, objectName]]
+DEF exL(lV, R)(sq) ==
+  LET iRes == lift(<>, hyps(sq), quantX(exist?)(lV, R))
+      mk == map1(\\ fs. sq :=_hyps dfd(lV) :: fs)
+  IN
+  mk * iRes
+
+/* %If formula is quantified as desired, replace one of the variables 
+    by the global variable. Return lazy sequence of all possibilities. */
+FUN quantX: (quantKind -> bool) ->
+             objectName ** repo -> formula -> lseq[pair[formula, objectName]]
+DEF quantX(k?)(lV, R)(F) ==
+  IF F quant? ANDIF k?(kind(F)) THEN
+    IF #(vars(F)) = 1 THEN
+      LET v == ft(vars(F))
+          srt == sort(fct(v)(R))
+      IN
+      %(subst(v, name(none, lV))(range(F)) & srt)
+    ELSE
+      every(lV, R)(an(F), kind(F), sign(F), range(F))(<>, vars(F))
+    FI
+  ELSE <>
+  FI
+
+/* %Input: Pre- and postsubgoals, function to apply. Returns a lazy
+    sequence of pairs of resulting subgoals and corresponding sort */
+FUN by: seq[sequent] ** seq[sequent] **
+         (sequent -> lseq[pair[sequent, objectName]]) ->
+         lseq[pair[seq[sequent], objectName]]
+DEF by(_, <>, _) == <>
+DEF by(preSq, currSq :: postSq, mu) ==
+  LET mk == \\p. preSq ++ 1st(p) :: postSq & 2nd(p)
+  IN
+  mk * mu(currSq) ++ by(preSq +% currSq, postSq, mu)
+
+-- %The same on formula level
+FUN lift: seq[formula] ** seq[formula] **
+           (formula -> lseq[pair[formula, objectName]]) ->
+           lseq[pair[seq[formula], objectName]]
+DEF lift(_, <>, _) == <>
+DEF lift(preF, currF :: postF, f) ==
+  LET mk == map1(\\ f1. preF ++ f1 :: postF)
+  IN
+  mk * f(currF) ++ lift(preF +% currF, postF, f)
+
+FUN every: objectName ** repo -> an ** quantKind ** localSignName ** formula ->
+            seq[objectName] ** seq[objectName] ->
+            lseq[pair[formula, objectName]]
+DEF every(_, _)(_, _, _, _)(_, <>) == <>
+DEF every(lV, R)(a, q, lS, F)(preVars, currVar :: postVars) ==
+  LET srt == sort(fct(currVar)(R))
+  IN
+  clearFormAn(quant(a, q, lS, preVars ++ postVars,
+                    subst(currVar, name(none, lV))(F))) & srt :: 
+  every(lV, R)(a, q, lS, F)(preVars +% currVar, postVars)
+
+-- %Merge Quantifiers
+DEF mergeQ == 
+  pscript(\\st. 
+  LET (I, newSubgoals) == (mergeQ, false & repo(st)) * subgoals(st)
+      (new?, newR) == unpair(I)
+  IN
+  IF new? THEN %(addTrace(lit("mergeQ"))
+                  (st :=_subgoals newSubgoals :=_repo newR)) ELSE <> FI
+  )
+
+FUN mergeQ: pair[bool, repo] ** sequent -> pair[bool, repo] ** sequent
+DEF mergeQ(I, sq) ==
+  LET (I1, newHyps) == (mergeQ, I) * hyps(sq)
+      (I2, newProps) == (mergeQ, I1) * props(sq)
+  IN
+  (I2, sq :=_hyps newHyps :=_props newProps)
+
+FUN mergeQ: pair[bool, repo] ** formula -> pair[bool, repo] ** formula
+DEF mergeQ(new? & R, F) ==
+  IF (atomic? or connect?)(F) THEN (new? & R, F)
+  IF F quant? THEN
+    IF range(F) quant? ANDIF kind(F) = (kind(range(F))):quantKind THEN
+      LET vs1 == (\\ x. object(x)(R)) * vars(F)
+          (nVs, R1) == newLocalObjects(sign(range(F)), vs1)(R)
+          sb == def(vars(F), name(none, _) * nVs, {})
+          nRange == sb <$ range(range(F))
+      IN
+      mergeQ(true & R1, clearFormAn(quant(an(range(F)), kind(range(F)),
+                                          sign(range(F)),
+                                          vars(range(F)) ++ nVs, nRange)))
+    ELSE
+      (new? & R, F)
+    FI
+  FI      
+
+-- %$Micro-Tactics$
+DEF notL ==
+  left(\\f. IF f neg? THEN avail(%(<> & formulas(f))) ELSE nil FI)
+
+DEF notR ==
+  right(\\f. IF f neg? THEN avail(%(formulas(f) & <>)) ELSE nil FI)
+
+DEF implR ==
+  right(\\f. IF f impl? THEN
+               avail(%(%(ft(formulas(f))) & rt(formulas(f))))
+             ELSE nil FI)
+
+-- %left side to left side
+FUN andL implNotNotL: microtactic
+DEF andL == 
+  left(\\f. IF f conj? THEN avail(%(formulas(f) & <>)) ELSE nil FI)
+
+DEF implNotNotL ==
+  left(\\f. IF impl?(f) THEN
+              IF neg?(ft(formulas(f))) and neg?(sd(formulas(f))) THEN
+                avail(%(%(connect(none, impl, 
+                                  %(ft(formulas(sd(formulas(f)))),
+                                    ft(formulas(ft(formulas(f))))))) & <>)
+                     )
+              ELSE
+                nil
+              FI
+            ELSE
+              nil
+            FI)
+
+FUN allL : (formula -> bool) ** bool ** repo -> formula -> newSQ
+DEF allL(check, std?, R) ==
+  \\f. IF f forall? ANDIF check(f) THEN
+         IF std? THEN
+           IF range(f) cong? THEN nil
+           IF range(f) dfd? THEN nil
+           IF range(f) impl? THEN
+             LET f1 == ft(formulas(range(f)))
+             IN
+             IF f1 cong? THEN nil
+             ELSE allL(f) FI
+           ELSE allL(f) FI
+         ELSE allL(f) FI
+       ELSE nil FI
+
+FUN allL: formula -> newSQ
+DEF allL(f) ==
+  IF avail?(getShadow(f)) THEN
+    LET (sF, sV) == unpair(cont(getShadow(f)))
+    IN
+    (%(clearFormAn(sF), clearShadow(f)), <>) addSq
+    (%(clearShadow(f)), %(conj1(dfd * sV))) addSq
+    new(sV)
+  ELSE nil 
+  FI
+  
+
+FUN exR : (formula -> bool) ** repo -> formula -> newSQ
+DEF exR(check, R)(f) ==
+  IF f exist? ANDIF check(f) THEN
+    -- IF atomic?(range(f)) ANDIF kind(range(f)) cong? THEN nil
+    -- IF atomic?(range(f)) ANDIF kind(range(f)) dfd? THEN nil
+    -- ELSE 
+    IF avail?(getShadow(f)) THEN
+      LET (sF, sV) == unpair(cont(getShadow(f)))
+      IN
+      (<>, %(clearFormAn(sF), clearShadow(f))) addSq
+      (<>, %(clearShadow(f), conj1(dfd * sV))) addSq
+      new(sV)
+    ELSE nil 
+    FI
+  ELSE
+    nil
+  FI
+
+-- %right side to right side
+FUN orR: microtactic
+DEF orR ==
+  right(\\f. IF f disj? THEN avail(%(<> & formulas(f))) ELSE nil FI)
+
+DEF implRalt ==
+  right(\\f. IF f impl? THEN
+               avail(%(<> & %(neg(ft(formulas(f))), sd(formulas(f)))))
+             ELSE nil FI)
+
+DEF implNotR ==
+  right(\\f. IF f neg? THEN
+               LET if == ft(formulas(f))
+               IN
+               IF if impl? THEN
+                 avail(%(<> & %(ft(formulas(if))),
+                         <> & %(neg(sd(formulas(if))))))
+               ELSE nil FI
+             ELSE nil FI)
+
+DEF andNotR ==
+  right(\\f. IF f neg? THEN
+               LET if == ft(formulas(f))
+               IN
+               IF if conj? THEN
+                 avail(%(<> & %(disj1((\\ f1. neg(f1)) * formulas(if)))))
+               ELSE nil FI
+             ELSE nil FI)
+ 
+DEF orNotR ==
+  right(\\f. IF f neg? THEN
+               LET if == ft(formulas(f))
+               IN
+               IF if disj? THEN
+                 avail(%(<> & %(conj1((\\ f1. neg(f1)) * formulas(if)))))
+               ELSE nil FI
+             ELSE nil FI)
+
+DEF notNotR ==
+  right(\\f. IF f neg? THEN
+               LET if == ft(formulas(f))
+               IN
+               IF if neg? THEN
+                 avail(%(<> & formulas(if)))
+               ELSE nil FI
+             ELSE nil FI)
+
+DEF biimplNotR ==
+  right(\\f. IF f neg? THEN
+               LET if == ft(formulas(f))
+               IN
+               IF if equiv? THEN
+                 LET A == ft(formulas(if))
+                     B == sd(formulas(if))
+                 IN
+                 avail(%(<> & %(disj1(%(conj1(%(A, neg(B))),
+                                        conj1(%(B, neg(A))))))))
+               ELSE nil FI
+             ELSE nil FI)
+
+-- %split sequent
+FUN andR orL implL biimplL biimplR: microtactic
+DEF andR ==
+  right(\\f. IF f conj? THEN
+             avail((\\f1. <> & %(f1)) * formulas(f))
+             ELSE nil FI)
+
+DEF orL ==
+  left(\\f. IF f disj? THEN
+             avail((\\f1. %(f1) & <>) * formulas(f))
+             ELSE nil FI)
+
+DEF implL ==
+  left(\\f. IF f impl? THEN
+              avail(%(<> & %(ft(formulas(f))),
+                      rt(formulas(f)) & <>))
+            ELSE nil FI)
+
+DEF biimplL ==
+  left(\\f. IF f equiv? THEN
+              avail(%(formulas(f) & <>, <> & formulas(f)))
+            ELSE nil FI)
+
+DEF biimplR ==
+  right(\\f. IF f equiv? THEN
+               avail(%(%(ft(formulas(f))) & rt(formulas(f)),
+                       rt(formulas(f)) & %(ft(formulas(f)))))
+             ELSE nil FI)
+
+-- %standard
+FUN standardL standardR standardLalt standardRalt: microtactic
+DEF standardL == andL | orL | notL | implL | biimplL
+/* %- slower ?!
+DEF standardL ==
+  left(\\ f. IF f connect? THEN
+               LET k == kind(f)
+               IN
+               IF k conj? THEN avail(%(formulas(f) & <>)) 
+               IF k disj? THEN avail((\\f1. %(f1) & <>) * formulas(f))
+               IF k neg? THEN avail(%(<> & formulas(f))) 
+               IF k impl? THEN avail(%(<> & %(ft(formulas(f))),
+                                       rt(formulas(f)) & <>))
+               IF k equiv? THEN avail(%(formulas(f) & <>, <> & formulas(f)))
+               ELSE
+                 nil
+               FI
+             ELSE
+               nil
+             FI)
+*/
+
+DEF standardR == andR | orR | notR | implR | biimplR
+/* %- slower ?!
+DEF standardR ==
+  right(\\ f. IF f connect? THEN
+                LET k == kind(f)
+                IN
+                IF k conj? THEN avail((\\f1. <> & %(f1)) * formulas(f))
+                IF k disj? THEN avail(%(<> & formulas(f)))
+                IF k neg? THEN avail(%(formulas(f) & <>))
+                IF k impl? THEN avail(%(%(ft(formulas(f))) & rt(formulas(f)))) 
+                IF k equiv? THEN avail(%(%(ft(formulas(f))) & rt(formulas(f)),
+                                         rt(formulas(f)) & %(ft(formulas(f)))))
+                ELSE
+                  nil
+                FI
+              ELSE
+                nil
+              FI)
+*/
+                
+DEF standardLalt == andL | orL | implL | biimplL
+
+DEF standardRalt == andR | orR | implRalt | implNotR | andNotR | 
+                      orNotR | notNotR | biimplNotR | biimplR
+
+
+-- %$Modus ponens right rule$
+DEF mp_r == liftUT(lit("mp_r"), mp_r(\\x.x, false))
+DEF mp_r2 == liftUT(lit("mp_r2"), mp_r(simplifyImpl, false))
+-- DEF mp_r3 == liftUT(lit("mp_r3"), mp_r(simplifyImpl, true))
+
+FUN mp_r: (formula -> formula) ** bool ->
+           repo ** localSignName ** localSignName ->
+                sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF mp_r(P, deep?)(R, unknownSig, freeSig)(sq) ==
+  LET impls == checkF(forall?)(impl? ' AbsySC)(hyps(sq))
+      res == mp_r(deep?)(R, unknownSig, freeSig)(P * impls)(<>, props(sq))
+      mk == map1(\\fs. %(sq :=_props fs))
+  IN
+  mk * res
+
+FUN mp_r: bool -> repo ** localSignName ** localSignName ->
+              seq[formula] -> seq[formula] ** seq[formula] ->
+              lseq[triple[seq[formula], subst, fmt]]
+DEF mp_r(_)(_, _, _)(_)(_, <>) == <>
+DEF mp_r(deep?)
+        (R, unknownSig, freeSig)(impls)(preProp, currProp :: postProp) ==
+  (LET f == checkF(exist?)(\\ _ . true)(currProp)
+   IN
+   IF f nil? THEN <>
+   IF f avail? THEN
+     LET res == mp_r(deep?)(R, unknownSig, freeSig)(impls)(f cont)
+         mk == map1(\\f1. preProp ++ f1 :: postProp)
+     IN
+     mk * res
+   FI)
+  ++ mp_r(deep?)(R, unknownSig, freeSig)(impls)(preProp  +% currProp, postProp)
+
+FUN mp_r: bool -> repo ** localSignName ** localSignName ->
+           seq[formula] -> formula -> lseq[triple[formula, subst, fmt]]
+DEF mp_r(deep?)(R, unknownSig, freeSig)(impls)(f) ==
+  flat((\\ i. (\\sb. ft(formulas(i)) & (sb, info(R, i, sb))) *
+              unify(R)(freeSig, unknownSig)(sd(formulas(i)), f)) *
+       asLSeq(impls)) ++
+  (IF deep? THEN
+   flat((\\ i. mp_r(R, unknownSig, freeSig)(i)(f)) * asLSeq(impls))
+   ELSE <> FI)
+
+FUN mp_r: repo ** localSignName ** localSignName ->
+           formula -> formula -> lseq[triple[formula, subst, fmt]]
+DEF mp_r(R, unknownSig, freeSig)(i)(f) ==
+  IF conj?(sd(formulas(i))) THEN
+    LET conjs == formulas(flatConj(sd(formulas(i))))
+    IN
+    flat((\\ i1. (\\sb. ft(formulas(i)) & (sb, info(R, i, sb))) *
+                 unify(R)(freeSig, unknownSig)(i1, f)) *
+         asLSeq(conjs))
+  ELSE
+    <>
+  FI
+
+
+FUN info: repo ** formula ** subst-> fmt
+DEF info(R, f, sb) ==
+  IF longInfo?(R) THEN prettyFormula(R)(f); spc(1); prettySubst(R)(sb)
+  ELSE <> FI
+
+
+DEF mp_r3 == liftUT(lit("mp_r3"), mp_r3)
+
+FUN mp_r3: repo ** localSignName ** localSignName ->
+                sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF mp_r3(R, unknownSig, freeSig)(sq) ==
+  mp_r3(R, unknownSig, freeSig)(an(sq), props(sq))(<>, hyps(sq)) 
+
+FUN mp_r3: repo ** localSignName ** localSignName -> an ** seq[formula] ->
+            seq[formula] ** seq[formula] ->
+            lseq[triple[seq[sequent], subst, fmt]]
+DEF mp_r3(_, _, _)(_, _)(_, <>) == <>
+DEF mp_r3(R, unknownSig, freeSig)(a, props)(preHyps, currHyp :: postHyps) ==
+  LET f == checkF(forall?)(impl?)(currHyp)
+  IN
+  IF f nil? THEN
+    mp_r3(R, unknownSig, freeSig)(a, props)(preHyps +% currHyp, postHyps)
+  ELSE
+    LET res == mp_r3(R, unknownSig, freeSig)(simplifyImpl(cont(f)))(<>, props)
+        mk == map1(\\ps. %(sequent(a, preHyps ++ 
+                                   clearShadow(currHyp) :: postHyps, ps)))
+    IN
+    (mk * res) ++ (\\ . 
+    mp_r3(R, unknownSig, freeSig)(a, props)(preHyps +% currHyp, postHyps)
+    )
+  FI
+
+FUN mp_r3: repo ** localSignName ** localSignName ->
+            formula -> seq[formula] ** seq[formula] ->
+            lseq[triple[seq[formula], subst, fmt]]
+DEF mp_r3(_, _, _)(_)(_, <>) == <>
+DEF mp_r3(R, unknownSig, freeSig)(hyp)(preProps, currProp :: postProps) ==
+  LET res1 == unify(R)(freeSig, unknownSig)(sd(formulas(hyp)), currProp)
+      mk1 == (\\ sb. &(preProps ++ ft(formulas(hyp)) :: postProps,
+                       sb, info(R, hyp, sb))) 
+  IN
+  (mk1 * res1) ++ (\\ . 
+  IF conj?(sd(formulas(hyp))) THEN
+    LET conjs == formulas(flatConj(sd(formulas(hyp))))
+    IN
+    flat((\\ i1. (\\sb. &(preProps ++ ft(formulas(hyp)) :: postProps, 
+                          sb, info(R, hyp, sb))) *
+                 unify(R)(freeSig, unknownSig)(i1, currProp)) *
+         asLSeq(conjs))
+  ELSE
+    <> 
+  FI
+  )
+
+-- %$Biimplication right rule$
+DEF biimpl_r == liftU(lit("biimpl_r"), biimpl_r)
+
+FUN biimpl_r: repo ** localSignName ** localSignName ->
+                sequent -> lseq[pair[seq[sequent], subst]]
+DEF biimpl_r(R, unknownSig, freeSig)(sq) ==
+  LET biimpls == checkF(forall?)(equiv?)(hyps(sq))
+      res == biimpl_r(R, unknownSig, freeSig)(biimpls)(<>, props(sq))
+      mk == map1(\\fs. %(sq :=_props fs))
+  IN
+  mk * res
+
+FUN biimpl_r: repo ** localSignName ** localSignName ->
+              seq[formula] -> seq[formula] ** seq[formula] ->
+              lseq[pair[seq[formula], subst]]
+DEF biimpl_r(_, _, _)(_)(_, <>) == <>
+DEF biimpl_r(R, unknownSig, freeSig)(biimpls)
+            (preProp, currProp :: postProp) ==
+  LET f == IF currProp exist? ANDIF avail?(getShadowF(currProp)) THEN 
+             cont(getShadowF(currProp))
+           ELSE
+             currProp
+           FI
+      res == biimpl_r(R, unknownSig, freeSig)(biimpls)(f)
+      mk == map1(\\f1. preProp ++ f1 :: postProp)
+  IN
+  mk * res ++ (\\ . 
+  biimpl_r(R, unknownSig, freeSig)(biimpls)(preProp  +% currProp, postProp)
+  )
+
+FUN biimpl_r: repo ** localSignName ** localSignName ->
+           seq[formula] -> formula -> lseq[pair[formula, subst]]
+DEF biimpl_r(R, unknownSig, freeSig)(biimpls)(f) ==
+  flat((\\ i. (\\sb. ft(formulas(i)) & sb) *
+              unify(R)(freeSig, unknownSig)(sd(formulas(i)), f)) *
+       asLSeq(biimpls))
+  ++
+  (\\ . flat((\\ i. (\\sb. sd(formulas(i)) & sb) *
+                    unify(R)(freeSig, unknownSig)(ft(formulas(i)), f)) *
+             asLSeq(biimpls))
+  )
+
+-- %new type for easier writing
+DATA newSQ == nil
+              avail(preSq: seq[pair[seq[formula], seq[formula]]],
+                    sV: seq[objectName])
+
+FUN new: newSQ
+DEF new == avail(<>, <>)
+
+FUN new: seq[objectName] -> newSQ
+DEF new(sV) == avail(<>, sV)
+
+FUN addSq: seq[formula] ** seq[formula] ** newSQ -> newSQ
+DEF addSq(preHyps, preProps, avail(psqs, sv)) ==
+          avail(preHyps & preProps :: psqs, sv)
+
+FUN * : (pair[seq[formula], seq[formula]] ->
+         pair[seq[formula], seq[formula]]) ** newSQ -> newSQ
+DEF _ * nil == nil
+DEF f * avail(psqs, sv) == avail(f * psqs, sv)
+
+-- %add fvct to given objectnames
+FUN addUN: state ** seq[objectName] -> state
+DEF addUN(st, sv) ==
+  LET R == (setFVct(fCt(st)), repo(st)) / sv
+      i == IF longInfo?(R) THEN
+             lit("hint: "); fmtSeq(fmtObjectNameLong(R))(sv);
+             lit(" may not be replaced by free variables ");
+             lit(asDeno(fCt(st))); lit("¡ and later")
+           ELSE none
+           FI
+  IN
+  addTrace(i)(st :=_repo R °=_subst subst(sv, sv))
+             
+-- %aux
+FUN unifyX: repo -> localSignName ** localSignName ->
+             formula ** formula -> lseq[subst]
+DEF unifyX(R)(l1,l2)(f1, f2) ==
+  PRINT(false, \\ . "(bi)impl_l / match_deep: trying `" ++ pretty(prettyFormula(R)(f1)) ++ "' and `" ++ pretty(prettyFormula(R)(f2)) ++ "'" ++ (IF res <>? THEN " -> failed" ELSE " -> ok" FI), res)
+  WHERE res == unify(R)(l1, l2)(f1, f2)
+
+FUN simplifyImpl: formula -> formula
+DEF simplifyImpl(f) ==
+  IF impl?(f) THEN
+    IF impl?(sd(formulas(f))) THEN
+      LET f2 == simplifyImpl(sd(formulas(f)))
+          f21 == ft(formulas(f2))
+          f22 == sd(formulas(f2))
+      IN
+      IF f21 conj? THEN
+        connect(none, impl,
+                connect(none, conj, ft(formulas(f)) :: formulas(f21)) ::
+                f22 :: <>)
+      ELSE
+        connect(none, impl,
+                connect(none, conj, ft(formulas(f)) :: f21 :: <>) ::
+                f22 :: <>)
+      FI
+    ELSE
+      f
+    FI
+  ELSE
+    f
+  FI

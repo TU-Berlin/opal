@@ -1,0 +1,541 @@
+IMPLEMENTATION CalcComputational
+
+IMPORT ProofTactics COMPLETELY
+       Seq ONLY <>? % <> ft ++ seq :: forall? # rt +% exist? ::?
+       Equiv ONLY equal uniq
+       Option ONLY nil avail option nil? cont avail?
+       Pair ONLY & pair
+       SeqMap ONLY *
+       SeqMapEnv ONLY *
+       SeqOfSeq ONLY partition
+       RepoAbsy COMPLETELY
+       RepoAn ONLY none an
+       OSubstitution ONLY subst:SORT {} def <$ codom 
+       AbsySC ONLY conj1 dfd impl cong neg cong? dfd? forall? ! approx?
+       Nat ONLY nat =
+       Fmt ONLY lit fmt string ;
+       UnitHandling ONLY true false
+       LSeq ONLY <> % lseq
+       SortHandling ONLY constr? discr?
+       Shadow ONLY checkF
+       ProofAn ONLY clearFormAn :=_types
+       Sequent COMPLETELY
+       PredefEntities ONLY true false proofscript
+       SeqSupplements ONLY sd
+       Subterm ONLY findSubexpr
+       Predicate ONLY or
+       SeqFilter ONLY partition
+       PrettyFormatting ONLY fmtObjectNameLong
+       SeqMapMapX ONLY *#
+       ObjectNameMap ONLY checkNames
+       RepoObjectAccess ONLY newLocalSign object newLocalObjects
+       Denotation ONLY ++
+       LSeqMap ONLY *
+
+-- %$Names$
+
+
+-- %$Tuples$
+-- %$Application$
+
+-- %$Block$
+DEF block_reduce == 
+  pscript(\\ st.
+  LET res == by(lift(block_reduce), subgoals(st))
+  IN
+  IF res nil? THEN <>
+  ELSE %(addTrace(lit("block_reduce"))(st :=_subgoals(cont(res))))
+  FI
+  )
+
+FUN block_reduce: microtactic
+DEF block_reduce ==
+  right(\\ f.
+    LET (rhs, f1) == block_reduce(f)
+    IN
+    IF rhs <>? THEN
+      IF f equal f1 THEN nil
+      ELSE avail(%(<> & %(clearFormAn(f1))))
+      FI
+    ELSE -- free variables
+      LET mkDfd == \\e. <> & %(dfd(e))
+          f2 == clearFormAn(f1)
+      IN
+      avail(<> & %(f2) :: mkDfd * uniq(rhs))
+    FI
+  )
+
+-- %$$Block left$
+DEF block_reduceL == 
+  pscript(\\ st.
+  LET res == by(lift(block_reduceL), subgoals(st))
+  IN
+  IF res nil? THEN <>
+  ELSE %(addTrace(lit("block_reduceL"))(st :=_subgoals(cont(res))))
+  FI
+  )
+
+FUN block_reduceL: microtactic
+DEF block_reduceL ==
+  left(\\ f.
+    LET (rhs, f1) == block_reduce(f)
+    IN
+    IF rhs <>? THEN
+      IF f equal f1 THEN nil
+      ELSE avail(%(%(clearFormAn(f1)) & <>))
+      FI
+    ELSE -- free variables
+      LET mkDfd == \\e. dfd(e)
+          f2 == clearFormAn(f1)
+          res == %(impl(conj1(mkDfd * uniq(rhs)), f2)) & <>
+      IN
+      avail(%(res))
+    FI
+  )
+/* %return formula with expanded lets and sequence of expressions
+    which must be defined. If formula introduces new variables,
+    DFD's are generated and added to the range. */
+FUN block_reduce: formula -> seq[expr] ** formula
+DEF block_reduce(atomic(an, k, es)) ==
+  LET (rhs, ees) == (let_reduce, <>) * es
+  IN
+  (rhs, atomic(an, k, ees))
+DEF block_reduce(F AS connect(an, k, fs)) ==
+  (<>, connect(an, k, block_reduce_cap * fs))
+DEF block_reduce(F AS quant(an, k, lS, vs, rng)) ==
+  LET (rhs, rrng) == block_reduce(rng)
+  IN
+  (<>, quant(an, k, lS, vs, conj1(rrng :: dfd(_) * uniq(rhs))))
+  
+  
+-- %variant for use with @code{*'SeqMapEnv}
+FUN block_reduce: seq[expr] ** formula -> seq[expr] ** formula
+DEF block_reduce(old, F) ==
+  LET (rhs, F1) == block_reduce(F)
+  IN
+  (rhs ++ old, F1)
+
+-- %encapsulate definednesses
+FUN block_reduce_cap: formula -> formula
+DEF block_reduce_cap(F) ==
+  LET (rhs, F1) == block_reduce(F)
+  IN
+  conj1(none, dfd(_) * uniq(rhs) +% F1)
+
+/* %return expression with expanded lets and sequence of rhs */
+FUN let_reduce: expr -> seq[expr] ** expr
+DEF let_reduce(E AS name(_,_)) == (<>, E)
+DEF let_reduce(apply(a1, f, a)) ==
+  LET (fR, ff) == let_reduce(f)
+      (aR, aa) == let_reduce(a)
+  IN
+  (fR ++ aR, apply(a1, ff, aa))
+DEF let_reduce(tuple(a, elems)) ==
+  LET (rhs, eelems) == (let_reduce, <>) * elems
+  IN
+  (rhs, tuple(a, eelems))
+DEF let_reduce(E AS den(_,_)) == (<>, E)
+DEF let_reduce(E AS cases(_, _, _)) == (<>, E)
+/* %- doesn't work: definedness conditions are moved out of the
+    scope of their associated guards
+DEF let_reduce(cases(a, gs, el)) ==
+  LET (gRhs, nGuards) == (let_reduce, <>) * gs
+      (eRhs, nEl) == IF el nil? THEN (<>, el)
+                    ELSE LET (rhs, e) == let_reduce(cont(el))
+                         IN
+                         (rhs, avail(e))
+                    FI
+  IN
+  (gRhs ++ eRhs, cases(a, nGuards, nEl))
+*/
+DEF let_reduce(E AS lambda(_,_,_,_)) == (<>, E)
+DEF let_reduce(E AS let(a,eqs,bd)) == 
+  IF forall?(checkLet, eqs) THEN let_reduce(a, eqs, bd, {})
+  ELSE (<>, E)
+  FI
+DEF let_reduce(_else) == (<>, _else)
+
+FUN let_reduce: seq[expr] ** guard -> seq[expr] ** guard
+DEF let_reduce(oRhs, guard(an, if, then)) ==
+  LET (rhs1, nIf) == let_reduce(if)
+      (rhs2, nThen) == let_reduce(then)
+  IN
+  (oRhs ++ rhs1 ++ rhs2, guard(an, nIf, nThen))
+
+-- %variant for use with @code{*'SeqMapEnv}
+FUN let_reduce: seq[expr] ** expr -> seq[expr] ** expr
+DEF let_reduce(old, E) ==
+  LET (rhs, E1) == let_reduce(E)
+  IN
+  (old ++ rhs, E1)
+
+/* %true, if variables on left side can be assigned expressions on the right */
+FUN checkLet: eqn -> bool
+DEF checkLet(eqn(_, _,l, _, r)) ==
+  IF l name? THEN true
+  IF (l tuple?) and (r tuple?) THEN
+    #(elems(l)) = #(elems(r))
+  ELSE false
+  FI
+
+
+FUN let_reduce: an ** seq[eqn] ** expr ** subst -> seq[expr] ** expr
+DEF let_reduce(an, eqn(_, _, l, _, r) :: eqs, bd, S) ==
+  LET S1 == IF l name? THEN def(oper(l), r, S)
+            IF l tuple? ANDIF r tuple? ANDIF #(elems(l)) = #(elems(r)) THEN
+              def(oper * elems(l), elems(r), S)
+            FI
+      eqs1 == (S1 <$ _) * eqs
+    IN
+    let_reduce(an, eqs1, bd, S1)
+DEF let_reduce(an, <>, bd, S) ==
+  LET bd1 == S <$ bd
+      (rhs, bd2) == let_reduce(bd1)
+  IN
+  (rhs ++ codom(S), bd2)
+
+-- %$Abstraction$
+
+DEF dfd_lambda == 
+  pscript(\\ st.
+    LET (hasDfdL, hasNoDfdL) == partition(hasDfdL?, subgoals(st))
+    IN
+      IF hasDfdL <>? THEN <>
+      ELSE 
+        %(addTrace(lit("dfd_lambda"))(st :=_subgoals hasNoDfdL))
+      FI
+  )
+
+FUN hasDfdL? : sequent -> bool
+DEF hasDfdL?(sq) == exist?(hasDfdL?, checkF(\\x. true)(\\f. true)(props(sq)))
+
+FUN hasDfdL?: formula -> bool
+DEF hasDfdL?(f) ==
+  IF dfd?(f) THEN lambda?(ft(exprs(f))) ELSE false FI
+
+DEF lambda_ext(fn) == 
+  pscript(\\st.
+  LET (newR, newSubgoals) == *#(lambda_ext(\\ n. n = fn, freeVarSig(st)),
+                                repo(st), subgoals(st))(\\x.x)
+      st1 == addTrace(lit("lambda_ext[");
+                      fmtObjectNameLong(repo(st), main(st))(fn);
+                      lit("]"))(st :=_repo newR)
+  IN
+  (\\sg. st1 :=_subgoals sg) * newSubgoals
+  )
+
+DEF lambda_extUN == 
+  pscript(\\st.
+  LET (newR, newSubgoals) == *#(lambda_ext(ckUN(unknownSig(st)),
+                                           freeVarSig(st)),
+                                repo(st), subgoals(st))(\\x.x)
+      st1 == addTrace(lit("lambda_extUn"))(st :=_repo newR)
+  IN
+  (\\sg. st1 :=_subgoals sg) * newSubgoals
+  )
+
+FUN ckUN: localSignName -> objectName -> bool
+DEF ckUN(lS)(oN) ==
+  IF globalObjectName?(oN) THEN false
+  IF localObjectName?(oN) THEN sign(oN) = lS
+  FI
+
+FUN lambda_ext: (objectName -> bool) ** localSignName ->
+                 repo ** sequent -> repo ** lseq[sequent]
+DEF lambda_ext(check, lS)(R, sq) ==
+  *#(lambda_ext(check, lS), R, props(sq))(sq :=_props _)
+
+FUN lambda_ext: (objectName -> bool) ** localSignName ->
+                 repo ** formula -> repo ** lseq[formula]
+DEF lambda_ext(check, lS)(R, F) ==
+  IF F cong? THEN
+    LET vars == checkLE(check, lS, ft(exprs(F)), sd(exprs(F)))
+    IN
+    IF avail?(vars) THEN replace(R)(oper(funct(ft(exprs(F)))),
+                                    cont(vars), sd(exprs(F)))
+    ELSE
+      LET vars2 == checkLE(check, lS, sd(exprs(F)), ft(exprs(F)))
+      IN
+      IF avail?(vars2) THEN replace(R)(oper(funct(sd(exprs(F)))),
+                                       cont(vars), ft(exprs(F)))
+      ELSE (R, <>)
+      FI
+    FI
+  ELSE
+    (R, <>)
+  FI
+      
+
+FUN checkLE: (objectName -> bool) ** localSignName ** expr ** expr ->
+              option[seq[objectName]]
+DEF checkLE(check, lS, lhs, rhs) ==
+  -- Is lhs an application of given objectName?
+  IF lhs apply? ANDIF funct(lhs) name? ANDIF check(oper(funct(lhs))) THEN
+    -- yes -> find argument variables (either name or tuple)
+    LET vars == IF arg(lhs) name? THEN %(oper(arg(lhs)))
+                IF arg(lhs) tuple? ANDIF forall?(name?, elems(arg(lhs))) THEN
+                  oper * elems(arg(lhs))
+                ELSE
+                  <>
+                FI
+    IN
+    IF vars ::? THEN -- found possible variables
+      -- check arguments; must be from given local signature
+      IF forall?(localObjectName?, vars) ANDIF
+         forall?(\\v. sign(v) = lS, vars) THEN
+        -- check rhs 
+        IF checkNames(ckName(vars))(rhs) THEN avail(vars) ELSE nil FI
+      ELSE nil FI
+    ELSE nil FI
+  ELSE nil FI
+
+FUN ckName: seq[objectName] -> objectName -> bool
+DEF ckName(os)(oN) ==
+  IF globalObjectName?(oN) THEN true
+  IF localObjectName?(oN) THEN exist?(\\x. x = oN, os)
+  FI
+
+
+FUN replace: repo -> objectName ** seq[objectName] ** expr -> 
+              repo ** lseq[formula]
+DEF replace(R)(fn, vars, rhs) ==
+  LET (lS, R1) == newLocalSign(proofscript(R))(R)
+      newVarObs == repsym * (\\ o. object(o)(R1)) * vars
+      (newVars, R2) == newLocalObjects(lS, newVarObs)(R1)
+      newRhs == def(vars, ! * newVars, {}) <$ rhs
+      newTypes == fct * kind * newVarObs
+  IN
+  (R2, %(cong(fn!, lambda(none :=_types newTypes, lS, newVars, newRhs))))
+
+FUN repsym : object -> object
+DEF repsym(o) == o :=_symbol symbol(o) ++ "_°"
+
+
+DEF lambda_reduce == by(lit("lambda_reduce"), lift(lambda_reduce))
+
+FUN lambda_reduce: microtactic
+DEF lambda_reduce == 
+  right(\\f.
+  IF f dfd? THEN
+    LET (subEx, insert) == findSubexpr(appliedL?, stopLambda, ft(exprs(f)))
+    IN
+    IF avail?(subEx) THEN
+      LET (newFirst, args) == doApply(cont(subEx), insert)
+      IN
+      IF avail?(newFirst) THEN
+        avail(%(<> & %(atomic(none, dfd, %(newFirst cont))),
+                <> & %(conj1(dfd * args))))
+      ELSE
+        nil
+      FI
+    ELSE
+      nil
+    FI
+  IF (approx? or cong?)(f) THEN
+    LET (subEx, insert) == findSubexpr(appliedL?, stopLambda, ft(exprs(f)))
+    IN
+    IF avail?(subEx) THEN
+      LET (newFirst, args) == doApply(cont(subEx), insert)
+      IN
+      IF avail?(newFirst) THEN
+        avail(%(<> & %(atomic(none, kind(f), %(newFirst cont, sd(exprs(f))))),
+                <> & %(conj1(dfd * args))))
+      ELSE
+        LET (subEx2, insert2) == findSubexpr(appliedL?,
+                                             stopLambda, sd(exprs(f)))
+        IN
+        IF avail?(subEx2) THEN
+          LET (newSecond, args2) == doApply(cont(subEx2), insert2)
+          IN
+          IF avail?(newSecond) THEN
+            avail(%(<> & %(atomic(none, kind(f), 
+                                   %(ft(exprs(f)), cont(newSecond)))),
+                    <> & %(conj1(dfd * args2))))
+          ELSE nil FI
+        ELSE nil FI
+      FI
+    ELSE nil FI
+  ELSE -- other atomic, connect, quant
+    nil
+  FI
+  )
+        
+FUN stopLambda: expr -> bool
+DEF stopLambda == lambda? or let?      
+
+FUN appliedL? : expr -> bool
+DEF appliedL?(e) == IF apply?(e) THEN lambda?(funct(e)) ELSE false FI
+
+FUN doApply: expr ** (expr -> expr) -> option[expr] ** seq[expr]
+DEF doApply(subEx, insert) ==
+  LET cArgs == IF tuple?(arg(subEx)) THEN elems(arg(subEx))
+               ELSE %(arg(subEx)) FI
+      vs == vars(funct(subEx))
+  IN
+  IF #(cArgs) = #(vs) THEN
+    (avail(insert(def(vs, cArgs, {}) <$ body(funct(subEx)))), cArgs)
+  ELSE
+    (nil, <>)
+  FI
+
+
+-- %$Cases$
+
+-- %$$Reduce cases$
+DEF cases_reduce == 
+  pscript(\\ st.
+  LET tt == true(repo(st))
+      ff == false(repo(st))
+      res == by(lift(cases_reduce(tt, ff)), subgoals(st))
+  IN
+  IF res nil? THEN <>
+  ELSE %(addTrace(lit("cases_reduce"))(st :=_subgoals(cont(res))))
+  FI
+  )
+
+FUN cases_reduce: expr ** expr -> microtactic
+DEF cases_reduce(tt, ff) ==
+  right(\\ f.
+    LET f1 == cases_reduce(tt, ff)(f)
+    IN
+    IF f equal f1 THEN nil
+    ELSE avail(%(<> & %(f1 clearFormAn)))
+    FI
+  )
+
+FUN cases_reduce: expr ** expr -> formula -> formula
+DEF cases_reduce(tt, ff)(F AS atomic(aa, ak, aexs)) ==
+  IF ak dfd? THEN
+    LET (caseTerm?, insert) == findSubexpr(cases?, lambda? or let?, ft(aexs))
+    IN
+    IF avail?(caseTerm?) THEN
+      do_cases(tt, ff)(cont(caseTerm?), \\s. atomic(none, ak, %(insert(s))))
+    ELSE 
+      F
+    FI
+  IF ak cong? THEN
+    LET (lT?, insertL) == findSubexpr(cases?, lambda? or let?, ft(aexs))
+    IN
+    IF avail?(lT?) THEN
+      do_cases(tt, ff)(cont(lT?), \\ s. atomic(none, ak,
+                                               %(insertL(s), sd(aexs))))
+    ELSE
+      LET (rT?, insertR) == findSubexpr(cases?, lambda? or let?, sd(aexs))
+      IN
+      IF avail?(rT?) THEN
+        do_cases(tt, ff)(cont(rT?), \\ s. atomic(none, ak,
+                                                 %(ft(aexs), insertR(s))))
+      ELSE
+        F
+      FI
+    FI
+  FI
+DEF cases_reduce(tt, ff)(F AS connect(ca, neg, 
+                                      atomic(aa, cong, aexs) :: _)) ==
+  IF cases?(ft(aexs)) THEN
+    do_cases(tt, ff)(ft(aexs), \\E. neg(cong(E, sd(aexs))))
+  IF cases?(ft(rt(aexs))) THEN
+    do_cases(tt, ff)(ft(rt(aexs)), \\E. neg(cong(E, ft(aexs))))
+  ELSE
+    F
+  FI
+DEF cases_reduce(_, _)(F) == F
+
+-- %$$Cases left$
+
+DEF cases_reduceL == 
+  pscript(\\ st.
+  LET tt == true(repo(st))
+      ff == false(repo(st))
+      res == by(lift(cases_reduceL(tt, ff)), subgoals(st))
+  IN
+  IF res nil? THEN <>
+  ELSE %(addTrace(lit("cases_reduceL"))(st :=_subgoals(cont(res))))
+  FI
+  )
+
+FUN cases_reduceL: expr ** expr -> microtactic
+DEF cases_reduceL(tt, ff) ==
+  left(\\ f.
+    LET f1 == cases_reduceL(tt, ff)(f)
+    IN
+    IF f equal f1 THEN nil
+    ELSE avail(%(%(f1 clearFormAn) & <>))
+    FI
+  )
+
+FUN cases_reduceL: expr ** expr -> formula -> formula
+DEF cases_reduceL(tt, ff)(F AS atomic(a, ak, aexs)) ==
+  IF ak dfd? THEN
+    LET (caseTerm?, insert) == findSubexpr(cases?, lambda? or let?, ft(aexs))
+    IN
+    IF avail?(caseTerm?) THEN
+      do_casesL(tt, ff)(cont(caseTerm?), \\s. atomic(none, ak, %(insert(s))))
+    ELSE 
+      F
+    FI
+  IF ak cong? THEN
+    LET (lT?, insertL) == findSubexpr(cases?, lambda? or let?, ft(aexs))
+    IN
+    IF avail?(lT?) THEN
+      do_casesL(tt, ff)(cont(lT?), \\ s. atomic(none, ak,
+                                                %(insertL(s), sd(aexs))))
+    ELSE
+      LET (rT?, insertR) == findSubexpr(cases?, lambda? or let?, sd(aexs))
+      IN
+      IF avail?(rT?) THEN
+        do_casesL(tt, ff)(cont(rT?), \\ s. atomic(none, ak,
+                                                 %(ft(aexs), insertR(s))))
+      ELSE
+        F
+      FI
+    FI
+  FI
+
+/*
+DEF cases_reduceL(tt, ff)(F AS atomic(aa, ak, aexs)) ==
+  IF ak dfd? ANDIF cases?(ft(aexs)) THEN
+    do_casesL(tt, ff)(ft(aexs), \\E. atomic(none, dfd, E%))
+  IF ak cong? ANDIF cases?(ft(aexs)) THEN
+    do_casesL(tt, ff)(ft(aexs), \\E. atomic(none, cong, %(E, ft(rt(aexs)))))
+  IF ak cong? ANDIF cases?(ft(rt(aexs))) THEN
+    do_casesL(tt, ff)(ft(rt(aexs)), \\E. atomic(none, cong, %(ft(aexs), E)))
+  ELSE
+    F
+  FI
+*/
+DEF cases_reduceL(_,_)(F) == F
+
+
+
+-- %$$Common functions for handling cases$
+/* %@code{do_cases(tt, ff)(cases, F)} returns
+    @code{(DFD c1) AND (DFD c2) AND ... AND }
+    @code{(c1 === tt ==> F(e1)) AND (c2 === tt ==> F(e2)) AND ...}
+    @code{AND (c1 === false AND c2 === false AND ... => F(eE))}
+*/
+FUN do_cases do_casesL: expr ** expr -> expr ** (expr -> formula) -> formula 
+DEF do_cases == do_cases(right)
+DEF do_casesL == do_cases(left)
+
+DATA sequentPart == left right
+
+FUN do_cases: sequentPart ->
+               expr ** expr -> expr ** (expr -> formula) -> formula
+DEF do_cases(SP)(tt, ff)(cases(_, gs, optelse), F) ==
+  LET conds == if * gs
+      dfdF == dfd(_) * conds
+      guardF == (\\g. impl(cong(if(g), tt), F(then(g)))) * gs
+  IN
+    IF optelse nil? THEN
+      IF SP right? THEN conj1(dfdF ++ guardF)
+      IF SP left? THEN impl(conj1(dfdF), conj1(guardF))
+      FI
+    ELSE
+      LET falseConds == conj1((\\c. cong(c, ff)) * conds)
+          elseF == impl(falseConds, F(cont(optelse)))
+      IN
+      IF SP right? THEN conj1(dfdF ++ (guardF +% elseF))
+      IF SP left? THEN impl(conj1(dfdF), conj1(guardF +% elseF))
+      FI
+    FI

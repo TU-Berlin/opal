@@ -1,0 +1,379 @@
+IMPLEMENTATION CalcLogicalForward
+
+IMPORT LSeq ONLY lseq % <> ++ asLSeq <>?
+       RepoAbsy COMPLETELY
+       OSubstitution ONLY subst:SORT prettySubst {} <$ o
+       Pair ONLY pair & 1st 2nd
+       Seq ONLY seq :: ft rt +% % <> ++ <>?
+       Sequent ONLY sequent hyps :=_hyps props
+       Triple ONLY triple &
+       Fmt ONLY fmt lit none ; spc pretty
+       Minitactic ONLY liftUF liftUFT liftUQT liftUQTd
+       ProofAn ONLY new? clearFormAn clearShadow getShadowF
+       Shadow ONLY checkF shadows
+       AbsySC ONLY forall? equiv? conj1 impl? conj? flatConj
+       PairMapPlus ONLY map1
+       LSeqMap ONLY *
+       LSeqOfLSeq ONLY flat
+       SeqSupplements ONLY sd
+       SeqFilter ONLY |
+       TripleMapPlus ONLY map1
+       Unify ONLY unify
+       ProofTactics ONLY longInfo?
+       PrettyFormatting ONLY prettyFormula
+       Nat ONLY 1
+       DEBUG ONLY PRINT
+       String ONLY string
+       Option ONLY option avail? cont avail nil
+       Predicate ONLY or
+       SeqMap ONLY *
+       Denotation ONLY ++
+       SeqOfSeq ONLY flat
+       Compose ONLY o
+       RepoAn ONLY none
+
+
+-- %$Biimplication left rule$
+DEF biimpl_l == liftUF(lit("biimpl_l"), biimpl_l(\\ _ . true))
+DEF biimpl_lN == liftUF(lit("biimpl_lN"), biimpl_l(new?))
+
+FUN biimpl_l: (formula -> bool) -> repo ** localSignName ** localSignName ->
+                sequent -> lseq[pair[seq[sequent], subst]]
+DEF biimpl_l(check)(R, unknownSig, freeSig)(sq) ==
+  LET biimpls == checkF(forall?)(equiv?)(hyps(sq))
+      res == biimpl_l(check)(R, unknownSig, freeSig)(biimpls)(hyps(sq))
+      mk == map1(\\f. %(sq :=_hyps f :: hyps(sq)))
+  IN
+  mk * res
+
+
+FUN biimpl_l: (formula -> bool) -> repo ** localSignName ** localSignName ->
+              seq[formula] -> seq[formula] ->
+              lseq[pair[formula, subst]]
+DEF biimpl_l(_)(_, _, _)(_)(<>) == <>
+DEF biimpl_l(check)(R, unknownSig, freeSig)(biimpls)(currHyp :: postHyp) ==
+  (IF check(currHyp) THEN
+      biimpl_l(R, unknownSig, freeSig)(biimpls)(currHyp)
+   ELSE
+     <>
+   FI) ++ 
+  biimpl_l(check)(R, unknownSig, freeSig)(biimpls)(postHyp)
+
+FUN biimpl_l: repo ** localSignName ** localSignName ->
+           seq[formula] -> formula -> lseq[pair[formula, subst]]
+DEF biimpl_l(R, unknownSig, freeSig)(biimpls)(f) ==
+  flat((\\ i. (\\sb. ft(formulas(i)) & sb) *
+              unifyX(R)(freeSig, unknownSig)(ft(rt(formulas(i))), f)) *
+       asLSeq(biimpls))
+  ++
+  flat((\\ i. (\\sb. sd(formulas(i)) & sb) *
+              unifyX(R)(freeSig, unknownSig)(ft(formulas(i)), f)) *
+       asLSeq(biimpls))
+
+-- %$Implication left rule$
+DEF impl_l == liftUFT(lit("impl_l"), impl_l(\\ _ . true))
+DEF impl_lN == liftUFT(lit("impl_lN"), impl_l(new?))
+
+FUN impl_l: (formula -> bool) -> repo ** localSignName ** localSignName ->
+                sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF impl_l(check)(R, unknownSig, freeSig)(sq) ==
+  LET impls == checkF(forall?)(impl?)(hyps(sq))
+      res == impl_l(R, unknownSig, freeSig)(impls)(check | hyps(sq))
+      mk == map1(\\f. %(sq :=_hyps f :: hyps(sq)))
+  IN
+    mk * res
+
+FUN impl_l: repo ** localSignName ** localSignName ->
+             seq[formula] -> seq[formula] ->
+             lseq[triple[formula, subst, fmt]]
+DEF impl_l(_, _, _)(_)(<>) == <>
+DEF impl_l(R, unknownSig, freeSig)(impls)(currHyp :: postHyp) ==
+    impl_l(R, unknownSig, freeSig)(impls)(currHyp) ++
+    impl_l(R, unknownSig, freeSig)(impls)(postHyp)
+
+FUN impl_l: repo ** localSignName ** localSignName ->
+           seq[formula] -> formula -> lseq[triple[formula, subst, fmt]]
+DEF impl_l(R, unknownSig, freeSig)(impls)(f) ==
+  flat((\\ i. (\\sb. sd(formulas(i)) & (sb, infoImplL(R)(i,sb)) ) *
+              unify(R)(freeSig, unknownSig)(ft(formulas(i)), f)) *
+       asLSeq(impls))
+
+FUN infoImplL: repo -> formula ** subst -> fmt
+DEF infoImplL(R)(i,sb) == 
+  IF longInfo?(R) THEN
+    prettyFormula(R)(i); spc(1); prettySubst(R)(sb)
+  ELSE
+    none
+  FI
+
+-- %$Implication left deep$
+
+DEF impl_l_deep ==
+  liftUQT(lit("impl_l_deep"), impl_l_deep(impl?, false))
+DEF impl_l_deep2 ==
+  liftUQT(lit("impl_l_deep2"), impl_l_deep(impl? or equiv?, false))
+DEF impl_l_deep3 ==
+  liftUQT(lit("impl_l_deep3"), impl_l_deep(impl? or equiv?, true))
+DEF impl_l_deep2_debug ==
+  liftUQTd(lit("impl_l_deep2D'"), impl_l_deep(impl? or equiv?, false))
+
+FUN impl_l_deep: (formula -> bool) ** bool ->
+                  repo ** localSignName ** localSignName ->
+                  sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF impl_l_deep(PF, rev?)(R, unknownSig, freeSig)(sq) ==
+  LET impls0 == PF | (hyps(sq) ++ shadows(forall?)(hyps(sq)))
+      impls == IF rev? THEN
+                 impls0 ++ revert * equiv? | impls0
+               ELSE
+                 impls0
+               FI
+      impls2 == flatConj * checkC | impls
+      res == impl_l_deep(R, unknownSig, freeSig)(impls, impls2) * 
+                        asLSeq(hyps(sq) ++ shadows(forall?)(hyps(sq)))
+      mk == map1(\\f. %(sq :=_hyps clearS(PF, f :: hyps(sq))))
+  IN
+  mk * flat(res)
+
+FUN impl_l_deep: repo ** localSignName ** localSignName ->
+                  seq[formula] ** seq[formula] -> formula ->
+                  lseq[triple[formula, subst, fmt]]
+DEF impl_l_deep(R, unknownSig, freeSig)(impls, impls2)(f) ==  
+  flat((\\ i. (\\sb. sd(formulas(i)) & (sb, info(R, sb, i, f, none)) ) *
+              unify(R)(freeSig, unknownSig)(ft(formulas(i)), f)) *
+       asLSeq(impls)) ++
+  flat(impl_l_deepI(R, unknownSig, freeSig)(f) * asLSeq(impls2))
+
+  FUN info: repo ** subst ** formula ** formula ** fmt -> fmt
+  DEF info(R, s, i, f, tag) ==
+    IF longInfo?(R) THEN 
+      lit("matched formula"); tag; lit(": "); prettyFormula(R)(f); spc(1);
+      lit("in formula"); tag; lit(": "); prettyFormula(R)(i); spc(1);
+      prettySubst(R)(s)
+    ELSE none
+    FI
+
+
+FUN impl_l_deepI: repo ** localSignName ** localSignName ->
+                  formula -> formula -> lseq[triple[formula, subst, fmt]]
+DEF impl_l_deepI(R, unknownSig, freeSig)(f)
+                (connect(a1, k, connect(a2, conj, fs) :: FS)) ==
+  impl_l_deepI(R, unknownSig, freeSig)(f)(a1, k, a2, FS)(<>, fs)
+
+FUN impl_l_deepI: repo ** localSignName ** localSignName ->
+                  formula -> an ** connectKind ** an ** seq[formula] ->
+                  seq[formula] ** seq[formula] ->
+                  lseq[triple[formula, subst, fmt]]
+DEF impl_l_deepI(R, unknownSig, freeSig)(f)(a1, k, a2, FS)(preC, <>) == <>
+DEF impl_l_deepI(R, unknownSig, freeSig)(f)(a1, k, a2, FS)
+                                           (preC, currC :: postC) ==
+  LET res0 == unify(R)(freeSig, unknownSig)(currC, f)
+      res == PRINT(false, \\ . (pretty(lit("impl_l_deepI:");
+                   prettyFormula(R)(f); spc(1); prettyFormula(R)(F0); spc(1);
+                   prettyFormula(R)(currC); spc(1);
+                   (IF res0 <>? THEN lit(" -> failed") ELSE
+                    lit(" -> ok") FI))):denotation, res0)
+      F0 == clearFormAn(connect(a1, k, conj1(a2, preC ++ currC :: postC) ::FS))
+      F == clearFormAn(connect(a1, k, conj1(a2, preC ++ postC) :: FS))
+      mk == \\sb. F & (sb, info(R, sb, F0, currC, lit("/d")))
+  IN
+  mk * res ++
+  (\\ . impl_l_deepI(R, unknownSig, freeSig)(f)
+                    (a1, k, a2, FS)(preC +% currC, postC))
+
+-- %$impl-l-deepD$
+DEF impl_l_deepD == liftUFT(lit("impl_l_deepD"), impl_l_deepD(impl?))
+DEF impl_l_deepD2 == liftUFT(lit("impl_l_deepD2"), 
+                             impl_l_deepD(impl? or equiv?))
+DEF biimpl_l_deepD == liftUFT(lit("biimpl_l_deepD"), impl_l_deepD(equiv?))
+
+FUN impl_l_deepD: (formula -> bool) ->
+                   repo ** localSignName ** localSignName ->
+                  sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF impl_l_deepD(PF)(R, unknownSig, freeSig)(sq) ==
+  impl_l_deepD(PF)(R, unknownSig, freeSig)(sq)(<>, hyps(sq)) 
+
+FUN impl_l_deepD: (formula -> bool) ->
+                  repo ** localSignName ** localSignName ->
+                  sequent -> seq[formula] ** seq[formula] ->
+                  lseq[triple[seq[sequent], subst, fmt]]
+DEF impl_l_deepD(PF)(R, unknownSig, freeSig)(sq)(_, <>) == <>
+DEF impl_l_deepD(PF)(R, unknownSig, freeSig)(sq)(preF, currF :: postF) ==
+  LET I == impl_l_deepD(R, unknownSig, freeSig)(sq)
+      res == IF PF(currF) THEN I(currF)
+             ELSE 
+               LET f == checkF(forall?)(PF)(currF)
+               IN
+               IF avail?(f) THEN I(cont(f))
+               ELSE <>
+               FI
+             FI
+      mk == map1(\\f. %(sq :=_hyps clearS(PF, f :: (preF ++ postF))))
+  IN
+  (mk * res) ++
+  (\\ . impl_l_deepD(PF)(R, unknownSig, freeSig)(sq)(preF +% currF, postF))
+
+FUN impl_l_deepD: repo ** localSignName ** localSignName ->
+                  sequent -> formula -> lseq[triple[formula, subst, fmt]]
+DEF impl_l_deepD(R, unknownSig, freeSig)(sq)(implF) ==
+  LET testFs == hyps(sq) ++ shadows(forall?)(hyps(sq))
+      res == (\\ f. unifyX(R)(freeSig, unknownSig)(ft(formulas(implF)), f)) * 
+                       asLSeq(testFs)
+      i == \\f, s. IF longInfo?(R) THEN
+                     lit("matched formula: "); prettyFormula(R)(f); spc(1);
+                     lit("Subst: "); prettySubst(R)(s)
+                   ELSE none FI
+      mk == \\ s. sd(formulas(implF)) & (s, i(ft(formulas(implF)), s))
+  IN
+  (mk * flat(res)) ++
+  (\\ . 
+   IF checkC(implF) THEN
+     LET implF1 == flatConj(implF)
+     IN
+     impl_l_deepD(R, unknownSig, freeSig)(sq)
+                 (an(implF1), kind(implF1), an(ft(formulas(implF1))), <>, 
+                  formulas(ft(formulas(implF1))), rt(formulas(implF1)))
+   ELSE
+     <>
+   FI)
+
+FUN impl_l_deepD: repo ** localSignName ** localSignName ->
+                   sequent ->
+                   an ** connectKind ** 
+                   an ** seq[formula] ** seq[formula] ** seq[formula] ->
+                   lseq[triple[formula, subst, fmt]]
+DEF impl_l_deepD(_, _, _)(_) (_, _, _, _, <>, _) == <>
+DEF impl_l_deepD(R, unknownSig, freeSig)(sq)
+                (a1, k, a2, preC, currC :: (postC:seq[formula]), FS) ==
+  LET testFs == hyps(sq) ++ shadows(forall?)(hyps(sq))
+      res == flat((\\ f. unifyX(R)(freeSig, unknownSig)(currC, f)) * 
+                  asLSeq(testFs))
+      F == connect(a1, k, conj1(a2, preC ++ postC) :: FS)
+      mk == \\s. clearFormAn(F) & (s, i(currC, s))
+      i == \\f, s. IF longInfo?(R) THEN
+                     lit("matched formula/d: "); prettyFormula(R)(f); spc(1);
+                     lit("Subst/d: "); prettySubst(R)(s); spc(1);
+                     lit("res/d: "); prettyFormula(R)(F)
+                   ELSE none FI
+  IN
+  mk * res ++ (\\ . impl_l_deepD(R, unknownSig, freeSig)(sq)
+                                (a1, k, a2, preC +% currC, postC, FS))
+
+-- %$Implication left deep / multi$
+DEF impl_l_deep4 == liftUQT(lit("impl_l_deep4"), impl_l_deep4)
+
+FUN impl_l_deep4: repo ** localSignName ** localSignName -> 
+                   sequent -> lseq[triple[seq[sequent], subst, fmt]]
+DEF impl_l_deep4(R, unknownSig, freeSig)(sq) ==
+  impl_l_deep4(R, unknownSig, freeSig)(hyps(sq), props(sq))(<>, hyps(sq))
+
+FUN impl_l_deep4: repo ** localSignName ** localSignName -> 
+                   seq[formula] ** seq[formula] ->
+                   seq[formula] ** seq[formula] -> 
+                   lseq[triple[seq[sequent], subst, fmt]]
+DEF impl_l_deep4(_, _, _)(_, _)(_, <>) == <>
+DEF impl_l_deep4(R, unknownSig, freeSig)(hyps, props)(preH, currH :: postH) ==
+  LET PF == impl? or equiv?
+      f0 == IF PF(currH) THEN avail(currH)
+           ELSE 
+             IF forall?(currH) ANDIF avail?(getShadowF(currH)) THEN
+               IF PF(cont(getShadowF(currH))) THEN 
+                 getShadowF(currH)
+               ELSE nil FI
+             ELSE nil FI
+           FI
+      f == PRINT(false, \\ . "impl_l_deep4," ++  
+                       (IF avail?(f0) THEN "handling "  ++ 
+                        pretty(prettyFormula(R)(cont(f0))) ELSE
+                        "omitting " ++ pretty(prettyFormula(R)(currH)) FI), f0)
+  IN
+  IF avail?(f) THEN
+    LET res == impl_l_deep4(R, unknownSig, freeSig)(hyps)(flatConj(f cont))
+        mk == map1(\\fi. %(sequent(none, fi :: (preH ++
+                                                clearShadow(currH) :: postH),
+                                                props)))
+    IN
+    (mk * res) ++ (\\ .
+    impl_l_deep4(R, unknownSig, freeSig)(hyps, props)(preH +% currH, postH)
+    )
+  ELSE
+    impl_l_deep4(R, unknownSig, freeSig)(hyps, props)(preH +% currH, postH)
+  FI
+
+-- %hyp is an implication or a biimplication with flatConj applied
+FUN impl_l_deep4: repo ** localSignName ** localSignName -> 
+                   seq[formula] -> formula -> 
+                   lseq[triple[formula, subst, fmt]]
+DEF impl_l_deep4(R, unknownSig, freeSig)(hyps)(hyp) ==
+  LET fs == IF ft(formulas(hyp)) conj? THEN formulas(ft(formulas(hyp)))
+            ELSE %(ft(formulas(hyp)))
+            FI
+      res == impl_l_deep4(R, unknownSig, freeSig)(hyps)(false, {}, <>, fs)
+      mk == (\\ p. IF 1st(p) <>? THEN 
+                     &(sd(formulas(hyp)), 2nd(p), mkinfo4(R, 2nd(p), hyp))
+                   ELSE
+                     &(connect(none, kind(hyp),
+                               conj1(none, 1st(p)) :: rt(formulas(hyp))),
+                       2nd(p), mkinfo4(R, 2nd(p), hyp))
+                   FI)
+  IN
+  mk * res
+
+FUN mkinfo4: repo ** subst ** formula -> fmt
+DEF mkinfo4(R, sb, f) ==
+  IF longInfo?(R) THEN
+    lit("target formula:"); spc(1); prettyFormula(R)(f); spc(1);
+    prettySubst(R)(sb)
+  ELSE
+    none
+  FI
+
+-- %ok is true, if at least one formula could be resolved
+FUN impl_l_deep4: repo ** localSignName ** localSignName ->
+                   seq[formula] ->
+                   bool ** subst ** seq[formula] ** seq[formula] ->
+                   lseq[pair[seq[formula], subst]]
+DEF impl_l_deep4(_, _, _)(_)(ok?, sb, unresolved, <>) == 
+  IF ok? THEN %(unresolved & sb) ELSE <> FI
+DEF impl_l_deep4(R, unknownSig, freeSig)(hyps)(ok?, sb, unresolved, f :: fs) ==
+  LET f1 == sb <$ f
+      res0 == (\\ h. unify(R)(freeSig, unknownSig)(f1, sb <$ h)) * asLSeq(hyps)
+      res == flat(res0)
+  IN 
+  IF res <>? THEN
+    impl_l_deep4(R, unknownSig, freeSig)(hyps)(ok?, sb, unresolved +% f, fs)
+  ELSE
+    flat((\\sbi. impl_l_deep4(R, unknownSig, freeSig)(hyps)
+                            (true, sbi o sb, unresolved, fs)) * res
+        )
+  FI
+  
+              
+  
+-- %aux
+FUN unifyX: repo -> localSignName ** localSignName ->
+             formula ** formula -> lseq[subst]
+DEF unifyX(R)(l1,l2)(f1, f2) ==
+  PRINT(false, \\ . "impl_l_deep4: trying `" ++ pretty(prettyFormula(R)(f1)) ++ "' and `" ++ pretty(prettyFormula(R)(f2)) ++ "'" ++ (IF res <>? THEN " -> failed" ELSE " -> ok" FI), res)
+  WHERE res == unify(R)(l1, l2)(f1, f2)
+
+FUN checkC: formula -> bool
+DEF checkC(connect(_, _, connect(_, conj, _) :: _)) == true
+DEF checkC(_else) == false
+
+
+
+-- %clear Shadow of quantified formulae
+FUN clearS: (formula -> bool) ** seq[formula] -> seq[formula]
+DEF clearS(_, <>) == <>
+DEF clearS(PF, f :: fs) ==
+  (IF f forall? /* ANDIF PF(range(f)) */ THEN clearShadow(f)
+   ELSE f
+   FI) :: clearS(PF, fs)
+-- %auch andere Formeln können Variablen einführen
+
+
+-- %revert equivlaences 
+FUN revert: formula -> formula
+DEF revert(connect(a, equiv, F1 :: F2 :: R)) ==
+  connect(a, equiv, F2 :: F1 :: R)
+DEF revert(_else) == _else

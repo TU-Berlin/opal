@@ -1,0 +1,88 @@
+/* %Some basic tactics and tacticals. */
+SIGNATURE BasicTac
+
+IMPORT Nat ONLY nat
+
+-- %$Special Proofscripts$
+
+FUN done: proofscript   -- do not do anything
+FUN fail: proofscript   -- never applies
+FUN print: denotation -> proofscript  -- make subgoals to hint
+FUN iprint: denotation -> proofscript  -- make subgoals to hint
+
+FUN QED: proofscript  -- fails with error, if subgoals nonempty
+FUN #<= : nat -> proofscript --  ok, iff no of subgoals <= arg
+FUN #= : nat -> proofscript --  ok, iff no of subgoals = arg
+
+/* %Informal proof, always succeeds and resolves all subgoals.
+    Argument is converted to a hint. */
+FUN trust: denotation -> proofscript
+
+
+-- %$Managing every- and atexit-hooks$
+
+-- %function is executed on every @code{;}
+FUN every: (state -> state) -> proofscript
+-- %function is executed after proof is finished
+FUN atexit: (state -> state) -> proofscript
+-- %statistics check
+FUN stat: state -> state
+/* %tracing at every @code{;}. do not use in conjunction with stat
+    @code{i} variant prints internal representation, @code{l} prints
+    long source code oriented representation. */
+FUN traceProof itraceProof ltraceProof: state -> state
+-- %PRINT current state - use only if desperate
+FUN debugProof: state -> state
+-- %PRINT short message at every proof step
+FUN blip: state -> state
+
+-- %add final proofstate to trace, if subgoals nonempty
+FUN finalize: state -> state
+-- %add Error with unfinished subgoals
+FUN finishedCheck: state -> state
+
+-- %break after specified number of steps
+FUN breakAfter: nat -> state -> state
+
+-- %$Tacticals$
+/* %Uses BNF-style notation instead of LCF-style (may be added later) */
+
+FUN ; : proofscript ** proofscript -> proofscript  -- composition
+/* BRACKET LEFT [; : proofscript ** proofscript -> proofscript ] 
+                [; : proofscript ** proofscript -> proofscript ] */
+FUN | : proofscript ** proofscript -> proofscript  -- alternative
+FUN ++ : proofscript ** proofscript -> proofscript -- sum
+FUN +^+ : proofscript ** proofscript -> proofscript -- interleaved sum
+FUN cond: (seq[sequent] -> bool) ->
+           proofscript ** proofscript -> proofscript -- choice
+FUN ? : proofscript -> proofscript -- option
+FUN * : proofscript -> proofscript -- repetition
+
+-- %$Selection of subgoals$
+-- %apply proofscript only to first/given subgoal
+FUN subgoal: proofscript -> proofscript
+FUN subgoal: nat ** proofscript -> proofscript
+
+/* %select subgoals which fulfill predicate (no error, if no
+    sungoals fulfill predicate) */                                             
+FUN subgoals: (state -> sequent -> bool) ** proofscript -> proofscript
+
+/* %as above, boolean defines whether to signal error, if no subgoals
+    fulfill predicate (true), or to silently succeed (false) */
+FUN subgoals: (state -> sequent -> bool) ** bool ** proofscript -> proofscript
+
+FUN noUnknowns? : state -> sequent -> bool
+ 
+-- %$Handle Backtracking$
+
+-- %make tactic deterministic by choosing first alternative
+FUN det: proofscript -> proofscript 
+-- %as above, select named alternative
+FUN det: nat ** proofscript -> proofscript 
+
+-- %"Cut": no backtracking over this point
+FUN ;! : proofscript ** proofscript -> proofscript
+/$ BRACKET LEFT [; : proofscript ** proofscript -> proofscript ] 
+                [;! : proofscript ** proofscript -> proofscript ] $/
+/$ BRACKET RIGHT [;! : proofscript ** proofscript -> proofscript ] 
+                 [; : proofscript ** proofscript -> proofscript ] $/

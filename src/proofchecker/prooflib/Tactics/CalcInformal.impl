@@ -1,0 +1,51 @@
+IMPLEMENTATION CalcInformal
+
+IMPORT SeqFilter ONLY partition |
+       Seq ONLY seq <>? % exist?
+       ProofTactics ONLY addError addTrace :=_subgoals
+       Fmt ONLY fmt lit
+       RepoAbsy COMPLETELY
+       String ONLY string
+       LSeq ONLY lseq %
+       Denotation ONLY = ++
+       Sequent ONLY sequent hyps props
+
+DEF trust_informal == trust_informal("")
+DEF trust_informal(tag) ==
+  abs(\\st.
+    LET (resolved, rest) == partition(hasInformal?(tag), subgoals(st))
+    IN
+    IF resolved <>? THEN
+      IF tag = "" THEN
+        fail(addError("no informal formulae found")(st))
+      ELSE
+        fail(addError("no informal formulaw with tag »" ++
+                      tag ++ "« found")(st))
+      FI
+    ELSE
+      okay(%(addTrace(lit("trust_informal"))(st :=_subgoals rest)))
+    FI
+  )
+
+DEF mistrust_informal == mistrust_informal("")
+DEF mistrust_informal(tag) ==
+  abs(\\st.
+    LET informals == hasInformal?(tag) | subgoals(st)
+    IN
+    IF informals <>? THEN
+      okay(%(addTrace(lit("mistrust_informal"))(st)))
+    ELSE
+      fail(addError("found informal formula(e)" ++
+                   (IF tag = "" THEN "" ELSE " with tag »" ++ tag ++ "«" FI))(st))
+    FI
+  )
+
+FUN hasInformal? : denotation -> sequent -> bool
+DEF hasInformal?(tag)(sq) ==
+  exist?(hasInformal?(tag), hyps(sq)) or exist?(hasInformal?(tag), props(sq))
+
+FUN hasInformal? : denotation -> formula -> bool
+DEF hasInformal?(tag)(atomic(_,k,_)) ==
+  IF informal?(k) THEN tag <| text(k) ELSE false FI
+DEF hasInformal?(tag)(connect(_, _, fs)) == exist?(hasInformal?(tag), fs)
+DEF hasInformal?(tag)(quant(_, _, _, _, rng)) == hasInformal?(tag)(rng)

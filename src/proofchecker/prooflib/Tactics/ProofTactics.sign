@@ -1,0 +1,115 @@
+SIGNATURE ProofTactics
+
+IMPORT PROOFSCRIPT COMPLETELY
+       RepoAbsy ONLY object:SORT kind:SORT expr:SORT
+       Nat ONLY nat:SORT
+       Option[seq[sequent]] ONLY option[seq[sequent]]:SORT
+       Option[seq[pair]] ONLY option[seq[pair]]:SORT
+       Pair[seq[formula], seq[formula]] ONLY pair
+       Seq[pair] ONLY seq
+       Seq[formula] ONLY seq
+       Seq[sequent] ONLY seq
+       RepoName ONLY objectName:SORT
+       Fmt ONLY fmt
+       Seq[fmt] ONLY seq
+       Option[objectName] ONLY option[objectName]:SORT
+       OSubstitution ONLY subst:SORT
+
+
+-- %Wrapper for error check and propagation
+FUN pscript: (state -> lseq[state]) -> proofscript
+FUN pscript: (state -> state) -> proofscript
+
+-- %$Mini-Tactics$
+/* %Mini-Tactics work on a single sequent. */
+
+TYPE minitactic == abs(rep: sequent -> option[seq[sequent]])
+
+-- %$$Mini-Tacticals$
+FUN | : minitactic ** minitactic -> minitactic
+FUN ; : minitactic ** minitactic -> minitactic
+FUN done fail: minitactic
+-- FUN * : (() -> minitactic) -> minitactic
+
+-- %$$Lifting of mini-tacticals$
+-- %apply to given subgoal
+FUN by: minitactic ** nat -> proofscript
+
+-- %apply to all subgoals
+FUN by: minitactic -> proofscript
+FUN by: fmt ** minitactic -> proofscript
+
+-- %internal: apply to supplied subgoals
+FUN by: minitactic ** seq[sequent] -> option[seq[sequent]]
+
+-- %$Micro-Tactics$
+/* %Micro-tactics work on formula level. @code{rep} returns @code{nil}, if
+    tactic does not apply. Otherwise, if @code{G |- D, f} be the sequent,
+    @code{f} the formula for a right micro-tactic (similar for a left
+    micro-tactic). If the result of @code{rep} is @code{<L1 & R1,
+    L2 & R2, ..., Ln & Rn>}, lifting to a mini-tactic yields the sequents
+    @code{G, L1 |- D, R1}, @code{G, L2 |- D, R2}, ...,
+    @code{G, Ln |- D, Rn}. */
+TYPE microtactic == 
+  left(rep: formula -> option[seq[pair[seq[formula], seq[formula]]]])
+  right(rep: formula -> option[seq[pair[seq[formula], seq[formula]]]])
+
+-- %$$Microtacticals$
+-- %alternative (may not combine microtactics for different sides)
+FUN | : microtactic ** microtactic -> microtactic
+
+-- %$$Lifting to minitactics$
+-- %apply microtactic to first applicable formula
+FUN lift: microtactic -> minitactic
+-- %as above, but only to specified index
+FUN lift: microtactic ** nat -> minitactic
+
+-- %$Manipulating state$
+FUN :=_diags: state ** diag -> state
+FUN :=_subgoals: state ** seq[sequent] -> state
+FUN :=_repo: state ** repo -> state
+FUN :=_uCt : state ** nat -> state
+FUN :=_every : state ** (state -> state) -> state
+FUN :=_atexit : state ** (state -> state) -> state
+FUN :=_stat : state ** stat -> state
+FUN :=_trace : state ** seq[fmt] -> state
+
+FUN tCt: state -> nat
+FUN setTCT: state ** nat -> state
+
+FUN addError addWarn addHint: denotation -> state -> state
+
+FUN addTrace: fmt -> state -> state
+
+-- %set or clear shortcut switch (marks annotation of state and repo)
+FUN setSCS: state -> state
+FUN clearSCS: state -> state
+FUN useSC: state -> bool
+FUN useSC: repo -> bool 
+FUN longInfo? : repo -> bool
+
+-- %unskolem support
+FUN getSpecFun: state -> option[objectName]
+FUN setUnskol: state ** objectName -> state
+FUN getUnskol: state -> option[objectName]
+FUN setSpecExpr: state ** expr -> state
+
+-- %add substitution
+FUN °=_subst: state ** subst -> state
+-- %get substitution
+FUN getSubst: state -> subst
+
+-- %$$New variables$
+-- %return a free variable or an unknown with undefined kind
+FUN newFV: state -> state ** objectName
+FUN newUN: state -> state ** objectName
+
+/* %internal use: return object corresponding to number.
+    Kind of the object is set to "any". */
+FUN asFV: nat -> object
+FUN asUN: nat -> object
+
+
+-- %@code{setKind(st, var, sort)} defines kind of given variable
+FUN setKind: state ** objectName ** objectName -> state
+FUN setKind: state ** objectName ** kind -> state

@@ -1,0 +1,442 @@
+IMPLEMENTATION Minitactic
+
+IMPORT ProofTactics COMPLETELY
+       Shadow ONLY ensureShadow
+       Seq ONLY <> seq :: ++ +% exist? forall? ft rt % <>? find?
+       Pair ONLY 1st 2nd pair & unpair
+       Triple ONLY triple & 1st 2nd 3rd untriple
+       OSubstitution ONLY {}? <$ subst | codom  !? prettySubst <+ ren {} o
+       AbsySC ONLY conj1 dfd
+       SeqMap ONLY *
+       RepoName COMPLETELY
+       LSeq ONLY lseq <> ++ | ::? <>?
+       RepoAbsy COMPLETELY
+       LSeqMap ONLY *
+       Equiv ONLY equal uniq contract equiv
+       DEBUG ONLY PRINT
+       Fmt ONLY pretty:fmt->denotation lit ; spc none brk
+       String ONLY string
+       BoolConv ONLY `
+       FmtSeq ONLY fmtSeq
+       Sequent ONLY prettySequent :=_props :=_hyps hyps sequent props
+       Denotation ONLY ++
+       RepoAn ONLY none
+       SubstitutionFun ONLY <$
+       ProofAn ONLY clearFormAn getFVct °=_subst getCurrSubst setFVct
+       SeqFilter ONLY |
+       Nat ONLY nat 1
+       Compose ONLY o
+       BasicSupplements ONLY fmtBool
+       Option ONLY option nil? avail? cont nil avail
+       PrettyFormatting COMPLETELY
+       Unify ONLY unify unifyD
+       ColourText ONLY hintText
+       Union2 ONLY union data2? cont2 cont1
+       SeqReduce ONLY /
+       BasicSupplements ONLY asDeno
+       SetConv ONLY asSet asSeq
+       SetOfSet ONLY flat
+       ObjectNameReduce ONLY checkNames
+       Set ONLY {} + set {<} % {}?
+       SeqOfSeq ONLY flat
+       RepoObjectAccess ONLY kind
+       TripleMapPlus ONLY map3
+
+
+DEF liftU(name, f) ==
+  pscript(\\st0.
+  LET st == ensureShadow(st0) 
+      res == liftU(\\ _ . true)(repo(st),
+                   unknownSig(st), freeVarSig(st))(f)(<>, subgoals(st), <>)
+  IN
+  mk(st, name) * res
+  )
+
+DEF liftUT(name, f) ==
+  pscript(\\st0.
+  LET st == ensureShadow(st0) 
+      res == liftUT(\\ _ . true)(repo(st),
+                   unknownSig(st), freeVarSig(st))(f)(<>, subgoals(st), <>)
+  IN
+  mk(st, name) * res
+  )
+
+FUN mk:  state ** fmt -> pair[seq[sequent], subst] -> state
+DEF mk(st, name)(&(newSubgoals, substUn)) ==
+  mk(st, name)(&(newSubgoals, substUn, none))
+
+FUN mk: state ** fmt -> triple[seq[sequent], subst, fmt] -> state
+DEF mk(st, name)(&(newSubgoals1, substUn, newTrace0)) ==
+  LET newTrace == name; spc(1); newTrace0
+  IN
+  IF substUn {}? THEN 
+    LET newSt == addUN(st, newUN(st, newSubgoals1))
+    IN
+    addTrace(newTrace)(newSt :=_subgoals newSubgoals1)
+  ELSE
+    LET newSubgoals2 == (substUn <$[clearXtras] _) * newSubgoals1
+        newUns == newUN(st, newSubgoals2)
+        check == checkSubst(st, newUns, getCurrSubst(an(st)))
+        (newSt0, substUn1, newSubgoals3, newUns1) ==
+          IF nil?(check) THEN (st, substUn, newSubgoals2, newUns)
+          ELSE
+            LET (newSt2a, ren, newUns1a) == untriple(check cont)
+                newSt2b == addTrace(lit("name clashes! renaming "); 
+                                    prettySubst(repo(newSt2a))(ren))(newSt2a)
+                substUn1a == ren o substUn 
+                newSubgoals3a == (ren <$[clearXtras] _) * newSubgoals2
+            IN
+            (newSt2b, substUn1a, newSubgoals3a, newUns1a)
+          FI
+        newSt1 == newSt0 °=_subst  subst(newUns1, newUns1) <+ substUn1
+        newSt == addUN(newSt1, newUns1)
+        newTrace1 == newTrace /* %- ; brk; lit("previous subst.:"); 
+                     prettySubst(repo(st))(getCurrSubst(an(st))); brk;
+                     lit("new subst.:"); prettySubst(repo(st))(substUn); brk;
+                     lit("new subst#.:"); prettySubst(repo(newSt0))(substUn1); brk;
+                     lit("result subst.:");
+                     prettySubst(repo(newSt))(getCurrSubst(an(newSt)));
+                     lit(" newUN: "); 
+                     fmtSeq(fmtObjectName(repo(newSt)))(newUns);
+                     lit(" newUN#: "); 
+                     fmtSeq(fmtObjectName(repo(newSt0)))(newUns1) */
+    IN
+    checkSkolem(addTrace(newTrace1)(newSt :=_subgoals newSubgoals3), substUn1)
+  FI
+
+/* %check new unknown variables: if already defined, rename 
+    in substitution and return appropriate substitution */
+FUN checkSubst: state ** seq[objectName] ** subst -> 
+                 option[triple[state, subst, seq[objectName]]]
+DEF checkSubst(st, newUns, prevSubst) ==
+  LET clashes == (\\ n. avail?(prevSubst !? n)) | newUns
+  IN
+  IF clashes <>? THEN nil
+  ELSE
+    avail(((\\on, tr. LET st1 == 1st(tr)
+                          rsb == 2nd(tr)
+                          new == 3rd(tr)
+                          (st2, on2) == newUN(st1)
+                          st3 == setKind(st2, on2, kind(on)(repo(st2)))
+                      IN
+                      &(st3, rsb <+ subst(%(on),%(on2)), on2 :: new)
+           ), 
+           &(st, {}, <>)
+          ) / clashes)
+  FI
+
+FUN checkSkolem: state ** subst -> state
+DEF checkSkolem(st, sb) ==
+  IF avail?(getUnskol(st)) ANDIF
+    avail?(sb !? cont(getUnskol(st))) THEN
+    LET unskolVar == cont(getUnskol(st))
+         unskolEx == cont(sb !? unskolVar)
+         i == \\ . lit("note: unskolem variable"); spc(1);
+                   fmtObjectNameLong(repo(st))(unskolVar); spc(1);
+                   lit("set to"); spc(1);
+                   prettyExpr(repo(st), main(st))(unskolEx)
+     IN
+     IF longInfo?(repo(st)) THEN
+       addTrace(i())(setSpecExpr(st, cont(sb !? cont(getUnskol(st)))))
+     ELSE
+       setSpecExpr(st, cont(sb !? cont(getUnskol(st))))
+     FI
+  ELSE
+    st
+  FI
+  
+-- %$LiftUF and liftUL$
+
+DEF liftUF(name, f) == liftUX(\\ _ . true)(name, f)
+DEF liftUL(name, f) == liftUX(nonTrivial?)(name, f)
+
+FUN liftUX: (sequent -> bool) ->
+             fmt ** (repo ** localSignName ** localSignName ->
+                     sequent -> lseq[pair[seq[sequent], subst]]) ->
+             proofscript
+DEF liftUX(P?)(name, f) ==
+  pscript(\\st0.
+  LET st == ensureShadow(st0) 
+      res == liftU(P?)(repo(st), unknownSig(st), freeVarSig(st))(f)
+                      (<>, contract(freeVarSig(st))(subgoals(st)), <>)
+      check == \\st1. forall?(checkGoals, subgoals(st1))
+  IN
+  check | (mk(st, name) * res)
+  )
+
+FUN liftU: (sequent -> bool) -> 
+           repo ** localSignName ** localSignName ->
+            (repo ** localSignName ** localSignName ->
+           sequent -> lseq[pair[seq[sequent], subst]]) ->
+            seq[sequent] ** seq[sequent] **
+            lseq[pair[seq[sequent], subst]] -> lseq[pair[seq[sequent], subst]]
+DEF liftU(_)(_, _, _)(_)(_, <>, accu) == accu
+DEF liftU(checkSq)(R, unknownSig, freeSig)(f)(preSq, currSq :: postSq, accu) ==
+  LET res == f(R, unknownSig, freeSig)(currSq)
+      mk == \\ p. preSq ++ 1st(p) ++
+                  dfdSeq(R, unknownSig, freeSig)
+                        (unknownSig | 2nd(p), hyps(currSq)) ++ postSq & 2nd(p)
+  IN
+  
+  liftU(checkSq)(R, unknownSig, freeSig)(f)
+       (preSq +% currSq, postSq, accu ++ mk * lift(R)(checkSq) | res)
+
+-- %$LiftULT und LiftUFT$
+DEF liftUFT(name, f) ==
+  liftUXT(false, \\ _ . true, \\ _, _, _, _ . checkGoals)(name, f)
+DEF liftULT(name, f) ==
+  liftUXT(false, nonTrivial?, \\ _, _, _, _ . checkGoals)(name, f)
+DEF liftUQT(name, f) ==
+  liftUXT(false, \\ _ . true, checkGoalsQ)(name, f)
+DEF liftUQTd(name, f) ==
+  liftUXT(true, \\ _ . true, checkGoalsQ)(name, f)
+
+FUN liftUXT: bool ** (sequent -> bool) ** 
+              (bool ** repo ** localSignName ** localSignName -> sequent -> bool) ->
+             fmt ** (repo ** localSignName ** localSignName ->
+                     sequent -> lseq[triple[seq[sequent], subst, fmt]]) ->
+             proofscript
+DEF liftUXT(dbg, P?, cGoals)(name, f) ==
+  pscript(\\st0.
+  LET st == ensureShadow(st0) 
+      res == liftUT(P?)(repo(st),
+                        unknownSig(st), freeVarSig(st))(f)
+                       (<>, contract(freeVarSig(st))(subgoals(st)), <>)
+      check == \\st1. forall?(cGoals(dbg, repo(st1), unknownSig(st1),
+                                     freeVarSig(st1)),
+                              subgoals(st1))
+  IN
+  check | (mk(st, name) * res)
+  )
+
+FUN liftUT: (sequent -> bool) -> 
+           repo ** localSignName ** localSignName ->
+            (repo ** localSignName ** localSignName ->
+           sequent -> lseq[triple[seq[sequent], subst, fmt]]) ->
+            seq[sequent] ** seq[sequent] **
+            lseq[triple[seq[sequent], subst, fmt]] ->
+            lseq[triple[seq[sequent], subst, fmt]]
+DEF liftUT(_)(_, _, _)(_)(_, <>, accu) == accu
+DEF liftUT(checkSq)(R, unknownSig, freeSig)(f)
+          (preSq, currSq :: postSq, accu) ==
+  LET res == f(R, unknownSig, freeSig)(currSq)
+      mk == \\ t. preSq ++ 1st(t) ++
+                  dfdSeq(R, unknownSig, freeSig)
+                        (unknownSig | 2nd(t), hyps(currSq)) ++ postSq & 
+                        (2nd(t), 3rd(t))
+  IN
+  liftUT(checkSq)(R, unknownSig, freeSig)(f)
+        (preSq +% currSq, postSq, accu ++ mk * (liftT(R)(checkSq) | res))
+
+
+FUN liftT: repo -> (sequent -> bool) ->
+            (triple[seq[sequent], subst, fmt] -> bool)
+DEF liftT(R)(P?)(sqs & (_, _)) == 
+  IF forall?(P?,sqs) THEN true
+  ELSE PRINT(traceTriv?, \\ . "eliminated trivial sequent:" ++
+                              pretty(fmtSeq(prettySequent(R))(sqs)), false) FI
+
+-- %$Andere$
+
+FUN lift: repo -> (sequent -> bool) -> (pair[seq[sequent], subst] -> bool)
+DEF lift(R)(P?)(sqs & _) == 
+  IF forall?(P?,sqs) THEN true
+  ELSE PRINT(traceTriv?, \\ . "eliminated trivial sequent:" ++
+                              pretty(fmtSeq(prettySequent(R))(sqs)), false) FI
+
+FUN liftUT: (sequent -> bool) -> 
+             repo ** localSignName ** localSignName ->
+             (repo ** localSignName ** localSignName ->
+              sequent -> lseq[triple[seq[sequent], subst, fmt]]) ->
+             seq[sequent] ** seq[sequent] **
+             lseq[triple[seq[sequent], subst, fmt]] ->
+             lseq[triple[seq[sequent], subst, fmt]]
+DEF liftUT(_)(_, _, _)(_)(_, <>, accu) == accu
+DEF liftUT(checkSq)(R, unknownSig, freeSig)(f)
+          (preSq, currSq :: postSq, accu) ==
+  LET res == f(R, unknownSig, freeSig)(currSq)
+      mk == \\ t. &(preSq ++ 1st(t) ++
+                    dfdSeq(R, unknownSig, freeSig)
+                          (unknownSig | 2nd(t), hyps(currSq)) ++ postSq,
+                    2nd(t), 3rd(t))
+  IN
+  liftUT(checkSq)(R, unknownSig, freeSig)(f)
+        (preSq +% currSq, postSq, accu ++ mk * liftT(R)(checkSq) | res)
+
+FUN liftT: repo -> (sequent -> bool) ->
+            (triple[seq[sequent], subst, fmt] -> bool)
+DEF liftT(R)(P?)(&(sqs, _, _)) == 
+  IF forall?(P?,sqs) THEN true
+  ELSE PRINT(traceTriv?, \\ . "eliminated trivial sequent:" ++
+                              pretty(fmtSeq(prettySequent(R))(sqs)), false) FI
+
+FUN checkGoals: sequent -> bool
+DEF checkGoals(sq) == checkHyp(hyps(sq))
+
+FUN checkHyp: seq[formula] -> bool
+DEF checkHyp(<>) == true
+DEF checkHyp(f :: R) ==
+  IF exist?(\\f1. f equal f1, R) THEN false ELSE checkHyp(R) FI
+
+
+FUN checkGoalsQ: bool ** repo ** localSignName ** localSignName ->
+                  sequent -> bool
+DEF checkGoalsQ(dbg, R, unknownSig, freeSig)(sq) == 
+  checkHypQ(dbg, R, unknownSig, freeSig)(close(R, unknownSig) * hyps(sq))
+
+FUN checkHypQ: bool ** repo ** localSignName ** localSignName ->
+                seq[formula] -> bool
+DEF checkHypQ(_, _, _, _)(<>) == true
+DEF checkHypQ(dbg, R, unknownSig, freeSig)(f :: r) ==
+  LET F == find?(\\f1. equivC(R, unknownSig, freeSig)(f, f1), r)
+  IN
+  IF F avail? THEN 
+    PRINT(dbg, \\ . hintText("checkHypQ: ") ++ pretty(prettyFormula(R)(f)) ++
+          hintText(" equivalent to ") ++ pretty(prettyFormula(R)(cont(F))),
+          false)
+  ELSE 
+    LET R0 == PRINT(dbg, \\ . hintText("checkHypQ: ") ++
+                    pretty(prettyFormula(R)(f)) ++ hintText(" not found "), R)
+    IN
+    checkHypQ(dbg, R0, unknownSig, freeSig)(r) 
+/* %true would restrict check to the first formula only. 
+    Experiments show savings to be at about 2% - 
+    not enough for a hack like this */
+  FI
+
+
+FUN unifyX: repo -> localSignName ** localSignName ->
+             formula ** formula -> lseq[subst]
+DEF unifyX(R)(freeSig, unknownSig)(f1, f2) ==
+  LET res == unifyD(R)(freeSig, unknownSig)(f1, f2)
+  IN
+  PRINT(false, \\ . "trying to unify " ++ pretty(prettyFormula(R)(f1)) ++ hintText(" <$> ") ++ pretty(prettyFormula(R)(f2)) ++ (IF res data2? THEN "-> failed: " ++ cont2(res) ELSE "-> ok" FI), IF res data2? THEN <> ELSE cont1(res) FI)
+
+FUN traceTriv? : bool
+DEF traceTriv? == false
+
+FUN nonTrivial? : sequent -> bool
+DEF nonTrivial?(sq) == forall?(nonTrivial?, hyps(sq))
+
+FUN nonTrivial? : formula -> bool
+DEF nonTrivial?(atomic(a, k, es)) ==
+  LET res ==
+  IF k cong? ANDIF ft(es) equal ft(rt(es)) THEN false
+  ELSE true
+  FI
+  IN
+  PRINT(false, \\ . pretty(lit("nonTrivial: "); fmtFormula(atomic(a, k, es)); fmtBool(res)), res) 
+DEF nonTrivial?(connect(a, k, fs)) ==
+  LET res ==
+  IF k equiv? ANDIF ft(fs) equal ft(rt(fs)) THEN false
+  ELSE true
+  FI
+  IN
+  PRINT(false, \\ . pretty(lit("nonTrivial: "); fmtFormula(connect(a, k, fs)); fmtBool(res)), res) 
+
+DEF nonTrivial?(quant(_, _, _, _, _)) == true
+
+
+-- %$Substitution on sequents$
+
+FUN clearXtras: formula -> formula
+DEF clearXtras == clearFormAn -- clearShortcut o clearShadow
+
+/* % Get the substitution (restricted to the unknownSig) and the hypotheses
+     from a sequent. If any unknowns are in the domain of the substitution,
+     returns a (one!) sequent with the hypotheses and definedness
+     conditions of the corresponding codomain expressions. Otherwise,
+     an empty sequence is returned. (seq fits better than option in the
+     callers context). 
+     Now does not generate definedness conditions for unknowns with an
+     associated freeVar count - the definedness consitions of these
+     variables have already been dealt with in the @code{allL} and
+     @code{exR} proofscripts.
+*/
+
+FUN dfdSeq: repo ** localSignName ** localSignName ->
+             subst ** seq[formula] -> seq[sequent] 
+DEF dfdSeq(R, unknownSig, freeSig)(f, hyps) ==
+  IF f {}? THEN <>
+  ELSE
+    LET f1 == checkUN(R) | f
+        exprs == (\\e. f1 <$ e) * check(unknownSig, freeSig) | codom(f1)
+        prop == conj1(dfd(_) * uniq(exprs))
+    IN
+    IF exprs <>? THEN <> ELSE %(sequent(none, hyps, %(prop))) FI
+  FI
+
+FUN check: localSignName ** localSignName -> expr -> bool
+DEF check(lS1, lS2)(name(_, oN)) ==
+  IF globalObjectName?(oN) THEN true
+  IF localObjectName?(oN) THEN (sign(oN) = lS1) or (sign(oN) = lS2)
+  FI
+DEF check(_,_)(_else) == true
+
+/* %true, iff either no unknown variable, or unknown variable has
+    no freeVar count associated. Relies on the fact that only those
+    objects which are unknown variables and are introduced by
+    @code{allL} or @code{exR} have a freeVar count. */
+FUN checkUN: repo -> objectName -> bool
+DEF checkUN(R)(oN) == nil?(getFVct(oN)(R))
+
+-- %Copied from CalcLogical
+-- %add fvct to given objectnames
+FUN addUN: state ** seq[objectName] -> state
+DEF addUN(st, <>) == 
+  IF longInfo?(repo(st)) THEN addTrace(lit("empty list of new unknowns"))(st)
+  ELSE st
+  FI
+DEF addUN(st, sv AS _ :: _) ==
+  LET R == (setFVct(fCt(st)), repo(st)) / sv
+      i == \\ . lit("hint: "); fmtSeq(fmtObjectNameLong(R))(sv);
+                lit(" may not be replaced by free variables ");
+                lit(asDeno(fCt(st))); lit("¡ and later")
+  IN
+  IF longInfo?(R) THEN
+    addTrace(i())(st :=_repo R)
+  ELSE
+    st :=_repo R
+  FI
+
+FUN newUN: state ** seq[sequent] -> seq[objectName]
+DEF newUN(st, sqs) ==
+  LET allForms == flat(hyps * sqs ++ props * sqs)
+  IN
+  (\\oN. nil?(getFVct(oN)(repo(st)))) |
+     asSeq( (+, {}) / getUNs(repo(st), unknownSig(st)) * allForms)
+
+-- %set of unknown variables used in formula
+FUN getUNs: repo ** localSignName -> formula -> set[objectName, <]
+DEF getUNs(R, unknownSig)(f) ==
+  checkNames((\\oN. IF check2(R, unknownSig)(oN) THEN %(oN)
+                    ELSE {}[objectName, <]
+                    FI), +, {})(f)
+
+-- %close formula by adding all quantifier for unknown variables
+FUN close: repo ** localSignName -> formula -> formula
+DEF close(R, unknownSig)(f) ==
+  LET uns == getUNs(R, unknownSig)(f)
+  IN
+  IF uns {}? THEN f
+  ELSE
+    quant(none, forall, unknownSig, asSeq(uns), f)
+  FI
+
+-- %check closed formulas for equivalence
+FUN equivC: repo ** localSignName ** localSignName ->
+             formula ** formula -> bool
+DEF equivC(R, unknownSig, freeSig)(f1, f2) == 
+  LET res == equiv(freeSig)(f1, f2)
+  IN
+  PRINT(false, \\ . "equivC: " ++ pretty(prettyFormula(R)(f1)) ++ 
+                    hintText(" <$> ") ++ pretty(prettyFormula(R)(f2)) ++
+                    hintText(pretty(fmtBool(res))),
+        res)
+
+-- %true. iff object is from given local signature
+FUN check2: repo ** localSignName -> objectName -> bool
+DEF check2(R, lS)(oN) ==
+  IF globalObjectName?(oN) THEN false
+  IF localObjectName?(oN) THEN sign(oN) = lS
+  FI

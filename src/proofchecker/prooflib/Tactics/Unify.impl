@@ -1,0 +1,414 @@
+IMPLEMENTATION Unify
+
+IMPORT RepoName COMPLETELY
+       Map ONLY map find? undef {} def
+       Set ONLY set {<} in excl {}
+       OSubstitution ONLY subst <$ !? odef - {}  forall?
+       AbsySC ONLY = fct
+       ObjectNameMap ONLY checkNames
+       Seq ONLY seq <> ++ # % ft rt :: <>? forall?
+       Pair ONLY pair & 1st 2nd
+       RepoAbsy COMPLETELY
+       LSeq ONLY | asLSeq lseq % <> ::? ft <>?
+       LSeqOfLSeq ONLY flat
+       LSeqMap ONLY *
+       SeqZip ONLY zip
+       SeqReduce ONLY / \
+       Option ONLY nil avail nil? cont option avail?
+       SetConv ONLY asSet
+       Nat ONLY = <
+       SeqMap ONLY *
+       Denotation ONLY = ++
+       SeqOfSeq ONLY flat
+       DEBUG ONLY PRINT
+       Fmt ONLY pretty
+       FmtSeq ONLY fmtSeq
+       FmtPair ONLY fmtPair
+       String ONLY string
+       RepoAn ONLY none an
+       PredicateX ONLY and
+       SeqFilter ONLY |
+       PrettyFormatting ONLY prettyExpr
+       ProofAn ONLY getFVct
+       Union2 ONLY data2 data1
+       ColourText ONLY hintText
+
+FUN traceUnify? : bool
+DEF traceUnify? == false
+
+/* %The unification environment contains all information necessary for
+    unification.
+@table @emph
+@item global?
+Predicate to recognize global names which must be matched literally.
+These are normally the global names and free variables; may also
+contain the unknown variables.
+@item unknown?
+Predicate to recognize names which may be freely substituted by other 
+expressions.
+@item delayed
+Sets of local names from corresponding quantifiers. The exact matching
+is determined during the unification process. If this map is not empty
+when substitution is finished, the variables are not used.
+@item subst
+The current substitution
+@end table
+Names which are neither global nor unknown are considered to be local names
+which may be consistently renamed but not replaced by global names or
+arbitrary expressions.
+*/
+
+DATA uEnv == uEnv(global? : objectName -> bool, 
+                  unknown? : objectName -> bool,
+                  delayed: map[set[objectName, <], {<}[objectName, <],
+                               set[objectName, <]],
+                  subst: subst)
+             error(reason: () -> denotation)
+
+FUN :=_delayed: uEnv ** map[set[objectName, <], {<}[objectName, <],
+                               set[objectName, <]] -> uEnv
+DEF error(m) :=_delayed _ == error(m)
+DEF uEnv(0,1,_,3) :=_delayed new == uEnv(0,1,new,3)
+FUN :=_subst : uEnv ** subst -> uEnv
+DEF error(m) :=_subst _ == error(m)
+DEF uEnv(0,1,2,_) :=_subst new == uEnv(0,1,2,new)
+
+DATA mmSet == mmSet(uEnv: uEnv, repo: repo, pairs: seq[pair[expr, expr]])
+
+FUN {} : uEnv ** repo -> mmSet
+DEF {}(U, R) == mmSet(U, R, <>)
+FUN <+ : mmSet ** seq[pair[expr, expr]] -> mmSet
+DEF mmSet(U, R, S1) <+ S2 == mmSet(U, R, S1 ++ S2)
+
+-- %$Exported Functions$
+/* %-
+FUN unifyM: repo -> localSignName ** localSignName ->
+             formula ** formula -> lseq[subst] 
+DEF unifyM(R)(lS1, lS2)(F1, F2) ==
+  subst * filterSubsts(R) | flat(unify *
+                                 asLSeq(mkMM(uEnv(mkF(lS1, lS2), F, {}, {}),
+                                             R, F1 & F2)))
+FUN unify: repo -> localSignName -> formula ** formula -> lseq[subst] 
+DEF unify(R)(lS)(F1, F2) ==
+  subst * filterSubsts(R) | flat(unify * asLSeq(mkMM(uEnv(mkF(lS), F, {}, {}),
+                                                     R, F1 & F2)))
+*/
+DEF unify(R)(lS1, lS2)(F1, F2) ==
+  subst * filterSubsts(R) | flat(unify *
+                                 asLSeq(mkMM(uEnv(mkF(lS1), mkU(lS2), {}, {}),
+                                             R, F1 & F2)))
+
+DEF unifyD(R)(lS1, lS2)(F1, F2) ==
+  LET res == flat(unify * asLSeq(mkMM(uEnv(mkF(lS1), mkU(lS2), {}, {}),
+                                             R, F1 & F2)))
+      oks == uEnv? | res
+  IN
+  IF (oks <>?) and (res ::?) THEN
+    data2(reason(ft(error? | res))())
+  IF (oks <>?) and (res <>?) THEN
+    data2(hintText("formulas differ"))
+  ELSE
+    data1(
+          subst * filterSubsts(R) | flat(unify *
+                   asLSeq(mkMM(uEnv(mkF(lS1), mkU(lS2), {}, {}), R, F1 & F2)))
+         )
+  FI
+  
+/* %-
+FUN unifyM: repo ->
+             localSignName ** localSignName -> expr ** expr -> lseq[subst] 
+DEF unifyM(R)(lS1, lS2)(E1, E2) ==
+  subst * filterSubsts(R) | unify(mmSet(uEnv(mkF(lS1, lS2), F, {}, {}),
+                                        R, %(E1 & E2)))
+FUN unify: repo -> localSignName -> expr ** expr -> lseq[subst] 
+DEF unify(R)(lS)(E1, E2) ==
+  subst * filterSubsts(R) | 
+    unify(mmSet(uEnv(mkF(lS), F, {}, {}), R, %(E1 & E2)))
+*/
+DEF unify(R)(lS1, lS2)(E1, E2) ==
+  subst * filterSubsts(R) |
+    unify(mmSet(uEnv(mkF(lS1), mkU(lS2), {}, {}), R, %(E1 & E2)))
+DEF unify(R)(lS1, lS2)(eSeq) ==
+  subst * filterSubsts(R) |
+    unify(mmSet(uEnv(mkF(lS1), mkU(lS2), {}, {}), R, eSeq))
+
+
+FUN filterSubsts: repo -> uEnv -> bool
+DEF filterSubsts(R)(U) == 
+  IF U uEnv? THEN forall?(checkUN(R, global?(U)), subst(U)) ELSE false FI
+
+FUN checkUN: repo ** (objectName -> bool) -> objectName ** expr -> bool
+DEF checkUN(R, ck)(oN, ex) ==
+  IF avail?(getFVct(oN)(R)) THEN
+    LET ck2 == \\oN2. IF globalObjectName?(oN2) THEN true
+                      ELSE 
+                        IF ck(oN2) THEN no(oN2) < cont(getFVct(oN)(R))
+                        ELSE true FI
+                      FI
+    IN
+    checkNames(ck2)(ex)
+  ELSE
+    true
+  FI
+
+-- %$Martelli-Montanari$
+/* %First we compute the set of pairs of expressions which must be unified
+    from the formulae. For equivalences (@code{===}) we have several
+    possibilities, hence we compute a sequence of results. */
+
+FUN mkMM: uEnv ** repo ** pair[formula, formula] -> seq[mmSet]
+DEF mkMM(error(_), _, _ : pair[formula, formula]) == <>
+DEF mkMM(uEnv(_,_,_,_), _, _else: pair[formula, formula]) == <>
+DEF mkMM(U AS uEnv(_,_,_,_), R, atomic(_, k1, E1) & atomic(_, k2, E2)) ==
+  IF k1 = k2 and #(E1) = #(E2) THEN
+    IF k1 cong? THEN
+       mmSet(U, R, %(ft(E1) & ft(E2), ft(rt(E1)) & ft(rt(E2)))) ::
+       mmSet(U, R, %(ft(E1) & ft(rt(E2)), ft(rt(E1)) & ft(E2))) :: <>
+    ELSE
+      %(mmSet(U, R, zip(&)(E1, E2)))
+    FI
+  ELSE
+    <>
+  FI
+DEF mkMM(U AS uEnv(_,_,_,_), R, connect(_, k1, F1) & connect(_, k2, F2)) ==
+  IF k1 = k2 and #(F1) = #(F2) THEN
+    combinations({}(U, R), zip(&)(F1, F2))
+  ELSE
+    <>
+  FI
+DEF mkMM(U AS uEnv(_,_,_,_), R,
+         quant(_, k1, _, v1, r1) & quant(_, k2, _, v2, r2)) ==
+  IF k1 = k2 and #(v1) = #(v2) THEN
+    mkMM(enter(U, v1, v2), R, r1 & r2)
+  ELSE
+    <>
+  FI
+
+
+FUN combinations: mmSet ** seq[pair[formula, formula]] -> seq[mmSet]
+DEF combinations(mmSet(U, R, S1), <>) == %(mmSet(U, R, S1))
+DEF combinations(mmSet(U, Re, S1), F1 & F2 :: R) ==
+  LET mmS1 == (_ <+ S1) * mkMM(U, Re, F1 & F2) 
+      res == (\\ mm. combinations(mm, R)) * mmS1
+  IN
+  flat(res)
+  
+-- %$Unifying sets of pairs of expressions$
+
+FUN unify: mmSet -> lseq[uEnv]
+DEF unify(mmSet(U0, R, ePairs)) == 
+  LET U == PRINT(traceUnify?, \\ .
+                 "unifying mmset: " ++
+                 pretty(fmtSeq(fmtPair(prettyExpr(R), prettyExpr(R)))(ePairs)), U0)
+      checkFct == \\p. fct'AbsySC(R)(1st(p)) = fct(R)(2nd(p))
+  IN
+  IF forall?(checkFct, ePairs) THEN %((unify, U) \ ePairs) ELSE <> FI
+
+FUN unify: pair[expr, expr] ** uEnv -> uEnv
+DEF unify(P, U :uEnv) == unify(U, P)
+
+FUN unify: uEnv ** pair[expr, expr] -> uEnv
+DEF unify(error(m), _) == error(m)
+DEF unify(_ AS uEnv(_,_,_,_), E1 & E2) == 
+  error(\\ . hintText("different exprs") ++ pretty(fmtExpr(E1)) ++
+             hintText(" <$> ") ++ pretty(fmtExpr(E2)))
+DEF unify(U AS uEnv(_,_,_,_), (E1 AS name(_, n1)) & E2 AS name(_, n2)) ==
+  IF avail?(subst(U) !? n1) and avail?(subst(U) !? n2) THEN
+    unify(U, cont(subst(U) !? n1) & cont(subst(U) !? n2))
+  OTHERWISE
+  IF avail?(subst(U) !? n1) THEN unify(U, cont(subst(U) !? n1) & E2)
+  IF avail?(subst(U) !? n2) THEN unify(U, E1 & cont(subst(U) !? n2))
+  ELSE
+    IF global?(U)(n1) and global?(U)(n2) THEN
+      IF n1 = n2 THEN PRINT(traceUnify?, \\ . "unify: two equal global names: "
+                            ++ pretty(fmtObjectName(n1)), U)
+      ELSE 
+        LET t == \\ . "different globals:" ++
+                 pretty(fmtObjectName(n1)) ++ " # " ++ 
+                 pretty(fmtObjectName(n2))
+        IN
+        error(t)
+      FI
+    OTHERWISE
+    IF unknown?(U)(n1) THEN enter(U, n1, E2)
+    IF unknown?(U)(n2) THEN enter(U, n2, E1)
+    ELSE
+      IF n1 = n2 THEN PRINT(traceUnify?, \\ . "unify: two equal local names: "
+                            ++ pretty(fmtObjectName(n1)), U)
+      ELSE enter(U, n1, E2) FI
+    FI
+  FI
+DEF unify(U AS uEnv(_,_,_,_), (E1 AS name(_, n1)) & E2) ==
+  IF unknown?(U)(n1) THEN enter(U, n1, E2)
+  ELSE error(\\ . hintText("global/local [") ++
+                  pretty(fmtObjectName(n1)) ++ "] # [" ++
+                  pretty(fmtExpr(E2)) ++ "]")
+  FI
+DEF unify(U AS uEnv(_,_,_,_), E1 & E2 AS name(_, n2)) ==
+  IF unknown?(U)(n2) THEN enter(U, n2, E1)
+  ELSE error(\\ . hintText("unify: global/local [") ++
+                  pretty(fmtObjectName(n2)) ++ "] # [" ++
+                  pretty(fmtExpr(E1)) ++ "]")
+  FI
+DEF unify(U AS uEnv(_,_,_,_), apply(_, f1, a1) & apply(_, f2, a2)) ==
+  unify(unify(U, f1 & f2), a1 & a2)
+DEF unify(U AS uEnv(_,_,_,_), (E1 AS tuple(_, es1)) & (E2 AS tuple(_, es2))) ==
+  IF #(es1) = #(es2) THEN
+    (unify, U) \ zip(&)(es1, es2)
+  ELSE
+    error(\\ . hintText("different tuple length ") ++ pretty(fmtExpr(E1)) ++
+             hintText(" <$> ") ++ pretty(fmtExpr(E2)))
+  FI
+DEF unify(U AS uEnv(_,_,_,_), tuple(_, E1 :: <>) & E2) == unify(U, E1 & E2)
+DEF unify(U AS uEnv(_,_,_,_), E1 & tuple(_, E2 :: <>)) == unify(U, E1 & E2)
+  
+DEF unify(U AS uEnv(_,_,_,_), den(_, t1) & den(_, t2)) == 
+  IF t1 = t2 THEN U
+  ELSE error(\\ . "denotations: " ++ t1 ++ hintText(" <$> ") ++ t2) FI
+DEF unify(U AS uEnv(_,_,_,_),
+          (E1 AS cases(_, gs1, e1)) & (E2 AS cases(_, gs2, e2))) ==
+  IF #(gs1) = #(gs2) and
+    ((avail?(e1) and avail?(e2)) or (nil?(e1) and nil?(e2))) THEN
+    LET U1 == IF nil?(e1) THEN U ELSE unify(U, cont(e1) & cont(e2)) FI
+        U2 == (unify, U1) \ zip(&)(if * gs1, if * gs2)
+        U3 == (unify, U2) \ zip(&)(then * gs1, then * gs2)
+    IN
+    U3
+  ELSE
+    error(\\ . hintText("different # of cases ")  ++ pretty(fmtExpr(E1)) ++
+             hintText(" <$> ") ++ pretty(fmtExpr(E2)))
+  FI
+DEF unify(U AS uEnv(_,_,_,_),
+          (E1 AS lambda(_, ls1, v1, b1)) & (E2 AS lambda(_, ls2, v2, b2))) ==
+  IF #(v1) = #(v2) THEN
+    LET U1 == enterX(U, v1, v2)
+        U2 == unify(U1, b1 & b2)
+    IN
+    IF U2 error? THEN error(reason(U2))
+    IF U2 uEnv? THEN U :=_subst subst(U2) - ls1 - ls2
+    FI
+  ELSE
+    error(\\ . hintText("different # of lambda vars ")  ++
+               pretty(fmtExpr(E1)) ++
+               hintText(" <$> ") ++ pretty(fmtExpr(E2)))
+  FI
+DEF unify(U AS uEnv(_,_,_,_),
+          (E1 AS let(_, eqs1, b1)) & (E2 AS let(_, eqs2, b2))) ==
+  IF #(eqs1) = #(eqs2) THEN
+    LET U1 == (unify, U) \ zip(&)(lhs * eqs1, lhs * eqs2)
+        U2 == (unify, U) \ zip(&)(rhs * eqs1, rhs * eqs2)
+    IN
+    unify(U2, b1 & b2)
+  ELSE
+    error(\\ . hintText("different # of let vars ")  ++ pretty(fmtExpr(E1)) ++
+             hintText(" <$> ") ++ pretty(fmtExpr(E2)))
+  FI
+DEF unify(U AS uEnv(_,_,_,_), as(_, _, e1) & as(_, _, e2)) == unify(U, e1 & e2)
+DEF unify(U AS uEnv(_,_,_,_), any(_) & _) == U
+DEF unify(U AS uEnv(_,_,_,_), _ & any(_)) == U
+DEF unify(U AS uEnv(_,_,_,_), any(_) & any(_)) == U
+  
+
+    
+FUN enter: uEnv ** objectName ** expr -> uEnv
+DEF enter(error(m), _, _ : expr) == error(m)
+DEF enter(U AS uEnv(_,_,_,_), v0, e) ==
+  LET v == PRINT(traceUnify?, \\ . "enter: " ++ pretty(fmtObjectName(v0)) ++
+                 " -> " ++ pretty(fmtExpr(e)), v0)
+  IN
+  IF checkNames(\\o. ~(o = v))(e) THEN -- occurs check successful
+    IF unknown?(U)(v) THEN -- no restriction
+      LET dfd? == subst(U) !? v
+      IN
+      IF dfd? nil? THEN U :=_subst odef(v, e, subst(U))
+      ELSE -- already defined, ok if same substitution
+        IF cont(dfd?) = e THEN U
+        ELSE error(\\ . hintText("enter/different substitutions for unknown ")
+                        ++ pretty(fmtObjectName(v)) ++ " -> " ++
+                        pretty(fmtExpr(e)) ++ " found: " ++
+                        pretty(fmtExpr(cont(dfd?))))
+        FI
+      FI
+    IF global?(U)(v) THEN -- should not happen
+      error(\\ . hintText("enter/ cannot enter global ") ++
+                 pretty(fmtObjectName(v)))
+    ELSE -- local name
+      IF e name? ANDIF ~(global?(U, oper(e))) THEN -- local -> local is ok
+        LET dld? == find?(\\d, _ . v in d, delayed(U))
+        IN
+        IF nil?(dld?) THEN
+          LET dfd? == subst(U) !? v
+          IN
+          IF dfd? nil? THEN U :=_subst odef(v,e, subst(U))
+          ELSE 
+            IF cont(dfd?) = e THEN U
+            ELSE error(\\ . hintText("enter/different substitutions for local ")
+                            ++ pretty(fmtObjectName(v)) ++ " -> " ++
+                            pretty(fmtExpr(e)) ++ " found: " ++
+                            pretty(fmtExpr(cont(dfd?))))
+            FI 
+          FI
+        ELSE
+          LET a == 1st(cont(dld?))
+              b == 2nd(cont(dld?))
+          IN
+          IF oper(e) in b THEN
+            U :=_delayed def(excl(v, a), excl(oper(e), b),
+                             undef(a, delayed(U)))
+              :=_subst odef(v, e, subst(U))
+          ELSE
+            error(\\ . hintText("enter/delayed"))
+          FI
+        FI
+      ELSE -- e is no local name
+        error(\\ . hintText("enter/local -> non-local ")
+                        ++ pretty(fmtObjectName(v)) ++ " -> " ++
+                        pretty(fmtExpr(e)))
+      FI
+    FI
+  ELSE -- occurs-check fehlgeschlagen
+    IF e name? ANDIF oper(e) = v THEN
+      -- letzte Rettung: identische Substitution
+      U
+    ELSE
+      error(\\ . hintText("enter/occurs check failed ") ++
+                 pretty(fmtObjectName(v)) ++ " -> " ++
+                 pretty(fmtExpr(e)))
+    FI
+  FI
+
+FUN enter: uEnv ** seq[objectName] ** seq[objectName] -> uEnv
+DEF enter(error, _ : seq, _) == error
+DEF enter(U, l1, l2) == U :=_delayed def(asSet(l1), asSet(l2), delayed(U))
+
+FUN enterX: uEnv ** seq[objectName] ** seq[objectName] -> uEnv
+DEF enterX(U, <>, <>) == U
+DEF enterX(U, n1 :: N1, n2 :: N2) ==
+--  enter(enterX(U, N1, N2), n1, name(none, n2))
+  enterX(enter(U, n1, name(none, n2)), N1, N2)
+
+FUN global?: uEnv ** objectName -> bool
+DEF global?(U, oN) == global?(U)(oN)
+    
+FUN <$ : subst ** pair[expr, expr] -> pair[expr, expr]
+DEF f <$ (e1 & e2) == (f <$ e1) & (f <$ e2)
+
+FUN mkF: localSignName -> objectName -> bool
+DEF mkF(lS) == 
+  \\ oN. IF globalObjectName?(oN) THEN true
+         IF localObjectName?(oN) THEN sign(oN) = lS
+         FI
+
+FUN mkF: localSignName ** localSignName -> objectName -> bool
+DEF mkF(lS1, lS2) ==
+  \\o. IF globalObjectName?(o) THEN true
+       IF localObjectName?(o) THEN (sign(o) = lS1) or (sign(o) = lS2)
+       FI
+
+FUN F: objectName -> bool
+DEF F(_) == false
+
+FUN mkU: localSignName -> objectName -> bool
+DEF mkU(lS)(oN) == IF globalObjectName?(oN) THEN false
+                   IF localObjectName?(oN) THEN sign(oN) = lS
+                   FI
