@@ -1,0 +1,132 @@
+IMPLEMENTATION CheckDynamic
+
+IMPORT Com               ONLY com succeed break
+       ComCompose        ONLY &
+       Config            ONLY checkSignature?
+       Denotation        COMPLETELY
+       Dynamic           ONLY dynamic? keyword
+       InterOpal         COMPLETELY
+       InterOpalIO       ONLY readInterOpal
+       InterOpalEquality ONLY = : name ** name -> bool
+       InterOpalTools    ONLY ok? formalParams baseName
+       Map               ONLY map ! codom undef iter def?
+       MapReduce         ONLY /
+       Nat               ONLY nat < 0 succ
+       Option            ONLY option avail? cont
+       Pair[bool, bool]  ONLY pair &
+       Seq               ONLY seq exist? <>? :: <> #
+       SeqIndex          ONLY ! pos
+       SeqMap            ONLY *
+       SeqReduce         ONLY /
+
+
+-- %$The main function$
+
+-- FUN checkDynamic : denotation -> map[origin, <, struct] ->
+--		       com[map[origin, <, struct]]
+
+DEF checkDynamic(InterFile)(Structs) ==
+  dynamics(InterFile, Structs) & (\\ Dynamics .
+  (IF DynamicParams <>? THEN succeed(Structs)
+   ELSE break("parameter(s) " ++ Names ++ " of structure " ++ symbol(Main) ++
+	      " must be declared " ++ keyword ++ ".")
+     WHERE
+       Names == (+/+(" and "), "") / (Name * DynamicParams)
+       Name == (\\ Param . symbol(objs(Main) ! ident(insts(Main) !
+						     formal ! Param)))
+       Main == Structs ! main
+   FI
+   WHERE DynamicParams == (checkDynamic(Structs), <>) / Dynamics))
+
+
+FUN checkDynamic : map[origin, <, struct] ->
+		    nat ** pair[bool, bool] ** seq[nat] -> seq[nat]
+
+DEF checkDynamic(Structs)(Param, SignDynamic? & ImplDynamic?, DynamicParams) ==
+  IF ImplDynamic? ORIF dynamicReuse?(Structs, Param) THEN
+    IF SignDynamic? THEN DynamicParams
+    ELSE Param :: DynamicParams
+    FI
+  ELSE DynamicParams
+  FI
+
+
+FUN signatureInterName : denotation -> denotation
+
+DEF signatureInterName(InterFile) ==
+  baseName(InterFile) ++ ".sign.inter"
+
+
+FUN dynamics : denotation ** map[origin, <, struct] ->
+		com[map[nat, <, pair[bool, bool]]]
+
+DEF dynamics(InterFile, Structs) ==
+  IF checkSignature? THEN
+    readInterOpal(false, SignatureInterFile) &
+    ok?(InterFile) & (\\ IO .
+    succeed(dynamics(structs(IO) ! main, Structs ! main)))
+    WHERE SignatureInterFile == signatureInterName(InterFile)
+  ELSE
+    succeed(dynamics(Structs ! main))
+  FI
+
+
+FUN dynamics : struct ** struct -> map[nat, <, pair[bool, bool]]
+
+DEF dynamics(Sign, Impl) ==
+  iter(0, succ, (_ < Params))(Dynamic?)
+  WHERE Params == paramCount(Sign)
+	Dynamic? == \\ Param . dynamic?(Sign, Param) & dynamic?(Impl, Param)
+
+
+FUN dynamics : struct -> map[nat, <, pair[bool, bool]]
+
+DEF dynamics(Impl) ==
+  iter(0, succ, (_ < Params))(Dynamic?)
+  WHERE Dynamic? == \\ Param .
+		      dynamic?(Impl, Param, fromSign?) &
+		      dynamic?(Impl, Param)
+	Params == paramCount(Impl)
+
+
+FUN fromSign? : pragma -> bool
+
+DEF fromSign?(Pragma) ==
+  (\\ Item . IF Item token? THEN part(pos(Item)) signature?
+	     ELSE false
+	     FI) exist? items(Pragma)
+
+
+FUN dynamicReuse? : map[origin, <, struct] ** nat -> bool
+
+DEF dynamicReuse?(Structs, Param) ==
+  exist?(dynamicReuse?(Main, Param),
+	 codom(main undef Structs))
+  WHERE Main == Structs ! main
+
+
+FUN dynamicReuse? : struct ** nat -> struct -> bool
+
+DEF dynamicReuse?(Main, Param)(Struct) ==
+  dynamicReuse?(insts(Main) ! formal ! Param, Struct)
+  exist?
+  codom(insts(Struct))
+
+
+FUN dynamicReuse? : name ** struct -> seq[name] -> bool
+
+DEF dynamicReuse?(FormalParam, Struct)(ActualParams) ==
+  IF Position? avail? THEN
+    dynamic?(Struct, cont(Position?))
+  ELSE false
+  FI
+  WHERE Position? == pos((FormalParam = _), ActualParams)
+
+
+FUN paramCount : struct -> nat
+
+DEF paramCount(Struct) ==
+  IF formal def? Insts THEN #(Insts ! formal)
+  ELSE 0
+  FI
+  WHERE Insts == insts(Struct)

@@ -1,0 +1,220 @@
+IMPLEMENTATION ImportREFLECTION
+
+IMPORT InterOpal COMPLETELY
+       InterOpalEquality COMPLETELY
+       InterOpalTools COMPLETELY
+       TransformInsts COMPLETELY
+       ImplementReflections COMPLETELY
+       Seq COMPLETELY
+       Option COMPLETELY
+       Map COMPLETELY
+       Seq ONLY cons? exist?
+       SeqFilter ONLY |
+       SeqMap ONLY *
+       SeqReduce ONLY /
+       Set COMPLETELY
+       Nat COMPLETELY
+       Denotation ONLY ++
+       Com ONLY com succeed break
+       ComCompose ONLY &
+
+
+-- FUN importREFLECTION : ttable -> com[itable]
+
+DEF importREFLECTION(ttable(Structs, Refls)) ==
+  Import & buildITable(Refls)
+  WHERE Import == IF Refls {}? THEN succeed(Structs)
+		  ELSE importDENOTATION(Create?)(Structs) &
+		       importREFLECTION(Create?, Instances?)
+		       WHERE Create? == Generated cons?
+			     Instances? == Inst? exist? Generated
+			     Generated == generated? | codom(Refls)
+			     Inst? == (\\ Refl . ~(inst(orig(Refl)) none?))
+		  FI
+
+
+FUN importDENOTATION : bool -> map[origin, <, struct] ->
+			com[map[origin, <, struct]]
+
+DEF importDENOTATION(Create?)(Structs) ==
+  IF Create? THEN
+    Import & (\\ Struct . succeed((origin(Struct), Struct) def Structs))
+    WHERE Import == IF Origin? avail?
+		      THEN addDenotation(Structs ! cont(Origin?))
+		    ELSE addDenotation(Empty)
+		      WHERE Empty == struct(unknown :: <>,
+					    origin(newOriginNo(Structs)),
+					    "DENOTATION", (none, <>) def {},
+					    (none, <>) def {}, {}, {}, <>)
+	            FI
+	  Origin? == findStruct("DENOTATION", Structs)
+  ELSE succeed(Structs)
+  FI
+
+
+FUN addDenotation : struct -> com[struct]
+
+DEF addDenotation(Struct) ==
+  addObject(denotationId, "denotation", sort)(Struct) &
+  onlyDenotation
+
+
+FUN onlyDenotation : struct -> com[struct]
+
+DEF onlyDenotation(struct(Pos, Origin, Symbol, Insts, Onlys, Objs,
+			  Props, Pragmas)) ==
+  succeed(struct(Pos, Origin, Symbol, Insts, Onlys1, Objs, Props, Pragmas))
+  WHERE Onlys1 == (none, DenotationName :: none(Onlys)) def Onlys
+	DenotationName == name(denotationId, Origin, none)
+
+
+FUN addObject : ident ** denotation ** kind -> struct -> com[struct]
+
+DEF addObject(Ident, OSymbol, Kind)
+             (Struct AS struct(Pos, Origin, SSymbol, Insts, Onlys, Objs,
+			       Props, Pragmas)) ==
+  IF Ident def? Objs THEN
+    IF (Objs ! Ident) = (OSymbol, Kind) THEN succeed(Struct)
+    ELSE break("incompatible change in structure " ++ SSymbol)
+    FI
+  ELSE succeed(struct(Pos, Origin, SSymbol, Insts, Onlys,
+		      (Ident, Object) def Objs, Props, Pragmas))
+    WHERE Object == object(unknown :: <>, Ident, OSymbol, Kind,
+			   imported, <>, <>)
+  FI
+
+
+FUN importREFLECTION : bool ** bool -> map[origin, <, struct] ->
+			com[map[origin, <, struct]]
+
+DEF importREFLECTION(Create?, Instances?)(Structs) ==
+  Import & (\\ NewStruct .
+  succeed((origin(NewStruct), NewStruct) def Structs))
+  WHERE OldStruct == IF Origin? avail? THEN Structs ! cont(Origin?)
+		     ELSE struct(unknown :: <>,
+				 origin(newOriginNo(Structs)),
+				 "REFLECTION", (none, <>) def {},
+				 (none, <>) def {}, {}, {}, <>)
+		     FI
+	Import == addREFLECTION(Create?, Instances?, DenotationName)
+	                       (OldStruct) &
+	          onlyREFLECTION(Create?, Instances?) 
+        Origin? == findStruct("REFLECTION", Structs)
+	DenotationName == name(denotationId,
+			       cont(findStruct("DENOTATION", Structs)),
+			       none)
+
+
+FUN addREFLECTION : bool ** bool ** name -> struct -> com[struct]
+
+DEF addREFLECTION(Create?, Instances?, DenotationName)(Struct) ==
+  addObject(coreReflectionId, "coreReflection", sort)(Struct) &
+  (IF Create? THEN (\\ Struct1 .
+     addObject(instancesId, "instances", sort)(Struct1) &
+     addObject(<>_Id, "<>", fct(<>_Fct)) &
+     addObject(sortId, "sort", fct(SortFct)) &
+     (IF Instances? THEN
+        addObject(::_Id, "::", fct(::_Fct))
+      ELSE Done
+      FI))
+   ELSE Done
+   FI)
+  WHERE <>_Fct == sort(InstancesName)
+	::_Fct == funct(cart(sort(CoreReflectionName) ::
+			     sort(InstancesName) :: <>),
+			sort(InstancesName))
+	SortFct == funct(cart(sort(DenotationName) ::
+			      sort(DenotationName) ::
+			      sort(InstancesName) :: <>),
+			 sort(CoreReflectionName))
+	InstancesName == inREFLECTION(Origin)(instancesId)
+	CoreReflectionName == inREFLECTION(Origin)(coreReflectionId)
+	Origin == origin(Struct)
+	Done == (\\ Result . succeed(Result))
+
+
+FUN onlyREFLECTION : bool ** bool -> struct -> com[struct]
+
+DEF onlyREFLECTION(Create?, Instances?)
+                  (struct(Pos, Origin, Symbol, Insts, Onlys, Objs,
+			  Props, Pragmas)) ==
+  succeed(struct(Pos, Origin, Symbol, Insts, Onlys1, Objs, Props, Pragmas))
+  WHERE Onlys1 == (none, Only) def Onlys
+	Only == mergeOnly(none(Onlys),
+			  AsName(coreReflectionId) ::
+			  (IF Create? THEN
+			     AsName(sortId) ::
+			     AsName(instancesId) ::
+			     AsName(<>_Id) ::
+			     (IF Instances? THEN AsName(::_Id) :: <>
+			      ELSE <>
+	                      FI)
+	                   ELSE <>
+			   FI))
+	AsName == inREFLECTION(Origin)
+
+
+FUN inREFLECTION : origin -> ident -> name
+
+DEF inREFLECTION(Origin)(Ident) == name(Ident, Origin, none)
+
+
+FUN addOnly : struct ** seq[name] -> com[struct]
+
+DEF addOnly(struct(Pos, Origin, Symbol, Insts, Onlys, Objs, Props, Pragmas),
+	    Names) ==
+  succeed(struct(Pos, Origin, Symbol, Insts, Onlys1, Objs, Props, Pragmas))
+  WHERE Onlys1 == (none, mergeOnly(none(Onlys), Names)) def Onlys
+
+
+FUN mergeOnly : seq[name] ** seq[name] -> seq[name]
+
+DEF mergeOnly(Names, <>) == Names
+DEF mergeOnly(Names, Ft :: Rt) ==
+  IF (_ = Ft) exist? Names THEN mergeOnly(Names, Rt)
+  ELSE Ft :: mergeOnly(Names, Rt)
+  FI
+
+
+FUN none : map[inst, <, seq[name]] -> seq[name]
+
+DEF none(Onlys) ==
+  IF none def? Onlys THEN Onlys ! none
+  ELSE <>
+  FI
+
+
+FUN buildITable : map[name, <, interReflection] ->
+		   map[origin, <, struct] -> com[itable]
+
+DEF buildITable(Refls)(Structs) ==
+  IF Refls {}? THEN succeed(itable(Structs, Refls))
+  ELSE
+    succeed(itable(Structs, Refls, CoreReflectionName, SortName, AsInstances))
+    WHERE CoreReflectionName == inREFLECTION(Origin)(coreReflectionId)
+	  SortName == inREFLECTION(Origin)(sortId)
+	  AsInstances == asInstances(Origin)
+	  Origin == cont(findStruct("REFLECTION", Structs))
+  FI
+
+
+FUN asInstances : origin -> seq[expr] -> expr
+
+DEF asInstances(Origin) ==
+  /(::_Expr, <>_Expr)
+  WHERE ::_Expr == (\\ Ft, Rt .
+		     apply(unknown, name(unknown, ::_Name),
+			   tuple(unknown, Ft :: Rt :: <>)))
+	<>_Expr == name(unknown, <>_Name)
+	::_Name == inREFLECTION(Origin)(::_Id)
+	<>_Name == inREFLECTION(Origin)(<>_Id)
+
+
+FUN denotationId instancesId <>_Id ::_Id coreReflectionId sortId : ident
+
+DEF denotationId == ident(1)
+DEF instancesId == ident(1)
+DEF <>_Id == ident(2)
+DEF ::_Id == ident(3)
+DEF coreReflectionId == ident(4)
+DEF sortId == ident(5)

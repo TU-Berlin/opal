@@ -1,0 +1,113 @@
+IMPLEMENTATION ImplementReflections
+
+IMPORT InterOpal COMPLETELY
+       InterOpalTools COMPLETELY
+       TransformInsts COMPLETELY
+       Seq COMPLETELY
+       SeqFilter ONLY |
+       SeqMap ONLY *
+       SeqReduce ONLY /
+       Map COMPLETELY
+       Com ONLY com succeed
+       ComCompose ONLY &
+       Option COMPLETELY
+       Pair ONLY &
+
+
+DATA itable == itable(structs : map[origin, <, struct],
+		      refls : map[name, <, interReflection],
+		      tools : option[itools])
+
+
+-- FUN itable : map[origin, <, struct] ** map[name, <, interReflection] **
+--               name ** name ** (seq[expr] -> expr) -> itable
+
+DEF itable(Structs, Refls, CoreReflectionName, SortName, AsInstances) ==
+  itable(Structs, Refls, avail(itools(CoreReflectionName, SortName,
+				      AsInstances)))
+
+
+-- FUN itable : map[origin, <, struct] ** map[name, <, interReflection] ->
+--               itable
+
+DEF itable(Structs, Refls) == itable(Structs, Refls, nil)
+
+
+DATA itools == itools(coreReflectionName : name,
+		      sortName : name,
+		      asInstances : seq[expr] -> expr)
+
+
+-- FUN implementReflections : itable -> com[pair[map[origin, <, struct], nat]]
+
+DEF implementReflections(IT) ==
+  (implementReflection(IT), succeed(structs(IT))) / Refls & (\\ Structs .
+  succeed(Structs & NewParams))
+  WHERE NewParams == #(Param? | Refls)
+	Param? == (\\ Refl . (Refl parameter?) and (origin(orig(Refl)) main?))
+	Refls == codom(refls(IT))
+
+
+FUN implementReflection : itable ->
+			   interReflection ** com[map[origin, <, struct]] ->
+			   com[map[origin, <, struct]]
+
+DEF implementReflection(itable(S, Refls, Tools))
+                       (Refl, State) ==
+  State & (\\ Structs .
+  (succeed((Origin, implementReflection(IT, Refl)) upd Structs)
+   WHERE IT == itable(Structs, Refls, Tools)))
+  WHERE Origin == origin(asName(Refl))
+
+
+FUN implementReflection : itable ** interReflection -> struct -> struct
+
+DEF implementReflection(IT, Refl)
+                       (struct(Pos, Origin, Symbol, Insts, Onlys,
+			       Objs, Props, Pragmas)) ==
+  struct(Pos, Origin, Symbol, Insts, Onlys, (ident(Refl), Obj) def Objs,
+	 Props, Pragmas)
+  WHERE Obj == implementReflection(IT, Refl)
+
+
+FUN implementReflection : itable ** interReflection -> object
+
+DEF implementReflection(IT, Refl) ==
+  object(unknown :: <>, Ident,
+	 reflectSymbol(symbol(lookup(structs(IT), Orig))),
+	 fct(sort(coreReflectionName(cont(tools(IT))))), Def, <>, <>)
+  WHERE Orig == orig(Refl)
+	Ident == ident(Refl)
+	Def == IF Refl parameter? THEN parameter(unknown, no(Refl))
+	       ELSE def(Eqn :: <>)
+		 WHERE
+		   Eqn == eqn(unknown, Pat, <>, Impl)
+		   Pat == name(unknown, asName(Refl))
+		   Impl == implementReflection(IT, Refl)
+	       FI
+
+
+FUN implementReflection : itable ** interReflection -> expr
+
+DEF implementReflection(itable(Structs, Refls,
+			       avail(itools(_, SortName, AsInstances))),
+			generated(Orig, _, _)) ==
+  apply(unknown, name(unknown, SortName), Args)
+  WHERE IdDen == den(unknown, symbol(lookup(Structs, Orig)))
+	Inst == inst(Orig)
+        StructDen == den(unknown, symbol(Structs ! origin(Orig)))
+	Params == IF Inst def? Insts THEN Insts ! Inst
+	          ELSE <>
+	          FI
+	Insts == insts(Structs ! origin(Orig))
+	Sorts == (\\ Name. kind(lookup(Structs, Name)) sort?) | Params
+	Names == (\\ Name. asName(Refls ! Name)) * Sorts
+	Instances == AsInstances(name(unknown, _) * Names)
+	Args == tuple(unknown, IdDen :: StructDen :: Instances :: <>)
+
+
+FUN reflectSymbol : denotation -> denotation
+
+/* Generate symbolic identifier for reflected parameter. */
+
+DEF reflectSymbol(Symbol) == Symbol

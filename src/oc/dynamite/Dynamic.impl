@@ -1,0 +1,62 @@
+IMPLEMENTATION Dynamic
+
+IMPORT Config ONLY globalPragma? dynamicValues?
+       Denotation ONLY =
+       InterOpal COMPLETELY
+       InterOpalEquality ONLY = : name ** name -> bool
+       Map ONLY ! def?
+       Seq ONLY exist?
+       SeqIndex ONLY !
+
+
+DEF dynamic?(Struct, Param : nat) ==
+  dynamic?(Struct, Param, \\ _ . true)
+
+
+DEF dynamic?(Struct, Param, Ok?) ==
+  IF formal def? Insts THEN
+    dynamic?(Struct, Insts ! formal ! Param, Ok?)
+  ELSE false
+  FI
+  WHERE Insts == insts(Struct)
+
+
+DEF dynamic?(Struct, Name : name) ==
+  dynamic?(Struct, Name, \\ _ . true)
+
+
+DEF dynamic?(Struct, Name, Ok?) ==
+  IF dynamicValues? ORIF kind(objs(Struct) ! ident(Name)) sort? THEN
+    dynamic?(Name, Ok?) exist? pragmas(Struct)
+  ELSE false
+  FI
+
+
+FUN dynamic? : name ** (pragma -> bool) -> pragma -> bool
+
+DEF dynamic?(Param, Ok?)(Pragma) ==
+  IF ~(Pragma Ok?) THEN false
+  OTHERWISE
+  IF dynamic? exist? items(Pragma) THEN
+    IF objects? exist? items(Pragma) THEN
+      dynamic?(Param) exist? items(Pragma)
+    ELSE globalPragma?
+    FI
+  ELSE false
+  FI
+
+
+FUN dynamic? : pragmaItem -> bool
+
+DEF dynamic?(token(_, text)) == text = keyword
+DEF dynamic?(objects(_))     == false
+
+
+FUN dynamic? : name -> pragmaItem -> bool
+
+DEF dynamic?(_)(token(_, _)) == false
+DEF dynamic?(Param)(objects(Objs)) ==
+  (_ = Param) exist? Objs
+
+
+DEF keyword == "DYNAMIC"

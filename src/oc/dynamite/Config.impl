@@ -1,0 +1,105 @@
+IMPLEMENTATION Config
+
+IMPORT Char ONLY char = |=
+       Com ONLY com EXEC succeed break
+       Denotation ONLY = ++ !
+       Nat ONLY nat 0 1 =
+       PrintableChar ONLY -
+       ProcessArgs ONLY args
+       Seq ONLY seq :: <> ft rt exist? #
+       SeqFilter ONLY |
+       SeqReduce ONLY /
+       Void ONLY void nil
+
+
+DEF fileArgument == EXEC(findFileArgument)
+
+
+DEF globalPragma? ==
+  flag("global-pragma", false)
+
+DEF dynamicValues? ==
+  flag("dynamic-values", false)
+
+DEF checkSignature? ==
+  flag("check-signature", true)
+
+
+FUN flag : denotation ** bool -> bool
+
+DEF flag(Name, Default) ==
+  IF (_ = ("--" ++ Name)) exist? args THEN true
+  IF (_ = ("--no-" ++ Name)) exist? args THEN false
+  ELSE Default
+  FI
+
+
+FUN prog : denotation
+
+DEF prog == ft(progArgs)
+
+
+FUN args : seq[denotation]
+
+DEF args == rt(progArgs)
+
+
+FUN progArgs : seq[denotation]
+
+DEF progArgs == EXEC(args)
+
+
+FUN findFileArgument : com[denotation]
+
+DEF findFileArgument ==
+  IF #(Candidates) = 1 THEN succeed(ft(Candidates))
+  ELSE break(usage)
+  FI
+  WHERE Candidates == NoSlash? | args
+	NoSlash? == \\ String . String ! 0 |= -
+
+
+FUN usage : denotation
+
+DEF usage ==
+  "usage: " ++ prog ++ " <interfile>\n" ++
+  (FlagSyntax, "") / flagNames
+  WHERE FlagSyntax == \\ Name, Rest . "         --" ++ Name ++
+			" --no-" ++ Name ++ "\n" ++ Rest
+
+
+FUN checkArgs : void
+
+DEF checkArgs == EXEC(checkArgs)
+
+
+FUN checkArgs : com[void]
+
+DEF checkArgs ==
+  IF unknown? exist? args THEN break(usage)
+  ELSE succeed(nil)
+  FI
+
+
+FUN unknown? : denotation -> bool
+
+DEF unknown?(Arg) ==
+  IF Arg ! 0 = - THEN ~(flag?(Arg) exist? flagNames)
+  ELSE false
+  FI
+
+
+FUN flag? : denotation -> denotation -> bool
+
+DEF flag?(Arg)(Name) ==
+  IF "--" ++ Name = Arg THEN true
+  IF "--no-" ++ Name = Arg THEN true
+  ELSE false
+  FI
+
+
+FUN flagNames : seq[denotation]
+
+DEF flagNames ==
+  "global-pragma" :: "dynamic-values" ::
+  "check-signature" :: <>

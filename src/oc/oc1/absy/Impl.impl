@@ -9,7 +9,7 @@ IMPLEMENTATION Impl[obj]
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:39 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-03-23 12:33:39 $ ($Revision: 1.2 $)
 
 IMPORT  -- absy
         Fct[obj]        COMPLETELY
@@ -31,7 +31,8 @@ IMPORT  -- lib
         Pair[expr,set]  ONLY pair & 
        SeqFilter ONLY |
        OptionConv ONLY `
-       Option ONLY avail
+       Option ONLY option avail nil
+       Pair ONLY pair unpair 1st
 
 -- %- ------------------------------------------------------------------------
 DATA sortImpl== sortImpl( sort:obj, variants:seq[variant], pos:pos )
@@ -311,3 +312,61 @@ DEF extractVarsI(val(o, _)) == o%
 DEF extractVarsI(typed(e, _, _)) == extractVarsI(e)
 DEF extractVarsI(_) == <>
 
+-- %$Positionen erweitern$
+DEF extendPos(e:expr) == IF region?(pos(e)) THEN e ELSE extendPos1(e) FI
+
+FUN extendPos1: expr -> expr
+DEF extendPos1(E AS none(_)) == E
+DEF extendPos1(E AS rtError(_, _)) == E
+DEF extendPos1(E AS den(_, _)) == E
+DEF extendPos1(tuple(els, p)) ==
+  LET els1 == extendPos * els
+  IN
+  tuple(els1, +/(pos * els) + p)
+DEF extendPos1(apply(f, a, p)) ==
+  LET f1 == extendPos1(f)
+      a1 == extendPos1(a)
+  IN
+  apply(f1, a1, pos(f1) + pos(a1) + p)
+DEF extendPos1(cases(gs, e, p)) ==
+  LET gs1 == extendPos * gs
+      e1 == extendPos1(e)
+  IN
+  cases(gs1, e1, +/(pos * gs1) + pos(e1) + p)
+DEF extendPos1(lambda(vs, bd, p)) ==
+  LET bd1 == extendPos1(bd)
+  IN
+  lambda(vs, bd1, pos(bd1) + p)
+DEF extendPos1(E AS val(_, _)) == E
+DEF extendPos1(as(pN, e, p)) ==
+  LET e1 == extendPos1(e)
+  IN
+  as(pN, e1, pos(e1) + p)
+DEF extendPos1(block(dfs, bd, p)) ==
+  LET dfs1 == extendPos * dfs
+      bd1 == extendPos1(bd)
+  IN
+  block(dfs1, bd1, +/(pos * dfs1) + pos(bd1) + p)
+DEF extendPos1(typed(e, fc, p)) ==
+  LET e1 == extendPos1(e)
+  IN
+  typed(e1, fc, pos(e1) + p)
+DEF extendPos1(mix(f, p)) ==
+  LET f1 == (\\es. LET (e, s) == unpair(es) 
+                      e1 == extendPos1(e)
+                  IN
+                  e1 & s) * f
+  IN  
+  mix(f1, +/(pos * 1st * f) + p)
+
+DEF extendPos(guard(i, t, p)) ==
+  LET i1 == extendPos1(i)
+      t1 == extendPos1(t)
+  IN
+  guard(i1, t1, pos(i1) + pos(t1) + p)
+
+DEF extendPos(eq(l, r, p)) ==
+  LET l1 == extendPos1(l)
+      r1 == extendPos1(r)
+  IN
+  eq(l1, r1, pos(l1) + pos(r1) +p)

@@ -1,0 +1,122 @@
+IMPLEMENTATION TransformInsts
+
+IMPORT InterOpal COMPLETELY
+       InterOpalTools COMPLETELY
+       Compose ONLY o
+       Dynamic COMPLETELY
+       Seq COMPLETELY
+       SeqFilter COMPLETELY
+       SeqIndex ONLY !
+       SeqMap ONLY *
+       SeqMapEnv COMPLETELY
+       SeqReduce ONLY /
+       Set COMPLETELY
+       SetConv ONLY asSet
+       Map COMPLETELY
+       MapFilter ONLY |
+       MapMapEnv ONLY *
+       EnvMap COMPLETELY
+       Nat COMPLETELY
+       Com COMPLETELY
+
+
+DATA interReflection == generated(orig : name,
+				  ident : ident,
+				  inst : inst)
+			parameter(orig : name,
+				  ident : ident,
+				  no : nat)
+
+
+-- FUN asName : interReflection -> name
+
+DEF asName(generated(_, Ident, Inst)) == name(Ident, main, Inst)
+DEF asName(parameter(name(_, Origin, _), Ident, _)) ==
+  name(Ident, Origin, none)
+
+
+DATA ttable == ttable(structs : map[origin, <, struct],
+		      dynamics : set[name, <],
+		      refls : map[name, <, interReflection],
+		      newId : nat)
+
+
+-- FUN ttable : map[origin, <, struct] ** map[name, <, interReflection] ->
+--	         ttable
+
+DEF ttable(Structs, Refls) ==
+  ttable(Structs, Dynamics, Refls, NewIdentNo)
+  WHERE Dynamics == (+, {}) / dynamics * codom(Structs)
+	NewIdentNo == (max, newIdentNo(Structs ! main)) /
+	              (succ o (no o ident)) * MainParam? | codom(Refls)
+	MainParam? == \\ Refl . (Refl parameter?)
+	                        and (origin(orig(Refl)) main?)
+
+FUN dynamics : struct -> set[name, <]
+
+DEF dynamics(Struct) ==
+  asSet(dynamic?(Struct, _) | formalParams(Struct))
+
+
+-- FUN transformInsts : ttable -> com[ttable]
+
+DEF transformInsts(TT AS ttable(Structs, _, _, _)) ==
+  succeed(finish(transformInsts * (TT, Structs)))
+
+
+FUN finish : ttable ** map[origin, <, struct] -> ttable
+
+DEF finish(ttable(_, Dynamics, Refls, NewId), Structs) ==
+  ttable(Structs, Dynamics, Refls, NewId)
+
+
+FUN transformInsts : ttable ** struct -> ttable ** struct
+
+DEF transformInsts(TT, Struct AS struct(Pos, Origin, Symbol, Insts, Onlys,
+					Objs, Props, Pragmas)) ==
+  struct(Pos, Origin, Symbol, _, Onlys, Objs, Props, Pragmas) *
+  transformInst(formalParams(Struct)) * (TT, Insts)
+
+
+FUN transformInst : seq[name] -> ttable ** seq[name] -> ttable ** seq[name]
+
+DEF transformInst(FormalParams)(TT, Params) ==
+  (Params ++ _) * transformInst * (TT, Sorts)
+  WHERE Sorts == filterInst(dynamics(TT))(FormalParams, Params)
+
+
+FUN filterInst : set[name, <] -> seq[name] ** seq[name] -> seq[name]
+
+DEF filterInst(_)(<>, <>) == <>
+DEF filterInst(Dynamics)(Formal :: FormalParams, Actual :: Params) ==
+  IF Formal in Dynamics THEN Actual :: Rest
+  ELSE Rest
+  FI
+  WHERE Rest == filterInst(Dynamics)(FormalParams, Params)
+
+
+FUN transformInst : ttable ** name -> ttable ** name
+
+DEF transformInst(TT AS ttable(Structs, _, Refls, _), Name) ==
+  IF Name def? Refls THEN (TT, asName(Refls ! Name))
+  ELSE addReflection(Ignore * transformInst * (TT, Params))
+  FI
+  WHERE	Params == IF NameInst none? THEN <>
+                  ELSE insts(Structs ! origin(Name)) ! NameInst
+		  FI
+        NameInst == inst(Name)
+	Ignore == (\\ _ . Name)
+
+
+FUN addReflection : ttable ** name -> ttable ** name
+
+DEF addReflection(ttable(Structs, Dynamics, Refls, NewId), Orig) ==
+  (ttable(Structs, Dynamics, (Orig, Refl) def Refls, succ(NewId)),
+   asName(Refl))
+  WHERE Inst ==
+	  IF formal def? insts(Structs ! main) THEN formal
+          ELSE none
+          FI
+	Refl == generated(Orig, ident(NewId), Inst)
+
+

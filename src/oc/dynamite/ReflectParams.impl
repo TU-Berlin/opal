@@ -1,0 +1,62 @@
+IMPLEMENTATION ReflectParams
+
+IMPORT InterOpal COMPLETELY
+       InterOpalTools ONLY newIdentNo
+       Map COMPLETELY
+       TransformInsts COMPLETELY
+       Dynamic COMPLETELY
+       Seq COMPLETELY
+       SeqFilter ONLY |
+       SeqReduce ONLY /
+       SeqMap ONLY *
+       Nat COMPLETELY
+       Com ONLY com succeed
+       ComCompose ONLY &
+
+
+-- FUN reflectParams : map[origin, <, struct] -> com[ttable]
+
+/* Build ttable with given structs and (if dynamic) additional
+   parameters. Informal:
+   
+   IMPLEMENTATION Foo[a : SORT, f : bar, b : SORT] /$ DYNAMIC $/
+   =>
+   IMPLEMENTATION Foo[a : SORT, f : bar, b : SORT,
+                      a : sortReflection, b : sortReflection]
+*/
+
+
+DEF reflectParams(Structs) ==
+  ((reflectParams, succeed({})) / codom(Structs)) & (\\ Refls .
+  succeed(ttable(Structs, Refls)))
+
+
+FUN reflectParams : struct ** com[map[name, <, interReflection]] ->
+		     com[map[name, <, interReflection]]
+
+DEF reflectParams(Struct, State) ==
+  State & (\\ Refls .
+  reflectParams(Struct) & (\\ Refls1 .
+  succeed(Refls <+ Refls1)))
+
+
+FUN reflectParams : struct -> com[map[name, <, interReflection]]
+
+DEF reflectParams(Struct) ==
+  (reflectParam(newIdentNo(Struct)), succeed({})) / DynamicParams
+  WHERE DynamicParams == dynamic?(Struct, _) | Params
+	Params == IF formal def? Insts THEN Insts ! formal
+	          ELSE <>
+	          FI
+	Insts == insts(Struct)
+
+
+FUN reflectParam : nat -> name ** com[map[name, <, interReflection]] ->
+		    com[map[name, <, interReflection]]
+
+/* Reflect single parameter, starting with ident(N) */
+
+DEF reflectParam(N)(Name, State) ==
+  State & (\\ Refls .
+  (succeed((Name, parameter(Name, ident(N + K), K + 1)) def Refls)
+   WHERE K == #(Refls)))
