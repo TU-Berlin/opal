@@ -1,6 +1,10 @@
 /* Filtering ocs output */
-/* $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/etc/filterocs.c,v 1.1.1.1 1998-06-16 15:59:54 wg Exp $ */
 
+/* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
+   See OCSHOME/etc/LICENSE or 
+   http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+   $Date: 1998-06-17 11:01:14 $ ($Revision: 1.2 $)
+*/
 #include <string.h>
 #include <stdio.h>
 
@@ -13,7 +17,7 @@ int main(int argc, char *argv[]){
     } else 
     if (strstr(line,"othing to be done for") != NULL){
       /* print abstract target */
-      fputs("Noting to be done for `", stdout);
+      fputs("Nothing to be done for `", stdout);
       fputs(argv[1], stdout);
       fputs("'.\n", stdout);
       fflush(stdout);
