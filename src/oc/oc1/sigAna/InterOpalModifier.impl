@@ -3,13 +3,15 @@ IMPLEMENTATION InterOpalModifier
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1998-06-16 15:59:43 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1998-06-22 13:43:08 $ ($Revision: 1.2 $)
 
 IMPORT  Char    ONLY blank
         Compose ONLY o
+		Denotation ONLY = ++
         Fct[name'Name]  COMPLETELY
         Impl[name'Name] COMPLETELY
         InterOpal       COMPLETELY
+        InterOpalAccess COMPLETELY
         Map     COMPLETELY
         MapConv COMPLETELY
         MapReduce COMPLETELY
@@ -27,67 +29,8 @@ IMPORT  Char    ONLY blank
         SeqReduce       COMPLETELY
         SeqSort         COMPLETELY
         SetConv         COMPLETELY
-       Denotation ONLY = ++
-       DEBUG ONLY PRINT
-
 
 -- Accessing InterOpal
-
--- Structures
-FUN structs : interOpal -> seq[struct'InterOpal]
-DEF structs(Inter) == codom(structs(Inter))
-
-FUN mainStruct : interOpal -> struct'InterOpal
-DEF mainStruct(Inter) == structs(Inter) ! main
-
-FUN transStructs : interOpal -> seq[struct'InterOpal]
-DEF transStructs(Inter) == (origin? o origin) | structs(Inter)
-
-FUN struct : interOpal ** origin -> struct'InterOpal
-DEF struct(Inter, Orig) == structs(Inter) ! Orig
-
-FUN struct : interOpal ** name'InterOpal -> struct'InterOpal
-DEF struct(Inter, Name) == struct(Inter, origin(Name))
-
--- Objects
-
-FUN objects : struct'InterOpal -> seq[object]
-DEF objects(Struct) == codom(objs(Struct))
-
-FUN objects : interOpal ** origin -> seq[object]
-DEF objects(Inter, Orig) == objects(structs(Inter) ! Orig)
-        
-FUN objects : interOpal -> seq[object]
-DEF objects(Inter) == objects(mainStruct(Inter))
-
-FUN object : struct'InterOpal ** ident -> object
-DEF object(Struct, Ident) == objs(Struct) ! Ident
-
-FUN object : interOpal ** name'InterOpal -> object
-DEF object(Inter, Name) == object(struct(Inter, Name), ident(Name))
-
--- Parameter
-
-FUN param? : struct'InterOpal -> bool
-DEF param?(Struct) == def?(formal, insts(Struct))
-
-FUN param? : interOpal -> bool
-DEF param?(Inter) == param?(mainStruct(Inter))
-
-FUN formals : struct'InterOpal -> seq[name'InterOpal]
-DEF formals(Struct) == insts(Struct)!formal
-
-FUN param? : struct'InterOpal ** ident -> bool
-DEF param?(Struct, Ide) == 
-        IF param?(Struct) THEN
-                exist?(\\F.ident(F) = Ide, formals(Struct))
-        ELSE false FI
-
-FUN param? : struct'InterOpal ** object -> bool
-DEF param?(Struct, Obj) == param?(Struct, ident(Obj))
-
-FUN param? : interOpal ** name'InterOpal -> bool
-DEF param?(Inter, Name) == param?(struct(Inter, Name), ident(Name))
 
 -- params are sorted according to their logical position!
 
@@ -101,23 +44,7 @@ DEF params(Struct:struct) == params(Struct, objects(Struct))
 FUN params : interOpal -> seq[object]
 DEF params(Inter:interOpal) == params(mainStruct(Inter))
 
--- Parameter position
-
-FUN paramNo : struct'InterOpal ** ident -> nat
-DEF paramNo(Struct, Ide) ==
-        succ(#(take(\\F. ~(ident(F)=Ide), formals(Struct))))
-
-FUN paramNo : interOpal ** name'InterOpal -> nat
-DEF paramNo(Inter, Name) == paramNo(struct(Inter, Name), ident(Name))
-
--- %$Laws$
-DEF laws(IO) == laws(structs(IO)!main)
-DEF laws(str) == law? | codom(props(str))
-
 -- Symbols
-
-FUN symbol : interOpal -> denotation
-DEF symbol(Inter) == symbol(mainStruct(Inter))
 
 FUN symbols : interOpal -> seq[denotation]
 DEF symbols(Inter:interOpal) == flat(symbols * structs(Inter))
@@ -126,73 +53,6 @@ FUN symbols : struct'InterOpal -> seq[denotation]
 DEF symbols(Struct:struct) == 
         / (\\O, S. symbol(O) :: S,
                 %(symbol(Struct)), objs(Struct))
-
--- equality for names (to find free types) 
-
-FUN = : origin ** origin -> bool
-DEF main = main == true
-DEF origin(o1) = origin(o2) == o1 = o2
-DEF local = local == true
-DEF _ : origin = _ == false
-
-FUN = : ident ** ident -> bool
-DEF i1:ident = i2 == no(i1) = no(i2)
-
-FUN = : name'InterOpal ** name'InterOpal -> bool
-DEF n1:name = n2 == ~(n1 < n2) and ~(n2 < n1)
-
--- Free Types 
-
-FUN freeTypes : struct'InterOpal -> seq[property]
-DEF freeTypes(Struct) == freeType? | codom(props(Struct))
-
-FUN freeTypes : origin ** seq[property] ** object -> seq[property]
-DEF freeTypes(Orig, FreeTypes, Obj) ==
-        IF sort?(kind(Obj)) ANDIF ::?(props(Obj)) THEN 
-                LET -- Props == props(Obj)
-                    Ide == ident(Obj)
-                IN
-                        (\\F. -- exist?(ident(F) = _, Props) and 
-                                ident(sort(F)) = Ide and origin(sort(F)) = Orig
-                                ) | FreeTypes
-        ELSE <> FI
-
-FUN freeType? : struct'InterOpal ** object -> bool
-DEF freeType?(Struct, Obj) == 
-        ::?(freeTypes(origin(Struct), freeTypes(Struct), Obj))
-
-FUN freeType : struct'InterOpal ** object -> property
-DEF freeType(Struct, Obj) == 
-        ft(freeTypes(origin(Struct), freeTypes(Struct), Obj))
-
--- Constructors 
-
-FUN constructors : seq[property] ** object -> seq[variant'InterOpal]
-DEF constructors(FreeTypes, Obj) ==
-        LET Kind == kind(Obj) IN
-        IF sort?(Kind) THEN <>
-        IF other?(Kind) THEN <>
-        ELSE LET Fct == fct(Kind) 
-                 ResultFct == IF funct?(Fct) THEN codom(Fct)
-                              ELSE Fct FI
-             IN
-             IF sort?(ResultFct) THEN 
-               LET Ide == ident(Obj) 
-                   Result == sort(ResultFct)
-                   Rest == (\\F. ident(sort(F)) = ident(Result)) | FreeTypes
-                   Variants == flat(variants * Rest)
-               IN (\\V. Ide = ident(cons(V))) | Variants
-             ELSE <> 
-             FI
-        FI
-
-FUN constructor? : struct'InterOpal ** object -> bool
-DEF constructor?(Struct, Obj) == 
-        ::?(constructors(freeTypes(Struct), Obj))
-
-FUN variant : struct'InterOpal ** object -> variant'InterOpal
-DEF variant(Struct, Obj) == 
-        ft(constructors(freeTypes(Struct), Obj))
 
 -- Instances
 
