@@ -1,17 +1,24 @@
 #! /usr/X11R6/bin/wish 
-## 
 
-## set up main window
+
 
 # some global variables
-set prefix /usr/local
 
 set fontbold -*-helvetica-bold-r-*-*-12-*-*-*-*-*-*-*
 set font1 -*-helvetica-bold-r-*-*-24-*-*-*-*-*-*-*
 set font2 -*-helvetica-bold-r-*-*-16-*-*-*-*-*-*-*
+set fonttt -*-lucidatypewriter-medium-*-normal-*-12-*-*-*-*-*-*-*
+set fontsmall -*-helvetica-medium-r-*-*-10-*-*-*-*-*-*-*
 
+set prefix /usr/local
 set optionList {dynamic absolute-pathes doc oasys dosfop opalwin \
-		    reflections tivi2 opaljava oc5 proofchecker}
+		    reflections tivi2 opaljava oc5 proofchecker locallinks}
+array set option { }
+set useCache 0
+set makeTargets {}
+
+## set up main window
+
 ## TOP LINE: image + headline
 
 . configure -background white
@@ -31,10 +38,14 @@ pack .top.image .top.headline -side left -fill y
 
 frame .mid -background white
 button .mid.configure -text "Configure OCS" -command midConfigure
+button .mid.install -text "Install OCS" -command midInstall -state disabled
+if [file exists opalconfig.makeTargets] {
+    .mid.install configure -state normal
+}
 button .mid.selectVersion -text "Select OCS Version" -command midSelectVersion
 button .mid.quit -text Quit -command midQuit
 
-pack .mid.configure .mid.selectVersion .mid.quit -side top -expand 1 -fill x
+pack .mid.configure .mid.install .mid.selectVersion .mid.quit -side top -expand 1 -fill x
 
 ## DISPLAY MAIN WINDOW
 pack .top 
@@ -47,11 +58,11 @@ pack .mid -expand 1 -fill both
 
 ### Configure
 proc midConfigure { } {
-    global prefix font2 option optionList
+    global prefix font2 option optionList useCache
 
 
     midConfigureCancel
-    parray option
+    # parray option
 
     .mid.configure configure -state disabled
     toplevel .configure -background white
@@ -60,6 +71,8 @@ proc midConfigure { } {
     namedEntry .configure.prefix "OCS Root Directory:" prefix
 
     frame .configure.options
+    checkbutton .configure.options.cache -text "use cache file" -variable useCache -anchor w
+    pack .configure.options.cache -expand 1 -fill x
     foreach o $optionList {
 	checkbutton .configure.options.$o -text $o -variable option($o) -anchor w
 	pack .configure.options.$o -expand 1 -fill x 
@@ -78,14 +91,30 @@ proc midConfigure { } {
 }
 
 proc midConfigureDo { } {
-    global prefix option optionList
+    global prefix option optionList useCache midConfigureProgress fonttt
+
+    .mid.install configure -state disabled
+    foreach b {do default cancel quit} {
+	.configure.buttons.$b configure -state disabled
+    }
+    frame .configure.progress -relief ridge -borderwidth 4
+    label .configure.progress.l -text "Configuring ...." 
+    message .configure.progress.l2 -text " <output> " -font $fonttt -width 200p -justify left -anchor w
+    pack .configure.progress.l .configure.progress.l2 -expand 1 -fill x 
+    pack .configure.progress -expand 1 -fill x 
+    update
+    set midConfigureProgress 1
+    after 100 midConfigureDoAux2
 
 #    midConfigureSave
-    parray option
-    puts "Prefix: $prefix"
+#    parray option
+ #   puts "Prefix: $prefix"
 
     set cmd "./configure"
     set cmd "$cmd --prefix=$prefix"
+    if { ! $useCache } { 
+	set cmd "$cmd --cache-file=/dev/null" 
+    }
 
     foreach o $optionList {
 	if {$option($o)} {
@@ -95,15 +124,47 @@ proc midConfigureDo { } {
 	}
     }
 
-    puts "cmd = $cmd"
-    set cmd [split "exec $cmd >& /tmp/opalconfig.out"]
-    set configError [catch [ eval $cmd ] msg]
-    if $configError {errorMsg $msg} {puts "configure ok"}
+#    puts "cmd = $cmd"
+    set configError [backExec $cmd]
+    set midConfigureProgress 0
+    if $configError {
+	label .configure.progress.l3 -text "Configure failed!" -fg red
+	button .configure.progress.b -text "See output" -command midConfigureDoAux3
+    } else { 
+	label .configure.progress.l3 -text "Configure succeeded!"
+	button .configure.progress.b -text "OK" -command midConfigureDoAux1
+	.mid.install configure -state normal
+    }
+    pack forget .configure.progress.l .configure.progress.l2
+    pack .configure.progress.l3 -expand 1 -fill x  -side left
+    pack .configure.progress.b -side left 
+}
 
+proc midConfigureDoAux1 { } {
+    foreach b {do default cancel quit} { 
+	.configure.buttons.$b configure -state normal
+    } 
+    destroy .configure.progress
+}
+
+proc midConfigureDoAux2 { } {
+    global midConfigureProgress
+
+    if { $midConfigureProgress } {
+	.configure.progress.l2 configure -text [exec tail -1 /tmp/opalconfig.out] -justify left
+	update
+	after 200 midConfigureDoAux2
+    }
+}
+
+proc midConfigureDoAux3 { } {
+    
+    midConfigureDoAux1
+    showFile "Configure failed!" "/tmp/opalconfig.out"
 }
 
 proc midConfigureCancel { } {
-    global option prefix
+    global option prefix useCache
 
     # read previously stored values
     if [file exists opalconfig.last] {
@@ -117,6 +178,8 @@ proc midConfigureDefault { } {
     global prefix option 
 
     # default values
+    set useCache 0
+
     set option(dynamic) 1
     set option(absolute-pathes) 1
     set option(doc) 0
@@ -128,6 +191,7 @@ proc midConfigureDefault { } {
     set option(opaljava) 0
     set option(oc5) 0
     set option(proofchecker) 0
+    set option(locallinks) 1
 
     set prefix /usr/local
 }
@@ -140,7 +204,7 @@ proc midConfigureQuit { } {
 }
 
 proc midConfigureSave { } {
-    global prefix option optionList
+    global prefix option optionList useCache
 
     if [catch {set fid [open "opalconfig.last" "w"]} ] {
 	errorMsg "Could not open opalconfig.last. Configuration not saved."
@@ -149,10 +213,115 @@ proc midConfigureSave { } {
     set now [exec "date"]
     puts $fid "\#\# OCS configuration saved by opalconfig at $now"
     puts $fid "set prefix $prefix"
+    puts $fid "set useCache $useCache"
     foreach o $optionList {
 	puts $fid "set option($o) $option($o)"
     }
     close $fid
+}
+
+### Install OCS
+proc midInstall { } {
+    global font2 makeTargets fontsmall
+
+    .mid.install configure -state disabled
+
+    toplevel .tInstall -background white
+    wm title .tInstall "Install OCS"
+    label .tInstall.headline -text "Install OCS" -font $font2 -background white
+    pack .tInstall.headline
+    source opalconfig.makeTargets
+    set no 0
+    set fidx 0
+    frame .tInstall.f$fidx
+    foreach t $makeTargets {
+	regsub -all "\\." $t "_" l
+	label .tInstall.$l -text $t -background grey -anchor w -font $fontsmall -width 30
+	pack .tInstall.$l -expand 1 -fill x -in .tInstall.f$fidx -side left
+	incr no
+	if { $no == 3 } {
+	    pack .tInstall.f$fidx
+	    incr fidx
+	    set no 0
+	    frame .tInstall.f$fidx
+	}
+    }
+    if { $no > 0 && $no < 3} {
+	pack .tInstall.f$fidx -anchor w
+    }
+    frame .tInstall.b -width 5c
+    button .tInstall.b.start -text Install -command midInstallDo
+    button .tInstall.b.cancel -text Quit -command midInstallQuit
+    pack .tInstall.b.start .tInstall.b.cancel -side left -expand 1
+    pack .tInstall.b -expand 1 -fill x
+
+}
+
+proc midInstallDo { } { 
+    global makeTargets fonttt tInstallProgress t
+
+    frame .tInstall.progress -relief ridge -borderwidth 4
+    label .tInstall.progress.l -text "Now making <target> ..." 
+    message .tInstall.progress.l2 -text " <output> " -font $fonttt -width 200p -justify left -anchor w
+    pack .tInstall.progress.l .tInstall.progress.l2 -expand 1 -fill x 
+    pack .tInstall.progress -expand 1 -fill x 
+    update
+
+    foreach t $makeTargets {
+	.tInstall.progress.l configure -text "Now making $t ..."
+	regsub -all "\\." $t "_" l
+	.tInstall.$l configure -background green
+	update
+	set tInstallProgress 1
+	after 200 midInstallDoAux
+	set res [backExec "make $t"]
+	set tInstallProgress 0
+	if {$res == 0} {
+	    .tInstall.$l configure -background white
+	} else {
+	    .tInstall.$l configure -background red
+	    label .tInstall.progress.l3 -text "make $t failed!" -fg red
+	    button .tInstall.progress.b -text "See output" -command {midInstallDoAux2 $t}
+	    break
+	}
+	update
+    }
+    if {$res == 0} {
+	label .tInstall.progress.l3 -text "Installation completed successfully"
+	button .tInstall.progress.b -text "OK" -command midInstallDoAux3
+    }
+    pack forget .tInstall.progress.l .tInstall.progress.l2
+    pack .tInstall.progress.l3 -expand 1 -fill x  -side left
+    pack .tInstall.progress.b -side left 
+    
+}
+
+proc midInstallQuit { } {
+
+    .mid.install configure -state normal
+    destroy .tInstall
+}
+
+proc midInstallDoAux { } {
+    global tInstallProgress
+
+    if { $tInstallProgress } {
+	.tInstall.progress.l2 configure -text [exec tail -1 /tmp/opalconfig.out] -justify left
+	update
+	after 200 midInstallDoAux
+    }
+}
+
+proc midInstallDoAux2 { target } {
+    
+    showFile "Make $target failed!" "/tmp/opalconfig.out"
+    .mid.install configure -state normal
+    destroy .tInstall
+}
+
+proc midInstallDoAux3 { } {
+    .mid.install configure -state normal
+    destroy .tInstall
 }
 
 ### Select Version
@@ -289,9 +458,61 @@ proc namedEntry {pathName boldText watchVar} {
     pack $pathName.left $pathName.right -side left
 }
 
-proc watch { name } {
-    toplevel .watch 
-    label .watch.label -text "Value of \"$name\": "
-    label .watch.value -textvariable $name
-    pack .watch.label .watch.value -side left
+## execute command, save output of stdout and stderr in /tmp/opalconfig.out,
+## return return code of command
+## execution is done in background, which allows `after'-procedures to
+## be performed
+
+proc backExec { cmd } {
+    
+    set cmd "$cmd &> /tmp/opalconfig.out ; echo \$? > /tmp/opalconfig.res"
+    set pid [ exec /bin/sh -c $cmd & ]
+    set terminated 0
+    while {! $terminated} {
+	after 200
+	set terminated [catch { exec ps $pid >& /dev/null } msg]
+	update
+    }
+    set f [open "/tmp/opalconfig.res" "r"]
+    set configError [read $f]
+    close $f
+    return $configError
+}
+
+## show given file in separate toplevel window
+## mark last line containing "error"
+## initially show last line
+
+set showFileCount 0
+proc showFile {header filename} {
+    global font2 showFileCount
+    
+    set showFilePathName ".showFile$showFileCount"
+    incr showFileCount
+    toplevel $showFilePathName
+    wm title $showFilePathName $header
+    label $showFilePathName.header -text $header -font $font2
+    frame $showFilePathName.t
+    text $showFilePathName.t.content -xscrollcommand "$showFilePathName.scrollx set" -yscrollcommand "$showFilePathName.t.scrolly set" -spacing3 3p
+    scrollbar $showFilePathName.scrollx -command "$showFilePathName.t.content xview" -orient horizontal
+    scrollbar $showFilePathName.t.scrolly -command "$showFilePathName.t.content yview" 
+    set f [open $filename "r"]
+    $showFilePathName.t.content insert end [read $f]
+    close $f
+    $showFilePathName.t.content see end
+    set pos [$showFilePathName.t.content search -backwards -regexp "\[Ee\]rror" end]
+    $showFilePathName.t.content tag configure errorTag -foreground red
+    if {$pos != ""} {
+	$showFilePathName.t.content tag add errorTag "$pos linestart" "$pos lineend"
+    }
+    button $showFilePathName.done -text Done -command "destroy $showFilePathName"
+
+    
+    pack $showFilePathName.t.content -side left -expand 1 -fill both
+    pack $showFilePathName.t.scrolly -side top -expand 1 -fill y
+
+    pack $showFilePathName.header 
+    pack $showFilePathName.t -expand 1 -fill both
+    pack $showFilePathName.scrollx -expand 1 -fill x
+    pack $showFilePathName.done
 }
