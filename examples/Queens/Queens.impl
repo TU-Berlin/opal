@@ -1,0 +1,65 @@
+IMPLEMENTATION Queens
+
+IMPORT Char         	ONLY char blank
+       Com          	ONLY com ans yield okay
+       ComCompose   	ONLY &
+       ComSeqReduce 	ONLY /& 
+       Denotation	ONLY ++
+       Stream    	ONLY output stdOut write writeLine 
+       Control      	ONLY for
+       Int          	ONLY int - =
+       Nat          	ONLY nat 0 1 8 = |= - +
+       NatConv		ONLY asInt `
+       Seq          	ONLY seq :: ::? <> <>? ft rt +% % front last # ++
+       SeqMap		ONLY * 
+       SeqReduce	ONLY /
+       SeqOfSeq      	ONLY flat    
+       Set          	ONLY set
+       String		ONLY string
+       Void         	ONLY void nil
+
+FUN queens : com[void]
+  -- prints the solutions
+DEF queens == writeLine(stdOut, "Loesungen sind:") 
+              &  writeLine(stdOut, "")
+              & (/& (\\S,V . writeLine(stdOut, S) , nil)
+                   (/(\\E,R . (`(E) ++ " ") ++ R,"") * Nqueens(8)))
+              & writeLine(stdOut, "")
+
+FUN Nqueens : nat -> seq[seq[nat]]
+  -- computes all solutions
+DEF Nqueens(Q) == expand(<>, Q, Q, <>)
+
+FUN expand : seq[nat] ** nat ** nat ** seq[seq[nat]] -> seq[seq[nat]]
+  -- backtracks over all possible positions
+DEF expand(Pc, N, Q, Ac) ==
+      IF ~(feasible(Pc)) THEN Ac                      -- dead end
+      IF feasible(Pc) THEN
+        IF Q = 0  THEN Ac ++ %(Pc)                    -- new solution found
+        IF Q |= 0 THEN unite(Pc, N, Q, N, Ac)         -- try all rows 
+        FI
+      FI
+
+FUN unite : seq[nat] ** nat ** nat ** nat ** seq[seq[nat]] -> seq[seq[nat]]
+  -- backtracks over all possible positions (rows) in a column
+DEF unite(Pc, N, Q, 0, Ac) == Ac
+DEF unite(Pc,  N, Q,Row, Ac) ==
+      unite(Pc, N, Q, Row - 1, expand(Pc +% Row, N, Q-1, Ac))
+
+FUN feasible : seq[nat] -> bool
+  -- tests if the new queen conflicts with those set previously
+DEF feasible(Pc) == 
+      IF ~(Pc ::?) THEN true
+      ELSE ~(conflicts(front(Pc), last(Pc), #(Pc), 1, false)) FI
+
+FUN conflicts : seq[nat] ** nat ** nat ** nat ** bool -> bool
+  -- tests for conflicts due to the same row or diagonal positions
+DEF conflicts(<>, N, Row, AcRow, Con) == Con
+DEF conflicts(Q::Queens, N, Row, AcRow, Con) ==
+      LET
+        AcCon == 
+          ((Q = N) or                                -- same row
+          (((Row+N) = (AcRow+Q)) or                   -- same diagonals
+          ((asInt(Row)-asInt(AcRow)) = (asInt(N)-asInt(Q)))))
+      IN
+        conflicts(Queens, N, Row, AcRow+1, Con or AcCon)
