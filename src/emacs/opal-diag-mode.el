@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.16 1999-05-11 14:06:53 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.17 1999-05-11 15:24:57 kd Exp $
 
 (provide 'opal-diag-mode)
 (require 'opal-diag-messages)
@@ -133,6 +133,10 @@
   "define associated err number"
   (overlay-put ovl 'err-no i)
   (overlay-put ovl 'nogoto nogoto)
+)
+
+(if (not (fboundp 'buffer-live-p))
+    (defun buffer-live-p (buffer) "stub for function available in modern emacsen" t)
 )
 
 )) ;; end of FSF Emacs only
@@ -1325,7 +1329,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.16 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.17 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (diag)

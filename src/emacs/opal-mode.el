@@ -42,6 +42,8 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
       (if opal-pchecker
 	  (require 'opal-trace-mode)
 	)
+      (require 'opal-info)
+      (add-hook 'opal-mode-hook 'opal-info-keymap)
       )
   )
 
