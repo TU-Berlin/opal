@@ -25,6 +25,8 @@
 # kd-pl10: generate support for frames
 # kd-pl11: change of names of generated frame-files
 # kd-pl12: ignore paragraphindent
+# kd-pl13: add colour to indices
+# kd-pl14: title in separate frame
 
 # The man page for this program is included at the end of this file and can be
 # viewed using the command 'nroff -man texi2html'.
@@ -54,7 +56,7 @@ $NODESRE = '[^@{}:\'`"]+';		# RE for a list of node names
 $XREFRE = '[^@{}]+';			# RE for a xref (should use NODERE)
 
 $ERROR = "***";			        # prefix for errors and warnings
-$THISPROG = "texi2html 1.51-kd-pl12";			# program name and version
+$THISPROG = "texi2html 1.51-kd-pl14";			# program name and version
 $HOMEPAGE = "http://wwwcn.cern.ch/dci/texi2html/"; # program home page
 $TODAY = &pretty_date;			# like "20 September 1993"
 $TIME = &pretty_time;
@@ -421,16 +423,23 @@ if ($monolithic) {
 #kd-pl11 names for frames and frames related web pages
 $docu_first = "${docu_name}.html";  # web page with frame definitions
 $docu_idx = "${docu_name}_indices.html"; # web page for indices
+$docu_title = "${docu_name}_title.html"; #kd-pl14: web page for title
 $frame_idx = "${docu_name}__indices"; # frame for indices
 $frame_body = "${docu_name}__body"; # main frame
 $frame_curr = "${docu_name}__current"; # frame for current index
+$frame_title = "${docu_name}__title"; # kd-pl14: frame for title
+#kd-pl13 constants for switching colour on and off
+$con{'light-blue'} = '<TD bgcolor=#ddeeff valign=top>';
+$coff{'light-blue'}= '</TD>' ;
+$con{'white'} = '<TD valign=top>';
+$coff{'white'}= '</TD>' ;
 
 #
 # variables
 #
 %value = ();				# hold texinfo variables
 $value{'html'} = 1;			# predefine html (the output format)
-$value{'texi2html'} = '1.51/kd-pl12';		# predefine texi2html (the translator)
+$value{'texi2html'} = '1.51/kd-pl14';   # predefine texi2html (the translator)
 # _foo: internal to track @foo
 foreach ('_author', '_title', '_subtitle',
 	 '_settitle', '_setfilename') {
@@ -1311,7 +1320,15 @@ while (@lines) {
 		$letter_split_idx{$letter} = $current_index_file;
 		$last_split_letter = $letter;
 	      };
-	      $index_letter_line .= "[ " . &anchor('', "$current_index_file#${docu_name}_${indextype}_" . join("_", unpack("C$letter_size", $letter)) , " " . &protect_html($letter) . " ", 0 ). " ] ";	      
+	      $index_letter_font_start = '';
+	      $index_letter_font_end = '';
+	      if($letter_size > 1 && 
+		 (!defined($last_letter) || 
+		  (substr($letter, 0 ,1) ne substr($last_letter, 0, 1)))) {
+		$index_letter_font_start = '<B>';
+		$index_letter_font_end   = '</B>';
+	      };
+	      $index_letter_line .= $index_letter_font_start . "[ " . &anchor('', "$current_index_file#${docu_name}_${indextype}_" . join("_", unpack("C$letter_size", $letter)) , " " . &protect_html($letter) . " ", 0 ). " ] " . $index_letter_font_end;	      
 		$last_letter = $letter;
 	    } else {
 	      $last_split_letter{$last_split_letter} = $letter;
@@ -1327,7 +1344,7 @@ while (@lines) {
 	    $letter = substr($key2alpha{$key}, 0, $letter_size);
 	    $letter = substr($key2alpha{$key}, 0, 1+$letter_size) if $letter eq $;;
 	    if (!defined($last_letter) || $letter ne $last_letter) {
-	      push(@lines2, "</DIR>\n") if defined($last_letter);
+	      push(@lines2, "</TABLE>\n") if defined($last_letter);
 	      if ($letter_split_idx{$letter} ne '') {
 		# start new file
 		print "%% starting >$letter< >$letter_split_idx{$letter}<\n"
@@ -1338,9 +1355,22 @@ while (@lines) {
 	      }
 	      push(@lines2, "<H2>" . &anchor("${docu_name}_${indextype}_" . join("_", unpack("C$letter_size", $letter)), "" , &protect_html($letter)) . "</H2>\n");
 	      ## kd-pl5 end
-	      push(@lines2, "<DIR>\n");
+	      push(@lines2, "<TABLE cellspacing=0 cellpadding=1>\n");
+	      $index_line_count = 0;
 	      $last_letter = $letter;
 	    }
+	    ## kd-pl13
+	    if ($index_line_count % 2 == 1) {
+	      $index_colour_on = $con{'light-blue'};
+	      $index_colour_off = $coff{'light-blue'};
+	    } else {
+	      $index_colour_on = $con{'white'};
+	      $index_colour_off = $coff{'white'};
+	    };
+	    $index_line_count++;
+	    ## kd-pl13
+	    $kkey = $key;
+	    $kkey =~ s/([a-zA-Z0-9 ]):/$1<\/TD>$index_colour_on/g;
 	    ## kd-pl7
 	    if ($ary{$key} =~ /$;/) {
 	      @refs = ();
@@ -1349,13 +1379,13 @@ while (@lines) {
 		$i++;
 		push(@refs, &anchor('', $_ , "[" . $i . "]", 0, $frame_body));
 	      }
-	      push(@lines2, "<LI>" . $key . " : " . join(", ", @refs) . "\n");
+	      push(@lines2, "<TR>" . $index_colour_on . $kkey . " : " . join(", ", @refs) . $index_colour_off . "</TR>\n");
 	    } else {
-	      push(@lines2, "<LI>" . &anchor('', $ary{$key}, $key, 0, $frame_body) . "\n");
+	      push(@lines2, "<TR>" . $index_colour_on . &anchor('', $ary{$key}, $kkey, 0, $frame_body) . $index_colour_off . "</TR>\n");
 	    };
 	    ## kd-pl7 end
 	  }
-	  push(@lines2, "</DIR>\n") if defined($last_letter);
+	  push(@lines2, "</TABLE>\n") if defined($last_letter);
 	  push(@lines2, $POPTAG);
 	  # set up node2href, node2sec, node2prev, node2next, node2up fields 
 	  $last_letter = undef;
@@ -1391,13 +1421,26 @@ while (@lines) {
 	    $letter = substr($key2alpha{$key}, 0, $letter_size);
 	    $letter = substr($key2alpha{$key}, 0, 1 + $letter_size) if $letter eq $;;
 	    if (!defined($last_letter) || $letter ne $last_letter) {
-	      push(@lines2, "</DIR>\n") if defined($last_letter);
+	      push(@lines2, "</TABLE>\n") if defined($last_letter);
 	      ## kd-pl5: add anchor
 	      push(@lines2, "<H2>" . &anchor("${docu_name}_${indextype}_" . join("_", unpack("C$letter_size", $letter)), "#${docu_name}_$indextype" , &protect_html($letter)) . "</H2>\n");
 	      ## kd-pl5 end
-	      push(@lines2, "<DIR>\n");
+	      push(@lines2, "<TABLE cellspacing=0 cellpadding=1>\n");
+	      $index_line_count = 0;
 	      $last_letter = $letter;
 	    }
+	    ## kd-pl13
+	    if ($index_line_count % 2 == 1) {
+	      $index_colour_on = $con{'light-blue'};
+	      $index_colour_off = $coff{'light-blue'};
+	    } else {
+	      $index_colour_on = $con{'white'};
+	      $index_colour_off = $coff{'white'};
+	    };
+	    $index_line_count++;
+	    ## kd-pl13
+	    $kkey = $key;
+	    $kkey =~ s/([a-zA-Z0-9 ]):/$1<\/TD>$index_colour_on/g;
 	    ## kd-pl7
 	    if ($ary{$key} =~ /$;/) {
 	      @refs = ();
@@ -1406,13 +1449,13 @@ while (@lines) {
 		$i++;
 		push(@refs, &anchor('', $_ , "[" . $i . "]", 0, $frame_body));
 	      }
-	      push(@lines2, "<LI>" . $key . " : " . join(", ", @refs) . "\n");
+	      push(@lines2, "<TR>" . $index_colour_on . $kkey . " : " . join(", ", @refs) . $index_colour_off . "</TR>\n");
 	    } else {
-	      push(@lines2, "<LI>" . &anchor('', $ary{$key}, $key, 0, $frame_body) . "\n");
+	      push(@lines2, "<TR>" . $index_colour_on . &anchor('', $ary{$key}, $kkey, 0, $frame_body) . $index_colour_off . "</TR>\n");
 	    };
 	    ## kd-pl7 end
 	  }
-	  push(@lines2, "</DIR>\n") if defined($last_letter);
+	  push(@lines2, "</TABLE>\n") if defined($last_letter);
 	};
 	next;  ## handle next input line 
     }
@@ -1710,7 +1753,7 @@ if (!$quick) {
     <title>$title</title>
   </head>
 
-<frameset rows="3*,*">
+<frameset rows="*, 14*, 5*">
 <noframe>
 Your browser does not support frames.
 You might want to use the following link instead:
@@ -1718,6 +1761,7 @@ You might want to use the following link instead:
 <li> <a href="$docu_toc">$toc_name</a>
 <ul>
 </noframe>
+<frame src="$docu_title" name="$frame_title">
 <frameset cols="130,*"> 
 <frame src="$docu_idx" name="$frame_idx">
 <frame src="$node2href{$first_node}" name="$frame_body">
@@ -1746,7 +1790,6 @@ if (!$quick) {
     <base target = "$frame_curr">
   </head>
 <BODY bgcolor=#ffffff vlink=#008000 link=#0000ff>
-<h1>$title</h1>
 <FONT SIZE=-1>
 <HR><a href="$docu_toc">$toc_name</a>
 $new_index_refline
@@ -1758,6 +1801,24 @@ EOT
     close(FILE);
     } else {
 	warn "$ERROR Can't write to $docu_idx : $!\n";
+    };
+
+  #kd-pl14: separate title
+    if (open(FILE, "> $docu_title")) {
+      print "# creating $docu_title ...\n" if $verbose;
+      print FILE <<EOT;
+<html>
+  <head>
+    <title>$title - Title</title>
+  </head>
+<BODY bgcolor=#ffffff vlink=#008000 link=#0000ff>
+<h1>$title</h1>
+</BODY>
+</html>
+EOT
+      close(FILE);
+    } else {
+      warn "$ERROR Can't write to $docu_title : $!\n";
     };
 
 }
@@ -2401,7 +2462,7 @@ sub print_toplevel_footer {
     print FILE <<EOT;
 This document was generated $TODAY ($TIME) using the
 <A HREF=\"$HOMEPAGE\">texi2html</A>
-translator version 1.51-kd-pl12.</P>
+translator version 1.51-kd-pl14.</P>
 EOT
     &print_footer;
 }
@@ -2574,7 +2635,7 @@ without any modofication.
 .B @end ifhtml
 This indicates the end of an HTML section.
 .SH VERSION
-This is \fItexi2html\fP version 1.51-kd-pl12, 16 Nov 97
+This is \fItexi2html\fP version 1.51-kd-pl14, 16 Nov 97
 .PP
 The latest version of \fItexi2html\fP can be found in WWW, cf. URL
 http://wwwcn.cern.ch/dci/texi2html/
