@@ -1,5 +1,5 @@
 IMPLEMENTATION TransUsrSources
--- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransUsrSources.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransUsrSources.impl,v 1.2 1998-10-12 18:26:04 kd Exp $
 
 IMPORT 
   String        COMPLETELY      ComCompose      COMPLETELY
@@ -23,7 +23,8 @@ IMPORT
        StringConv ONLY `
        Denotation ONLY ++
        ConfigExt ONLY include?
-       ConfigTest ONLY getPath
+       ConfigTest ONLY getPath getSubsystemPath
+       FileSystem ONLY stat filestat
 
 -- %$Translation of all User Modules$
 -- %---------------------------------
@@ -103,7 +104,7 @@ FUN buildUsrSubsystems :
       seq[subsystem[usrSourceInfo]] ** string ** string ** string **
         partType ** config ** output -> com[void]
 
-/* %recusively translates user-implemented subsystems into a Texinfo intermediate 
+/* %recursively translates user-implemented subsystems into a Texinfo intermediate 
 representation. This is done in the following order:
 @enumerate
 @item The header of the @c{actSubsystem} is constructed and written to @c{output} 
@@ -242,13 +243,19 @@ function @c{buildUsrNodes}. */
         ) &
 
 -- %Informal subsystem overview:
-    (\\ _ .                                    
+/* %Hack: if subsystemPath does not exist, the file @file{/Survey.texi} is used,
+    which hopefully does not exist. */
+    (\\ _ .         
+        stat(`(cont(<>)(getSubsystemPath(name(actSubsystem))(config))) ++
+             "/Survey.texi") ; (\\ s?.
         write(
           outputFile,
           subsystemSurvey(
             name(actSubsystem),
-            config
+            config,
+            s? okay?
           )
+        )
         ) &
 
 -- %Hierarchy Visualization
@@ -415,21 +422,27 @@ DEF buildUsrSubsystems( <>, _, _, _, _, _, _ ) == yield(okay(nil))
 -- %$$Subsystem Introductory Text$
 -- %-----------------------------
 
-FUN subsystemSurvey : string ** config -> seq[outputElem]
+FUN subsystemSurvey : string ** config ** bool -> seq[outputElem]
 
-DEF subsystemSurvey( name , config ) ==
-  LET
-    optionalSurvey == surveySub(config, name)
-  IN
+DEF subsystemSurvey( name , config , include? ) ==
+  IF include? THEN
+    %(overviewPrefix,
+      texinfo(("@include "!) ++ cont(<>)(getSubsystemPath(name)(config)) ++
+              !("/Survey.texi\n")),
+      overviewSuffix)
+  ELSE
+    LET
+      optionalSurvey == surveySub(config, name)
+    IN
     IF nil?(optionalSurvey) THEN
       <>
     ELSE
       %(overviewPrefix,
         documentation(cont(optionalSurvey)),
         overviewSuffix
-      )
+       )
     FI
-
+  FI
 
 -- %$$Hierarchy Visualizations for Subsystems$
 -- %-------------------------------------------

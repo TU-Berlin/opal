@@ -1,5 +1,5 @@
 IMPLEMENTATION TransAdmin
--- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransAdmin.impl,v 1.1.1.1 1998-06-16 16:00:42 wg Exp $
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tools/dosfop/trans/TransAdmin.impl,v 1.2 1998-10-12 18:26:00 kd Exp $
 
 IMPORT
   String        COMPLETELY       ComCompose     COMPLETELY
@@ -18,6 +18,8 @@ IMPORT
   Language      COMPLETELY       TransMenu      COMPLETELY
   SubsystemType COMPLETELY       TransHierarchy COMPLETELY
        SourceTabFun COMPLETELY
+       FileSystem ONLY stat filestat
+       StringConv ONLY `
 
 -- %$The Top Node$
 -- %--------------
@@ -33,21 +35,21 @@ and writes them to @c{output}: */
 DEF buildTopNode
       ( sortedUsrFileLevels, libInfos, usrInfos, config, outputFile ) ==
 
-  writeLine(stdErr, "building the top node ...") &
-  (\\ _ .
+  writeLine(stdErr, "building the top node ...") & (
+  stat(`(location(config)) ++ "/Survey.texi") ; (\\ stat? .
     write(
       outputFile,
         conc(
              dosfopPrelude,
              nodeAdminInfo(sortedUsrFileLevels, libInfos, usrInfos, config),
              nodeAdminTeX(sortedUsrFileLevels, libInfos, usrInfos, config),
-             headline(config),
+             headline(config, stat? okay?),
              topLevelHierarchyVisu(sortedUsrFileLevels, usrInfos, config),
              topLevelSubsystemVisu(usrInfos, config),
              menus(sortedUsrFileLevels, libInfos, usrInfos, config)
             )
     )
-  ) -- \\ _    
+  )) -- \\ _    
 
 
 -- %$$Components of the Top Node$
@@ -288,11 +290,15 @@ DEF nodeAdminTeX( sortedUsrFileLevels, libInfos, usrInfos, config ) ==
 
 /* %Specification of the @TeX{}-headline of the top-node and extraction of the
 global project survey from the configuration database: */
-FUN headline : config -> string
-DEF headline( config ) ==
+FUN headline : config ** bool -> string
+DEF headline( config, include? ) ==
   conc(
     cont(cont(overviewPrefix)),
-    globalSurvey(config), 
+    IF include? THEN 
+      !("\n@include ") ++ location(config) ++ ("/Survey.texi\n"!)
+    ELSE
+      globalSurvey(config)
+    FI, 
     cont(cont(overviewSuffix)),
     nl,
     optionalNewPage(config)
