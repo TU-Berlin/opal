@@ -1,0 +1,167 @@
+
+IMPLEMENTATION PErr
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT  -- parser
+  Terminal COMPLETELY
+  Token ONLY token terminal lexem pos =
+  Rep   ONLY rep ` errorRep
+IMPORT  -- admin
+  Pos   ONLY pos unknown nextPos
+  Error COMPLETELY
+IMPORT  -- lib
+  Denotation            COMPLETELY
+  Nat                   COMPLETELY
+  Set[terminal,<]       COMPLETELY
+  SetConv               COMPLETELY
+  Seq                   COMPLETELY
+  String                COMPLETELY
+  StringConv            COMPLETELY
+
+-- ------------------------------------------------------------------------
+-- Errors
+-- ------------------------------------------------------------------------
+
+DEF ok (_) == ok
+
+DEF pErr(Msg,Pos) == err(error,Msg, Pos)
+DEF pErr(Msg) == err(error,"Internal Err: " ++ Msg, errPos)
+
+
+FUN pErrExpMsg : denotation ** pos -> err
+DEF pErrExpMsg (Term,Pos) == 
+    pErr("Expected was " ++ "`" ++ Term ++ "'",Pos)
+
+FUN pErrExpMsg : denotation ** denotation ** pos -> err
+DEF pErrExpMsg (Term,Instead,Pos) == 
+    pErr("Expected was `" ++ Term ++ "' instead of `" ++ Instead ++ "'",Pos)
+
+
+DEF pErrExp(Term)                == pErrExp(Term)(<>,errPos)
+DEF pErrExp(Term)(Tok :: _ ,Pos) == pErrExp(Term)(Tok,Pos)
+DEF pErrExp(Term)(<>,Pos)      == pErrExpMsg(Term `,Pos)
+
+DEF pErrExp(Term)(Tok :: _ )     == pErrExp(Term)(Tok,pos(Tok))
+DEF pErrExp(Term)(<>)     	 == pErrExp(Term)(<>,errPos)
+
+DEF pErrExp(Term)(Tok)           == pErrExp(Term)(Tok,pos(Tok))
+DEF pErrExp(Term)(Tok,Pos)       == 
+    IF errorRep = Tok ORIF eof = terminal(Tok)
+    THEN pErrExpMsg(Term`,Pos)
+    ELSE pErrExpMsg(Term `,`(terminal(Tok)) ++ Ide,pos(Tok))
+    FI WHERE Ide == IF ide = terminal(Tok) 
+    THEN "  """ ++ `(lexem(Tok)) ++ """ "  ELSE "" FI
+
+DEF pErrExp (Msg)(<>)      == pErrExp(Msg)(errPos) (<>)
+DEF pErrExp (Msg)(T :: TS) == pErrExp(Msg)(pos(T)) (T :: TS)
+
+DEF pErrExp (Msg)(Pos)(Tok:: _ ) ==
+    IF errorRep = Tok ORIF eof = terminal(Tok)
+    THEN pErrExpMsg(Msg,Pos)
+    ELSE pErrExpMsg(Msg,`(terminal(Tok)),Pos)
+    FI
+DEF pErrExp(Msg)(Pos)(<>) == pErrExpMsg(Msg,Pos)
+
+-- ------------------------------------------------------------------------
+
+DEF pErrUnExp(TS)      == pErrUnExp({})(TS)
+
+DEF pErrUnExp(_)(<>)        == ok
+DEF pErrUnExp(Set)(Tok:: _) == 
+    IF terminal(Tok) in Set THEN ok 
+    ELSE pErr("Found unexpected " ++ `(terminal(Tok)) ++ Ide,pos(Tok))
+        WHERE Ide == IF ide = terminal(Tok) THEN
+                       """" ++ `(lexem(Tok)) ++ """" ELSE "" FI
+    FI 
+
+-- ------------------------------------------------------------------------
+
+FUN pErrExpFN : denotation ** token -> err
+DEF pErrExpFN(Ide,Tok) == 
+    pErr("Expected was `" ++ Ide ++ "' as Structure Name ",pos(Tok))
+    
+-- ------------------------------------------------------------------------
+
+DEF pErrMiss(Msg,Pos) == pErr("Missing " ++ Msg,Pos)
+
+-- ------------------------------------------------------------------------
+-- Conversion to denotation
+-- ------------------------------------------------------------------------
+
+FUN ` : set[terminal,<] -> denotation
+DEF ` (TS) == `("", " ", "")(`)(TS)
+
+-- ------------------------------------------------------------------------
+-- Special error positions
+-- ------------------------------------------------------------------------
+
+FUN errPos : pos
+DEF errPos == unknown
+
+FUN missPos : token -> pos
+DEF missPos(Tok) == 
+    nextPos(pos(Tok),!(`(lexem(Tok))))
+
+FUN nextPos: pos ** string -> pos
+DEF nextPos(Pos,<>) == Pos
+DEF nextPos(Pos,Ch::ChSeq) == 
+    nextPos(nextPos(Pos,Ch),ChSeq)
+
+
+DEF calcMissPos(Tok,TS1,TS2) == 
+    IF (TS1 <>?) and (TS2 <>?)  THEN missPos(Tok)
+    IF (TS1 <>?) and ~(TS2 <>?) THEN pos(ft(TS2))
+    IF ~(TS1 <>?) and (TS2 <>?) THEN missPos(last(TS1)) 
+    ELSE pos(ft(TS2))
+    FI
+DEF calcMissPos(TS1,TS2) == 
+    IF (TS1 <>?) and (TS2 <>?)  THEN errPos
+    IF (TS1 <>?) and ~(TS2 <>?) THEN pos(ft(TS2))
+    IF ~(TS1 <>?) and (TS2 <>?) THEN missPos(last(TS1)) 
+    ELSE pos(ft(TS2))
+    FI
+
+-- ---------------------------------------------------------------------------
+-- Error Texts
+-- ---------------------------------------------------------------------------
+
+DEF ideOnly == "Only Identifier allowed"
+DEF oriFct  == "Structure Names don't have a Functionality"
+DEF oriOri  == "Structure names don't have an Origin"
+DEF oriOriFct == "Structure names don't have an Origin and Functionality"
+DEF missOri == "Structure name (origin)"
+
+DEF missLhs == "Left Hand Side"
+DEF missRhs == "Rhs Hand Side"
+DEF missName == "Name"
+
+DEF expFct == "Functionality expected"
+DEF expLocal == "Local Name" 
+
+DEF noAs == "AS only in ( .. ) on left hand side"
+
+DEF noMix == "Only simple infix (no associatives) allowed"
+DEF mtMix == "No valid infix"
+
+DEF opExp == "Operator should be a Name"
+DEF argExp == "Argument should be a tuple or function application"
+
+DEF missOp == "Operator" 
+DEF missPostOp == "Postfix Operator" 
+DEF missInfOp == "Infix Operator" 
+DEF missOprnd == "Operand" 
+
+DEF noWild == "Application of _ not allowed here"
+DEF noTwoUS == "Application of two _ as arguments not allowed"
+DEF noWildAsOp == "_ cannot be an operator"
+DEF noSort == "No local sorts allowed"
+
+DEF compound_object == "compound object: not allowed for operations (and local names)"
+DEF ho_inf_pattern  == "higher-order infix pattern constructor"
+DEF ho_pattern    == "higher-order pattern constructor"

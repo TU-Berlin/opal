@@ -1,0 +1,151 @@
+
+IMPLEMENTATION PExpr
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT  -- pars
+        PCommon         COMPLETELY
+        Token           ONLY token terminal lexem pos ` = printTS
+        Terminal        COMPLETELY
+        Error           COMPLETELY
+        PErr            COMPLETELY
+        BaseParser      COMPLETELY
+	PartName	COMPLETELY
+        PTypes          COMPLETELY
+        ZOpts           COMPLETELY
+        ModBase         COMPLETELY
+        ModExpr         COMPLETELY
+        ModMix          COMPLETELY
+        PName           COMPLETELY
+IMPORT  -- reps
+        Rep             COMPLETELY
+IMPORT  -- absy
+        Impl            COMPLETELY
+        Struct          COMPLETELY
+        Absy            COMPLETELY
+IMPORT  -- admin
+        Pos             ONLY pos unknown
+        Options         COMPLETELY
+IMPORT  -- lib
+        Nat             ONLY nat
+        Denotation      COMPLETELY
+        Seq		COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqMap          COMPLETELY
+        Set[terminal,<] COMPLETELY
+
+-- ----------------------------------------------------------------------------
+
+FUN eExp eqExp: pos -> seq[token] -> err
+DEF eExp == pErrExp(" expression ")
+DEF eqExp == pErrExp(" equation ")
+
+DEF pExpr(M)(S) == pInnExpr(M) <.&> empty(S)
+
+DEF pExpr(M) == pInnExpr(M) <.&> empty
+
+FUN pInnExpr pOneExpr : modifier -> parser
+
+DEF pInnExpr (M) == parser(\\Arg. pWhere(M)(pOneExpr(M)) @ Arg) 
+DEF pOneExpr(M) == parser(\\Arg. pOneE(M,Arg))
+
+    FUN pOneE : modifier ** seq[token] -> pRes
+    DEF pOneE(M, TS AS Ft :: _) ==
+	IF lambda = Ft THEN pAbstr(M) @ TS
+	IF if = Ft THEN pCases(M) @ TS
+	IF let = Ft THEN pLet(M) @ TS
+	IF terminal(Ft) in %(openBr!,ide,ignPat,deno) 
+		THEN modify(pMixFix(M) @ TS,M) 
+	ELSE fail(eExp(pos(Ft))) @ TS
+	FI
+
+FUN pMixFix: modifier -> parser
+DEF pMixFix (M) == pSimpleExpr(M)
+
+DEF pSimpleExpr(M) == 
+    doMod(mkMixExpr, +(isA(\\T.Expr(den(lexem(T), pos(T))), deno) <|> 
+	(mkExpr(pLocalName) <|> pTuple(pInnExpr(M)))))
+
+FUN mkNames : parser -> parser
+DEF mkNames == updAbsy(\\A. NameSeq(pName * aSeq(A)))
+
+FUN mkExpr: parser -> parser
+DEF mkExpr == updAbsy(\\A. LET N == pName(A) IN Expr(val(N,pos(N))))
+-- --------------------------------------------------------------------------
+
+FUN pAbstr pCases pGuard pLet pEqS pAbstrBody: modifier -> parser
+FUN pIfCond pSeqAnd pSeqOr pSimpleExpr : modifier -> parser
+
+DEF pCases (M)== 
+    LET Other  == doMod(nestCases, doMod(flattenGuards, pGuard(M) +) 
+					|| !(otherwise))
+        Else   == isA(else) <&.> pInnExpr(M)
+    IN (((Other <;?> Else)(modElse) <.&> isA(fi)) <;?> pFctKind)(modExprFct)
+
+DEF pGuard (M) == 
+    ((isA(if) <&.> pIfCond(M))<&>((isA(then)<&.> pInnExpr(M)))) (modGuard)
+
+DEF pIfCond(M) == parser(\\Arg.
+    pSeqAnd(M) @ Arg)
+   
+DEF pSeqAnd (M) == 
+  ((pSeqOr(M) <&?> ((isA(andelse) <&> pIfCond(M))(modSeqAnd)))(modSeqAnd))
+
+DEF pSeqOr (M) == 
+ ((pInnExpr(M) <&?> ((isA(orelse) <&> pIfCond(M))(modSeqOr)))(modSeqOr))
+
+DEF pAbstr (M) == 
+    ((isA(lambda) <&?.> (mkNames(pLocalName || !(comma))))
+     <&> (isA(dot) <&.> pAbstrBody(M))) (modAbstr)
+
+DEF pAbstrBody (M) == pOneExpr(M)
+
+DEF pLet (M) ==  
+    ((isA(let) <&.>  pEqS(M)) <&> (isA(in) <&.> pInnExpr(M)))(modBlock)
+
+FUN pWhere : modifier -> parser -> parser
+DEF pWhere (M)(PE) ==  (PE <&?> (isA(where) <&.> pEqS(M)))(modBlock)
+
+-- --------------------------------------------------------------------------
+
+DEF pEqS (M) == doMod(flattenEqS, pEq(M) || eqSep) <|> 
+	setAbsy(EqSeq(<>), fail(" equation "))
+
+FUN pPatSide: parser
+DEF pPatSide == mkExpr(pLocalName) <|> pTuple(mkExpr(pLocalName))
+
+FUN pEq : modifier -> parser
+-- mit Sections auf Tuple und _
+DEF pEq (M) == 
+        LET 
+            Lhs == (pPatSide <.&> empty(%(equation!)))
+            Rhs   == (isA(equation) <&> doMod(mkTopSec, pInnExpr(M)))(modEq)
+        IN (Lhs <&> Rhs)(modEq)
+
+-- %reversed equation
+DEF pREq(M) == 
+  LET
+    Lhs == (pInnExpr(M) <.&> empty(%(equation!)))
+    Rhs == (isA(equation) <&> 
+	doMod(mkTopSec, pPatSide <.&> empty(%(post!, pre!, equation!))))(modEq)
+  IN (Lhs <&> Rhs)(modEq)
+
+
+-- ------------------------------------------------------------------------
+
+DEF pTuple (Pars) == 
+	((((isA(openBr) <&> mkTuple(Pars || !(comma))))(modTuplePos) 
+		<.;> isA(closeBr)) <;?> pFctKind)(modExprFct)
+
+FUN mkTuple: parser -> parser
+DEF mkTuple == updAbsy(\\A. Expr(tuple(e * aSeq(A), unknown)))
+
+
+-- ------------------------------------------------------------------------
+

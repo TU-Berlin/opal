@@ -1,0 +1,424 @@
+
+IMPLEMENTATION Parser
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- author:      cg
+-- purpose:     parsing
+
+IMPORT  -- pars
+        ModBody         COMPLETELY
+        ModBase         COMPLETELY
+        PName           COMPLETELY
+        PForm           COMPLETELY
+        ModForm         COMPLETELY
+        PExpr           COMPLETELY
+        ModExpr         COMPLETELY
+        ModMix          COMPLETELY
+        PCommon         COMPLETELY
+        Token           COMPLETELY
+        Terminal        COMPLETELY
+        PErr            COMPLETELY
+        BaseParser      COMPLETELY
+        PTypes          COMPLETELY
+        ZOpts           COMPLETELY
+        PostParser      COMPLETELY
+IMPORT  -- reps
+        Rep             COMPLETELY
+IMPORT  -- absy
+        Struct          COMPLETELY
+        Absy            COMPLETELY
+        PartName ONLY sort? ` partName partName? pos op?
+IMPORT  -- admin
+        Verbose         COMPLETELY
+        Pos             ONLY pos  `
+        Error           ONLY errors err ok errKind + error warning
+        Options         COMPLETELY
+        OcExit          ONLY languageError
+IMPORT  -- lib
+        Nat             COMPLETELY
+        NatConv         ONLY     `
+        Denotation      COMPLETELY
+        Com             COMPLETELY
+        ComCompose      COMPLETELY
+        Seq[token]      COMPLETELY
+        Seq[seq[token]] COMPLETELY
+        Seq[terminal]   COMPLETELY
+        Seq[import]     COMPLETELY
+        Seq[partName]   COMPLETELY
+        SeqConv         COMPLETELY
+        SeqFilter       COMPLETELY
+        SeqIndex        COMPLETELY
+        Set[terminal,<] COMPLETELY
+        SetMap[terminal,<,denotation,<] COMPLETELY
+        SetReduce[denotation,<,denotation]      COMPLETELY
+        Pair            COMPLETELY
+        DEBUG           ONLY PRINT FIELD?
+
+-- %- ------------------------------------------------------------------------
+
+FUN initAbsy : options ** seq[token] -> denotation ** parser ** absy
+DEF initAbsy(Options, tokens) ==
+	LET SName == IF (take(2,tokens) #) = 2 THEN `(lexem(tokens ! 1))
+                 		ELSE "" FI 
+	IN 
+	IF sign?(Options) THEN 
+	  IF ::?(tokens) ANDIF theory = ft(tokens) THEN
+		("Theory " ++ SName, isA(theory), mkInitT)
+	  ELSE ("Signature " ++ SName, isA(signature), mkInitS) FI
+	ELSE ("Implementation " ++ SName, isA(implementation), mkInitI)
+	FI
+
+DEF parse(Options)(tokens & repTab) ==
+	LET (Text, Key, Absy) == initAbsy(Options, tokens) IN
+    	parse(Options)(tokens,repTab)(Text, parseAny(Key, Absy))
+
+FUN parse: options -> seq[token]**repTab 
+       -> denotation ** (options ** seq[seq[token]] -> com[absy])
+          -> com[pair[struct,repTab]]
+DEF parse(Options)(TS,RepTab)(Text,Parser)   ==
+    verb(Options,subphase,"parsing " ++ Text ++ " ... ") ;
+    (verb(Options,subphase,"# of Token is: " ++ `(#(TS))) ;
+    (\\ _ . Parser(Options,
+              PRINT(printPrepTS?,\\ . prntTSS(prepareTS(TS)),prepareTS(TS)))
+              ; (\\Ans. IF Ans okay? 
+                        THEN postParse(Options)(structOf(data(Ans)),RepTab)
+                        ELSE yield(fail(languageError))
+                        FI)))
+
+
+FUN prntTSS : seq[seq[token]] -> denotation
+DEF prntTSS(TSS) == `("", "\n", "\n")(printTS)(TSS)
+
+FUN postParse : options -> struct ** repTab -> com[pair[struct,repTab]]
+DEF postParse(Opt)(Struct,RepTab) ==
+    verb(Opt,subphase,("post parsing ...")) & (
+    succeed(postParser(Struct & RepTab))
+    )
+
+-- %- ------------------------------------------------------------------------
+
+FUN parseAny : parser ** absy -> options ** seq[seq[token]] -> com[absy]
+DEF parseAny(Key, Absy)(Opts,TokS) == 
+    parse(Opts,TokS)(Key, Absy)
+
+FUN parse: options ** seq[seq[token]] -> parser ** absy -> com[absy]
+DEF parse(Opts,HeadS::BodyS)(Head,Init)==  
+    pHead(Opts)(Head)(HeadS) &
+       (\\ ResH.
+           (pBody(Opts)(BodyS,pRes(ok,Init,<>),1st(ResH)) &
+           (\\ResB. IF 1st(ResB)
+                    THEN yield(okay(PRINT(printAbsy?,\\ . `(Absy),Absy)))
+                    WHERE Absy == absy(modify(2nd(ResH),2nd(ResB),modStructOri))
+                    ELSE yield(fail(LE))
+                    WHERE LE   == PRINT(printAbsy?,\\ . `(Absy),languageError)
+                          Absy == absy(modify(2nd(ResH),2nd(ResB),modStructOri))
+                    FI)))
+
+DEF parse(Opts,<>)(Head,_) == 
+    pHead(Opts)(Head)(<>) & (\\ _ . yield(fail(languageError)))
+
+-- %- ------------------------------------------------------------------------
+-- Argument parser of pHead parses implementation or signature resp.
+
+FUN pHead : options -> parser -> seq[token] -> com[pair[bool,pRes]]
+DEF pHead(Opts)(P)(Arg) == 
+    LET Name    == IF extp?(Opts) or intp?(Opts) THEN first(drop(2,Arg))
+                   ELSE first(rest(Arg))         FI
+        NameErr == IF `(lexem(Name)) = myStruct(Opts) THEN ok
+                   ELSE pErrExpFN(myStruct(Opts),Name)    FI
+        Head    == ((P <&.> pOrigin) <.&> empty(ftBody)) @ Arg
+    IN errors(Opts,err(Head) + NameErr) 
+       & (\\ _ . IF  (err(Head) + NameErr) ok? THEN yield(okay(true & Head))
+                 ELSE yield(okay(false & Head)) FI)
+
+-- %- -------------------------------------------------------------------------
+
+FUN pBody : options -> seq[seq[token]] ** pRes ** bool -> com[pair[bool,pRes]]
+
+DEF pBody(_)   (<>,SoFar,Ok?)              ==  yield(okay(Ok? & SoFar))
+DEF pBody(Opts)((Tok::One)::RTS,SoFar,Ok?) == 
+    parsBody(ftBody)(Opts,Tok)(One) & 
+       (\\Res. LET More == modify(SoFar,2nd(Res),modStructBody)
+               IN pBody(Opts)(RTS,More,1st(Res) and Ok?))
+
+FUN parsBody: set[terminal,<] -> options**token -> seq[token] -> com[pair[bool,pRes]]
+DEF parsBody(_)(Opts,Tok)(<>) == 
+    IF terminal(Tok) = eof 
+    THEN yield(okay(true & pRes(ok,noAbsy,<>)))
+    ELSE errors(Opts,pErrMiss("Body of " ++ `(terminal(Tok)),missPos(Tok))) 
+           & (\\ _ . yield(okay(false & okRes)))
+    FI
+DEF parsBody(FtSet)(Opts,Tok)(TS AS T:: _) == 
+    IF terminal(T) = eof 
+    THEN errors(Opts,pErrMiss("Body of " ++ `(terminal(Tok)),missPos(Tok))) 
+           & (\\ _ . yield(okay(false & okRes)))
+    ELSE IF def = Tok    THEN pDef(Opts)(TS)
+         IF fun = Tok    THEN pFun(Opts)(TS)
+         IF sort = Tok   THEN pSort(Opts)(TS)
+         IF data = Tok   THEN pType(Opts, data)(TS)
+         IF type = Tok   THEN pType(Opts, type)(TS)
+         IF import = Tok THEN pRelation(Opts, import)(TS)
+         IF assert = Tok THEN pRelation(Opts, assert)(TS)
+         IF assume = Tok THEN pRelation(Opts, assume)(TS)
+         IF law = Tok    THEN pLaw(Opts)(TS)
+         IF prBeg = Tok  THEN pPragma(Opts)(Tok::TS)
+         IF proof = Tok  THEN pProof(Opts)(TS)
+         IF terminal(Tok) = eof    THEN parsBody(FtSet)(Opts,Tok)(rt(TS))
+         ELSE errors(Opts,pErrExp(FtSet)(Tok,pos(Tok)))
+            & (\\ _ . yield(okay(false & okRes)))
+    FI   FI
+
+-- %- ------------------------------------------------------------------------
+-- <Relation> origin ((ONLY | ALLBUT) name1 ... nameN | [ COMPLETELY ]) +
+-- %- ------------------------------------------------------------------------
+FUN pRelation : options ** rep -> seq[token] -> com[pair[bool,pRes]]
+DEF pRelation(Opts, Type)(Tok::TS) ==
+  verb(Opts,definition,"parsing " ++ `(Type) ++
+                       " " ++ `(lexem(Tok)) ++ " ...") ;
+  (\\ _ . LET Relation == (pRelation(Opts, Type) <.&> empty) @ (Tok::TS)
+          IN errors(Opts,err(Relation)) 
+             & (\\ _ . IF err(Relation) ok? THEN succeed(true & Relation)
+                        ELSE succeed(false & Relation) FI))
+FUN pRelation : options ** rep -> parser
+DEF pRelation (_, Type) == 
+    (pOrigin <&>  (     isA(completely)
+                        <|> (isA(allbut) <&> +(pName))(modButImport)
+                        <|> (isA(only) <&> +(pName))(modOnlyImport)
+			<|> empty
+                        <|> fail(pErrExp(%(allbut!,only!,completely!)))))
+                     (modRelation(Type))
+    
+/* %Hier könnte man je nach Art der Relation auch nur ONLY pOnlyOnly oder
+    nur COMPLETELY zulassen. (kd) */
+
+-- %- -----------------------------------------------------------------------
+-- 'FUN' (Ide + ':' fct) + [ spec ]
+-- %- -----------------------------------------------------------------------
+
+FUN pFun : options -> seq[token] -> com[pair[bool,pRes]]
+DEF pFun(Opts)(Tok::TS) ==
+  verb(Opts,definition,"parsing FUN " ++ `(lexem(Tok)) ++ " ...") ;
+  (\\ _ . 
+      -- % erst mal eine Deklarationsliste parsen
+      LET Fun == pFun @ (Tok::TS)
+      IN 
+      -- % Programmstück zu Ende oder @code{FUN} fehlerhaft -> zurück
+      IF (terminal(ft(tokS(Fun))) = eof) or (Fun pFail?) THEN
+        errors(Opts,err(Fun)) &
+        succeed((err(Fun) ok?) & Fun)
+      -- % Spezifikation folgt
+      IF spc = ft(tokS(Fun)) THEN
+        errors(Opts, err(Fun)) & (\\ _ .
+        LET Spec == pSpec @ tokS(Fun)
+            nErr == IF NameSeq?(absy(Fun)) THEN
+                      IF <>?(rt(nSeq(absy(Fun)))) THEN ok 
+                      ELSE err(error, 
+                               "specification for single declarations only",
+                               pos(Tok))
+                      FI
+                    ELSE
+                      err(error,
+                          "weird result of pFun'Parser - this cannot happen!",
+                          pos(Tok))
+                    FI
+        IN
+        errors(Opts, nErr + err(Spec)) & ( \\ _ .
+        succeed(((nErr + err(Spec)) ok?) & modify(Fun, Spec, modSpec))
+        ))
+      -- %   weitere Deklarationslistes nach demselben @code{FUN} parsen
+      ELSE 
+        errors(Opts,err(Fun)) & (\\ _ .
+        pFun(Opts)(tokS(Fun)) & (\\NFun. 
+        succeed(1st(NFun) & modify(Fun,2nd(NFun),modPNSeq))
+        ))
+      FI)
+
+
+-- %- ------------------------------------------------------------------
+/* % @code{pFun} should have been defined as 
+@w{@code{DEF pFun == (((pIde+)) <&> (isA(colon) <&.> pFct))(modFun)}}
+but the context analysis expects the parser to check the context condition
+"compound object". 
+
+This should be changed one day in order to get a clean seperation between 
+the destination of parsing and checking ... (cg)
+*/
+-- %- -------------------------------------------------------------------------
+
+FUN pFun : parser
+DEF pFun == ((pIde+) <;> pFctKind)(modFun)
+
+-- %- -----------------------------------------------------------------------
+-- 'SORT' Ide+
+-- %- -----------------------------------------------------------------------
+FUN pSort : options -> seq[token] -> com[pair[bool,pRes]]
+DEF pSort(Opts)(Tok::TS) ==
+  verb(Opts,definition,"parsing SORT " ++ `(lexem(Tok)) ++ " ...") ;
+  (\\ _ . LET SortIdes == ((pIde+) <.&> empty) @ (Tok::TS)
+              Sort     == modify(SortIdes,mkSort)
+          IN errors(Opts,err(Sort)) 
+             & (\\ _ . IF err(Sort) ok? THEN yield(okay(true & Sort))
+                        ELSE yield(okay(false & Sort)) FI))
+
+-- %- -------------------------------------------------------------------------
+-- ('DATA' | 'TYPE') Name '==' ...
+-- %- -------------------------------------------------------------------------
+
+FUN pType : options ** rep -> seq[token] -> com[pair[bool,pRes]]
+DEF pType(Opts, Key)(Tok::TS) ==
+verb(Opts,definition,"parsing " ++ `(Key) ++ " " ++ `(lexem(Tok)) ++ " ...") &
+  (\\ _ . LET Data == IF data = Key THEN doMod(mkData, pDataType) 
+			ELSE pDataType FI
+	      Type == Data @ (Tok::TS)
+          IN errors(Opts,err(Type)) 
+             & (\\ _ . IF err(Type) ok? THEN yield(okay(true & Type))
+                        ELSE yield(okay(false & Type)) FI))
+
+-- %- ------------------------------------------------------------------------
+
+FUN pDataType :  parser
+DEF pDataType == 
+    ((pIde <.&> empty(%(equation!))) <&> 
+	((isA(equation)<&.>(doMod(flattenVariants, pVariant +)))
+                <.&> empty))(modType)
+
+FUN pVariant pComps: parser
+DEF pVariant == (pIde <&?> pComps)(modVariant)
+
+DEF pComps   == 
+    isA(openBr) <&.> ((doMod(flattenComps, pNameOrFct || !(comma))) 
+			<.&> isA(closeBr))
+
+-- %- ------------------------------------------------------------------------
+-- DEF lhs  == rhs
+-- %- ------------------------------------------------------------------------
+
+FUN pDef : options -> seq[token] -> com[pair[bool,pRes]]
+DEF pDef(Opts)(TS) ==
+  verb(Opts,definition,"parsing DEF " ++ `(lexem(IdeTok)) ++ " ...") ;
+  (\\ _ . 
+   LET  (Mix?,MixLhs?)  == IF mix? THEN (mkMix,mkMix)
+                           ELSE (mkRhsAssoc,mkLhsNoMix) FI
+        DefP   == (pDef(MixLhs?,Mix?)) @ TS
+        Def    == PRINT(traceParse?,
+                        \\ . "Result of Definition " ++ `(DefP), DefP)
+  IN errors(Opts,err(Def)) & (\\ _ . IF err(Def) ok? 
+                                      THEN yield(okay(true & Def))
+                                      ELSE yield(okay(false & Def)) FI))
+  WHERE IdeTok == first(drop(\\T.(openBr = T) 
+                                 or (lexem(T) generated?),TS))
+
+-- %- ------------------------------------------------------------------------
+
+FUN pDef : modifier ** modifier -> parser
+-- mit section auf tuple und _
+DEF pDef(MLhs?,M?) == parser(\\ Arg. 
+    LET Lhs == (IF equation = ft(Arg) THEN fail(missLhs) 
+                    ELSE pTopLhs(MLhs?)  FI) @ Arg
+        up_eq == isA(equation) @ tokS(Lhs)
+        Rhs   == modify(up_eq,modify(pExpr(M?) @ tokS(up_eq),mkTopSec),modEq)
+    IN modify(Lhs,Rhs,modEq))
+
+
+FUN pTopLhs : modifier -> parser
+DEF pTopLhs(M) == 
+    (pLhs(M)(top) <.&> empty(%(equation!)))
+
+
+FUN pLhs : modifier -> set[terminal,<] -> parser
+DEF pLhs(M)(FtSet) == parser(\\Arg.
+    doMod(M, (empty(FtSet) <&.> pLhsExprS(M)(FtSet)) <|> fail(errKey))
+	@ Arg)
+
+FUN pLhsExprS : modifier -> set[terminal,<] -> parser 
+DEF pLhsExprS (M)(F) ==
+    LET InnerMod == IF mix? THEN mkMix
+                    ELSE mkInnerLhsAssoc FI
+    IN  doMod(mkMixExpr, ((pLhsExpr(M)(F)) 
+         <|> (pTuple(pLhs(InnerMod)(inside))))
+         + ) 
+
+
+FUN pLhsExpr : modifier -> set[terminal,<] -> parser 
+DEF pLhsExpr(M)(F) == parser(\\Arg. 
+    LET LhsName == PRINT(traceP?,
+                        \\ . `(pLocalName @ Arg),
+                        mkExpr(pLocalName) @ Arg)
+    IN IF !(as) in F THEN 
+          IF as = ft(tokS(LhsName)) THEN 
+             modify(LhsName,
+                   (isA(as) <&.> pLhs(M)(F)) @ tokS(LhsName),modAsE)
+          ELSE LhsName
+          FI
+       ELSE LhsName
+       FI)
+
+FUN errKey : seq[token] -> err 
+DEF errKey == \\Arg. pErrUnExp(top)(ft(Arg)%)
+
+FUN top inside : set[terminal,<]
+DEF top == %(ignPat, ide, openBr!)       
+DEF inside == !(as) incl top
+
+-- %- -------------------------------------------------------------------------
+-- %$Laws$
+-- %@code{LAW ==> [ Ide '==' ] Formula}
+FUN pLaw : options -> seq[token] -> com[pair[bool,pRes]]
+DEF pLaw(Opts)(Tok::TS) ==
+  verb(Opts,definition,"parsing LAW " ++ Ide ++ " ...") ;
+  (\\ _ . 
+     LET P == IF equation = ft(TS) THEN 
+                  ((pIde <.&> isA(equation)) <&> pFormula)(modLaw(pos(ft(TS))))
+              ELSE (pFormula <&> nil)(modLaw(pos(Tok)))
+              FI
+         Law  == (P <.&> empty) @ (Tok::TS)
+     IN errors(Opts,err(Law))  
+        & (\\ _ . IF err(Law) ok? THEN yield(okay(true & Law))
+                  ELSE yield(okay(false & Law)) FI))
+  WHERE Ide == IF equation = Tok THEN ""
+               IF openBr = Tok THEN ""
+               ELSE `(lexem(Tok))          FI
+
+-- %- ------------------------------------------------------------------------
+FUN pPragma : options -> seq[token] -> com[pair[bool,pRes]]
+
+DEF pPragma(Opts)(Tok::TS) == 
+    verb(Opts,definition,"parsing PRAGMA in Position " ++ `(pos(Tok))) ; 
+    (\\ _ . 
+        LET PragP == ((pPragItem <.&> isA(prEnd)) <.&> empty) @ TS
+            Prag == PRINT(tracePrag?, \\ . "Pragma " ++ `(PragP),PragP)
+        IN errors(Opts,err(Prag))
+           & (\\ _ . IF err(Prag) ok? THEN yield(okay(true & Prag))
+                     ELSE yield(okay(false & Prag))
+                     FI))
+
+-- %@zoindex tracePrag
+FUN tracePrag? : bool
+DEF tracePrag? == FIELD?[bool]("-ztracePrag")
+
+FUN pPragItem : parser
+DEF pPragItem == 
+ doMod(flattenGPragma, ((isA?(openSqBr!) <&.> doMod(mkPItem, pParams)) <|> 
+	doMod(flattenGPragma, +(isIn(mkPrTokAbsy, prLexemSet)))) *)
+
+FUN prLexemSet prNoLexem: set[terminal,<]
+DEF prLexemSet == termSet - prNoLexem
+DEF prNoLexem  == %(prBeg!,prEnd!,openSqBr!,closeSqBr!,eof)
+
+-- %- -------------------------------------------------------------------------
+-- % 'PROOF' (( Ide ':' partName* '|-' partName ) | (partName '==' expr))
+
+FUN pProof: options -> seq[token] -> com[pair[bool, pRes]]
+DEF pProof(Opts)(T AS Tok:: _) ==
+  verb(Opts, definition, "parsing PROOF "++ `(lexem(Tok)) ++ " ...") & (\\ _ .
+  LET Proof == pProof @ T
+  IN
+    errors(Opts, err(Proof)) & ( \\ _ .
+    succeed((err(Proof) ok?) & Proof)
+    )
+)
+

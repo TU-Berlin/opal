@@ -1,0 +1,102 @@
+IMPLEMENTATION Match
+
+IMPORT 	
+	Name COMPLETELY
+	NameUnify COMPLETELY
+	GlobSig	COMPLETELY
+	RepMap	COMPLETELY
+	Nat	COMPLETELY
+	Option  COMPLETELY
+	Pair	COMPLETELY
+	PartName COMPLETELY
+	Rep	COMPLETELY
+	Seq	COMPLETELY
+	SeqFilter	COMPLETELY
+	SeqIndex	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqOfSeq	COMPLETELY
+	SeqReduce	COMPLETELY
+	Set	COMPLETELY
+	SetConv	COMPLETELY
+
+DEF deepMatch(GS) == deepMatch(names(GS))
+DEF deepMatchInst(GS, FormalInst, PartInst) ==
+	deepMatchInst(names(GS), FormalInst, PartInst)
+
+FUN get : map[set[fullName, <]] ** rep -> seq[fullName] 
+DEF get(M, R) == LET OptSet == M !? R IN
+	IF nil?(OptSet) THEN <> ELSE asSeq(cont(OptSet)) FI
+
+FUN topLevelMatch: map[set[fullName, <]] -> partName -> 
+	seq[pair[partName, fullName]] 
+
+DEF topLevelMatch(M)(PN) ==
+LET Ide == ide(PN) IN
+	IF Ide = product THEN %(PN & mkTuple(#(cont(paramS(PN)))))
+	ELSE IF generated?(Ide) ORIF nilRep?(Ide) THEN
+		LET Kind == kind(PN) 
+		    VarSort == var(1, sort)
+		IN
+		IF sort?(Kind) THEN %(PN & VarSort)
+	        IF op?(Kind) THEN 
+			LET Fcts == topLevelMatch(M)(fct(Kind))
+			IN (\\F. :=_kind(PN, op(1st(F))) & 
+					var(maxVar(2nd(F)) + 1,
+					2nd(F))) * Fcts 
+		ELSE %(PN & VarSort, 
+			PN & var(2, VarSort))
+	        FI
+	      ELSE match(PN, get(M, Ide)) FI
+	FI
+
+FUN match: partName ** seq[fullName] -> seq[pair[partName, fullName]]
+DEF match(_, <>) == <>
+DEF match(P, Ft :: Rt) ==
+	LET OptP == match(Ft, P)
+	    Rest == match(P, Rt)
+	IN IF nil?(OptP) THEN Rest
+	   ELSE cont(OptP) & Ft :: Rest 
+	   FI
+
+FUN deepMatch: map[set[fullName, <]] -> partName -> 
+	seq[fullName]
+
+DEF deepMatch(M)(PN) ==
+	LET S == topLevelMatch(M)(PN)
+	    (Monos, Generics) == partition(\\P. monomorph?(2nd(P)), S)
+	    Rest == flat(handleGeneric(M) * Generics)			
+	IN (2nd * Monos ++ Rest)
+
+FUN handleGeneric: map[set[fullName, <]] ->
+	pair[partName, fullName] -> seq[fullName]
+DEF handleGeneric(M)(P & F) ==
+	IF nil?(paramS(P)) THEN %(F)
+	ELSE IF var?(F) THEN %(F)
+	    ELSE matchInst(M, F, 0, cont(paramS(P))) 
+	    FI
+	FI
+
+FUN matchInst: map[set[fullName, <]] ** fullName 
+	** nat ** seq[partName] -> seq[fullName]
+
+DEF matchInst(_, F, _, <>) == %(F)
+DEF matchInst(M, F, N, Pft :: Prt) ==
+	LET Cands == deepMatch(M)(Pft)
+	    Max == maxVar(F)  
+	    Cands2 == incr(Max, _) * Cands
+	    NewFs == \ (handleCand(F, N), <>, Cands2)
+	IN flat(matchInst(M, _, N+1, Prt) * NewFs)  
+
+FUN handleCand: fullName ** nat -> fullName ** seq[fullName] -> seq[fullName]
+DEF handleCand(F, N)(Cand, Rest) ==
+	LET Fft == inst(F) ! N
+	    OptSubst == unify(Fft, Cand)	    	
+	IN IF nil?(OptSubst) THEN Rest
+	   ELSE subst(F, cont(OptSubst)) :: Rest FI
+
+FUN deepMatchInst:  map[set[fullName, <]] ** seq[fullName] ** 
+	seq[partName] -> seq[seq[fullName]]
+DEF deepMatchInst(M, Formals, ParamS) ==
+	LET Dummy == fullName(nilRep, nilRep, sort :: Formals)
+	    Cands == matchInst(M, Dummy, 0, ParamS)
+	IN (\\C. inst(C)) * Cands

@@ -1,0 +1,114 @@
+
+IMPLEMENTATION ModName
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT -- pars
+       Terminal         COMPLETELY
+       Token            COMPLETELY
+       PTypes           COMPLETELY
+       PErr             COMPLETELY
+       ModBase          COMPLETELY
+IMPORT -- absy
+       Absy             COMPLETELY
+       PartName         COMPLETELY
+       Struct           COMPLETELY
+       Impl		COMPLETELY
+IMPORT -- reps
+       Rep              COMPLETELY
+IMPORT -- admin
+       Pos              ONLY pos unknown +
+IMPORT -- lib
+       Denotation       COMPLETELY
+       Option           COMPLETELY
+       Seq              COMPLETELY
+       SeqReduce        COMPLETELY
+       SeqMap           COMPLETELY
+       DEBUG            COMPLETELY
+       Error ONLY err errKind error
+
+-- %$NAMES$
+
+-- %- ----------------------------------------------------------------------
+-- %$transforming a Name into an Origin$
+-- %- ----------------------------------------------------------------------
+
+DEF mkOrigin == 
+    mkMod(\\Res. 
+	LET TS  == tokS(Res)
+            Err == err(Res)
+	    A == absy(Res)
+        IN IF A Name? 
+           THEN LET N == pName(A) IN
+		pRes(Err, Origin(origin(ide(N),pos(N),paramS(N))), TS)
+	   ELSE pRes(pErrMiss(missOri,calcMissPos(<>,TS)),
+			Origin(errorOrigin), TS)
+	   FI)
+
+
+-- %- ----------------------------------------------------------------------
+-- %$modOrigin, modParams, modKind  adds OriginPart, Kind and Params$
+-- %$of a given partName resp. --> always delivers Name$ <---
+-- %- ----------------------------------------------------------------------
+
+DEF modOrigin == mod(\\A1,A2.
+		IF (A1 Name?) 
+		THEN IF (A2 Name?) THEN
+                      	Name(:=_structIde(pName(A1), avail(ide(pName(A2)))))
+		      ELSE A1 FI
+		ELSE A1 FI)  -- noAbsy
+
+FUN modParams: modifier
+DEF modParams == mod(\\A1,A2. 
+	IF (A1 Name?) 
+	THEN 	IF (A2 NameSeq?) THEN
+			Name(:=_paramS(pName(A1), avail(nSeq(A2))))
+		ELSE A1 FI
+	ELSE A1 FI)
+
+DEF modKind == mod(\\A1,A2. 
+ 	IF (A1 Name?) THEN
+		IF A2  Kind? THEN
+		Name(:=_kind(pName(A1), kind(A2)))
+		ELSE A1 FI
+	ELSE Name(errorName) FI)
+
+-- %- ----------------------------------------------------------------------
+-- %$Construction of Functionalities$ 
+/* %Function Functionalities (s -> s -> s$ -> ...)
+    and             Products                (s ** s ** s ** s$ ..) 
+Delivers always ---> Fct or noAbsy$ <----
+*/
+-- %- ----------------------------------------------------------------------
+
+DEF modFunFct == mod(\\A1,A2. mFunFct(A1,A2))
+    FUN mFunFct : absy ** absy -> absy
+    DEF mFunFct(Name(F1),Name(F2)) == 
+	LET P == pos(F1) + pos(F2) IN 
+	Name(partName(arrow, nil, avail(%(F1, F2)), P, sort, P))
+    DEF mFunFct(A1 AS Name(_),_) == A1
+
+-- %- ---------------------------------------------------------------------
+-- %$Constructing a PartName Seq$.
+/* %Delivers always ---> NameSeq <--- */
+-- %- ---------------------------------------------------------------------
+
+DEF modPNSeq ==  mod(\\A1,A2. 
+	IF A1 Name? THEN LET N1 == pName(A1) IN
+		IF A2 NameSeq? THEN NameSeq(N1 :: nSeq(A2))
+		IF A2 Name? THEN NameSeq(N1::(pName(A2) %))
+		ELSE NameSeq(N1 %) FI
+	IF A1 NameSeq? THEN LET NS == nSeq(A1) IN
+		IF A2 NameSeq? THEN NameSeq(NS ++ nSeq(A2))
+		IF A2 Name? THEN NameSeq(NS +% pName(A2))
+		ELSE A1 FI
+	ELSE IF A2 Name? THEN NameSeq(pName(A2) %)
+	     IF A2 NameSeq? THEN A2
+	     ELSE NameSeq(<>) FI
+	FI)

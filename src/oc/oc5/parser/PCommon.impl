@@ -1,0 +1,306 @@
+/* %Teilt die Liste der Token anhand der Items in Teillisten auf, damit
+    LL-Parsen erst möglich wird. JEde Teilliste endet auf @code{eof}. */
+
+IMPLEMENTATION PCommon
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- %- author: cg
+-- %- purpose: parsing Opal1 and property language
+
+IMPORT  -- pars
+        Terminal        COMPLETELY
+        Token           COMPLETELY
+        PErr            COMPLETELY
+	Pos		ONLY pos
+        ZOpts           COMPLETELY
+IMPORT  -- reps
+        Rep             COMPLETELY
+IMPORT  -- lib
+        Denotation      COMPLETELY
+        Nat             COMPLETELY
+        Bitset          COMPLETELY
+        Seq[token]      COMPLETELY
+        Seq[seq[token]] COMPLETELY
+        Seq[terminal]   COMPLETELY
+        Set[terminal,<] COMPLETELY
+        SeqMap          COMPLETELY
+        SeqReduce       COMPLETELY
+        SeqFilter       COMPLETELY
+        DEBUG           COMPLETELY
+
+-- %- ------------------------------------------------------------------------
+
+DEF prepareTS(Tok :: <>) == (Tok %) %
+DEF prepareTS(TS) == 
+    LET (Header,Rest) == splitHeader(<>,TS)
+    IN IF terminal(ft(Rest)) = eof   -- mind. eof muss in Rest sein
+       THEN Header :: %(Rest)
+       ELSE Header:: revert(prepTS(whichBS?(ft(Rest)),<>,%(ft(Rest)),rt(Rest)))
+       FI
+
+/* %@code{splitHeader(<>, TS) = (H, R)}:
+    initial split of file in two parts, such that @code{R} starts with one
+    of the big keywords. */
+-- %@zoindex traceSplit
+FUN splitHeader : seq[token] ** seq[token] -> seq[token] ** seq[token]
+DEF splitHeader(SoFarP,TS) ==
+    LET (H1,R1) == split(\\ T . ~(terminal(T) in ftSet),TS)
+    IN IF colon = last(H1) THEN -- :SORT -> kind -> continue
+             splitHeader(SoFar ++ (H1 +% ft(R1)),rt(R1))
+       ELSE (SoFar ++ (H1 +% mkEof), R1)
+       FI WHERE SoFar == PRINT(traceSplit?,\\ . printTS(SoFarP),SoFarP)
+
+/* %New state of split function wrp. to token */
+-- %@zoindex traceSplit
+FUN whichBS? : token -> set'Bitset
+DEF whichBS?(T0) == 
+    IF def = T ORIF law = T ORIF
+       proof = T THEN def
+    IF import = T ORIF
+       assume = T ORIF assert = T THEN imp
+    IF prBeg = T  THEN prag
+    ELSE body
+    FI
+    WHERE T == PRINT(traceSplit?,\\ . "whichBS: " ++ `(T0), T0)
+-- %- ------------------------------------------------------------------------
+-- 
+-- %- ------------------------------------------------------------------------
+
+/* %@code{prepTS(BS, SoFarTS, SoFar, Toks) == TSS}: 
+@table @code
+@item BS
+State the split algorithm is in
+@item SoFarTS 
+The already split list of list of tokens in reverse order.
+@item SoFar
+The current list of tokens (never empty)
+@item Toks
+The tokens not yet looked at.
+@end table */
+FUN prepTS : set'Bitset **seq[seq[token]]**seq[token]**seq[token] -> seq[seq[token]]
+
+-- %No more tokens
+DEF prepTS(_ ,SoFarTS,SoFar,<>) == revert(SoFar) :: SoFarTS
+
+-- %just one token
+DEF prepTS(_ ,SoFarTS,SoFar,(Tok AS token(_,_,_)) :: <>) == 
+    revert(Tok :: SoFar) :: SoFarTS
+
+DEF prepTS(BS,SoFarTS,SoFar,(TokP AS token(Term,_,Pos)) :: TS AS _ :: _) ==
+-- %@zoindex traceSplit
+LET Tok == PRINT(traceSplit?,\\ . " splitBody " ++ `(TokP),TokP)
+             EPos == missPos(ft(SoFar))
+IN
+/* %@itemize
+@item
+Pragma: split at begin or end of pragma. At end of pragma, include everything
+upto next big keyword. */
+    IF prag?(BS) THEN 
+       IF (Term in lastPrag) 
+       THEN prepTS(whichBS?(ft(NewTS)),
+                   rev((mkEof:: revert(Ign))++(Tok::SoFar),NPos)::SoFarTS,
+                   ft(NewTS)%,rt(NewTS))
+            WHERE (IgnP,NewTS)   == split(\\T. ~(terminal(T) in ftSet),TS)
+                  Ign == PRINT(traceSplit?,\\ . "IGN " ++ printTS(NewTS),IgnP)
+                  NPos == IF Ign <>? THEN EPos ELSE pos(ft(Ign)) FI
+       IF prBeg = Term
+       THEN prepTS(whichBS?(Tok),rev(mkEof::SoFar,EPos) ::SoFarTS,Tok%,TS)
+       ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
+       FI 
+    OTHERWISE
+/* %@item
+Big Keyword: split, but beware of kind @samp{:SORT}. In case of pchecker
+look also for @samp{:LAW} and @samp{:PROOF} */
+    IF (Term in ftSet) THEN 
+       IF (((law = Term) or (proof = Term)) or
+           (sort = Term)) and ~(SoFar <>?) THEN 
+          IF colon = ft(SoFar)  THEN 
+             prepTS(BS,SoFarTS,Tok :: SoFar,TS)
+          ELSE prepTS(whichBS?(Tok),rev(mkEof::SoFar,EPos)::SoFarTS,Tok%,TS)
+          FI
+       ELSE prepTS(whichBS?(Tok),rev(mkEof::SoFar,EPos)::SoFarTS,Tok%,TS)
+       FI 
+/* %@item
+Within import: wait for @code{COMPLETELY} or @code{ONLY} or @code{ALLBUT}. */
+    ELSE IF imp? (BS) THEN 
+            IF completely = Term THEN prepTS(comp,SoFarTS,Tok::SoFar,TS)
+            IF (only = Term) or (allbut = Term) THEN 
+			prepTS(only,SoFarTS,Tok::SoFar,TS)
+            ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
+            FI
+/* %@item
+Within Only-import: check if we ran into another only or completely import.
+Compute position of next import and terminate current. */
+         IF only?(BS) THEN 
+            IF (only=Term) or (allbut=Term) or (completely=Term) THEN 
+               LET (Name,OnlyTS)== splitName(SoFar)
+                   ImpTok       == impTok(pos(ft(OnlyTS)))
+                   ImpTS        == rev(mkEof::OnlyTS,pos(ImpTok)) ::SoFarTS
+                   ImpSoFar     == Tok:: (Name +% ImpTok)
+               IN IF (only=Term) or (allbut=Term) THEN 
+			prepTS(only,ImpTS,ImpSoFar,TS)
+		  IF (completely=Term) THEN prepTS(comp,ImpTS,ImpSoFar,TS)
+                  FI
+            ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
+            FI
+/* %@item
+Completely-import: terminate current import and wait for next one. */
+         IF comp?(BS) THEN 
+            prepTS(imp,ImpTS,Tok:: %(impTok(pos(ft(TS)))),TS)
+                 WHERE ImpTS == rev(mkEof::SoFar,EPos) :: SoFarTS
+/* %@item
+Within definition or law: wait for next @code{LET} or @code{WHERE}. */
+         IF def?(BS)  THEN
+            IF (let=Term) or (where=Term) THEN 
+               prepTS(block,SoFarTS,Tok::SoFar,TS)
+            ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
+            FI
+/* %@item
+Within let-block or where-block: wait for next @code{==}. */
+         IF block?(BS) THEN
+            IF equation=Term THEN 
+               prepTS(eq,SoFarTS,Tok::SoFar,TS)
+            ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
+            FI
+/* %@item
+Within Rhs of equation: If @code{LET} or @code{WHERE} is found,
+terminate current equation. If @code{==} is found, we ran into the following
+equation. Split off already scanned Lhs and continue. */
+         IF eq?(BS) THEN 
+            IF (let=Term) or (where=Term) THEN 
+               prepTS(block,SoFarTS,Tok::SoFar,TS)
+            IF equation=Term THEN
+               LET (Lhs,Rhs) == splitLhs(SoFar)
+                   EqSepPos  == IF Rhs <>? THEN Pos ELSE pos(ft(Rhs)) FI
+                   EqSep     == token(eqSep,nilRep,EqSepPos)
+               IN prepTS(eq,SoFarTS,Tok::(Lhs++(EqSep::Rhs)),TS) 
+            ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
+            FI
+/* %@item
+Else: continue. */
+        ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
+        FI
+    FI 
+
+    FUN mkEof : token
+    DEF mkEof == token(eof,nilRep,errPos)
+
+-- %- ------------------------------------------------------------------------
+-- %Determine already scanned LHS of an equation
+-- %- ------------------------------------------------------------------------
+
+FUN splitLhs : seq[token] -> seq[token] ** seq[token]
+DEF splitLhs (TS AS T :: _ ) ==
+    IF closeBr=T 
+    THEN LET (Lhs,Rhs) == split(%(openBr!),TS)
+         IN IF Rhs <>? THEN (Lhs,<>) ELSE (Lhs +% ft(Rhs),rt(Rhs)) FI
+    ELSE splitName(TS)
+    FI
+
+-- %- ------------------------------------------------------------------------
+-- % Determine already scanned strcuture name
+-- %- ------------------------------------------------------------------------
+
+FUN splitName : seq[token] -> seq[token] ** seq[token]
+DEF splitName(<>)     == (<>,<>)
+DEF splitName(TS AS T :: R) == IF terminal(T) = ide THEN (T%,R) ELSE (<>,TS) FI
+DEF splitName(TS AS T1 :: (T2 :: R)) ==
+    IF terminal(T1) = ide
+    THEN IF (arrow=T2) ORIF (product=T2)
+            ORIF (apo=T2) ORIF (colon=T2)
+         THEN (T1 :: (T2 ::Name),Rest) WHERE (Name,Rest) == splitName(R)
+         ELSE (T1%,T2::R)
+         FI
+    IF sort=T1
+    THEN (T1:: ( T2 :: Lhs),Rhs) WHERE (Lhs,Rhs) == splitName(R)
+    IF closeSqBr=T1
+    THEN LET (Params,Rest) == splitParams(T1%,T2::R,1) 
+             (Name,NRest)  == splitName(Rest)
+         IN (Params ++ Name,NRest)
+    ELSE (<>,TS)
+    FI
+
+FUN splitParams : seq[token] ** seq[token] ** nat -> seq[token] ** seq[token]
+DEF splitParams(SoFar,T :: <>,_) == (T::SoFar,<>)
+DEF splitParams(SoFar,T :: R,N) == 
+    IF closeSqBr=T THEN splitParams(T::SoFar,R,N+1)
+    IF openSqBr=T  THEN IF N=1 THEN (revert(T::SoFar),R)
+                                   ELSE splitParams(T::SoFar,R,N-1)
+                                   FI
+-- nun wird verhindert, dass der Parameter zu weit gelesen wird ...
+    IF only=T ORIF allbut=T ORIF completely=T 
+        ORIF terminal(T) in excl(sort!,ftBody) THEN  (revert(T::SoFar),R)
+    ELSE splitParams(T::SoFar,R,N)
+    FI
+
+-- %- ------------------------------------------------------------------------
+-- %$Bitsets$ 
+-- %- ------------------------------------------------------------------------
+
+FUN body def imp only comp block eq prag: set'Bitset
+FUN body def imp only comp block eq prag: nat
+
+DEF body == 1   DEF def  == 2  DEF imp == 3     DEF prag == 4
+DEF only == 5   DEF comp == 6  DEF block  == 7  DEF eq   == 8
+
+DEF body == body%  DEF def  == def%  DEF imp == imp%        DEF prag == prag%
+DEF only == only%  DEF comp == comp% DEF block  == block%   DEF eq   == eq%
+
+FUN body? def? imp? only? comp? block? eq? prag? : set'Bitset -> bool
+DEF body?(BS)   == body in BS      DEF def?(BS)   == def in BS
+DEF imp?(BS)    == imp in BS       DEF prag?(BS)  == prag in BS
+DEF only?(BS)   == only in BS      DEF comp?(BS)  == comp in BS
+DEF block?(BS)  == block in BS     DEF eq?(BS)    == eq in BS
+
+-- %- ------------------------------------------------------------------------
+FUN newPos rev : seq[token] ** pos -> seq[token]
+
+DEF rev(TS,Pos) == revert(newPos(TS,Pos))
+
+DEF newPos(<>,_)    == <>
+DEF newPos(token(T,L,P1) :: TS,P2) == IF T = eof THEN token(eof,L,P2) :: TS
+					ELSE token(T,L,P1) :: TS FI
+
+-- %- ------------------------------------------------------------------------
+
+-- %@zoindex traceSplit
+FUN traceSplit? : bool
+DEF traceSplit?  == FIELD?[bool]("-ztraceSplit")
+
+-- %- ------------------------------------------------------------------------
+-- %$First Sets for splitting the body$
+-- %- ------------------------------------------------------------------------
+
+FUN ftSignBody ftBody ftExpr lastPrag: set[terminal,<]
+
+-- %wird z.Z. nur in Fehlermeldung verwendet
+DEF ftSignBody == %(sort!, fun!, import!, prBeg!, type!)
+DEF ftBody     == ftSignBody + %(def!, data!, law!, proof!, assert!, assume!)
+DEF ftExpr   == %(andelse!, orelse!, let!, in!, where!, lambda!) +
+                %(if!, then!, otherwise!, else!, fi!)
+
+FUN ftSet : set[terminal,<]
+DEF ftSet     == incl(eof,ftBody)
+
+DEF lastPrag == %(eof,prEnd!)
+
+-- %- ------------------------------------------------------------------------
+-- %$additional functions for shortcuts$
+-- %- ------------------------------------------------------------------------
+
+FUN split : set[terminal,<] ** seq[token] -> seq[token] ** seq[token]
+DEF split(TermSet,TS) ==
+    split(\\Tok. ~(terminal(Tok) in TermSet),TS)
+
+FUN first : seq[token] -> token
+DEF first(<>) == token(errorRep!,errorRep,errPos)
+DEF first(Tok :: _ ) == Tok
+
+FUN rest : seq[token] -> seq[token]
+DEF rest(<>) == <>
+DEF rest(_ :: TS) == TS
+

@@ -1,0 +1,899 @@
+
+IMPLEMENTATION Scanner
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+/* %@table @asis
+@item author: 
+cg
+@item purpose: 
+parsing Opal1 and property language
+@end table
+*/
+
+
+
+-- %$Imports$
+-- %$$Imports from admin$
+IMPORT  
+        Options         ONLY options cop? myFile 
+        Error          	ONLY err errKind  + error ok errors warning  ok?
+        Pos             ONLY pos nextPos nextLine initPos + +! unknown
+        OcExit          ONLY exit languageError
+        OcSetup         COMPLETELY
+        OcStream        COMPLETELY
+        Verbose         ONLY subphase verb
+
+-- %$$Imports from lib$
+IMPORT  
+        ABORT 			ONLY ABORT
+        Char                    COMPLETELY
+        CharConv                ONLY ` asDigitNat asNat
+        Com                     COMPLETELY
+        ComCompose              ONLY ; & 
+        Denotation              ONLY ++ empty =
+        DEBUG                   COMPLETELY
+        Latin1 			ONLY punctuation? letgit? printable? space?
+        Greek 			ONLY punctuation? letgit? printable? space?
+        Nat                     COMPLETELY
+        NatConv 		ONLY asChar `
+        MapByOS 			ONLY map def {} !
+        Pair[seq[token],repTab] ONLY pair & 1st 2nd 
+	Predicate 		ONLY or ~
+        PrintableChar           COMPLETELY
+        Set[char,<]        COMPLETELY
+        SetFilter 		ONLY |
+        Seq                     COMPLETELY
+       	SeqFilter 		ONLY drop split
+        SeqMap                  ONLY * 
+        SeqReduce               ONLY  /  \
+        Stream                  ONLY input readLine read writeLine load
+        String                  COMPLETELY
+        StringConv              ONLY `
+        StringFilter            ONLY split drop
+        Triple                  ONLY triple & 1st 2nd 3rd
+        Void                    ONLY void
+
+
+-- %$$Imports from oc structures$
+IMPORT
+        ZOpts                   COMPLETELY
+        Token                   COMPLETELY
+        Terminal                COMPLETELY
+        Rep                     COMPLETELY
+
+-- %$IO$
+
+-- %Scan @sc{Opal} file which is given in the options
+FUN scan: options -> com[pair[seq[token],repTab]]
+DEF scan(Opt) ==
+  verb(Opt,subphase,"scanning ...") & (\\ _ . 
+  load(myFile(Opt)) & (\\Contents.    -- whole file as seq[string]
+	LET ClearContents == clearHeading(Contents)
+	    Scan == scan(ClearContents, initArg())
+  	IN scan(Scan, Opt)))
+
+-- %Scan the given string.
+FUN scan: options ** string -> com[pair[seq[token],repTab]]
+DEF scan(Opt,Str) ==
+  verb(Opt,subphase,"scanning ...") & (\\ _ . 
+  scan(scanStr(Str, initArg()), Opt))
+
+-- %process scanning result 
+FUN scan: sc ** options -> com[pair[seq[token],repTab]]
+DEF scan(sc(RT,TS, _, Err, _), Opt) ==
+  LET Dump? == cop?("printRepTab", Opt)
+      RT2 == PRINT(Dump?, \\ . dump(RT), RT)
+      Tokens? == cop?("printToken", Opt)
+      TS2 == PRINT(Tokens?, \\ . IF Dump? THEN
+		dumpTS(TS) ELSE printTS(TS) FI, TS)
+  IN errors(Opt, Err) & (\\ok?. 
+  IF ok? THEN succeed(TS2 & RT2) 
+	ELSE yield(fail(languageError)) FI
+  )
+
+-- %$$Auxiliary data types for scanning$
+-- %result from scanning
+DATA sc == sc(rt:repTab,ts:seq[token],po:pos,er:err,cx:ctx)
+
+-- %Current state of automaton.
+DATA ctx == 
+            -- %- op: start position, sf: reverted deno, dotKW: next Keyword?
+            deno(op:pos,sf:string,dotKW:bool) 
+            -- %- nest: start of current nesting level(s)
+            comm(nest:seq[pos],dotKW:bool) 
+            none(dotKW: bool)
+            -- %- currently allowed set, reverted string, starting position
+            ide(charset?: char -> bool, sofar: string, op: pos, dotKW: bool)
+            /* %- docu: like comm, but count open and closed curly braces
+                  esc: last character was escape character */
+            docu(nest: seq[pos], openCt: seq[nat], closeCt: seq[nat],
+                 esc? : bool, dotKW: bool)
+
+FUN initArg : () -> sc
+DEF initArg() == sc(initialTab(),<>,initPos,ok,none(false))
+
+FUN clearEsc setEsc incO incC: ctx -> ctx
+DEF clearEsc(docu(N, O, C, _, d)) == docu(N, O, C, false, d)
+DEF setEsc(docu(N, O, C, _, d)) == docu(N, O, C, true, d)
+DEF incO(docu(N, O1 :: OO, C, e, d)) == docu(N, succ(O1) :: OO, C, e, d)
+DEF incC(docu(N, O, C1 :: CC, e, d)) == docu(N, O, succ(C1) :: CC, e, d)
+
+FUN clearHeading : seq[string] -> seq[string]
+DEF clearHeading(Contents) == 
+  -- %remove lines from the beginning which start with #!
+  LET (badContents, goodContents) == split(interpreter?, Contents)
+      interpreter? == \\s. IF s ::? THEN ft(s) = # ELSE false FI
+  IN ((\\ _ . <>) * badContents) ++ goodContents 
+
+-- %Scan sequence of strings (note @emph{left} reduce)
+FUN scan: seq[string] ** sc -> sc
+DEF scan(Contents, Init) == final((scan, Init) \ Contents) 
+
+-- %Check for errors after whole text has been scanned; revert token sequence
+FUN final: sc -> sc
+DEF final(sc(RT,TS,P,E,C)) ==
+      sc(RT,NTS,P,E+NE,C)
+      WHERE NTS == revert(token(eof,nilRep,P):: TS)
+            NE  == IF C comm? THEN (+ /ok)(revert(sErr(cNotC,_)*nest(C)))
+                   IF C docu? THEN (+ /ok)(revert(sErr(cNotC,_)*nest(C)))
+                   IF C deno? THEN sErr(dNotC,op(C))
+                   ELSE ok   
+                   FI
+
+-- %Scan string (be aware that string may contain several lines!)
+FUN scanStr: string ** sc -> sc
+DEF scanStr(Str, Init) == final(scan(Str, Init))
+
+-- --------------------------------------------------------------------------
+-- Now scanning 
+    -- Hints for short parameter names
+    -- Tok = Token     TS = TokenSequence       RT = Representation Table
+    -- ACS = Actual (unclassified) Character Sequence
+    -- CS = Character Sequence   P or Pos = Position
+    -- N.. == New... oder Next ..
+-- --------------------------------------------------------------------------
+
+/* %@code{scan(CS, RT, TS, P, E, C) = SC}: scan string in
+   @code{CS}. C is a switch to indicate which state the scanner is in.
+   Sequence of token in @code{SC} is stored in reverse order.
+   In @code{CS} unicode escapes are still present.
+
+   The conditions are ordered according to their probability wherever
+   possible. We
+   therefore employ OTHERWISE to prevent the compiler from reordering
+   the guards.
+*/
+FUN scan: rawString**repTab**seq[token]**pos**err**ctx -> sc
+DEF scan(raw(<>, _),RT,TS,P,E,C) ==  
+    sc(NRT,NTS,nextLine(P),E + NE,NC)
+    WHERE (NRT,NTS,NE,NC) == 
+          IF C deno? THEN
+            (RT, TS, sErr(dNotC,op(C)),none(dotKW(C)))
+          IF C ide? THEN
+            LET Ide == revert(sofar(C))
+                (NRT2, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
+            IN 
+            (NRT2, T :: TS, ok, none(dotT?(T, dotKW(C))))
+          IF C docu? THEN
+            (RT, TS, ok, clearEsc(C))
+          ELSE (RT, TS, ok, C) FI
+
+DEF scan(CS0, RT, TS, P, E0, C) ==
+    LET (Ch, ucE) == ftUni(P, CS0)
+        CS == rtUni(CS0)
+        E == E0 + ucE
+        NP == nextPosUni(P, CS0)
+        dot? == dotKW(C)
+    IN
+    IF Ch = newline THEN -- end of current line
+      LET (NRT, NTS, NE,NC) == 
+          IF C deno? THEN (RT, TS, sErr(dNotC,op(C)),none(dot?))
+          IF C ide? THEN
+            LET Ide == revert(sofar(C))
+                (NRT2, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
+            IN 
+            (NRT2, T :: TS, ok, none(dotT?(T, dotKW(C))))
+          ELSE (RT, TS, ok, C)
+          FI
+      IN
+      scan(CS, NRT, NTS, nextLine(P), E + NE, NC)
+    OTHERWISE
+    IF C ide? THEN -- scan identifier
+      IF charset?(C)(Ch) THEN -- continue identifier
+        scan(CS, RT, TS, NP, E, ide(charset?(C), Ch :: sofar(C), op(C), dot?))
+      ELSE 
+        IF (ft(sofar(C)) usc?) THEN -- underline -> continue
+          IF Ch special? THEN 
+            scan(CS, RT, TS, NP, E, ide(special?, Ch :: sofar(C), op(C), dot?))
+          IF Ch alphanum? THEN
+            scan(CS, RT, TS, NP, E,
+                 ide(alphanum?, Ch :: sofar(C), op(C), dot?))
+          ELSE -- identifier finished
+            LET Ide == revert(sofar(C))
+                (NRT, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
+            IN -- must use oriignal parameters!
+            scan(CS0, NRT, T :: TS, P, E0, none(dotT?(T, dot?)))
+          FI
+        ELSE -- wrong charset, no underscore -> finished
+          LET Ide == revert(sofar(C))
+              (NRT, T) == classify(op(C)+!P, Ide, RT, dotKW(C))
+          IN -- must use orignal parameters!
+          scan(CS0, NRT, T :: TS, P, E0, none(dotT?(T, dot?)))
+        FI
+      FI
+    OTHERWISE
+    IF C none? THEN -- normal program
+       IF Ch scanLetgit? THEN -- ide starting with alphanumeric character
+           scan(CS, RT, TS, NP, E, ide(alphanum?, Ch%, P, dot?))
+       OTHERWISE
+       IF Ch scanSpace? THEN -- ignore white space
+         scan(CS,RT,TS,NP,E,C)
+       OTHERWISE
+       IF Ch extra? THEN -- separator
+         LET (NRT,Tok) == classify(P,Ch,RT)
+         IN scan(CS,NRT,Tok::TS,NP,E,C)
+       OTHERWISE
+       IF (Ch = /) and nestDocuBegin?(CS) THEN -- begin of nested doumentation
+          scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E,
+               docu(P%, 0%, 0%, false, dot?))
+       OTHERWISE
+       IF (Ch = /) and nestComBegin?(CS) THEN -- begin of nested comment
+          scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E,comm(P%, dot?))
+       OTHERWISE
+       IF (Ch = -) and lineCom?(CS)  THEN -- begin of line comment
+         scan(<>,RT,TS,P,E + checkLineDoc(rtUni(CS), P, P),C)
+       OTHERWISE
+       IF Ch = dblquote THEN -- start of denotation
+         scan(CS,RT,TS,NP,E,deno(P,<>, dot?))
+       OTHERWISE
+       IF (Ch = *) and nestEnd?(CS) THEN -- erroneous end of comment
+          scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E+sErr(cNotO,P),none(dot?))
+       OTHERWISE
+       IF Ch special? THEN -- identifier starting with special character
+         -- must have this test here because of /* -- */ tokens
+         scan(CS, RT, TS, NP, E, ide(special?, Ch%, P, dot?))
+       OTHERWISE                     
+       IF Ch other? THEN -- other character forbidden
+         scan(CS,RT,TS,NP,E + NE,C)
+         WHERE NE == sErr(otherChar,P)
+       ELSE -- should have considered all cases now, but who knows?
+         scan(CS,RT,TS,NP,E + NE,C)
+                          WHERE NE == sErr(never, P)
+       FI
+    OTHERWISE
+    IF C comm? THEN -- within nested comment
+      IF (Ch = *) and nestEnd?(CS) THEN -- end of nested comment
+        scan(rtUni(CS), RT, TS, nextPosUni(NP,CS), E + NE, NC)
+        WHERE (NC,NE) == IF nest(C) <>? THEN (none(dot?),sErr(cNotO,P))
+                         IF #(nest(C)) = 1 THEN (none(dot?),ok)
+                         ELSE (comm(rt(nest(C)), dot?),ok) FI
+      OTHERWISE                         
+      IF (Ch = -) THEN -- check for possible line comment
+        IF lineCom?(CS) THEN scan(<>,RT,TS,P,E,C)
+        ELSE LET (NP1,NCS,NE) == skipMinus(NP,CS,ok)
+             IN scan(NCS,RT,TS,NP1,E+NE+checkLineDoc(CS,P,P),C)
+        FI      
+      OTHERWISE
+      IF (Ch = /) and nestComBegin?(CS) THEN -- start of nested comment
+         scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E,comm(P :: nest(C), dot?))
+      OTHERWISE
+      IF Ch special? THEN -- skip consecutive special characters
+         LET (NP1, NCS, NE) == skipSpecial(NP, CS, ok)
+         IN scan(NCS,RT,TS,NP1,E+NE,C)
+      ELSE -- just ignore this character
+        scan(CS,RT,TS,NP,E,C)
+      FI
+    OTHERWISE
+    IF C docu? THEN -- within nested docuemntation
+      IF (Ch = *) and nestEnd?(CS) THEN -- end of nested documentation
+        scan(rtUni(CS), RT, TS, nextPosUni(NP,CS), E + NE + NE1, NC)
+        WHERE (NC,NE) == IF nest(C) <>? THEN (none(dot?),sErr(cNotO,P))
+                         IF #(nest(C)) = 1 THEN (none(dot?),ok)
+                         ELSE (docu(rt(nest(C)), rt(openCt(C)),
+                                    rt(closeCt(C)), false, dot?),ok) FI
+               NE1 == IF openCt(C) <>? THEN ok
+                     ELSE IF ft(openCt(C)) = ft(closeCt(C)) THEN ok 
+                          ELSE sErr(unbalanced(ft(openCt(C)), ft(closeCt(C))),
+                                    ft(nest(C)))
+                          FI
+                     FI
+      OTHERWISE                         
+      IF (Ch = -) THEN -- check for possible line comment
+        LET C1 == clearEsc(C) IN
+        IF lineCom?(CS) THEN scan(<>,RT,TS,P,E+checkLineDoc(rtUni(CS),P,P),C1)
+        ELSE LET (NP1,NCS,NE) == skipMinus(NP,CS,ok)
+             IN scan(NCS,RT,TS,NP1,E+NE,C1)
+        FI      
+      OTHERWISE
+      IF (Ch = /) and nestComBegin?(CS) THEN -- start of nested docu
+         scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E,
+              docu(P :: nest(C), 0 :: openCt(C), 0 :: closeCt(C), false, dot?))
+      OTHERWISE
+      IF esc?(C) THEN -- last character was escape character
+        scan(CS, RT, TS, NP, E, clearEsc(C))
+      OTHERWISE
+      IF Ch = @ THEN scan(CS, RT, TS, NP, E, setEsc(C))
+      OTHERWISE
+      IF Ch = { THEN scan(CS, RT, TS, NP, E, clearEsc(incO(C)))
+      IF Ch = } THEN scan(CS, RT, TS, NP, E, clearEsc(incC(C)))
+      ELSE
+        scan(CS,RT,TS,NP,E,clearEsc(C))
+      FI
+    ELSE -- C deno?
+      IF Ch = dblquote THEN -- end of deno or literal dblquote
+        IF CS <>? THEN -- end of deno
+          LET (NRT,Rp) == insert(RT,`(revert(sf(C))))
+          IN 
+          scan(CS,NRT,token(deno,Rp,op(C)+!P)::TS, NP,E,none(dot?))
+        ELSE
+          LET (Ch2, chE) == ftUni(NP, CS)
+          IN
+          IF Ch2 = dblquote THEN -- literal dblquote
+            scan(rtUni(CS),RT,TS,nextPosUni(NP,CS),E+chE,
+                 deno(op(C), dblquote :: sf(C), dot?))
+          ELSE -- end of denotation
+            LET (NRT,Rp) == insert(RT,`(revert(sf(C))))
+            IN 
+            scan(CS,NRT,token(deno,Rp,op(C)+!P)::TS, NP,E,none(dot?))
+          FI       
+        FI
+      OTHERWISE
+      IF Ch = \ THEN -- check escaped characters
+        IF CS <>? THEN
+          scan(CS,RT,TS,NP,E + sErr(nlInD,P),C)
+        ELSE
+          LET (Ch2, chE) == ftUni(NP, CS)
+              NP2 == nextPosUni(NP, CS)
+              CS2 == rtUni(CS)
+          IN
+          IF Ch2 in escapes THEN -- ok, add corresponding character
+            scan(CS2,RT,TS,NP2,E+chE, deno(op(C), ESCCH :: sf(C), dot?))
+            WHERE ESCCH == escape!Ch2
+          IF Ch2 = x THEN -- hex number
+            scanHex(CS2, RT, TS, NP2, E + chE, C, P, 0, x :: <> )
+          IF 0 <= Ch2 and Ch2 <= 7 THEN -- oct number
+            scanOct(CS, RT, TS, NP, E, C, P, 0, <>)
+          ELSE -- unknown escape
+            scan(CS2,RT,TS,NP2,
+                 E + sWarn(unkEC(Ch2), P), deno(op(C), Ch2 :: sf(C), dot?))
+          FI
+        FI
+      IF Ch = tab THEN -- no tab characters in denotations
+        scan(CS,RT,TS,NP,E + sErr(tabInD,op(C)),C)
+      OTHERWISE
+      IF (Ch other?) and ~(denoOther?) THEN -- other character forbidden
+         scan(CS,RT,TS,NP,E + NE,C)
+                          WHERE NE == sErr(otherChar,P)
+      ELSE -- include character in denotation
+        scan(CS,RT,TS,NP,E,deno(op(C),Ch :: sf(C), dot?))
+      FI
+    FI
+
+-- %Notational variant
+FUN scan: string ** sc -> sc
+DEF scan(CS, sc(RT, TS, P, E, C)) == scan(CS!, RT, TS, P, E, C)
+
+  -- %Calculcate position after string
+  FUN calc_pos : pos ** string -> pos
+  DEF calc_pos(P,<>) == P
+  DEF calc_pos(P,Ch :: R) == calc_pos(nextPos(P,Ch),R)
+  
+  FUN skipMinus: pos ** rawString ** err -> pos ** rawString ** err
+  DEF skipMinus(P,raw(<>, _),E) == (P,<>,E)
+  DEF skipMinus(P,CS,E) == 
+      LET (Ch, chE) == ftUni(P, CS)
+          CSR == rtUni(CS)
+      IN
+      IF Ch = - THEN skipMinus(nextPosUni(P,CS),CSR,E+chE) ELSE (P,CS,E) FI
+
+  FUN skipSpecial: pos ** rawString ** err  -> pos ** rawString ** err
+  DEF skipSpecial(P,raw(<>, _),E) == (P,<>,E)
+  DEF skipSpecial(P,CS,E) == 
+      LET (Ch, chE) == ftUni(P, CS)
+          CSR == rtUni(CS)
+      IN
+      IF special?(Ch) THEN skipSpecial(nextPos(P,Ch),CSR,E+chE) ELSE (P,CS,E) FI
+  
+/* %First arguments as for @code{scan}. Second butlast argument
+    is starting position of character denotation, first butlast argument is
+    the hex (resp. oct) number recognized up to now, last argument is
+    string (for error messages). If hex (oct) number is too large,
+    @code{nat} is not correctly
+    computed. In this case, an error is reported. 
+
+    @code{CS} contains unicode escapes.
+*/
+
+FUN scanHex: rawString**repTab**seq[token]**pos**err**ctx**
+              pos**nat**string -> sc
+DEF scanHex(CS, RT, TS, P, E, C, start, num, str) ==
+  IF CS <>? THEN -- should not happen, unclosed denotation!
+    IF num < 256 THEN
+      scan(CS, RT, TS, P, E, deno(op(C), asChar(num) :: sf(C), dotKW(C)))
+    ELSE
+      scan(CS, RT, TS, P, E + cHigh(str, start),
+           deno(op(C), # :: sf(C), dotKW(C)))
+    FI
+  ELSE
+    LET (Ch, chE) == ftUni(P, CS)
+    IN        
+    IF num >= 256 THEN -- erroneous character
+      IF hexdigit?(Ch) THEN -- skip rest of number
+        scanHex(rtUni(CS), RT, TS, nextPosUni(P, CS), E + chE, C,
+                start, num, Ch :: str)
+      ELSE -- return with error and dummy character
+        scan(CS, RT, TS, P, E + cHigh(str, start),
+             deno(op(C), # :: sf(C), dotKW(C)))
+      FI
+    ELSE
+      IF digit?(Ch) THEN -- decimal number
+        scanHex(rtUni(CS), RT, TS, nextPosUni(P, CS), E + chE, C,
+                start, (16 * num) + asDigitNat(Ch), Ch :: str)
+      IF a <= Ch and Ch <= f THEN -- small true hex character
+        scanHex(rtUni(CS), RT, TS, nextPosUni(P, CS), E + chE, C,
+                start, (16 * num) + 10 + (asNat(Ch) - asNat(a)), Ch :: str)
+      IF A <= Ch and Ch <= F THEN -- big true hex character
+        scanHex(rtUni(CS), RT, TS, nextPosUni(P, CS), E + chE, C,
+                start, (16 * num) + 10 + (asNat(Ch) - asNat(A)), Ch :: str)
+      ELSE -- finish
+        scan(CS, RT, TS, P, E, deno(op(C), asChar(num) :: sf(C), dotKW(C)))
+      FI
+    FI
+  FI
+       
+
+FUN scanOct: rawString**repTab**seq[token]**pos**err**ctx**
+              pos**nat**string -> sc
+DEF scanOct(CS, RT, TS, P, E, C, start, num, str) ==
+  IF CS <>? THEN -- should not happen, unclosed denotation!
+    IF num < 256 THEN
+      scan(CS, RT, TS, P, E, deno(op(C), asChar(num) :: sf(C), dotKW(C)))
+    ELSE
+      scan(CS, RT, TS, P, E + cHigh(str, start),
+           deno(op(C), # :: sf(C), dotKW(C)))
+    FI
+  ELSE
+    LET (Ch, chE) == ftUni(P, CS)
+    IN
+    IF #(str) >= 3 or ~(octdigit?(Ch)) or ~(ok?(chE)) THEN -- stop it
+      IF num >= 256 THEN -- erroneous character
+                         -- return with error and dummy character
+        scan(CS, RT, TS, P, E + chE + cHigh(str, start),
+             deno(op(C), # :: sf(C), dotKW(C)))
+      ELSE -- finish
+        scan(CS, RT, TS, P, E + chE,
+             deno(op(C), asChar(num) :: sf(C), dotKW(C)))
+      FI
+    ELSE -- octdigit
+      scanOct(rtUni(CS), RT, TS, nextPosUni(P, CS), E + chE, C,
+                start, (8 * num) + asDigitNat(Ch), Ch :: str)
+    FI
+  FI
+
+FUN hexdigit? octdigit? : char -> bool
+DEF hexdigit?(ch) == digit?(ch) or (a <= ch and ch <= f) or 
+                     (A <= ch and ch <= F)
+
+DEF octdigit?(ch) == 0 <= ch and ch <= 7
+
+/* %Check body of a line comment. If it is a documentation comment,
+    the curly braces must be balanced. (We just count brackets here,
+    so some unbalanced comments might escape) */
+
+FUN checkLineDoc: rawString ** pos ** pos -> err
+DEF checkLineDoc(CS, P, CP) ==
+  IF CS <>? THEN 
+    ok
+  ELSE
+    LET (Ch, _) == ftUni(CS, CP)
+        CS1 == rtUni(CS)
+        CP1 == nextPosUni(CP, CS)
+    IN
+    IF Ch scanSpace? THEN checkLineDoc(CS1, P, CP1)
+    IF Ch = ("%"!) THEN checkLineDoc(CS1, P, CP1, 0, 0, Ch)
+    ELSE ok
+    FI
+  FI
+
+FUN checkLineDoc: rawString ** pos ** pos ** nat ** nat ** char -> err
+DEF checkLineDoc(CS, P, CP, openCt, closeCt, lastC) ==
+  IF CS <>? THEN 
+    IF openCt |= closeCt THEN sErr(unbalanced(openCt, closeCt), P) ELSE ok FI
+  ELSE
+    LET (Ch, _) == ftUni(CS, CP)
+        CS1 == rtUni(CS)
+        CP1 == nextPosUni(CP, CS)
+    IN
+    IF Ch = ("@"!) ANDIF (lastC = ("@"!)) THEN
+      checkLineDoc(CS1, P, CP1, succ(openCt), closeCt, " "!)
+    IF Ch = ("{"!) ANDIF (lastC |= ("@"!)) THEN
+      checkLineDoc(CS1, P, CP1, succ(openCt), closeCt, Ch)
+    IF Ch = ("}"!) ANDIF (lastC |= ("@"!)) THEN
+      checkLineDoc(CS1, P, CP1, openCt, succ(closeCt), Ch)
+    ELSE
+      checkLineDoc(CS1, P, CP1, openCt, closeCt, Ch)
+    FI
+  FI
+
+  
+
+-- %- -----------------------------------------------------------------------
+-- %$Code the internal representation$
+-- %- -----------------------------------------------------------------------
+
+-- %@code{classify} functions are called with unicode escapes expanded
+FUN classify: pos ** char ** repTab -> repTab ** token
+DEF classify(Pos, Ch, RT) ==
+    LET (NRT,Rep) == IF (Ch usc?) 
+                     THEN genAndIns(RT,Ch`) ELSE insert(RT,Ch `) FI
+        Terminal  == !(Rep)
+        Token     == token(Terminal,Rep,Pos)
+    IN (NRT,Token)
+
+FUN classify: pos ** string ** repTab ** bool -> repTab ** token
+DEF classify(P,<>,RT, _) == (RT,token(errorRep!,errorRep,P))
+DEF classify(P,Ch :: <>,RT,dot?) == 
+    LET (NRT,Rep) == IF (Ch usc?)
+                     THEN genAndIns(RT,Ch `) ELSE insert(RT,Ch `) FI
+        Terminal0  == !(Rep)
+        Terminal   == IF dot? THEN Terminal0 
+                      ELSE IF dot = Terminal0 THEN ide ELSE Terminal0 FI
+                      FI
+        Token     == token(Terminal,Rep,P)
+    IN (NRT,Token)
+DEF classify(P,Ch :: CS,RT,_) == 
+    LET (NRT,Rep) == insert(RT,`(Ch :: CS))
+         Terminal  == !(Rep)
+         Token     == token(Terminal,Rep,P)
+    IN (NRT,Token)
+
+-- %is next dot keyword?
+FUN dotT? : token ** bool -> bool 
+DEF dotT?(T, expectDot?) == 
+    IF all = T ORIF ex = T ORIF lambda = T THEN true
+    IF dot = T THEN false
+    ELSE expectDot?
+    FI
+
+-- %- -----------------------------------------------------------------------
+-- %$Functions for look ahead $
+-- %- -----------------------------------------------------------------------
+
+/* %Note that all these functions get a string with
+    unicode escapes still in it. 
+
+    Errors in analyzing these characters must be treated by the caller.
+*/
+FUN lineCom? nestComBegin? nestDocuBegin? nestEnd? : rawString->bool 
+DEF lineCom?(raw(<>, _)) == false
+DEF lineCom?(CS) ==
+  LET (Ch, _) == ftUni(unknown,CS)
+      CS1 == rtUni(CS)
+  IN
+  IF CS1 <>? THEN Ch = -
+  ELSE
+    LET (Ch2, _) == ftUni(unknown,CS1)
+    IN
+    (Ch = -) and ~(Ch2 special?)
+  FI
+
+
+DEF nestComBegin?(raw(<>, _)) == false
+DEF nestComBegin?(CS) ==
+  LET (Ch, _) == ftUni(unknown,CS)
+      CS1 == rtUni(CS)
+  IN
+  IF CS1 <>? THEN Ch = *
+  ELSE
+    LET (Ch2, _) == ftUni(unknown,CS1)
+    IN
+    (Ch = *) and ~(Ch2 special?)
+  FI
+
+DEF nestDocuBegin?(raw(<>, _)) == false
+DEF nestDocuBegin?(CS) ==
+  LET (Ch, _) == ftUni(unknown,CS)
+      CS1 == rtUni(CS)
+  IN
+  IF CS1 <>? THEN Ch = *
+  ELSE
+    LET (Ch2, _) == ftUni(unknown,CS1)
+    IN
+    IF (Ch = *) and ~(Ch2 special?) THEN
+      checkPercent(rtUni(CS1))
+    ELSE
+      false
+    FI
+  FI
+
+FUN checkPercent: rawString -> bool
+DEF checkPercent(CS) ==
+  IF CS <>? THEN false
+  ELSE
+    LET (Ch, _) == ftUni(unknown, CS)
+        CS1 == rtUni(CS)
+    IN
+    IF Ch scanSpace? THEN checkPercent(CS1)
+    IF Ch = ("%"!) THEN true
+    ELSE false
+    FI
+  FI
+
+DEF nestEnd?(raw(<>, _)) == false
+DEF nestEnd?(CS) ==
+  LET (Ch, _) == ftUni(unknown,CS)
+      CS1 == rtUni(CS)
+  IN
+  IF CS1 <>? THEN Ch = /
+  ELSE
+    LET (Ch2, _) == ftUni(unknown,CS1)
+    IN
+    (Ch = /) and ~(Ch2 special?)
+  FI
+
+-- %- ---------------------------------------------------------------------
+-- %$Errors$
+-- %- ---------------------------------------------------------------------
+
+FUN sErr: denotation ** pos -> err
+DEF sErr(msg, pos) == err(error, msg, pos)
+
+FUN sWarn: denotation ** pos -> err
+DEF sWarn(msg, pos) == err(warning, msg, pos)
+
+FUN otherChar cNotO cNotC dNotC never tabInD pNotC pNotO 
+    nlInD: denotation
+DEF dNotC        == "`""` not closed before end of line" 
+DEF tabInD       == "Tabular in denotation is not allowed" 
+DEF nlInD        == "Cannot escape newline"
+DEF cNotC        == "`/*` not closed" 
+DEF pNotC        == "`/$` not closed" 
+DEF cNotO        == "`*/` not opened" 
+DEF pNotO        == "`$/` not opened" 
+DEF otherChar    == "other character" 
+DEF never        == "INTERNAL SCANNER ERROR: should not happen" 
+
+FUN unbalanced: nat ** nat -> denotation
+DEF unbalanced(o, c)  ==
+  "unbalanced curly brackets in documentation (" ++
+  `(o) ++ " x `{' " ++ `(c) ++ " x `}' )"
+
+FUN unkEC: char -> denotation
+DEF unkEC(ch)        == "unknown escape `\\" ++ (ch`) ++
+                        "' replaced by `" ++ (ch`) ++ "'"
+
+FUN cHigh: string ** pos -> err
+DEF cHigh(s, p) == sErr("`\\" ++ (revert(s)`) ++
+                        "' is a non existent character!", p)
+
+-- %- -----------------------------------------------------------------------
+-- %$Character Classes for @sc{Opal}$
+-- %- -----------------------------------------------------------------------
+
+-- %graphic characters which are allowed for identifiers
+FUN special : set[char,<]
+DEF special == LET allChars == (0 .. 256 - 1)(asChar)
+                   check == IF latin1? THEN punctuation?'Latin1
+                            IF greek? THEN punctuation?'Greek
+                            ELSE punctuation?'Char
+                            FI
+               IN
+               excl(dblquote, (check | allChars) - extra)
+
+FUN special? : char -> bool
+DEF Ch special? == Ch in special
+
+-- %delimiters which have predefined meaning to @sc{Opal}
+FUN extra: set[char,<]
+DEF extra ==  incl(lbrace,incl(rbrace,incl(comma,
+                   incl(rsngquote,incl(lsqbrace,(rsqbrace %))))))
+
+FUN extra?: char -> bool
+DEF Ch extra? == Ch in extra
+
+-- %alphanumeric characters 
+FUN alphanum: set[char, <]
+DEF alphanum == 
+ LET allChars == (0 .. 256 - 1)(asChar)
+     check == IF latin1? THEN letgit?'Latin1
+              IF greek? THEN letgit?'Greek
+              ELSE letgit?'Char
+              FI
+     check2 == check or usc?
+ IN
+ incl(?, check2 | allChars)
+
+FUN alphanum?: char -> bool
+DEF alphanum?(ch) == ch in alphanum
+
+FUN scanLetgit? : char -> bool
+DEF scanLetgit? == IF latin1? THEN letgit?'Latin1
+                   IF greek? THEN letgit?'Greek
+                   ELSE letgit?'Char
+                   FI
+
+-- %Other characters, generally only allowed in comments
+FUN other: set[char, <]
+DEF other == 
+ LET allChars == (0 .. 256 - 1)(asChar)
+     check == IF latin1? THEN ~(printable?'Latin1 or space?'Latin1)
+              IF greek? THEN ~(printable?'Greek or space?'Greek)
+              ELSE ~(printable?'Char or space?'Char)
+              FI
+ IN check | allChars
+
+FUN other?: char -> bool
+DEF Ch other? == Ch in other
+
+-- %space (needed for adapting to different character sets)
+FUN scanSpace?: char -> bool
+DEF scanSpace? == IF latin1? THEN space?'Latin1 
+                  IF greek? THEN space?'Greek
+                  ELSE space?'Char
+                  FI
+
+FUN usc? : char -> bool
+DEF Ch usc? == Ch = underscore
+
+/* %Single Characters allowed after a backslash. */
+FUN escapes: set[char, <]
+DEF escapes == incl(n, incl(t, incl(v, incl(b, incl(r, incl(f, incl(a, 
+               incl(\, incl(?, incl(rsngquote, incl(dblquote,
+               {})))))))))))
+
+FUN escape: map[char, <, char]
+DEF escape ==
+  def("n"!, "\n"!,
+  def("t"!, "\t"!,
+  def("v"!, "\v"!,
+  def("b"!, "\b"!,
+  def("r"!, "\r"!,
+  def("f"!, "\f"!,
+  def("a"!, "\a"!,
+  def("\\"!, "\\"!,
+  def("?"!, "?"!,
+  def("'"!, "'"!,
+  def(""""!, """"!,
+  {})))))))))))
+
+-- %$Functions to handle Unicode-Escapes$
+
+/* %This data type is used to store information needed for scanning the
+    string. Currently, @code{bsl} contains the number of backslashes
+    (samp{\}) contiguously precding the first character of the string. */
+DATA rawString == raw(cont: string, bsl: nat)
+
+FUN ! : string -> rawString
+DEF s! == raw(s, 0)
+
+FUN <>? : rawString -> bool
+DEF raw(s, _) <>? == s <>?
+
+FUN <> : rawString
+DEF <> == raw(<>, 0)
+
+/* %If string starts with unicode-escape, process this escape.
+    If it denotes a character from asChar(0) to asChar(255), return it with
+    message ok, otherwise return dummy character and error.
+    If string does not start with unicode escape, behaves like @code{ft}. */
+FUN ftUni: rawString ** pos -> char ** err
+DEF ftUni(raw(<>, _), _) ==
+  (ABORT("ftUni'Scanner called with empty string"), ok)
+DEF ftUni(raw(c1 :: (S AS c2 :: c3 :: _), b), p) ==
+  IF even?(b) and unicode?(c1, c2, c3) THEN 
+    LET (unicodeMarkers, rest) == split(unicodeMarker?, S)
+    IN
+    scanUnicode(rest, p, 0, unicodeMarkers)
+  ELSE
+    (c1, ok)
+  FI
+DEF ftUni(raw(ch :: _, _), _) == (ch, ok)
+
+FUN ftUni: pos ** rawString -> char ** err
+DEF ftUni(p:pos, CS) == ftUni(CS, p)
+
+/* % @code{str} contains the initial @samp{u}! */
+
+FUN scanUnicode: string ** pos ** nat ** string -> char ** err
+DEF scanUnicode(CS, start, num, str) ==
+    IF #(str) >= 5 THEN -- stop it
+      IF num >= 256 THEN -- erroneous character
+                         -- return with error and dummy character
+      (blank, sErr("`\\u" ++ `(revert(str)) ++
+               "' : codes above \\u00FF not supported, replaced by space",
+               start))
+      ELSE -- finish
+       (asChar(num), ok)
+      FI
+    OTHERWISE
+    IF CS <>? ORIF ~(hexdigit?(ft(CS))) THEN -- end of string reached
+      IF num < 256 THEN
+        (asChar(num), sErr("`\\u" ++ `(revert(str)) ++
+               "' : unicode escape must contain exactly four " ++ 
+               "hexadecimal digits", start))
+      ELSE
+        (blank, sErr("`\\" ++ `(revert(str)) ++
+                    "' : codes above \\u00FF not supported, replaced by space",
+                     start))
+      FI
+    ELSE -- hexdigit
+      IF digit?(ft(CS)) THEN -- decimal number
+        scanUnicode(rt(CS), start, (16 * num) + asDigitNat(ft(CS)),
+                    ft(CS) :: str)
+      IF a <= ft(CS) and ft(CS) <= f THEN -- small true hex character
+        scanUnicode(rt(CS), start,
+                    (16 * num) + 10 + (asNat(ft(CS)) - asNat(a)),
+                    ft(CS) :: str)
+      IF A <= ft(CS) and ft(CS) <= F THEN -- big true hex character
+        scanUnicode(rt(CS), start,
+                    (16 * num) + 10 + (asNat(ft(CS)) - asNat(A)),
+                    ft(CS) :: str)
+      FI
+    FI
+
+
+/* %If string starts with unicode escape, skip it. Otherwise behaves like
+    @code{rt}. (No need for error messages here). */
+FUN rtUni: rawString -> rawString
+DEF rtUni(raw(<>, _)) == ABORT("rtUni'Scanner called with empty string")
+DEF rtUni(raw(c1 :: (S AS c2 :: c3 :: _), b)) ==
+  IF even?(b) and unicode?(c1, c2, c3) THEN
+    skipUnicode(drop(unicodeMarker?, S), 0)
+  ELSE
+    raw(S, IF c1 = \ THEN succ(b) ELSE 0 FI)
+  FI
+DEF rtUni(raw(ch :: R, b)) == raw(R, IF ch = \ THEN succ(b) ELSE 0 FI)
+
+-- %skip over hexdigits, max. 4 hexdigits
+FUN skipUnicode: string ** nat -> rawString
+DEF skipUnicode(<>, _) == <>
+DEF skipUnicode(S AS (ch :: R), n) ==
+  IF n >= 4 THEN S!
+  IF n < 4 THEN
+    IF hexdigit?(ch) THEN skipUnicode(R, succ(n))
+    ELSE S!
+    FI
+  FI
+
+/* %If string starts with unicode escape, return position after that escape.
+    Otherwise identical to @code{nextPos(ft(S))}. */
+FUN nextPosUni: pos ** rawString -> pos
+DEF nextPosUni(p, raw(<>, _)) == p
+DEF nextPosUni(p, raw(c1 :: (S AS c2 :: c3 :: _), b)) ==
+  IF even?(b) and unicode?(c1, c2, c3) THEN
+    LET (ucmarkers, rest) == split(unicodeMarker?, S)
+    IN
+    nextPosUnicode(calc_pos(nextPos(p, c1), ucmarkers), rest, 0)
+  ELSE
+    nextPos(p, c1)
+  FI
+DEF nextPosUni(p, raw(ch :: _, _)) == nextPos(p, ch)
+
+-- %skip over hexdigits and compute pos, max. 4 hexdigits
+FUN nextPosUnicode: pos ** string ** nat -> pos
+DEF nextPosUnicode(p, <>, _) == p
+DEF nextPosUnicode(p, ch :: R, n) ==
+  IF n >= 4 THEN p
+  IF n < 4 THEN
+    IF hexdigit?(ch) THEN nextPosUnicode(nextPos(p, ch), R, succ(n))
+    ELSE p
+    FI
+  FI
+
+/* %Check, if next three characters might start a unicode escape. This is
+    more intelligent than the Java grammar specifies: If the characters
+    @samp{\} @samp{u} are not followed by an other @samp{u} nor a
+    hexadecimal digit, @sc{Opal} will not assume a unicode escape.
+    @sc{java} will generate a compile-time error. */
+FUN unicode? : char ** char ** char -> bool
+DEF unicode?(c1, c2, c3) == 
+  c1 = \ and c2 = u and (hexdigit?(c3) or c3 = u)
+
+FUN unicodeMarker? : char -> bool
+DEF unicodeMarker?(ch) == ch = u
+
+

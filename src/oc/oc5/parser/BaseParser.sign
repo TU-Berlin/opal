@@ -1,0 +1,156 @@
+
+SIGNATURE BaseParser
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- %- author: cg
+-- %- purpose: parsing Opal1 and property language
+
+IMPORT	  -- %- pars
+	  Rep			    ONLY rep
+	  Token			    ONLY token:SORT
+	  Terminal		    ONLY terminal:SORT <
+	  PTypes		    ONLY pRes:SORT
+	  Absy			    ONLY absy 
+	  ModBase		    ONLY modifier:SORT
+IMPORT	  -- %- admin
+	  Error			    ONLY err:SORT 
+	  Pos			    ONLY pos:SORT
+IMPORT	  -- %- lib
+	  Seq[token]		    ONLY seq 	  
+	  Seq[terminal]		    ONLY seq 	  
+	  Set[terminal,<]	    ONLY set
+
+-- %- ------------------------------------------------------------------------
+-- %$General Parsers$
+-- %- ------------------------------------------------------------------------
+
+TYPE parser == parser(pars: seq[token] -> pRes)
+
+/* %Sequencing of parsers. Second parser is not called, if first parser
+    fails. */ 
+
+FUN <&.>  : parser ** parser -> parser	     -- (P1 <&> P2)(mod2nd)
+FUN <.&>  : parser ** parser -> parser	     -- (P1 <&> P2)(mod1st)
+FUN <&>  : parser ** parser -> modifier -> parser
+	-- %- P1 fail? => M(P1 fail, pFail(_,noAbsy, _)) => fail
+	-- %- P1 res?  => M(P1 res, P2 fail) => fail
+	-- %-          => M(P1 res, P2 res)  => res
+	-- %- ===> P1 <&> P2 = fail, iff P1 fail   else res
+
+/* %Sequencing of parsers. Second parser is called, if first parser
+    fails. */ 
+
+FUN <;.>  : parser ** parser -> parser	     -- (P1 <;> P2)(mod2nd)
+FUN <.;>  : parser ** parser -> parser	     -- (P1 <;> P2)(mod1st)
+FUN <;>   : parser ** parser -> modifier -> parser
+	 -- %- ===> P1 <;> P2 = fail, iff P1 fail or P2 fail
+
+/* %Alternative. If first parser fails, the second parser is called. */
+FUN <|>	 : parser ** parser -> parser
+	 -- %- P1 res?  => P1 res => res
+	 -- %- P2 fail? => P2 res? => res
+	 -- %-          => P2 fail? => fail
+	 -- %- ===> P1 <|> P2 = fail, iff P2 fail, else res
+
+/* %Sequencing of parsers (like <&>) but if second parser fails,
+    the result of first parser is returned. (Modifier is always called.)  */
+FUN <&?.> : parser ** parser -> parser	   -- (P1 <&?> P2)(mod2nd)
+FUN <.&?> : parser ** parser -> parser	   -- (P1 <&?> P2)(mod1st)
+FUN <&?> : parser ** parser -> modifier -> parser
+	 -- %- P1 fail? => M(P1 fail, pFail(_,noAbsy, _)) => fail
+	 -- %- P1 res? and P2 fail? => M(P1 res, pRes(ok,noAbsy, _)) => res
+         -- %- P1 res? and P2 res? => M(P1 res, P2 res) => res
+
+/* %Sequencing of parsers (like <&?>) but second parser is called in any case
+    to consume tokens. (Errors are accumulated if both parsers fail.) */
+FUN <;?> : parser ** parser -> modifier -> parser
+FUN <;?.> : parser ** parser -> parser	   -- (P1 <;?> P2)(mod2nd)
+FUN <.;?> : parser ** parser -> parser	   -- (P1 <;?> P2)(mod1st)
+
+
+/* %Call parser repeatedly, until failure or eof. Never fails and returns
+    a sequence of absys. */
+FUN *	 : parser -> parser
+
+/* %Call parser repeatedly, until failure or or first token is in the
+    given stop set. */
+FUN *	 : parser -> set[terminal,<] -> parser
+
+/* %Call parser repeatedly, at least once. 
+    Fails, if first call to parser fails. */
+FUN +	 : parser -> parser
+	-- (P <&> P*)
+
+/* %Call parser repeatedly, at least once. Considers the given stop set.
+    Fails, if first call to parser fails. (see above) */
+FUN +	 : parser -> set[terminal,<] -> parser
+
+/* %Parse a (possibly empty) list separated by terminal. 
+    Fails, if parsing after last seperator fails. */
+FUN ||	 : parser ** terminal -> parser
+	-- ( + (P<;>T) <;> P ) <|> P <|> nil 
+
+/* %Succeeds, iff first element of the token sequence is equal to argument. */
+FUN isA  : rep -> parser
+FUN isA  : terminal -> parser
+	 -- %- term = terminal(ft(Arg)) => res , else fail
+FUN isA : (token -> absy) ** terminal -> parser 
+	-- %- term = terminal(ft(Arg)) => res and returns mkAbsy(ft(Arg))
+
+/* %Succeeds, iff current token is in the given set. */
+FUN isIn : (token -> absy) ** set[terminal,<] -> parser
+         -- %- term in set[terminal] => res, else fail
+
+/* %@code{nil} is the empty parser - always succeeds, does not alter token
+    sequence. @code{empty} succeeds, if token sequence is empty or current
+    token is eof, does not alter token sequence. */
+FUN nil	empty pos : parser
+	-- %- nil   = always res
+	-- %- empty = res  iff ft(Args) = eof
+        -- %- pos   = always res with current position 
+
+/* %Succeeds, if token sequence is empty or current token is in given set.
+    Token sequence is altered only, if empty fails. In this case,
+    removes all tokens from the beginning in the given set. */
+FUN empty : set[terminal,<] -> parser
+	-- %- emptyExpr = res   iff Args <> or (ft(Arg) in firstExprSet)
+	-- %-	     = fail  iff Args <> or ~(ft(Arg) in firstExprSet)
+        -- %- shifts token sequence until first of token is in set or eof
+
+/* %Fails always with error message as given in argument. */
+FUN fail : denotation -> parser
+/* %Fails always with error message constructed from the token sequence. */
+FUN fail : (seq[token] -> err) -> parser
+
+-- %- ------------------------------------------------------------------------
+-- %$LookAheads - no abstract syntax generated$
+-- %- ------------------------------------------------------------------------
+
+/* %Fails, if current token is different from terminal. Does not alter
+    token sequence. */
+FUN isA? : terminal -> parser	
+
+-- %- ------------------------------------------------------------------------
+-- %$Test if first token is in Set$
+-- %- ------------------------------------------------------------------------
+/* %Fails, if current token is not in given set. Does not alter
+    token sequence. */ 
+FUN isIn? : set[terminal,<] -> parser
+
+-- %- ------------------------------------------------------------------------
+-- %$Evaluation of a parser$
+-- %- ------------------------------------------------------------------------
+
+FUN @ : parser ** seq[token] -> pRes
+
+-- %- ------------------------------------------------------------------------
+-- %$Modifying result of a parser$
+-- %- ------------------------------------------------------------------------
+
+FUN doMod: modifier ** parser -> parser
+FUN setAbsy: absy ** parser -> parser
+FUN updAbsy: (absy -> absy) -> parser -> parser

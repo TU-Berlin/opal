@@ -1,0 +1,63 @@
+IMPLEMENTATION InitRelation
+
+IMPORT 	
+	Com	COMPLETELY
+	ComCompose	COMPLETELY
+	Error	COMPLETELY
+	InterOpal	COMPLETELY
+	MapByOS	COMPLETELY
+	MapByOSConv	COMPLETELY
+	OcBinStream	COMPLETELY
+	Option	COMPLETELY
+	Options	COMPLETELY
+	Pair	COMPLETELY
+	Pos	COMPLETELY
+	Rep	COMPLETELY
+	Struct	COMPLETELY
+	Seq	COMPLETELY
+	SeqMap	COMPLETELY
+	SeqOfSeq ONLY flat
+
+FUN readOwn: options -> com[interOpal]
+
+/* Von der eigenen Signatur muss der gesamte Namensraum rekonstruiert
+werden. Das Mischen mehrerer eigener Strukturen - durch mehrfaches
+REALIZES - wird noch nicht unterstützt.  */
+
+DEF readOwn(Opt) ==
+	read(Opt, mySignExpFile(Opt), ioTypeKey) 
+
+FUN deps: struct'Struct -> seq[import]
+DEF deps(Struct) == (imports(Struct) 
+			++ flat(codom(relations(Struct))))
+		
+FUN readInters:  options ** struct'Struct -> com[seq[interOpal]]
+DEF readInters(Opt, Struct) ==
+	LET PairSeq == asSeq(asMap[rep, <, pos]
+		  ((\\Dep. LET Orig == origin(Dep) IN  
+			structIde(Orig) & pos(Orig)) * deps(Struct)))
+	IN
+		readFiles(Opt, structIde(head(Struct)), PairSeq)
+
+FUN readFiles:  options ** rep ** seq[pair[rep, pos'Pos]] 
+					-> com[seq[interOpal]]
+DEF readFiles(_, _, <>) == succeed(<>)
+DEF readFiles(Opt, MainRep, ImpRep & Pos :: Rt) ==
+	LET ReadRtFiles == readFiles(Opt, MainRep, Rt) IN
+	IF MainRep = ImpRep THEN
+		errors(Opt, err(error, 
+			"illegal reference of current structure '%s'",
+					`(MainRep), Pos)) & (\\ _ .
+		ReadRtFiles)
+	ELSE
+	    LET ImpFile ==  expFile(`(ImpRep), Opt) 
+	    IN optread(Opt, ImpFile, ioTypeKey) & (\\Inter?.
+	    	IF nil?(Inter?) THEN 
+	    		errors(Opt, err(error, "imported file '%s' not found", 
+					ImpFile, Pos)) & (\\ _ .
+			ReadRtFiles)
+	    	ELSE ReadRtFiles & (\\InterSeq.
+			succeed(cont(Inter?)::InterSeq))
+	    	FI)
+	FI
+	

@@ -1,0 +1,214 @@
+
+IMPLEMENTATION PName
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- %$author: cg$
+-- %$purpose: parsing Opal1 and property language$
+
+IMPORT    -- pars
+          PErr                  COMPLETELY
+          Terminal              COMPLETELY
+          Token                 COMPLETELY
+          ZOpts                 COMPLETELY
+          PTypes                COMPLETELY
+          ModBase               COMPLETELY
+          BaseParser            COMPLETELY
+IMPORT    -- absy
+          Absy                  COMPLETELY
+	  Struct		COMPLETELY
+          PartName              COMPLETELY
+IMPORT    -- reps               
+          Rep                   COMPLETELY
+IMPORT    -- admin
+          Pos                   ONLY pos unknown +
+	  Error 		ONLY warning errKind error err
+IMPORT    -- lib
+          Denotation            COMPLETELY
+	  Option		COMPLETELY
+	  Nat			COMPLETELY
+          Seq	                COMPLETELY
+          SeqMap                COMPLETELY
+          Set[terminal,<]       COMPLETELY
+       	  String 		ONLY string
+
+-- %- ----------------------------------------------------------------------
+-- %$Opal specific base parsers for Names$
+-- %- ----------------------------------------------------------------------
+
+FUN pIde pFctName pName pLocalName pFct : parser
+
+FUN mkIde: token -> absy
+DEF mkIde(token(_, Lex, Pos)) == Name(partName(Lex,nil,nil,unknown,none,Pos))
+
+DEF pIde      == isA(mkIde, ide) 
+
+FUN pOri : parser
+DEF pOri == isA(apo) <&.> pIde
+
+FUN pNameFront :  parser
+DEF pNameFront ==  isA(mkIde, ignPat) <|>
+  (((pIde <;?> pOri)(modOrigin))  <;?> (pParams))(modParams)
+
+DEF pFctName == (pNameFront  <;?> pFctKind)(modKind(none))
+
+DEF pName      == (nameParser <.;> empty(termSet-specialInName))
+DEF pLocalName == (pFctName <.;> empty(termSet-specialInName))
+
+FUN nameParser :  parser
+DEF nameParser == 
+  	(pNameFront  <;?> pKind)(modKind(none))
+
+DEF pOrigin == doMod(mkOrigin, (pIde <;?> pParams)(modParams))
+
+FUN modOrigin mkOrigin: modifier
+DEF modOrigin == mod(\\A1,A2.
+		IF (A1 Name?) 
+		THEN IF (A2 Name?) THEN
+                      	Name(:=_structIde(pName(A1), avail(ide(pName(A2)))))
+		      ELSE A1 FI
+		ELSE A1 FI)  -- noAbsy
+
+DEF mkOrigin == 
+    mkMod(\\Res. 
+	LET TS  == tokS(Res)
+            Err == err(Res)
+	    A == absy(Res)
+        IN IF A Name? 
+           THEN LET N == pName(A) IN
+		pRes(Err, Origin(origin(ide(N),pos(N),paramS(N))), TS)
+	   ELSE pRes(pErrMiss(missOri,calcMissPos(<>,TS)),
+			Origin(errorOrigin), TS)
+	   FI)
+
+-- %- ----------------------------------------------------------------------
+
+FUN pParams : parser
+DEF pParams  == 
+   ((isA(openSqBr) <&> (pNameOrFct || !(comma)))(modOpenInstPos) 
+	<&> isA(closeSqBr))(modCloseInstPos)
+
+FUN modOpenInstPos modCloseInstPos modParams: modifier
+DEF modOpenInstPos == mod(\\A1, A2.
+	IF Pos?(A1) THEN Name(:=_instPos(:=_paramS(nilName, 
+				avail(pName * aSeq(A2))),
+					p(A1)))
+	ELSE Name(nilName) FI)
+
+DEF modCloseInstPos == mod(\\A1, A2.
+	IF Pos?(A2) THEN Name(:=_instPos(pName(A1),
+			instPos(pName(A1)) + p(A2)))
+	ELSE A1 FI)
+
+DEF modParams == mod(\\A1, A2.
+	IF Name?(A1) 
+	THEN IF Name?(A2) THEN
+		LET P1 == pName(A1)
+		    P2 == pName(A2)
+		IN Name(:=_instPos(:=_paramS(P1, paramS(P2)), instPos(P2)))
+	     ELSE A1 FI
+	ELSE A2 FI)     
+
+FUN pKind : parser
+DEF pKind == isA(colon) <&.>
+		(setAbsy(Kind(sort), isA(sort)) <|>
+		 setAbsy(Kind(law), isA(law))  <|>
+		 setAbsy(Kind(proof), isA(proof))  <|>
+		 pKindFct)
+
+FUN pKindFct: parser
+DEF pKindFct == 
+  updAbsy(\\N. IF Name?(N) THEN Kind(op(pName(N))) ELSE N FI)
+	(pFct(true))
+
+FUN pFctKind: parser
+DEF pFctKind == isA(colon) <&.> pKindFct
+
+
+FUN pSortKind:parser 
+DEF pSortKind == setAbsy(Kind(sort), isA(colon) <&.> isA(sort))
+
+FUN pLawKind:parser 
+DEF pLawKind == setAbsy(Kind(law), isA(colon) <&.> isA(law))
+
+FUN pSortName:parser 
+DEF pSortName == (pNameFront  <;?> pSortKind)(modKind(sort))
+
+FUN pLawName:parser 
+DEF pLawName == (pNameFront  <;?> pLawKind)(modKind(law))
+
+FUN modKind: kind -> modifier
+DEF modKind(DefaultKind) == mod(\\A1,A2. 
+ 	IF (A1 Name?) THEN
+		IF A2  Kind? THEN
+		Name(:=_kind(pName(A1), kind(A2)))
+		ELSE Name(:=_kind(pName(A1), DefaultKind)) FI
+	ELSE Name(errorName) FI)
+
+
+-- %- ----------------------------------------------------------------------
+-- %$Functionality Parser$
+-- %- ----------------------------------------------------------------------
+-- %- ------------------------------------------------------------------------
+-- %$$Fct$
+-- %Parses : @code{Fct ::= ProdFct [ '->' Fct]}
+-- %- ------------------------------------------------------------------------
+
+FUN pFct pNameOrFct : parser
+DEF pNameOrFct == pFct(false)
+DEF pFct == pFct(true)
+
+FUN pFct pProdFct pSimpleFct: bool -> parser
+
+DEF pFct(Sort?) == parser(\\Arg.
+-- avoid empty functionalities
+	isIn?(%(ignPat,ide,openBr!,closeBr!)) <&.>   
+	((pProdFct(Sort?) <;?> (isA(arrow) <&.> pFct))(modFunFct))
+	@ Arg)
+
+FUN modFunFct : modifier
+DEF modFunFct == mod(\\A1,A2. 
+    IF Name?(A2) THEN
+	LET F1 == pName(A1)
+	    F2 == pName(A2)
+	    P == pos(F1) + pos(F2) 
+	IN Name(partName(arrow, nil, avail(%(F1, F2)), P, sort, P))
+    ELSE A1 FI)
+
+-- %- ------------------------------------------------------------------------
+-- %$$ProdFct$
+-- %Parses : @code{ProdFct ::= SimpleFct || ** }
+-- %- ------------------------------------------------------------------------
+
+DEF pProdFct(Sort?) == 
+	doMod(mkProd, pSimpleFct(Sort?) || !(product))  -- could be empty
+
+FUN mkProd: modifier
+DEF mkProd == mkMod(\\R. 
+		LET S == pName * aSeq(absy(R))
+		    P == IF #(S) > 1 THEN
+				pos(ft(S)) + pos(last(S))
+			 ELSE pos(ft(tokS(R))) FI  
+		    N == IF #(S) = 1 THEN Name(ft(S))
+			 ELSE Name(partName(product, nil, avail(S),
+				P, sort, P)) FI
+-- 		    E == check Kind SORT if more then 1 component
+		IN pRes(err(R), N, tokS(R)))
+
+-- %- ------------------------------------------------------------------------
+-- %$$SimpleFct$
+-- %Parses : @code{SimpleFct ::= '(' pFct ')' | Name  | '(' ')' | '_'}
+-- %- ------------------------------------------------------------------------
+
+DEF pSimpleFct(Sort?) == (((isA(openBr) <&.> 
+	pFct(true)) <.;> isA(closeBr)) <.;?> pSortKind)
+	<|> (IF Sort? THEN pSortName
+		ELSE nameParser FI)
+
+-- %- ----------------------------------------------------------------------
+
+FUN specialInName : set[terminal,<]
+DEF specialInName == %(colon!,apo!,closeSqBr!,openSqBr!)

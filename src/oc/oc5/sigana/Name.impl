@@ -1,0 +1,132 @@
+IMPLEMENTATION Name
+
+IMPORT Rep COMPLETELY
+	Denotation COMPLETELY
+IMPORT Nat COMPLETELY
+	NatConv COMPLETELY
+IMPORT Seq COMPLETELY
+	SeqConv  COMPLETELY
+	SeqMap  COMPLETELY
+	SeqReduce  COMPLETELY
+
+DATA fullName == fullName(ide: rep, orig: rep, kinst: seq[fullName], maxv: nat)
+	     var(no: nat, fullKind: fullName)
+
+DEF fullName(Ide, Orig, Kinst) == 
+	fullName(Ide, Orig, Kinst, \ (\\K, M. IF maxVar(K) > M THEN 
+			maxVar(K) ELSE M FI, 0, Kinst))
+
+FUN sort law proof: fullName
+DEF sort == fullName(sort, nilRep, <>)
+DEF law == fullName(law, nilRep, <>)
+DEF proof == fullName(proof, nilRep, <>)
+
+FUN sort?: fullName -> bool
+DEF sort?(fullName(Ide, Orig, <>, _)) == (Ide = sort) and nilRep?(Orig)
+DEF sort?(_) == false
+
+FUN stripKind: fullName -> fullName
+DEF stripKind(F) == :=_kinst(F, inst(F))
+
+FUN addKind: fullName ** fullName -> fullName
+DEF addKind(F, K) == :=_kinst(F, K :: kinst(F))
+
+FUN inst: fullName -> seq[fullName]
+DEF inst(fullName(_, _, _ :: Inst, _)) == Inst
+
+FUN kind: fullName -> fullName
+DEF kind(fullName(_, _, Kind :: _, _)) == Kind
+DEF kind(var(_, Kind)) == Kind
+
+FUN mkFct: fullName ** fullName -> fullName
+DEF mkFct(Arg, Res) == fullName(arrow, nilRep, %(sort, Arg, Res))
+
+FUN arg res: fullName -> fullName
+DEF arg(F) == ft(inst(F))
+DEF res(F) == ft(rt(inst(F)))
+
+FUN :=_inst : fullName ** seq[fullName] -> fullName
+DEF :=_inst(F, S) == :=_kinst(F, kind(F) :: S)
+FUN :=_ide : fullName ** rep -> fullName
+
+FUN ` : fullName -> denotation
+DEF `(var(N, K)) == "var(" ++ `(N) ++ ")" ++
+	(IF sort?(K) THEN "" ELSE ":" ++ `(K) FI)
+DEF `(F AS fullName(Ide, Orig, Kinst, _)) ==
+	IF Ide = arrow THEN 
+		(IF fullName?(arg(F)) ANDIF ide(arg(F)) = arrow THEN 
+		 "(" ++ `(arg(F)) ++ ")"
+		ELSE `(arg(F)) FI) ++ `(arrow) ++ 
+		`(res(F))
+	IF Ide = product THEN  
+		`("(", `(product), ")")(`)(inst(F))
+	ELSE
+	`(Ide) ++ 
+	(IF nilRep?(Orig) THEN "" ELSE "'" ++ `(Orig) FI) ++
+	(IF <>?(Kinst) THEN "" ELSE 
+		(IF <>?(inst(F)) THEN "" ELSE
+		`("[", ",", "]")(`)(inst(F)) FI) ++ 
+		(IF sort?(kind(F)) THEN "" ELSE
+			":" ++ `(kind(F)) FI)
+	FI)
+	FI
+
+FUN = < : fullName ** fullName -> bool
+-- this is output of ordinatrice verte for free type fullName
+FUN < : fullName ** fullName -> bool
+DEF <(fullName(a,b,c,_),fullName(A,B,C,_)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE
+IF <(b,B) THEN true
+IF <(B,b) THEN false
+ELSE <(<)(c,C) 
+FI
+FI
+
+DEF <(fullName(_,_,_,_),var(_,_)) == true
+DEF <(var(_,_),fullName(_,_,_,_)) == false
+DEF <(var(a,b),var(A,B)) == IF <(a,A) THEN true
+IF <(A,a) THEN false
+ELSE <(b,B)
+FI
+
+FUN = : fullName ** fullName -> bool
+DEF =(fullName(a,b,c,_),fullName(A,B,C,_)) == 
+IF =(a,A) THEN IF =(b,B) THEN =(=)(c,C) 
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+DEF =(fullName(_,_,_,_),var(_,_)) == false
+DEF =(var(_,_),fullName(_,_,_,_)) == false
+DEF =(var(a,b),var(A,B)) == IF =(a,A) THEN =(b,B) ELSE false FI
+
+FUN :=_kinst : fullName ** seq[fullName] -> fullName
+DEF :=_kinst(fullName(1,2,_,_),new) == fullName(1,2,new)
+FUN :=_ide : fullName ** rep -> fullName
+DEF :=_ide(fullName(_,2,3,M),new) == fullName(new,2,3,M)
+
+FUN maxVar : fullName -> nat
+DEF maxVar(var(N, K)) == max(N, maxVar(K))
+DEF maxVar(fullName(_, _, _, M)) == M 
+
+FUN incr : nat ** fullName -> fullName
+DEF incr(M, var(N, K)) == var(N + M, incr(M, K))
+DEF incr(N, fullName(Ide, Orig, Inst,_)) == 
+        fullName(Ide, Orig, incr(N, _) * Inst) 
+
+FUN monomorph? : fullName -> bool
+DEF monomorph?(F) == maxVar(F) = 0
+
+
+FUN mkTuple : nat -> fullName
+DEF mkTuple(N) == :=_inst(tuple0, mkTupleInst(N))
+
+FUN tuple0 : fullName
+DEF tuple0 == fullName(product, nilRep, %(sort))
+
+FUN mkTupleInst : nat -> seq[fullName]
+DEF mkTupleInst(N) == (1 .. N)(\\I. var(I, sort))

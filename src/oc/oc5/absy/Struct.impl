@@ -1,0 +1,216 @@
+
+IMPLEMENTATION Struct
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- AutorInnen:  mija + carola
+-- Projekt:     OPAL1-Compiler + property language
+
+IMPORT  PartName    COMPLETELY
+        Impl	    COMPLETELY
+        GlobPragma  COMPLETELY
+IMPORT  -- token
+        Rep             COMPLETELY
+IMPORT  -- admin
+        Pos             ONLY pos unknown
+IMPORT  -- lib
+	Option		COMPLETELY
+        Seq             COMPLETELY
+       	Denotation      COMPLETELY
+        Nat             ONLY nat 0
+        Char            ONLY char blank newline
+        CharConv        ONLY `
+       	Pair 		ONLY pair &
+       	MapByOSConv 	ONLY `
+       	SeqConv 	ONLY `
+       	String 		ONLY string
+       	MapByOS		ONLY map {}
+
+-- %- ------------------------------------------------------------------------
+        -- Compilationseinheit (Signatur- oder Implementationsteil)
+DATA struct ==  
+                mkstruct(
+                  head:origin,                  -- Kopf (Name,form.Parameter)
+                  imports:seq[import],  -- explizite Importe (IMPORT)
+                  signature:seq[partName], -- neue Sig. (SORT,FUN)
+                  specsign:seq[pair[partName, law]],  -- spez. FUNs
+                  sortImpls:seq[sortImpl], -- Sortenimpl. (DATADef)
+                  funImpls:seq[eq],        -- Funktionsimpl. (DEFEq)
+                  freeTypes:seq[sortImpl], -- frei aufbauende Typen (TYPEDecl)
+                  laws:seq[law],                 -- Eigenschaften (LAWProp)
+                  pragmas:seq[globPragma],      -- pragmas der Struktur
+                  proofHeads: seq[proofHead],   -- proofHeads der Struktur
+                  proofBodies: seq[proofBody],  -- proofBodies der Struktur
+                  relations: map[rep, <, seq[import]],
+                       -- Relationen zu anderen Strukturen, rep zur Info
+                  pos:pos,                      -- Position des Schluesselworts
+                  part:rep)                    -- sign, impl, extp
+
+        -- IMPORT mit ONLY oder ALLBUT Namenslisten
+        -- (COMPLETELY entspricht ALLBUT mit leerer Namensliste)
+DATA import ==  
+             mkImport(	only? : bool, 
+			origin : origin, 
+			namelist : seq[partName])
+
+     -- Herkunft:Strukturname, aktuelle/formale Parameter
+DATA origin ==  
+                origin( structIde : rep,        -- Strukturbezeichner
+                        pos : pos,              -- Position des ?
+                        paramS : option[seq[partName]]) -- Instanz
+
+-- %- ------------------------------------------------------------------------
+-- %$Textrepraesentationen$
+
+DEF  `(s:struct) ==
+	LET
+            originT ==  `(part(s)) ++ " " ++ `(head(s))
+            importT ==  `("", "\n", "")(`)(imports(s))
+            signatureT == `("", "\n", "")(h2)(signature(s))
+            specsigns == `("", "\n", "")(h7)(specsign(s))
+            typesT ==   `("", "\n", "")(h3)(sortImpls(s)) 
+            defsT ==    `("", "\n", "")(h4)(funImpls(s))
+            freesT ==   `("", "\n", "")(h5)(freeTypes(s))
+            lawsT  ==   `("", "\n", "")(`)(laws(s)) 
+            pHsT == `("", "\n", "")(`)(proofHeads(s))
+            pBsT == `("", "\n", "")(`)(proofBodies(s))
+            relsT == `("->")("","\n","")(`, `("","\n   ", "")(`))(relations(s))
+            pragmaT ==  `("", "\n", "")(`)(pragmas(s))
+	IN originT + importT + signatureT + specsigns +
+             typesT + defsT + freesT + lawsT + pragmaT +
+             pHsT + pBsT + relsT
+
+FUN + : denotation ** denotation -> denotation
+DEF D1 + D2 == 
+	IF empty?(D1) THEN D2 
+	IF empty?(D2) THEN D1
+	ELSE D1 ++ "\n\n" ++ D2 FI 
+         
+        FUN h2 :partName->denotation
+        DEF h2(N) == LET K == kind(N) IN
+	(IF sort?(K) THEN `(sort:rep)
+	IF law?(K) THEN `(law:rep)
+	IF proof?(K) THEN `(proof:rep)
+	IF op?(K) THEN `(fun)
+        FI) ++ " " ++ (IF op?(K) THEN `(N) ELSE `(stripKind(N)) FI)  
+
+        FUN h3:sortImpl->denotation
+        DEF h3(i) == `(data) ++ " " ++ `(i)
+        FUN h4:eq->denotation
+        DEF h4(i) == `(def) ++ " " ++ `(i)
+        FUN h5:sortImpl->denotation
+        DEF h5(i) == `(type) ++ " " ++ `(i) 
+
+        FUN h7: pair[partName, law] -> denotation
+        DEF h7(pN & l) == h2(pN) ++ "\n" ++ `(spc) ++ " " ++ `(l)
+
+DEF  `(i:import) ==
+        `(import) ++ " " ++ `(origin(i)) ++ " " ++
+        (IF <>?(namelist(i)) THEN `(completely)
+         ELSE (IF i only? THEN `(only) 
+	       ELSE `(allbut) FI) 
+               ++ `(" ", " ", "")(`)(namelist(i)) FI)
+
+
+DEF `(origin(SI,_,nil)) ==  `(SI)
+DEF `(origin(SI,_,avail(Ps))) == 
+    `(SI) ++ `("[", ",", "]")(`'PartName)(Ps)
+
+-- %- ------------------------------------------------------------------------
+-- %$Init-Funktionen$ 
+
+FUN errorOrigin nilOrigin: origin
+DEF nilOrigin == origin(nilRep,unknown,nil)
+DEF errorOrigin == origin(errorRep,unknown,nil)
+
+FUN errorOrigin? :  origin -> bool
+DEF errorOrigin?(O) == errorRep?(structIde(O))
+
+FUN errorStruct nilStruct: struct
+DEF nilStruct == mkstruct(nilOrigin,
+	<>,<>,<>,<>,<>,<>,<>,<>,<>,<>,{},unknown,nilRep)
+DEF errorStruct == :=_part(nilStruct,errorRep)
+
+FUN errorStruct?: struct -> bool
+DEF errorStruct?(S) == errorRep?(part(S))
+
+-- %- ------------------------------------------------------------------------
+-- %$Vergleiche$ 
+FUN = : import ** import -> bool
+DEF =(mkImport(a,b,c),mkImport(A,B,C)) == 
+IF =(a,A) THEN IF =(b,B) THEN =(=)(c,C)
+ELSE
+false
+FI
+ELSE
+false
+FI
+
+FUN = : origin ** origin -> bool
+DEF =(origin(a,_,c),origin(A,_,C)) == 
+IF =(a,A) THEN =(=(=))(c,C) ELSE false FI
+
+-- %- ------------------------------------------------------------------------
+-- %$Update-Funktionen$ 
+-- %$$Origin$$
+FUN :=_paramS : origin ** option[seq[partName]] -> origin
+DEF :=_paramS(origin(1,2,_),new) == origin(1,2,new)
+
+FUN :=_pos : origin ** pos -> origin
+DEF :=_pos(origin(1,_,3),new) == origin(1,new,3)
+
+FUN :=_structIde : origin ** rep -> origin
+DEF :=_structIde(origin(_,2,3),new) == origin(new,2,3)
+
+-- %$$Import$$
+FUN :=_namelist : import ** seq[partName] -> import
+DEF :=_namelist(mkImport(1,2,_),new) == mkImport(1,2,new)
+
+FUN :=_origin : import ** origin -> import
+DEF :=_origin(mkImport(1,_,3),new) == mkImport(1,new,3)
+
+-- %$$Struct$$
+FUN :=_part : struct ** rep -> struct
+DEF :=_part(mkstruct(1,2,3,4,5,6,7,8,9,10,11,12,13,_),new) == mkstruct(1,2,3,4,5,6,7,8,9,10,11,12,13,new)
+
+FUN :=_pos : struct ** pos -> struct
+DEF :=_pos(mkstruct(1,2,3,4,5,6,7,8,9,10,11,12,_,14),new) == mkstruct(1,2,3,4,5,6,7,8,9,10,11,12,new,14)
+
+FUN :=_relations : struct ** map[rep,<,seq[import]] -> struct
+DEF :=_relations(mkstruct(1,2,3,4,5,6,7,8,9,10,11,_,13,14),new) == mkstruct(1,2,3,4,5,6,7,8,9,10,11,new,13,14)
+
+FUN :=_proofBodies : struct ** seq[proofBody] -> struct
+DEF :=_proofBodies(mkstruct(1,2,3,4,5,6,7,8,9,10,_,12,13,14),new) == mkstruct(1,2,3,4,5,6,7,8,9,10,new,12,13,14)
+
+FUN :=_proofHeads : struct ** seq[proofHead] -> struct
+DEF :=_proofHeads(mkstruct(1,2,3,4,5,6,7,8,9,_,11,12,13,14),new) == mkstruct(1,2,3,4,5,6,7,8,9,new,11,12,13,14)
+
+FUN :=_pragmas : struct ** seq[globPragma] -> struct
+DEF :=_pragmas(mkstruct(1,2,3,4,5,6,7,8,_,10,11,12,13,14),new) == mkstruct(1,2,3,4,5,6,7,8,new,10,11,12,13,14)
+
+FUN :=_laws : struct ** seq[law] -> struct
+DEF :=_laws(mkstruct(1,2,3,4,5,6,7,_,9,10,11,12,13,14),new) == mkstruct(1,2,3,4,5,6,7,new,9,10,11,12,13,14)
+
+FUN :=_freeTypes : struct ** seq[sortImpl] -> struct
+DEF :=_freeTypes(mkstruct(1,2,3,4,5,6,_,8,9,10,11,12,13,14),new) == mkstruct(1,2,3,4,5,6,new,8,9,10,11,12,13,14)
+
+FUN :=_funImpls : struct ** seq[eq] -> struct
+DEF :=_funImpls(mkstruct(1,2,3,4,5,_,7,8,9,10,11,12,13,14),new) == mkstruct(1,2,3,4,5,new,7,8,9,10,11,12,13,14)
+
+FUN :=_sortImpls : struct ** seq[sortImpl] -> struct
+DEF :=_sortImpls(mkstruct(1,2,3,4,_,6,7,8,9,10,11,12,13,14),new) == mkstruct(1,2,3,4,new,6,7,8,9,10,11,12,13,14)
+
+FUN :=_specsign : struct ** seq[pair[partName,law]] -> struct
+DEF :=_specsign(mkstruct(1,2,3,_,5,6,7,8,9,10,11,12,13,14),new) == mkstruct(1,2,3,new,5,6,7,8,9,10,11,12,13,14)
+
+FUN :=_signature : struct ** seq[partName] -> struct
+DEF :=_signature(mkstruct(1,2,_,4,5,6,7,8,9,10,11,12,13,14),new) == mkstruct(1,2,new,4,5,6,7,8,9,10,11,12,13,14)
+
+FUN :=_imports : struct ** seq[import] -> struct
+DEF :=_imports(mkstruct(1,_,3,4,5,6,7,8,9,10,11,12,13,14),new) == mkstruct(1,new,3,4,5,6,7,8,9,10,11,12,13,14)
+
+FUN :=_head : struct ** origin -> struct
+DEF :=_head(mkstruct(_,2,3,4,5,6,7,8,9,10,11,12,13,14),new) == mkstruct(new,2,3,4,5,6,7,8,9,10,11,12,13,14)

@@ -1,0 +1,163 @@
+
+IMPLEMENTATION PartName
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- Autor:       mija 
+-- Projekt:     OPAL1-Compiler
+
+IMPORT  
+        Char            ONLY punctuation?
+        Denotation      COMPLETELY
+        Option		COMPLETELY
+	Nat		COMPLETELY
+	NatConv		ONLY `
+	Seq             COMPLETELY
+        SeqConv 	COMPLETELY
+
+IMPORT 
+        Rep             COMPLETELY
+	Pos		ONLY pos unknown
+
+DATA partName ==       -- partielle Namen (Applikationen von Namen)
+             partName(  ide : rep,              -- Bezeichner
+                        structIde : option[rep], -- Herkunft
+                        paramS : option[seq[partName]], -- Instanz
+                        instPos : pos,          -- Position der Instanz
+		        kind : kind,		
+                        pos : pos)              -- Position d. Bez.
+
+DATA kind ==    sort                    -- Sorten
+                op( fct : partName )    -- Operationen
+                law                     -- Gesetze
+                proof                   -- Beweise
+                none                    -- nicht angegeben oder fehlerhaft
+
+-- %- ------------------------------------------------------------------------
+-- %$Konstanten$
+
+FUN errorName nilName: partName
+DEF nilName == partName(nilRep,nil,nil,unknown,none,unknown)
+DEF errorName == :=_ide(nilName, errorRep)
+
+FUN errorName? nilName?: partName -> bool
+DEF nilName?(N) == nilRep?(ide(N))
+DEF errorName?(N) == errorRep?(ide(N))
+
+
+-- %- ------------------------------------------------------------------------
+-- %$Relationen$
+-- % (ohne Vergleich der Positionen!)
+
+DEF partName(I1, O1, Ps1, _, K1, _) = partName(I2, O2, Ps2, _, K2, _) ==
+IF I1 = I2 THEN
+	IF =(=)(O1,O2) THEN 
+		IF =(=(=))(Ps1, Ps2) THEN K1 = K2
+		ELSE false FI
+	ELSE false FI
+ELSE false FI
+
+DEF k1 = k2:kind ==
+        IF k1 sort?             THEN k2 sort?
+        IF (k1 op?) and (k2 op?)THEN 
+          fct(k1) = fct(k2)
+        IF k1 none?             THEN k2 none?
+        IF k1 law? THEN k2 law?
+        IF k1 proof? THEN k2 proof?
+        ELSE false
+        FI
+
+DEF partName(I1, O1, Ps1, _, K1, _) < partName(I2, O2, Ps2, _, K2, _) ==
+IF I1 < I2 THEN true
+IF I2 < I1 THEN false
+ELSE	IF <(<)(O1, O2) THEN true
+	IF <(<)(O2, O1) THEN false
+	ELSE 	IF <(<(<))(Ps1, Ps2) THEN true 
+		IF <(<(<))(Ps2, Ps1) THEN false
+		ELSE K1 < K2 FI
+	FI
+FI
+
+-- Reihenfolge op < none < sort < law < proof
+FUN < : kind ** kind -> bool
+DEF k1 < k2:kind ==
+        IF k1 op? THEN 
+          IF k2 op? THEN fct(k1) < fct(k2)
+          ELSE true FI
+        IF k1 none? THEN (k2 sort?) or (k2 law?) or (k2 proof?)
+        IF k1 sort? THEN (k2 law?) or (k2 proof?)
+        IF k1 law? THEN (k2 proof?)
+        IF k1 proof? THEN false
+        FI
+
+-- %- ------------------------------------------------------------------------
+-- %$Textkonversionen$
+
+DEF `(none)    == ""
+DEF `(sort)    == ":" ++ `(sort:rep)
+DEF `(law)    == ":" ++ `(law:rep)
+DEF `(proof) == ":" ++ `(proof:rep)
+DEF `(op(Fct)) == ":" ++ `(res)(Fct) -- no special sort names except "_" 
+
+
+-- argument- or resulttype of a function type or component of a tuple 
+DATA topmode == arg res comp any
+
+FUN ` : topmode -> partName -> denotation 
+DEF `(Mode)(partName(I, O, Ps, _, K, _)) ==
+  IF I = arrow ANDIF avail?(Ps) ANDIF #(cont(Ps)) = 2 THEN  -- function type
+     (IF arg?(Mode) ORIF comp?(Mode) THEN "(" ELSE "" FI) 
+	++ `(arg)(ft(cont(Ps))) ++ `(arrow) ++ 
+	       `(res)(ft(rt(cont(Ps)))) ++ 
+     (IF arg?(Mode) ORIF comp?(Mode) THEN ")" ELSE "" FI)
+  IF I = product ANDIF avail?(Ps) THEN -- tupel type
+     IF #(cont(Ps)) = 0 THEN "()"
+     ELSE 
+	 (IF comp?(Mode) THEN "(" ELSE "" FI) ++
+             `("", `(product), "")(`(comp))(cont(Ps)) ++
+         (IF comp?(Mode) THEN ")" ELSE "" FI)
+     FI
+  ELSE 
+  (IF generated?(I) THEN "_" ELSE `(I) FI) ++   
+  (IF avail?(O) THEN `(apo) ++ `(cont(O)) ELSE "" FI) ++
+  (IF avail?(Ps) THEN `("[", ",", "]")(`(any))(cont(Ps)) ELSE "" FI) ++ 
+  (IF any?(Mode) THEN 
+	(IF nil?(O) ANDIF nil?(Ps) ANDIF ~(none?(K)) ANDIF specialEnd?(I) 
+	 THEN " " ELSE "" FI)
+   ++ `(K) ELSE "" FI)
+  FI
+
+FUN specialEnd?: rep -> bool
+DEF specialEnd?(R) == IF nilRep?(R) THEN false
+	ELSE punctuation?(`(R) ! pred(#(`(R)))) FI
+
+DEF ` == `(any)
+ 
+-- %- ------------------------------------------------------------------------
+-- %$Update-Funktionen$ 
+
+FUN stripKind : partName -> partName
+DEF stripKind(N) == :=_kind(N, none)
+
+FUN :=_pos : partName ** pos -> partName
+DEF :=_pos(partName(1,2,3,4,5,_),new) == partName(1,2,3,4,5,new)
+
+FUN :=_kind : partName ** kind -> partName
+DEF :=_kind(partName(1,2,3,4,_,6),new) == partName(1,2,3,4,new,6)
+
+FUN :=_instPos : partName ** pos -> partName
+DEF :=_instPos(partName(1,2,3,_,5,6),new) == partName(1,2,3,new,5,6)
+
+FUN :=_paramS : partName ** option[seq[partName]] -> partName
+DEF :=_paramS(partName(1,2,_,4,5,6),new) == partName(1,2,new,4,5,6)
+
+FUN :=_structIde : partName ** option[rep] -> partName
+DEF :=_structIde(partName(1,_,3,4,5,6),new) == partName(1,new,3,4,5,6)
+
+FUN :=_ide : partName ** rep -> partName
+DEF :=_ide(partName(_,2,3,4,5,6),new) == partName(new,2,3,4,5,6)
+
+

@@ -1,0 +1,205 @@
+
+IMPLEMENTATION ModExpr
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- %- author: cg
+-- %- purpose: parsing Opal1 and property language
+
+IMPORT -- pars
+       Terminal         COMPLETELY
+       Token            COMPLETELY
+       PTypes           COMPLETELY
+       Error		COMPLETELY
+       PErr             COMPLETELY
+       PCommon          COMPLETELY
+       ModBase          COMPLETELY
+       ZOpts            COMPLETELY
+IMPORT -- absy
+       Absy             COMPLETELY
+       PartName         COMPLETELY
+       Impl   COMPLETELY
+       PreDef           COMPLETELY
+IMPORT -- admin
+       Pos              ONLY pos unknown +
+       Options          COMPLETELY
+IMPORT -- reps
+       Rep              COMPLETELY
+IMPORT -- lib
+       Nat              COMPLETELY
+       Denotation       COMPLETELY
+       Seq              COMPLETELY
+       SeqReduce        COMPLETELY
+       SeqMap           COMPLETELY
+       SeqOfSeq         COMPLETELY
+       Pair[expr,set'Bitset] COMPLETELY
+       Bitset            COMPLETELY
+       DEBUG             COMPLETELY
+       Option            COMPLETELY
+
+-- %- ---------------------------------------------------------------------
+-- %$Modifiers for Parsing Definition (= Equations$ )
+-- %- ---------------------------------------------------------------------
+FUN traceEq? : bool
+DEF traceEq? == FIELD?[bool]("-ztraceEq")
+
+DEF modEq == mod(\\A1,A2. 
+    LET E1 == IF A1 Name? THEN Expr(val(pName(A1),pos(pName(A1)))) 
+              ELSE A1     FI
+        E2 == IF A2 Name? THEN Expr(val(pName(A2),pos(pName(A2)))) 
+              ELSE A2     FI
+    IN PRINT(traceEq?,\\ . "modEq Res " ++ `(mEq(E1,E2)),mEq(E1,E2)))
+
+    FUN mEq : absy ** absy -> absy
+    DEF mEq(Pos(P),Expr(E))         == EqSeq(eq(none(P),E,P)%)
+    DEF mEq(Pos(_),_)               == EqSeq(<>)
+    DEF mEq(Expr(E),EqSeq(Eq :: <>))== EqSeq(eq(E,right(Eq),pos(Eq))%)
+    DEF mEq(Expr(E),EqSeq(Eq :: R)) == EqSeq(eq(E,right(Eq),pos(Eq)) :: R)
+    DEF mEq(Expr(_),_)              == EqSeq(<>)
+    DEF mEq(EqSeq(ES1),EqSeq(ES2))  == EqSeq(ES1 ++ ES2)
+    DEF mEq(noAbsy,Expr(E))         == EqSeq(eq(none(pos(E)),E,pos(E))%)
+    DEF mEq(noAbsy,EqS AS EqSeq(_ :: _))  == EqS
+    DEF mEq(noAbsy,EqSeq(<>))       == EqSeq(<>)
+    DEF mEq(noAbsy,_)               == EqSeq(<>)
+    DEF mEq(_,_)                    == EqSeq(<>)
+
+FUN flattenEqS : modifier
+DEF flattenEqS == mkAbsyMod(\\A.  EqSeq(flat(eqs * aSeq(A))))
+
+-- %- ---------------- Expr -----------------------------------------------
+
+FUN mkMixExpr: modifier
+DEF mkMixExpr == mkAbsyMod(\\A. Expr(mix(prePre * (e * aSeq(A)), unknown)))
+
+
+        FUN prePre : expr -> pair[expr,set'Bitset]
+        DEF prePre (D AS den(_,_)) == 
+                    D & (fun + (arg + (postOprnd + inOprnd)))
+        DEF prePre (V AS val(_,_))    == V & (op + (fun + (postOprnd + inOprnd)))
+        DEF prePre (T AS tuple(<>,_)) ==  T & (arg + postOprnd)
+        DEF prePre (D AS tuple(den(_,_) :: <>,_)) == 
+                    D & (arg + (postOprnd + inOprnd))
+        DEF prePre (tuple((D AS den(_,_)) :: R ,P1)) == 
+                    tuple(D :: R ,P1) & (arg + (postOprnd + inOprnd))
+        DEF prePre (T AS tuple(_ :: <>, _ )) ==  
+                    T & (fun + (arg + (postOprnd + inOprnd)))
+        DEF prePre (A AS apply(_,_,_)) ==  
+                    A & (fun + (arg + (postOprnd + inOprnd)))
+        DEF prePre (typed(E,F,P)) ==  typed(1st(Pre),F,P) & 2nd(Pre)
+                                      WHERE Pre == prePre(E)
+        DEF prePre (as(N,E,P))    ==  as(N,1st(Pre),P) & 2nd(Pre)
+                                      WHERE Pre == prePre(E)
+        DEF prePre (L AS lambda(_,_,_)) == 
+                    L & (fun + (arg + (postOprnd + inOprnd)))
+        DEF prePre (E) == E & (arg + (postOprnd + inOprnd))
+
+-- %- ------------------------------------------------------------------------
+
+DEF modTuplePos ==
+    mod(\\A1,A2. 
+        LET E1 == IF A2 Name? THEN 
+                     Expr(tuple(val(pName(A2),pos(pName(A2)))%,pos(pName(A2))))
+                  ELSE A2     FI
+        IN PRINT(printTuplePos?,\\ . `(mTupPos(A1,E1)),mTupPos(A1,E1)))
+    FUN mTupPos : absy ** absy -> absy
+    DEF mTupPos(Pos(P),Expr(tuple(E,_))) == Expr(tuple(E,P))
+    DEF mTupPos(Pos(P),Expr(E))          == Expr(tuple(E%,P))
+    DEF mTupPos(Pos(P),Pos(_))           == Expr(tuple(<>,P))
+    DEF mTupPos(_,A)                     == A
+
+FUN printTuplePos?: bool
+DEF printTuplePos? == FIELD?[bool]("-zprintTuplePos")
+
+DEF modExprFct ==
+    mod(\\A1,A2. mExprFct(A1,A2))
+    FUN mExprFct : absy ** absy -> absy
+    DEF mExprFct(Pos(P), Kind(F))  == Expr(typed(none(P),fct(F),P))
+    DEF mExprFct(Expr(E), Kind(F))  == Expr(typed(E,fct(F),pos(E)))
+    DEF mExprFct(Expr(E), Expr(typed(_,F,P))) == Expr(typed(E,F,P))
+    DEF mExprFct(E AS Expr(_), _)== E
+    DEF mExprFct(_, _)            == Expr(none(errPos))
+
+DEF modAsE ==
+    mod(\\A1,A2. mAsE(A1,A2))
+    FUN mAsE : absy ** absy -> absy
+    DEF mAsE(Pos(P), Expr(E))       == Expr(as(nilName,E,P))
+    DEF mAsE(Expr(E1), Expr(E2))    == Expr(as(object(E1), E2, 
+						pos(E1) + pos(E2)))
+    DEF mAsE(E AS Expr(_), _)    == E
+    DEF mAsE(_, E AS Expr(_))    == E
+    DEF mAsE(_, _) 	== Expr(none(errPos))
+
+-- %- ---------------- RHS -------------------------------------------------
+
+DEF modGuard == mod(\\A1,A2. mGuard(A1,A2))
+    FUN mGuard : absy ** absy -> absy
+    DEF mGuard (Expr(E1), Expr(E2)) == Guards(guard(E1,E2,pos(E1))%)
+    DEF mGuard (_, _) == Guards(<>)
+
+FUN flattenGuards: modifier
+DEF flattenGuards == mkAbsyMod(\\A.  Guards(flat(g * aSeq(A))))
+
+FUN nestCases: modifier
+DEF nestCases == mkAbsyMod(\\A. Expr(
+	/(\\G,E. cases(G,E,unknown), none(unknown), (g * aSeq(A)))))
+
+DEF modElse == mod(\\A1,A2. mElse(A1,A2))
+    FUN mElse : absy ** absy -> absy
+    DEF mElse(Expr(cases(G,E1,P)),Expr(E2)) == Expr(modInner(cases(G,E1,P),E2))
+    DEF mElse(E AS Expr(_),noAbsy)          == E
+    DEF mElse(noAbsy,E AS Expr(_))          == E
+    DEF mElse(_,_)                          == Expr(none(errPos))
+
+    FUN modInner : expr ** expr -> expr
+    DEF modInner(cases(GS,none(_),Pos),E) == cases(GS,E,Pos)
+    DEF modInner(cases(GS,Else,Pos),E)    == cases(GS,modInner(Else,E),Pos)
+    DEF modInner(E,_)                     == E
+
+-- %- ---------------------------------------------------------------------
+
+DEF modAbstr == mod(\\A1,A2. mAbstr(A1,A2))
+    FUN mAbstr : absy ** absy -> absy
+    DEF mAbstr(NameSeq(<>),Name(Nm))        == Expr(lambda(<>,val(Nm,pos(Nm)),
+                                                           pos(Nm)))
+    DEF mAbstr(NameSeq(N::NS),Name(Nm))     == Expr(lambda(N::NS,
+                                                    val(Nm,pos(Nm)),pos(Nm)))
+    DEF mAbstr(noAbsy,Name(Nm))             == Expr(lambda(<>,val(Nm,pos(Nm)),
+                                                           pos(Nm)))
+    DEF mAbstr(NameSeq(<>),Expr(E))         == Expr(lambda(<>,E,pos(E)))
+    DEF mAbstr(NameSeq(N::NS),Expr(E))      == Expr(lambda(N::NS,E,pos(E)))
+    DEF mAbstr(noAbsy,Expr(E))              == Expr(lambda(<>,E,pos(E)))
+    DEF mAbstr(_,_)                         == Expr(none(errPos))
+
+DEF modBlock == mod(\\A1,A2. mBlock(A1,A2))
+    FUN mBlock : absy ** absy -> absy
+    DEF mBlock(EqSeq(ES),Expr(E)) == Expr(block(ES,E,pos(E)))
+    DEF mBlock(Expr(E),EqSeq(ES)) == Expr(block(ES,E,pos(E)))
+    DEF mBlock(_,E AS Expr(_))    == E
+    DEF mBlock(E AS Expr(_),_)   == E
+    DEF mBlock(E AS Expr(_),Expr(_))  == E
+    DEF mBlock(_,_)               == Expr(none(errPos))
+
+
+-- %- ---------------------------------------------------------------------
+
+DEF modSeqAnd == mod(\\A1,A2. mSeqAnd(A1,A2))
+    FUN mSeqAnd : absy ** absy -> absy
+    DEF mSeqAnd(Pos(P),Expr(E)) == 
+        Expr(cases(guard(none(errPos),E,P)%,falseVal,P))
+    DEF mSeqAnd(Expr(E1),Expr(cases(guard(none(_),E2,P1) :: _,False,P2))) ==
+        Expr(cases(guard(E1,E2,P1)%,False,P2))
+    DEF mSeqAnd(E AS Expr(_),_) == E
+    DEF mSeqAnd(_,_) == Expr(none(errPos))
+
+DEF modSeqOr == mod(\\A1,A2. mSeqOr(A1,A2))
+    FUN mSeqOr : absy ** absy -> absy
+    DEF mSeqOr(Pos(P),Expr(E)) == 
+        Expr(cases(guard(none(errPos),trueVal,P)%,E,pos(E)))
+    DEF mSeqOr(Expr(E1),Expr(cases(guard(none(_),True,P1) :: _,E2,P2))) ==
+        Expr(cases(guard(E1,True,P1)%,E2,P2))
+    DEF mSeqOr(E AS Expr(_),_) == E
+    DEF mSeqOr(_,_) == Expr(none(errPos))
+

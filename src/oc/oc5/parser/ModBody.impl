@@ -1,0 +1,208 @@
+
+IMPLEMENTATION ModBody
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT -- pars
+       Terminal         COMPLETELY
+       Token            COMPLETELY
+       PTypes           COMPLETELY
+       PErr             COMPLETELY
+       ModBase          COMPLETELY
+       ZOpts            COMPLETELY
+IMPORT -- absy
+       Absy             COMPLETELY
+       PartName         COMPLETELY
+       Struct           COMPLETELY
+       Impl             COMPLETELY
+       GlobPragma       COMPLETELY
+IMPORT --reps
+       Rep              COMPLETELY
+IMPORT -- admin
+       Pos              ONLY pos initPos unknown
+IMPORT -- lib
+       Nat              COMPLETELY
+       Denotation       COMPLETELY
+       Seq              COMPLETELY
+       Set              COMPLETELY
+       SeqReduce        COMPLETELY
+       SeqMap           COMPLETELY
+       SeqOfSeq         COMPLETELY
+       DEBUG            COMPLETELY
+       Impl 		ONLY mkSpecLaw
+       Pair 		ONLY pair &
+       MapByOS 		ONLY {} map def? ! def
+       Option 		COMPLETELY
+
+-- %- ----------------------------------------------------------------------
+-- %$Opal Modifier$
+-- %- ----------------------------------------------------------------------
+
+DEF mkInitS  == Struct(:=_part(nilStruct,signature))
+DEF mkInitI  == Struct(:=_part(nilStruct,implementation))
+DEF mkInitEP == Struct(:=_part(nilStruct,external))
+DEF mkInitIP == Struct(:=_part(nilStruct,internal))
+DEF mkInitT  == 
+	LET TP == prag(lexem(theory, initPos)%)
+	    SIG == partName(theory, nil, nil, initPos, sort, initPos)
+	    Theo1 == :=_part(nilStruct,theory)
+	    Theo2 == :=_signature(Theo1, SIG%)
+	IN Struct(:=_pragmas(Theo2, TP%))
+
+DEF modStructOri ==
+    mod(\\A1,A2. Struct(:=_head(struct(A2), origin(A1)))) 
+
+DEF modStructBody ==
+    mod(\\A1,A2. Struct(modS(struct(A1),A2)))
+
+    FUN modS : struct ** absy -> struct
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Import(IS)) == 
+      mkstruct(H,Imp++IS,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             NameSeq(NS)) == 
+      mkstruct(H,Imp,Sig++NS,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Type(TS)) == 
+      mkstruct(H,Imp,Sig,Specs,Data,Def,Typ++TS,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Data(DS)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat++DS,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             EqSeq(ES)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def++ES,Typ,Law,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             LawSeq(LS)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law++LS,PR,pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             GPragma(PI)) == 
+      mkstruct(H,Imp,Sig,Specs,Data,Def,Typ,Law,GP,pH,pB,RS,P,Part)
+      WHERE GP == IF PI <>? THEN PR ELSE ft(PI) :: PR FI
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             ProofHead(PH)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,PH :: pH,pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             ProofBody(PB)) == 
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,PB :: pB,RS,P,Part)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             NameSpec(pN, spc)) == 
+      mkstruct(H,Imp,Sig,newSpec::Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part)
+      WHERE newSpec == pN & mkSpecLaw(spc)
+    DEF modS(mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,RS,P,Part),
+             Relation(t, i)) == 
+      LET oldImps == IF t def? RS THEN RS!t ELSE <> FI
+          newRels == def(t, i ++ oldImps, RS)
+      IN
+      mkstruct(H,Imp,Sig,Specs,Dat,Def,Typ,Law,PR,pH,pB,newRels,P,Part)
+   DEF modS(S , _) == S 
+
+
+-- %- ----------------------------------------------------------------------
+-- %$modFun modifies  < FUN Ide+ : fct  > delivers always NameSeq$
+-- %- ----------------------------------------------------------------------
+
+DEF modFun == mod(\\A1,A2. 
+	NameSeq((\\A. :=_kind(pName(A), kind(A2))) * aSeq(A1)))
+
+DEF mkSort == mkAbsyMod(\\S. 
+	NameSeq((\\A. :=_kind(pName(A), sort)) * aSeq(S)))
+
+DEF modPNSeq ==  mod(\\A1,A2. NameSeq(nSeq(A1) ++ nSeq(A2)))
+
+
+-- %- ---------------------------------------------------------------------
+-- %$Modifiers for Parsing IMPORTS$
+-- %- ---------------------------------------------------------------------
+FUN modOnlyImport modButImport: modifier
+DEF modOnlyImport == mod(\\ _,A2.
+	IF AbsySeq?(A2) THEN Import(%(mkImport(true, nilOrigin, 
+				pName * aSeq(A2))))
+	ELSE Import(%(mkImport(true, nilOrigin, <>))) FI)
+
+DEF modButImport == mod(\\ _,A2.
+	IF AbsySeq?(A2) THEN Import(%(mkImport(false, nilOrigin, 
+			pName * aSeq(A2))))
+	ELSE Import(%(mkImport(false, nilOrigin, <>))) FI)
+
+-- %- ---------------------------------------------------------------------
+-- %$Modifiers for Parsing Relations$
+-- %- ---------------------------------------------------------------------
+
+DEF modRelation(Type) == mod(\\A1,A2. 
+	LET I ==
+	IF Origin?(A1) THEN
+		IF Import?(A2) THEN 
+			:=_origin(ft(import(A2)), origin(A1))
+		ELSE mkImport(false, origin(A1), <>) FI
+	ELSE IF Import?(A2) THEN ft(import(A2))
+		ELSE mkImport(false, errorOrigin, <>) FI
+	FI 
+	IN IF Type = import THEN Import(%(I)) ELSE Relation(Type, %(I)) FI)
+		
+-- %- ---------------------------------------------------------------------
+-- %$Modifier for TYPE and DATA$
+-- %- ---------------------------------------------------------------------
+
+FUN mkData: modifier
+DEF mkData==mkAbsyMod(\\A. IF Type?(A) THEN Data(type(A)) ELSE A FI)
+
+DEF modType == mod(\\A1,A2. Type(mTD(A1,A2)))
+
+    FUN mTD : absy ** absy -> seq[sortImpl]
+    DEF mTD(Name(N), Variants(V))      == sortImpl(N,V,pos(N))%
+
+DEF modVariant == mod(\\A1,A2. mV(A1,A2))
+    FUN mV : absy ** absy -> absy
+    DEF mV(Name(N),Comps(C))      == Variants(variant(N,nilName,C,pos(N))%)
+    DEF mV(Name(N),_)             == Variants(variant(N,nilName,<>,pos(N))%)
+    DEF mV(_,_)           == Variants(<>)
+
+FUN flattenVariants : modifier
+DEF flattenVariants == mkAbsyMod(\\A. Variants(flat(variants * aSeq(A))))
+
+FUN flattenComps : modifier
+DEF flattenComps == mkAbsyMod(\\A. Comps(mkComp * aSeq(A)))
+
+   FUN mkComp : absy -> comp
+   DEF mkComp (Name(Pn AS partName(_,_,_,_, none,Pos))) == 
+       comp(nilName, Pn, Pos)
+   DEF mkComp (Name(Pn AS partName(_,_,_,_, sort,Pos))) == 
+       comp(nilName, Pn, Pos)
+   DEF mkComp (Name(Pn AS partName(_,_,_,_, op(Fct),Pos))) ==
+       comp(Pn,Fct,Pos)
+
+-- %- --------------------------------------------------------------------------
+-- %$Modifier for Laws$
+-- %- --------------------------------------------------------------------------
+
+DEF modLaw (Pos) ==  mod(\\A1,A2. mLaw(A1,A2,Pos))
+    FUN mLaw : absy ** absy ** pos -> absy
+    DEF mLaw(Name(N),Formula(F),P)      == LawSeq(law(ide(N),F,P)%)
+    DEF mLaw(noAbsy,Formula(F),P)       == LawSeq(law(nilRep,F,P)%)
+    DEF mLaw(Formula(F),noAbsy,P)       == LawSeq(law(nilRep,F,P)%)
+    DEF mLaw(LawSeq(L1),LawSeq(L2),_)   == LawSeq(L1 ++ L2)
+    DEF mLaw(LS AS LawSeq(_),_,_)       == LS
+    DEF mLaw(_,LS AS LawSeq(_),_)       == LS
+    DEF mLaw(_,_,_)                     == LawSeq(<>)
+
+-- %- --------------------------------------------------------------------------
+-- %$Modifier for Pragmas$
+-- %- --------------------------------------------------------------------------
+
+FUN mkPrTokAbsy: token -> absy
+DEF mkPrTokAbsy(T) == GPragma(prag(lexem(lexem(T),pos(T))%)%)
+
+FUN flattenGPragma: modifier
+DEF flattenGPragma == 
+	mkAbsyMod(\\A. GPragma(%(prag(flat(pragS * flat(pi * aSeq(A)))))))
+
+FUN mkPItem : modifier
+DEF mkPItem == mkAbsyMod(\\A. GPragma(%(prag(%(identify(
+	cont(paramS(pName(A)))))))))
+

@@ -1,0 +1,173 @@
+
+IMPLEMENTATION BaseParser
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/etc/LICENSE or 
+      http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+*/
+-- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+
+-- author: cg
+-- purpose: parsing Opal1 and property language
+
+IMPORT    -- pars
+          PErr                  COMPLETELY
+          Terminal              COMPLETELY
+          Token                 COMPLETELY
+          PTypes                COMPLETELY
+          ModBase               COMPLETELY
+IMPORT    -- absy
+          Absy                  COMPLETELY
+IMPORT    -- admin
+          Error                 COMPLETELY
+IMPORT    -- lib
+          DEBUG                 COMPLETELY
+          Denotation            COMPLETELY
+          Seq         		COMPLETELY
+          SeqFilter             COMPLETELY
+          Set[terminal,<]       COMPLETELY
+	  SetConv		COMPLETELY	
+
+-- -------------------------------------------------------------------------
+
+DATA parser == parser(pars:seq[token] -> pRes)
+
+-- token sequence is never empty
+DEF @ (parser(P), TS AS _ :: _)  == P(TS)
+
+FUN traceMt? : bool
+DEF traceMt? == FIELD?[bool]("-ztraceMt")
+
+DEF pos   == parser(\\Arg.pRes(ok,Pos(pos(ft(Arg))),Arg))
+DEF nil   == parser(\\Arg.pRes(ok,noAbsy,Arg))
+DEF empty == parser(\\Arg.
+         IF terminal(ft(Arg)) = eof THEN pRes(ok,noAbsy,Arg)
+         ELSE pFail(pErrUnExp(Arg),noAbsy,Arg) 
+         FI)
+
+DEF empty(Set) == parser(\\Arg.
+         IF (terminal(ft(Arg)) in Set) or (terminal(ft(Arg)) = eof)
+         THEN LET OK == PRINT(traceMt?,\\ . "Arg is \n" ++ printTS(Arg), ok)
+                  OK2 == PRINT(traceMt?,\\ . "Set is \n" ++ `(`)(Set), OK)
+              IN pRes(OK2,noAbsy,Arg) 
+         ELSE pFail(pErrUnExp(Set)(Arg),noAbsy,Shift)
+              WHERE Shift == drop(\\T. ~(terminal(T) in Set), Arg)
+         FI)
+
+DEF fail(Msg) == parser(\\Arg.
+ 	pFail(pErrExp(Msg)(pos(ft(Arg)))(Arg),noAbsy,Arg))
+
+DEF fail(Err)   == parser(\\Arg. pFail(Err(Arg),noAbsy,Arg))
+
+-- -------------------------------------------------------------------------
+DEF (P1 <;> P2) (M)  == parser(\\Arg.
+    LET Res  == P1 @ Arg 
+        Res2  == P2 @ tokS(Res) 
+    IN
+    modify(Res, Res2, M))
+
+DEF (P1 <;?> P2) (M) == parser(\\Arg. 
+    LET Res  == P1 @ Arg
+	Res2 == P2 @ tokS(Res)    
+    IN IF Res2 pFail? THEN modify(Res, pRes(ok, noAbsy, tokS(Res)), M)
+       ELSE modify(Res, Res2, M) 
+       FI)   
+
+DEF (P1 <&> P2) (M) == parser(\\Arg.
+    LET Res  == P1 @ Arg IN
+    IF Res pFail? THEN modify(Res, pFail(ok, noAbsy, tokS(Res)), M)
+    ELSE modify(Res, P2 @ tokS(Res), M)
+    FI)
+
+DEF (P1 <&?> P2) (M) == parser(\\Arg. 
+    LET Res  == P1 @ Arg
+    IN IF Res pFail? THEN modify(Res, pFail(ok, noAbsy, tokS(Res)), M)
+       ELSE LET Res2 == P2 @ tokS(Res)
+	    IN IF Res2 pFail? THEN modify(Res, pRes(ok, noAbsy, tokS(Res)), M)
+               ELSE modify(Res, Res2, M) 
+	       FI
+       FI)   
+
+DEF P1 <&.> P2 == (P1 <&> P2)(mod2nd)
+DEF P1 <.&> P2 == (P1 <&> P2)(mod1st)
+DEF P1 <;.> P2 == (P1 <;> P2)(mod2nd)
+DEF P1 <.;> P2 == (P1 <;> P2)(mod1st)
+
+DEF P1 <&?.> P2 == (P1 <&?> P2)(mod2nd)
+DEF P1 <.&?> P2 == (P1 <&?> P2)(mod1st)
+DEF P1 <;?.> P2 == (P1 <;?> P2)(mod2nd)
+DEF P1 <.;?> P2 == (P1 <;?> P2)(mod1st)
+
+DEF P1 <|> P2 == parser(\\Arg.
+    IF (P1 @ Arg) pRes? THEN P1 @ Arg ELSE P2 @ Arg FI)
+
+DEF P * == (P *) (eof %) 
+DEF (P *)(Stop) == parser(\\Arg. 
+	LET Res == isIn?(Stop) @ Arg
+	IN IF pRes?(Res) THEN pRes(ok, AbsySeq(<>), Arg)
+	   ELSE LET ResP == P @ Arg 
+		IN IF pFail?(ResP) THEN pRes(ok, AbsySeq(<>), Arg)
+		   ELSE LET Res2 == (P *)(Stop) @ tokS(ResP)
+			IN pRes(ok, AbsySeq(absy(ResP) :: aSeq(absy(Res2))), 
+				tokS(Res2))
+		   FI
+	   FI)
+
+DEF P + == (P +) (eof%)
+DEF (P +)(Stop) == parser(\\Arg.
+	LET ResP == P @ Arg IN
+	IF pFail?(ResP) THEN pFail(err(ResP),  AbsySeq(<>), tokS(ResP))
+	ELSE modify(ResP, (P *)(Stop) @ tokS(ResP),
+		mod(\\A1,A2. AbsySeq(A1 :: aSeq(A2))))
+	FI)
+
+DEF P || T == parser(\\Arg.
+    LET Res1 == P @ Arg
+    IN 
+      IF pFail?(Res1) THEN pRes(ok,AbsySeq(<>),Arg)
+      ELSE LET Res2 == isA(T) @ tokS(Res1) IN
+	IF pFail?(Res2) THEN modify(Res1, mkAbsyMod(\\A.AbsySeq(%(A))))
+	ELSE LET Res3 == (P || T) @ tokS(Res2)
+		 A == aSeq(absy(Res3)) 
+		 NewA == AbsySeq(absy(Res1) :: A) 
+		 TS == tokS(Res3)
+		 E == err(Res3)		     
+	     IN IF pFail?(Res3) ORIF <>?(A) THEN
+		pFail(E, NewA, TS) ELSE pRes(E, NewA, TS) FI
+      FI
+	FI)
+	
+-- -------------------------------------------------------------------------
+
+DEF isIn (F, TS) == parser(\\Arg.
+  	LET Tok == ft(Arg) IN 
+        IF terminal(Tok) in TS
+        THEN pRes(ok, F(Tok), rt(Arg))
+        ELSE pFail(pErrExp(TS)(Tok,missPos(Tok)),noAbsy, Arg)
+        FI)
+
+DEF isA (Rep) == isA(\\T.Pos(pos(T)), Rep!)
+DEF isA (Term) == isA(\\T.Pos(pos(T)), Term)
+
+FUN isA : (token -> absy) ** terminal -> parser 
+DEF isA (F, T)  == isIn(F, T%)
+
+
+DEF isA? (T) == isIn?(T%)
+DEF isIn?(S) == parser(\\ Arg .
+         IF terminal(ft(Arg)) in S THEN pRes(ok, noAbsy, Arg)
+         ELSE pFail(ok, noAbsy, Arg)
+         FI)
+
+-- %- ------------------------------------------------------------------------
+-- %$Modifying result of a parser$
+-- %- ------------------------------------------------------------------------
+
+FUN doMod: modifier ** parser -> parser
+DEF doMod(M, P) == parser(\\Arg.modify(P @ Arg, M))
+
+FUN updAbsy: (absy -> absy) -> parser -> parser
+DEF updAbsy(F)(P) == doMod(mkAbsyMod(F), P)
+
+FUN setAbsy: absy ** parser -> parser
+DEF setAbsy(A, P) == updAbsy(\\ _ . A)(P)
+

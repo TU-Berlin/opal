@@ -1,0 +1,165 @@
+IMPLEMENTATION FullInter
+
+IMPORT 	
+	Denotation	ONLY = 
+	Name  	COMPLETELY
+	InterOpal 	COMPLETELY
+	InterOpalAccess COMPLETELY
+	Map		COMPLETELY
+	MapConv		COMPLETELY
+	Nat		COMPLETELY
+	Pair		COMPLETELY
+	Rep		COMPLETELY
+	Seq	COMPLETELY
+	SeqFilter	COMPLETELY
+	SeqIndex	COMPLETELY
+	SeqMap		COMPLETELY
+	SeqMapEnv	COMPLETELY
+	SeqOfSeq	COMPLETELY
+
+FUN mkOwnNames: repTab ** interOpal -> repTab ** seq[fullName] ** seq[fullName]
+/* hier müssen die only-Listen der importierten Strukturen durchsucht
+werden. Formale Parameter von Main müssen wie unparametrisierte Namen
+behandelt werden. */ 
+DEF mkOwnNames(RT, IO) ==
+LET (RT2, MainRep) == insert(RT, symbol(IO))
+    Params == formParams(IO)
+    IO2 == unparametrize(IO)
+    (RT3, ActParams) == *(mkFullName(IO2, MainRep, <>), RT2, Params)
+    (RT4, MainNames) == *(mkFullName(IO2, MainRep, <>), RT3, realObjects(IO2))
+IN (RT4, ActParams, MainNames)
+
+FUN unparametrize: interOpal -> interOpal
+
+/* simply remove formal inst entry, such that param?, formParams?
+etc. will find no parameters. Leave formal instance within names as
+they are and treat "formal" like "none" in @code{mkFullNames} */
+	
+DEF unparametrize(IO) ==
+	LET NewMain == :=_insts(mainStruct(IO), {})
+	IN  :=_structs(IO, def(main, NewMain, structs(IO)))
+
+-- this is output of ordinatrice verte for free type struct
+FUN :=_insts : struct ** map[inst,<,seq[name]] -> struct
+DEF :=_insts(struct(1,2,3,_,5,6,7,8),new) == struct(1,2,3,new,5,6,7,8)
+
+FUN :=_structs : interOpal ** map[origin,<,struct] -> interOpal
+DEF :=_structs(interOpal(1,_),new) == interOpal(1,new)
+
+FUN mkFullNames: repTab ** interOpal -> 
+	repTab ** rep ** seq[fullName] ** seq[fullName]
+-- compute full names of the main structure
+
+DEF mkFullNames(RT, IO) ==
+	LET (RT1, MainRep) == insert(RT, symbol(IO))
+	    (RT2, FormalInst) == *(mkParam(IO, MainRep), RT1, formParams(IO))
+	    (RT3, Names) == *(mkFullName(IO, MainRep, FormalInst), 
+			RT2, realObjects(IO))
+	IN (RT3, MainRep, FormalInst, Names)
+
+FUN realObjects: interOpal -> seq[name]
+DEF realObjects(IO) ==
+	IF param?(IO) THEN
+        (\\O. name(ident(O),main,formal)) * 
+	((\\O. ~(param?(mainStruct(IO), O))) | objects(IO)) 
+	ELSE (\\O. name(ident(O),main,none)) * objects(IO)
+	FI
+
+FUN mkParam: interOpal ** rep -> repTab ** name -> repTab ** fullName
+DEF mkParam(IO, MainRep)(RT, Name) ==
+	LET Kind == kind(object(IO, Name))
+	    Front == paramNo(IO, Name)
+	IN IF fct?(Kind) THEN
+/* Für die Parameterberechnung wird die Struktur wie unparametrisiert
+betrachtet. Das muss in mkFullName bei Namen, die Parameter sind,
+berücksichtigt werden. */
+		LET (RT2, FullName) == mkFct(IO, MainRep, <>)(RT, fct(Kind))
+	   	IN (RT2, var(Front, FullName))
+	   ELSE (RT, var(Front, simpleKind(Kind)))
+	   FI
+
+FUN simpleKind : kind -> fullName
+DEF simpleKind(sort) == sort
+DEF simpleKind(other(Den, _)) ==
+	IF Den = "LAW" THEN law
+	IF Den = "PROOF" THEN proof
+	ELSE sort FI
+
+
+FUN mkFullName: interOpal ** rep ** seq[fullName] 
+		-> repTab ** name -> repTab ** fullName
+DEF mkFullName(IO, MainRep, FormalInst)(RT, Name) ==
+/* Wenn ein Parameter referenziert wird, muss das ein zu FormalInst passender sein! Eine Neuberechnung  - mkParam(IO)(RT, Name) - ist dann nicht nötig. (Ggf. kann man OrigRep durchreichen und testen, ob origin(Name) und FormalInst tatsächlich zusammenpassen.) */
+LET Struct == struct(IO, Name)
+    (RT2, OrigRep) == insert(RT, symbol(Struct))
+IN	
+IF param?(IO, Name) THEN 
+    IF OrigRep = MainRep THEN --  ASSERT
+	IF <>?(FormalInst) THEN
+/* das kann nur bei der Parameterberechnung durch mkParam der Fall sein. */
+	     IF param?(Struct) THEN -- ASSERT
+		mkParam(IO, MainRep)(RT2, Name)
+	     FI 
+	ELSE (RT2, FormalInst ! pred(paramNo(IO, Name)))
+	FI
+    FI
+ELSE
+	LET -- Id == id(no(ident(Name)))
+	    Obj == object(IO, Name)
+            (RT3, IdeRep) == insert(RT2, symbol(Obj))
+	    (RT4, Inst) == 
+		IF inst?(inst(Name)) ANDIF no(inst(Name)) > 0 THEN
+		    IF ~(OrigRep = MainRep) and param?(Struct) THEN -- ASSERT
+		*(mkFullName(IO, MainRep, FormalInst), RT3, origInst(IO, Name))
+		    FI
+		IF formal?(inst(Name)) THEN 
+			IF OrigRep = MainRep THEN -- ASSERT
+/* "formal" could come from the own signature and must be treated like "none"
+after the own signature is to be treated as unparametrized */ 
+		(RT3, FormalInst) 
+			FI
+/* Der origin(Name) muss zu FormalInst (gemäß Konstruktion?) passen!
+Das sollte man vielleicht testen und den OrigRep durchreichen. */
+		IF none?(inst(Name)) THEN 
+			IF ~(param?(Struct)) THEN (RT3, <>) FI
+		FI
+	    Front == fullName(IdeRep, OrigRep, Inst)
+	    Kind == kind(Obj)
+	IN 
+	IF fct?(Kind) THEN
+	    IF inst?(inst(Name)) THEN 
+		LET 
+/* Kann hier das übergeordnete FormalInst ignoriert werden? Die
+uninstantiierte Funktionalität aus einer untergeordneten Struktur kann
+keine übergeordnete referenzieren! (Bei zyklischen Strukturen sieht
+das aber anders aus.) 
+		(RT5, RecInst) == *(mkParam(IO), RT4, formParams(Struct))
+	        (RT6, UninstFct) == mkFct(IO, RecInst)(RT5, fct(Kind))
+und jetzt (kompliziert) substituieren bzw.\ direkt mit der konkreten
+Instanz nun mit OrigRep statt MainRep aufrufen. */
+		(RT5, InstFct) == mkFct(IO, OrigRep, Inst)(RT4, fct(Kind))
+		IN
+			(RT5, addKind(Front, InstFct))
+	    ELSE
+		LET (RT5, FullName) == mkFct(IO, MainRep, FormalInst)
+			(RT4, fct(Kind))
+	   	IN (RT5, addKind(Front, FullName))
+	    FI
+	ELSE (RT4, addKind(Front, simpleKind(Kind)))
+	FI
+FI
+
+FUN mkFct: interOpal ** rep ** seq[fullName] 
+		-> repTab ** fct -> repTab ** fullName
+DEF mkFct(IO, Rep, Inst)(RT, sort(N)) == 
+	mkFullName(IO, Rep, Inst)(RT, N)
+DEF mkFct(IO, Rep, Inst)(RT, cart(S)) ==
+        LET (RT2, Names) == *(mkFct(IO, Rep, Inst), RT, S)
+	IN IF #(Names) = 1 THEN (RT2, ft(Names))
+	ELSE (RT2, fullName(product, nilRep, sort :: Names))
+	FI
+
+DEF mkFct(IO, Rep, Inst)(RT, funct(Arg, Res)) ==
+        LET (RT2, Arg2) == mkFct(IO, Rep, Inst)(RT, Arg)
+	    (RT3, Res2) == mkFct(IO, Rep, Inst)(RT2, Res)
+	IN (RT3, fullName(arrow, nilRep, %(sort, Arg2, Res2)))
