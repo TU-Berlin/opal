@@ -38,7 +38,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (if opal-running-xemacs
     (progn
       (require 'opal-oasys)
-      (require 'oasys-mode)
+;      (require 'oasys-mode)
       (require 'opal-outline)
       (add-hook 'opal-mode-hook 'opal-outline-hook-functions)
       (if opal-pchecker
