@@ -1,0 +1,74 @@
+IMPLEMENTATION PrettyInfo
+/* %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/pcheck/PrettyInfo.impl,v 1.1 2001-04-28 13:13:34 kd Exp $ */
+
+IMPORT PCEFunctions ONLY datatype? freetype? getAxioms
+       PCEnv COMPLETELY
+       Set ONLY set - + {}? % {} incl exist?
+       Compose ONLY o
+       SetFilter ONLY |
+       Nat ONLY <= 2 >= 4 6
+       ColourText ONLY prompt
+       Fmt ONLY lit ; brk inc dec none beg end spc
+       FmtSet ONLY fmtSet
+       PrettyPCEnv ONLY pretty pretty1
+       String ONLY string
+       Predicate ONLY or
+       MapFilter ONLY |
+       Map ONLY map ! dom
+       SeqOfSeq ONLY flat
+       SetConv ONLY asSeq
+       Seq ONLY seq <> % 
+       SetMap ONLY *
+       FmtSeq ONLY fmtSeq
+       SeqMap ONLY *
+       SeqFilter ONLY |
+
+/* %We don't include the freetype laws as proof obligations because 
+    they are added only internally.
+*/
+
+DEF prettyInfo(level)(e)(main)(R) ==
+  LET rawAxioms == getAxioms(e)
+      rawObs == laws(e) - rawAxioms
+      obligations == (~ o (freetypeLaws? or datatypeLaws?)) | rawObs
+      axioms == IF level <= 2 THEN
+                  ((~ o datatype?) | rawAxioms) +
+                  (freetypeLaws? or datatypeLaws?) | rawObs
+                ELSE
+                  rawAxioms
+                FI
+      tProofNh == \\ pN, _ :pHead . true -- ~(axm?(pN))
+      tProofNb == \\ pN, _ :pBody . true -- ~(axm?(pN))
+      rawExtraLemmas == flat((\\ pN. IF (~({}?(prems(pHeads(e)!pN)))) THEN
+                                       %(pHeads(e)!pN)
+                                     ELSE <> FI) *
+                             asSeq(dom((\\ _, pb. axiom?(pb)) | pBodies(e))))
+      extraLemmas == IF level <= 2 THEN
+                       (\\ pH. ~(exist?(freetypeLaws? or datatypeLaws?,
+                                        incl(concl(pH), prems(pH))))) |
+                       rawExtraLemmas
+                     ELSE
+                       rawExtraLemmas
+                     FI
+  IN
+  (prompt(lit("Axioms: ")); brk;
+   (spc(2); beg(2); fmtSet(pretty(R, main))(axioms); end; brk));
+  (prompt(lit("Proof obligations: ")); brk;
+   (spc(2); beg(2); fmtSet(pretty(R, main))(obligations); end; brk));
+  (prompt(lit("Proof declarations: ")); brk);
+  (spc(2); beg(2); lit("{");
+   pretty1(R, main)(tProofNh | pHeads(e), tProofNb | pBodies(e)); 
+   lit("}"); end);
+  brk; 
+  prompt(lit("Extra proof declarations:")); brk;
+  spc(2); beg(2); fmtSeq(pretty(R, main))(extraLemmas); end;
+  (IF level >= 6 THEN
+     (brk; prompt(lit("Extra laws:")); brk;
+      spc(2); beg(2); fmtSet(pretty(R, main))(extraLaws(e)); end);
+     (brk; prompt(lit("Assumes:")); brk;
+      spc(2); beg(2); fmtSet(pretty(R, main))(assumes(e)); end);
+     (brk; prompt(lit("Resolved:")); brk;
+      spc(2); beg(2); fmtSet(pretty(R, main))(resolved(e)); end)
+   ELSE
+     none
+   FI)
