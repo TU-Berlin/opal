@@ -108,8 +108,11 @@ IMPORT INLINE ONLY INLINE
        IdMapReduce ONLY /
        Id ONLY id < no
        SeqMap ONLY *
-       UnitHandling ONLY sourceImports checkSourceImports checkImportedUnits
+       UnitHandling COMPLETELY
        DecodeForm ONLY decFormula
+       VarHandling ONLY newTypeVar
+       FmtOption ONLY fmtOption
+       TypeLaws ONLY getVisible getCong
 
 FUN compileTime: denotation
 DEF compileTime == INLINE("make_denotation", "make_denotation:", " __DATE__  "" "" __TIME__ ")
@@ -144,6 +147,7 @@ DEF pcheckerCmdtable ==
          |(lit("known-objects") o var("name") & 2nd @ pcheckKnownObjects)
          |(lit("fulness") o var("origin") & 2nd o var("instance") @ pcheckV)
          |(lit("sourceImports") o unitNameSpec & 2nd @ pcheckSourceImports)
+         |(lit("sortprops") o unitNameSpec & 2nd @ pcheckSortProps)
         ) & 2nd,
         "execute internal commands: \n" ++
         "fulness ORIGIN INSTANCE  (use t and d): control printing of terms")
@@ -276,6 +280,23 @@ DEF pcheckSourceImports(uN) ==
   dumpFmt(brk; lit("checked imports:"); f3) 
   ))))))))
       
+FUN pcheckSortProps: unitName -> com[denotation]
+DEF pcheckSortProps(uN) ==
+  query(trueSorts(uN)) & (\\ oNs.
+  query(\\R. fmtSet(pSP(R, uN))(oNs)) & (\\ f.
+  dumpFmt(f)
+  ))
+
+FUN pSP: repo ** unitName -> objectName -> fmt
+DEF pSP(R, uN)(type) == 
+  LET (v, R1) == newTypeVar(type)(R)
+  IN
+  fmtObjectNameLong(R1, uN)(type); lit(":");
+  lit("visibility:"); fmtOption(prettyFormula(R1, uN))
+                               (getVisible(type, v!)(R1)); spc(1);
+  lit("congruence:"); fmtOption(prettyFormula(R1, uN))
+                               (getCong(type, v!, v!)(R1))
+  
 
 
 -- %$Verbosity commands$

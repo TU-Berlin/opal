@@ -1,14 +1,14 @@
 IMPLEMENTATION ProofSemantics
 
-IMPORT Seq ONLY seq <> % ft rt ++ :: +%
+IMPORT Seq ONLY seq <> % ft rt ++ :: +% exist? <>? forall?
        RepoName COMPLETELY
        RepoAbsy COMPLETELY
-       Set ONLY set % find? incl {}? arb {}  - + {<}
+       Set ONLY set % find? incl {}? arb {}  - + {<} exist? in
        PCEnv COMPLETELY
        Map ONLY map def {} init
        UnitHandling COMPLETELY
        SeqMap ONLY *
-       RepoObjectAccess ONLY objects object
+       RepoObjectAccess ONLY objects object symbol kind fct
        RepoPropertyAccess ONLY properties
        RepoUnitAccess ONLY formals actuals symbol
        InstanceHandling ONLY monomorphic? instantiate instanceMap
@@ -21,7 +21,7 @@ IMPORT Seq ONLY seq <> % ft rt ++ :: +%
        Nat ONLY nat 10 3 4 5 1 2 max 6
        String ONLY string
        ProofHandling ONLY codedProof? decode codedProofUniq?
-       Option ONLY cont avail? option nil?
+       Option ONLY cont avail? option nil? nil
        ReflexTrans ONLY refl 
        SetConv ONLY asSeq asSet
        SetMap ONLY *
@@ -38,12 +38,12 @@ IMPORT Seq ONLY seq <> % ft rt ++ :: +%
        MapFilter ONLY |
        MapReduce ONLY /
        SetReduce ONLY /
-       SortHandling ONLY indirectRec? variants
+       SortHandling ONLY indirectRec? variants dataVariants
        ComSeqMap ONLY *&
        ComSeqMapEnv ONLY *& &&
        Com ONLY com succeed
        ComCompose ONLY &
-       Pair ONLY pair &
+       Pair ONLY pair & unpair
        Loquacity ONLY progress debugMsg
        PCEStore ONLY set get tryRead
        RepoCom1 ONLY query
@@ -59,7 +59,7 @@ IMPORT Seq ONLY seq <> % ft rt ++ :: +%
        DEBUG ONLY PRINT
        FmtSet ONLY fmtSet
        NFmt ONLY fmtLatin1
-       TypeLaws ONLY getDatatypeLaws getFreetypeLaws
+       TypeLaws COMPLETELY
        FormInclusion ONLY includable?
        ObjectNameMap ONLY <*
        NameHandling ONLY parameter?
@@ -67,6 +67,8 @@ IMPORT Seq ONLY seq <> % ft rt ++ :: +%
        RealConv ONLY ``
        Real ONLY - real
        Stopwatch ONLY now
+       IdTabReduce ONLY /
+       PredefEntities ONLY bool
 
 DEF proofSemantics(uN)(R0) ==
   LET oldE? == get(uN)(R0)
@@ -95,9 +97,11 @@ DEF proofSemantics(uN)(R0) ==
       succeed({} & set({}, uN)(R3))
       ))
     ELSE
+      progress(2, \\ . "visibility and congruences ...")(R1) & (\\ R1a.
       LET (R2, _imports, asserts, assumes,
-           indirectAsserts, indirectAssumes) == obligationPart(uN, R1)
-          cImports == checkImportedUnits(uN)(R1)
+           indirectAsserts, indirectAssumes) == obligationPart(uN, R1b)
+          cImports == checkImportedUnits(uN)(R1a)
+          (R1b, e0) == checkVandR(uN, unitPragmas, R1a)
       IN
       progress(2, \\ . "import relations ...")(R2) & (\\ R2a.
       (relationSemantic(uN, import), R2a) *& asSeq(cImports) && (\\ R3, e1.
@@ -117,14 +121,14 @@ DEF proofSemantics(uN)(R0) ==
       (propertySemantic(uN), R14) *& asSeq(properties(uN)(R14)) && (\\ R15, e7.
       progress(2, \\ . "realization relation ...")(R15) & (\\ R16.
       realizationSemantic(uN)(R16) && (\\ R17, e8.
-      LET all == flat(e1 ++ e2 ++ e3 ++ e4 ++ e5 ++ e6 ++ (e7 +% e8))
+      LET all == flat(e0 :: (e1 ++ e2 ++ e3 ++ e4 ++ e5 ++ e6 ++ (e7 +% e8)))
           newE == checkProofs(all)(R17)
           R18 == set(newE, uN)(R17)
       IN
       progress(1, \\ . "Finished proof semantics of " ++
                        denoUnit)(R18) & (\\ R19.
       succeed(newE & R19)
-      )))))))))))))))))
+      ))))))))))))))))))
     FI
     )
   FI
@@ -281,7 +285,9 @@ DEF checkImport(rType, main, uN)(R0)(oN) ==
         IF freeType?(p) THEN
           msg(5, "free type induced function")(R1)
         IF law?(p) THEN
-          succeed(R1 & %!(spc(an(object(oN)(R1)), oN, pN)))
+          succeed(R1 & %!(spc(an(object(oN)(R1)), oN, pN)) <+
+                       %!(dfd(an(object(oN)(R1)), oN, pN))
+                 )
         ELSE
           msg(5, "is not handled")(R1)
         FI
@@ -377,7 +383,7 @@ DEF objectSemantic(main)(R0)(oN) ==
   IN
   progress(3, \\ . "object " ++ !(R0)(oN))(R0) & (\\ R.
   IF kind(o) sort? THEN 
-    IF impl(o) data? THEN freeTypeProps(oN, impl(o))(R)
+    IF impl(o) data? THEN freeTypeProps(oN, impl(o))(visibility(main, R, oN) )
     ELSE
       LET ft? == find?[propertyName, <]((\\pN. freeType?(propertyS(pN)(R))),
                                         properties(o))
@@ -402,8 +408,10 @@ DEF objectSemantic(main)(R0)(oN) ==
       ELSE msg(4, "twin of coded proof")(R)
       FI
     ELSE
+      LET e1 == addDTIlaws(main, R, oN)
+      IN
       IF impl(o) def? THEN
-        LET e == %!(def(an(impl(o)), oN)) <+ speclaw(oN, o, R)
+        LET e == (e1 <+ %!(def(an(impl(o)), oN))) <+ speclaw(oN, o, R)
         IN
         progress(4, \\ . "defined function")(R) & (\\ R1.
         debugMsg("objectSemantic", \\ . pretty(fmtPcEnv(e)))(R1) & (\\ R2.
@@ -414,11 +422,11 @@ DEF objectSemantic(main)(R0)(oN) ==
         IN
         IF sl {}? THEN 
           progress(6, \\ . "no specification")(R1) & (\\ R2.
-          succeed(R2 & {})
+          succeed(R2 & e1)
           )
         ELSE 
           progress(6, \\ . "with specification")(R1) & (\\ R2.
-          succeed(R2 & %!(arb(sl)))
+          succeed(R2 & e1 <+ %!(sl))
           )
         FI)
       FI
@@ -433,10 +441,98 @@ DEF speclaw(oN, o, R) ==
     LET pN == arb(properties(o))
         p == propertyS(pN)(R)
     IN
-    IF law?(p) THEN %(spc(none, oN, pN))
+    IF law?(p) THEN %(spc(none, oN, pN), dfd(none, oN, pN))
     ELSE {}
     FI
   FI
+
+/* %check, whether laws for data type implementation 
+    must be added */
+FUN addDTIlaws: unitName ** repo ** objectName -> pcEnv
+DEF addDTIlaws(uN, R, fun) ==
+  IF from?(uN, fun) and exported?(R, fun) THEN
+     (IF needsClosed(R, fct(fun)(R)) THEN %(closed(none, fun))
+      ELSE {}
+      FI) <+
+     (IF needsCong(R, fct(fun)(R)) THEN %(cong(none, fun))
+      ELSE {} :pcEnv
+      FI)
+  ELSE
+    {}
+  FI
+    
+FUN exported?: repo ** objectName -> bool
+DEF exported?(R, oN) ==
+  IF localObjectName?(oN) THEN false
+  IF globalObjectName?(oN) THEN
+    globalObjectName(no(oN), baseName(unit(oN)) :=_part sign)
+    in objects(baseName(unit(oN)) :=_part sign)(R)
+  FI
+
+FUN from?: unitName ** objectName -> bool
+DEF from?(uN, oN) == uN ~ unit(oN)
+
+FUN needsClosed: repo ** fct -> bool
+DEF needsClosed(R, f) ==
+  IF name?(f) or cart?(f) THEN hasVisible(R)(f)
+  ELSE
+    LET (_, last) == split(f)
+    IN
+    hasVisible(R)(last)
+  FI
+
+FUN hasVisible: repo -> fct -> bool
+DEF hasVisible(R)(name(s)) == hasVisible(s)(R)
+DEF hasVisible(R)(cart(els)) == exist?(hasVisible(R), els)
+DEF hasVisible(R)(funct(d, c)) == hasVisible(R)(d) or hasVisible(R)(c)
+
+
+FUN split: fct -> fct ** fct
+DEF split(funct(d, name(s))) == (d, name(s))
+DEF split(funct(d, cart(els))) == (d, cart(els))
+DEF split(funct(d, funct(d1, c1))) ==
+  LET (s1, s2) == split(funct(d1, c1))
+  IN
+  (funct(d, s1), s2)
+
+FUN needsCong: repo ** fct -> bool
+DEF needsCong(R, fc) ==
+  IF name?(fc) or cart?(fc) THEN false
+  ELSE
+    LET (front, _) == split(fc)
+    IN
+    hasCong(R)(front)
+  FI
+
+FUN hasCong: repo -> fct -> bool
+DEF hasCong(R)(name(s)) == hasCong(s)(R)
+DEF hasCong(R)(cart(els)) == exist?(hasCong(R), els)
+DEF hasCong(R)(funct(d, c)) == hasCong(R)(d) or hasCong(R)(c)
+
+/* check whether visibile default needs to be set */
+FUN visibility: unitName ** repo ** objectName -> repo
+DEF visibility(main, R, oN) ==
+  IF from?(main, oN) and exported?(R, oN) THEN
+    LET sON == globalObjectName(no(oN), unit(oN) :=_part sign)
+        vs == variants(sON, R)
+    IN
+    IF vs <>? THEN R
+--      IF hasVisible(oN)(R) THEN setVisibleDefault(oN)(R)
+--      ELSE R
+--      FI
+    ELSE
+      IF forall?(exported?(R), dataVariants(oN, R)) THEN R        
+      ELSE setVisibleDefault(oN)(R)
+      FI
+    FI
+  ELSE
+    R
+  FI
+
+FUN exported?: repo -> variant -> bool
+DEF exported?(R)(variant(_, c, t, comps)) ==
+  exported?(R, c) and exported?(R, t) and
+  forall?((\\ oN. exported?(R, oN)), selector * comps)
 
 -- %First parameter denotes sort
 -- %@code{TYPE} properties
@@ -556,6 +652,114 @@ DEF propertySemantic(uN)(R0)(pN) ==
     succeed(R1 & {}))
   FI
 
+-- %$Checking Visibility and Congruence pragmas$
+FUN checkVandR: unitName ** idtab[pragma] ** repo -> repo ** pcEnv
+DEF checkVandR(uN, unitPragmas, R) ==
+  unpair((checkVR(part(uN) impl?, uN), R & {}) / unitPragmas)
+  
+FUN checkVR: bool ** unitName ->
+              pragma ** pair[repo, pcEnv] -> pair[repo, pcEnv]
+DEF checkVR(impl?, uN)(P AS pragma(_, token(t) ::
+                                   objects(type :: <>) ::
+                                   objects(fun :: <>) :: <>), R & e) ==
+  IF t = "VISIBLE" THEN
+    IF impl? THEN checkV(uN, type, fun, pragRef(P, uN))(R, e)
+    ELSE R &  incl((error, pragRef(P, uN)) !!
+                   "VISIBLE not allowed in signature parts", e)
+    FI
+  IF t = "CONG" THEN
+    IF impl? THEN checkC(uN, type, fun, pragRef(P, uN))(R, e)
+    ELSE R & incl((error, pragRef(P, uN)) !!
+                   "CONG not allowed in signature parts", e)
+    FI
+  ELSE
+    R & e
+  FI
+DEF checkVR(_, _)(_, R) == R
+
+FUN checkV: unitName ** objectName ** objectName ** ref ->
+             repo ** pcEnv -> pair[repo, pcEnv]
+DEF checkV(uN, type, vis, r)(R, e) ==
+  IF ~(baseName(uN) = baseName(unit(type))) THEN 
+    R & asPCEnv((error, r) !! ("type %s from other unit",
+                       pretty(fmtObjectNameLong(R, uN)(type))))
+  ELSE
+    LET exSorts == trueSorts(uN :=_part sign)(R)
+        ex? == find?((\\oN. symbol(oN)(R) = symbol(type)(R)), exSorts)
+    IN
+    IF ex? nil? THEN
+      R & asPCEnv((error, r) !! ("type %s is not exported",
+                         pretty(fmtObjectNameLong(R, uN)(type))))
+    IF ex? avail? THEN
+      IF exist?(\\ pN. freeType?(propertyS(pN)(R)),
+                       properties(object(cont(ex?))(R))) THEN
+        R & asPCEnv((error, r) !! ("must use default for free type %s",
+                           pretty(fmtObjectNameLong(R, uN)(type))))
+      ELSE
+        IF kind(vis)(R) sort? THEN
+          R & asPCEnv((error, r) !! ("visibility function is a sort"))
+        ELSE
+          IF checkVPred(fct(vis)(R), type, R) THEN
+            setVisible(type, vis)(R) &
+            incl(visibility(none, type, variants(type, R)), e)
+          ELSE
+            R & asPCEnv((error, r) !!
+                     ("wrong functionality for visibility function: found %s",
+                         pretty(prettyFct(R, uN)(fct(vis)(R)))))
+          FI
+        FI
+      FI
+    FI
+  FI
+
+FUN checkVPred: fct ** objectName ** repo -> bool
+DEF checkVPred(funct(name(from), name(to)), type, R) ==
+  from = type and to = bool(R)
+DEF checkVPred(_, _, _) == false
+
+FUN checkC: unitName ** objectName ** objectName ** ref ->
+             repo ** pcEnv -> pair[repo, pcEnv]
+DEF checkC(uN, type, fun, r)(R, e) ==
+  IF ~(baseName(uN) = baseName(unitName(type))) THEN 
+    R & asPCEnv((error, r) !! ("type %s from other unit",
+                       pretty(fmtObjectNameLong(R, uN)(type))))
+  ELSE
+    LET exSorts == trueSorts(uN :=_part sign)(R)
+        ex? == find?((\\oN. symbol(oN)(R) = symbol(type)(R)), exSorts)
+    IN
+    IF ex? nil? THEN
+      R & asPCEnv((error, r) !! ("type %s is not exported",
+                         pretty(fmtObjectNameLong(R, uN)(type))))
+    ELSE
+      IF kind(fun)(R) sort? THEN
+          R & asPCEnv((error, r) !! ("congruence function is a sort"))
+      ELSE
+        IF checkCstd(fct(fun)(R), type, R) THEN
+          setCong(type, fun)(R) &
+          e <+ %(congRefl(none, type),
+                 congSym(none, type), congTrans(none, type))
+        IF checkCred(fct(fun)(R), type, R) THEN
+          setCongRed(type, fun)(R) & e
+        ELSE
+          R & asPCEnv((error, r) !!
+              ("wrong functionality for congruence function: found %s",
+               pretty(prettyFct(R, uN)(fct(fun)(R)))))
+        FI
+      FI
+    FI
+  FI
+
+FUN checkCstd: fct ** objectName ** repo -> bool
+DEF checkCstd(funct(cart(name(from1) :: name(from2) :: <>),
+                    name(to)), type, R) ==
+  (from1 = type) and (from2 = type) and (to = bool(R))
+DEF checkCstd(_, _, _) == false
+
+FUN checkCred: fct ** objectName ** repo -> bool
+DEF checkCred(funct(name(from), name(_)), type, _) == from = type
+DEF checkCred(_, _, _) == false
+
+
 -- %$Checking Proofs$
 /* %Check, whether laws named in proof heads are known. This should be handled
     by the compiler, but special names, like Spc, Excl, ... are
@@ -583,6 +787,9 @@ DEF objRef(oN, R) ==
   LET loc? == locator?(an(object(oN)(R)))
   IN
   unitRef(cont(unspecified)(loc?), unitName(oN))
+
+FUN pragRef: pragma ** unitName -> ref
+DEF pragRef(p, uN) == unitRef(cont(unspecified)(locator?(an(p))), uN)
 
 FUN ! : repo -> unitName -> denotation
 DEF !(R)(uN) == pretty(fmtUnitNameLong(R)(uN))

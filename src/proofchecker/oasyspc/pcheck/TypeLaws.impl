@@ -2,15 +2,32 @@ IMPLEMENTATION TypeLaws
 
 IMPORT SortHandling ONLY variants dataVariants
        SeqOfSeq ONLY combinations flat
-       Seq ONLY seq % ft rt ++
+       Seq ONLY seq % ft rt ++ <>?
        Compose ONLY o
        PCEnv ONLY lawName discr sel equiv ddfd sdfd  pBody gen cdfd proofName
-       RepoAn ONLY none an
+       RepoAn ONLY none an anLayer:SORT register def !?
        SeqMap ONLY *
-       RepoAbsy ONLY components variant component
+       RepoAbsy COMPLETELY
        SetConv ONLY asSet
        Set ONLY set + incl
-       Nat ONLY nat
+       Nat ONLY nat !
+       Fmt ONLY fmt:SORT lit ; pretty
+       String ONLY string
+       RepoName COMPLETELY
+       Com ONLY EXEC com
+       DynConv ONLY unpack pack
+       RepoObjectAccess ONLY updateAn an
+       OptionMap ONLY *
+       Option ONLY nil? nil cont avail option avail?
+       AbsySC ONLY apply1 disj1 tuple1 cong !
+       PredefEntities ONLY true
+       ABORT ONLY ABORT
+       PrettyFormatting ONLY fmtObjectNameLong
+       Dyn ONLY dyn
+       Denotation ONLY ++
+       UnitHandling ONLY toSign toImpl
+
+/* %$Handle abbreviations Freetype[s] and Datatype[s]$ */
 
 DEF getFreetypeLaws(tp)(R) ==
   LET vs == variants(tp, R)
@@ -24,7 +41,7 @@ DEF getDatatypeLaws(tp)(R) ==
 
 
 FUN commonTypeLaws: objectName ** seq[variant] -> repo -> set[lawName, <]
-DEF commonTypeLaws(tp, vs)(R) ==
+DEF commonTypeLaws(tp, vs)(_R) ==
   LET vv == combinations(%(vs, vs))
       1st == ft
       2nd == ft o rt
@@ -37,3 +54,101 @@ DEF commonTypeLaws(tp, vs)(R) ==
   incl(gen(none, tp, vs),
        asSet((mdisc * vv) ++ (mexcl * vv) ++ flat(msel * vv) ++
              mddfd * vs ++ flat(msdfd * vs)))
+
+/* %$Manage visibility and congruence functions$ */
+
+DATA visibleInfo == pred(pred: objectName)
+                    default
+
+FUN fmtVisibleInfo: visibleInfo -> fmt
+DEF fmtVisibleInfo(pred(f)) == "pred" $$ fmtObjectName(f)
+DEF fmtVisibleInfo(default) == "default" lit
+
+FUN visibleTag: denotation
+DEF visibleTag == "visible"
+
+FUN visibleLayer: anLayer
+DEF visibleLayer ==
+  EXEC(register("924"!, \\ d. visibleTag $
+                              fmtVisibleInfo(unpack(d, visibleTag))))
+
+DEF setVisible(type, fun)(R) ==
+  updateAn(baseName(type),
+           \\ a. def(visibleLayer, pack(pred(fun), visibleTag), a))(R)
+
+DEF setVisibleDefault(type)(R) ==
+  updateAn(baseName(type),
+           \\ a. def(visibleLayer, pack(default, visibleTag), a))(R)
+
+DATA congInfo== direct(congf: objectName)
+                reduce(fun: objectName)
+
+FUN fmtCongInfo: congInfo -> fmt
+DEF fmtCongInfo(direct(c)) == "direct" $$ fmtObjectName(c)
+DEF fmtCongInfo(reduce(f)) == "reduce" $$ fmtObjectName(f)
+
+FUN congTag: denotation
+DEF congTag == "cong"
+
+FUN congLayer: anLayer
+DEF congLayer ==
+  EXEC(register("925"!,
+                \\ d. congTag $ fmtCongInfo(unpack(d, congTag))))
+
+DEF setCong(type, cong)(R) ==
+  updateAn(baseName(type), 
+           \\ a. def(congLayer,
+                     pack(direct(cong), congTag), a))(R)
+
+DEF setCongRed(type, redfun)(R) ==
+  updateAn(baseName(type), 
+           \\ a. def(congLayer,
+                     pack(reduce(redfun), congTag), a))(R)
+                
+
+DEF getVisible(type, arg)(R) ==
+  LET vInfo == unpack(_, visibleTag) * an(type)(R) !? visibleLayer
+  IN
+  IF vInfo nil? THEN nil
+  ELSE
+    IF cont(vInfo) pred? THEN avail(cong(apply1(pred(cont(vInfo)), arg),
+                                         true(R)))
+    IF cont(vInfo) default? THEN 
+      LET (R1, typeSign) == toSign(R, unit(type))(type)
+          getTest == \\ v. toImpl(R1, unit(type))(test(v))         
+          variantsSign == variants(typeSign, R1)
+      IN
+      IF variantsSign <>? THEN 
+        ABORT("getVisible'TypeLaws: " ++
+              pretty(fmtObjectNameLong(R1)(type)) ++ "has no variants")
+      ELSE
+        avail(disj1((\\v. cong(apply1(getTest(v), arg), true(R1))) *
+                    variantsSign))
+      FI
+    FI
+  FI
+
+DEF getCong(type, arg1, arg2)(R) ==
+  LET cInfo == unpack(_, congTag) * an(type)(R) !? congLayer
+  IN
+  IF cInfo nil? THEN nil
+  ELSE
+    IF cont(cInfo) direct? THEN
+      avail(cong(apply(none, !(congf(cont(cInfo))), tuple1(%(arg1, arg2))),
+                 true(R)))
+    IF cont(cInfo) reduce? THEN
+      avail(cong(apply1(fun(cont(cInfo)), arg1),
+                 apply1(fun(cont(cInfo)), arg2)))
+    FI
+  FI
+
+
+DEF hasVisible(type)(R) == avail?(an(type)(R) !? visibleLayer)
+DEF hasCong(type)(R) == avail?(an(type)(R) !? congLayer)
+
+-- %$Auxiliary Functions$
+FUN $ : denotation ** fmt -> fmt
+DEF t $ f == lit("<"); lit(t); lit(":"); f; lit(">")
+FUN $$ : denotation ** fmt -> fmt
+DEF t $$ f == lit(t); lit("(");  f; lit(")")
+

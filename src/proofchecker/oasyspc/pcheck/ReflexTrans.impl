@@ -1,18 +1,18 @@
 IMPLEMENTATION ReflexTrans 
--- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/pcheck/ReflexTrans.impl,v 1.2 2000-08-30 22:10:53 kd Exp $
+-- %- $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/proofchecker/oasyspc/pcheck/ReflexTrans.impl,v 1.3 2000-09-19 20:26:28 kd Exp $
 
-IMPORT RepoObjectAccess ONLY symbol actuals object newLocalSign newLocalObjects
+IMPORT RepoObjectAccess COMPLETELY
        Denotation ONLY = ++
        RepoName COMPLETELY
        PCEnv COMPLETELY
-       Seq ONLY ft rt seq <> <>? % ++ exist?
+       Seq ONLY ft rt seq <> <>? % ++ exist? +%
        Set ONLY arb set {}? {}
        RepoAbsy COMPLETELY
        ABORT ONLY ABORT
        FormulaHandling COMPLETELY
        Nat ONLY nat 4
        RepoUnitAccess ONLY symbol
-       PrettyFormatting ONLY fmtObjectNameLong 
+       PrettyFormatting ONLY fmtObjectNameLong  fmtUnitNameLong
        Fmt ONLY fmt pretty
        RepoAn ONLY an none
        String ONLY string
@@ -34,7 +34,7 @@ IMPORT RepoObjectAccess ONLY symbol actuals object newLocalSign newLocalObjects
        ProofAn ONLY :=_shortcut
        Weight ONLY +#
        SeqFilter ONLY |
-       TypeLaws ONLY getFreetypeLaws getDatatypeLaws
+       TypeLaws COMPLETELY
        SetConv ONLY asSeq
        SeqMapEnv ONLY *
        DefEqnHandling ONLY transDefEqn
@@ -42,6 +42,11 @@ IMPORT RepoObjectAccess ONLY symbol actuals object newLocalSign newLocalObjects
        VarHandling ONLY toImplVars toImpl newVars asVar newTypeVar
        PredefEntities ONLY true false proofscript
        AbsySC COMPLETELY
+       DbAbsyAux ONLY fct
+       SeqSupplements ONLY sd td
+       ProofHandling ONLY codedProof?
+       OSubstitution ONLY subst <$
+       FmtSet ONLY fmtSet
 
 -- %$Decode Reflexion$
 
@@ -77,13 +82,29 @@ DEF refl(R, main)(cProp) ==
         FI
       ELSE (R, spc(a, ft(aPars), arb(props)))
       FI
-    IF (reflOp = "Restr") or (reflOp = "Trans") THEN
+    IF reflOp = "Dfd" THEN
+      LET 
+        props == properties(object(ft(aPars))(R))
+      IN
+      IF {}?(props) THEN
+        LET (R1, ob) == toSign(R, main)(ft(aPars))
+            props2 == properties(object(ob)(R1))
+        IN
+        IF {}?(props2) THEN
+          (R1, error(mkDiag(a, ft(aPars), main, R) ("No properties for %s")))
+        ELSE
+          (R1, dfd(a, ft(aPars), arb(props2)))
+        FI
+      ELSE (R, dfd(a, ft(aPars), arb(props)))
+      FI
+    IF (reflOp = "Restr") or (reflOp = "Trans") or (reflOp = "Lift") THEN
       LET (R1, ob) == toSign(R, main)(ft(aPars))
           (R2, res) == refl(R1, main)(ob)
+          srts == PRINT(true, \\ . "Restr:" ++ pretty(fmtSet(fmtObjectNameLong(R2, main))(trueSorts(main :=_part sign)(R2))) ++ " unit:" ++ pretty(fmtUnitNameLong(R2)(main :=_part sign )), trueSorts(main :=_part sign)(R2))
       IN
       IF res error? THEN (R2, res)
       ELSE
-        (R2, restr(none, res, trueSorts(unit(ob))(R)))
+        (R2, restr(none, res, srts))
       FI
     IF (reflOp = "Copy") or (reflOp = "Incl") THEN
       LET (R1, ob) == toSign(R, main)(ft(aPars))
@@ -141,6 +162,15 @@ DEF refl(R, main)(cProp) ==
     IF reflOp = "Datatype" THEN
       checkData(main, R)(a, ft(aPars), \\vs. 
       (R, datatypeLaws(a, ft(aPars), vs)))
+-- %hier fehlen Fehlerabfragen      
+    IF reflOp = "Visible" THEN 
+      checkFT(main, R)(a, ft(aPars), \\vs. 
+      (R, visibility(a, ft(aPars), vs)))
+    IF reflOp = "Closed" THEN (R, closed(a,ft(aPars)))
+    IF reflOp = "Cong" THEN (R, cong(a,ft(aPars)))
+    IF reflOp = "CongRefl" THEN (R, congRefl(a,ft(aPars)))
+    IF reflOp = "CongSym" THEN (R, congSym(a,ft(aPars)))
+    IF reflOp = "CongTrans" THEN (R, congTrans(a,ft(aPars)))
     ELSE (R, error(mkDiag(a, ft(aPars), main, R)
                    ("unknown reflexion " ++ reflOp)))
     FI  
@@ -269,21 +299,39 @@ DEF formula0(def(_, n),_)(R) ==
   ELSE
     (R, ABORT("formula'ReflexTrans: Def without equation!" ++ ""))
   FI
-DEF formula0(spc(_, f, p),_)(R) == 
+DEF formula0(spc(_, _f, p),_)(R) == 
   LET (R1, pr) == property(p)(R) IN (R1, formula(pr))
-DEF formula0(restr(_, orig, sorts), main)(R) ==
-  IF sorts {}? THEN
-    LET (R1, origF) == formula(orig, main)(R) 
-        (R2, F1) == toImplVars(main)(R1, origF)
-    IN (R2, toImpl(main) <* F1)
+DEF formula0(dfd(_, f, p), _)(R) ==
+  LET (R1, pr) == property(p)(R)
+      frm == formula(pr)
+      i == ft(formulas(range(frm)))
+  IN
+  IF atomic?(i) ANDIF kind(i) cong? ANDIF ft(exprs(i)) name? ANDIF
+     sd(exprs(i)) name? ANDIF
+     oper(ft(exprs(i))) = oper(true(R)) ANDIF
+     oper(sd(exprs(i))) = oper(true(R)) THEN
+     (R1, quant(an(frm), kind(frm), sign(frm), vars(frm),
+               atomic(none, dfd, %(apply1(f, vars(frm))))))
   ELSE
-    (R, ABORT("formula'ReflexTrans: cannot construct Restr yet" ++ "" ))
+    (R1, quant(an(frm), kind(frm), sign(frm), vars(frm),
+              connect(none, impl,
+                      %(i, atomic(none, dfd, %(apply1(f, vars(frm)))))
+    )))
+  FI
+DEF formula0(restr(_, orig, sorts), main)(R) ==
+  LET (R1, origF) == formula(orig, main)(R) 
+      (R2, F1) == toImplVars(main)(R1, origF)
+      F2 == toImpl(main) <* F1
+  IN
+  IF sorts {}? THEN (R2, F2)
+  ELSE
+    (R2, lift(R2)(F2))
   FI
 DEF formula0(copy(_, orig), main)(R) ==
   LET (R1, origF) == formula(orig, main)(R) 
       (R2, F1) == toImplVars(main)(R1, origF)
   IN (R2, toImpl(main) <* F1)
-DEF formula0(discr(_, tpe, con, dcr),_)(R) ==
+DEF formula0(discr(_, _tpe, con, dcr),_)(R) ==
   LET res == select(constructor(con) = constructor(dcr))(R)
   IN
   IF components(con) <>? THEN
@@ -296,7 +344,7 @@ DEF formula0(discr(_, tpe, con, dcr),_)(R) ==
     (R1, quant(none, forall, lS, vars, cong(lhs, res)))
   FI
 
-DEF formula0(sel(_, tpe, con, sl),_)(R) ==
+DEF formula0(sel(_, _tpe, con, sl),_)(R) ==
   LET (R1, lS) == newVars(R, %(con))
       vars == (\\sl1. asVar(R1)(lS, sl1)) * selector * components(con)
       p == pos(\\ c. selector(c) = selector(sl), components(con))
@@ -324,10 +372,10 @@ DEF mkEx(mv)(R, vrt) ==
   IN
   (R1, exist1(none, vars, cong(name(none, mv), cTerm)))
 
-DEF formula0(ind(_, tpe, vars),_)(R) ==
+DEF formula0(ind(_, _tpe, _vars),_)(R) ==
   (R, ABORT("formula'ReflexTrans: cannot construct Ind yet" ++ "" ))
-DEF formula0(equiv(_, tpe, con1, con2),_)(R) ==
-  LET (R1, lS, v1, v2) == newVars(R, con1, con2)
+DEF formula0(equiv(_, _tpe, con1, con2),_)(R) ==
+  LET (R1, _lS, v1, v2) == newVars(R, con1, con2)
       equation == cong(apply1(constructor(con1), v1),
                        apply1(constructor(con2), v2))
   IN
@@ -342,7 +390,7 @@ DEF formula0(equiv(_, tpe, con1, con2),_)(R) ==
     (R1, neg(exist1(none, v1 ++ v2, equation)))
     -- (R1, forall1(none, v1 ++ v2, connect(none, neg, %(equation))))
   FI
-DEF formula0(cdfd(_, tpe, con), _)(R) ==
+DEF formula0(cdfd(_, _tpe, con), _)(R) ==
   LET (R1, lS) == newVars(R, %(con))
       vars == (\\sl1. asVar(R1)(lS, sl1)) * selector * components(con)
       cTerm == apply1(constructor(con), vars)
@@ -364,18 +412,92 @@ DEF formula0(sdfd(_, tpe, sel), _)(R) ==
   (R2, forall1(var, impl(disj1(none, mkCong * goodVar | vs),
                          dfd(apply1(selector(sel), var)))))
 
-DEF formula0(freetypeLaws(_, tpe, vs), uN)(R) ==
+DEF formula0(freetypeLaws(_, tpe, _vs), uN)(R) ==
   LET laws == getFreetypeLaws(tpe)(R)
       (R1, forms) == (formula(uN), R) * asSeq(laws)
   IN
   (R1, conj1(forms))
 
-DEF formula0(datatypeLaws(_, tpe, vs), uN)(R) ==
+DEF formula0(datatypeLaws(_, tpe, _vs), uN)(R) ==
   LET laws == getDatatypeLaws(tpe)(R)
       (R1, forms) == (formula(uN), R) * asSeq(laws)
   IN
   (R1, conj1(forms))
 
+DEF formula0(visibility(_, tpe, _vs), main)(R) ==
+  LET signMain == main :=_part sign
+      exFuns == (\\o. target?(o, tpe)(R)) | 
+                (\\ o. (kind(o)(R) oper?) and ~(codedProof?(o)(R))) |
+                asSeq(objects(signMain)(R))
+      (sortVar, R1) == newTypeVar(tpe)(R) 
+      sortExpr == cont(getVisible(tpe, sortVar!)(R1))
+      visFun == \\ex. cont(getVisible(tpe, ex)(R1))
+      (R2, existForms) == (mkExistForm(visFun, sortVar!,
+                                       tpe, main), R1) * exFuns
+  IN
+  (R2, forall1(sortVar, equiv(sortExpr, disj1(existForms))))
+DEF formula0(closed(_, f), main)(R) ==
+  LET tpe0 == target(fct(f)(R))
+      tpe == PRINT(debugClosed?, \\ . "target: " ++ 
+                   pretty(fmtObjectNameLong(R, main)(f)) ++ " " ++
+                   pretty(fmtObjectNameLong(R, main)(tpe0)), tpe0)
+      (lS, R1) == newLocalSign(main)(R)   
+      (R2, vs, cTerm1) == mkCanTerm(R1, f!, fct(f)(R1), <>, lS)
+      doubles == (\\ v. sort(fct(v)(R2)) = tpe) |  vs
+  IN
+  IF doubles <>? THEN
+    (R2, forall1(vs, cont(getVisible(tpe, cTerm1)(R2))))
+  ELSE
+    (R2, forall1(vs, impl(conj1((\\ v. cont(getVisible(tpe, v!)
+                                                      (R2))) * doubles),
+                          cont(getVisible(tpe, cTerm1)(R2)))))
+  FI
+DEF formula0(cong(_, f), main)(R) ==
+  LET tpe == target(fct(f)(R))
+      (lS, R1) == newLocalSign(main)(R)   
+      (R2, vs, cTerm1) == mkCanTerm(R1, f!, fct(f)(R), <>, lS)
+      doubles == (\\ v. hasCong(sort(fct(v)(R2)))(R2)) | vs
+      (R3, nDoubles) == (mkDoubles, R) * doubles
+      cTerm2 == subst(doubles, nDoubles) <$ cTerm1
+      right == IF avail?(getCong(tpe, cTerm1, cTerm2)(R3)) THEN
+                 cont(getCong(tpe, cTerm1, cTerm2)(R3))
+               ELSE
+                 cong(cTerm1,cTerm2)
+               FI
+  IN
+  IF doubles <>? THEN
+    (R3, forall1(vs, right))
+  ELSE
+    (R3, forall1(vs ++ doubles, 
+                 impl(conj1(zip(\\d, nD. cont(getCong(sort(fct(d)(R3)),
+                                                      d!, nD!)(R3)))
+                               (doubles, nDoubles)),
+                      right)))
+  FI
+
+DEF formula0(congRefl(_, tpe), _)(R) ==
+  LET (v, R2) == newTypeVar(tpe)(R)
+  IN
+  (R2, forall1(v, cont(getCong(tpe, v!, v!)(R2))))
+DEF formula0(congSym(_, tpe), main)(R) ==
+  LET (lS, R2) == newLocalSign(main)(R)
+      (R3, vs) == newVars(R2, main, lS)(%(name(tpe), name(tpe)))
+      v1 == ft(vs)!
+      v2 == sd(vs)!
+  IN
+  (R3, forall1(vs, impl(cont(getCong(tpe, v1,  v2)(R3)), 
+                        cont(getCong(tpe, v2, v1)(R3)))))
+
+DEF formula0(congTrans(_, tpe), main)(R) ==  
+  LET (lS, R2) == newLocalSign(main)(R)
+      (R3, vs) == newVars(R2, main, lS)(%(name(tpe), name(tpe), name(tpe)))
+      v1 == ft(vs)!
+      v2 == sd(vs)!
+      v3 == td(vs)!
+  IN
+  (R3, forall1(vs, impl(conj1(%(cont(getCong(tpe, v1, v2)(R3)), 
+                                cont(getCong(tpe, v2, v3)(R3)))),
+                        cont(getCong(tpe, v1, v3)(R3)))))
 
  
 
@@ -399,3 +521,104 @@ DEF mkDiag(a, errorOb1, errorOb2, main, R)(msg) ==
   (error, ref) !! (msg, pretty(fmtObjectNameLong(R, main)(errorOb2)),
                         pretty(fmtObjectNameLong(R, main)(errorOb1)))
 
+
+FUN lift: repo -> formula -> formula
+DEF lift(_)(atomic(a, dfd, exs)) == atomic(a, dfd, exs)
+DEF lift(R)(atomic(_, approx, exs)) ==
+  lift(R)(disj1(%(neg(dfd(ft(exs))), atomic(none, cong, exs))))
+DEF lift(R)(atomic(a, cong, exs)) ==
+  LET fc == fct(R, ft(exs))
+  IN
+  IF fc name? THEN 
+    LET newEx == getCong(sort(fc), ft(exs), sd(exs))(R)
+    IN
+    IF newEx nil? THEN atomic(a, cong, exs)
+    ELSE
+      cont(newEx)
+    FI
+  IF fc cart? THEN
+    ABORT("lift'ReflexTrans: cannot handle tuple1 === tuple2")
+  IF fc funct? THEN
+    atomic(a, cong, exs)
+  FI
+DEF lift(_)(atomic(a, informal(txt), exs)) ==
+  atomic(a, informal("Lift[" ++ txt ++ "]"), exs)
+DEF lift(R)(connect(a, cK, frms)) == connect(a, cK, lift(R) * frms)
+DEF lift(R)(quant(a, forall, lS, vs, r)) ==
+  LET visvs == (\\ v. hasVisible(sort(fct(v)(R)))(R)) | vs
+  IN
+  IF visvs <>? THEN quant(a, forall, lS, vs, lift(R)(r))
+  ELSE
+    quant(a, forall, lS, vs,
+          impl(conj1((\\ v. cont(getVisible(sort(fct(v)(R)), v!)(R))) * visvs),
+               lift(R)(r))
+         )
+  FI
+DEF lift(R)(quant(a, exist, lS, vs, r)) ==
+  LET visvs == (\\ v. hasVisible(sort(fct(v)(R)))(R)) | vs
+  IN
+  IF visvs <>? THEN quant(a, exist, lS, vs, lift(R)(r))
+  ELSE
+    quant(a, exist, lS, vs,
+          conj1((\\ v. cont((getVisible(sort(fct(v)(R)), v!)(R)))) * visvs +%
+                lift(R)(r))
+         )
+  FI
+
+
+-- %object must be a function
+FUN target?: objectName ** objectName -> repo -> bool
+DEF target?(o, tpe)(R) == LET fc == fct(kind(o)(R)) IN target?(fc, tpe)
+
+/* %-ich bin nicht ganz sicher, wie Funktionen im Ergebnistupel
+    behandelt werden müssen: sei f: a ** b -> (c -> d) ** a
+    die Funktionalität: kann ich damit Typ d erzeugen, und wenn ja,
+    wie sieht der kanonische Term dazu aus?
+*/
+FUN target?: fct ** objectName -> bool
+DEF target?(name(s), tpe) == s = tpe
+DEF target?(cart(_els), _tpe) == -- exist?(\\f. target?(f, tpe), els)
+  ABORT("target?'ReflexTrans: cannot handle tuple-valued functions in the construction of visibility proof obligation")
+DEF target?(funct(_, c), tpe) == target?(c, tpe)
+
+FUN mkExistForm: (expr -> formula) ** expr ** objectName ** unitName ->
+                  repo ** objectName -> repo ** formula
+DEF mkExistForm(visFun, sVar, tpe, main)(R, fun) ==
+  LET (lS, R2) == newLocalSign(main)(R)
+      (R3, vars, canTerm) == mkCanTerm(R2, fun!, fct(fun)(R2), <>, lS)
+      tVarsEx == ! * (\\ v. sort(fct(v)(R)) = tpe) |
+                     (\\ v. name?(fct(v)(R))) | vars
+  IN
+  (R3, exist1(vars, conj1(visFun * tVarsEx +% cong(canTerm, sVar))))
+
+FUN mkCanTerm: repo ** expr ** fct ** seq[objectName] ** localSignName ->
+                repo ** seq[objectName] ** expr
+DEF mkCanTerm(R, ex, name(_), vs, _) == (R, vs, ex)
+DEF mkCanTerm(R, _, cart(_), _, _) ==
+  (R, <>, ABORT("mkCanTerm'ReflexTrans: cannot handle tuple-valued functions"))
+DEF mkCanTerm(R, ex, funct(d, c), vs, lS) ==
+  LET (R2, vs2) == newVars(R, lS, "")
+                          (IF (d name?) or (d funct?) THEN d%
+                           IF d cart? THEN elems(d)
+                           FI)
+  IN
+  mkCanTerm(R2, apply1(ex, vs2), c, vs ++ vs2, lS)
+
+FUN mkDoubles: repo ** objectName -> repo ** objectName
+DEF mkDoubles(R, oN) ==
+  LET o == object(oN)(R)
+      newO == object(an(o), symbol(o) ++ "¹", kind(o), impl(o), 
+                     properties(o), items(o))
+      (vs, R2) == newLocalObjects(sign(oN), %(newO))(R)
+  IN
+  (R2, ft(vs))
+
+FUN target: fct  -> objectName
+DEF target(fc) == 
+  IF name?(fc) THEN sort(fc)
+  IF cart?(fc) THEN ABORT("target'ReflexTrans: cannot handle tuple-valued functions")
+  IF funct?(fc) THEN target(codom(fc))
+  FI
+
+FUN debugClosed? : bool
+DEF debugClosed? == false
