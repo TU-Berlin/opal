@@ -235,7 +235,7 @@
 #define HAVE_DIFFTIME 1
 
 /* Define if you have the dlopen function.  */
-#define HAVE_DLOPEN 1
+/* #undef HAVE_DLOPEN */
 
 /* Define if you have the getcwd function.  */
 #define HAVE_GETCWD 1
