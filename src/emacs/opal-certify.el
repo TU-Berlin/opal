@@ -121,11 +121,11 @@ by the Opal compiler and return name of property"
   (save-excursion
     (set-buffer buf)
     (if (re-search-forward
-	 (concat "^ *\\(JSTF\\|PROOF\\) *" (regexp-quote propname) " *==") nil t)
+	 (concat "^ *\\(JSTF\\|JUSTF\\|PROOF\\) *" (regexp-quote propname) " *==") nil t)
 	(progn
 	  (beginning-of-line)
 	  (kill-line 1)
-	  (while (and (not (looking-at "^\\(LAW\\|PROOF\\|FUN\\|DEF\\|PROP\\|JSTF\\|TYPE\\|SORT\\|DATA\\|LEMMA\\|GOAL\\)"))
+	  (while (and (not (looking-at "^\\(LAW\\|PROOF\\|FUN\\|DEF\\|PROP\\|JSTF\\|JUSTF\\|TYPE\\|SORT\\|DATA\\|LEMMA\\|GOAL\\)"))
 		      (not (looking-at "^[ \t]*$")))
 	    (kill-line 1)
 	    )

@@ -37,11 +37,11 @@
 
 
 (defconst opal-outline-begin-regexp   
-  "^\\(DEF\\|PROOF.*==\\|IMPORT\\|DATA\\|TYPE\\|PROP\\|JSTF\\)"
+  "^\\(DEF\\|PROOF.*==\\|IMPORT\\|DATA\\|TYPE\\|PROP\\|JSTF\\|JUSTF\\)"
   "regexp to mark beginning of regions which may be folded")
 
 (defconst opal-outline-end-regexp 
-  "^\\(DEF\\|FUN\\|LAW\\|TYPE\\|DATA\\|PROOF\\|PROP\\|JSTF\\|[ \t]*$\\)"
+  "^\\(DEF\\|FUN\\|LAW\\|TYPE\\|DATA\\|PROOF\\|PROP\\|JSTF\\|JUSTF\\|[ \t]*$\\)"
   "regexp to mark the first line after the end of region to be folded")
 
 (defvar opal-outline-menu 

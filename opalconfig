@@ -1,0 +1,297 @@
+#! /usr/X11R6/bin/wish 
+## 
+
+## set up main window
+
+# some global variables
+set prefix /usr/local
+
+set fontbold -*-helvetica-bold-r-*-*-12-*-*-*-*-*-*-*
+set font1 -*-helvetica-bold-r-*-*-24-*-*-*-*-*-*-*
+set font2 -*-helvetica-bold-r-*-*-16-*-*-*-*-*-*-*
+
+set optionList {dynamic absolute-pathes doc oasys dosfop opalwin \
+		    reflections tivi2 opaljava oc5 proofchecker}
+## TOP LINE: image + headline
+
+. configure -background white
+
+frame .top 
+
+image create photo opalimage -file opal.gif
+canvas .top.image -width 58 -height 57
+.top.image create image 31 30 -image opalimage
+
+label .top.headline -text "The OCS Configurator"  -background white -font $font1
+
+
+pack .top.image .top.headline -side left -fill y
+
+## BUTTON ROW
+
+frame .mid -background white
+button .mid.configure -text "Configure OCS" -command midConfigure
+button .mid.selectVersion -text "Select OCS Version" -command midSelectVersion
+button .mid.quit -text Quit -command midQuit
+
+pack .mid.configure .mid.selectVersion .mid.quit -side top -expand 1 -fill x
+
+## DISPLAY MAIN WINDOW
+pack .top 
+pack .mid -expand 1 -fill both
+
+
+
+## ======================================================================
+## BUTTON COMMANDS
+
+### Configure
+proc midConfigure { } {
+    global prefix font2 option optionList
+
+
+    midConfigureCancel
+    parray option
+
+    .mid.configure configure -state disabled
+    toplevel .configure -background white
+    wm title .configure "Configure OCS"
+    label .configure.headline -text "Configure OCS" -font $font2  -bg white
+    namedEntry .configure.prefix "OCS Root Directory:" prefix
+
+    frame .configure.options
+    foreach o $optionList {
+	checkbutton .configure.options.$o -text $o -variable option($o) -anchor w
+	pack .configure.options.$o -expand 1 -fill x 
+    }
+    
+    frame .configure.buttons
+    button .configure.buttons.do -text "Configure" -command midConfigureDo
+    button .configure.buttons.default -text "Default" -command midConfigureDefault
+    button .configure.buttons.cancel -text "Cancel" -command midConfigureCancel
+    button .configure.buttons.quit -text "Quit" -command midConfigureQuit
+    pack .configure.buttons.do .configure.buttons.default .configure.buttons.cancel .configure.buttons.quit -side left -expand 1 -fill x
+    
+    pack .configure.headline -expand 1 -fill x
+    pack .configure.prefix .configure.options .configure.buttons -expand 1 -fill x
+
+}
+
+proc midConfigureDo { } {
+    global prefix option optionList
+
+#    midConfigureSave
+    parray option
+    puts "Prefix: $prefix"
+
+    set cmd "./configure"
+    set cmd "$cmd --prefix=$prefix"
+
+    foreach o $optionList {
+	if {$option($o)} {
+	    set cmd "$cmd --enable-$o"
+	} else {
+	    set cmd "$cmd --disable-$o"
+	}
+    }
+
+    puts "cmd = $cmd"
+    set cmd [split "exec $cmd >& /tmp/opalconfig.out"]
+    set configError [catch [ eval $cmd ] msg]
+    if $configError {errorMsg $msg} {puts "configure ok"}
+
+}
+
+proc midConfigureCancel { } {
+    global option prefix
+
+    # read previously stored values
+    if [file exists opalconfig.last] {
+	source opalconfig.last
+    } else {
+	midConfigureDefault
+    }
+}
+
+proc midConfigureDefault { } {
+    global prefix option 
+
+    # default values
+    set option(dynamic) 1
+    set option(absolute-pathes) 1
+    set option(doc) 0
+    set option(oasys) 1
+    set option(dosfop) 1
+    set option(opalwin) 1
+    set option(reflections) 1
+    set option(tivi2) 1
+    set option(opaljava) 0
+    set option(oc5) 0
+    set option(proofchecker) 0
+
+    set prefix /usr/local
+}
+
+proc midConfigureQuit { } {
+
+    midConfigureSave
+    destroy .configure
+    .mid.configure configure -state normal
+}
+
+proc midConfigureSave { } {
+    global prefix option optionList
+
+    if [catch {set fid [open "opalconfig.last" "w"]} ] {
+	errorMsg "Could not open opalconfig.last. Configuration not saved."
+	return
+    }
+    set now [exec "date"]
+    puts $fid "\#\# OCS configuration saved by opalconfig at $now"
+    puts $fid "set prefix $prefix"
+    foreach o $optionList {
+	puts $fid "set option($o) $option($o)"
+    }
+    close $fid
+}
+
+### Select Version
+proc midSelectVersion { } {
+    global prefix font2 currentOCSversion ocslist
+
+#    if {"" != [ocsVersionInDir "$prefix/ocs"]} {
+	set currentOCSversion [ocsVersionInDir $prefix/ocs]
+
+	set ocslist { }
+	set ocslist1 [glob $prefix/ocs?*]
+	foreach f $ocslist1 { 
+	    if {[ocsVersionInDir $f] != ""} { lappend ocslist $f }
+	}
+	
+	.mid.selectVersion configure -state disabled
+	toplevel .tSelectVersion -background white
+        wm title .tSelectVersion "Select OCS Version"
+	label .tSelectVersion.headline -text "Select OCS Version" -font $font2
+	namedLabel .tSelectVersion.current "Current:" currentOCSversion
+	frame .tSelectVersion.lb
+	listbox .tSelectVersion.lb.available -yscrollcommand ".tSelectVersion.lb.scroll set" -selectmode single 
+	scrollbar .tSelectVersion.lb.scroll -command ".tSelectVersion.lb.available yview"
+	pack .tSelectVersion.lb.available -expand 1 -fill both -side left
+	pack .tSelectVersion.lb.scroll -side left -fill y 
+	set i 0
+	foreach f $ocslist {
+	    set v [ocsVersionInDir $f]
+	    if {$v != ""} {
+  	      .tSelectVersion.lb.available insert end $v
+	      if {$v == $currentOCSversion} {
+		  .tSelectVersion.lb.available selection set $i
+	      }
+	      incr i
+	    }
+	}
+	frame .tSelectVersion.b
+	button .tSelectVersion.b.apply -text "Apply" -command midSelectVersionApply
+	button .tSelectVersion.b.quit -text "Quit" -command midSelectVersionQuit
+	pack .tSelectVersion.b.apply .tSelectVersion.b.quit -side left -expand 1 -fill x
+	pack .tSelectVersion.headline .tSelectVersion.current  .tSelectVersion.lb .tSelectVersion.b -expand 1 -fill x
+#    } else {
+#	errorMsg "File $prefix/ocs/VERSION could not be found. Change prefix to proper value." 
+#    }
+}
+
+proc midSelectVersionQuit { } {
+    midSelectVersionApply
+    destroy .tSelectVersion
+    .mid.selectVersion configure -state normal
+}
+
+proc midSelectVersionApply { } {
+    global ocslist currentOCSversion prefix
+
+    set select [ .tSelectVersion.lb.available curselection ]
+    if {$select != {} } {
+	#    puts $ocslist
+#	puts "selected : $select"
+	set newOCSversion [ocsVersionInDir [lindex $ocslist $select]]
+	if {$newOCSversion != $currentOCSversion} {
+#	    puts "must change"
+	    set newdir [lindex $ocslist $select]
+	    if {[file exists $prefix/ocs] && [file type $prefix/ocs] == "directory"} {
+		errorMsg "Expected $prefix/ocs to be a link to the current version. Will not remove directory."
+		return
+	    } else {
+		if [ catch { exec rm -f $prefix/ocs } msg ] {
+		    errorMsg "No permission to remove $prefix/ocs: $msg"
+		    return
+		}
+		if [catch {exec ln -s $newdir $prefix/ocs} msg] {
+		    errorMsg "Could not relink $prefix/ocs to $newdir: $msg"
+		    return
+		}
+		set currentOCSversion $newOCSversion
+	    }
+	}
+    } else {
+#	puts "nothing: select = $select"
+    }
+}
+
+proc ocsVersionInDir fname {    
+    
+    if {[file exist "$fname"] && [file isdirectory $fname] && [file exist "$fname/VERSION"]} {
+	set vId [open "$fname/VERSION" "r"]
+	set thisOCSversion [read -nonewline $vId]
+	close $vId			       
+	return $thisOCSversion
+    } else {
+	return ""
+    }
+}
+
+### Quit
+proc midQuit { } { exit 0 }
+
+## ======================================================================
+# General procedures
+
+## display error message
+set errorCount 0
+proc errorMsg { errorText } {
+    global errorCount 
+
+    set errorPathName ".errorMsg$errorCount"
+    set errorCount [expr $errorCount + 1]
+    toplevel $errorPathName
+    message $errorPathName.cont -text $errorText -foreground red
+    button $errorPathName.ok -text "OK" -command "destroy $errorPathName"
+    pack $errorPathName.cont $errorPathName.ok
+}
+
+## named label
+
+proc namedLabel {pathName boldText watchVar} {
+    global fontbold $watchVar
+
+    frame $pathName
+    label $pathName.left -text $boldText -font $fontbold 
+    label $pathName.right -textvariable $watchVar
+    pack $pathName.left $pathName.right -side left
+}
+
+## named entry
+
+proc namedEntry {pathName boldText watchVar} {
+    global fontbold $watchVar
+
+    frame $pathName
+    label $pathName.left -text $boldText -font $fontbold 
+    entry $pathName.right -textvariable $watchVar
+    pack $pathName.left $pathName.right -side left
+}
+
+proc watch { name } {
+    toplevel .watch 
+    label .watch.label -text "Value of \"$name\": "
+    label .watch.value -textvariable $name
+    pack .watch.label .watch.value -side left
+}
