@@ -1,21 +1,57 @@
 IMPLEMENTATION CheckSignature
 
+IMPORT Seq ONLY seq <>? rt ft # :: <> %
+       Com ONLY com succeed okay? error ans
+       Void ONLY void
+       RepoAbsy COMPLETELY
+       RepoAn ONLY an
+       Loquacity ONLY progress
+       Nat ONLY 6 >= 2 nat
+       Fmt ONLY pretty fmt
+       ComCompose ONLY & ;
+       ComSeqMapEnv ONLY &&
+       RepoDiag ONLY ok? <+ error !! ok mode
+       PCEnv ONLY ordinary? name lawName pBody
+       RepoObjectAccess ONLY symbol
+       SeqSupplements ONLY sd
+       SeqFilter ONLY |
+       Stream ONLY store
+       String ONLY ! string ::
+       SeqMap ONLY *
+       ComAction ONLY done
+       IdTabReduce ONLY /
+       RepoInternData COMPLETELY
+       RepoName COMPLETELY
+       Id ONLY id
+       IdTab ONLY idtab
+       RepoAdmin ONLY repoFile
+       IdMap ONLY idmap
+       Set ONLY set
+       Pair ONLY &
+       Denotation ONLY = ++
+       PredicateX ONLY and
+       Char ONLY = char
+       PrintableChar ONLY colon L A W
+       DEBUG ONLY PRINT
+       StringConv ONLY `
+       Control ONLY ^
+
 DEF checkSignature(R, main, pN, r, sigexpr) ==
-  progress(6, \\ . pretty("extracting proof source ..."))(R) & (\\ R1.
-  extractProofSource(R1, main, r, pN) && (\\ R2, d1.
+  progress(6, \\ . "extracting proof source ...")(R) & (\\ R1.
+  extractProofSource(R1, main, r, pN) && (\\ R2, d1:diag .
   IF ~(d1 ok?) THEN clean & succeed(R2 & d1)
   ELSE
-    progress(6, \\ . pretty("extracting signature ..."))(R2) & (\\ R3.
+    progress(6, \\ . "extracting signature ...")(R2) & (\\ R3.
     extractSignature(R3, main, r, sigexpr) && (\\R4, d2.
-    IF ~(d2 ok?) THEN clean & succeed(R4 & d1 <+ d2)
+    IF ~(d2 ok?) THEN clean & succeed(R4 & (d1 <+ d2))
     ELSE
-      progress(6, \\ . pretty("checking signature ..."))(R4) & (\\ R5.
+      progress(6, \\ . "checking signature ...")(R4) & (\\ R5.
       internalCheck(R5, main, r) && (\\ R6, d3.
-      IF ~(d3 ok?) THEN clean & succeed(R6, d1 <+ d2 <+ d3)
+      IF ~(d3 ok?) THEN clean & succeed(R6 & (d1 <+ d2 <+ d3))
       ELSE
-        progress(6, \\ . pretty("checking authority ..."))(R6) & (\\ R7.
-        checkAuthor(R6, main, r) && (\\ R8, d4.
-        clean & succeed(R8, d1 <+ d2 <+ d3 <+ d4)
+        progress(6, \\ . "checking authority ...")(R6) & (\\ R7.
+        checkAuthor(R7, main, r) && (\\ R8, d4.
+        clean & succeed(R8 & (d1 <+ d2 <+ d3 <+ d4))
         ))
       FI
       ))
@@ -31,29 +67,73 @@ FUN extractProofSource: repo ** unitName ** ref ** proofName ->
 DEF extractProofSource(R, main, r, pN) ==
   IF pN ordinary? THEN
     LET pName == symbol(name(pN))(R)
-        allPrags == 
-        srcPrag == 
+        pPrag == (\\ p. "PROOF%" ++ text(sd(comps(p))) = pName) | srcPragmas(R, main)
+    IN
+    IF pPrag <>? THEN
+      succeed(R & ((error, r) !!
+                   ("no PROOFSOURCE pragma found for `%s' ?!?", pName)))
+    ELSE
+      store(".proof",
+            !((tl^6)(pName)) :: 
+              (rmLaw * ! * text * rt(rt(comps(ft(pPrag)))))); (\\ a?.
+      IF a? okay? THEN
+        succeed(R & ok)
+      ELSE
+        succeed(R & ((error, r) !!
+                     ("could not write `.proof' : %s ?!?", error(a?))))
+      FI
+      )
+    FI
   ELSE
-    succeed(R & (error, r) !! "no ordinary proof found ?!?")
+    succeed(R & ((error, r) !! "no ordinary proof found ?!?"))
   FI
       
 /* %extract signature of given expression and write it to
     file @file{.signature} */
 FUN extractSignature: repo ** unitName ** ref ** expr -> 
                        com[pair[repo, diag]]
+DEF extractSignature(R, main, r, ex) ==
+  IF ex apply? ANDIF arg(ex) den? THEN
+    store(".signature", !(text(arg(ex)))% ); (\\ a? .
+    IF a? okay? THEN succeed(R & ok)
+    ELSE 
+      succeed(R &  ((error, r) !! 
+                    ("could not write `.signature' : %s ?!?", error(a?))))
+    FI
+    )
+  ELSE
+    succeed(R & (error, r) !! "expression has wrong format ?!?")
+  FI
 
 /* %call gpg to verify @file{.proof} with signature in @file{.signature}.
     write output to file @file{.gpg} */
 FUN internalCheck: repo ** unitName ** ref -> com[pair[repo, diag]]
+DEF internalCheck(R, main, r) == succeed(R & ok)
 
 /* %check author in output from previous call to gpg */
 FUN checkAuthor: repo ** unitName ** ref -> com[pair[repo, diag]]
+DEF checkAuthor(R, main, r) == succeed(R & ok)
 
 /* %remove all intermediate files */
 FUN clean: com[void]
+DEF clean == done
 
 -- %$Auxiliary functions$
 FUN srcPragmas: repo ** unitName -> seq[pragma]
--- DEF srcPragmas(R, uN) ==
-  
---  (::, <>) / pragmas(unitInfo(baseName(uN))(R))
+DEF srcPragmas(R, uN) ==
+  (\\ p. IF #(comps(p)) >= 2 ANDIF 
+           (ft(comps(p)) and sd(comps(p)))(token?) THEN
+           text(ft(comps(p))) = "PROOFSOURCE"
+         ELSE false
+         FI) |
+  pragma? |
+  (::, <>) / pragmas(unitInfo(baseName(uN))(R))
+
+-- %remove `:LAW' from string
+FUN rmLaw: string -> string
+DEF rmLaw(c1 :: C AS (c2 :: c3 :: c4 :: S)) ==
+  IF c1 = colon and c2 = L and c3 = A and c4 = W THEN rmLaw(S)
+  ELSE c1 :: rmLaw(C)
+  FI
+DEF rmLaw(c1 :: else) == c1 :: rmLaw(else)
+DEF rmLaw(<>) == <>
