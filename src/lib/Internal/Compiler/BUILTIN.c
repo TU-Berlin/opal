@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.3 1999-03-09 11:51:30 kd Exp $
+ * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.4 1999-05-04 07:54:37 kd Exp $
  */
 
 /* FIXME: stub for strdup() */
@@ -497,6 +497,8 @@ int ocs_dl_debug;
 
 #define DLDDEBUG(stm) {if (ocs_dl_debug) {stm;}}
 
+
+
 /* call entries */
 
 static void * (*dl_resolve)(char *);
@@ -623,13 +625,33 @@ typedef struct sOBJMAP {
     struct sOBJMAP * next;
     char * structure;	/* name of structure */
     char * filename;	/* name of object structure is found in */
+    void * dl_handle;   /* handle for dynamic loading functions */
 } * OBJMAP;
 
+/* literature says prime numbers not too near a power of two are best */
+#define OBJMAP_HASHSIZE 199 
 
-#define OBJMAP_HASHSIZE 32
+/* structure names often have common prefixes; the hash function 
+   therefore looks at the whole string */
+#define OBJMAP_HASHCODE(stru) ocs_calc_object_hash(stru)
+
+static int ocs_calc_object_hash(char * stru) {
+  char *s = stru;
+  unsigned int h = 0, f = 1;
+
+  while(*s){
+    h = (h + (int) *s * f) % OBJMAP_HASHSIZE;
+    s++;
+    if (*s) s++;
+    f *= 3;
+  };
+  return h;
+}
+
+/* old has method - fast but prone to collisions
 #define OBJMAP_HASHCODE(struct) \
    (((struct[0]) + (struct[1])) % OBJMAP_HASHSIZE)
-       /* FIXME: better hash method */
+*/
 
 static OBJMAP object_map[OBJMAP_HASHSIZE];
 
@@ -694,6 +716,27 @@ static char *lookup_object_map(char *structure){
     return NULL;
 }
 
+static void *lookup_dl_map(char *structure){
+    OBJMAP p;
+    for (p = object_map[OBJMAP_HASHCODE(structure)]; p != NULL; p = p->next){
+	if (strcmp(p->structure, structure) == 0){
+	    return p->dl_handle;
+	}
+    }
+    return NULL;
+}
+
+static void *set_dl_map(char *structure, void * handle){
+    OBJMAP p;
+    for (p = object_map[OBJMAP_HASHCODE(structure)]; p != NULL; p = p->next){
+	if (strcmp(p->structure, structure) == 0){
+	    p->dl_handle = handle;
+	    return handle;
+	}
+    }
+    return NULL;
+}
+
 static void insert_object_map(char *structure, char *filename){
     int h = OBJMAP_HASHCODE(structure);
     OBJMAP p = (OBJMAP)malloc_aux(sizeof(struct sOBJMAP));
@@ -703,6 +746,7 @@ static void insert_object_map(char *structure, char *filename){
 		     filename));
     p->structure = structure;
     p->filename = filename;
+    p->dl_handle = NULL;
 
     p->next = object_map[h];
     object_map[h] = p;
@@ -872,50 +916,58 @@ char * link_closure(OBJ Clos){
 #include <dlfcn.h>
 /* FIXME: put include to unixconfig.h */
 
-static void * dlopen_handle[512] = {NULL};
+static void * dlopen_handle_main = NULL;
 static int handle_counter = 0;
 static char dlopen_error_buf[256] = {0};
 
 static void dl_lazy_open(){
-    if (dlopen_handle[0] == NULL){
-	dlopen_handle[0] = dlopen(NULL, RTLD_NOW|RTLD_GLOBAL);
+    if (dlopen_handle_main == NULL){
+	dlopen_handle_main = dlopen(NULL, RTLD_NOW|RTLD_GLOBAL);
     }
 }
 
 static void * dl_dlopen_resolve(char * sym){
     void *res = NULL;
     int i = 0;
+    void *h; 
+    char stru[128]; char fun[128];
+    void (*init)() = NULL;
+
     dl_lazy_open();
-    for (i = 0; i <= handle_counter && res == NULL; i++) {
-      res = dlsym(dlopen_handle[i], sym);
-      if (res == NULL) {
-	strncpy(dlopen_error_buf, dlerror(), sizeof(dlopen_error_buf)-1);
-	DLDDEBUG(fprintf(stderr, "not resolved by dlopen: %s\n", sym));
-      }
-    };
-    if (res == NULL) {
-      return NULL;
+    h = dlopen_handle_main;
+    res = dlsym(dlopen_handle_main, sym);
+    if (ocs_dl_parse_init_entry(sym, stru, sizeof(stru) - 1)) {
+      if (res == NULL) { /* not found in main */
+	h = lookup_dl_map(stru); /* lookup handle */
+	if (h == NULL) {
+	  sprintf(dlopen_error_buf, "no handle for %s ?!", stru);
+	  return NULL;
+	};
+	res = dlsym(h, sym); /* try again */
+      };
+      init = res; /* init entry already found */
     } else {
-	/* Call init entry -- it is possible that the initialization entry of
-	 * the structure defining this symbol has not yet been called,
-	 * since it belongs to a shared library. */
-        char stru[128]; char fun[128];
-	void (*init)() = NULL;
-	DLDDEBUG(fprintf(stderr, "resolved by dlopen: %s\n", sym));
-	if (ocs_dl_parse_init_entry((char*)sym, stru, sizeof(stru)-1)){
-	    init = res;
-	} else
-	if (ocs_dl_parse_symbol((char*)sym, stru, 
-	                        sizeof(stru)-1, fun, sizeof(fun)-1)){
-	    ocs_dl_make_init_entry(stru, fun, sizeof(fun)-1);
-	    init = dlsym(dlopen_handle, fun);
-	}
-	if (init != NULL){
-	    DLDDEBUG(fprintf(stderr, "  calling init entry\n"));
-	    (*init)();
-	}
-	return res;
-    }
+      if (ocs_dl_parse_symbol(sym, stru, sizeof(stru) - 1,
+			      fun, sizeof(fun) - 1)) {
+	if (res == NULL) { /* not found in main */
+	  h = lookup_dl_map(stru); /* find dlopen handel */
+	  if (h == NULL) {
+	    sprintf(dlopen_error_buf, "no handle for %s ?!", stru);
+	    return NULL;
+	  };
+	  res = dlsym(h, sym); /* try again */
+	};
+	ocs_dl_make_init_entry(stru, fun, sizeof(fun) - 1);
+	init = dlsym(h, fun); /* lookup init entry */
+      };
+    };
+    /* Call init entry -- it is possible that the initialization entry of
+     * the structure defining this symbol has not yet been called,
+     * since it belongs to a shared library. */
+    if (init != NULL) {
+      (*init)();
+    };
+    return res;
 }
 
 static int dl_dlopen_link(char * structure){
@@ -1013,10 +1065,15 @@ static int dl_dlopen_link(char * structure){
 	}
 	ocs_dl_make_init_entry(structure, initsym, sizeof(initsym)-1);
 
-	/* next three lines inserted */
-	handle_counter++;
-	if (handle_counter >= 512) handle_counter = 1; /* restart to avoid overflow */
-	dlopen_handle[handle_counter] = handle;
+	handle = set_dl_map(structure, handle);
+	if (handle == NULL) {
+	  sprintf(dlopen_error_buf, "cannot store dlopen handle of `%s' ?!",
+		  structure);
+	  if (transient) unlink(charbuf);
+	  return 0;
+	}
+
+	DLDDEBUG(fprintf(stderr, "defined handle #%d\n", handle_counter));
 	init = dlsym(handle, initsym);
 	if ((error = dlerror()) != NULL){
 	    sprintf(dlopen_error_buf,
