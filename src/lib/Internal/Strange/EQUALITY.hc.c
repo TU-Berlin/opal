@@ -4,7 +4,7 @@
 /* Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
    See OCSHOME/etc/LICENSE or 
    http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-   $Date: 1998-06-16 16:00:14 $ ($Revision: 1.1.1.1 $)
+   $Date: 1998-11-19 10:49:06 $ ($Revision: 1.2 $)
 */
 #include <unixconfig.h>
 
@@ -19,13 +19,18 @@ static int tmp;
 #define AT(d)
 #endif
 
-static int equal(OBJ x1,OBJ x2){
+static int equal(OBJ x1,OBJ x2, int abort){
     AT(@);
     if (x1 == x2) RETURN(a, 1)
+    else if ((x1 == NIL) || (x2 == NIL)) RETURN(a-0, 0)
     else {
         AT(@1);
 	if (tst_sflag(x1,closure_sflag) || tst_sflag(x2,closure_sflag)){
-	   HLT("equal'EQUAL: function values not comparable");
+	  if (abort) {
+	    HLT("equal'NEQUALITY: function values not comparable"); 
+	  } else {
+	    RETURN(b, 0);
+	  };
 	};
 	AT(@2);
         if (is_structured(x1) && is_structured(x2)){
@@ -57,11 +62,13 @@ static int equal(OBJ x1,OBJ x2){
 		    /* we do a recursive compare */
 		    AT(H);
 		    while (n > 0){
+		      if((*d1 != NIL)||(*d2 != NIL)){ /* at least one != NIL */
 		        if(*d1 == NIL) RETURN(d-1,0);
-			if(*d2 == NIL) RETURN(d-2,0)
-		  	if (!equal(*d1,*d2)) RETURN(d,0);
-			AT(I);
-			d1++; d2++; n--;
+			if(*d2 == NIL) RETURN(d-2,0);
+		  	if (!equal(*d1,*d2, abort)) RETURN(d,0);
+		      };
+		      AT(I);
+		      d1++; d2++; n--;
 		    }
 		    AT(J);
 		    RETURN(e, 1);
@@ -71,9 +78,17 @@ static int equal(OBJ x1,OBJ x2){
     }
 }
 
+
 extern OBJ _AEQUALITY_Aequal(OBJ x1, OBJ x2){
     int r;
-    r = equal(x1,x2);
+    r = equal(x1,x2, 1);
+    free_some(x1,1); free_some(x2,1);
+    return pack_clean_bool(r);
+}
+		
+extern OBJ _AEQUALITY_AwEqual(OBJ x1, OBJ x2){
+    int r;
+    r = equal(x1,x2, 0);
     free_some(x1,1); free_some(x2,1);
     return pack_clean_bool(r);
 }

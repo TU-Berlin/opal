@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-x-diag-mode.el,v 1.3 1998-10-30 14:25:09 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-x-diag-mode.el,v 1.4 1998-11-19 10:45:54 kd Exp $
 
 ;;; This file is written for XEmacs and may not work with other Emacsen.
 ;;; Use the original opal-diag-mode.el in this case.
@@ -389,7 +389,7 @@ skipping sub errors."
   (opal-diag-show-error)
 )
 
-(defun opal-diag-show-error ()
+(defun opal-diag-show-error (&optional nomessage)
   "Make current error and corresponding source visible."
 
   (if (not opal-diag-curr-error)
@@ -415,7 +415,7 @@ skipping sub errors."
       (set-window-point err-window (extent-start-position err-ext))
       (set-window-start err-window (extent-start-position err-ext))
       ;; print message for certain error
-      (if (buffer-file-name opal-diag-source)
+      (if (and (not nomessage) (buffer-file-name opal-diag-source))
 	  (opal-diag-show-std-info err-ext)
 	)
       (switch-to-buffer (extent-object src-ext))
@@ -781,6 +781,8 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 )
 
 (defun opal-diag-parse-ext-keymap ()
+  (define-key ext-keymap "\M-n" 'opal-diag-next-main-error)
+  (define-key ext-keymap "\M-p" 'opal-diag-prev-main-error)
   (define-key ext-keymap [(button1)]
     `(lambda () (interactive) (opal-diag-show-this-error ,i)))
   (define-key ext-keymap [(button2)]
@@ -875,7 +877,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.3 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.4 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (err-ext)
@@ -889,9 +891,12 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   (erase-buffer)
   (insert acterror)
   (goto-char (point-min))
-  (if (re-search-forward "^[^:]*:" nil t)
+  (if (re-search-forward "^.*\\(ERROR\\|WARNING\\|HINT\\):" nil t)
       (replace-match "")
-  )
+    )
+  (if (re-search-forward (concat "^" opal-diag-parse-suberror-regexp) nil t)
+      (replace-match "")
+    )
   (let ((el opal-diag-extended-doku-alist)
 	(searching t)
        )
@@ -1052,7 +1057,7 @@ match 1 to this word"
   )
     ;(pop-to-buffer (opal-diag-select-source))
 ;  (opal-diag-next-main-error)
-  (opal-diag-show-error)
+  (opal-diag-show-error t)
 )
 
 (defun opal-diag-ask-compare (&optional sort)

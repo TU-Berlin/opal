@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.6 1998-10-30 14:25:04 kd Exp $
+;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-diag-mode.el,v 1.7 1998-11-19 10:45:46 kd Exp $
 
 
 (provide 'opal-diag-mode)
@@ -18,8 +18,8 @@
 
 (defun opal-diag-make-diag (type src err) (list type src err))
 (defun opal-diag-type-of (diag)  (car diag))
-(defun opal-diag-src-of  (diag)  (car (cdr diag)))
-(defun opal-diag-err-of  (diag)  (car (cdr (cdr diag))))
+(defun opal-diag-src-of  (diag)  (cadr diag))
+(defun opal-diag-err-of  (diag)  (car (cddr diag)))
 
 (defvar opal-diag-curr-error nil
   "Current position in opal-diag-errors.")
@@ -229,9 +229,9 @@
   (define-key opal-mode-map "\C-c\C-d\C-h" 'opal-toggle-extended-flag)
   (define-key opal-mode-map "\C-c\C-d\C-m" 'opal-diag-insert-missing-item)
 ;  (define-key opal-mode-map "\C-c\C-d\C-0" 'opal-diag-clear-diags)
-  (define-key opal-mode-map [S-mouse-1] 'opal-diag-mouse-select-error)
-  (define-key opal-mode-map [S-mouse-2] 'opal-diag-mouse-hide-diags)
-  (define-key opal-mode-map [S-mouse-3] 'opal-diag-mouse-help)
+  (define-key opal-mode-map [mouse-1] 'opal-diag-mouse-select-error)
+  (define-key opal-mode-map [mouse-2] 'opal-diag-mouse-hide-diags)
+  (define-key opal-mode-map [mouse-3] 'opal-diag-mouse-help)
 
   (opal-diag-fsfemacs-menu)
   )
@@ -254,8 +254,7 @@ over an overlay which has err-no set, select that error"
 	      (opal-diag-not-found)
 	      )
 	    (setq ovl nil)
-	    ))))
-  )
+	    )))))
 
 (defun opal-diag-mouse-hide-diags (event)
   "set point to position where event occurred. if event occurred 
@@ -868,9 +867,9 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
   )
 
 (defun opal-diag-parse-ext-for-unknown ()
- ; (define-key ext-keymap [(button1)] 'opal-diag-not-found)
- ; (define-key ext-keymap [(button2)] 'opal-diag-not-found)
- ; (define-key ext-keymap [(button3)] 'opal-diag-not-found)
+  (define-key ext-keymap [(button1)] 'opal-diag-not-found)
+  (define-key ext-keymap [(button2)] 'opal-diag-not-found)
+  (define-key ext-keymap [(button3)] 'opal-diag-not-found)
   (setq new-err-ext
 	(make-overlay err-start err-end
 		     (get-buffer opal-diag-buffer)))
@@ -880,13 +879,13 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 )
 
 (defun opal-diag-parse-ext-keymap ()
-;  (define-key ext-keymap [(button1)]
-;    `(lambda () (interactive) (opal-diag-show-this-error ,i)))
-;  (define-key ext-keymap [(button2)]
-;    'opal-diag-hide-diag-buffer)
-;  (define-key ext-keymap [(button3)]
-;    `(lambda () (interactive) (opal-diag-show-this-error ,i)
-;       (opal-diag-toggle-extended-flag)))
+  (define-key ext-keymap [(button1)]
+    `(lambda () (interactive) (opal-diag-show-this-error ,i)))
+  (define-key ext-keymap [(button2)]
+    'opal-diag-hide-diag-buffer)
+  (define-key ext-keymap [(button3)]
+    `(lambda () (interactive) (opal-diag-show-this-error ,i)
+       (opal-diag-toggle-extended-flag)))
   )
 
 (defun opal-diag-parse-src-ext ()
@@ -980,7 +979,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.6 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.7 $*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (err-ext)

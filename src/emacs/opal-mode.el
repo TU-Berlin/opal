@@ -716,6 +716,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 	       font-lock-mode]
 	      ["Opal Indentation" opal-misc-indent :active t 
 	       :style toggle :selected opal-indent-flag]
+	      ["Install toolbar" opal-toolbar-install t]
 	      )
 	)
 )

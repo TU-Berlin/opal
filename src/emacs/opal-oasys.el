@@ -37,10 +37,14 @@
 (defun opal-oasys-eval (expr)
   "set focus to current unit and ask for expression to be evaluated"
   (interactive "sExpression:")
-  (oasys-add-path (file-name-directory (buffer-file-name)))
-  (oasys-focus (file-name-nondirectory (buffer-file-name)))
-  (oasys-eval expr)
-)
+  (let (b)
+    (setq b (buffer-file-name))
+    (oasys-add-path (file-name-directory b))
+    (oasys-cmd (concat "a " (file-name-nondirectory b)))
+    (oasys-focus (file-name-nondirectory b))
+    (oasys-eval expr)
+    )
+  )
 
 (defun opal-oasys-check ()
   "set focus to current unit and check"

@@ -16,6 +16,7 @@
   (define-key opal-trace-mode-map "\C-f" 'opal-trace-next-subgoal)
   (define-key opal-trace-mode-map "\C-b" 'opal-trace-previous-subgoal)
   (define-key opal-trace-mode-map "\C-c\C-l" 'opal-trace-reload)
+  (define-key opal-trace-mode-map "\M-u" 'opal-trace-reload)
   (define-key opal-trace-mode-map "\C-c\C-r" 'opal-trace-find-source)
   (define-key opal-trace-mode-map "\C-c\C-f" 'opal-trace-fontify-proofstate)
   (if running-xemacs
@@ -83,10 +84,16 @@
    '("\\<Subgoal\\>\\|\\<hypotheses\\>" (0 'modeline-buffer-id t t))
    '("^Trace of .*" (0 'modeline-mousable t t))
 ;   '("^Trace of \\(.*\\)" (1 'font-lock-comment-face t t))
-   '("\\<[a-zA-Z]+[!?]\\>" (0 'font-lock-string-face t t))
+   '("[a-zA-Z]+[¡¿]" (0 'italic t t))
    '("§[0-9]+" (0 'font-lock-reference-face t t))
+   '("§[0-9]+ [^¤§]*¤" (0 'highlight t t))
+   '("§[0-9]+ [^ø§]*ø" (0 'font-lock-string-face t t))
+   '("subgoal #.*$" (0 'italic t t)) 
+   '("finished subgoal, 0.*$" (0 'italic t t))
+   '("finished subgoal, [1-9].*$" (0 'font-lock-comment-face t t))   
    )
-)
+  )
+
 
 (put 'opal-trace-mode 'font-lock-defaults 
        '(opal-trace-font-lock-keywords nil nil nil 'beginning-of-line)
@@ -96,13 +103,13 @@
   "find next proofstate"
   (interactive)
 
-  (end-of-line)
+  (if (looking-at "^ *\\(Proofstate\\|final proofstate\\)")
+      (forward-line 1)
+    )
+  (search-forward-regexp "^ *end of proofstate")
   (search-forward-regexp "^ *\\(Proofstate\\|final proofstate\\)")
   (beginning-of-line)
-  (forward-line -1)
-  (set-window-start (selected-window) (point))
-  (forward-line 1)
-;  (opal-trace-bold-line)
+  (opal-trace-back-nonempty)
 )
 
 (defun opal-trace-previous-proofstate ()
@@ -111,19 +118,36 @@
 
   (search-backward-regexp "^ *\\(Proofstate\\|final proofstate\\)")
   (beginning-of-line)
-  (forward-line -1)
-  (set-window-start (selected-window) (point))
-  (forward-line 1)
+  (opal-trace-back-nonempty)
 )
+
+(defun opal-trace-back-nonempty ()
+  "skip back nonempty lines"
+
+  (beginning-of-line)
+  (set-window-start (selected-window) (point))
+  (let (a)
+    (save-excursion
+      (while (not (looking-at "^ *$"))
+	(forward-line -1)
+	)
+      (forward-line 1)
+      (setq a (point))
+      )
+   (set-window-start (selected-window) a)
+   )
+  )
 
 (defun opal-trace-next-trace ()
   "find next trace"
   (interactive)
 
+  (if (looking-at "^ *Trace")
+      (forward-line 1)
+    )
   (search-forward-regexp "^ *Trace")
   (beginning-of-line)
   (set-window-start (selected-window) (point))
-  (forward-line 1)
 )
 
 (defun opal-trace-previous-trace ()
@@ -133,7 +157,6 @@
   (search-backward-regexp "^ *Trace")
   (beginning-of-line)
   (set-window-start (selected-window) (point))
-  (forward-line 1)
 )
 
 (defun opal-trace-bold-line ()
@@ -155,20 +178,21 @@
   "fontify current proofstate"
 
   (interactive)
-  (save-excursion)
-  (let (a o)
-    (if (search-backward-regexp "^\\(Proofstate\\|final proofstate\\)" nil t)
-	(progn 
-	  (beginning-of-line)
-	  (setq a (point))
-	  (if (search-forward-regexp "^end of proofstate" nil t)
-	      (progn
-		(end-of-line)
-		(setq o (point))
-		(font-lock-fontify-region a o)
-		)
+  (save-excursion
+    (let (a o)
+      (if (search-backward-regexp "^\\(Proofstate\\|final proofstate\\)" nil t)
+	  (progn 
+	    (beginning-of-line)
+	    (setq a (point))
+	    (if (search-forward-regexp "^end of proofstate" nil t)
+		(progn
+		  (end-of-line)
+		  (setq o (point))
+		  (font-lock-fontify-region a o)
+		  )
+	      )
 	    )
-	  )
+	)
       )
     )
   )
