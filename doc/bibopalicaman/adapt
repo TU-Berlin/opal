@@ -27,20 +27,6 @@ while(<CONFIG>) {
 }
 close CONFIG;
 
-$conf="$newManualRoot/DOSFOP/BasicTypes.subsystems.config";
-open (CONFIG, $conf) or die "$0: could not open $conf";
-while(<CONFIG>) {
-  if (/name =/) {
-    $_ = <CONFIG>;
-    if (m!.*directory *= *(.*/src/lib)!) {
-      $oldLibRoot = $1;
-      last;
-    } else {
-      die "$0: could not determine \$oldLibRoot from $config";
-    };
-  };
-}
-close CONFIG;
 
 # print "oldManualRoot = $oldManualRoot\n";
 # print "newManualRoot = $newManualRoot\n";
@@ -48,10 +34,10 @@ close CONFIG;
 # print "newLibRoot = $newLibRoot\n";
 
 ## don't do anything superfluous
-if ($oldManualRoot eq $newManualRoot and $oldLibRoot eq $newLibRoot) {exit 0;};
+#if ($oldManualRoot eq $newManualRoot and $oldLibRoot eq $newLibRoot) {exit 0;};
 
-@configFilesMan = ("$newManualRoot/DOSFOP/config", "$newManualRoot/DOSFOP/Toplevel.config");
-@configFilesLib = <$newManualRoot/DOSFOP/*config>;
+@configFilesMan = ("$newManualRoot/DOSFOP/Toplevel.config");
+@configFilesLib = <$newManualRoot/DOSFOP/*subsystems.config>;
 
 foreach $f (@configFilesMan) {
   if ($f eq "$newManualRoot/DOSFOP/config" and (! -e $f)) {next;};
@@ -68,14 +54,29 @@ foreach $f (@configFilesMan) {
 }
 
 foreach $f (@configFilesLib) {
-  open (INFILE, $f) or die "$0: could not open $f";
-  open (OUTFILE, ">$f.bak") or die "$0: could not open $f.bak";
-  while (<INFILE>) {
-    s /$oldLibRoot/$newLibRoot/g;
-    print OUTFILE
+  open (CONFIG, $f) or die "$0: could not open $f";
+  while(<CONFIG>) {
+    if (/name =/) {
+      $_ = <CONFIG>;
+      if (m!.*directory *= *(.*/src/lib)!) {
+	$oldLibRoot = $1;
+	last;
+      } else {
+	die "$0: could not determine \$oldLibRoot from $config";
+      };
+    };
   }
-  close INFILE;
-  close OUTFILE;
-  unlink $f;
-  rename "$f.bak", "$f";
+  close CONFIG;
+  if (!($oldLibRoot eq $newLibRoot)) {
+    open (INFILE, $f) or die "$0: could not open $f";
+    open (OUTFILE, ">$f.bak") or die "$0: could not open $f.bak";
+    while (<INFILE>) {
+      s /$oldLibRoot/$newLibRoot/g;
+      print OUTFILE
+    }
+    close INFILE;
+    close OUTFILE;
+    unlink $f;
+    rename "$f.bak", "$f";
+  };
 }
