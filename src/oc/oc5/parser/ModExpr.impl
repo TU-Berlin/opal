@@ -4,7 +4,7 @@ IMPLEMENTATION ModExpr
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-17 15:51:09 $ ($Revision: 1.2 $)
 
 -- %- author: cg
 -- %- purpose: parsing Opal1 and property language
@@ -15,13 +15,12 @@ IMPORT -- pars
        PTypes           COMPLETELY
        Error		COMPLETELY
        PErr             COMPLETELY
-       PCommon          COMPLETELY
        ModBase          COMPLETELY
        ZOpts            COMPLETELY
 IMPORT -- absy
        Absy             COMPLETELY
        PartName         COMPLETELY
-       Impl   COMPLETELY
+       Impl             COMPLETELY
        PreDef           COMPLETELY
 IMPORT -- admin
        Pos              ONLY pos unknown +
@@ -35,10 +34,9 @@ IMPORT -- lib
        SeqReduce        COMPLETELY
        SeqMap           COMPLETELY
        SeqOfSeq         COMPLETELY
-       Pair[expr,set'Bitset] COMPLETELY
-       Bitset            COMPLETELY
-       DEBUG             COMPLETELY
-       Option            COMPLETELY
+       Pair[expr,nat]   COMPLETELY
+       DEBUG            COMPLETELY
+       Option           COMPLETELY
 
 -- %- ---------------------------------------------------------------------
 -- %$Modifiers for Parsing Definition (= Equations$ )
@@ -66,35 +64,39 @@ DEF modEq == mod(\\A1,A2.
     DEF mEq(noAbsy,_)               == EqSeq(<>)
     DEF mEq(_,_)                    == EqSeq(<>)
 
-FUN flattenEqS : modifier
-DEF flattenEqS == mkAbsyMod(\\A.  EqSeq(flat(eqs * aSeq(A))))
+FUN flattenEqS : absy -> absy
+DEF flattenEqS(A) == EqSeq(flat(eqs * aSeq(A)))
 
 -- %- ---------------- Expr -----------------------------------------------
 
-FUN mkMixExpr: modifier
-DEF mkMixExpr == mkAbsyMod(\\A. Expr(mix(prePre * (e * aSeq(A)), unknown)))
+FUN mkMixExpr: absy -> absy
+DEF mkMixExpr(A) == Expr(mix(prePre * (e * aSeq(A)), unknown))
 
+FUN arg val fun: nat
+DEF arg == 3 
+DEF fun == 2
+DEF val == 6
 
-        FUN prePre : expr -> pair[expr,set'Bitset]
+        FUN prePre : expr -> pair[expr,nat]
         DEF prePre (D AS den(_,_)) == 
-                    D & (fun + (arg + (postOprnd + inOprnd)))
-        DEF prePre (V AS val(_,_))    == V & (op + (fun + (postOprnd + inOprnd)))
-        DEF prePre (T AS tuple(<>,_)) ==  T & (arg + postOprnd)
+                    D & arg
+        DEF prePre (V AS val(_,_))    == V & val
+        DEF prePre (T AS tuple(<>,_)) ==  T & arg
         DEF prePre (D AS tuple(den(_,_) :: <>,_)) == 
-                    D & (arg + (postOprnd + inOprnd))
-        DEF prePre (tuple((D AS den(_,_)) :: R ,P1)) == 
-                    tuple(D :: R ,P1) & (arg + (postOprnd + inOprnd))
+                    D & arg
+        DEF prePre (T AS tuple(den(_,_) :: _ ,_)) == 
+                    T & arg
         DEF prePre (T AS tuple(_ :: <>, _ )) ==  
-                    T & (fun + (arg + (postOprnd + inOprnd)))
+                    T & fun
         DEF prePre (A AS apply(_,_,_)) ==  
-                    A & (fun + (arg + (postOprnd + inOprnd)))
+                    A & fun
         DEF prePre (typed(E,F,P)) ==  typed(1st(Pre),F,P) & 2nd(Pre)
                                       WHERE Pre == prePre(E)
         DEF prePre (as(N,E,P))    ==  as(N,1st(Pre),P) & 2nd(Pre)
                                       WHERE Pre == prePre(E)
         DEF prePre (L AS lambda(_,_,_)) == 
-                    L & (fun + (arg + (postOprnd + inOprnd)))
-        DEF prePre (E) == E & (arg + (postOprnd + inOprnd))
+                    L & fun
+        DEF prePre (E) == E & arg
 
 -- %- ------------------------------------------------------------------------
 
@@ -139,12 +141,12 @@ DEF modGuard == mod(\\A1,A2. mGuard(A1,A2))
     DEF mGuard (Expr(E1), Expr(E2)) == Guards(guard(E1,E2,pos(E1))%)
     DEF mGuard (_, _) == Guards(<>)
 
-FUN flattenGuards: modifier
-DEF flattenGuards == mkAbsyMod(\\A.  Guards(flat(g * aSeq(A))))
+FUN flattenGuards: absy -> absy
+DEF flattenGuards(A) == Guards(flat(g * aSeq(A)))
 
-FUN nestCases: modifier
-DEF nestCases == mkAbsyMod(\\A. Expr(
-	/(\\G,E. cases(G,E,unknown), none(unknown), (g * aSeq(A)))))
+FUN nestCases:  absy -> absy
+DEF nestCases(A) == Expr(
+	/(\\G,E. cases(G,E,unknown), none(unknown), (g * aSeq(A))))
 
 DEF modElse == mod(\\A1,A2. mElse(A1,A2))
     FUN mElse : absy ** absy -> absy

@@ -6,7 +6,7 @@ IMPLEMENTATION PCommon
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-17 15:51:09 $ ($Revision: 1.2 $)
 
 -- %- author: cg
 -- %- purpose: parsing Opal1 and property language
@@ -16,17 +16,13 @@ IMPORT  -- pars
         Token           COMPLETELY
         PErr            COMPLETELY
 	Pos		ONLY pos
-        ZOpts           COMPLETELY
 IMPORT  -- reps
         Rep             COMPLETELY
 IMPORT  -- lib
         Denotation      COMPLETELY
         Nat             COMPLETELY
-        Bitset          COMPLETELY
         Seq[token]      COMPLETELY
         Seq[seq[token]] COMPLETELY
-        Seq[terminal]   COMPLETELY
-        Set[terminal,<] COMPLETELY
         SeqMap          COMPLETELY
         SeqReduce       COMPLETELY
         SeqFilter       COMPLETELY
@@ -48,7 +44,7 @@ DEF prepareTS(TS) ==
 -- %@zoindex traceSplit
 FUN splitHeader : seq[token] ** seq[token] -> seq[token] ** seq[token]
 DEF splitHeader(SoFarP,TS) ==
-    LET (H1,R1) == split(\\ T . ~(terminal(T) in ftSet),TS)
+    LET (H1,R1) == split(\\ T . ~(terminal(T) ftSet),TS)
     IN IF colon = last(H1) THEN -- :SORT -> kind -> continue
              splitHeader(SoFar ++ (H1 +% ft(R1)),rt(R1))
        ELSE (SoFar ++ (H1 +% mkEof), R1)
@@ -56,7 +52,7 @@ DEF splitHeader(SoFarP,TS) ==
 
 /* %New state of split function wrp. to token */
 -- %@zoindex traceSplit
-FUN whichBS? : token -> set'Bitset
+FUN whichBS? : token -> nat
 DEF whichBS?(T0) == 
     IF def = T ORIF law = T ORIF
        proof = T THEN def
@@ -81,7 +77,7 @@ The current list of tokens (never empty)
 @item Toks
 The tokens not yet looked at.
 @end table */
-FUN prepTS : set'Bitset **seq[seq[token]]**seq[token]**seq[token] -> seq[seq[token]]
+FUN prepTS : nat **seq[seq[token]]**seq[token]**seq[token] -> seq[seq[token]]
 
 -- %No more tokens
 DEF prepTS(_ ,SoFarTS,SoFar,<>) == revert(SoFar) :: SoFarTS
@@ -99,12 +95,12 @@ IN
 @item
 Pragma: split at begin or end of pragma. At end of pragma, include everything
 upto next big keyword. */
-    IF prag?(BS) THEN 
-       IF (Term in lastPrag) 
+    IF prag = BS THEN 
+       IF prEnd = Term ORIF eof = Term 
        THEN prepTS(whichBS?(ft(NewTS)),
                    rev((mkEof:: revert(Ign))++(Tok::SoFar),NPos)::SoFarTS,
                    ft(NewTS)%,rt(NewTS))
-            WHERE (IgnP,NewTS)   == split(\\T. ~(terminal(T) in ftSet),TS)
+            WHERE (IgnP,NewTS)   == split(\\T. ~(terminal(T) ftSet),TS)
                   Ign == PRINT(traceSplit?,\\ . "IGN " ++ printTS(NewTS),IgnP)
                   NPos == IF Ign <>? THEN EPos ELSE pos(ft(Ign)) FI
        IF prBeg = Term
@@ -115,9 +111,9 @@ upto next big keyword. */
 /* %@item
 Big Keyword: split, but beware of kind @samp{:SORT}. In case of pchecker
 look also for @samp{:LAW} and @samp{:PROOF} */
-    IF (Term in ftSet) THEN 
-       IF (((law = Term) or (proof = Term)) or
-           (sort = Term)) and ~(SoFar <>?) THEN 
+    IF (Term ftSet) THEN 
+       IF ~(SoFar <>?) ANDIF law = Term ORIF proof = Term ORIF
+          sort = Term THEN 
           IF colon = ft(SoFar)  THEN 
              prepTS(BS,SoFarTS,Tok :: SoFar,TS)
           ELSE prepTS(whichBS?(Tok),rev(mkEof::SoFar,EPos)::SoFarTS,Tok%,TS)
@@ -126,7 +122,7 @@ look also for @samp{:LAW} and @samp{:PROOF} */
        FI 
 /* %@item
 Within import: wait for @code{COMPLETELY} or @code{ONLY} or @code{ALLBUT}. */
-    ELSE IF imp? (BS) THEN 
+    ELSE IF imp = BS THEN 
             IF completely = Term THEN prepTS(comp,SoFarTS,Tok::SoFar,TS)
             IF (only = Term) or (allbut = Term) THEN 
 			prepTS(only,SoFarTS,Tok::SoFar,TS)
@@ -135,8 +131,8 @@ Within import: wait for @code{COMPLETELY} or @code{ONLY} or @code{ALLBUT}. */
 /* %@item
 Within Only-import: check if we ran into another only or completely import.
 Compute position of next import and terminate current. */
-         IF only?(BS) THEN 
-            IF (only=Term) or (allbut=Term) or (completely=Term) THEN 
+         IF only = BS THEN 
+            IF (only=Term) ORIF (allbut=Term) ORIF (completely=Term) THEN 
                LET (Name,OnlyTS)== splitName(SoFar)
                    ImpTok       == impTok(pos(ft(OnlyTS)))
                    ImpTS        == rev(mkEof::OnlyTS,pos(ImpTok)) ::SoFarTS
@@ -149,19 +145,19 @@ Compute position of next import and terminate current. */
             FI
 /* %@item
 Completely-import: terminate current import and wait for next one. */
-         IF comp?(BS) THEN 
+         IF comp = BS THEN 
             prepTS(imp,ImpTS,Tok:: %(impTok(pos(ft(TS)))),TS)
                  WHERE ImpTS == rev(mkEof::SoFar,EPos) :: SoFarTS
 /* %@item
 Within definition or law: wait for next @code{LET} or @code{WHERE}. */
-         IF def?(BS)  THEN
-            IF (let=Term) or (where=Term) THEN 
+         IF def = BS  THEN
+            IF (let=Term) ORIF (where=Term) THEN 
                prepTS(block,SoFarTS,Tok::SoFar,TS)
             ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
             FI
 /* %@item
 Within let-block or where-block: wait for next @code{==}. */
-         IF block?(BS) THEN
+         IF block = BS THEN
             IF equation=Term THEN 
                prepTS(eq,SoFarTS,Tok::SoFar,TS)
             ELSE prepTS(BS,SoFarTS,Tok::SoFar,TS)
@@ -170,8 +166,8 @@ Within let-block or where-block: wait for next @code{==}. */
 Within Rhs of equation: If @code{LET} or @code{WHERE} is found,
 terminate current equation. If @code{==} is found, we ran into the following
 equation. Split off already scanned Lhs and continue. */
-         IF eq?(BS) THEN 
-            IF (let=Term) or (where=Term) THEN 
+         IF eq = BS THEN 
+            IF (let=Term) ORIF (where=Term) THEN 
                prepTS(block,SoFarTS,Tok::SoFar,TS)
             IF equation=Term THEN
                LET (Lhs,Rhs) == splitLhs(SoFar)
@@ -196,7 +192,7 @@ Else: continue. */
 FUN splitLhs : seq[token] -> seq[token] ** seq[token]
 DEF splitLhs (TS AS T :: _ ) ==
     IF closeBr=T 
-    THEN LET (Lhs,Rhs) == split(%(openBr!),TS)
+    THEN LET (Lhs,Rhs) == split(\\x. ~(openBr = x),TS)
          IN IF Rhs <>? THEN (Lhs,<>) ELSE (Lhs +% ft(Rhs),rt(Rhs)) FI
     ELSE splitName(TS)
     FI
@@ -233,30 +229,21 @@ DEF splitParams(SoFar,T :: R,N) ==
                                    FI
 -- nun wird verhindert, dass der Parameter zu weit gelesen wird ...
     IF only=T ORIF allbut=T ORIF completely=T 
-        ORIF terminal(T) in excl(sort!,ftBody) THEN  (revert(T::SoFar),R)
+        ORIF (terminal(T) ftBody) and ~(sort = T) THEN  (revert(T::SoFar),R)
     ELSE splitParams(T::SoFar,R,N)
     FI
 
 -- %- ------------------------------------------------------------------------
--- %$Bitsets$ 
+-- %$Keys$ 
 -- %- ------------------------------------------------------------------------
 
-FUN body def imp only comp block eq prag: set'Bitset
 FUN body def imp only comp block eq prag: nat
 
 DEF body == 1   DEF def  == 2  DEF imp == 3     DEF prag == 4
 DEF only == 5   DEF comp == 6  DEF block  == 7  DEF eq   == 8
 
-DEF body == body%  DEF def  == def%  DEF imp == imp%        DEF prag == prag%
-DEF only == only%  DEF comp == comp% DEF block  == block%   DEF eq   == eq%
-
-FUN body? def? imp? only? comp? block? eq? prag? : set'Bitset -> bool
-DEF body?(BS)   == body in BS      DEF def?(BS)   == def in BS
-DEF imp?(BS)    == imp in BS       DEF prag?(BS)  == prag in BS
-DEF only?(BS)   == only in BS      DEF comp?(BS)  == comp in BS
-DEF block?(BS)  == block in BS     DEF eq?(BS)    == eq in BS
-
 -- %- ------------------------------------------------------------------------
+
 FUN newPos rev : seq[token] ** pos -> seq[token]
 
 DEF rev(TS,Pos) == revert(newPos(TS,Pos))
@@ -275,26 +262,16 @@ DEF traceSplit?  == FIELD?[bool]("-ztraceSplit")
 -- %$First Sets for splitting the body$
 -- %- ------------------------------------------------------------------------
 
-FUN ftSignBody ftBody ftExpr lastPrag: set[terminal,<]
+FUN ftSet : terminal -> bool
+DEF ftSet(T)     == IF eof = T THEN true ELSE ftBody(T) FI
 
--- %wird z.Z. nur in Fehlermeldung verwendet
-DEF ftSignBody == %(sort!, fun!, import!, prBeg!, type!)
-DEF ftBody     == ftSignBody + %(def!, data!, law!, proof!, assert!, assume!)
-DEF ftExpr   == %(andelse!, orelse!, let!, in!, where!, lambda!) +
-                %(if!, then!, otherwise!, else!, fi!)
-
-FUN ftSet : set[terminal,<]
-DEF ftSet     == incl(eof,ftBody)
-
-DEF lastPrag == %(eof,prEnd!)
+DEF ftBody(T) == IF T < (prBeg!) THEN false
+                 IF (assume!) < T THEN false
+		 ELSE true FI
 
 -- %- ------------------------------------------------------------------------
 -- %$additional functions for shortcuts$
 -- %- ------------------------------------------------------------------------
-
-FUN split : set[terminal,<] ** seq[token] -> seq[token] ** seq[token]
-DEF split(TermSet,TS) ==
-    split(\\Tok. ~(terminal(Tok) in TermSet),TS)
 
 FUN first : seq[token] -> token
 DEF first(<>) == token(errorRep!,errorRep,errPos)

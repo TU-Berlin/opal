@@ -11,10 +11,10 @@ IMPORT
 	Pair	COMPLETELY
 	Pos	COMPLETELY
 	Rep	COMPLETELY
-	RepMap  COMPLETELY
 	Struct	COMPLETELY
 	Seq	COMPLETELY
 	SeqMap	COMPLETELY
+	SeqReduce ONLY \
 	SeqOfSeq ONLY flat
 
 FUN readOwn: options -> com[interOpal]
@@ -32,18 +32,27 @@ DEF deps(Struct) == imports(Struct)
 		
 FUN readInters:  options ** struct'Struct -> com[seq[interOpal]]
 DEF readInters(Opt, Struct) ==
-	LET PairSeq == codom(asMap[pair[rep,pos]]
-		  ((\\Dep. LET Orig == origin(Dep) 
-			       Rep == structIde(Orig)
-			   IN  Rep & (Rep & pos(Orig))) * deps(Struct)))
+	LET
+	    OrigSeq == \ (insertUnique, <>, deps(Struct))
 	IN
-		readFiles(Opt, structIde(head(Struct)), PairSeq)
+	    readFiles(Opt, structIde(head(Struct)), OrigSeq)
 
-FUN readFiles:  options ** rep ** seq[pair[rep, pos'Pos]] 
+FUN insertUnique : import ** seq[origin'Struct] -> seq[origin'Struct]
+DEF insertUnique(I, <>) == origin(I) %
+DEF insertUnique(I, S AS Ft :: Rt) ==
+	LET Orig == origin(I) IN
+	IF structIde(Orig) < structIde(Ft) THEN Orig :: S
+	IF structIde(Orig) = structIde(Ft) THEN S
+	ELSE Ft :: insertUnique(I, Rt) FI
+
+FUN readFiles:  options ** rep ** seq[origin'Struct] 
 					-> com[seq[interOpal]]
 DEF readFiles(_, _, <>) == succeed(<>)
-DEF readFiles(Opt, MainRep, ImpRep & Pos :: Rt) ==
-	LET ReadRtFiles == readFiles(Opt, MainRep, Rt) IN
+DEF readFiles(Opt, MainRep, Orig :: Rt) ==
+	LET ReadRtFiles == readFiles(Opt, MainRep, Rt) 
+	    ImpRep == structIde(Orig)
+	    Pos == pos(Orig)
+	IN
 	IF MainRep = ImpRep THEN
 		errors(Opt, err(error, 
 			"illegal reference of current structure '%s'",

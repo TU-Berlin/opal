@@ -1,0 +1,139 @@
+IMPLEMENTATION PostMatchParams
+
+IMPORT 	
+	Denotation ONLY	++
+	Error	COMPLETELY
+	Name COMPLETELY
+	NameUnify ONLY	match
+	GlobSig	COMPLETELY
+	Match	ONLY	deepMatch
+	Nat	COMPLETELY
+	Option  COMPLETELY
+	Pair	COMPLETELY
+	PartName COMPLETELY
+	Pos	ONLY	pos
+	Rep	ONLY	= rep
+	Seq	COMPLETELY
+	SeqConv	COMPLETELY
+	SeqFilter	ONLY	|
+	SeqMap		COMPLETELY
+	SeqReduce	COMPLETELY
+	SeqZip	COMPLETELY
+	Set	COMPLETELY
+	SetConv COMPLETELY
+	Struct	COMPLETELY
+
+
+FUN matchParams: globSig -> globSig
+DEF matchParams(GS) ==
+	LET 
+	    Origin == head(struct(GS))
+	    OptParamS == paramS(Origin)
+	    Params == params(GS)
+	IN IF nil?(OptParamS) THEN GS 
+	   ELSE 
+		LET PartParamS == cont(OptParamS)
+		IN IF #(PartParamS) < #(Params) THEN
+			addErrs(GS, 
+		err(error, "too few parameters", pos(Origin)))
+		ELSE LET (CheckErr, RestPars) == 
+				checkOldPars(Params, PartParamS)
+			ExtendWarn == IF ::?(Params) ANDIF ::?(RestPars)
+				THEN err(warning, "additional parameters", 
+					pos(ft(RestPars)))
+				ELSE ok FI
+		        DeepParCands == deepMatch(names(GS)) * RestPars
+			UnknownErrs == deepErr(DeepParCands, RestPars)
+			FlatParCands == (Params ++ _) * combine(DeepParCands)
+                        NoDups == noDuplicates? | FlatParCands 
+			DupErr == IF <>?(NoDups) ANDIF ::?(FlatParCands) THEN
+				dupErr(ft(FlatParCands), RestPars)
+				ELSE ok FI
+			ParCands == checkParList(structIde(Origin)) | 
+					NoDups
+			ClosErr == IF <>?(ParCands) ANDIF ::?(NoDups) THEN
+				closErr(ft(NoDups), RestPars)
+				ELSE ok FI
+			GS2 == addErrs(GS, CheckErr + ExtendWarn 
+				+ UnknownErrs + DupErr + ClosErr)
+		     IN IF <>?(ParCands) THEN GS2
+			ELSE IF ::?(rt(ParCands)) THEN
+				addErrs(GS2,
+			err(error, "ambiguous parameterization" ++ 
+				`("\n  ", "\n  ", "")(`("[", ",", "]")(`))
+					(ParCands)
+				, pos(Origin)))
+			     ELSE :=_params(GS2, ft(ParCands))
+			     FI
+			FI
+		 FI
+	FI
+ 
+FUN checkOldPars: seq[fullName] ** seq[partName] -> err ** seq[partName]
+DEF checkOldPars(<>,Ps) == (ok,Ps)
+DEF checkOldPars(Ft1 :: Rt1, Ft2 :: Rt2) == 
+	LET (CheckErr, Ps) == checkOldPars(Rt1, Rt2)
+	IN IF avail?(match(Ft1, Ft2)) THEN (CheckErr, Ps)
+	   ELSE (err(error, "formal parameter `" ++ `(Ft2) ++
+		"'\n  must be `" ++ `(Ft1) ++ "'", pos(Ft2)) + CheckErr,
+		Ps)
+	   FI
+
+FUN deepErr: seq[seq[fullName]] ** seq[partName] -> err
+DEF deepErr(Cands, Ps) ==
+	LET UnknownPars == (\\P. <>?(1st(P))) | zip(&)(Cands, Ps)
+	IN \ (\\P, E. err(error, "unresolved parameter `" ++
+		`(2nd(P)) ++ "'", pos(2nd(P))) + E, 
+				ok, UnknownPars)
+
+FUN combine: seq[seq[fullName]] -> seq[seq[fullName]]
+DEF combine(<>) == %(<>)
+DEF combine(<> :: _) == <>
+DEF combine((Ft :: Rt) :: RRt) == 
+	((Ft :: _) * combine(RRt)) ++ combine(Rt :: RRt)
+
+FUN noDuplicates?: seq[fullName] -> bool
+DEF noDuplicates?(S) == #(asSet[fullName, <](S)) = #(S)
+
+FUN checkParList: rep -> seq[fullName] -> bool
+DEF checkParList(Rep)(Pars) == findOwnSubnames(Rep, Pars) <= asSet(Pars)
+
+FUN findOwnSubnames:  rep ** seq[fullName] -> set[fullName, <]
+DEF findOwnSubnames(_, <>) == {}
+DEF findOwnSubnames(Rep, (Ft AS fullName(_, Orig, Kinst)) :: Rt) ==
+	(IF Rep = Orig THEN %(Ft) ELSE {} FI) + 
+	 findOwnSubnames(Rep, Kinst) +
+	 findOwnSubnames(Rep, Rt)
+
+FUN dupErr: seq[fullName] ** seq[partName] -> err
+DEF dupErr(Cand, Ps) ==
+	LET (Own, New) == split(#(Cand) - #(Ps), Cand)
+	    OwnSet == asSet[fullName, <](Own) 
+	IN dupErr(OwnSet, New, Ps)
+
+FUN dupErr: set[fullName, <] ** seq[fullName] ** seq[partName] -> err
+DEF dupErr(_, <>, <>) == ok
+DEF dupErr(Set, Ft1 :: Rt1, Ft2 :: Rt2) ==
+	IF Ft1 in Set THEN
+		err(error, "duplicate parameter `" ++ `(Ft2) ++ "'", 
+		pos(Ft2)) + dupErr(Set, Rt1, Rt2)
+	ELSE dupErr(Ft1 incl Set, Rt1, Rt2) FI
+
+FUN closErr: seq[fullName] ** seq[partName] -> err
+DEF closErr(Cand, Ps) ==
+	LET New == drop(#(Cand) - #(Ps), Cand)
+	    FullSet == asSet[fullName, <](Cand)
+	IN closErr(FullSet, New, Ps) 
+
+FUN closErr: set[fullName, <] ** seq[fullName] ** seq[partName] -> err
+DEF closErr(_, <>, <>) == ok
+DEF closErr(Set, Ft1 :: Rt1, Ft2 :: Rt2) ==
+	LET SubNames == findOwnSubnames(orig(Ft1), %(Ft1))
+	    Err == closErr(Set, Rt1, Rt2)
+	IN  IF ~(SubNames <= Set) THEN
+		LET Diff == asSeq(SubNames - Set)
+		IN err(error, "unclosed parameter `" ++ `(Ft2) ++ 
+		   "'\n  requires additional parameter `" ++
+			`("", " ", "")(`)(Diff) ++ "'", pos(Ft2))
+		+ Err
+	    ELSE Err FI

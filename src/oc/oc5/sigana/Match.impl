@@ -1,9 +1,10 @@
 IMPLEMENTATION Match
 
 IMPORT 	
+	Array COMPLETELY
+	ArrayReduce COMPLETELY
 	Name COMPLETELY
 	NameUnify COMPLETELY
-	GlobSig	COMPLETELY
 	RepMap	COMPLETELY
 	Nat	COMPLETELY
 	Option  COMPLETELY
@@ -16,18 +17,35 @@ IMPORT
 	SeqMap		COMPLETELY
 	SeqOfSeq	COMPLETELY
 	SeqReduce	COMPLETELY
-	Set	COMPLETELY
+	Set[fullName,<]	COMPLETELY
 	SetConv	COMPLETELY
 
-DEF deepMatch(GS) == deepMatch(names(GS))
-DEF deepMatchInst(GS, FormalInst, PartInst) ==
-	deepMatchInst(names(GS), FormalInst, PartInst)
+DATA nameInfo == abs(rep : array[pair[set, set]])
 
-FUN get : map[set[fullName, <]] ** rep -> seq[fullName] 
-DEF get(M, R) == LET OptSet == M !? R IN
-	IF nil?(OptSet) THEN <> ELSE asSeq(cont(OptSet)) FI
+DEF init(N) == abs(init(N+1, {} & {}))
 
-FUN topLevelMatch: map[set[fullName, <]] -> partName -> 
+FUN insert: fullName ** nameInfo -> nameInfo
+DEF insert(F, abs(A)) ==
+	LET N == ord(ide(F))
+	    (Sorts, Funs) == unpair(A ! ord(ide(F)))
+	IN IF sort?(kind(F)) THEN abs(upd(N, incl(F, Sorts) & Funs, A))
+	   ELSE abs(upd(N, Sorts & incl(F, Funs), A)) FI
+
+DEF addNames(I, S) == \ (insert, I, S)
+
+DEF asSeq(abs(A)) == 
+	\ (\\P, S. asSeq(1st(P)) ++ asSeq(2nd(P)) ++ S, <>, A)
+
+FUN get : nameInfo ** partName -> seq[fullName] 
+DEF get(abs(A), P) == LET (Sorts, Funs) == unpair(A ! ord(ide(P))) IN
+	IF sort?(kind(P)) THEN asSeq(Sorts)
+	IF op?(kind(P)) THEN asSeq(Funs)
+	IF none?(kind(P)) THEN 
+		asSeq(Sorts) ++ asSeq(Funs)
+        FI
+
+-- ----------------------------------------------------------------------------
+FUN topLevelMatch: nameInfo -> partName -> 
 	seq[pair[partName, fullName]] 
 
 DEF topLevelMatch(M)(PN) ==
@@ -46,7 +64,7 @@ LET Ide == ide(PN) IN
 		ELSE %(PN & VarSort, 
 			PN & var(2, VarSort))
 	        FI
-	      ELSE match(PN, get(M, Ide)) FI
+	      ELSE match(PN, get(M, PN)) FI
 	FI
 
 FUN match: partName ** seq[fullName] -> seq[pair[partName, fullName]]
@@ -57,17 +75,17 @@ DEF match(P, Ft :: Rt) ==
 	IN IF nil?(OptP) THEN Rest
 	   ELSE cont(OptP) & Ft :: Rest 
 	   FI
-
-FUN deepMatch: map[set[fullName, <]] -> partName -> 
+-- ----------------------------------------------------------------------------
+FUN deepMatch: nameInfo -> partName -> 
 	seq[fullName]
 
 DEF deepMatch(M)(PN) ==
 	LET S == topLevelMatch(M)(PN)
 	    (Monos, Generics) == partition(\\P. monomorph?(2nd(P)), S)
-	    Rest == flat(handleGeneric(M) * Generics)			
-	IN (2nd * Monos ++ Rest)
+	    Rest == flat(handleGeneric(M) * Generics)		
+	IN Rest ++ 2nd * Monos
 
-FUN handleGeneric: map[set[fullName, <]] ->
+FUN handleGeneric: nameInfo ->
 	pair[partName, fullName] -> seq[fullName]
 DEF handleGeneric(M)(P & F) ==
 	IF nil?(paramS(P)) THEN %(F)
@@ -75,8 +93,8 @@ DEF handleGeneric(M)(P & F) ==
 	    ELSE matchInst(M, F, 0, cont(paramS(P))) 
 	    FI
 	FI
-
-FUN matchInst: map[set[fullName, <]] ** fullName 
+-- --------------------------------------------------------------------------
+FUN matchInst: nameInfo ** fullName 
 	** nat ** seq[partName] -> seq[fullName]
 
 DEF matchInst(_, F, _, <>) == %(F)
@@ -93,8 +111,8 @@ DEF handleCand(F, N)(Cand, Rest) ==
 	    OptSubst == unify(Fft, Cand)	    	
 	IN IF nil?(OptSubst) THEN Rest
 	   ELSE subst(F, cont(OptSubst)) :: Rest FI
-
-FUN deepMatchInst:  map[set[fullName, <]] ** seq[fullName] ** 
+-- ---------------------------------------------------------------------------
+FUN deepMatchInst:  nameInfo ** seq[fullName] ** 
 	seq[partName] -> seq[seq[fullName]]
 DEF deepMatchInst(M, Formals, ParamS) ==
 	LET Dummy == fullName(nilRep, nilRep, sort :: Formals)

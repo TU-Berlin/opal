@@ -4,7 +4,7 @@ IMPLEMENTATION PName
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-17 15:51:09 $ ($Revision: 1.2 $)
 
 -- %$author: cg$
 -- %$purpose: parsing Opal1 and property language$
@@ -32,7 +32,6 @@ IMPORT    -- lib
 	  Nat			COMPLETELY
           Seq	                COMPLETELY
           SeqMap                COMPLETELY
-          Set[terminal,<]       COMPLETELY
        	  String 		ONLY string
 
 -- %- ----------------------------------------------------------------------
@@ -51,20 +50,20 @@ DEF pOri == isA(apo) <&.> pIde
 
 FUN pNameFront :  parser
 DEF pNameFront ==  isA(mkIde, ignPat) <|>
-  (((pIde <;?> pOri)(modOrigin))  <;?> (pParams))(modParams)
+  (((pIde <&?> pOri)(modOrigin))  <&?> (pParams))(modParams)
 
-DEF pFctName == (pNameFront  <;?> pFctKind)(modKind(none))
+DEF pFctName == (pNameFront  <&?> pFctKind)(modKind)
 
-DEF pName      == (nameParser <.;> empty(termSet-specialInName))
-DEF pLocalName == (pFctName <.;> empty(termSet-specialInName))
+DEF pName      == (nameParser <.&> empty(specialInName))
+DEF pLocalName == (pFctName <.&> empty(specialInName))
 
 FUN nameParser :  parser
 DEF nameParser == 
-  	(pNameFront  <;?> pKind)(modKind(none))
+  	(pNameFront  <&?> pKind)(modKind)
 
-DEF pOrigin == doMod(mkOrigin, (pIde <;?> pParams)(modParams))
+DEF pOrigin == updAbsy(mkOrigin)((pIde <&?> pParams)(modParams))
 
-FUN modOrigin mkOrigin: modifier
+FUN modOrigin: modifier
 DEF modOrigin == mod(\\A1,A2.
 		IF (A1 Name?) 
 		THEN IF (A2 Name?) THEN
@@ -72,17 +71,10 @@ DEF modOrigin == mod(\\A1,A2.
 		      ELSE A1 FI
 		ELSE A1 FI)  -- noAbsy
 
-DEF mkOrigin == 
-    mkMod(\\Res. 
-	LET TS  == tokS(Res)
-            Err == err(Res)
-	    A == absy(Res)
-        IN IF A Name? 
-           THEN LET N == pName(A) IN
-		pRes(Err, Origin(origin(ide(N),pos(N),paramS(N))), TS)
-	   ELSE pRes(pErrMiss(missOri,calcMissPos(<>,TS)),
-			Origin(errorOrigin), TS)
-	   FI)
+FUN mkOrigin: absy -> absy
+DEF mkOrigin(A) == 
+           LET N == pName(A) IN
+		Origin(origin(ide(N),pos(N),paramS(N)))
 
 -- %- ----------------------------------------------------------------------
 
@@ -127,26 +119,24 @@ DEF pKindFct ==
 FUN pFctKind: parser
 DEF pFctKind == isA(colon) <&.> pKindFct
 
-
-FUN pSortKind:parser 
-DEF pSortKind == setAbsy(Kind(sort), isA(colon) <&.> isA(sort))
-
-FUN pLawKind:parser 
-DEF pLawKind == setAbsy(Kind(law), isA(colon) <&.> isA(law))
-
 FUN pSortName:parser 
-DEF pSortName == (pNameFront  <;?> pSortKind)(modKind(sort))
+DEF pSortName == updAbsy(mkKind(sort))(pNameFront) <.&?> 
+	(isA(colon) <&.> isA(sort))
 
 FUN pLawName:parser 
-DEF pLawName == (pNameFront  <;?> pLawKind)(modKind(law))
+DEF pLawName == updAbsy(mkKind(law))(pNameFront) <.&?>
+		(isA(colon) <&.> isA(sort))
 
-FUN modKind: kind -> modifier
-DEF modKind(DefaultKind) == mod(\\A1,A2. 
- 	IF (A1 Name?) THEN
-		IF A2  Kind? THEN
+FUN mkKind: kind -> absy -> absy
+DEF mkKind(DefaultKind)(A) == 
+	IF A Name? THEN Name(:=_kind(pName(A), DefaultKind))
+	ELSE A FI
+
+FUN modKind: modifier
+DEF modKind == mod(\\A1,A2. 
+ 	IF (A1 Name?) ANDIF A2  Kind? THEN
 		Name(:=_kind(pName(A1), kind(A2)))
-		ELSE Name(:=_kind(pName(A1), DefaultKind)) FI
-	ELSE Name(errorName) FI)
+	ELSE A1 FI)
 
 
 -- %- ----------------------------------------------------------------------
@@ -165,8 +155,8 @@ FUN pFct pProdFct pSimpleFct: bool -> parser
 
 DEF pFct(Sort?) == parser(\\Arg.
 -- avoid empty functionalities
-	isIn?(%(ignPat,ide,openBr!,closeBr!)) <&.>   
-	((pProdFct(Sort?) <;?> (isA(arrow) <&.> pFct))(modFunFct))
+	isIn?(specialInFct) <&.>   
+	((pProdFct(Sort?) <&?> (isA(arrow) <&.> pFct))(modFunFct))
 	@ Arg)
 
 FUN modFunFct : modifier
@@ -184,19 +174,17 @@ DEF modFunFct == mod(\\A1,A2.
 -- %- ------------------------------------------------------------------------
 
 DEF pProdFct(Sort?) == 
-	doMod(mkProd, pSimpleFct(Sort?) || !(product))  -- could be empty
+	updAbsy(mkProd) (pSimpleFct(Sort?) || !(product))  -- could be empty
 
-FUN mkProd: modifier
-DEF mkProd == mkMod(\\R. 
-		LET S == pName * aSeq(absy(R))
-		    P == IF #(S) > 1 THEN
+FUN mkProd: absy -> absy
+DEF mkProd(A) == LET S == pName * aSeq(A)
+		     P == IF #(S) > 1 THEN
 				pos(ft(S)) + pos(last(S))
-			 ELSE pos(ft(tokS(R))) FI  
-		    N == IF #(S) = 1 THEN Name(ft(S))
+			  ELSE unknown FI  
+		 IN IF #(S) = 1 THEN Name(ft(S))
 			 ELSE Name(partName(product, nil, avail(S),
 				P, sort, P)) FI
--- 		    E == check Kind SORT if more then 1 component
-		IN pRes(err(R), N, tokS(R)))
+
 
 -- %- ------------------------------------------------------------------------
 -- %$$SimpleFct$
@@ -204,11 +192,21 @@ DEF mkProd == mkMod(\\R.
 -- %- ------------------------------------------------------------------------
 
 DEF pSimpleFct(Sort?) == (((isA(openBr) <&.> 
-	pFct(true)) <.;> isA(closeBr)) <.;?> pSortKind)
+	pFct(true)) <.&> isA(closeBr))) 
 	<|> (IF Sort? THEN pSortName
 		ELSE nameParser FI)
 
 -- %- ----------------------------------------------------------------------
 
-FUN specialInName : set[terminal,<]
-DEF specialInName == %(colon!,apo!,closeSqBr!,openSqBr!)
+FUN specialInName : terminal -> bool
+DEF specialInName(T) == IF T < (colon!) THEN true
+			ELSE (apo!) < T FI
+
+FUN specialInFct : terminal -> bool
+DEF specialInFct(T) == 
+IF T = ide THEN true
+IF T = ignPat THEN true
+IF openBr = T THEN true
+ELSE closeBr = T FI		 
+
+

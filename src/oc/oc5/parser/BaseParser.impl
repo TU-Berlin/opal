@@ -4,7 +4,7 @@ IMPLEMENTATION BaseParser
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-11 17:33:14 $ ($Revision: 1.1.1.1 $)
+-- % $Date: 1999-10-17 15:51:09 $ ($Revision: 1.2 $)
 
 -- author: cg
 -- purpose: parsing Opal1 and property language
@@ -24,8 +24,6 @@ IMPORT    -- lib
           Denotation            COMPLETELY
           Seq         		COMPLETELY
           SeqFilter             COMPLETELY
-          Set[terminal,<]       COMPLETELY
-	  SetConv		COMPLETELY	
 
 -- -------------------------------------------------------------------------
 
@@ -45,12 +43,11 @@ DEF empty == parser(\\Arg.
          FI)
 
 DEF empty(Set) == parser(\\Arg.
-         IF (terminal(ft(Arg)) in Set) or (terminal(ft(Arg)) = eof)
+         IF (terminal(ft(Arg)) Set) or (terminal(ft(Arg)) = eof)
          THEN LET OK == PRINT(traceMt?,\\ . "Arg is \n" ++ printTS(Arg), ok)
-                  OK2 == PRINT(traceMt?,\\ . "Set is \n" ++ `(`)(Set), OK)
-              IN pRes(OK2,noAbsy,Arg) 
-         ELSE pFail(pErrUnExp(Set)(Arg),noAbsy,Shift)
-              WHERE Shift == drop(\\T. ~(terminal(T) in Set), Arg)
+              IN pRes(OK,noAbsy,Arg) 
+         ELSE pFail(pErrUnExp(Arg),noAbsy,Shift)
+              WHERE Shift == drop(\\T. ~(terminal(T) Set), Arg)
          FI)
 
 DEF fail(Msg) == parser(\\Arg.
@@ -59,48 +56,31 @@ DEF fail(Msg) == parser(\\Arg.
 DEF fail(Err)   == parser(\\Arg. pFail(Err(Arg),noAbsy,Arg))
 
 -- -------------------------------------------------------------------------
-DEF (P1 <;> P2) (M)  == parser(\\Arg.
-    LET Res  == P1 @ Arg 
-        Res2  == P2 @ tokS(Res) 
-    IN
-    modify(Res, Res2, M))
-
-DEF (P1 <;?> P2) (M) == parser(\\Arg. 
-    LET Res  == P1 @ Arg
-	Res2 == P2 @ tokS(Res)    
-    IN IF Res2 pFail? THEN modify(Res, pRes(ok, noAbsy, tokS(Res)), M)
-       ELSE modify(Res, Res2, M) 
-       FI)   
-
 DEF (P1 <&> P2) (M) == parser(\\Arg.
     LET Res  == P1 @ Arg IN
-    IF Res pFail? THEN modify(Res, pFail(ok, noAbsy, tokS(Res)), M)
+    IF Res pFail? THEN Res
     ELSE modify(Res, P2 @ tokS(Res), M)
     FI)
 
 DEF (P1 <&?> P2) (M) == parser(\\Arg. 
     LET Res  == P1 @ Arg
-    IN IF Res pFail? THEN modify(Res, pFail(ok, noAbsy, tokS(Res)), M)
+    IN IF Res pFail? THEN Res
        ELSE LET Res2 == P2 @ tokS(Res)
-	    IN IF Res2 pFail? THEN modify(Res, pRes(ok, noAbsy, tokS(Res)), M)
+	    IN IF Res2 pFail? THEN Res 
+--modify(Res, pRes(ok, noAbsy, tokS(Res)), M)
                ELSE modify(Res, Res2, M) 
 	       FI
        FI)   
 
 DEF P1 <&.> P2 == (P1 <&> P2)(mod2nd)
 DEF P1 <.&> P2 == (P1 <&> P2)(mod1st)
-DEF P1 <;.> P2 == (P1 <;> P2)(mod2nd)
-DEF P1 <.;> P2 == (P1 <;> P2)(mod1st)
 
-DEF P1 <&?.> P2 == (P1 <&?> P2)(mod2nd)
 DEF P1 <.&?> P2 == (P1 <&?> P2)(mod1st)
-DEF P1 <;?.> P2 == (P1 <;?> P2)(mod2nd)
-DEF P1 <.;?> P2 == (P1 <;?> P2)(mod1st)
 
 DEF P1 <|> P2 == parser(\\Arg.
     IF (P1 @ Arg) pRes? THEN P1 @ Arg ELSE P2 @ Arg FI)
 
-DEF P * == (P *) (eof %) 
+DEF P * == (P *) (eof = _) 
 DEF (P *)(Stop) == parser(\\Arg. 
 	LET Res == isIn?(Stop) @ Arg
 	IN IF pRes?(Res) THEN pRes(ok, AbsySeq(<>), Arg)
@@ -112,7 +92,7 @@ DEF (P *)(Stop) == parser(\\Arg.
 		   FI
 	   FI)
 
-DEF P + == (P +) (eof%)
+DEF P + == (P +) (eof = _)
 DEF (P +)(Stop) == parser(\\Arg.
 	LET ResP == P @ Arg IN
 	IF pFail?(ResP) THEN pFail(err(ResP),  AbsySeq(<>), tokS(ResP))
@@ -125,7 +105,7 @@ DEF P || T == parser(\\Arg.
     IN 
       IF pFail?(Res1) THEN pRes(ok,AbsySeq(<>),Arg)
       ELSE LET Res2 == isA(T) @ tokS(Res1) IN
-	IF pFail?(Res2) THEN modify(Res1, mkAbsyMod(\\A.AbsySeq(%(A))))
+	IF pFail?(Res2) THEN pRes(ok, AbsySeq(%(absy(Res1))), tokS(Res1))
 	ELSE LET Res3 == (P || T) @ tokS(Res2)
 		 A == aSeq(absy(Res3)) 
 		 NewA == AbsySeq(absy(Res1) :: A) 
@@ -140,7 +120,7 @@ DEF P || T == parser(\\Arg.
 
 DEF isIn (F, TS) == parser(\\Arg.
   	LET Tok == ft(Arg) IN 
-        IF terminal(Tok) in TS
+        IF terminal(Tok) TS
         THEN pRes(ok, F(Tok), rt(Arg))
         ELSE pFail(pErrExp(TS)(Tok,missPos(Tok)),noAbsy, Arg)
         FI)
@@ -149,12 +129,12 @@ DEF isA (Rep) == isA(\\T.Pos(pos(T)), Rep!)
 DEF isA (Term) == isA(\\T.Pos(pos(T)), Term)
 
 FUN isA : (token -> absy) ** terminal -> parser 
-DEF isA (F, T)  == isIn(F, T%)
+DEF isA (F, T)  == isIn(F, T = _)
 
 
-DEF isA? (T) == isIn?(T%)
+DEF isA? (T) == isIn?(T = _)
 DEF isIn?(S) == parser(\\ Arg .
-         IF terminal(ft(Arg)) in S THEN pRes(ok, noAbsy, Arg)
+         IF terminal(ft(Arg)) S THEN pRes(ok, noAbsy, Arg)
          ELSE pFail(ok, noAbsy, Arg)
          FI)
 
@@ -162,11 +142,20 @@ DEF isIn?(S) == parser(\\ Arg .
 -- %$Modifying result of a parser$
 -- %- ------------------------------------------------------------------------
 
-FUN doMod: modifier ** parser -> parser
-DEF doMod(M, P) == parser(\\Arg.modify(P @ Arg, M))
+FUN postMod: (absy -> absy ** err) -> parser -> parser
+DEF postMod(F)(P) == parser(\\Arg. 
+	LET R == P @ Arg IN
+	IF pRes?(R) THEN 
+		LET (A, E) == F(absy(R)) IN
+		pRes(E + err(R), A, tokS(R))
+	ELSE R FI)
 
 FUN updAbsy: (absy -> absy) -> parser -> parser
-DEF updAbsy(F)(P) == doMod(mkAbsyMod(F), P)
+DEF updAbsy(F)(P) == parser(\\Arg. 
+	LET R == P @ Arg IN
+	IF pRes?(R) THEN pRes(err(R), F(absy(R)), tokS(R))
+	ELSE R FI)
+
 
 FUN setAbsy: absy ** parser -> parser
 DEF setAbsy(A, P) == updAbsy(\\ _ . A)(P)

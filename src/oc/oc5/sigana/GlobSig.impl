@@ -4,63 +4,58 @@ IMPORT
 	Error	COMPLETELY
 	Name 	COMPLETELY
 	InterOpal	COMPLETELY
-	RepMap	COMPLETELY
+	Match	ONLY nameInfo addNames init
 	Nat	COMPLETELY
 	Option  COMPLETELY
+	Pair	COMPLETELY
 	Rep	COMPLETELY
-	Set	COMPLETELY
-	SetFilter	COMPLETELY
 	Seq	COMPLETELY
-	SeqReduce	COMPLETELY
 	Struct	COMPLETELY
-	Triple COMPLETELY
+
 
 DATA globSig == globSig(
 	repTab: repTab,
 	struct: struct'Struct,
-	imports: map[triple[interOpal,seq[fullName],seq[fullName]]],
+	imports: interInfo,
 	params: seq[fullName],
 	errs: err, 
-	names: map[set[fullName,<]])  
+	count: nat,
+	names: nameInfo)  
+
+DATA interInfo == {}
+	def(rep: rep, interOpal: interOpal,
+	     formals: seq[fullName], names: seq[fullName], rest: interInfo)
+
+DEF def(Rep, I, F, N, Rest) ! R == IF R = Rep THEN (I, F, N) ELSE
+	Rest ! R FI
+
 
 FUN :=_repTab : globSig ** repTab -> globSig
-DEF :=_repTab(globSig(_,2,3,4,5,6),new) == globSig(new,2,3,4,5,6)
+DEF :=_repTab(globSig(_,2,3,4,5,c6,7),new) == globSig(new,2,3,4,5,c6,7)
+
+DEF :=_struct(globSig(1,_,3,4,5,c6,7),new) == globSig(1,new,3,4,5,c6,7)
+
+DEF :=_params(globSig(1,2,3,_,5,c6,7),new) == globSig(1,2,3,new,5,c6,7)
+
+DEF :=_names(globSig(1,2,3,4,5,c6,_),new) == globSig(1,2,3,4,5,c6,new)
+
+DEF :=_imports(globSig(1,2,_,4,5,c6,7),new) == globSig(1,2,new,4,5,c6,7)
+
+DEF :=_errs(globSig(1,2,3,4,_,c6,7),new) == globSig(1,2,3,4,new,c6,7)
+
+FUN :=_count : globSig ** nat -> globSig
+DEF :=_count(globSig(1,2,3,4,5,_,7),new) == globSig(1,2,3,4,5,new,7)
 
 
-DEF :=_struct(globSig(1,_,3,4,5,6),new) == globSig(1,new,3,4,5,6)
-
-
-DEF :=_params(globSig(1,2,3,_,5,6),new) == globSig(1,2,3,new,5,6)
-
-
-DEF :=_names(globSig(1,2,3,4,5,_),new) == globSig(1,2,3,4,5,new)
-
-DEF :=_imports(globSig(1,2,_,4,5,6),new) == globSig(1,2,new,4,5,6)
-
-FUN :=_errs : globSig ** err -> globSig
-DEF :=_errs(globSig(1,2,3,4,_,6),new) == globSig(1,2,3,4,new,6)
 
 -- -------------------------------------------------------------------
 FUN addErrs : globSig ** err -> globSig
 DEF addErrs(GS, Err) == :=_errs(GS, errs(GS) + Err) 
 
 FUN addNames : globSig ** seq[fullName] -> globSig
-DEF addNames(GS, Names) == :=_names(GS, \ (insert, names(GS), Names))
-
-FUN insert: fullName ** map[set[fullName,<]] -> 
-			map[set[fullName,<]]
-DEF insert(F, M) == 
-	LET Rep == ide(F)
-	    OptSet == M !? Rep 
-	IN IF avail?(OptSet) THEN def(Rep, incl(F, cont(OptSet)), M)
-	   ELSE def(Rep, %(F), M) FI	
+DEF addNames(GS, Names) == 
+	:=_names(GS, addNames(names(GS), Names))
 
 FUN init: repTab ** struct'Struct -> globSig
 DEF init(RT, Struct) ==
-	globSig(RT, Struct, {}, <>, ok, {})
-
-FUN | : (fullName -> bool) **  map[set[fullName,<]] -> 
-			map[set[fullName,<]]
-DEF P | M ==
-	LET NewMap == (P | _) * M
-	IN (\\S. ~({}?(S))) | NewMap
+	globSig(RT, Struct, {}, <>, ok, 0, init(#(RT)))

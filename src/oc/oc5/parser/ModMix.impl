@@ -4,20 +4,15 @@ IMPLEMENTATION ModMix
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-13 10:42:13 $ ($Revision: 1.2 $)
+-- % $Date: 1999-10-17 15:51:09 $ ($Revision: 1.3 $)
 
 -- author: cg
 -- purpose: parsing Opal1 and property language
 
 IMPORT -- pars
-       Terminal		COMPLETELY
-       Token		COMPLETELY
-       PTypes		COMPLETELY
-       ZOpts		COMPLETELY
-       Error		COMPLETELY
        PErr		COMPLETELY
-       PCommon		COMPLETELY
-       ModBase		COMPLETELY
+       Error		COMPLETELY
+
 IMPORT -- reps
        Rep		COMPLETELY
 IMPORT -- absy
@@ -35,8 +30,7 @@ IMPORT -- lib
        SeqMap		COMPLETELY
        SeqReduce	COMPLETELY
        SeqFilter	COMPLETELY
-       Pair[expr,set'Bitset]	COMPLETELY
-       Bitset		COMPLETELY
+       Pair[expr,nat]	COMPLETELY
        DEBUG		COMPLETELY
 
 -- ------------------------------------------------------------------------
@@ -45,9 +39,6 @@ IMPORT -- lib
 
 FUN traceMix? : bool
 DEF traceMix? == FIELD?[bool]("-ztraceMix")
-
-DEF mkMix ==
-    mkMod(\\PRes. PRes)
 
 -- ---------------------------------------------------------------------------
 
@@ -67,16 +58,13 @@ DEF mkRhsNoMix == mkNoMix(Rhs)
 
 -- ---------------------------------------------------------------------------
 
-FUN mkNoMix : nat -> modifier
-DEF mkNoMix (Rhs?) ==
-    mkMod(\\PResP. 
-	LET PRes == PRINT(traceMix?, \\ . "Before " ++ `(absy(PResP)),PResP)
-	IN  IF absy(PRes) Expr?
-	    THEN PRINT(traceMix?, \\ . "After " ++ `(absy(After)),After)
-		 WHERE (NAbsy,Err) == buildAppl(Rhs?)(e(absy(PRes)))
-		       After == pRes(err(PRes) + Err,Expr(NAbsy),tokS(PRes))
-	    ELSE PRes 
-	    FI)
+FUN mkNoMix : nat -> absy -> absy ** err
+DEF mkNoMix (Rhs?)(A) ==
+	LET B == PRINT(traceMix?, \\ . "Before " ++ `(A),A)
+	    (C,Err) == buildAppl(Rhs?)(e(B))
+            D == PRINT(traceMix?, \\ . "After " ++ `(C),C)
+	IN (Expr(D), Err)
+
    FUN buildAppl : nat -> expr -> expr ** err
    DEF buildAppl (Rhs?)(E)			        == (E,wildErr(Rhs?)(E))
    DEF buildAppl (Rhs?)(typed(E,F,Pos))	    == 
@@ -93,15 +81,15 @@ DEF mkNoMix (Rhs?) ==
 
 -- ------------------------------------------------------------------------------
 
-   FUN buildFix : nat -> seq[pair[expr,set'Bitset]] -> expr ** err
+   FUN buildFix : nat -> seq[pair[expr,nat]] -> expr ** err
    DEF buildFix(Rhs?)
-       ((tuple(E1,P1)& B1)::((E2& B2)::((tuple(E3,_)& B3):: <>))) ==
-       IF (B1 inOprnd?) and ((B2 op?) and (B3 inOprnd?))
+       ((tuple(E1,P1)& _)::((E2& B2)::((tuple(E3,_)& _):: <>))) ==
+       IF B2 = 6
        THEN mkSec(Rhs?)(E2,tuple(E1 ++ E3,P1),pos(E2))
        ELSE (apply(E2,tuple(E1 ++ E3,P1),pos(E2)),infixErr(E2))
        FI
-   DEF buildFix(Rhs?)((E1 & B1)::((E2 & B2)::((tuple(E3,_) & B3):: <>))) ==
-       IF (B1 inOprnd?) and ((B2 op?) and (B3 inOprnd?))
+   DEF buildFix(Rhs?)((E1 & _)::((E2 & B2)::((tuple(E3,_) & _):: <>))) ==
+       IF B2 = 6
        THEN IF ~(Rhs? rhs?) ANDIF (E1 ho_apply?) 
 	    THEN (apply(E1,tuple(E2::E3,pos(E2)),pos(E1)),
 		  pErr(ho_inf_pattern,pos(E1)))
@@ -109,8 +97,8 @@ DEF mkNoMix (Rhs?) ==
 	    FI
        ELSE (apply(E2,tuple(E1 :: E3,pos(E1)),pos(E2)),infixErr(E2))
        FI
-   DEF buildFix(Rhs?)((tuple(E1,P1) & B1)::((E2 & B2)::((E3 & B3):: <>))) ==
-       IF (B1 inOprnd?) and ((B2 op?) and (B3 inOprnd?))
+   DEF buildFix(Rhs?)((tuple(E1,P1) & _)::((E2 & B2)::((E3 & _):: <>))) ==
+       IF B2 = 6
        THEN IF ~(Rhs? rhs?) ANDIF (E3 ho_apply?) 
 	    	THEN (apply(E2,tuple(E1 +% E3,P1),pos(E2)),
 		  		  pErr(ho_inf_pattern,pos(E3)))
@@ -118,8 +106,8 @@ DEF mkNoMix (Rhs?) ==
 	    	FI
        ELSE (apply(E2,tuple(E1 +% E3,P1),pos(E2)),infixErr(E2))
        FI
-   DEF buildFix(Rhs?)((E1 & B1)::((E2 & B2)::((E3 & B3):: <>))) ==
-       IF (B1 inOprnd?) and ((B2 op?) and (B3 inOprnd?))
+   DEF buildFix(Rhs?)((E1 & _)::((E2 & B2)::((E3 & _):: <>))) ==
+       IF B2 = 6
        THEN IF ~(Rhs? rhs?) ANDIF (E1 ho_apply?) and (E3 ho_apply?)
 	    THEN (apply(E1,tuple(E2::(E3 %),pos(E2)),pos(E1)),
 		  pErr(ho_inf_pattern,pos(E1)) + pErr(ho_inf_pattern,pos(E3)))
@@ -134,11 +122,11 @@ DEF mkNoMix (Rhs?) ==
 	    FI
        ELSE (apply(E1,tuple(E2::(E3 %),pos(E2)),pos(E1)),infixErr(E2))
        FI
-   DEF buildFix(Rhs?)((E1P & B1) :: ((E2P & B2) :: <>)) ==
+   DEF buildFix(Rhs?)((E1P & _) :: ((E2P & B2) :: <>)) ==
 	LET E1 == PRINT(traceMix?,\\ . "buildFix 2Arg : E1 " ++ `(Expr(E1P)),E1P)
 	    E2 == PRINT(traceMix?,\\ . "buildFix 2Arg : E2 " ++ `(Expr(E2P)),E2P)
     IN
-       IF (B1 postOprnd?) and (B2 op?) 
+       IF B2 = 6
        THEN IF ~(Rhs? rhs?) ANDIF E1 ho_apply? 
 	    	THEN (apply(E1,E2,pos(E2)),pErr(ho_inf_pattern,pos(E1)))
 	    	ELSE mkSec(Rhs?)(E2,E1,pos(E1))
@@ -155,11 +143,6 @@ DEF ho_apply?(_)		       == false
 
 -- ---------------------------------------------------------------------------
 
-FUN prBS : set'Bitset -> denotation
-DEF prBS(BS) == IF BS {}? THEN empty 
-		ELSE LET One == arb(BS) IN `(arb(BS)) ++ prBS(excl(One,BS)) FI
-
--- ---------------------------------------------------------------------------
 FUN sectionCond? : nat -> expr -> bool
 
 DEF sectionCond?(Rhs?)(E) == 
@@ -173,14 +156,10 @@ DEF mkLhsAssoc == mkAssoc(Lhs)
 DEF mkInnerLhsAssoc == mkAssoc(In_Lhs)
 DEF mkRhsAssoc == mkAssoc(Rhs)
 
-FUN mkAssoc: nat -> modifier
-DEF mkAssoc (Rhs?)==
-    mkMod(\\PRes. 
-	    IF absy(PRes) Expr?
-	    THEN pRes(err(PRes) + Err,Expr(NAbsy),tokS(PRes))
-		 WHERE (NAbsy,Err) == buildAssoc(Rhs?)(e(absy(PRes)))
-	    ELSE PRes 
-	    FI)
+FUN mkAssoc: nat -> absy -> absy ** err
+DEF mkAssoc (Rhs?)(A)==
+	    LET (B, Err) == buildAssoc(Rhs?)(e(A))
+	    IN (Expr(B), Err)
 
    FUN buildAssoc : nat -> expr -> expr ** err
    DEF buildAssoc (Rhs?)(E)     == (E,wildErr(Rhs?)(E))
@@ -199,32 +178,32 @@ DEF mkAssoc (Rhs?)==
 			   WHERE Act_Rhs? == IF Rhs? rhs? THEN Rhs_Mix ELSE Rhs? FI
           FI
 
-   FUN checkAssoc : nat -> seq[pair[expr,set'Bitset]] -> err
-   DEF checkAssoc(Rhs?)((E1 & B1) :: ((E2 & B2) :: ((E3 & B3) :: <>))) ==
-       IF (B1 inOprnd?) and ((B2 op?) and (B3 inOprnd?)) 
+   FUN checkAssoc : nat -> seq[pair[expr,nat]] -> err
+   DEF checkAssoc(Rhs?)((E1 & _) :: ((E2 & B2) :: ((E3 & _) :: <>))) ==
+       IF B2 = 6
        THEN noWildErr(Rhs?)(E1) + noWildErr(Rhs?)(E3)
        ELSE pErrMiss(missInfOp ,pos(E2)) FI
-   DEF checkAssoc(Rhs?)((E1 & B1) :: ((E2 & B2) :: <>)) ==
-       IF (B1 op?) and (B2 inOprnd?) 
+   DEF checkAssoc(Rhs?)((E1 & B1) :: ((E2 & _) :: <>)) ==
+       IF B1 = 6
        THEN pErrMiss(missOprnd ,pos(E2)) + noWildErr(Rhs?)(E2) 
        ELSE infixErr(E1) + pErrMiss(missInfOp ,pos(E1)) FI
-   DEF checkAssoc(Rhs?)((E1 & B1) :: ((E2 & B2) :: R)) ==
-       IF (B1 inOprnd?) and (B2 op?) 
+   DEF checkAssoc(Rhs?)((E1 & _) :: ((E2 & B2) :: R)) ==
+       IF B2 = 6
        THEN noWildErr(Rhs?)(E1) +  checkAssoc(Rhs?)(R)
        ELSE infixErr(E2) + checkAssoc(Rhs?)(R) FI
    DEF checkAssoc(_)(S) == pErrMiss(missOp,pos(1st(ft(S))))
 
 -- ---------------------------------------------------------------------------
 
-FUN build: nat -> seq[pair[expr,set'Bitset]] ** err -> seq[pair[expr,set'Bitset]]**err
+FUN build: nat -> seq[pair[expr,nat]] ** err -> seq[pair[expr,nat]]**err
 
 DEF build(Rhs?)((E1 & B1) :: ((E2 & B2) :: S),Err) ==
- 	IF (Rhs? rhs?) or (Rhs? lhs?) ANDIF (B1 fun?) and (B2 arg?)  
+ 	IF (Rhs? rhs?) ORIF (Rhs? lhs?) ANDIF even?(B1) ANDIF B2 |= 6
 	THEN LET (A,NE) == mkA(Rhs?)(E1,E2)
-         IN  build(Rhs?)((A & (fun+(inOprnd+postOprnd))) :: S,Err+NE)
- 	IF (Rhs? in_lhs?) ANDIF (B1 op?) and (B2 arg?)  
+         IN  build(Rhs?)((A & 4) :: S,Err+NE)
+ 	IF (Rhs? in_lhs?) ANDIF B1 = 6 ANDIF B2 |= 6
 	THEN LET (A,NE) == mkA(Rhs?)(E1,E2)
-         IN  build(Rhs?)((A & (fun+(inOprnd+postOprnd))) :: S,Err+NE)
+         IN  build(Rhs?)((A & 4) :: S,Err+NE)
     ELSE LET (NS,NE) == build(Rhs?)(S,ok)
 	     IN ((E1 & B1) :: ((E2 & B2) :: NS),Err+NE)
     FI
@@ -291,14 +270,8 @@ DEF mkA(Rhs?)(E1,E2) == mkSec(Rhs?)(E1,E2,pos(E1))
           ELSE (apply(Op,Arg,P),OpErr)
 	  FI
 -- ---------------------------------------------------------------------------
-   FUN mkTopSec: modifier
-   DEF mkTopSec == mkMod(\\PRes.
-    	IF absy(PRes) Expr?
-	    THEN PRINT(traceMix?, \\ . "After " ++ `(absy(After)),After)
-		 WHERE (NAbsy,Err) == mkSec(e(absy(PRes)))
-		       After == pRes(err(PRes) + Err,Expr(NAbsy),tokS(PRes))
-	    ELSE PRes 
-	    FI)
+   FUN mkTopSec: absy -> absy ** err
+   DEF mkTopSec(A) == LET (B, Err) == mkSec(e(A)) IN (Expr(B), Err)
 
    FUN mkSec : expr -> expr ** err
    DEF mkSec(Arg AS tuple(Eles,P)) == 

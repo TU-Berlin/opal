@@ -1,10 +1,9 @@
-
 IMPLEMENTATION Scanner
 /* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
       See OCSHOME/etc/LICENSE or 
       http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
 */
--- % $Date: 1999-10-13 16:34:51 $ ($Revision: 1.3 $)
+-- % $Date: 1999-10-17 15:51:09 $ ($Revision: 1.4 $)
 
 /* %@table @asis
 @item author: 
@@ -22,9 +21,7 @@ IMPORT
         Options         ONLY options cop? myFile 
         Error          	ONLY err errKind  + error ok errors warning  ok?
         Pos             ONLY pos nextPos nextLine initPos + +! unknown
-        OcExit          ONLY exit languageError
-        OcSetup         COMPLETELY
-        OcStream        COMPLETELY
+        OcExit          ONLY exit ioError
         Verbose         ONLY subphase verb
 
 -- %$$Imports from lib$
@@ -35,29 +32,25 @@ IMPORT
         Com                     COMPLETELY
         ComCompose              ONLY ; & 
         Denotation              ONLY ++ empty =
-        DEBUG                   COMPLETELY
-        Latin1 			ONLY punctuation? letgit? printable? space?
-        Greek 			ONLY punctuation? letgit? printable? space?
+        Latin1 			COMPLETELY
         Nat                     COMPLETELY
         NatConv 		ONLY asChar `
         Pair[seq[token],repTab] ONLY pair & 1st 2nd 
-	Predicate 		ONLY or ~
         PrintableChar           COMPLETELY
         Seq                     COMPLETELY
        	SeqFilter 		ONLY drop split
         SeqMap                  ONLY * 
         SeqReduce               ONLY  /  \
-        Stream                  ONLY input readLine read writeLine load
+        Stream                  ONLY output stdOut writeLine load
         String                  COMPLETELY
         StringConv              ONLY `
         StringFilter            ONLY split drop
         Triple                  ONLY triple & 1st 2nd 3rd
-        Void                    ONLY void
+        Void                    COMPLETELY
 
 
 -- %$$Imports from oc structures$
 IMPORT
-        ZOpts                   COMPLETELY
         Token                   COMPLETELY
         Terminal                ONLY terminal ! eof deno ide =
         Rep                     COMPLETELY
@@ -67,22 +60,21 @@ IMPORT
 -- %Scan @sc{Opal} file which is given in the options
 FUN scan: options -> com[pair[seq[token],repTab]]
 DEF scan(Opt) ==
+  LET Dump? == cop?("printRepTab", Opt) IN
+  load(myFile(Opt)) ; (\\Contents.    -- whole file as seq[string]
   verb(Opt,subphase,"scanning ...") & (\\ _ .
-  load(myFile(Opt)) & (\\Contents.    -- whole file as seq[string]
-  scan(scan(clearHeading(Contents), initArg()), Opt)))
-
--- %process scanning result 
-FUN scan: sc ** options -> com[pair[seq[token],repTab]]
-DEF scan(sc(RT,TS, _, Err, _), Opt) ==
-  LET Dump? == cop?("printRepTab", Opt)
-      RT2 == PRINT(Dump?, \\ . dump(RT), RT)
-      Tokens? == cop?("printToken", Opt)
-      TS2 == PRINT(Tokens?, \\ . IF Dump? THEN
-		dumpTS(TS) ELSE printTS(TS) FI, TS)
-  IN errors(Opt, Err) & (\\ok?. 
-  IF ok? THEN succeed(TS2 & RT2) 
-	ELSE yield(fail(languageError)) FI
-  )
+  (IF okay?(Contents) THEN 
+  	succeed(scan(clearHeading(data(Contents)), initArg()))
+  ELSE break(ioError) FI) & (\\Scan.
+  (IF Dump? THEN
+	writeLine(stdOut, dump(rt(Scan)))
+  ELSE succeed(nil) FI) & (\\ _ .
+  (IF cop?("printToken", Opt) THEN 
+	writeLine(stdOut, (IF Dump? THEN dumpTS ELSE printTS FI)(ts(Scan)))
+  ELSE succeed(nil) FI) & (\\ _ .
+  errors(Opt, er(Scan)) & (\\ _ .
+  succeed(ts(Scan) & rt(Scan))
+  ))))))
 
 -- %$$Auxiliary data types for scanning$
 -- %result from scanning
@@ -190,7 +182,7 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
       IF charset?(C)(Ch) THEN -- continue identifier
         scan(CS, RT, TS, NP, E, ide(charset?(C), Ch :: sofar(C), op(C), dot?))
       ELSE 
-        IF (ft(sofar(C)) usc?) THEN -- underline -> continue
+        IF (ft(sofar(C)) = underscore) THEN -- underline -> continue
           IF Ch special? THEN 
             scan(CS, RT, TS, NP, E, ide(special?, Ch :: sofar(C), op(C), dot?))
           IF Ch alphanum? THEN
@@ -240,17 +232,13 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
        IF Ch special? THEN -- identifier starting with special character
          -- must have this test here because of /* -- */ tokens
          scan(CS, RT, TS, NP, E, ide(special?, Ch%, P, dot?))
-       OTHERWISE                     
-       IF Ch other? THEN -- other character forbidden
+       ELSE  -- other character forbidden
          scan(CS,RT,TS,NP,E + NE,C)
          WHERE NE == sErr(otherChar,P)
-       ELSE -- should have considered all cases now, but who knows?
-         scan(CS,RT,TS,NP,E + NE,C)
-                          WHERE NE == sErr(never, P)
        FI
     OTHERWISE
     IF C comm? THEN -- within nested comment
-      IF (Ch = *) and nestEnd?(CS) THEN -- end of nested comment
+      IF (Ch = *) ANDIF nestEnd?(CS) THEN -- end of nested comment
         scan(rtUni(CS), RT, TS, nextPosUni(NP,CS), E + NE, NC)
         WHERE (NC,NE) == IF nest(C) <>? THEN (none(dot?),sErr(cNotO,P))
                          IF #(nest(C)) = 1 THEN (none(dot?),ok)
@@ -348,10 +336,6 @@ DEF scan(CS0, RT, TS, P, E0, C) ==
         FI
       IF Ch = tab THEN -- no tab characters in denotations
         scan(CS,RT,TS,NP,E + sErr(tabInD,op(C)),C)
-      OTHERWISE
-      IF (Ch other?) and ~(denoOther?) THEN -- other character forbidden
-         scan(CS,RT,TS,NP,E + NE,C)
-                          WHERE NE == sErr(otherChar,P)
       ELSE -- include character in denotation
         scan(CS,RT,TS,NP,E,deno(op(C),Ch :: sf(C), dot?))
       FI
@@ -414,7 +398,7 @@ DEF scanHex(CS, RT, TS, P, E, C, start, num, str) ==
              deno(op(C), # :: sf(C), dotKW(C)))
       FI
     ELSE
-      IF digit?(Ch) THEN -- decimal number
+      IF digit?'Char(Ch) THEN -- decimal number
         scanHex(rtUni(CS), RT, TS, nextPosUni(P, CS), E + chE, C,
                 start, (16 * num) + asDigitNat(Ch), Ch :: str)
       IF a <= Ch and Ch <= f THEN -- small true hex character
@@ -459,7 +443,7 @@ DEF scanOct(CS, RT, TS, P, E, C, start, num, str) ==
   FI
 
 FUN hexdigit? octdigit? : char -> bool
-DEF hexdigit?(ch) == digit?(ch) or (a <= ch and ch <= f) or 
+DEF hexdigit?(ch) == digit?'Char(ch) or (a <= ch and ch <= f) or 
                      (A <= ch and ch <= F)
 
 DEF octdigit?(ch) == 0 <= ch and ch <= 7
@@ -512,7 +496,7 @@ DEF checkLineDoc(CS, P, CP, openCt, closeCt, lastC) ==
 -- %@code{classify} functions are called with unicode escapes expanded
 FUN classify: pos ** char ** repTab -> repTab ** token
 DEF classify(Pos, Ch, RT) ==
-    LET (NRT,Rep) == IF (Ch usc?) 
+    LET (NRT,Rep) == IF Ch = underscore
                      THEN genAndIns(RT,Ch`) ELSE insert(RT,Ch `) FI
         Terminal  == !(Rep)
         Token     == token(Terminal,Rep,Pos)
@@ -521,7 +505,7 @@ DEF classify(Pos, Ch, RT) ==
 FUN classify: pos ** string ** repTab ** bool -> repTab ** token
 DEF classify(P,<>,RT, _) == (RT,token(errorRep!,errorRep,P))
 DEF classify(P,Ch :: <>,RT,dot?) == 
-    LET (NRT,Rep) == IF (Ch usc?)
+    LET (NRT,Rep) == IF Ch = underscore
                      THEN genAndIns(RT,Ch `) ELSE insert(RT,Ch `) FI
         Terminal0  == !(Rep)
         Terminal   == IF dot? THEN Terminal0 
@@ -538,8 +522,10 @@ DEF classify(P,Ch :: CS,RT,_) ==
 -- %is next dot keyword?
 FUN dotT? : token ** bool -> bool 
 DEF dotT?(T, expectDot?) == 
-    IF all = T ORIF ex = T ORIF lambda = T THEN true
     IF dot = T THEN false
+    IF lambda = T THEN true
+    IF all = T THEN true
+    IF ex = T THEN true
     ELSE expectDot?
     FI
 
@@ -662,63 +648,73 @@ DEF cHigh(s, p) == sErr("`\\" ++ (revert(s)`) ++
 
 FUN special? : char -> bool
 DEF Ch special? == 
-	LET       check? == IF latin1? THEN punctuation?'Latin1
-                            IF greek? THEN punctuation?'Greek
-                            ELSE punctuation?'Char
-                            FI
-	IN IF check?(Ch) THEN 
-		IF extra?(Ch) THEN false ELSE dblquote |= Ch FI
-	   ELSE false FI
+IF punctuation?'Char(Ch) THEN IF extra?(Ch) THEN false 
+		              ELSE Ch |= dblquote FI
+IF Ch >= invertedExclamationMark THEN
+	IF Ch <= invertedQuestionMark THEN true
+	ELSE IF Ch = divisionSign THEN true
+	     ELSE Ch = multiplicationSign FI
+        FI
+ELSE false FI
 
 -- %delimiters which have predefined meaning to @sc{Opal}
 
 FUN extra?: char -> bool
-DEF Ch extra? == IF Ch = lbrace ORIF Ch = rbrace ORIF Ch = comma ORIF 
-		 Ch = rsngquote ORIF Ch = lsqbrace ORIF Ch = rsqbrace THEN
-		true ELSE false FI
+DEF Ch extra? == 
+IF Ch = comma THEN true 
+IF Ch = lbrace THEN true
+IF Ch = rbrace THEN true
+IF Ch = rsngquote THEN true
+IF Ch = lsqbrace THEN true 
+IF Ch = rsqbrace THEN true
+ELSE false FI
 
 -- %alphanumeric characters 
 
 FUN alphanum?: char -> bool
 DEF alphanum?(ch) == 
- LET check? == IF latin1? THEN letgit?'Latin1
-              IF greek? THEN letgit?'Greek
-              ELSE letgit?'Char
-              FI
- IN IF check?(ch) ORIF usc?(ch) ORIF ch = ? THEN true
-	ELSE false FI
+IF ch = underscore THEN true
+IF ch = ? THEN true
+ELSE scanLetgit?(ch) FI
 
 FUN scanLetgit? : char -> bool
-DEF scanLetgit? == IF latin1? THEN letgit?'Latin1
-                   IF greek? THEN letgit?'Greek
-                   ELSE letgit?'Char
-                   FI
+DEF scanLetgit?(ch) == 
+    IF letter?'Char(ch) THEN true
+    IF digit?'Char(ch) THEN true
+    IF ch >= Agrave THEN IF ch = divisionSign THEN false 
+			 ELSE ch |= multiplicationSign FI 
+    ELSE false FI
 
 -- %Other characters, generally only allowed in comments
 
 FUN other?: char -> bool
-DEF other? == 
-              IF latin1? THEN ~(printable?'Latin1 or space?'Latin1)
-              IF greek? THEN ~(printable?'Greek or space?'Greek)
-              ELSE ~(printable?'Char or space?'Char)
-              FI
+DEF other?(ch) == 
+IF printable?'Char(ch) THEN false
+IF whitespace?'Char(ch) THEN false
+IF c >= noBreakSpace THEN false
+ELSE true FI
 
 -- %space (needed for adapting to different character sets)
 FUN scanSpace?: char -> bool
-DEF scanSpace? == IF latin1? THEN space?'Latin1 
-                  IF greek? THEN space?'Greek
-                  ELSE space?'Char
-                  FI
-
-FUN usc? : char -> bool
-DEF Ch usc? == Ch = underscore
+DEF scanSpace?(ch) == 
+IF ch = noBreakSpace THEN true
+ELSE whitespace?'Char(ch) FI
 
 /* %Single Characters allowed after a backslash. */
 FUN escapes?: char -> bool
 DEF escapes?(ch) == 
-IF ch = n ORIF ch = t ORIF ch = v ORIF ch = b ORIF ch = r ORIF
-   ch = f ORIF ch = a ORIF ch = \ ORIF ch = ? ORIF ch = rsngquote
-   ORIF ch = dblquote THEN true ELSE false FI
+IF ch = n THEN true 
+IF ch = t THEN true 
+IF ch = v THEN true 
+IF ch = b THEN true 
+IF ch = r THEN true 
+IF ch = f THEN true 
+IF ch = a THEN true 
+IF ch = \ THEN true 
+IF ch = ? THEN true 
+IF ch = rsngquote THEN true 
+IF ch = dblquote THEN true
+ELSE false FI
 
 FUN escape: char -> char
 DEF escape(ch) ==
@@ -792,7 +788,7 @@ DEF scanUnicode(CS, start, num, str) ==
                      start))
       FI
     ELSE -- hexdigit
-      IF digit?(ft(CS)) THEN -- decimal number
+      IF digit?'Char(ft(CS)) THEN -- decimal number
         scanUnicode(rt(CS), start, (16 * num) + asDigitNat(ft(CS)),
                     ft(CS) :: str)
       IF a <= ft(CS) and ft(CS) <= f THEN -- small true hex character

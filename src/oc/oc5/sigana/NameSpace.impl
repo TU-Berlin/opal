@@ -1,39 +1,40 @@
 IMPLEMENTATION NameSpace
 
 IMPORT 	
-	DEBUG COMPLETELY
-	Denotation COMPLETELY
+	Denotation ONLY	++
 	Error	COMPLETELY
-	Name COMPLETELY
-	FullInter COMPLETELY
-	NameUnify COMPLETELY
+	FullInter ONLY	mkFullNames mkOwnNames
 	GlobSig	COMPLETELY
 	InterOpal	COMPLETELY
-	InterOpalAccess	COMPLETELY
-	RepMap	COMPLETELY
 	Match	COMPLETELY
+	Name COMPLETELY
+	NameUnify COMPLETELY
 	Nat	COMPLETELY
 	NatConv	COMPLETELY
 	Option  COMPLETELY
 	Pair	COMPLETELY
 	PartName COMPLETELY
-	Pos	ONLY pos:SORT `
-	Rep	COMPLETELY
+	Pos	ONLY 	pos `
+	Rep	ONLY	= arrow rep repTab #
+	RepMap	COMPLETELY
 	Seq	COMPLETELY
 	SeqConv	COMPLETELY
 	SeqFilter	COMPLETELY
 	SeqMap		COMPLETELY
-	SeqMapEnv		COMPLETELY
+	SeqMapEnv	COMPLETELY
 	SeqOfSeq	COMPLETELY
 	SeqReduce	COMPLETELY
 	SeqZip	COMPLETELY
-	Set	COMPLETELY
-	SetConv COMPLETELY
-	SetReduce COMPLETELY
+	Set	ONLY	set
+	SetConv ONLY	asSeq
 	Struct	COMPLETELY
-	Triple COMPLETELY
-
-
+	Quadruple COMPLETELY
+/*
+	Com	COMPLETELY
+	ComCompose ONLY &
+	Options  COMPLETELY
+	Verbose COMPLETELY
+*/
 -- ---------------------------------------------------------------------------
 FUN insertOwnInter: interOpal ** globSig -> globSig
 DEF insertOwnInter(IO, GS) == 
@@ -45,18 +46,19 @@ IN :=_params(addNames(:=_repTab(GS, RT2), Names), ActParams)
 FUN insertInters: seq[interOpal] ** globSig -> globSig
 DEF insertInters(IOS, GS) ==
 	LET RT == repTab(GS) 
-	    (RT2, PairSeq) == *(mkImport, RT, IOS)
+	    (RT2, QuadSeq) == *(mkImport, RT, IOS)
 	    Imports == imports(struct(GS))
 	    ImportSeqs == partition(\\I1, I2. structIde(origin(I1)) =
 				structIde(origin(I2)))(Imports)
 	    GS2 == \ (anaImports, GS, ImportSeqs)
-	IN :=_imports(:=_repTab(GS2, RT2), asMap(PairSeq))
+            Info == \ (\\Q, I. def(unquad(Q), I), {}, QuadSeq) 
+	IN :=_names(:=_imports(:=_repTab(GS2, RT2), Info), init(#(RT2)))
 
 FUN mkImport : repTab ** interOpal -> 
-	repTab ** pair[rep,triple[interOpal,seq[fullName],seq[fullName]]]
+	repTab ** quad[rep,interOpal,seq[fullName],seq[fullName]]
 DEF mkImport(RT, IO) ==
 	LET (RT2, Rep, Formals, Names) == mkFullNames(RT, IO)
-	IN (RT2, Rep & &(IO, Formals, Names))
+	IN (RT2, &(Rep, IO, Formals, Names))
 
 -- --------------------------------------------------------------------------
 FUN anaImports: seq[import] ** globSig -> globSig
@@ -97,8 +99,8 @@ DATA phase == first cycle last
 FUN anaImports: phase -> import ** globSig -> globSig
 -- PRE ::?(Is) AND structIde(origin(I)) alle gleich
 DEF anaImports(Phase)(I, GS) ==
-	LET (_, Formals, AllNames) == untriple(imports(GS) ! 
-			structIde(origin(I)))
+	LET (_, Formals, AllNames) == imports(GS) ! 
+			structIde(origin(I))
 	IN anaImport(Phase, Formals, AllNames)(I, GS)
 
 FUN anaImport : phase ** seq[fullName] ** seq[fullName]
@@ -109,7 +111,7 @@ DEF anaImport(Phase, Formals, AllNames)(I, GS) ==
 	IF avail?(paramS(Origin)) THEN
 	    IF ~(first?(Phase)) THEN 
 		LET ParamS == cont(paramS(Origin))
-		    InstS == deepMatchInst(GS, Formals, ParamS)
+		    InstS == deepMatchInst(names(GS), Formals, ParamS)
 		IN
 	            IF last?(Phase) THEN
 			LET Pos == pos(Origin)
@@ -189,11 +191,15 @@ DEF insertSorts(GS) == analyseImports(first, analyseFuns(first, GS))
 
 FUN insertFuns : globSig -> globSig
 DEF insertFuns(GS) ==
-	LET N == #(flat(asSeq * codom(names(GS))))
-	    GS2 == analyseFuns(cycle, GS)
-	    GS3 == analyseImports(cycle, GS2)
-	IN IF #(flat(asSeq * codom(names(GS3)))) = N THEN 
-		matchParams(analyseImports(last, analyseFuns(last, GS3))) 
+	LET N == #(asSeq(names(GS)))
+	    GS3 == analyseImports(cycle, analyseFuns(cycle, GS))
+/*	    Opts == EXEC(analyzeOptions)
+	    GS3 == EXEC(verb(Opts, subphase, "funs") & (\\ _ .
+			succeed(analyseFuns(cycle, GS)) & (\\GS2.
+	                verb(Opts, subphase, "imports") & (\\ _ .
+			succeed(analyseImports(cycle, GS2))))))
+*/	IN IF #(asSeq(names(GS3))) = N THEN 
+		analyseImports(last, analyseFuns(last, GS3))
 	   ELSE insertFuns(GS3) FI
 
 FUN analyseFuns : phase ** globSig -> globSig
@@ -209,7 +215,7 @@ IN IF first?(Phase) THEN
    ELSE LET
 	    Funs == (\\P. op?(kind(P))) | Sig
 	    Fcts == (\\F. fct(kind(F))) * Funs
-	    CandFcts ==	zip(&)(deepMatch(GS) * Fcts, Funs)
+	    CandFcts ==	zip(&)(deepMatch(names(GS)) * Fcts, Funs)
 	    (NoCands, MoreCands) == partition(\\P. <>?(1st(P)), CandFcts)
 	    (UniCands, AmbCands) == partition(\\P. <>?(rt(1st(P))), MoreCands)
 	    (MonoCands, VarCands) == partition(\\P. monomorph?(ft(1st(P))),
@@ -253,116 +259,3 @@ DEF mkSort(Orig)(P) ==
 
 
 -- --------------------------------------------------------------------------
-FUN matchParams: globSig -> globSig
-DEF matchParams(GS) ==
-	LET 
-	    Origin == head(struct(GS))
-	    OptParamS == paramS(Origin)
-	    Params == params(GS)
-	IN IF nil?(OptParamS) THEN GS 
-	   ELSE 
-		LET PartParamS == cont(OptParamS)
-		IN IF #(PartParamS) < #(Params) THEN
-			addErrs(GS, 
-		err(error, "too few parameters", pos(Origin)))
-		ELSE LET (CheckErr, RestPars) == 
-				checkOldPars(Params, PartParamS)
-			ExtendWarn == IF ::?(Params) ANDIF ::?(RestPars)
-				THEN err(warning, "additional parameters", 
-					pos(ft(RestPars)))
-				ELSE ok FI
-		        DeepParCands == deepMatch(GS) * RestPars
-			UnknownErrs == deepErr(DeepParCands, RestPars)
-			FlatParCands == (Params ++ _) * combine(DeepParCands)
-                        NoDups == noDuplicates? | FlatParCands 
-			DupErr == IF <>?(NoDups) ANDIF ::?(FlatParCands) THEN
-				dupErr(ft(FlatParCands), RestPars)
-				ELSE ok FI
-			ParCands == checkParList(structIde(Origin)) | 
-					NoDups
-			ClosErr == IF <>?(ParCands) ANDIF ::?(NoDups) THEN
-				closErr(ft(NoDups), RestPars)
-				ELSE ok FI
-			GS2 == addErrs(GS, CheckErr + ExtendWarn 
-				+ UnknownErrs + DupErr + ClosErr)
-		     IN IF <>?(ParCands) THEN GS2
-			ELSE IF ::?(rt(ParCands)) THEN
-				addErrs(GS2,
-			err(error, "ambiguous parameterization" ++ 
-				`("\n  ", "\n  ", "")(`("[", ",", "]")(`))
-					(ParCands)
-				, pos(Origin)))
-			     ELSE :=_params(GS2, ft(ParCands))
-			     FI
-			FI
-		 FI
-	FI
- 
-FUN checkOldPars: seq[fullName] ** seq[partName] -> err ** seq[partName]
-DEF checkOldPars(<>,Ps) == (ok,Ps)
-DEF checkOldPars(Ft1 :: Rt1, Ft2 :: Rt2) == 
-	LET (CheckErr, Ps) == checkOldPars(Rt1, Rt2)
-	IN IF avail?(match(Ft1, Ft2)) THEN (CheckErr, Ps)
-	   ELSE (err(error, "formal parameter `" ++ `(Ft2) ++
-		"'\n  must be `" ++ `(Ft1) ++ "'", pos(Ft2)) + CheckErr,
-		Ps)
-	   FI
-
-FUN deepErr: seq[seq[fullName]] ** seq[partName] -> err
-DEF deepErr(Cands, Ps) ==
-	LET UnknownPars == (\\P. <>?(1st(P))) | zip(&)(Cands, Ps)
-	IN \ (\\P, E. err(error, "unresolved parameter `" ++
-		`(2nd(P)) ++ "'", pos(2nd(P))) + E, 
-				ok, UnknownPars)
-
-FUN combine: seq[seq[fullName]] -> seq[seq[fullName]]
-DEF combine(<>) == %(<>)
-DEF combine(<> :: _) == <>
-DEF combine((Ft :: Rt) :: RRt) == 
-	((Ft :: _) * combine(RRt)) ++ combine(Rt :: RRt)
-
-FUN noDuplicates?: seq[fullName] -> bool
-DEF noDuplicates?(S) == #(asSet[fullName, <](S)) = #(S)
-
-FUN checkParList: rep -> seq[fullName] -> bool
-DEF checkParList(Rep)(Pars) == findOwnSubnames(Rep, Pars) <= asSet(Pars)
-
-FUN findOwnSubnames:  rep ** seq[fullName] -> set[fullName, <]
-DEF findOwnSubnames(_, <>) == {}
-DEF findOwnSubnames(Rep, (Ft AS fullName(_, Orig, Kinst)) :: Rt) ==
-	(IF Rep = Orig THEN %(Ft) ELSE {} FI) + 
-	 findOwnSubnames(Rep, Kinst) +
-	 findOwnSubnames(Rep, Rt)
-
-FUN dupErr: seq[fullName] ** seq[partName] -> err
-DEF dupErr(Cand, Ps) ==
-	LET (Own, New) == split(#(Cand) - #(Ps), Cand)
-	    OwnSet == asSet[fullName, <](Own) 
-	IN dupErr(OwnSet, New, Ps)
-
-FUN dupErr: set[fullName, <] ** seq[fullName] ** seq[partName] -> err
-DEF dupErr(_, <>, <>) == ok
-DEF dupErr(Set, Ft1 :: Rt1, Ft2 :: Rt2) ==
-	IF Ft1 in Set THEN
-		err(error, "duplicate parameter `" ++ `(Ft2) ++ "'", 
-		pos(Ft2)) + dupErr(Set, Rt1, Rt2)
-	ELSE dupErr(Ft1 incl Set, Rt1, Rt2) FI
-
-FUN closErr: seq[fullName] ** seq[partName] -> err
-DEF closErr(Cand, Ps) ==
-	LET New == drop(#(Cand) - #(Ps), Cand)
-	    FullSet == asSet[fullName, <](Cand)
-	IN closErr(FullSet, New, Ps) 
-
-FUN closErr: set[fullName, <] ** seq[fullName] ** seq[partName] -> err
-DEF closErr(_, <>, <>) == ok
-DEF closErr(Set, Ft1 :: Rt1, Ft2 :: Rt2) ==
-	LET SubNames == findOwnSubnames(orig(Ft1), %(Ft1))
-	    Err == closErr(Set, Rt1, Rt2)
-	IN  IF ~(SubNames <= Set) THEN
-		LET Diff == asSeq(SubNames - Set)
-		IN err(error, "unclosed parameter `" ++ `(Ft2) ++ 
-		   "'\n  requires additional parameter `" ++
-			`("", " ", "")(`)(Diff) ++ "'", pos(Ft2))
-		+ Err
-	    ELSE Err FI
