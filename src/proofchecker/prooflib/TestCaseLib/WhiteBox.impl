@@ -1,0 +1,75 @@
+IMPLEMENTATION WhiteBox
+
+IMPORT DefEqnHandling ONLY lVars
+       SeqFold ONLY /
+       RepoAbsy COMPLETELY
+       Seq ONLY seq :: <> # ft ++ %
+       SeqOfSeq ONLY flat
+       Pair ONLY pair &
+       RepoObjectAccess ONLY impl
+       Nat ONLY 1 |=
+       RepoDiag ONLY error freeRef !! ok mode ref
+       Fmt ONLY pretty
+       PrettyFormatting ONLY fmtObjectNameLong
+       SeqMap ONLY *
+       Option ONLY avail? cont option
+       RepoAn ONLY none
+       PredefEntities ONLY true not and
+       String ONLY string
+       AbsySC ONLY apply1 tuple1
+
+DEF whiteBox(R, oN) ==
+  LET i == impl(oN)(R)
+  IN
+  IF i def? THEN
+    IF #(eqns(i)) |= 1 THEN <> & ((error, freeRef("whiteBox")) !! 
+                                  ("need 1! equation for `%s'", 
+                                   pretty(fmtObjectNameLong(R)(oN))))
+    ELSE
+      unfoldEqn(R)(ft(eqns(i))) & ok
+    FI
+  ELSE
+    <> & ((error, freeRef("whiteBox")) !! 
+          ("no definition found for `%s'", 
+           pretty(fmtObjectNameLong(R)(oN))))
+  FI
+
+FUN unfoldEqn: repo -> eqn -> seq[expr]
+DEF unfoldEqn(R)(eqn(_, lS, lhs, _, rhs)) ==
+  IF rhs cases? THEN
+    LET iExprs == flat(unfoldGuard(R) * guards(rhs))
+        elseExpr == IF else(rhs) avail? THEN
+                      unfoldGuard(R)(guard(none, negate(R, guards(rhs)),
+                                           cont(else(rhs))))
+                    ELSE
+                      <>
+                    FI
+    IN
+      (\\ e. lambda(none, lS, lVars(lhs), e)) * (iExprs ++ elseExpr)
+  ELSE
+    %(lambda(none, lS, lVars(lhs), true(R)))
+  FI
+  
+FUN negate: repo ** seq[guard] -> expr
+DEF negate(R, gs) ==
+  LET ifs == if * gs
+      mkNot == apply1(not(R), _)
+      mkAnd == \\ e1, e2. apply1(and(R), tuple1(%(e1, e2)))
+  IN
+  mkAnd / mkNot * ifs
+
+FUN unfoldGuard: repo -> guard -> seq[expr]
+DEF unfoldGuard(R)(guard(_, i, t)) ==
+  IF t cases? THEN
+    LET iExprs == flat(unfoldGuard(R) * guards(t))
+        elseExpr == IF else(t) avail? THEN
+                      unfoldGuard(R)(guard(none, negate(R, guards(t)),
+                                           cont(else(t))))
+                    ELSE
+                      <>
+                    FI
+    IN
+    (\\ e. apply1(and(R), tuple1(%(i, e)))) * (iExprs ++ elseExpr)
+  ELSE
+    %(i)
+  FI

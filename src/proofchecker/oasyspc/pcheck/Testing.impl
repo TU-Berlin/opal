@@ -283,3 +283,43 @@ FUN flat: fct -> fct
 DEF flat(F AS name(_)) == F
 DEF flat(cart(elems)) == cart(flat * elems)
 DEF flat(funct(d, c)) == cart(%(flat(d), flat(c)))
+
+/* %Perform a formal test */
+
+DEF checkFormalTest(R, main, F, re, e) ==
+  LET fct == ft(actuals(oper(funct(e)))(R))
+      caseTest == ft(elems(arg(e)))
+  IN               
+  setRepo(R) & (\\ _ .
+  identTable & (\\ iTab.
+  LET E0 == init(R, iTab)
+      (E1, main, _) == expr2expr(E0, caseTest)
+      (E2, arg0) == E1 @ repo(_)
+      (E3, arg1) == E2 @ obj(_, cast(fct))
+      (E4, args) == E3 @ tuple(_, %(tupleExpr(arg0, 0),
+                                    tupleExpr(arg1, 1)), 2)
+      (_E5, top) == E4 @ apply(_, main, args, 1)
+  IN
+  start & (\\ _ .
+  debugMsg("checkFormalTest", \\ . "evaluating case tests ...")(R) & (\\ R1.
+  eval(main, top, resultT(R1)) & (\\ res.
+  debugMsg("checkFormalTest", \\ . "... done")(R1) & (\\ R2.
+  elapsed & (\\ diff.
+  debugMsg("timer", \\ . "elapsed time: " ++ 
+           ``(diff, 6) ++ " sec")(R2) & (\\ R3 . 
+  IF res undefined? THEN
+    succeed(R & (error, re) !! "undefined case test evaluator: " ++ msg(res))
+  IF res unknown? THEN
+    succeed(R & (error, re) !! msg(res))
+  IF res okay? THEN
+    LET testFs == caseTests(cast(data(res)))
+    IN
+    debugMsg("checkFormalTest", \\ . "resulting case tests: " ++
+             fmtSeq(prettyExpr(R3, main))(testFs))(R3) & (\\ R4.
+    succeed(R4 & ok)
+    )
+  FI
+  ))))))))
+
+FUN resultT: repo -> fct
+DEF resultT(R) == name(arb(lookup(proofscript(R), "resultT")(R)))
