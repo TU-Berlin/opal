@@ -1,11 +1,11 @@
 #!/usr/tcl/bin/wish -f
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dfo.tcl,v 1.2 1999-04-28 15:12:49 wg Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dfo.tcl,v 1.3 2000-07-04 09:46:10 kd Exp $
 ### some tcl commands for integrating dosfop into the oasys-environment
 ### we are using dosfop- as prefix for names used by procedures or variables 
 ### from this file 
 
 
-uplevel #0 set dfoVersion 1.31
+uplevel #0 set dfoVersion 1.32
 uplevel #0 {puts "dfo version $dfoVersion"}
 
 

@@ -2,7 +2,7 @@
 ### we are using dosfop- as prefix for names used by procedures or variables 
 ### from this file 
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-update.tcl,v 1.1.1.1 1998-06-16 16:00:44 wg Exp $
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-update.tcl,v 1.2 2000-07-04 09:46:10 kd Exp $
 
 uplevel #0 append dosfopVersions {dosfop-update\ 1.04\n}
 
@@ -16,14 +16,21 @@ proc dosfop-update { } {
     set dosfopLibPaths { }
     foreach p [split [oasys-intern-path] ","] {
 	if { [lindex $p 0] == [lindex $p 1] } then {
-	    lappend dosfopLibPaths [dosfop-expand [lindex $p 1]]}
+	    set pa [dosfop-expand [lindex $p 1]]
+	    if { ! ($pa == "") } then {
+		lappend dosfopLibPaths $pa
+	    }
+	}
     }
     # dosfopStructs: array, path -> list of structures in path
     # dosfopSPath: array, structure name -> path
     foreach un [oasys-units file] {
 	if { [regexp "(.*)/(.*)\.sign" $un m p u] == 1} then {
-	    lappend dosfopStructs([dosfop-expand $p]) $u
-	    set dosfopSPath($u) [dosfop-expand $p]
+	    set pa [dosfop-expand $p]
+	    if { ! ($pa == "") } then {
+		lappend dosfopStructs($pa) $u
+		set dosfopSPath($u) $pa
+	    }
 	} 
     }
     

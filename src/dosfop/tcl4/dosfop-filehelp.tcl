@@ -1,6 +1,6 @@
 ### proc's for filehandling
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-filehelp.tcl,v 1.1.1.1 1998-06-16 16:00:44 wg Exp $ 
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-filehelp.tcl,v 1.2 2000-07-04 09:46:10 kd Exp $ 
 
 uplevel #0 append dosfopVersions {dosfop-filehelp\ 1.07\n}
 
@@ -143,11 +143,15 @@ proc dosfop-cp-modify { src dest mods } {
 
 # expand argument path
 proc dosfop-expand { p } {
-    set oldpath [pwd]
-    cd $p
-    set newpath [pwd]
-    cd $oldpath
-    return $newpath
+    if [file exists $p] then {
+	set oldpath [pwd]
+	cd $p
+	set newpath [pwd]
+	cd $oldpath
+	return $newpath 
+    } else {
+	return ""
+    }    	    
 }
 
 # former getNamelist
