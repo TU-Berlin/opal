@@ -1,0 +1,299 @@
+IMPLEMENTATION Num
+/$ PROOFCHECK $/
+
+IMPORT BasicTac COMPLETELY
+       Strategies COMPLETELY
+       CalcInduct COMPLETELY
+       CalcComputational COMPLETELY
+       CalcLogical COMPLETELY
+       CalcDomain COMPLETELY
+       CalcStructural COMPLETELY
+       REFLEXIONS COMPLETELY
+       ProofAn COMPLETELY
+       ProofTactics COMPLETELY
+       Compose ONLY o
+       Abort ONLY abort
+       Nat ONLY nat 0 1 2 3 4 5 6 7 8 9 10 20 30 ! succ 100 *
+       Denotation ONLY ++
+       BoolProps COMPLETELY
+       CalcLogicalForward COMPLETELY
+
+DATA num == 0
+            succ(pred: num)
+
+DEF asDeno(0) == "<0>"
+DEF asDeno(succ(0)) == "I"
+DEF asDeno(succ(x)) == "I" ++ asDeno(x)
+
+DEF 0 >= 0 == true
+DEF 0 >= succ(a) == false
+DEF succ(a) >= 0 == true
+DEF succ(a) >= succ(b) == a >= b
+
+DEF 0 = 0 == true
+DEF 0 = succ(a) == false
+DEF succ(a) = 0 == false
+DEF succ(a) = succ(b) == a = b
+
+DEF 0 < 0 == false
+DEF 0 < succ(a) == true
+DEF succ(a) < 0 == false
+DEF succ(a) < succ(b) == a < b
+
+DEF a > b == b < a
+
+DEF 0 + a == a
+DEF succ(a) + b == succ(a + b)
+
+DEF 0 - 0 == 0
+DEF succ(a) - 0 == succ(a)
+DEF succ(a) - succ(b) == a - b
+DEF 0 - succ(a) == abort("-'Num: right operand greater than left")
+
+DEF 1 == succ(0)
+
+DEF max(a, b) == IF a >= b THEN a 
+                 IF b >= a THEN b
+                 FI
+
+DEF min(a, b) == IF a >= b THEN b
+                 IF b >= a THEN a
+                 FI
+
+-- %$Proofs related to geq$
+PROOF Q: dfd_true |- dfd_true
+PROOF Q == simpleP2
+
+
+
+-- %$Proofs related to geq$
+PROOF P: Discr[0'Num, succ?'Num] Discr[succ'Num,0?'Num] 
+         Discr[succ'Num,succ?'Num] Sel[succ'Num, pred'Num] 
+         CDfd[0'Num] CDfd[succ'Num]
+         dfd_true dfd_false 
+-- PROOF P: Datatype[num] Freetype[bool] 
+         >=_total Def[>=] |- Copy[Spc[>=]:LAW]
+PROOF P == simpleP2
+
+
+-- LAW >=_total == ALL a b. DFD a >= b 
+PROOF P_total: Discr[0'Num, succ?'Num] Discr[succ'Num,0?'Num] 
+         Discr[succ'Num,succ?'Num] Discr[0'Num, 0?'Num] 
+         Sel[succ'Num, pred'Num] 
+         CDfd[0'Num] CDfd[succ'Num]
+         dfd_true dfd_false 
+         Def[>=] |- Copy[>=_total:LAW] 
+PROOF P_total == simpleP2
+
+-- LAW >=_refl == ALL a. a >= a
+PROOF >=_refl : Discr[0'Num, succ?'Num] Discr[succ'Num,0?'Num] 
+         Discr[succ'Num,succ?'Num] Discr[0'Num, 0?'Num] 
+         Sel[succ'Num, pred'Num] 
+         CDfd[0'Num] CDfd[succ'Num]
+         dfd_true dfd_false Def[>=] |- Copy[reflexive[num, >=]:LAW]
+PROOF >=_refl == simpleP2
+
+PROOF succ_mon_>= :Discr[0'Num, succ?'Num] Discr[succ'Num,0?'Num] 
+         Discr[succ'Num,succ?'Num] Discr[0'Num, 0?'Num] 
+         Sel[succ'Num, pred'Num] 
+         CDfd[0'Num] CDfd[succ'Num] DDfd[0?'Num] DDfd[succ?'Num] 
+         SDfd[pred'Num]
+         dfd_true dfd_false  contradict Def[>=] |- Copy[succ_mon_>= : LAW]
+PROOF succ_mon_>= == 
+   statP( induct2Start;!
+          subgoal(rewriterO;! mp_r;! rewrite_l_deep;! tApart);!
+          subgoal(rewriterO;! mp_r;! rewrite_l_deep;! tApart)
+        ) 
+
+-- LAW tricho_>= == ALL a b. a >= b OR b >= a
+PROOF tricho_>= : Def[>='Num] |- Copy[tricho_>= :LAW]
+PROOF tricho_>= == statP(simpleP2;! 
+                          subgoal(all_lN; tApart);!
+                          subgoal(all_lN; tApart)
+                         )                          
+
+-- LAW >=_antisym == ALL a b. a >= b AND b >= a ==> a === b
+PROOF >=_antisym : Equiv[succ'Num, succ'Num] Def[>=] |- Copy[antisymmetric[num, >=]:LAW]
+PROOF >=_antisym == 
+   statP(
+         induct2Start;!
+         subgoal(biimpl_r; mp_r; *(deleter2 | bLogic | contrawrite_r_deep));!
+         subgoal(biimpl_r; mp_r; *(deleter2 | bLogic | contrawrite_r_deep));! 
+         subgoal(biimpl_r; mp_r; *(deleter2 | bLogic | contrawrite_r_deep))
+        )
+
+-- LAW >=_trans == ALL a b c. a >= b AND b >= c ==> a >= c
+PROOF >=_trans : Def[>=] |- Copy[transitive[num, >=]:LAW]
+PROOF >=_trans == 
+   statP(induct2Start;! rewriterO;!
+          subgoal(mp_r;! rewriter3L);!
+          subgoal(mp_r;! logic; contrawrite_r_deep; assume;! rewriter3L)
+         )
+
+-- LAW >=_def == ALL a b. a >= b <=> EX x. a === b + x
+PROOF >=_def : Def[+'Num] Def[>='Num] +_total
+               CDfd[0'Num] CDfd[succ'Num] Equiv[0'Num, succ'Num] 
+               Equiv[succ'Num, succ'Num]
+               Copy[succ_mon_>= :LAW] |- Copy[>=_def:LAW]
+PROOF >=_def == 
+  LET t1 == subgoal(rewrite_r_deep; rewrite_r_deep; equiv_refl_u;! tApartS)
+  IN
+  statP((mInduct;! tApartS);!
+         t1;! t1;! subgoal(rewrite_r_deep; equiv_refl_u; tApartS);!
+         subgoal(rewrite_l_deepN; biimpl_lN; ex_l; tApartS; ex_r;!
+                 rewrite_r_deep; rewrite_r_deep; equiv_refl_u; tApartS);!
+         subgoal(rewrite_r_deep;! tApartS;! all_lN; *(bLogic);
+                 assume; det(4, rewrite_l_deepN);! 
+                 det(4, biimpl_l); assume; tApartS; QED);!
+         subgoal(all_lN; *(bLogic); rewrite_r_deep; det(5, rewrite_r_deep);!
+                equiv_refl_u; tApartS;
+                mp_r; contrawrite_r_deep; tApartS; QED);!
+         subgoal(all_lN; *(bLogic); rewrite_r_deep; tApartS;!
+                 rewrite_l_deepN; biimpl_lN; assume; tApartS)
+        )
+
+-- %$Proofs related to eq$
+
+LAW dfd_eq == ALL a b. DFD a ='Num b
+PROOF dfd_eq : Def[='Num] dfd_true dfd_false |- dfd_eq
+PROOF dfd_eq == simpleP2
+
+
+PROOF eq : Def[='Num] dfd_eq
+           CDfd[succ'Num] CDfd[0'Num] Equiv[succ'Num, succ'Num]
+           Equiv[0'Num, succ'Num] Equiv[succ'Num, 0'Num] 
+           |- Copy[Spc[='Num]:LAW]
+PROOF eq == statP(mInduct;! *(opalR | deleter | bLogic);!
+                   subgoal(all_lN; *(bLogic); det(2, biimpl_r); assume;!
+                          rewriter30;! contrawrite_r_deep; tApartS; QED);!
+                   subgoal(rewrite_r_deep; all_lN; *(bLogic); assume;
+                          tApartS;! biimpl_r; assume; tApartS);!
+                   subgoal(all_lN; *(bLogic); det(2, biimpl_r); assume;!
+                          rewriter30;! contrawrite_r_deep; tApartS; QED);!
+                   subgoal(rewrite_r_deep; all_lN; *(bLogic); assume;
+                          tApartS;! biimpl_r; assume; tApartS)
+                  )
+
+
+-- %Proof related to less
+
+
+PROOF less: Def[>='Num] Def[<'Num] Copy[succ_mon_>= :LAW]
+            CDfd[succ'Num]
+              dfd_true dfd_false |- Copy[Spc[<'Num]:LAW]
+PROOF less == 
+  LET t1 == all_l;! rewriter30
+      t2 == mp_r; all_l;! rewriter30
+      t3 == all_l;! *(bLogic); eq_assume; tApartS
+  IN
+  statP(mInduct;! rewriterO4;!
+        subgoal(mp_r; contrawrite_r_deep; tApartS);!
+        subgoal(t2);!
+        subgoal(t1);!
+        subgoal(t2);!
+        subgoal(t1);!
+        subgoal(all_l; *(bLogic);! eq_assume;!
+                det(8, contrawrite_r_deep); assume; tApartS;!
+                contrawrite_r_deep; assume; tApartS);!
+        subgoal(t3);!
+        subgoal(t3);!
+        subgoal(t3);!
+        subgoal(t3)
+       )
+
+-- %Proof related to greater
+
+PROOF succ_> : Def[>'Num] Def[<'Num] 
+               CDfd[succ'Num] CDfd[0'Num] |- Copy[succ_> : LAW]
+PROOF succ_> == statP(rewriterO)
+
+PROOF irrefl_> : Def[>'Num] Def[<'Num] CDfd[succ'Num] CDfd[0'Num]
+                  |- Copy[irreflexive[num, >]:LAW]
+PROOF irrefl_> == statP(mInduct; rewriterO;
+                         (contrawrite_r_deep; assume); tApartO; QED)
+
+PROOF > : Def[>'Num] |- Copy[Spc[>'Num]:LAW]
+PROOF > == statP(rewriterO4; contrawrite_r_deep; assume; tApartS)
+
+-- %Proofs related to plus
+
+PROOF neutral_r_+ : Def[+'Num] CDfd[0'Num] |- Copy[neutral_r[num, +, 0]:LAW]
+PROOF neutral_r_+ == simpleP2
+
+PROOF neutral_l_+ : Def[+'Num] |- Copy[neutral_l[num, +, 0]:LAW]
+PROOF neutral_l_+ == trivial
+
+PROOF +_succ : Def[+'Num] |- Copy[+_succ: LAW]
+PROOF +_succ == trivial
+
+PROOF +_succ_r : Def[+'Num] CDfd[0'Num] CDfd[succ'Num] |- Copy[+_succ_r: LAW]
+PROOF +_succ_r == simpleP2
+
+PROOF +_total : Def[+'Num] CDfd[0'Num] CDfd[succ'Num]
+                Copy[neutral_r[num, +, 0]:LAW] Copy[+_succ_r: LAW]
+                |- Copy[+_total : LAW]
+PROOF +_total == statP(mInduct;! rewriter33)
+
+-- %Proofs related to minus
+
+PROOF - : Def[-'Num] CDfd[0'Num] +_total Def[>='Num]
+           CDfd[succ'Num] Def[+'Num] Copy[neutral_r[num, +, 0]:LAW]
+           Copy[succ_mon_>= : LAW] Copy[+_succ_r:LAW]
+           Equiv[succ'Num, succ'Num]
+           |- Copy[Spc[-'Num]:LAW] 
+PROOF - == statP(mInduct;! rewriterO4;!
+                 subgoal(rewrite_l_deepN; all_lNA;! *(bLogic);
+                         assume; tApartS);!
+                 subgoal(mp_r; rewrite_l_deepN; tApartS);!
+                 subgoal(rewrite_l_deepN; all_lNA;! *(bLogic);
+                         assume; tApartS);!
+                 subgoal(rewrite_l_deepN; all_lNA;! *(bLogic);
+                         assume; tApartS);!
+                 subgoal(rewrite_l_deepN; det(2, biimpl_r); 
+                         all_lNA; *(bLogic); assume; tApartS;!
+                         all_lNA; *(bLogic); *(assume));!
+                 subgoal(rewrite_l_deepN; all_lNA; *(bLogic); *(assume))
+                )
+
+-- %Proofs related to max
+PROOF max: Def[>='Num] Def[max'Num] max_total dfd_true
+           Copy[antisymmetric[num, >=]:LAW] Copy[>=_total:LAW]
+           Copy[reflexive[num, >=]:LAW]
+         |- Copy[Spc[max'Num]:LAW]
+PROOF max == statP(rewriterO4;! mp_r;! tApartS)
+
+PROOF max_total: Def[max'Num] Copy[tricho_>= : LAW] 
+                 Copy[>=_total:LAW]|- Copy[max_total:LAW]
+PROOF max_total == statP(rewriterO)
+
+-- %Proofs related to min
+PROOF min: Def[>='Num] Def[min'Num] min_total dfd_true
+           Copy[antisymmetric[num, >=]:LAW] Copy[>=_total:LAW]
+           Copy[reflexive[num, >=]:LAW]
+         |- Copy[Spc[min'Num]:LAW]
+PROOF min == statP(rewriterO4;! mp_r;! tApartS)
+
+PROOF min_total: Def[min'Num] Copy[tricho_>= : LAW] 
+                 Copy[>=_total:LAW]|- Copy[min_total:LAW]
+PROOF min_total == statP(rewriterO)
+
+
+-- %Proofs related to 1
+PROOF 1 : Def[1'Num] |- Copy[1_def:LAW]
+PROOF 1 == trivial
+
+/* %-
+
+-- %Proof tactics$
+
+FUN * : nat ** proofscript -> proofscript
+DEF 0 * P == done
+DEF succ(0) * P == P 
+DEF succ(x) * P == (P );!( x * P)
+
+FUN max : nat ** proofscript -> proofscript
+DEF max(0, P) == done
+DEF max(succ(0), P) == P:proofscript
+DEF max(succ(x), P) == (P ); x * P
+
+*/
