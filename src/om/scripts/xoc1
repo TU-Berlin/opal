@@ -1,0 +1,140 @@
+#!/usr/local/bin/perl
+# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/scripts/xoc1,v 1.1 1998-07-30 12:00:48 kd Exp $
+
+# initialize variables for own options
+
+$verbose = 0;   # --verbose -v
+$ignore = 0;    # --ignore-errors -i
+$dryrun = 0;    # --dry-run -n
+$keep = 0;      # --keep -k
+$debug = 0;
+$version = '$Revision: 1.1 $ ';
+$version =~ /..evision: (...) /;
+$version = $1;
+
+# initialize arrays for storing commands and their arguments
+@cmd = ();
+@args = ();
+$currCmd = 0;
+
+# check arguments
+
+if (scalar(@ARGV) == 0) { &usage; exit };
+while(@ARGV) {
+    $_ = shift;
+    if(/^-v$/ || /^--verbose$/) { $verbose = 1; }
+    elsif (/^-h$/ || /^--help$/) { &usage; exit;} 
+    elsif (/^-i$/ || /^--ignore-errors$/) { $ignore = 1;}
+    elsif (/^-n$/ || /^--dry-run$/) {$dryrun = 1;}
+    elsif (/^-k$/ || /^--keep$/) {$keep = 1;}
+    elsif (/^--version$/) {print "xoc1 Version $version\n"; exit;}
+    elsif (/^--debug$/) {print STDERR "[xoc1] debugging on\n"; 
+			 $debug = 1; $verbose = 1;}
+    elsif (/^--$/) {unshift @ARGV, $_; last;}
+    else {print STDERR "\n*** ERROR *** unknown option `$_'\n"; &usage; exit; }
+};
+
+#now scan commands and their arguments
+while(@ARGV) {
+  $_ = shift;
+  if(/^--$/) { $currCmd++ ; $first = 1;}
+  else {
+    if ($first) { $cmd[$currCmd] = $_ ; $first = 0;}
+    else { push @{ $args[$currCmd] }, $_ ; };
+  };
+};
+# currCmd is now the index of the oc1 program
+unless ($currCmd) {
+  print STDERR "\n*** ERROR *** no oc1 program on command line! \n";
+  &usage;
+  exit 1;
+}
+# find out the name of the interopal file by scanning the options 
+# of the oc1 program
+@tmpX =  @{ [ @{ @args[$currCmd] } ]};
+print STDERR join ' ', "DEBUG: ", scalar(@tmpX), "::", @tmpX, "\n" if $debug;
+
+$part = ""; $path = ""; $struct = ""; $_ = "#"; 
+while(@tmpX) {
+  $_ = shift @tmpX;
+  print STDERR "oc1 option `$_'\n" if $debug;
+  if    (/^-s$/) {$part = ".sign"; }
+  elsif (/^-i$/) {$part = ".impl"; }
+  elsif (/^-E$/) {$part = ".extp"; }
+  elsif (/^-I$/) {$part = ".intp"; }
+  elsif (/^-h$/) {$path = shift @tmpX; $path .= "/OCS"; }
+  elsif (/^-h(.*)$/) {$path = "$1/OCS"; }
+  elsif (/^-e$/) { $path = shift @tmpX; }
+  elsif (/^-e(.*)$/) {$path = $1; }
+  elsif (/^-/) { next; } # ignore other options
+  else {$struct = $_; last; } # first non-option is name of structure
+}
+$interfile = "$path/$struct$part.inter";
+print STDERR "Interopal file is `$interfile'\n" if $debug;
+
+# call opal front end
+print STDERR "[xoc1] calling oc1 ...\n" if ($verbose);
+print STDERR join ' ', $cmd[$currCmd], @{ $args[$currCmd]}, "\n" if $debug;
+
+$res = 0;
+unless ($dryrun) { 
+  $res = system($cmd[$currCmd], @{ $args[$currCmd]}); 
+  $res >>= 8;
+  if ($res) {
+    print STDERR "[xoc1] oc1 failed with status $res\n" if $verbose;
+    exit $res;
+  }
+}
+
+# --keep option
+if ($keep) { system("cp", "-f", "$interfile", "$interfile.bak"); };
+
+# call the filters
+for ($i = 1; $i < $currCmd; $i++) {
+  print STDERR "[xoc1] calling $cmd[$i] ...\n" if ($verbose);
+  print STDERR join ' ', $cmd[$i], $interfile, @{ $args[$i]}, "\n" if $debug;
+  $res = 0;
+  unless ($dryrun) {
+    $res = system($cmd[$i], $interfile, @{ $args[$i] });
+    print STDERR "raw result is $res\n$!\n" if $debug;
+    $res >>= 8;
+    if ($res) {
+      print STDERR "[xoc1] $cmd[$i] failed with status $res\n" if $verbose;
+      unless ($ignore) { unlink $interfile; 
+			 exit $res; }
+    };
+  };
+};
+
+# --dry-run
+exit 13 if $dryrun;
+
+# end
+print STDERR "[xoc1] normal exit\n" if $debug;
+exit 0;
+######################################################################
+
+sub usage {
+print "
+xoc1 Version $version
+usage: xoc1 [xoc1-options] 
+          -- filter1 [filter1-options] 
+          -- filter2 [filter2-options] 
+          ... 
+          -- oc1 [oc1-options]
+
+filter1 ... filterN are called with the name of the interopal file,
+    followed by their respective filter-options
+oc1 is the name of the Opal compiler's front end which is called 
+    with the given oc1-options
+
+valid xoc1-options are:
+  -v         --verbose          verbose output
+  -h         --help             this information
+  -i         --ignore-errors    ignore errors from filters
+  -n         --dry-run          just print commands, exit with error 13
+  -k         --keep             keep original interopal file as .inter.bak
+             --version          print version info and exit
+             --debug            print debug information
+"
+}
