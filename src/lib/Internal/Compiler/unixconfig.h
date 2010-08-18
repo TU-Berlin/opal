@@ -1,4 +1,4 @@
-/* src/lib/Internal/Compiler/unixconfig.h.  Generated automatically by configure.  */
+/* src/lib/Internal/Compiler/unixconfig.h.  Generated from unixconfig.h.in by configure.  */
 /* Unix System Configuration */
 
 /* include this header to access any standard C or system functionality */
@@ -38,7 +38,7 @@
 #define HAVE_LIMITS_H 1
 
 /* Define to `int' if <sys/types.h> doesn't define.  */
-/* #undef uid_t */ 
+/* #undef uid_t  */
 
 /* Define to `int' if <sys/types.h> doesn't define.  */
 /* #undef gid_t */
@@ -276,10 +276,10 @@
 #define HAVE_CLOCK 1
 
 /* Define if getpgrp is the POSIX.1 version without arguments */
-#define GETPGRP_VOID 1 
+#define GETPGRP_VOID 1
 
 /* Define if memcmp is 8-bit clean */
-#define HAVE_CLEAN_MEMCMP 1 
+/* #undef HAVE_CLEAN_MEMCMP  */
 
 #ifndef HAVE_CLEAN_MEMCMP
   extern int ocsmemcmp(const void *, const void *, size_t);

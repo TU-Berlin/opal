@@ -5,8 +5,10 @@ IMPORT	Denotation		COMPLETELY
 	Void			COMPLETELY
 	Fmt			COMPLETELY
 	Nat			COMPLETELY
+	NatConv			COMPLETELY
 	Pair			COMPLETELY
 	Seq			COMPLETELY
+	SeqConv			COMPLETELY
 	Com			COMPLETELY
 	ComCompose		COMPLETELY
 	ComCheck		COMPLETELY
@@ -16,11 +18,14 @@ IMPORT	Denotation		COMPLETELY
 	ProcessInterrupt	COMPLETELY
 	FileSystem		COMPLETELY
 	ProcessCtrl		COMPLETELY
+	UserAndGroup		COMPLETELY
 	Wait			COMPLETELY
 	WaitConv		COMPLETELY
 	Signal			COMPLETELY
 	File			COMPLETELY
 	FileName		COMPLETELY
+	Random                  COMPLETELY
+	BasicIO			COMPLETELY
 
 IMPORT	RepoEvent		COMPLETELY
 	RepoCom			COMPLETELY
@@ -46,7 +51,7 @@ DEF clientCheck? ==
     get(theClient)			& (\\ Client? .
     IF avail?(Client?) THEN
 	-- lets see if client is alive
-	wait(cont(Client?))			; (\\ ProcAndStat?? .
+	 wait(cont(Client?))			; (\\ ProcAndStat?? .
 	IF fail?(ProcAndStat??) THEN
 	    -- assume this is an extern client
 	    succeed(true)
@@ -97,27 +102,35 @@ DEF terminateClient ==
 
 DEF externClient ==
     terminateClient			& (\\ _ .
-    openChannel
+    openChannel("OCS")
     )
 	
 
 FUN startClient : com[void]
 DEF startClient	 ==
     oasysLibDir					& (\\ LibDir .
-    LET ClientName == LibDir ++ "evaluator"
+    random                                      & (\\ RandInt:nat .
+    getUId                                      & (\\ UId .
+    getUser(UId)                                & (\\ optUser .
+    LET UserName == IF nil?(optUser) THEN "" ELSE userName(cont(optUser)) FI
+        ClientName == LibDir ++ "evaluator"
+        dir == "/tmp/oasys-" ++ UserName ++ `(RandInt)
     IN
+    cleanChannels                               & (\\ _ .
+    mkDir(dir, ownerRead + ownerWrite + ownerExec) & (\\ _ .
+    symLink(dir, "OCS/oasys.channel.dir") & (\\ _ .
     event(progress(repository,
 		   "starting evaluator process")) 
 						& (\\ _ .
     clientArgs					& (\\ Args .
-    query(exec(ClientName, "evaluator" :: Args, 
+    query(exec(ClientName, "evaluator" :: dir :: Args, 
 		  stdIn, stdOut, stdErr))	& (\\ P:process .
-    openChannel
-    ))))
+    openChannel(dir)
+    ))))))))))
 
-FUN openChannel : com[void]
-DEF openChannel == 
-    open("OCS/oasys.channel", server)		& (\\ Channel.
+FUN openChannel : denotation -> com[void]
+DEF openChannel(dir) == 
+    open(dir ++ "/oasys.channel", server)		& (\\ Channel.
     :=_channel(Channel)				& (\\ _ .
     rpc(register,register?)			& (\\ Answer .
     theClient => (\\ _ . avail(pid(Answer)))   
@@ -142,10 +155,21 @@ DEF resetGlobals ==
     channel					; (\\ Chan? .
     (IF okay?(Chan?) THEN close(data(Chan?))
 		     ELSE succeed(nil) FI)	; (\\ _ .
+    cleanChannels                               ; (\\ _ .
     resetChannel				; (\\ _ .
     theClient => (\\ _ . nil)			
-    )))))
+    ))))))
 
+
+FUN cleanChannels : com[void]
+DEF cleanChannels ==
+    (readLink("OCS/oasys.channel.dir")           & (\\ TmpDirName .
+     unlink(TmpDirName ++ "/oasys.channel.in")   ; (\\ _ .
+     unlink(TmpDirName ++ "/oasys.channel.out")  ; (\\ _ .
+     rmDir(TmpDirName)                           ; (\\ _ .
+     unlink("OCS/oasys.channel.dir"))))))             ; (\\ _ .
+    succeed(nil)
+   )
 
 DEF rpc?(Task) == rpc?(Task,(\\ _ . true))
 

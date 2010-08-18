@@ -271,6 +271,9 @@ AC_SUBST(ocs_cv_feature_locallinks)
 OCS_CHECK_FEATURE(dynamic, dynamic, yes,
         [  --enable-dynamic        use dynamic linking  (yes)])
 
+OCS_CHECK_FEATURE(m32, m32_mode, no,
+        [  --enable-m32            force 32-bit mode  (no)])
+
 OCS_CHECK_FEATURE(absolute-pathes, absolute_pathes, yes,
         [  --enable-absolute-pathes  burn absolute pathes to tools  (yes)])
 
@@ -378,6 +381,16 @@ ocs_lib_readline=X
 ocs_lib_java=X
 ocs_lib_tcl=X
 ocs_lib_tk=X
+
+AC_SUBST(ocs_c_option_m32)
+ocs_c_option_m32=""
+
+if test "$ocs_cv_feature_m32_mode" = "no"
+  then
+    ocs_c_option_m32=""
+  else
+    ocs_c_option_m32="-m32"
+  fi 
 
 if test -z "$CYGWIN" 
 then
@@ -514,9 +527,9 @@ fi
 
 if test "$ocs_cv_with_cflags" != no
 then
-  ocs_CC="$ac_cv_path_CC  $ocs_cv_with_cflags"
+  ocs_CC="$ac_cv_path_CC $ocs_c_option_m32 $ocs_cv_with_cflags"
 else
-  ocs_CC="$ac_cv_path_CC"
+  ocs_CC="$ac_cv_path_CC $ocs_c_option_m32"
 fi
 CC="$ocs_CC"
 CFLAGS=
@@ -1195,9 +1208,19 @@ then
       dnl früher war noch die Angabe -mimpure-text nötig?
       AC_CHECK_LIB(readline, readline,ocs_lib_readline="-L/opt/gnu/lib \${LDRPATH}/opt/gnu/lib -lreadline -ltermcap",,-ltermcap)
     fi
+    if test -z "$ocs_lib_readline"
+    then
+      dnl clear cache!
+      unset ac_cv_lib_readline_readline
+      echo "trying in /opt/csw/lib ..."
+      ocs_save_LDFLAGS="$LDFLAGS"
+      LDFLAGS="$LDFLAGS -L/opt/csw/lib"
+      AC_CHECK_LIB(readline, readline,ocs_lib_readline="-L/opt/csw/lib \${LDRPATH}/opt/csw/lib -lreadline -ltermcap",,-ltermcap)
+      LDFLAGS="$ocs_save_LDFLAGS"
+    fi
   else
     ocs_lib_readline=   
-    AC_CHECK_LIB(readline, readline, ocs_lib_readline="$ocs_cv_with_readline_lib",,$ocs_cv_readline_lib)
+    AC_CHECK_LIB(readline, readline, ocs_lib_readline="$ocs_cv_with_readline_lib",,$ocs_cv_with_readline_lib)
   fi    
   if test -z "$ocs_lib_readline"
   then
@@ -1226,6 +1249,13 @@ then
       echo "trying in /opt/gnu/include ..."
       OCS_CHECK_HEADER("-I/opt/gnu/include",readline/readline.h,ocs_incl_readline) 
     fi
+    if test "$not_found" = "yes"
+    then
+      not_found=no
+      unset ac_cv_header_readline_readline_h
+      echo "trying in /opt/csw/include ..."
+      OCS_CHECK_HEADER("-I/opt/csw/include",readline/readline.h,ocs_incl_readline) 
+    fi
   else 
     not_found=no
     OCS_CHECK_HEADER($ocs_cv_with_readline_incl, readline/readline.h,ocs_incl_readline)
@@ -1246,6 +1276,10 @@ then
   if test "$ocs_cv_with_tcl_lib" = "yes"
   then
     AC_CHECK_LIB(tcl, Tcl_CreateInterp,ocs_lib_tcl="-ltcl")
+    if test -z "$ocs_lib_tcl"
+    then
+      AC_CHECK_LIB(tcl8.5, Tcl_CreateInterp,ocs_lib_tcl="-ltcl8.5")
+    fi          
     if test -z "$ocs_lib_tcl"
     then
       AC_CHECK_LIB(tcl8.4, Tcl_CreateInterp,ocs_lib_tcl="-ltcl8.4")
@@ -1285,6 +1319,10 @@ then
       AC_CHECK_LIB(tcl, Tcl_CreateInterp,ocs_lib_tcl="-L/usr/tcl/lib $ocs_cv_with_ldrpath/usr/tcl/lib -ltcl")
       if test -z "$ocs_lib_tcl"
       then
+        AC_CHECK_LIB(tcl8.5, Tcl_CreateInterp,ocs_lib_tcl="-L/usr/tcl/lib $ocs_cv_with_ldrpath/usr/tcl/lib -ltcl8.5")
+      fi                
+      if test -z "$ocs_lib_tcl"
+      then
         AC_CHECK_LIB(tcl8.4, Tcl_CreateInterp,ocs_lib_tcl="-L/usr/tcl/lib $ocs_cv_with_ldrpath/usr/tcl/lib -ltcl8.4")
       fi                
       if test -z "$ocs_lib_tcl"
@@ -1318,6 +1356,10 @@ then
       LIBS="$LIBS -L/opt/tcl/lib"
       echo "trying in /opt/tcl/lib ..."
       AC_CHECK_LIB(tcl, Tcl_CreateInterp,ocs_lib_tcl="-L/opt/tcl/lib $ocs_cv_with_ldrpath/opt/tcl/lib -ltcl")
+      if test -z "$ocs_lib_tcl"
+      then
+        AC_CHECK_LIB(tcl8.5, Tcl_CreateInterp,ocs_lib_tcl="-L/opt/tcl/lib $ocs_cv_with_ldrpath/opt/tcl/lib -ltcl8.5")
+      fi                
       if test -z "$ocs_lib_tcl"
       then
         AC_CHECK_LIB(tcl8.4, Tcl_CreateInterp,ocs_lib_tcl="-L/opt/tcl/lib $ocs_cv_with_ldrpath/opt/tcl/lib -ltcl8.4")
@@ -1395,6 +1437,16 @@ then
       not_found=no
       unset ac_cv_header_tcl_h
       ocs_save_CPPFLAGS=$CPPFLAGS
+      echo "trying /usr/include/tcl8.5 ..."
+      CPPFLAGS="$CFLAGS -I/usr/include/tcl8.5"
+      AC_CHECK_HEADER(tcl.h,ocs_incl_tcl="-I/usr/include/tcl8.5",not_found=yes)
+      CPPFLAGS=$ocs_save_CPPFLAGS
+    fi
+    if test "$not_found" = "yes"
+    then
+      not_found=no
+      unset ac_cv_header_tcl_h
+      ocs_save_CPPFLAGS=$CPPFLAGS
       echo "trying /usr/include/tcl8.4 ..."
       CPPFLAGS="$CFLAGS -I/usr/include/tcl8.4"
       AC_CHECK_HEADER(tcl.h,ocs_incl_tcl="-I/usr/include/tcl8.4",not_found=yes)
@@ -1442,6 +1494,10 @@ then
   if test "$ocs_cv_with_tk_lib" = "yes"
   then
     AC_CHECK_LIB(tk, Tk_MainWindow,ocs_lib_tk="-ltk",,$ocs_x11 $ocs_lib_tcl)
+    if test -z "$ocs_lib_tk"
+    then
+    AC_CHECK_LIB(tk8.5, Tk_MainWindow,ocs_lib_tk="-ltk8.5",,$ocs_x11 $ocs_lib_tcl)
+    fi          
     if test -z "$ocs_lib_tk"
     then
     AC_CHECK_LIB(tk8.4, Tk_MainWindow,ocs_lib_tk="-ltk8.4",,$ocs_x11 $ocs_lib_tcl)
@@ -1524,6 +1580,16 @@ then
       echo "trying in /opt/tcl/include ..."
       CPPFLAGS="$CPPFLAGS -I/opt/tcl/include"
       AC_CHECK_HEADER(tk.h,ocs_incl_tk="-I/opt/tcl/include",not_found=yes)
+      CPPFLAGS=$ocs_save_CPPFLAGS
+    fi
+    if test "$not_found" = "yes"
+    then
+      not_found=no
+      unset ac_cv_header_tk_h
+      ocs_save_CPPFLAGS=$CPPFLAGS
+      echo "trying in /usr/include/tcl8.5 ..."
+      CPPFLAGS="$CPPFLAGS -I/usr/include/tcl8.5"
+      AC_CHECK_HEADER(tk.h,ocs_incl_tk="-I/usr/include/tcl8.5",not_found=yes)
       CPPFLAGS=$ocs_save_CPPFLAGS
     fi
     if test "$not_found" = "yes"
@@ -1857,6 +1923,7 @@ then
   fi
 fi
 OCS_OUTPUT(opalconfig.makeTargets)
+OCS_OUTPUT(src/lib/Internal/Compiler/SysDefs)
 AC_OUTPUT($ocs_output_files)
 echo "creating src/om/specs/ShSpecs.basic"
 SED=$ac_cv_path_SED src/om/etc/gmake2sh < src/om/specs/Specs.basic > src/om/specs/ShSpecs.basic
