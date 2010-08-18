@@ -37,6 +37,11 @@
 /* import Users and Groups */
 #include "UserAndGroup.h"
 
+#ifndef CLK_TCK
+  #define CLK_TCK sysconf(_SC_CLK_TCK)
+#endif
+
+
 
 /* local procedure for copying an OPAL-array[denotation] to a char** C-array
    the OPAL-OBJ is only read, the referencee count must be handled by the 
