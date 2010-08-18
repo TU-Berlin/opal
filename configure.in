@@ -30,6 +30,17 @@ AC_CANONICAL_HOST
 AC_CYGWIN
 
 echo "CYGWIN´s value is >$CYGWIN<"
+
+# CYGWIN is set to the empty string, because newer autoconfs set it to "no"
+# when not available, but the opalwin machinery below assumes it to be
+# empty.  Grmpf.
+#
+# Martin & Stephan 2003-10-31
+#
+if test "$CYGWIN" = "no"
+then
+  CYGWIN=""
+fi
 if test -z "$CYGWIN" 
 then
   featureflag=yes
@@ -231,10 +242,7 @@ AC_DEFUN(OCS_TRY_LINK_FUNC,
 AC_TRY_LINK(dnl
 ifelse([$1], [main], , dnl Avoid conflicting decl of main.
 [/* Override any gcc2 internal prototype to avoid an error.  */
-]ifelse(AC_LANG, CPLUSPLUS, [#ifdef __cplusplus
-extern "C"
-#endif
-])dnl
+]dnl
 [/* We use char because int might match the return type of a gcc2
     builtin and then its argument prototype would still apply.  */
 char $1();
@@ -492,8 +500,17 @@ AC_SUBST(ocs_cv_flag_cc_opt)
 AC_SUBST(ocs_cv_flag_cc_debug)
 AC_SUBST(ocs_cv_flag_cc_profile)
 
+# Hack (magr, 2003-10-31):
+# Here the variable $ac_cv_prog_CC was used, which is not available
+# under autoconf 2.57 anymore.
+# ----------------------------v
 dnl to add path
-OCS_CHECK_PROGS(ac_cv_path_CC,$ac_cv_prog_CC)
+OCS_CHECK_PROGS(ac_cv_path_CC,$CC)
+
+if test -z "$ac_cv_path_CC"
+then
+  ac_cv_path_CC="$ac_cv_prog_CC"
+fi
 
 if test "$ocs_cv_with_cflags" != no
 then
@@ -503,7 +520,6 @@ else
 fi
 CC="$ocs_CC"
 CFLAGS=
-
 
 ocs_CC="$CC"
 
@@ -569,6 +585,21 @@ then
   AC_MSG_WARN(cannot figure out how to optimize with $CC (will be disabled))
 fi
 AC_SUBST(ocs_cv_flag_cc_opt)
+
+
+# Check for C compiler optimization flags for function alignment.
+#
+# This workaround is necessary for GCC > 3.1.2, because these compilers
+# do not align functions at even addresses by default, thus breaking
+# Opal's pointer tagging scheme for function pointers.  
+#
+# This bug was identified on 2003-10-31 by Andre Metzner, Stephan
+# Frank and Martin Grabmueller
+
+AC_MSG_CHECKING(C compiler function alignment flags)
+OCS_TRY_CC_FLAGS(ocs_cv_flag_cc_align, [-falign-functions])
+AC_MSG_RESULT($ocs_cv_flag_cc_align)
+AC_SUBST(ocs_cv_flag_cc_align)
 
 
 # Check for C compiler debugging flags 
@@ -1112,7 +1143,7 @@ fi
 
 ## make version available
 AC_SUBST(ocs_version)
-ocs_version=2.3g
+ocs_version=2.3h
 
 ## get absolute path for sourcedir
 ocs_abssrcdir=`pwd`
@@ -1217,6 +1248,10 @@ then
     AC_CHECK_LIB(tcl, Tcl_CreateInterp,ocs_lib_tcl="-ltcl")
     if test -z "$ocs_lib_tcl"
     then
+      AC_CHECK_LIB(tcl8.4, Tcl_CreateInterp,ocs_lib_tcl="-ltcl8.4")
+    fi          
+    if test -z "$ocs_lib_tcl"
+    then
       AC_CHECK_LIB(tcl8.3, Tcl_CreateInterp,ocs_lib_tcl="-ltcl8.3")
     fi          
     if test -z "$ocs_lib_tcl"
@@ -1239,6 +1274,7 @@ then
     then
       dnl clear cache!
       unset ac_cv_lib_tcl_Tcl_CreateInterp
+      unset ac_cv_lib_tcl8_4_Tcl_CreateInterp
       unset ac_cv_lib_tcl8_3_Tcl_CreateInterp
       unset ac_cv_lib_tcl8_2_Tcl_CreateInterp
       unset ac_cv_lib_tcl8_0_Tcl_CreateInterp
@@ -1247,6 +1283,10 @@ then
       LIBS="$LIBS -L/usr/tcl/lib"
       echo "trying in /usr/tcl/lib ..."
       AC_CHECK_LIB(tcl, Tcl_CreateInterp,ocs_lib_tcl="-L/usr/tcl/lib $ocs_cv_with_ldrpath/usr/tcl/lib -ltcl")
+      if test -z "$ocs_lib_tcl"
+      then
+        AC_CHECK_LIB(tcl8.4, Tcl_CreateInterp,ocs_lib_tcl="-L/usr/tcl/lib $ocs_cv_with_ldrpath/usr/tcl/lib -ltcl8.4")
+      fi                
       if test -z "$ocs_lib_tcl"
       then
         AC_CHECK_LIB(tcl8.3, Tcl_CreateInterp,ocs_lib_tcl="-L/usr/tcl/lib $ocs_cv_with_ldrpath/usr/tcl/lib -ltcl8.3")
@@ -1269,6 +1309,7 @@ then
     then
       dnl clear cache!
       unset ac_cv_lib_tcl_Tcl_CreateInterp
+      unset ac_cv_lib_tcl8_4_Tcl_CreateInterp
       unset ac_cv_lib_tcl8_3_Tcl_CreateInterp
       unset ac_cv_lib_tcl8_2_Tcl_CreateInterp
       unset ac_cv_lib_tcl8_0_Tcl_CreateInterp
@@ -1277,6 +1318,10 @@ then
       LIBS="$LIBS -L/opt/tcl/lib"
       echo "trying in /opt/tcl/lib ..."
       AC_CHECK_LIB(tcl, Tcl_CreateInterp,ocs_lib_tcl="-L/opt/tcl/lib $ocs_cv_with_ldrpath/opt/tcl/lib -ltcl")
+      if test -z "$ocs_lib_tcl"
+      then
+        AC_CHECK_LIB(tcl8.4, Tcl_CreateInterp,ocs_lib_tcl="-L/opt/tcl/lib $ocs_cv_with_ldrpath/opt/tcl/lib -ltcl8.4")
+      fi                
       if test -z "$ocs_lib_tcl"
       then
         AC_CHECK_LIB(tcl8.3, Tcl_CreateInterp,ocs_lib_tcl="-L/opt/tcl/lib $ocs_cv_with_ldrpath/opt/tcl/lib -ltcl8.3")
@@ -1345,6 +1390,26 @@ then
       AC_CHECK_HEADER(tcl.h,ocs_incl_tcl="-I/opt/tcl/include",not_found=yes)
       CPPFLAGS=$ocs_save_CPPFLAGS
     fi
+    if test "$not_found" = "yes"
+    then
+      not_found=no
+      unset ac_cv_header_tcl_h
+      ocs_save_CPPFLAGS=$CPPFLAGS
+      echo "trying /usr/include/tcl8.4 ..."
+      CPPFLAGS="$CFLAGS -I/usr/include/tcl8.4"
+      AC_CHECK_HEADER(tcl.h,ocs_incl_tcl="-I/usr/include/tcl8.4",not_found=yes)
+      CPPFLAGS=$ocs_save_CPPFLAGS
+    fi
+    if test "$not_found" = "yes"
+    then
+      not_found=no
+      unset ac_cv_header_tcl_h
+      ocs_save_CPPFLAGS=$CPPFLAGS
+      echo "trying /usr/include/tcl8.3 ..."
+      CPPFLAGS="$CFLAGS -I/usr/include/tcl8.3"
+      AC_CHECK_HEADER(tcl.h,ocs_incl_tcl="-I/usr/include/tcl8.3",not_found=yes)
+      CPPFLAGS=$ocs_save_CPPFLAGS
+    fi
   else
     OCS_CHECK_HEADER($ocs_cv_with_tcl_incl, tcl.h, ocs_incl_tcl)
   fi
@@ -1377,6 +1442,10 @@ then
   if test "$ocs_cv_with_tk_lib" = "yes"
   then
     AC_CHECK_LIB(tk, Tk_MainWindow,ocs_lib_tk="-ltk",,$ocs_x11 $ocs_lib_tcl)
+    if test -z "$ocs_lib_tk"
+    then
+    AC_CHECK_LIB(tk8.4, Tk_MainWindow,ocs_lib_tk="-ltk8.4",,$ocs_x11 $ocs_lib_tcl)
+    fi          
     if test -z "$ocs_lib_tk"
     then
     AC_CHECK_LIB(tk8.3, Tk_MainWindow,ocs_lib_tk="-ltk8.3",,$ocs_x11 $ocs_lib_tcl)
@@ -1455,6 +1524,26 @@ then
       echo "trying in /opt/tcl/include ..."
       CPPFLAGS="$CPPFLAGS -I/opt/tcl/include"
       AC_CHECK_HEADER(tk.h,ocs_incl_tk="-I/opt/tcl/include",not_found=yes)
+      CPPFLAGS=$ocs_save_CPPFLAGS
+    fi
+    if test "$not_found" = "yes"
+    then
+      not_found=no
+      unset ac_cv_header_tk_h
+      ocs_save_CPPFLAGS=$CPPFLAGS
+      echo "trying in /usr/include/tcl8.4 ..."
+      CPPFLAGS="$CPPFLAGS -I/usr/include/tcl8.4"
+      AC_CHECK_HEADER(tk.h,ocs_incl_tk="-I/usr/include/tcl8.4",not_found=yes)
+      CPPFLAGS=$ocs_save_CPPFLAGS
+    fi
+    if test "$not_found" = "yes"
+    then
+      not_found=no
+      unset ac_cv_header_tk_h
+      ocs_save_CPPFLAGS=$CPPFLAGS
+      echo "trying in /usr/include/tcl8.3 ..."
+      CPPFLAGS="$CPPFLAGS -I/usr/include/tcl8.3"
+      AC_CHECK_HEADER(tk.h,ocs_incl_tk="-I/usr/include/tcl8.3",not_found=yes)
       CPPFLAGS=$ocs_save_CPPFLAGS
     fi
   else
@@ -1771,4 +1860,3 @@ OCS_OUTPUT(opalconfig.makeTargets)
 AC_OUTPUT($ocs_output_files)
 echo "creating src/om/specs/ShSpecs.basic"
 SED=$ac_cv_path_SED src/om/etc/gmake2sh < src/om/specs/Specs.basic > src/om/specs/ShSpecs.basic
-
