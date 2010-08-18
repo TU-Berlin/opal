@@ -631,6 +631,13 @@ extern int ocs_dl_parse_symbol(char *sym,
 
 extern int ocs_dl_parse_init_entry(char *sym, 
 				   char *structure, int structmaxlen){
+  /* Fix for verbose nm -u (2004/11/05 bt) */
+    /* while (*sym == ' ') sym++; */
+    while (*sym) {
+      if (*sym == ' ' || *sym == '\t') sym++ ;
+      else if (sym[0] == 'U' && sym[1] == ' ') sym += 2 ;
+      else break ;
+    }
     if (strncmp(sym, "init_A",  6) == 0){
 	strncpy(structure, sym + 6, structmaxlen-1);
 	return 1;
@@ -1084,7 +1091,6 @@ static int dl_link_referred(FILE *symfile) {
     while (i > 0 && (cmdbuf[i-1] == '\n' || cmdbuf[i-1] == ' ')){
       cmdbuf[i-1] = 0;
     }
-    while (*s == ' ') s++;
     if (ocs_dl_parse_init_entry(s, refstruct, 
 				sizeof(refstruct)-1)){
       if (!ocs_dl_link(refstruct)){
