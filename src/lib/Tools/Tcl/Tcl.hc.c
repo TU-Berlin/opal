@@ -421,7 +421,7 @@ extern OBJ _ATcl_AasString(OBJ Seq) /* asString */ {
     seq2argv(Seq, &argc, &argv);
     str = Tcl_Merge(argc, argv);
     Res = make_string(str);
-    free((void*)str);
+    Tcl_Free(str);
     free_seq2argv(argc, argv);
     return Res;
 }
