@@ -7,6 +7,10 @@
 */
   /* representation */
 
+/* To use intptr_t, an int of size (void *). */
+/* FIXME: check for stdint.h n configure script. */
+#include <stdint.h>
+
 typedef unsigned char OCSCHAR;
 
 #define pack_char(x)   ((OBJ)((intptr_t)(((OCSCHAR)(x)<<1)+1)))

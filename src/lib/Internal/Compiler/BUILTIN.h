@@ -18,9 +18,6 @@ typedef void * OBJ;
 #define is_primitive(o)	 ((WORD)(o)&1)
 #define is_structured(o) (!((WORD)(o)&1))
 
-/* intptr_t , an int that has the same size as (void*) (used in conversions) */
-#include <stdint.h>
-
 /* some code */
 typedef void (*CODE)();			
 
