@@ -10,6 +10,8 @@
 #include "Int.h"
 #include "Real.h"
 
+#include <string.h> // used for memset
+
 #define MAX_LEN_OF_INT (11)
 
 extern OBJ _AIntConv_Sq(OBJ x1) /* ` */

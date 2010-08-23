@@ -9,7 +9,7 @@
 
 typedef unsigned char OCSCHAR;
 
-#define pack_char(x)   ((OBJ)((WORD)(((OCSCHAR)(x)<<1)+1)))
+#define pack_char(x)   ((OBJ)((intptr_t)(((OCSCHAR)(x)<<1)+1)))
 #define unpack_char(x) ((OCSCHAR)((WORD)(x)>>1))
 #define convert2char(x) ((WORD)(x))
 

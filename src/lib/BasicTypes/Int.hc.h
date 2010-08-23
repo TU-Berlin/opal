@@ -32,9 +32,9 @@ typedef SWORD INT;
 #define AInt_Sm_O1(x1,x2)\
 	{x2=pack_int(-unpack_int(x1));}
 #define AInt_Aabs(x1,x2)\
-	{int _t=unpack_int(x1);x2=pack_int(_t < 0 ? -_t : _t);}
+	{INT _t=unpack_int(x1);x2=pack_int(_t < 0 ? -_t : _t);}
 #define AInt_Asign(x1,x2)\
-	{int _t=unpack_int(x1);\
+	{INT _t=unpack_int(x1);\
 	 if (_t < 0) x2=pack_int(-1); else \
 	 if (_t == 0) x2=pack_int(0); else x2=pack_int(1);}
 #define AInt_Aeven_(x1,x2)\

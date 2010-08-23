@@ -147,7 +147,8 @@ void freeHashTab(HASHTAB t) {
 static void dump(FILE *f, HASHTAB t, OBJ ob, int *labct, OBJ *ep) {
 
     if (is_structured(ob)){
-	int sz = _size(_header(ob)), fs = _flags(_header(ob)), flds, i; 
+	int sz = _size(_header(ob)), fs = _flags(_header(ob)), i; 
+	intptr_t flds;
 	OBJ *data;
 
 	if (_tstRc(_header(ob),1)) {
@@ -251,7 +252,8 @@ static OBJ parse(FILE *f, HASHTAB t, OBJ *ep){
 	*ep = __ABinFile_AinvalidFormat;
 	return NIL;
     } else if ((shared = isSharedCell(d)) || isExclCell(d)) {
-	int sz = getSize(d), fs = getFlags(d), i, flds; 
+	int sz = getSize(d), fs = getFlags(d), i; 
+	intptr_t flds;
 	OBJ * data; OBJ ob; WORD lab;
 	    
 	if (shared) {
@@ -267,7 +269,7 @@ static OBJ parse(FILE *f, HASHTAB t, OBJ *ep){
 	}
 
 	if (sz % flat_offset_ssize == big_escape_ssize){
-	    flds = (int)read_obj(f,ep);
+	    flds = (intptr_t)read_obj(f,ep);
 	    if (*ep) return NIL;
 	    ob = _bigAlloc(flds);
 	    _mkHeader(_header(ob),sz,1);

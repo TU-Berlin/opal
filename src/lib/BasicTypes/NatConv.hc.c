@@ -9,7 +9,7 @@
 #include "Nat.h"
 #include "Int.h"
 #include "Real.h"
-
+#include <string.h> //used for memset
 
 /* maximum length of text representation of a natural number */
 #define MAX_LEN_OF_NAT (10)
