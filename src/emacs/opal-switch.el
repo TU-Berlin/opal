@@ -147,14 +147,14 @@
   (interactive)
   (setq switch-keymap (make-sparse-keymap "Switch to other structure parts"))
   
-  (if (not opal-novice)
-      (progn
-	(define-key switch-keymap [switch-to-intp] 
-	  '("INTERNAL PROPERTIES part" . opal-switch-to-intp))
-	(define-key switch-keymap [switch-to-extp] 
-	  '("EXTERNAL PROPERTIES part" . opal-switch-to-extp))
-      )
-  )
+  ;; (if (not opal-novice)
+  ;;     (progn
+  ;; 	(define-key switch-keymap [switch-to-intp] 
+  ;; 	  '("INTERNAL PROPERTIES part" . opal-switch-to-intp))
+  ;; 	(define-key switch-keymap [switch-to-extp] 
+  ;; 	  '("EXTERNAL PROPERTIES part" . opal-switch-to-extp))
+  ;;     )
+  ;; )
   (define-key switch-keymap [switch-to-impl] 
     '("IMPLEMENTATION part" . opal-switch-to-impl))
   (define-key switch-keymap [switch-to-sign] 
@@ -177,10 +177,10 @@
     (define-key opal-mode-map [menu-bar opal switch]
       (cons "Switch" (make-sparse-keymap "Switch")))
 
-    (define-key opal-mode-map [menu-bar opal switch opal-switch-to-intp]
-      '("INTERNAL PROPERTIES part" . opal-switch-to-intp))
-    (define-key opal-mode-map [menu-bar opal switch opal-switch-to-extp]
-      '("EXTERNAL PROPERTIES part" . opal-switch-to-extp))
+    ;; (define-key opal-mode-map [menu-bar opal switch opal-switch-to-intp]
+    ;;   '("INTERNAL PROPERTIES part" . opal-switch-to-intp))
+    ;; (define-key opal-mode-map [menu-bar opal switch opal-switch-to-extp]
+    ;;   '("EXTERNAL PROPERTIES part" . opal-switch-to-extp))
     (define-key opal-mode-map [menu-bar opal switch opal-switch-to-impl]
       '("IMPLEMENTATION part" . opal-switch-to-impl))
     (define-key opal-mode-map [menu-bar opal switch opal-switch-to-sign]

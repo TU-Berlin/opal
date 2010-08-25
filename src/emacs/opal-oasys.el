@@ -9,8 +9,8 @@
 (defun opal-mode-oasys-keymap ()
   "set the opal-mode oasys keymap"
   (define-key opal-mode-map "\C-c\C-a\C-e" 'opal-oasys-eval)
+  (define-key opal-mode-map "\C-c\C-a\C-f" 'opal-oasys-focus)
   (define-key opal-mode-map "\M-e" 'opal-oasys-eval)
-  (define-key opal-mode-map "\M-o" 'opal-oasys-view)
   (define-key opal-mode-map "\C-c\C-a\C-c" 'opal-oasys-check)
   (define-key opal-mode-map "\C-c\C-a\C-v" 'opal-oasys-view)
   (define-key opal-mode-map "\C-c\C-a\C-h" 'opal-oasys-hide)
@@ -33,8 +33,15 @@
 	  (cons "Oasys" (make-sparse-keymap "Oasys")))
 	
 	(define-key opal-mode-map [menu-bar opal oasys opal-oasys-eval]
-	  '("Eval Expression" . opal-oasys-eval))
-	
+	  '("Eval ..." . opal-oasys-eval))
+	(define-key opal-mode-map [menu-bar opal oasys opal-oasys-check]
+	  '("Check" . opal-oasys-check))
+	(define-key opal-mode-map [menu-bar opal oasys opal-oasys-focus]
+	  '("Focus" . opal-oasys-focus))
+	(define-key opal-mode-map [menu-bar opal oasys opal-oasys-view]
+	  '("View" . opal-oasys-view))
+	(define-key opal-mode-map [menu-bar opal oasys opal-oasys-hide]
+	  '("Hide" . opal-oasys-hide))
       )
   )
 )
@@ -60,18 +67,31 @@
   (interactive "sExpression:")
   (let (b)
     (setq b (buffer-file-name))
-    ;(oasys-add-path (file-name-directory b))
     (oasys-cmd (concat "a " (file-name-nondirectory b)))
     (oasys-focus (file-name-nondirectory b))
     (oasys-eval expr)
     )
   )
 
+(defun opal-oasys-focus ()
+  "set focus to current unit and ask for expression to be evaluated"
+  (interactive)
+  (let (b)
+    (setq b (buffer-file-name))
+     (oasys-cmd (concat "a " (file-name-nondirectory b)))
+     (oasys-focus (file-name-nondirectory b))
+     )
+  
+  )
+
 (defun opal-oasys-check ()
   "set focus to current unit and check"
   (interactive)
-  (oasys-add-path (file-name-directory (buffer-file-name)))
-  (oasys-focus (file-name-nondirectory (buffer-file-name)))
+   (let (b)
+    (setq b (buffer-file-name))
+    (oasys-cmd (concat "a " (file-name-nondirectory b)))
+    (oasys-focus (file-name-nondirectory b))
+    )
   (oasys-check)
 )
 
@@ -88,6 +108,7 @@
   (oasys-start)
   (pop-to-buffer oasys-raw-output)
 )
+
 (defun opal-oasys-hide ()
   "hide oasys (and other) windows"
   (interactive)

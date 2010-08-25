@@ -25,7 +25,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 
 (require 'opal-parser)
 ;(require 'opal-abbrev-mode)
-(require 'opal-browser)
+;(require 'opal-browser)
 (require 'opal-filehandling)
 (require 'opal-diag-mode)
 (require 'opal-compile)
@@ -96,7 +96,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   "If keymap opal-mode-map not exists then set the keymap of the opal-mode."
   (interactive)
   (if opal-mode-map
-      (opal-mode-set-keymap)         ; Do not change the keymap if it is already set up
+      ()         ; Do not change the keymap if it is already set up
     (opal-mode-set-keymap)
     )
   )
@@ -123,7 +123,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   (opal-mode-switch-keymap)
   (opal-mode-filehandling-keymap)
   (opal-mode-compile-keymap)
-  (opal-mode-browser-keymap)
+  ;;(opal-mode-browser-keymap)
   (opal-mode-dosfop-keymap)
 
   (opal-mode-set-menu)
@@ -595,7 +595,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 
 (defun opal-misc-hilit-all ()
   (interactive)
-  (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-simple))
+  ;;(set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-simple))
   (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-extended))
 )
 
@@ -699,7 +699,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 	    (add-submenu (list "OPAL") opal-import-menu)
 	    (add-submenu (list "OPAL") opal-compile-menu)
 	    (add-submenu (list "OPAL") opal-dosfop-menu)
-	    (add-submenu (list "OPAL") opal-browser-menu)
+	    ;;(add-submenu (list "OPAL") opal-browser-menu)
 	    (add-submenu (list "OPAL") opal-oasys-menu) 
 	    (add-submenu (list "OPAL") opal-outline-menu)
 	    (if opal-pchecker
@@ -715,58 +715,6 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 
 
 
-;; For debugging
-
-(setq reg 
-(concat
-       "\\(?:^\\|[ \t\(]\\)"
-       "\\(_\\)\\(?:[ \t\)]\\|$\\)") 
-)
-      ;; (concat **/
-      ;;  "^\\(\\(FUN\\)[ \t]+\\)" **/
-      ;;  "\\(" **/
-      ;;  "\\(" **/
-      ;;  opal-syntax-ide **/
-      ;;  "\\)" **/
-      ;;  "\\(" **/
-      ;;  "[ \t]+" **/
-      ;;  "\\(" **/
-      ;;  opal-syntax-ide **/
-      ;;  "\\)" **/
-      ;;  "\\)*" **/
-      ;;  "\\)" **/
-      ;;  "[ \t]*" **/
-      ;;  "\\(:\\)" **/
-      ;;  "[ \t]*" **/
-      ;;  "\\(" **/
-      ;;  "\\(\(\\)?\\(" opal-syntax-ide "\\)"  **/
-      ;;  "\\)" **/
-      ;; ))
-(setq re (concat
-      "^\\(?:\\(?:FUN\\)[ \t]+\\)"
-       "\\(?:"
-       "\\("
-       opal-syntax-ide
-       "\\)"
-       "\\(?:"
-       "[ \t]+"
-       "\\("
-       opal-syntax-ide
-       "\\)"
-       "\\)*"
-       "\\)"
-       "[ \t]*"
-       "\\(?::\\)"
-       "[ \t]*"
-       "\\(?:"
-       "\\(?:\(\\)?\\(" opal-syntax-ide "\\)" 
-       "\\)"
-       ))
-(setq str "asdes +*#")
-(string-match (concat "\\(" opal-syntax-special "\\)+") str)
-(match-string 1 str)
-;; (string-match opal-syntax-special str) **/
-;; (match-string 1 str) **/
 
 ;; Local Variables:
 ;; coding: latin-1-unix

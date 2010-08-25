@@ -347,14 +347,14 @@
 	  '("Show previous (sub)error" . opal-diag-prev-error))
       )
   )
-  (define-key opal-mode-map [menu-bar diag t1]
-    '("" . nil))
-  (define-key opal-mode-map [menu-bar diag opal-diag-show-errors]
-    '("Show only errors" . opal-diag-show-errors))
-  (define-key opal-mode-map [menu-bar diag opal-diag-show-errors-and-warns]
-    '("Show only errors and warnings" . opal-diag-show-errors-and-warns))
-  (define-key opal-mode-map [menu-bar diag opal-diag-show-all]
-    '("Show all diagnostics" . opal-diag-show-all)) 
+  ;; (define-key opal-mode-map [menu-bar diag t1]
+  ;;   '("" . nil))
+  ;; (define-key opal-mode-map [menu-bar diag opal-diag-show-errors]
+  ;;   '("Show only errors" . opal-diag-show-errors))
+  ;; (define-key opal-mode-map [menu-bar diag opal-diag-show-errors-and-warns]
+  ;;   '("Show only errors and warnings" . opal-diag-show-errors-and-warns))
+  ;; (define-key opal-mode-map [menu-bar diag opal-diag-show-all]
+  ;;   '("Show all diagnostics" . opal-diag-show-all)) 
    
   (put 'opal-diag-show-errors 'menu-enable
        '(not (equal 'error opal-diag-show-what)))

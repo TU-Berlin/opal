@@ -39,16 +39,16 @@
 ;      '("Load ext. properties" . opal-opalfile-extp))
 ;    (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-intp]
 ;      '("Load int. properties" . opal-opalfile-intp))
-    (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-impl]
-      '("Load implementation" . opal-opalfile-impl))
-    (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-sign]
-      '("Load signature" . opal-opalfile-sign))
-    (define-key opal-mode-map [menu-bar opal opalfile t1]
-      '("" . nil))
-    (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-all]
-      '("Load all parts" . opal-opalfile-all))
-    (define-key opal-mode-map [menu-bar opal opalfile t0]
-      '("" . nil))
+    ;; (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-impl]
+    ;;   '("Load implementation" . opal-opalfile-impl))
+    ;; (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-sign]
+    ;;   '("Load signature" . opal-opalfile-sign))
+    ;; (define-key opal-mode-map [menu-bar opal opalfile t1]
+    ;;   '("" . nil))
+    ;; (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-all]
+    ;;   '("Load all parts" . opal-opalfile-all))
+    ;; (define-key opal-mode-map [menu-bar opal opalfile t0]
+    ;;   '("" . nil))
     (define-key opal-mode-map [menu-bar opal opalfile opal-opalfile-ask]
       '("Save all Opal files" . opal-ask-save-opal-buffers))
   )

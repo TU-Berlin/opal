@@ -175,10 +175,61 @@
   (define-key oasys-mode-map "\M-n" 'opal-diag-next-main-error)
   (define-key oasys-mode-map "\M-p" 'opal-diag-prev-main-error)
   (define-key oasys-mode-map "\C-c\C-a\C-r" 'opal-oasys-raw)
+  (if opal-running-xemacs
+      (nil)
+    (define-key oasys-mode-map [menu-bar oasys] 
+      (cons "OASYS" (make-sparse-keymap "OASYS")))
+    (define-key oasys-mode-map [menu-bar oasys oasys-quit]
+      '("Quit" . oasys-quit))
+    (define-key oasys-mode-map [menu-bar oasys line1]
+      '(menu-item "--single-line"))
+    (define-key oasys-mode-map [menu-bar oasys oasys-cmd]
+      '("Command" . oasys-cmd))
+    (define-key oasys-mode-map [menu-bar oasys line2]
+      '(menu-item "--single-line"))
+    (define-key oasys-mode-map [menu-bar oasys oasys-eval]
+      '("Eval ..." . oasys-eval))
+    (define-key oasys-mode-map [menu-bar oasys oasys-check]
+      '("Check" . oasys-check))
+    (define-key oasys-mode-map [menu-bar oasys oasys-focus]
+      '("Focus" . oasys-focus))
+     
+      
+    )
   
 )
 
+
 (defun oasys-mode-menu ()
+  "Set the menu spec. of the opal mode"
+  (interactive)
+  (if opal-running-xemacs
+					; ------ XEmacs related
+      (opal-oasys-menu-xemaxs)
+					; --- FSF Emacs related
+      (opal-oasys-menu-fsfemacs)
+    )
+)
+
+(defun opal-oasys-menu-fsfemacs ()
+  "Set oasys-mode menu for FSF Emacs"
+  (interactive)
+  (progn (define-key oasys-mode-map [menu-bar oasys] 
+	(cons "OASYS" (make-sparse-keymap "OASYS")))
+      (define-key oasys-mode-map [menu-bar oasys oasys-eval]
+       '("Eval ..." . oasys-eval))
+      (define-key oasys-mode-map [menu-bar oasys oasys-check]
+       '("Check" . oasys-check))
+     (define-key oasys-mode-map [menu-bar oasys oasys-view]
+       '("View" . oasys-view))
+     (define-key oasys-mode-map [menu-bar oasys oasys-hide]
+       '("Hide" . oasys-hide))
+     (define-key oasys-mode-map [menu-bar oasys oasys-load]
+       '("Load" . oasys-load)))
+    
+  )
+
+(defun oasys-mode-menu-xemacs ()
   "define and set oasys-mode menu."
 
   (interactive)
