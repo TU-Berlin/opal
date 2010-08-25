@@ -5,11 +5,9 @@
 (require 'oasys-mode)
 
 ;; 0) keymap and menu setup
+
 (defun opal-mode-oasys-keymap ()
   "set the opal-mode oasys keymap"
-
-  (opal-oasys-menu-xemacs)
-
   (define-key opal-mode-map "\C-c\C-a\C-e" 'opal-oasys-eval)
   (define-key opal-mode-map "\M-e" 'opal-oasys-eval)
   (define-key opal-mode-map "\M-o" 'opal-oasys-view)
@@ -17,7 +15,30 @@
   (define-key opal-mode-map "\C-c\C-a\C-v" 'opal-oasys-view)
   (define-key opal-mode-map "\C-c\C-a\C-h" 'opal-oasys-hide)
   (define-key opal-mode-map "\C-c\C-a\C-r" 'opal-oasys-raw)
+
+  (if opal-running-xemacs
+      (opal-oasys-menu-xemacs)
+      (opal-oasys-menu-fsfemacs)
+      )
+
 )
+
+(defun opal-oasys-menu-fsfemacs ()
+  "Set opal-mode oasys menu for FSF Emacs"
+  (interactive)
+
+  (if (not opal-novice)
+      (progn
+	(define-key opal-mode-map [menu-bar opal oasys]
+	  (cons "Oasys" (make-sparse-keymap "Oasys")))
+	
+	(define-key opal-mode-map [menu-bar opal oasys opal-oasys-eval]
+	  '("Eval Expression" . opal-oasys-eval))
+	
+      )
+  )
+)
+
 
 (defun opal-oasys-menu-xemacs ()
   "set up opal-mode oasys menu for XEmacs"
@@ -39,7 +60,7 @@
   (interactive "sExpression:")
   (let (b)
     (setq b (buffer-file-name))
-    (oasys-add-path (file-name-directory b))
+    ;(oasys-add-path (file-name-directory b))
     (oasys-cmd (concat "a " (file-name-nondirectory b)))
     (oasys-focus (file-name-nondirectory b))
     (oasys-eval expr)

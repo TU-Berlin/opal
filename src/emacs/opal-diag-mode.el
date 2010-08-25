@@ -510,17 +510,17 @@ over an overlay which has err-no set, toggle extended help"
 
 ;;; $Diag Mode$
 ;; colors for diag-mode
-(defun opal-diag-hilit19 ()
-  "setup regexps for opal-diag-mode for hilit19"
-(hilit-set-mode-patterns
-    '(opal-diag-mode)
-    '(
-      ("^.*HINT:" nil define)
-      ("^.*WARNING:" nil warning)
-      ("^.*ERROR:" nil error)
-     )
-   )
- )
+;; (defun opal-diag-hilit19 () **/
+;;   "setup regexps for opal-diag-mode for hilit19" **/
+;; (hilit-set-mode-patterns **/
+;;     '(opal-diag-mode) **/
+;;     '( **/
+;;       ("^.*HINT:" nil define) **/
+;;       ("^.*WARNING:" nil warning) **/
+;;       ("^.*ERROR:" nil error) **/
+;;      ) **/
+;;    ) **/
+;;  ) **/
 
 (defconst opal-diag-font-lock-keywords
   (list

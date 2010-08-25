@@ -11,7 +11,7 @@
 (defvar opal-path 
   (cond ((getenv "OCS") (getenv "OCS"))
 	((getenv "OCSDIR") (getenv "OCSDIR"))
-	(t "/usr/ocs")
+	(t "/usr/lib/ocs/ocs-2.3j")
 	)
   "*root directory of Opal installation. If environment variable OCS
 or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
@@ -35,6 +35,8 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (require 'opal-import)
 (require 'opal-defs-mode)
 (require 'opal-toolbar)
+(require 'opal-oasys)
+
 (if opal-running-xemacs
     (progn
 ;      (require 'opal-oasys)
@@ -82,8 +84,8 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   )
   ;; reverse order of appearance in OPAL menu! (for FSF only)
   (opal-mode-misc-keymap)
-  (if opal-running-xemacs (opal-outline-init))
-;  (if opal-running-xemacs (opal-mode-oasys-keymap))
+  ;(if opal-running-xemacs (opal-outline-init))
+  (opal-mode-oasys-keymap)
   (opal-mode-import-keymap)
   (opal-mode-switch-keymap)
   (opal-mode-filehandling-keymap)
@@ -91,7 +93,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   (opal-mode-browser-keymap)
   (opal-mode-dosfop-keymap)
 
-  (opal-mode-set-menu)
+  ;(opal-mode-set-menu) ;; No idea why this is needed
 
   (define-key opal-mode-map "\C-c\C-q\C-t" 'opal-mode-print-alist) ; debug
   (define-key opal-mode-map "\C-c\C-q\C-l" 'opal-mode-load) ; debug
@@ -129,13 +131,13 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 		)
 	    ; else
 	    (add-submenu nil (list "OPAL"))
-;	    (add-submenu (list "OPAL") opal-opalfile-menu)
+	    (add-submenu (list "OPAL") opal-opalfile-menu)
 	    (add-submenu (list "OPAL") opal-switch-menu)
 	    (add-submenu (list "OPAL") opal-import-menu)
 	    (add-submenu (list "OPAL") opal-compile-menu)
 	    (add-submenu (list "OPAL") opal-dosfop-menu)
 	    (add-submenu (list "OPAL") opal-browser-menu)
-;	    (add-submenu (list "OPAL") opal-oasys-menu) 
+	    (add-submenu (list "OPAL") opal-oasys-menu) 
 	    (add-submenu (list "OPAL") opal-outline-menu)
 	    (if opal-pchecker
 		(add-submenu (list "OPAL") opal-certify-menu)
@@ -181,6 +183,53 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   (setq opal-mode-alist 1)
   )
 )
+
+
+;; ************************************
+
+
+(defconst opal-keywords
+  (list "DEF" "FUN" "IF" "THEN" "ELSE" "FI" "LET" "IN" "WHERE" 
+	"IMPORT" "ONLY" "COMPLETELY" "DATA" "TYPE" "SORT"
+	"IMPLEMENTATION" "SIGNATURE"
+	)
+)
+(defconst opal-font-lock-keywords-1
+  (list 
+   `(,(regexp-opt opal-keywords) . font-lock-keyword-face)
+   )
+  "Minimal highlighting expressions for OPAL mode")
+
+(defvar opal-font-lock-keywords opal-font-lock-keywords-1
+  "Default highlighting expressions for OPAL mode")
+
+
+
+
+
+
+
+
+
+
+
+
+;; ***************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 (defvar opal-font-lock-keywords-simple
@@ -414,36 +463,6 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    )
 )
 
-(defun opal-hilit19 ()
-  "define regexps for highlighting opal-mode by hilit19"
-
-  (interactive)
-     (require 'hilit19)
-     (hilit-set-mode-patterns
-      '(opal-mode)
-      '(
-   ;    (regexp-start regexp-end/nil face-name) 
-        ("/\\$" "\\$/" purple)
-        ("/\\* %[^\\$]" "\\*/" comment)
-        ("-- %[^\\$].*$" nil comment)
-        ("/\\* %\\$" "\\$ \\*/" firebrick-underline)
-        ("-- %\\$.*\\$" nil firebrick-underline)
-        ("/\\*" "\\*/" string)
-        ("--.*$" nil string)
-
-        ("\\<\\(IMPORT\\|SORT\\)\\>" nil keyword)
-        ("\\<FUN\\|DEF\\|LAW\\|TYPE\\|DATA\\>" nil keyword)
-        ("\\<\\(FUN\\).*$" nil bold)
-        ("\\<\\(\\(DEF\\|LAW\\|TYPE\\|DATA\\).*\\) *==" 1 bold)
-;        ("\\<\\(TYPE\\|LAW\\)\\>" "==" highlight)
-;        ("\\<\\(DEF\\|DATA\\)\\>" "==" secondary-selection)
-
-        ("\\<\\(SPC\\|PRE\\|POST\\|ASSERT\\|ASSUME\\|ALL\\|AND\\|ANDIF\\|AS\\|COMPLETELY\\|DFD\\|ELSE\\|EX\\|FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|THEN\\|WHERE\\|_\\|===\\|<<=\\|==>\\|<=>\\|\\\\\\\\\\)\\>" nil keyword)
-        ("^\.*\\(EXTERNAL\\|IMPLEMENTATION\\|INTERNAL\\|SIGNATURE\\).*$" nil modeline)
-       )
-     )
-)
-
 (defvar opal-font-lock-table nil
   "font lock table which will be used for opal mode")
 
@@ -451,11 +470,11 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   "set up font-lock-mode with given font-lock-table"
   (interactive)
 
-  (setq opal-font-lock-table font-lock-table)
+  ;;(setq opal-font-lock-table font-lock-table)
 
-  (put 'opal-mode 'font-lock-defaults 
-       '(opal-font-lock-table nil nil nil 'beginning-of-buffer))
-  
+;;  (put 'opal-mode 'font-lock-defaults 
+;;       '(opal-font-lock-table nil nil nil beginning-of-buffer))
+  (set (make-local-variable 'font-lock-defaults) font-lock-table)
 )
 
 (defun opal-init-file ()
@@ -745,7 +764,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
     (define-key opal-mode-map [menu-bar opal misc opal-misc-indent-on]
       '("Opal Indentation" . opal-misc-indent-on ))
     (define-key opal-mode-map [menu-bar opal misc opal-misc-hilit-all]
-      '("Hilit19" . opal-misc-hilit-all))
+      '("Highlight" . opal-misc-hilit-all))
 
     (put 'opal-misc-indent-on 'menu-enable '(not opal-indent-flag))
     (put 'opal-misc-indent  'menu-enable 'opal-indent-flag)
@@ -762,26 +781,12 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
   opal-indent-flag
 )
 
-(defun opal-misc-font-lock-simple ()
-  (interactive)
-  (opal-font-lock opal-font-lock-keywords-simple)
-  (font-lock-mode -1)
-  (font-lock-mode 1)
-)
-
-(defun opal-misc-font-lock-extended ()
-  (interactive)
-  (opal-font-lock opal-font-lock-keywords-extended)
-  (font-lock-mode -1)
-  (font-lock-mode 1)
-)
-
 (defun opal-misc-hilit-all ()
   (interactive)
-  (opal-hilit19)
-  (opal-diag-hilit19)
-  (opal-defs-hilit19)
-  (hilit-rehighlight-buffer)
+  (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-simple))
+  (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-extended))
+;;  (font-lock-mode -1)
+;;  (font-lock-mode 1)
 )
 
 (defvar opal-indent-flag nil

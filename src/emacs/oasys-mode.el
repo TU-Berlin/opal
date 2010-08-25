@@ -196,7 +196,7 @@
 	      (list "Expert"
 		    ["Raw output" opal-oasys-raw t])
 	      ))
-  (set-buffer-menubar (copy-sequence current-menubar))
+  ;;(set-buffer-menubar (copy-sequence current-menubar))
   (add-submenu nil oasys-mode-menu)
 )
 
@@ -233,8 +233,8 @@
 	(insert expr)
 	(setq b (point))
 	(insert "\n")
-	(set-extent-face (make-extent a b (get-buffer oasys-output))
-			 'oasys-input-face)
+;	(set-extent-face (make-extent a b (get-buffer oasys-output))
+;			 'oasys-input-face)
 	)
       ) 
     (while (string-match "[{}]" escexpr)

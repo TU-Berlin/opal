@@ -112,7 +112,7 @@
 	(opal-import-popup-fsfemacs)
       )
     )
-  (opal-setup-alists-buffer)
+  ; (opal-setup-alists-buffer) ;; this is a problem for font-lock
 )
 
 ;;;; 1) ask first for structure and then for items 
@@ -655,8 +655,12 @@
 (defun opal-read-alists () (interactive) (opal-read-alists-i opal-alist-file))
 (defun opal-print-alists () (interactive) 
   (opal-print-alists-i opal-alist-file))
-(defun opal-setup-alists-buffer () (interactive) 
-  (opal-setup-alists-buffer-i opal-alist-file))
+
+(defun opal-setup-alists-buffer () 
+  (interactive) 
+  (opal-setup-alists-buffer-i opal-alist-file)
+)
+
 (defun opal-correct-alists () (interactive) 
 "call this function, after you manually corrected the opal-alist-file"
   (opal-correct-alists-i opal-alist-file))

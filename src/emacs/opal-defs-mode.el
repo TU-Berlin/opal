@@ -74,22 +74,6 @@
    )
 )
 
-(defun opal-defs-hilit19 ()
-  "define regexps for highlighting opal-mode by hilit19"
-
-  (interactive)
-     (require 'hilit19)
-     (hilit-set-mode-patterns
-      '(opal-defs-mode)
-      '(
-   ;    (regexp-start regexp-end/nil face-name) 
-	("#.*$" nil comment)
-	("^[A-Za-z0-9_.]+" "=" defun)
-	("$([A-Z]+)" nil keyword)
-	("\\\\$" nil defun)
-        )
-     )
-)
 
 
 
