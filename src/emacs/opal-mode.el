@@ -198,7 +198,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 )
 
 
-(defvar opal-font-lock-keywords-middle
+(defvar opal-font-lock-keywords-extended
   (list
    ; comments
    (list (concat
@@ -301,196 +301,6 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 
 
 
-(defvar opal-font-lock-keywords-extended
-
-  (list
-   ; comments
-   (list (concat
-       "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-       "\\(/\\*[ \t]%.*\\($.*\\)*\\*/\\)")
-     '(2 'font-lock-doc-string-face t t))
-   (list (concat
-       "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-       "\\(--\\( [^%].*\\)?$\\)")
-     '(2 'font-lock-comment-face t t))
-   (list (concat
-       "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-       "\\(-- %.*$\\)")
-     '(2 'font-lock-doc-string-face t t))
-   (list (concat
-       "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-       "\\(/\\$.*\\$/\\)")
-     '(2 'font-lock-preprocessor-face t t))
-   ; alphanumerical keywords
-   (list (concat
-       "\\(^\\|[^0-9a-zA-Z_]\\)"
-       "\\("
-         "ALL\\|AND\\|ANDIF\\|AS\\|COMPLETELY\\|DFD\\|ELSE\\|EX\\|"
-         "FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|"
-         "THEN\\|WHERE\\|FUN\\|DEF\\|SORT\\|TYPE\\|DATA\\|IMPORT"
-       "\\)"
-       "\\($\\|[^0-9a-zA-Z_]\\)")
-     '(2 'font-lock-keyword-face nil t))
-   ; graphical keywords
-   (list (concat
-       "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-       "\\("
-         "\\*\\*\\|->\\|\\.\\|:\\|==\\|===\\|<<="
-         "\\|==>\\|<=>\\|\\\\\\\\"
-       "\\)"
-       "\\($\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)")
-     '(2 'font-lock-keyword-face nil t))
-   ; underscore
-   (list (concat
-       "\\(^\\|[ \t\(,]\\)"
-       "\\(_\\)\\([ \t\),]\\|$\\)")
-	 '(2 'font-lock-keyword-face nil t))
-   ; file identifying keywords
-   (list (concat
-       "^\\("
-         "SIGNATURE\\|IMPLEMENTATION\\|"
-         "\\(EXTERNAL\\|INTERNAL\\)[ \t]+PROPERTIES"
-       "\\)\\([ \t]+\\)"
-       "\\("
-         "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\("
-           "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\)*"
-       "\\)"
-       "[ \t]*\\(\\(\\[[^ \t]*\\]\\)?\\)")
-     '(1 'font-lock-keyword-face nil t)
-     '(4 'font-lock-variable-name-face nil t)
-     '(8 'font-lock-type-face nil t))
-   ; imports
-   (list (concat
-       "^\\(\\(IMPORT\\)?\\)[ \t]+"
-       "\\("
-         "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\("
-           "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\)*"
-       "\\)"
-       "[ \t]*\\(\\(\\[[^ \t]*\\]\\)?\\)[ \t]+"
-       "\\(ONLY\\|COMPLETELY\\)")
-     '(1 'font-lock-keyword-face nil t)
-     '(3 'font-lock-variable-name-face nil t)
-     '(7 'font-lock-type-face nil t)
-     '(9 'font-lock-keyword-face nil t))
-   ; sorts
-   (list (concat
-       "^\\(SORT\\)"
-       "\\("
-         "\\([ \t]+"
-           "\\("
-             "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\("
-               "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\)*"
-           "\\)"
-         "\\)+"
-       "\\)")
-     '(1 'font-lock-keyword-face nil t)
-     '(2 'font-lock-type-face nil t))
-   ; type/data declarations
-   (list (concat
-       "^\\(TYPE\\|DATA\\)\\([ \t]+\\)"
-       "\\("
-         "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\("
-           "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\)*"
-       "\\)")
-     '(1 'font-lock-keyword-face nil t)
-     '(3 'font-lock-type-face nil t))
-   ; law declarations
-   (list (concat
-       "^\\(TYPE\\|DATA\\)\\([ \t]+\\)"
-       "\\("
-         "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\("
-           "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\)*"
-       "\\)")
-     '(1 'font-lock-keyword-face nil t)
-     '(3 'font-lock-function-name-face nil t))
-   ; prefix function definitions
-   ; TODO: allow for optional typing
-   '("\\(^\\)\\(DEF\\)\\([ \t]+\\)\
-\\(_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?\
-\\(_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?\\)*\\)\
-\\([ \t]*\\)\\((.*)\\)?[ \t]*="
-      (2 'font-lock-keyword-face nil t)
-      (4 'font-lock-function-name-face nil t))
-   ; infix/postfix function definitions
-   ; TODO: allow for optional typing
-   ;; (list 
-   ;;  (concat "\\(^\\)\\(DEF\\)\\([ \t]+\\)"
-   ;; 	    ""
-   ;; 	    )
-     
-   ;;    '(2 'font-lock-keyword-face nil t)
-   ;;    '(11 'font-lock-function-name-face nil t))
-   ; function declarations
-   (list (concat
-      "^\\(?:\\(?:FUN\\)[ \t]+\\)"
-       "\\(?:"
-       "\\("
-       opal-syntax-ide
-       "\\)"
-       "\\(?:"
-       "[ \t]+"
-       "\\("
-       opal-syntax-ide
-       "\\)"
-       "\\)*"
-       "\\)"
-       "[ \t]*"
-       "\\(?::\\)"
-       "[ \t]*"
-       "\\(?:"
-       "\\(?:\(\\)?\\(" opal-syntax-ide "\\)" 
-       "\\)"
-       )
-	 '(1 'font-lock-function-name-face nil t)
-	 '(2 'font-lock-function-name-face nil t)
-	 '(3 'font-lock-type-face nil t)
-	 )
-   ; types
-   (list (concat
-       "\\("
-         "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)\\(:\\)\\|"
-            "\\(\\*\\*\\)\\|"
-            "\\(->\\)"
-         "\\)"
-         "\\([ \t]+"
-           "\\("
-             "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\("
-               "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\)*"
-           "\\)\\|"
-           "[0-9a-zA-Z]+\\?*"
-           "\\("
-             "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-           "\\)*"
-         "\\)"
-         "\\("
-           "\\("
-             "'_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\("
-               "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\)*"
-           "\\)?"
-         "\\)"
-         "[ \t]*\\(\\(\\[[^-* \t]*\\]\\)?\\)")
-     '(3 'font-lock-keyword-face nil t)
-     '(4 'font-lock-keyword-face nil t)
-     '(5 'font-lock-keyword-face nil t)
-     '(6 'font-lock-type-face nil t)
-     '(13 'font-lock-variable-name-face nil t)
-     '(18 'font-lock-type-face nil t))
-   )
-)
 
 
 (defun opal-init-file ()
@@ -786,7 +596,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 (defun opal-misc-hilit-all ()
   (interactive)
   (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-simple))
-  (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-middle))
+  (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-extended))
 )
 
 (defvar opal-indent-flag nil
