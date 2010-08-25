@@ -38,15 +38,17 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (require 'opal-oasys)
 
 
+
+
 ;; opal syntax definition
-(setq opal-syntax-special (concat "[!#$%&\\*\\+-./:;<=>?"
+(setq opal-syntax-special (concat "\\(?:[!#$%&\\*\\+\\-./:;<=>?"
 				      "@\\\\~|^`¡¢£¤¥¦§¨©ª«¬"
-				      "®¯°±²³´µ¶·¹¸º»¼½¾¿×÷]"))
+				      "®¯°±²³´µ¶·¹¸º»¼½¾¿×÷]\\)"))
 
 
-(setq opal-syntax-letgit "[a-zA-Zßà-ÿÀ-ÝÞ0-9]")
+(setq opal-syntax-letgit "\\(?:[a-zA-Zßà-öø-ÿÀ-ÖØ-ÝÞ0-9]\\)")
 
-(setq opal-syntax-extra "[][\"\(\),']")
+(setq opal-syntax-extra "\\(?:[][\"\(\),']\\)")
 
 (setq opal-syntax-alphanumA 
   (concat "\\(?:\\(?:" opal-syntax-letgit "\\|_\\)+\\?*\\)"))
@@ -227,13 +229,13 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 	 '(2 'font-lock-keyword-face nil t))
    ; graphical keywords
    (list (concat
-	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\(?:^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
 	  "\\("
 	  "\\*\\*\\|->\\|\\.\\|:\\|==\\|===\\|<<="
 	  "\\|==>\\|<=>\\|\\\\\\\\"
 	  "\\)"
-	  "\\($\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)")
-	 '(2 'font-lock-keyword-face nil t))
+	  "\\(?:$\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)")
+	 '(1 'font-lock-builtin-face nil t))
    ; underscore
    (list (concat
 	  "\\(^\\|[ \t\(,]\\)"
@@ -243,18 +245,14 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    (list (concat
 	  "^\\("
 	  "SIGNATURE\\|IMPLEMENTATION\\|"
-	  "\\(EXTERNAL\\|INTERNAL\\)[ \t]+PROPERTIES"
-	  "\\)\\([ \t]+\\)"
+	  "\\(?:EXTERNAL\\|INTERNAL\\)[ \t]+PROPERTIES"
+	  "\\)\\(?:[ \t]+\\)"
 	  "\\("
-	  "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-	  "\\("
-	  "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-	  "\\)*"
+	  opal-syntax-ide
 	  "\\)"
-	  "[ \t]*\\(\\(\\[[^ \t]*\\]\\)?\\)")
+	  )
 	 '(1 'font-lock-keyword-face nil t)
-	 '(4 'font-lock-variable-name-face nil t)
-	 '(8 'font-lock-type-face nil t))
+	 '(2 'font-lock-variable-name-face nil t))
    ; imports
    (list (concat
 	  "^\\(\\(IMPORT\\)?\\)[ \t]+"
@@ -270,8 +268,38 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 	 '(3 'font-lock-variable-name-face nil t)
 	 '(7 'font-lock-type-face nil t)
 	 '(9 'font-lock-keyword-face nil t))
-   )
+   ; Numbers
+   (list (concat "\\(?:^\\|" opal-syntax-special "\\|" opal-syntax-extra "\\|[ \t]+" "\\)"
+		 "\\([0-9]+\\)" 
+		 "\\(?:$\\|" opal-syntax-special "\\|" opal-syntax-extra "\\|[ \t]+" "\\)" 
+	  )
+	 '(1 'font-lock-constant-face nil t)
+	 )
+   ; Identifiers
+   (list (concat "\\(" opal-syntax-alphanum "\\)")
+	 '(0 'default nil t)
+	 )
+  ; Operators
+  (list (concat "\\(" opal-syntax-special "\\)+")
+	'(0 'font-lock-variable-name-face nil t)
+	)
+  
   )
+  )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 (defvar opal-font-lock-keywords-extended
 
@@ -758,7 +786,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 (defun opal-misc-hilit-all ()
   (interactive)
   (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-simple))
-  (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-extended))
+  (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-middle))
 )
 
 (defvar opal-indent-flag nil
@@ -924,9 +952,9 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
        "\\(?:\(\\)?\\(" opal-syntax-ide "\\)" 
        "\\)"
        ))
-(setq str "FUN gghh_asdas?_123 : nat")
-(string-match re str)
-(match-string 3 str)
+(setq str "asdes +*#")
+(string-match (concat "\\(" opal-syntax-special "\\)+") str)
+(match-string 1 str)
 ;; (string-match opal-syntax-special str) **/
 ;; (match-string 1 str) **/
 
