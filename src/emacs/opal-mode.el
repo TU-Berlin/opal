@@ -39,31 +39,31 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 
 
 ;; opal syntax definition
-(defvar opal-syntax-special (concat "[!#$%&\\*\\+-./:;<=>?"
+(setq opal-syntax-special (concat "[!#$%&\\*\\+-./:;<=>?"
 				      "@\\\\~|^`¡¢£¤¥¦§¨©ª«¬"
 				      "®¯°±²³´µ¶·¹¸º»¼½¾¿×÷]"))
 
 
-(defvar opal-syntax-letgit "[a-zA-Zßà-ÿÀ-ÝÞ0-9]")
+(setq opal-syntax-letgit "[a-zA-Zßà-ÿÀ-ÝÞ0-9]")
 
-(defvar opal-syntax-extra "[][\"\(\),']")
+(setq opal-syntax-extra "[][\"\(\),']")
 
-(defvar opal-syntax-alphanumA 
-  (concat "\\(\\(" opal-syntax-letgit "\\|_\\)+\\?*\\)"))
+(setq opal-syntax-alphanumA 
+  (concat "\\(?:\\(?:" opal-syntax-letgit "\\|_\\)+\\?*\\)"))
 
-(defvar opal-syntax-alphGraph 
-  (concat "\\(_\\(" opal-syntax-alphanumA 
+(setq opal-syntax-alphGraph 
+  (concat "\\(?:_\\(?:" opal-syntax-alphanumA 
 	  "\\|" opal-syntax-special "+\\)\\)"))
 
-(defvar opal-syntax-alphanum 
-  (concat opal-syntax-alphanumA opal-syntax-alphGraph "*_*"))
+(setq opal-syntax-alphanum 
+  (concat "\\(?:"opal-syntax-alphanumA opal-syntax-alphGraph "*_*\\)"))
 
-(defvar opal-syntax-graphic 
-  (concat "\\(" opal-syntax-special "\\)+" opal-syntax-alphGraph "*_*"))
+(setq opal-syntax-graphic 
+  (concat "\\(?:\\(?:" opal-syntax-special "\\)+" opal-syntax-alphGraph "*_*\\)"))
 
 
-(defvar opal-syntax-ide 
-  (concat opal-syntax-alphanum "\\|" opal-syntax-graphic))
+(setq opal-syntax-ide 
+  (concat "\\(?:"opal-syntax-alphanum "\\|" opal-syntax-graphic "\\)"))
 
 
 (if opal-running-xemacs
@@ -194,6 +194,84 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    `("\\(CERTIFICATION\\|FORMALTEST\\|FORMALPROOF\\|SYNTHESIS\\)" (0 'font-lock-reference-face t t))
    )
 )
+
+
+(defvar opal-font-lock-keywords-middle
+  (list
+   ; comments
+   (list (concat
+	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\(/\\*[ \t]%.*\\($.*\\)*\\*/\\)")
+	 '(2 'font-lock-doc-string-face t t))
+   (list (concat
+	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\(--\\( [^%].*\\)?$\\)")
+	 '(2 'font-lock-comment-face t t))
+   (list (concat
+	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\(-- %.*$\\)")
+	 '(2 'font-lock-doc-string-face t t))
+   (list (concat
+	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\(/\\$.*\\$/\\)")
+	 '(2 'font-lock-preprocessor-face t t))
+   ; alphanumerical keywords
+   (list (concat
+	  "\\(^\\|[^0-9a-zA-Z_]\\)"
+	  "\\("
+	  "ALL\\|AND\\|ANDIF\\|AS\\|COMPLETELY\\|DFD\\|ELSE\\|EX\\|"
+	  "FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|"
+	  "THEN\\|WHERE\\|FUN\\|DEF\\|SORT\\|TYPE\\|DATA\\|IMPORT"
+	  "\\)"
+	  "\\($\\|[^0-9a-zA-Z_]\\)")
+	 '(2 'font-lock-keyword-face nil t))
+   ; graphical keywords
+   (list (concat
+	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\("
+	  "\\*\\*\\|->\\|\\.\\|:\\|==\\|===\\|<<="
+	  "\\|==>\\|<=>\\|\\\\\\\\"
+	  "\\)"
+	  "\\($\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)")
+	 '(2 'font-lock-keyword-face nil t))
+   ; underscore
+   (list (concat
+	  "\\(^\\|[ \t\(,]\\)"
+	  "\\(_\\)\\([ \t\),]\\|$\\)")
+	 '(2 'font-lock-keyword-face nil t))
+   ; file identifying keywords
+   (list (concat
+	  "^\\("
+	  "SIGNATURE\\|IMPLEMENTATION\\|"
+	  "\\(EXTERNAL\\|INTERNAL\\)[ \t]+PROPERTIES"
+	  "\\)\\([ \t]+\\)"
+	  "\\("
+	  "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
+	  "\\("
+	  "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
+	  "\\)*"
+	  "\\)"
+	  "[ \t]*\\(\\(\\[[^ \t]*\\]\\)?\\)")
+	 '(1 'font-lock-keyword-face nil t)
+	 '(4 'font-lock-variable-name-face nil t)
+	 '(8 'font-lock-type-face nil t))
+   ; imports
+   (list (concat
+	  "^\\(\\(IMPORT\\)?\\)[ \t]+"
+	  "\\("
+	  "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
+	  "\\("
+	  "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
+	  "\\)*"
+	  "\\)"
+	  "[ \t]*\\(\\(\\[[^ \t]*\\]\\)?\\)[ \t]+"
+	  "\\(ONLY\\|COMPLETELY\\)")
+	 '(1 'font-lock-keyword-face nil t)
+	 '(3 'font-lock-variable-name-face nil t)
+	 '(7 'font-lock-type-face nil t)
+	 '(9 'font-lock-keyword-face nil t))
+   )
+  )
 
 (defvar opal-font-lock-keywords-extended
 
@@ -326,12 +404,12 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    ;;    '(11 'font-lock-function-name-face nil t))
    ; function declarations
    (list (concat
-      "^\\(\\(FUN\\)[ \t]+\\)"
-       "\\("
+      "^\\(?:\\(?:FUN\\)[ \t]+\\)"
+       "\\(?:"
        "\\("
        opal-syntax-ide
        "\\)"
-       "\\("
+       "\\(?:"
        "[ \t]+"
        "\\("
        opal-syntax-ide
@@ -339,15 +417,15 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
        "\\)*"
        "\\)"
        "[ \t]*"
-       "\\(:\\)"
+       "\\(?::\\)"
        "[ \t]*"
-       "\\("
-       "\\(\(\\)?\\(" opal-syntax-ide "\\)" 
+       "\\(?:"
+       "\\(?:\(\\)?\\(" opal-syntax-ide "\\)" 
        "\\)"
        )
-	 '(3 'font-lock-function-name-face nil t)
-	 '(17 'font-lock-function-name-face nil t)
-	 '(32 'font-lock-type-face nil t)
+	 '(1 'font-lock-function-name-face nil t)
+	 '(2 'font-lock-function-name-face nil t)
+	 '(3 'font-lock-type-face nil t)
 	 )
    ; types
    (list (concat
@@ -803,8 +881,8 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 
 (setq reg 
 (concat
-       "\\(^\\|[ \t\(]\\)"
-       "\\(_\\)\\([ \t\)]\\|$\\)") 
+       "\\(?:^\\|[ \t\(]\\)"
+       "\\(_\\)\\(?:[ \t\)]\\|$\\)") 
 )
       ;; (concat **/
       ;;  "^\\(\\(FUN\\)[ \t]+\\)" **/
@@ -826,10 +904,29 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
       ;;  "\\(\(\\)?\\(" opal-syntax-ide "\\)"  **/
       ;;  "\\)" **/
       ;; ))
-
-(setq str "_")
-(string-match reg str)
-(match-string 0 str)
+(setq re (concat
+      "^\\(?:\\(?:FUN\\)[ \t]+\\)"
+       "\\(?:"
+       "\\("
+       opal-syntax-ide
+       "\\)"
+       "\\(?:"
+       "[ \t]+"
+       "\\("
+       opal-syntax-ide
+       "\\)"
+       "\\)*"
+       "\\)"
+       "[ \t]*"
+       "\\(?::\\)"
+       "[ \t]*"
+       "\\(?:"
+       "\\(?:\(\\)?\\(" opal-syntax-ide "\\)" 
+       "\\)"
+       ))
+(setq str "FUN gghh_asdas?_123 : nat")
+(string-match re str)
+(match-string 3 str)
 ;; (string-match opal-syntax-special str) **/
 ;; (match-string 1 str) **/
 
