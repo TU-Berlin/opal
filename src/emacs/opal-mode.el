@@ -317,13 +317,13 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
       (4 'font-lock-function-name-face nil t))
    ; infix/postfix function definitions
    ; TODO: allow for optional typing
-   (list 
-    (concat "\\(^\\)\\(DEF\\)\\([ \t]+\\)"
-	    
-	    )
+   ;; (list 
+   ;;  (concat "\\(^\\)\\(DEF\\)\\([ \t]+\\)"
+   ;; 	    ""
+   ;; 	    )
      
-      (2 'font-lock-keyword-face nil t)
-      (11 'font-lock-function-name-face nil t))
+   ;;    '(2 'font-lock-keyword-face nil t)
+   ;;    '(11 'font-lock-function-name-face nil t))
    ; function declarations
    (list (concat
       "^\\(\\(FUN\\)[ \t]+\\)"
@@ -825,7 +825,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
       ;;  "\\(" **/
       ;;  "\\(\(\\)?\\(" opal-syntax-ide "\\)"  **/
       ;;  "\\)" **/
-       ))
+      ;; ))
 
 (setq str "_")
 (string-match reg str)
