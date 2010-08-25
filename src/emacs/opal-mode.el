@@ -37,23 +37,54 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (require 'opal-toolbar)
 (require 'opal-oasys)
 
+
+;; opal syntax definition
+(defvar opal-syntax-special (concat "[!#$%&\\*\\+-./:;<=>?"
+				      "@\\\\~|^`¡¢£¤¥¦§¨©ª«¬"
+				      "®¯°±²³´µ¶·¹¸º»¼½¾¿×÷]"))
+
+
+(defvar opal-syntax-letgit "[a-zA-Zßà-ÿÀ-ÝÞ0-9]")
+
+(defvar opal-syntax-extra "[][\"\(\),']")
+
+(defvar opal-syntax-alphanumA 
+  (concat "\\(\\(" opal-syntax-letgit "\\|_\\)+\\?*\\)"))
+
+(defvar opal-syntax-alphGraph 
+  (concat "\\(_\\(" opal-syntax-alphanumA 
+	  "\\|" opal-syntax-special "+\\)\\)"))
+
+(defvar opal-syntax-alphanum 
+  (concat opal-syntax-alphanumA opal-syntax-alphGraph "*_*"))
+
+(defvar opal-syntax-graphic 
+  (concat "\\(" opal-syntax-special "\\)+" opal-syntax-alphGraph "*_*"))
+
+
+(defvar opal-syntax-ide 
+  (concat opal-syntax-alphanum "\\|" opal-syntax-graphic))
+
+
 (if opal-running-xemacs
-    (progn
-;      (require 'opal-oasys)
-;      (require 'oasys-mode)
-      (require 'opal-outline)
-      (add-hook 'opal-mode-hook 'opal-outline-hook-functions)
-      (if opal-pchecker
-	  (progn
-	    (require 'opal-trace-mode)
-	    (require 'opal-certify)
-	    (add-hook 'opal-mode-hook 'opal-certify-keymap)
-	    )
-	)
-      (require 'opal-info)
-      (add-hook 'opal-mode-hook 'opal-info-keymap)
-      )
-  )
+ ;;     (progn
+ ;; ;      (require 'opal-oasys)
+ ;; ;      (require 'oasys-mode)
+ ;;       (require 'opal-outline)
+ ;;       (add-hook 'opal-mode-hook 'opal-outline-hook-functions)
+ ;;       (if opal-pchecker
+ ;; 	  (progn
+ ;; 	    (require 'opal-trace-mode)
+ ;; 	    (require 'opal-certify)
+ ;; 	    (add-hook 'opal-mode-hook 'opal-certify-keymap)
+ ;; 	    )
+ ;; 	)
+ ;;       (require 'opal-info)
+ ;;       (add-hook 'opal-mode-hook 'opal-info-keymap)
+ ;;       (message "XEmacs is not supported at the moment")
+ ;;       )
+(message "XEmacs is not supported at the moment")
+)
 
 ;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
@@ -63,7 +94,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   "If keymap opal-mode-map not exists then set the keymap of the opal-mode."
   (interactive)
   (if opal-mode-map
-      ()         ; Do not change the keymap if it is already set up
+      (opal-mode-set-keymap)         ; Do not change the keymap if it is already set up
     (opal-mode-set-keymap)
     )
   )
@@ -93,7 +124,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   (opal-mode-browser-keymap)
   (opal-mode-dosfop-keymap)
 
-  ;(opal-mode-set-menu) ;; No idea why this is needed
+  (opal-mode-set-menu)
 
   (define-key opal-mode-map "\C-c\C-q\C-t" 'opal-mode-print-alist) ; debug
   (define-key opal-mode-map "\C-c\C-q\C-l" 'opal-mode-load) ; debug
@@ -103,53 +134,10 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   (define-key opal-mode-map "\M-f" 'forward-opal-ide)
   )
 
-(defun opal-mode-set-menu ()
-  "Set the menu spec. of the opal mode"
-  (interactive)
-  (if opal-running-xemacs
-					; ------ XEmacs related
-      (progn
-	(defun opal-add-menus ()
-	  ""
-	  (set-buffer-menubar (copy-sequence current-menubar))
-	  (if opal-novice
-	      (progn
-		(add-submenu nil
-			     (list "Opal"
-				   ["Save all Opal files" 
-				    opal-ask-save-opal-buffers t]
-				   ["Show SIGNATURE and IMPLEMENTATION" 
-				    opal-switch-2 t]
-				   ["Switch to SIGNATURE part"  
-				    opal-switch-to-sign 
-				    :style radio :selected (opal-in-sign)]
-				   ["Switch to IMPLEMENTATION part"
-				    opal-switch-to-impl 
-				    :style radio :selected (opal-in-impl)]
-			      )
-		  )
-		)
-	    ; else
-	    (add-submenu nil (list "OPAL"))
-	    (add-submenu (list "OPAL") opal-opalfile-menu)
-	    (add-submenu (list "OPAL") opal-switch-menu)
-	    (add-submenu (list "OPAL") opal-import-menu)
-	    (add-submenu (list "OPAL") opal-compile-menu)
-	    (add-submenu (list "OPAL") opal-dosfop-menu)
-	    (add-submenu (list "OPAL") opal-browser-menu)
-	    (add-submenu (list "OPAL") opal-oasys-menu) 
-	    (add-submenu (list "OPAL") opal-outline-menu)
-	    (if opal-pchecker
-		(add-submenu (list "OPAL") opal-certify-menu)
-	      )
-	    (add-submenu (list "OPAL") opal-misc-menu)
-	    )
-	  (add-submenu nil opal-diag-menu)
-	  )
-	(add-hook 'opal-mode-hook 'opal-add-menus)
-	)
-					; --- FSF Emacs related
-       (if opal-novice
+
+
+(defun opal-mode-set-menu-fsfemacs ()
+  (if opal-novice
 	   (progn
 	     (define-key opal-mode-map 
 	       [menu-bar opal opal-switch-to-impl]
@@ -164,6 +152,15 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 	       '("Save all Opal files" . opal-ask-save-opal-buffers))	     
 	   )
        )
+)
+(defun opal-mode-set-menu ()
+  "Set the menu spec. of the opal mode"
+  (interactive)
+  (if opal-running-xemacs
+					; ------ XEmacs related
+      (opal-mode-set-menu-xemaxs)
+					; --- FSF Emacs related
+      (opal-mode-set-menu-fsfemacs)
     )
 )
 
@@ -183,54 +180,6 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
   (setq opal-mode-alist 1)
   )
 )
-
-
-;; ************************************
-
-
-(defconst opal-keywords
-  (list "DEF" "FUN" "IF" "THEN" "ELSE" "FI" "LET" "IN" "WHERE" 
-	"IMPORT" "ONLY" "COMPLETELY" "DATA" "TYPE" "SORT"
-	"IMPLEMENTATION" "SIGNATURE"
-	)
-)
-(defconst opal-font-lock-keywords-1
-  (list 
-   `(,(regexp-opt opal-keywords) . font-lock-keyword-face)
-   )
-  "Minimal highlighting expressions for OPAL mode")
-
-(defvar opal-font-lock-keywords opal-font-lock-keywords-1
-  "Default highlighting expressions for OPAL mode")
-
-
-
-
-
-
-
-
-
-
-
-
-;; ***************************************
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 (defvar opal-font-lock-keywords-simple
 
@@ -280,11 +229,16 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    (list (concat
        "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
        "\\("
-         "\\*\\*\\|->\\|\\.\\|:\\|_\\|==\\|===\\|<<="
+         "\\*\\*\\|->\\|\\.\\|:\\|==\\|===\\|<<="
          "\\|==>\\|<=>\\|\\\\\\\\"
        "\\)"
        "\\($\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)")
      '(2 'font-lock-keyword-face nil t))
+   ; underscore
+   (list (concat
+       "\\(^\\|[ \t\(,]\\)"
+       "\\(_\\)\\([ \t\),]\\|$\\)")
+	 '(2 'font-lock-keyword-face nil t))
    ; file identifying keywords
    (list (concat
        "^\\("
@@ -363,69 +317,38 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
       (4 'font-lock-function-name-face nil t))
    ; infix/postfix function definitions
    ; TODO: allow for optional typing
-   '("\\(^\\)\\(DEF\\)\\([ \t]+\\)\
-\\(\
-\\(_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?\
-\\(_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?\\)*\
-[ \t]*\\((.*)\\)?[ \t]\\|(\\(.\\)*)\\)[ \t]*\
-\\)\
-\\(_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?\
-\\(_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?\\)*\\)"
+   (list 
+    (concat "\\(^\\)\\(DEF\\)\\([ \t]+\\)"
+	    
+	    )
+     
       (2 'font-lock-keyword-face nil t)
       (11 'font-lock-function-name-face nil t))
    ; function declarations
    (list (concat
-       "^\\(\\(FUN\\)[ \t]+\\)"
+      "^\\(\\(FUN\\)[ \t]+\\)"
        "\\("
-         "\\("
-           "\\("
-             "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\("
-               "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-             "\\)*"
-           "\\)"
-           "[ \t]+"
-         "\\)*"
+       "\\("
+       opal-syntax-ide
        "\\)"
        "\\("
-         "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\("
-           "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\)*"
-         "\\("
-           "[0-9a-zA-Z?][ \t]*\\|[-!#$%&*+./:;<=>?@\\^`{|}~_][ \t]+"
-         "\\)"
-       "\\)"
-       "\\(:\\)"
+       "[ \t]+"
        "\\("
-         "[ \t]+\\("
-           "_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-           "\\("
-             "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-           "\\)*"
-         "\\)\\|"
-         "[0-9a-zA-Z]+\\?*"
-         "\\("
-           "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-         "\\)*"
+       opal-syntax-ide
        "\\)"
-       "\\("
-         "\\("
-           "'_*\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-           "\\("
-             "_+\\([0-9a-zA-Z]+\\?*\\|[-!#$%&*+./:;<=>?@\\^`{|}~]+\\)?"
-           "\\)*"
-         "\\)?"
+       "\\)*"
        "\\)"
        "[ \t]*"
-       "\\(\\(\\[[^-* \t]*\\]\\)?\\)")
-     '(2 'font-lock-keyword-face nil t)
-     '(3 'font-lock-function-name-face nil t)
-     '(9 'font-lock-function-name-face nil t)
-     '(13 'font-lock-keyword-face nil t)
-     '(14 'font-lock-type-face nil t)
-     '(21 'font-lock-variable-name-face nil t)
-     '(26 'font-lock-type-face nil t))
+       "\\(:\\)"
+       "[ \t]*"
+       "\\("
+       "\\(\(\\)?\\(" opal-syntax-ide "\\)" 
+       "\\)"
+       )
+	 '(3 'font-lock-function-name-face nil t)
+	 '(17 'font-lock-function-name-face nil t)
+	 '(32 'font-lock-type-face nil t)
+	 )
    ; types
    (list (concat
        "\\("
@@ -463,19 +386,6 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    )
 )
 
-(defvar opal-font-lock-table nil
-  "font lock table which will be used for opal mode")
-
-(defun opal-font-lock (font-lock-table)
-  "set up font-lock-mode with given font-lock-table"
-  (interactive)
-
-  ;;(setq opal-font-lock-table font-lock-table)
-
-;;  (put 'opal-mode 'font-lock-defaults 
-;;       '(opal-font-lock-table nil nil nil beginning-of-buffer))
-  (set (make-local-variable 'font-lock-defaults) font-lock-table)
-)
 
 (defun opal-init-file ()
   "initializes empty structure part."
@@ -710,7 +620,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
   (if opal-running-xemacs
       nil
     (opal-misc-hilit-all)
-    )
+  )
   (setq selective-display t)
   (add-hook 'first-change-hook 'opal-toolbar-mark-change)
   (add-hook 'after-save-hook 'opal-toolbar-save-necessary)
@@ -731,25 +641,11 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 
   (if opal-running-xemacs
       (opal-misc-menu-xemacs)
-    (opal-misc-menu-fsfemacs)
-    )
+      (opal-misc-menu-fsfemacs)
+  )
 )
 
-(defun opal-misc-menu-xemacs ()
-  "opal-mode misc menu for Xemacs"
 
-  (interactive)
-  (setq opal-misc-menu
-	(list "Misc"
-	      ["Font lock simple" opal-misc-font-lock-simple font-lock-mode]
-	      ["Font lock extended" opal-misc-font-lock-extended 
-	       font-lock-mode]
-	      ["Opal Indentation" opal-misc-indent :active t 
-	       :style toggle :selected opal-indent-flag]
-	      ["Install toolbar" opal-toolbar-install t]
-	      )
-	)
-)
 
 (defun opal-misc-menu-fsfemacs ()
   "opal-mode misc menu for FSF emacs"
@@ -769,7 +665,7 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
     (put 'opal-misc-indent-on 'menu-enable '(not opal-indent-flag))
     (put 'opal-misc-indent  'menu-enable 'opal-indent-flag)
     )
-  )
+)
 
 (defun opal-misc-std-indent-q ()
   (interactive)
@@ -785,8 +681,6 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
   (interactive)
   (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-simple))
   (set (make-local-variable 'font-lock-defaults) '(opal-font-lock-keywords-extended))
-;;  (font-lock-mode -1)
-;;  (font-lock-mode 1)
 )
 
 (defvar opal-indent-flag nil
@@ -837,3 +731,108 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
   )
 
 
+
+
+
+;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; XEMACS
+;;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun opal-misc-menu-xemacs ()
+  "opal-mode misc menu for Xemacs"
+
+  (interactive)
+  (setq opal-misc-menu
+	(list "Misc"
+	      ["Font lock simple" opal-misc-font-lock-simple font-lock-mode]
+	      ["Font lock extended" opal-misc-font-lock-extended 
+	       font-lock-mode]
+	      ["Opal Indentation" opal-misc-indent :active t 
+	       :style toggle :selected opal-indent-flag]
+	      ["Install toolbar" opal-toolbar-install t]
+	      )
+	)
+)
+
+(defun opal-mode-set-menu-xemacs () 
+  (progn
+	(defun opal-add-menus ()
+	  ""
+	  (set-buffer-menubar (copy-sequence current-menubar))
+	  (if opal-novice
+	      (progn
+		(add-submenu nil
+			     (list "Opal"
+				   ["Save all Opal files" 
+				    opal-ask-save-opal-buffers t]
+				   ["Show SIGNATURE and IMPLEMENTATION" 
+				    opal-switch-2 t]
+				   ["Switch to SIGNATURE part"  
+				    opal-switch-to-sign 
+				    :style radio :selected (opal-in-sign)]
+				   ["Switch to IMPLEMENTATION part"
+				    opal-switch-to-impl 
+				    :style radio :selected (opal-in-impl)]
+			      )
+		  )
+		)
+	    ; else
+	    (add-submenu nil (list "OPAL"))
+	    (add-submenu (list "OPAL") opal-opalfile-menu)
+	    (add-submenu (list "OPAL") opal-switch-menu)
+	    (add-submenu (list "OPAL") opal-import-menu)
+	    (add-submenu (list "OPAL") opal-compile-menu)
+	    (add-submenu (list "OPAL") opal-dosfop-menu)
+	    (add-submenu (list "OPAL") opal-browser-menu)
+	    (add-submenu (list "OPAL") opal-oasys-menu) 
+	    (add-submenu (list "OPAL") opal-outline-menu)
+	    (if opal-pchecker
+		(add-submenu (list "OPAL") opal-certify-menu)
+	      )
+	    (add-submenu (list "OPAL") opal-misc-menu)
+	    )
+	  (add-submenu nil opal-diag-menu)
+	  )
+	(add-hook 'opal-mode-hook 'opal-add-menus)
+	)
+)
+
+
+
+;; For debugging
+
+(setq reg 
+(concat
+       "\\(^\\|[ \t\(]\\)"
+       "\\(_\\)\\([ \t\)]\\|$\\)") 
+)
+      ;; (concat **/
+      ;;  "^\\(\\(FUN\\)[ \t]+\\)" **/
+      ;;  "\\(" **/
+      ;;  "\\(" **/
+      ;;  opal-syntax-ide **/
+      ;;  "\\)" **/
+      ;;  "\\(" **/
+      ;;  "[ \t]+" **/
+      ;;  "\\(" **/
+      ;;  opal-syntax-ide **/
+      ;;  "\\)" **/
+      ;;  "\\)*" **/
+      ;;  "\\)" **/
+      ;;  "[ \t]*" **/
+      ;;  "\\(:\\)" **/
+      ;;  "[ \t]*" **/
+      ;;  "\\(" **/
+      ;;  "\\(\(\\)?\\(" opal-syntax-ide "\\)"  **/
+      ;;  "\\)" **/
+       ))
+
+(setq str "_")
+(string-match reg str)
+(match-string 0 str)
+;; (string-match opal-syntax-special str) **/
+;; (match-string 1 str) **/
+
+;; Local Variables:
+;; coding: latin-1-unix
+;; End:
