@@ -42,7 +42,7 @@ for f in `find $distdir -name \*.inter -o -name \*.opt`; do
 done
 
 echo "Creating tarball $tarball..."
-tar vcz $tarball -C $tmpdir ocs-$VERSION
+tar czf $tarball -C $tmpdir ocs-$VERSION
 
 echo "Deleting temporary firectory..."
 rm -rf $TMP
