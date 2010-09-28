@@ -5,6 +5,9 @@ cd ${0%/*}
 
 . src/om/specs/ShSpecs.basic
 
+echo $PATH
+
+#./configure
 
 tmpdir=`mktemp -d`
 
@@ -32,6 +35,9 @@ for f in `cat DELETE.ocsdefs`; do
 done
 for f in `cat DELETE.OCS`; do
     rm -r $distdir/$f
+done
+for f in `cat DELETE.in`; do
+    rm $distdir/$f
 done
 
 echo "Writing dummy intermediate files..."
