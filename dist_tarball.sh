@@ -7,7 +7,12 @@ cd ${0%/*}
 
 echo $PATH
 
-#./configure
+
+if [ -x config.status ]; then
+    ./config.status
+else
+    ./configure
+fi
 
 tmpdir=`mktemp -d`
 
@@ -37,8 +42,27 @@ for f in `cat DELETE.OCS`; do
     rm -r $distdir/$f
 done
 for f in `cat DELETE.in`; do
-    rm $distdir/$f
+    rm -r $distdir/$f
 done
+
+# Delete TeX temporaries from doc.
+texdocs="bibopalica dosfopman hcguide install oasysman opal2x opalreport tutorial userguide"
+for d in $texdocs; do
+    for suffix in `cat DELETE.tex`; do
+	rm -f $distdir/doc/$d/*.$suffix
+    done
+done
+
+# Delete DOSFOP temporaries.
+for f in `cat DELETE.dosfop`; do
+    rm -f $distdir/$f
+done
+
+
+
+# Delete emacs backup files.
+find $distdir -name \*~ -exec rm {} \;
+
 
 echo "Writing dummy intermediate files..."
 for f in `find $distdir -name \*.inter -o -name \*.opt`; do
@@ -51,4 +75,4 @@ echo "Creating tarball $tarball..."
 tar czf $tarball -C $tmpdir ocs-$VERSION
 
 echo "Deleting temporary firectory..."
-rm -rf $TMP
+rm -rf $tmpdir
