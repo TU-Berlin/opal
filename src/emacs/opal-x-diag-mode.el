@@ -1,8 +1,8 @@
 ;;; emacs mode for processing Opal diagnostics
 
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
-;;; See OCSHOME/etc/LICENSE or 
-;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
+;;; See OCSHOME/doc/LICENSE or
+;;; http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
 ;;; $Id$
 
 ;;; This file is written for XEmacs and may not work with other Emacsen.
