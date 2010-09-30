@@ -1,7 +1,7 @@
 ### calling the dosfop-translator itself
 ### and subsequent tools for processing 
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-translation.tcl,v 1.2 1999-04-28 15:12:49 wg Exp $
+# $Id$
 
 uplevel #0 append dosfopVersions {dosfop-translation\ 1.24\n}
 

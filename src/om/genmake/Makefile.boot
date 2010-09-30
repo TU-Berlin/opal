@@ -1,5 +1,5 @@
 # Makefile for booting genmake 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/genmake/Makefile.boot,v 1.1.1.1 1998-06-16 15:59:52 wg Exp $
+# $Id$
 
 include $(OCSPROJECT)
 

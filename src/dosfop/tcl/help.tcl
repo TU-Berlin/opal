@@ -1,4 +1,4 @@
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/help.tcl,v 1.1.1.1 1998-06-16 16:00:31 wg Exp $
+# $Id$
 ############################
 # creating the help window #
 ############################

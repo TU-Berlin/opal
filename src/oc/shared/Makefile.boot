@@ -1,5 +1,5 @@
 # Makefile for booting library of OC 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/shared/Makefile.boot,v 1.1.1.1 1998-06-16 15:59:34 wg Exp $
+# $Id$
 
 include $(OCSPROJECT)
 

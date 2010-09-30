@@ -1,6 +1,6 @@
 /* subject: Ac unit "BUILTIN" -- provides also all compiler macros
  * author:  wg 7-92
- * version: $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/BUILTIN.c,v 1.8 2001-05-27 15:29:50 kd Exp $
+ * version: $Id$
  */
 
 /* FIXME: stub for strdup() */

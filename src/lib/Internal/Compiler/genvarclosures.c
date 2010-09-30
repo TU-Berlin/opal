@@ -1,7 +1,7 @@
 /* generate foreign closure tables and functions
 */
 
-/* $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/genvarclosures.c,v 1.1.1.1 1998-06-16 16:00:15 wg Exp $
+/* $Id$
 */
 
 #include <string.h>

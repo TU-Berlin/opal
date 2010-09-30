@@ -1,5 +1,5 @@
 #### oasys commands for documentation
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-oasys.tcl,v 1.1.1.1 1998-06-16 16:00:44 wg Exp $
+# $Id$
 
 uplevel #0 append dosfopVersions {dosfop-oasys\ 1.08\n}
 

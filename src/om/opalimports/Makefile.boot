@@ -1,5 +1,5 @@
 # Makefile for booting opalimports 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/om/opalimports/Makefile.boot,v 1.1.1.1 1998-06-16 15:59:53 wg Exp $
+# $Id$
 
 include $(OCSPROJECT)
 

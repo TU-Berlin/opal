@@ -1,4 +1,4 @@
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/filehelp.tcl,v 1.2 2000-06-09 22:04:34 kd Exp $
+# $Id$
 source $env(DOSFOP)/tcl/global.tcl
 source $env(DOSFOP)/tcl/regexprs.tcl
 

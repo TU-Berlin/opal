@@ -1,6 +1,6 @@
 ### initialising the DOSFOP environment
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-init.tcl,v 1.1.1.1 1998-06-16 16:00:44 wg Exp $
+# $Id$
 
 uplevel #0 append dosfopVersions {dosfop-init\ 1.01\n}
 

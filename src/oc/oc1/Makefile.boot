@@ -1,5 +1,5 @@
 # Makefile for booting oc1 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/oc1/Makefile.boot,v 1.1.1.1 1998-06-16 15:59:38 wg Exp $
+# $Id$
 
 include $(OCSPROJECT)
 

@@ -3,7 +3,7 @@
 ;;; Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved 
 ;;; See OCSHOME/etc/LICENSE or 
 ;;; http://uebb.cs.tu-berlin.de/~opal/LICENSE.html for details
-;;; $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/emacs/opal-x-diag-mode.el,v 1.5 1999-02-25 09:08:23 kd Exp $
+;;; $Id$
 
 ;;; This file is written for XEmacs and may not work with other Emacsen.
 ;;; Use the original opal-diag-mode.el in this case.
@@ -937,7 +937,7 @@ diag buffer and select it, make it opal-diag-buffer, and update opal-diag-source
 
 ;;; $Support for extended help$
 
-(defvar opal-diag-info-buffer "*opal-diag-information $Revision: 1.5 $*"
+(defvar opal-diag-info-buffer "*opal-diag-information $Revision$*"
   "name of buffer to display extended information" )
 
 (defun opal-diag-extended-show (err-ext)

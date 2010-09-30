@@ -2,7 +2,7 @@
    s.t. they can be linked on demand.
 */
 
-/* $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Internal/Compiler/genmttab.c,v 1.1.1.1 1998-06-16 16:00:15 wg Exp $
+/* $Id$
 */
 
 #include <string.h>

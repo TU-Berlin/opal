@@ -1,7 +1,7 @@
 #################################################################################
 # simple text-widgets #
 #######################
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl/configWidgets.tcl,v 1.1.1.1 1998-06-16 16:00:30 wg Exp $
+# $Id$
 
 proc nameWidget {introText name} {
   global headlineFont

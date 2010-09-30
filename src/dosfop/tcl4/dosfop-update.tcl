@@ -2,7 +2,7 @@
 ### we are using dosfop- as prefix for names used by procedures or variables 
 ### from this file 
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-update.tcl,v 1.2 2000-07-04 09:46:10 kd Exp $
+# $Id$
 
 uplevel #0 append dosfopVersions {dosfop-update\ 1.04\n}
 

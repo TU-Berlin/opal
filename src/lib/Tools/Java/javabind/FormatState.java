@@ -4,7 +4,7 @@ package espress.util.java.format;
   * A class which realizes a state-oriented frontend to
   * the formatting facilities. 
   *
-  * @version $Id: FormatState.java,v 1.1 1999-10-16 17:32:05 wg Exp $
+  * @version $Id$
   * @author Wolfgang Grieskamp
   */
 

@@ -1,6 +1,6 @@
 # Makefile for subsystems of 'oc2' 
 #
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/oc2/Makefile,v 1.1.1.1 1998-06-16 15:59:47 wg Exp $
+# $Id$
 
 #---------------------------------------------------------------------
 #		locations and general macros

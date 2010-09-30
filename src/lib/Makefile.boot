@@ -1,5 +1,5 @@
 # Makefile for booting OPAL library
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/lib/Makefile.boot,v 1.1.1.1 1998-06-16 15:59:55 wg Exp $
+# $Id$
 
 include $(OCSPROJECT)
 

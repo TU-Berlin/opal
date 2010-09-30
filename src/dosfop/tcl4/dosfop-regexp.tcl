@@ -1,6 +1,6 @@
 ### some procedure based on regular expressions
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-regexp.tcl,v 1.1.1.1 1998-06-16 16:00:44 wg Exp $
+# $Id$
 
 uplevel #0 append dosfopVersions {dosfop-regexp\ 1.01\n}
 

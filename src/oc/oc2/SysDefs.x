@@ -1,6 +1,6 @@
 # Definitions for: oc2
 #
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/oc/oc2/SysDefs.x,v 1.1.1.1 1998-06-16 15:59:47 wg Exp $
+# $Id$
 
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

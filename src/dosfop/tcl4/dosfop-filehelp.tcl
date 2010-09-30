@@ -1,6 +1,6 @@
 ### proc's for filehandling
 
-# $Header: /home/florenz/opal/home_uebb_CVS/CVS/ocs/src/dosfop/tcl4/dosfop-filehelp.tcl,v 1.2 2000-07-04 09:46:10 kd Exp $ 
+# $Id$ 
 
 uplevel #0 append dosfopVersions {dosfop-filehelp\ 1.07\n}
 
