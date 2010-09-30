@@ -37,7 +37,6 @@ TARGET =
 # The release number generator. The version number of this file will
 # be used as release identifier for the whole system. 
 
-VERSIONFILE = Release			# source
 VERSIONOBJECT =				# derived (if source contains 
 					# program code)
 
