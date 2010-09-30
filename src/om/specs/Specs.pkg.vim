@@ -10,7 +10,7 @@ PKGNAME = pkg.vim
 PKGDESCR = syntax highlighting for vim editor
 
 ## version
-PKGVERSION = 2.3e
+PKGVERSION = 2.3n
 
 ## Package base
 PKGBASE = $OCSSRC/vim
