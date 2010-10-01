@@ -148,8 +148,8 @@ extern OBJ _ABitset_Sm(OBJ s1,OBJ s2) /* - */ {
 
 
 extern OBJ _ABitset_Aarb(OBJ s) /* arb */ {
-    int words = calc_words(s), i,b,m;
-    BITWORD w;
+    int words = calc_words(s), i,b;
+    BITWORD w, m;
     for (i = 0; i < words; i++){
 	if (w = data_bitset(s)[i]){
 	    for (b = 0,m = 1; ; b++, m <<= 1){
