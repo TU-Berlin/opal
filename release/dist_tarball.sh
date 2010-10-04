@@ -27,7 +27,7 @@ echo cd ${0%/*}/..
 if [ -x config.status ]; then
     ./config.status
 else
-    ./configure
+    ./configure --enable-dosfop
 fi
 
 tmpdir=`mktemp -d`
