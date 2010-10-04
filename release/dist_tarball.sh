@@ -18,17 +18,9 @@ delete_from () {
 
 owd=`pwd`
 
-echo cd ${0%/*}/..
-
+./configure --enable-dosfop
 
 . src/om/specs/ShSpecs.basic
-
-
-if [ -x config.status ]; then
-    ./config.status
-else
-    ./configure --enable-dosfop
-fi
 
 tmpdir=`mktemp -d`
 
