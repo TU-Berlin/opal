@@ -249,9 +249,6 @@ of same nesting level"
       nil  ;; already at first line
     (cond ((looking-at "[ \t]*--") ;; ignore line comment
 	   (opal-indent-matching-if depth))
-	  ((looking-at ".*DEF") ;; stop at DEF
-	   (message "%s" (opal-current-line))
-	   (current-indentation))
 	  ((looking-at ".*FI")  ;; increase level
 	   (opal-indent-matching-if (current-indentation))
 	   (opal-indent-matching-if depth))
@@ -273,6 +270,9 @@ of same nesting level"
 		 (t ;; IF of different nesting
 		  (forward-line 1) ; so that outer level will look at this line
 		  t))) ;; return
+	  ((looking-at ".*DEF") ;; stop at DEF
+	   (message "%s" (opal-current-line))
+	   (current-indentation))
 	  (t ;; else next line
 	   (opal-indent-matching-if depth)) 
 	  )
