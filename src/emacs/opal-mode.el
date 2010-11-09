@@ -190,8 +190,8 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    '("\\<ALL\\>\\|\\<AND\\>\\|\\<ANDIF\\>\\|\\<AS\\>\\|\\<COMPLETELY\\>\\|\\<DFD\\>\\|\\<ELSE\\>\\|\\<EX\\>\\|\\<FI\\>\\|\\<IF\\>\\|\\<IN\\>\\|\\<LET\\>\\|\\<NOT\\>\\|\\<ONLY\\>\\|\\<ORIF\\>\\|\\<OR\\>\\|\\<OTHERWISE\\>\\|\\<THEN\\>\\|\\<WHERE\\>\\|\\*\\*\\|->\\|\\<\\.\\>\\|:\\|_\\|==[=>?]\\|<<=\\|<=>\\|\\\\\\\\\\||-\\>" (0 'font-lock-keyword-face nil t))
 ;   '("/\\* %.*\\*/" (0 'font-lock-doc-string-face nil t))
 ;   '("/\\* [^%][^\\$].*\\*/" (0 'font-lock-comment-face t t))
-   '("-- %.*$" (0 'font-lock-doc-string-face t t))
-   '("-- [^%].*$" (0 'font-lock-comment-face t t))
+;   '("-- %.*$" (0 'font-lock-doc-face t t))
+   '("-- .*$" (0 'font-lock-comment-face t t))
    '("/\\$.*\\$/" (0 'font-lock-preprocessor-face t t))
    `("\\(CERTIFICATION\\|FORMALTEST\\|FORMALPROOF\\|SYNTHESIS\\)" (0 'font-lock-reference-face t t))
    )
@@ -204,7 +204,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    (list (concat
 	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
 	  "\\(/\\*[ \t]%.*\\($.*\\)*\\*/\\)")
-	 '(2 'font-lock-doc-string-face t t))
+	 '(2 'font-lock-doc-face t t))
    (list (concat
 	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
 	  "\\(--\\( [^%].*\\)?$\\)")
@@ -212,7 +212,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    (list (concat
 	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
 	  "\\(-- %.*$\\)")
-	 '(2 'font-lock-doc-string-face t t))
+	 '(2 'font-lock-doc-face t t))
    (list (concat
 	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
 	  "\\(/\\$.*\\$/\\)")
