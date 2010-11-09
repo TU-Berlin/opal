@@ -201,22 +201,22 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 (defvar opal-font-lock-keywords-extended
   (list
    ; comments
+   ;; (list (concat
+   ;; 	  "\\(^\\|[^-!#$%&*+./:;\<=>?@\\^_`{|}~]\\)"
+   ;; 	  "\\(/\\*[ \t]%.*\\($.*\\)*\\*\/\\)")
+   ;; 	 '(2 'font-lock-doc-face t t))
    (list (concat
 	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-	  "\\(/\\*[ \t]%.*\\($.*\\)*\\*/\\)")
-	 '(2 'font-lock-doc-face t t))
-   (list (concat
-	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-	  "\\(--\\( [^%].*\\)?$\\)")
+	  "\\(--\\( .*\\)?$\\)")
 	 '(2 'font-lock-comment-face t t))
-   (list (concat
-	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-	  "\\(-- %.*$\\)")
-	 '(2 'font-lock-doc-face t t))
-   (list (concat
-	  "\\(^\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
-	  "\\(/\\$.*\\$/\\)")
-	 '(2 'font-lock-preprocessor-face t t))
+   ;; (list (concat
+   ;; 	  "\\(^\\|[^-!#$%&*+./:;\<=>?@\\^_`{|}~]\\)"
+   ;; 	  "\\(-- %.*$\\)")
+   ;; 	 '(2 'font-lock-doc-face t t))
+   ;; (list (concat
+   ;; 	  "\\(^\\|[^-!#$%&*+./:;\<=>?@\\^_`{|}~]\\)"
+   ;; 	  "\\(/\\$.*\\$/\\)")
+   ;; 	 '(2 'font-lock-preprocessor-face t t))
    ; alphanumerical keywords
    (list (concat
 	  "\\(^\\|[^0-9a-zA-Z_]\\)"
@@ -225,7 +225,8 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 	  "FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|"
 	  "THEN\\|WHERE\\|FUN\\|DEF\\|SORT\\|TYPE\\|DATA\\|IMPORT"
 	  "\\)"
-	  "\\($\\|[^0-9a-zA-Z_]\\)")
+	  "\\($\\|[^0-9a-zA-Z_]\\)"
+	  )
 	 '(2 'font-lock-keyword-face nil t))
    ; graphical keywords
    (list (concat
