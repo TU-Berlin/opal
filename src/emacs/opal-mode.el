@@ -219,7 +219,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    ;; 	 '(2 'font-lock-preprocessor-face t t))
    ; alphanumerical keywords
    (list (concat
-	  "\\(^\\|[^0-9a-zA-Z_]\\)"
+	  "\\(^\\|[^0-9a-zA-Z_]\\|\\b\\)"
 	  "\\("
 	  "ALL\\|AND\\|ANDIF\\|AS\\|COMPLETELY\\|DFD\\|ELSE\\|EX\\|"
 	  "FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|"
@@ -235,8 +235,16 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
 	  "\\*\\*\\|->\\|\\.\\|:\\|==\\|===\\|<<="
 	  "\\|==>\\|<=>\\|\\\\\\\\"
 	  "\\)"
-	  "\\(?:$\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)")
-	 '(1 'font-lock-builtin-face nil t))
+	  "\\(?:$\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\(?:"
+	  "\\("
+	  "\\\\\\\\"
+	  "\\)"
+	  "\\(?:$\\|[^-!#$%&*+./:;<=>?@\\^_`{|}~]\\)"
+	  "\\)*"
+	  )
+	 '(1 'font-lock-builtin-face nil t)
+	 '(2 'font-lock-builtin-face nil t))
    ; underscore
    (list (concat
 	  "\\(^\\|[ \t\(,]\\)"
