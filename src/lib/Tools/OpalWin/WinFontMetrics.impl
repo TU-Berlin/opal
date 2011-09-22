@@ -1,0 +1,101 @@
+IMPLEMENTATION WinFontMetrics
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/doc/LICENSE or
+      http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
+*/
+-- % $Date: 2010-09-30T16:24:28.168186Z $ ($Revision: 7678 $)
+
+
+IMPORT ABORT      COMPLETELY
+       Char       COMPLETELY
+       CharConv   COMPLETELY
+       Com        COMPLETELY
+       ComCompose COMPLETELY
+       ComSeqMap  COMPLETELY
+       Denotation COMPLETELY
+       Identity   COMPLETELY
+       Map        COMPLETELY
+       MapConv    COMPLETELY
+       NatConv    COMPLETELY
+       Option     COMPLETELY
+       Pair       COMPLETELY
+       Real       COMPLETELY
+       RealConv   COMPLETELY       
+       Seq        COMPLETELY
+       SeqFilter  COMPLETELY
+       SeqMap     COMPLETELY
+       SeqReduce  COMPLETELY
+       SeqZip     COMPLETELY
+       String     COMPLETELY
+       StringConv COMPLETELY
+       Void       COMPLETELY
+       WinConfig  COMPLETELY
+       WinTclTk   COMPLETELY
+
+
+DATA metrics == metrics(dpth : real, hght : real, lskip : real, wdths : map[char, <, real])
+
+
+FUN fontMetrics : font -> com[metrics]
+DEF fontMetrics(font(name)) ==
+  eval("font metrics %s -descent" <- name)   & (\\d.
+  eval("font metrics %s -ascent" <- name)    & (\\h.
+  eval("font metrics %s -linespace" <- name) & (\\l.
+  measureWidths(font(name))                  & (\\w.
+  yield(okay(metrics(fromPx(convNat(d)), fromPx(convNat(h)), fromPx(convNat(l)), w)))))))
+
+
+FUN measureWidths : font -> com[map[char, <, real]]
+DEF measureWidths(font(name)) ==
+  (measureWidth(font(name)) *& printables) & (\\widths.
+  yield(okay(asMap(zip(&)(printables, widths)))))
+  WHERE
+    printables == filter(printable?, allChars)
+    allChars   == asChar * (asNat(min'Char) .. asNat(max'Char))(id)
+
+
+FUN measureWidth : font -> char -> com[real]
+DEF measureWidth(font(name))(c) ==
+  eval("font measure %s \"%d\"" <- name + escape(c)) & (\\w.
+  yield(okay(fromPx(convNat(w)))))
+  WHERE
+    escape == \\x. IF `(x) = "\"" THEN "\\\""
+                   IF `(x) = "[" THEN "\\["
+                   IF `(x) = "\\" THEN "\\\\"
+                   ELSE `(x) FI
+
+
+FUN dimensions : metrics -> denotation -> real ** real
+DEF dimensions(m)(denot) ==
+  LET chars == asSeq(asString(denot))
+      chWs  == (\\ch. cont(lkup(wdths(m), ch))) * chars
+      lkup  == \\w, c. LET e == w!?c
+                       IN IF e nil? THEN ABORT(msg(c))
+                          ELSE e FI
+      msg   == \\c. "Character `" ++ `(c) ++ "' is not supported by WinFontMetrics"
+  IN (reduce(+, "0"!)(chWs), height(m)+depth(m))
+
+
+FUN depth : metrics -> real
+DEF depth == dpth
+
+FUN height : metrics -> real
+DEF height == hght
+
+FUN lineskip : metrics -> real
+DEF lineskip == lskip
+
+FUN fromPx : nat -> real
+DEF fromPx(n) == asReal(n)*(px("1"))
+
+FUN ` : metrics -> denotation
+DEF `(metrics(d, h, l, _)) ==
+  "(depth=" ++ `(d) ++ ", height=" ++ `(h) ++ ", lineskip=" ++ `(l) ++ ")"
+
+
+-- %@ignore
+-- Local Variables:
+-- mode: opal
+-- coding: latin-1-unix
+-- End:
+-- %@end ignore
