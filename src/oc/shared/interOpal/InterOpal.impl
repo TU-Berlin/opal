@@ -13,8 +13,20 @@ IMPLEMENTATION InterOpal
 IMPORT  Dyn             ONLY    dyn  
         Map             ONLY    map
         Nat             ONLY    10000 < >= max nat succ
+        NatConv         ONLY    `
         Option          ONLY    option
         Seq             ONLY    seq
+	SeqReduce       ONLY    /
+	SeqMap          ONLY    map
+	SeqConv[pattern] ONLY   ` : (pattern->denotation)->seq[pattern]->denotation
+	SeqConv[expr]   ONLY    ` : (expr->denotation)->seq[expr]->denotation
+	SeqConv[guard]  ONLY    ` : (guard->denotation)->seq[guard]->denotation
+	SeqConv[var]    ONLY    ` : (var->denotation)->seq[var]->denotation
+	SeqConv[eqn]    ONLY    ` : (eqn->denotation)->seq[eqn]->denotation
+	SeqConv[pattern] ONLY    ` : (pattern->denotation)->seq[pattern]->denotation
+	
+	Denotation      ONLY    ++ denotation
+	OptionConv      ONLY    `
 
 
 DATA interOpal == 
@@ -248,6 +260,9 @@ DATA var ==
         )
 
 DATA expr == 
+        abort(     pos          : pos,
+                   msg          : denotation
+        )
         name(      pos          : pos,
                    name         : name
         )
@@ -396,3 +411,27 @@ DATA pragmaItem == objects (objects: seq[name])
 
 FUN ioTypeKey : denotation
 DEF ioTypeKey == "interOpalKey2" 
+
+
+-- Conversion functions.
+DEF `(abort(_, msg)) == "abort(" ++ msg ++ ")"
+DEF `((name(_, name(ident(n),or,inst))):expr) == `(n)
+DEF `(den(_, rep)) == "\"" ++ rep ++ "\""
+DEF `((tuple(_, cmpnts)):expr) == "(" ++ ((\\x,y. x++","++y) / ("",map(`,cmpnts))) ++ ")"
+DEF `((apply(_, fun, arg)):expr) == `(fun) ++ "(" ++ `(arg) ++ ")"
+DEF `(cases(_, grds, else)) == "cases(" ++ `(`)(grds) ++ ", else: " ++ `(`)(else) ++ ")"
+DEF `(lambda(_, vars, body)) == "\\" ++ `(`)(vars) ++ "." ++ `(body)
+DEF `(block(_, eqns, body)) == "let " ++ `(`)(eqns) ++ " in " ++ `(body)
+
+DEF `(any:pattern) == "_"
+DEF `((name(_, name(ident(n),or,inst))):pattern) == `(n)
+DEF `(var(_, v)) == `(v)
+DEF `(as(_, v, pat)) == `(v) ++ " as " ++ `(pat)
+DEF `((apply(_, fun, arg)):pattern) == `(fun) ++ "(" ++ `(arg) ++ ")"
+DEF `((tuple(_, cmpnts)):pattern) == "(" ++ ((\\x,y. x++","++y) / ("",map(`,cmpnts))) ++ ")"
+
+DEF `(eqn(_, lhs, pats, rhs)) == `(lhs) ++ `(`)(pats) ++ "==" ++ `(rhs)
+
+DEF `(guard(_, if, then)) == `(if) ++ " => " ++ `(then)
+
+DEF `(var(_, _, sym, _)) == sym
