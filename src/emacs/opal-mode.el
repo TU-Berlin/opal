@@ -11,7 +11,7 @@
 (defvar opal-path 
   (cond ((getenv "OCS") (getenv "OCS"))
 	((getenv "OCSDIR") (getenv "OCSDIR"))
-	(t "/opt/ocs-2.3n")
+	(t "/opt/ocs-2.3o_pre")
 	)
   "*root directory of Opal installation. If environment variable OCS
 or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")

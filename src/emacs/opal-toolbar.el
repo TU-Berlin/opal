@@ -233,7 +233,7 @@
 	  "print message in echo area"
 	  
 	  (interactive)
-	  (message "OCS system 2.3n")
+	  (message "OCS system 2.3o_pre")
 	  )
 	
 	(defun opal-toolbar-sign-impl ()
