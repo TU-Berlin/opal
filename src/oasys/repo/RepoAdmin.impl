@@ -10,6 +10,7 @@ IMPORT  Nat             COMPLETELY
         ComCompose      COMPLETELY
         Fmt             COMPLETELY
         FmtBasicTypes   COMPLETELY
+	ProcessArgs     ONLY env noSuchEnvVar?
                 
 IMPORT  RepoAn          COMPLETELY
         RepoName        COMPLETELY
@@ -50,13 +51,50 @@ DEF _  <= _ == false
 
 -- %$File Names$ ============================================================
 
-DEF sourceFileName(Path, Symbol, sign) == Path ++ Symbol ++ ".sign"
-DEF sourceFileName(Path, Symbol, impl) == Path ++ Symbol ++ ".impl"
+/* The following two functions are copied from GenMake.impl.
+   This is a quick fix.
+*/
+/* %check, if environment variable @code{OCS_FILENAMES_CASEFOLD} exists
+    and set to "yes" */
+FUN casefold? : bool
+DEF casefold? == 
+  EXEC(env("OCS_FILENAMES_CASEFOLD") ; (\\ ans.
+       IF noSuchEnvVar?(ans) THEN succeed(false)
+       IF fail?(ans) THEN succeed(false)  -- should we abort here?
+       ELSE
+         succeed(data(ans) = "yes")
+       FI
+       )
+      )
 
-DEF absyFileName(Path, Symbol, sign) == Path ++ Symbol ++ ".sign.inter"
-DEF absyFileName(Path, Symbol, impl) == Path ++ Symbol ++ ".impl.inter"
+FUN translate: denotation -> denotation
+DEF translate(bn) ==
+  IF casefold? THEN
+    IF bn="Denotation" THEN "Denotation_ocs"
+    IF bn="Time" THEN "Time_ocs"
+    IF bn="Bool" THEN "Bool_ocs"
+    IF bn="Signal" THEN "Signal_ocs"
+    IF bn="Wait" THEN "Wait_ocs"
+    IF bn="ReadLine" THEN "ReadLine_ocs"
+    IF bn="Tcl" THEN "Tcl_ocs"
+    IF bn = "Tk" THEN "Tk_ocs"
+    IF bn = "Reflection" THEN "N_Reflection_ocs"
+    IF bn = "REFLECTION" THEN "U_REFLECTION_ocs"
+    ELSE
+      bn
+    FI
+  ELSE
+    bn
+  FI
+/* End of copied code. */
 
-DEF objectFileName(Path, Symbol)     == Path ++ Symbol ++ ".o"
+DEF sourceFileName(Path, Symbol, sign) == Path ++ translate(Symbol) ++ ".sign"
+DEF sourceFileName(Path, Symbol, impl) == Path ++ translate(Symbol) ++ ".impl"
+
+DEF absyFileName(Path, Symbol, sign) == Path ++ translate(Symbol) ++ ".sign.inter"
+DEF absyFileName(Path, Symbol, impl) == Path ++ translate(Symbol) ++ ".impl.inter"
+
+DEF objectFileName(Path, Symbol)     == Path ++ translate(Symbol) ++ ".o"
 
 
 DEF folder(_,K1,S1,O1) = folder(_,K2,S2,O2) ==
