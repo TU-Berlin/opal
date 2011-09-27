@@ -631,6 +631,14 @@ extern int ocs_dl_parse_symbol(char *sym,
 
 extern int ocs_dl_parse_init_entry(char *sym, 
 				   char *structure, int structmaxlen){
+#ifdef HAVE_LEADING_UNDERSCORE
+    char *init_prefix = "_init_A";
+    int prefix_len = 7;
+#else
+    char* init_prefix = "init_A";
+    int prefix_len = 6;
+#endif
+
   /* Fix for verbose nm -u (2004/11/05 bt) */
     /* while (*sym == ' ') sym++; */
     while (*sym) {
@@ -639,11 +647,8 @@ extern int ocs_dl_parse_init_entry(char *sym,
       else break ;
     }
 
-    /* leading underscore must be handled by configure script. */
-    /* We have to respect name changes in symbols here. On MacOS X
-       there seems to be an additional _ at the head of a symbol */
-    if (strncmp(sym, "_init_A",  7) == 0){
-	strncpy(structure, sym + 7, structmaxlen-1);
+    if (strncmp(sym, init_prefix,  prefix_len) == 0){
+	strncpy(structure, sym + prefix_len, structmaxlen-1);
 	return 1;
     } else {
 	return 0;
