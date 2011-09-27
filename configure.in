@@ -607,16 +607,15 @@ AC_CACHE_SAVE
 # -------------------------------------------------------------------------
 # Check for dynamic linker
 
-AC_SUBST(ocs_DLD)
-AC_SUBST(ocs_DLDLIBS)
-AC_SUBST(ocs_cv_flag_cc_pic)
-AC_SUBST(ocs_cv_flag_cc_shared)
-AC_SUBST(ocs_LD)
-AC_SUBST(ocs_cv_with_ldstatic)
-AC_SUBST(ocs_cv_with_lddynamic)
-AC_SUBST(ocs_cv_with_ldrpath)
-AC_SUBST(ocs_cv_with_ldrpathlink)
-AC_SUBST(ocs_cv_with_soname)
+dnl AC_SUBST(ocs_DLD)
+dnl AC_SUBST(ocs_DLDLIBS)
+
+dnl AC_SUBST(ocs_LD)
+dnl AC_SUBST(ocs_cv_with_ldstatic)
+dnl AC_SUBST(ocs_cv_with_lddynamic)
+dnl AC_SUBST(ocs_cv_with_ldrpath)
+dnl AC_SUBST(ocs_cv_with_ldrpathlink)
+dnl AC_SUBST(ocs_cv_with_soname)
 
 if test "$ocs_cv_feature_dynamic" = "yes"
 then
@@ -633,6 +632,8 @@ then
   then
     AC_MSG_WARN(cannot figure out how to produce position-independent code (ignored))
   fi
+  AC_SUBST(ocs_cv_flag_cc_pic)
+  
 
   if test "$ocs_cv_with_dldflags" = no
   then
@@ -647,6 +648,7 @@ then
   else
     ocs_DLD="$ac_cv_path_CC $ocs_LDFLAGS $ocs_cv_with_dldflags"
   fi
+  AC_SUBST(ocs_cv_flag_cc_shared)
 
   if test "$ocs_cv_with_dldlibs" != no
   then
@@ -663,12 +665,17 @@ then
   AC_SUBST(ocs_cv_with_soname)
   AC_SUBST(ocs_cv_with_ldstatic)
   AC_SUBST(ocs_cv_with_lddynamic)
+  AC_SUBST(ocs_cv_with_dlo)
+  AC_SUBST(ocs_cv_with_sosuffix)
+  AC_SUBST(ocs_cv_with_soversionfirst)
 
   if test -n "$ocs_cv_with_ldrpath" -a \
           -n "$ocs_cv_with_ldrpathlink" -a \
           -n "$ocs_cv_with_soname" -a \
           -n "$ocs_cv_with_ldstatic" -a \
-          -n "$ocs_cv_with_lddynamic"
+          -n "$ocs_cv_with_lddynamic" -a \
+          -n "$ocs_cv_with_dlo" -a \
+	  -n "$ocs_cs_with_sosuffix"
   then
     ocs_found=yes
     AC_MSG_RESULT(explicitly provided)
@@ -690,6 +697,9 @@ then
       OCS_SET_WITH(soname,[-Wl,-soname,])
       OCS_SET_WITH(ldstatic, "-Xlinker -Bstatic")
       OCS_SET_WITH(lddynamic, "-Xlinker -Bdynamic")
+      OCS_SET_WITH(dlo,"-shared")
+      OCS_SET_WITH(sosuffix,"so")
+      OCS_SET_WITH(soversionfirst,"no")
       ocs_save_LIBS=$LIBS
       LIBS="$LIBS -ldl"
       AC_CHECK_FUNCS(dlopen)
@@ -697,26 +707,27 @@ then
     fi
   fi
   # Do we have the MacOS X linker?
-  dnl if test "$ocs_found" = no 
-  dnl then
-  dnl   Does not work like this, doutput of -v does not always contain Apple
-  dnl   and the options could not yet be tested
-  dnl   (because of other compilation problems on MacOS X).
-  dnl   if $ac_cv_path_LD -v 2>&1 | grep "Apple" 1> /dev/null 2>&1
-  dnl   then
-  dnl     AC_MSG_RESULT(Apple linker flags)
-  dnl     ocs_found=yes
-  dnl     OCS_SET_WITH(ldrpath,[-Wl,-rpath,])
-  dnl     OCS_SET_WITH(ldrpathlink, [-Wl,-rpath,])
-  dnl     OCS_SET_WITH(soname,[-Wl,-install_name,])
-  dnl     OCS_SET_WITH(ldstatic, "-Xlinker -Bstatic")
-  dnl     OCS_SET_WITH(lddynamic, "-Xlinker -Bdynamic")
-  dnl     ocs_save_LIBS=$LIBS
-  dnl     LIBS="$LIBS -ldl"
-  dnl     AC_CHECK_FUNCS(dlopen)
-  dnl     LIBS=$ocs_save_LIBS
-  dnl   fi
-  dnl fi
+  if test "$ocs_found" = no 
+  then
+    dnl Not sure if this is a good way to test for the linker.
+    if test x$host_vendor = xapple
+    then
+      AC_MSG_RESULT(Apple linker flags)
+      ocs_found=yes
+      OCS_SET_WITH(ldrpath,[-Wl,-rpath,])
+      OCS_SET_WITH(ldrpathlink, [-Wl,-rpath,])
+      OCS_SET_WITH(soname,"")
+      OCS_SET_WITH(ldstatic, "-Xlinker -Bstatic")
+      OCS_SET_WITH(lddynamic, "-Xlinker -Bdynamic")
+      OCS_SET_WITH(dlo, "-flat_namespace -undefined suppress -bundle")
+      OCS_SET_WITH(sosuffix,"dylib")
+      OCS_SET_WITH(soversionfirst,"yes")
+      ocs_save_LIBS=$LIBS
+      LIBS="$LIBS -ldl"
+      AC_CHECK_FUNCS(dlopen)
+      LIBS=$ocs_save_LIBS
+    fi
+  fi
   # do we have the solaris linker?
   if test "$ocs_found" = no 
   then
@@ -729,6 +740,9 @@ then
       OCS_SET_WITH(soname,[-Wl,-h])
       OCS_SET_WITH(ldstatic, [-Wl,-B,static])
       OCS_SET_WITH(lddynamic, [-Wl,-B,dynamic])
+      OCS_SET_WITH(dlo, "-shared")
+      OCS_SET_WITH(sosuffix,"so")
+      OCS_SET_WITH(soversionfirst,"no")
       ocs_save_LIBS=$LIBS
       LIBS="$LIBS -ldl"
       AC_CHECK_FUNCS(dlopen)
@@ -1494,7 +1508,8 @@ AC_CACHE_SAVE
 
 ## case sensitivity of filenames
 AC_SUBST(ocs_filenames_casefold)
-if test "$host_os" = "cygwin"
+## This should be a proper test!!!
+if test "$host_os" = "cygwin" -o "$host_vendor" = "apple"
 then
   ocs_filenames_casefold="yes"
   OCS_DEFINE_GENERAL(OCS_FILENAMES_CASEFOLD)

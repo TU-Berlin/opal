@@ -638,8 +638,12 @@ extern int ocs_dl_parse_init_entry(char *sym,
       else if (sym[0] == 'U' && sym[1] == ' ') sym += 2 ;
       else break ;
     }
-    if (strncmp(sym, "init_A",  6) == 0){
-	strncpy(structure, sym + 6, structmaxlen-1);
+
+    /* leading underscore must be handled by configure script. */
+    /* We have to respect name changes in symbols here. On MacOS X
+       there seems to be an additional _ at the head of a symbol */
+    if (strncmp(sym, "_init_A",  7) == 0){
+	strncpy(structure, sym + 7, structmaxlen-1);
 	return 1;
     } else {
 	return 0;
@@ -1110,8 +1114,11 @@ static int dl_dlopen_create_so(char *fname, int sz){
   char cmdbuf[512];
 
   tmpnam(outbuf);
+
+  printf("CREATE_SO: %s -> %s\n", fname, outbuf);
+
   strcat(outbuf, ".so");
-  strcpy(cmdbuf, "${DLD} -o ");
+  strcpy(cmdbuf, "${MKDLOPEN} -o ");
   strcat(cmdbuf, outbuf);
   strcat(cmdbuf, " ");
   strcat(cmdbuf, fname);
