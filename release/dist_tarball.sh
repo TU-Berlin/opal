@@ -19,11 +19,12 @@ delete_from () {
 owd=`pwd`
 
 autoconf
+cp config.status config.status.bak
 ./configure --enable-dosfop
 
 . src/om/specs/ShSpecs.basic
 
-tmpdir=`mktemp -d`
+tmpdir=`mktemp -d ocsdistXXXXXX`
 
 echo Using temporary directory $tmpdir
 
@@ -38,7 +39,11 @@ ocs
 # Use tar to copy files (excluding subversion files) to keep file
 # timestamps untouched.
 echo "Copying files to temporary directory..."
-tar c --exclude=$tarball --exclude=.svn -f - . | tar x -C $distdir -f -
+if [ `uname -s` = "Darwin" ]; then
+  tar c --exclude $tarball --exclude ".svn" -f - . | tar x -C $distdir -f -
+else
+  tar c --exclude=$tarball --exclude=".svn" -f - . | tar x -C $distdir -f -
+fi
 
 # Delete object and archive files.
 echo "Remove objects and archives..."
@@ -81,9 +86,15 @@ find $distdir -name \*~ -exec rm {} \;
 # Write dummy intermediate files for bootstrapping.
 echo "Writing dummy intermediate files..."
 for f in `find $distdir -name \*.inter -o -name \*.opt`; do
-    mtime="`stat -c \"%y\" $f`"
-    echo "Dummy intermediate file to enable bootstrapping. Do not change its mtime!" > $f
-    touch -d "$mtime" $f
+    if [ `uname -s` = "Darwin" ]; then
+      mtime="`stat -f \"%m\" $f`"
+      echo "Dummy intermediate file to enable bootstrapping. Do not change its mtime!" > $f
+      touch -m "$mtime" $f
+    else
+      mtime="`stat -c \"%y\" $f`"
+      echo "Dummy intermediate file to enable bootstrapping. Do not change its mtime!" > $f
+      touch -d "$mtime" $f
+    fi
 done
 
 # Create tarball.
@@ -91,7 +102,10 @@ echo "Creating tarball $tarball..."
 tar czf $tarball -C $tmpdir ocs-$VERSION
 
 # Delete temporary directory.
-echo "Deleting temporary firectory..."
-rm -rf $tmpdir
+echo "Deleting temporary firectory... $tmpdir"
+#rm -rf $tmpdir
 
 cd $owd
+
+cp config.status.bak config.status
+./config.status
