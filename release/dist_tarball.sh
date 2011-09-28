@@ -18,6 +18,7 @@ delete_from () {
 
 owd=`pwd`
 
+autoconf
 ./configure --enable-dosfop
 
 . src/om/specs/ShSpecs.basic
