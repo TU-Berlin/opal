@@ -1120,8 +1120,6 @@ static int dl_dlopen_create_so(char *fname, int sz){
 
   tmpnam(outbuf);
 
-  printf("CREATE_SO: %s -> %s\n", fname, outbuf);
-
   strcat(outbuf, ".so");
   strcpy(cmdbuf, "${MKDLOPEN} -o ");
   strcat(cmdbuf, outbuf);
