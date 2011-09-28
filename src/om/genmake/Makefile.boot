@@ -32,7 +32,7 @@ _$(TOPSTRUCT)_$(TOPCOM).o: $(TOPSTRUCT).h $(OSTART) $(HDEPS)
 	@echo "Generating startup code for $(TOPCOM) ..."; \
 	$(CC) $(CCFLAGS) $(SYS_CCFLAGS) \
 		-Dcommand=__A$(TOPSTRUCT)_A$(TOPCOM) -Dinit=init_A$(TOPSTRUCT) \
-		-Dinclude='"$(TOPSTRUCT).h"' \
+		-Dinclude='"$(TOPSTRUCT).oc.h"' \
 		-o _$(TOPSTRUCT)_$(TOPCOM).o -c $(OSTART)
 
 %.o: %.c $(HDEPS)

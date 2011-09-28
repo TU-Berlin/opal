@@ -1,12 +1,12 @@
 /* hand-coded interface part of JavaVM */
 
-#include "jni.h"
+#include "jni.oc.h"
 
-#include "Int.h"
-#include "Char.h"
-#include "Real.h"
-#include "SmallReal.h"
-#include "Com.h"
+#include "Int.oc.h"
+#include "Char.oc.h"
+#include "Real.oc.h"
+#include "SmallReal.oc.h"
+#include "Com.oc.h"
 
 
 /* #undef JAVABIND_GLOBALREFS */

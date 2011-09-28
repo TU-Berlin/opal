@@ -5,7 +5,7 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "Nat.h"
+#include "Nat.oc.h"
 
   /* representation */
 

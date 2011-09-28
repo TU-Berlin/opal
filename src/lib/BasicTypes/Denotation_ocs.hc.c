@@ -7,9 +7,9 @@
    $Date$ ($Revision$)
 */
 #include <unixconfig.h>
-#include "Nat.h"
-#include "Char.h"
-#include "Int.h"
+#include "Nat.oc.h"
+#include "Char.oc.h"
+#include "Int.oc.h"
 
 
 extern OBJ dup_denotation(OBJ d){

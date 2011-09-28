@@ -14,13 +14,13 @@
 /* #include <stdio.h> */
 
 /* import Option */
-#include "Option.h"
+#include "Option.oc.h"
 /* import Nats */
-#include "Nat.h"
+#include "Nat.oc.h"
 /* import Reals */
-#include "Real.h"
+#include "Real.oc.h"
 /* import Commands */
-#include "Com.h"
+#include "Com.oc.h"
 
 
 extern OBJ _ATime_Sl(OBJ x1,OBJ x2) /* < */

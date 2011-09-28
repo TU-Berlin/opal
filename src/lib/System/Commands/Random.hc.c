@@ -8,10 +8,10 @@
 */
 #include <unixconfig.h>
 
-#include "Nat.h"
-#include "Real.h"
-#include "Com.h"
-#include "Void.h"
+#include "Nat.oc.h"
+#include "Real.oc.h"
+#include "Com.oc.h"
+#include "Void.oc.h"
 
 /* assuming integers are 32 bit */
 static int internal_seed = 0.0;

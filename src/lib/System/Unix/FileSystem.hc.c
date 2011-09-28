@@ -22,21 +22,21 @@
 /* #include <errno.h> */
 
 /* import Users and Groups */
-#include "UserAndGroup.h"
+#include "UserAndGroup.oc.h"
 /* import Time */
 #ifdef OCS_FILENAMES_CASEFOLD
-#include "Time_ocs.h"
+#include "Time_ocs.oc.h"
 #else
-#include "Time.h"
+#include "Time.oc.h"
 #endif
 /* import Arrays */
-#include "Array.h"
+#include "Array.oc.h"
 /* import Options */
-#include "Option.h"
+#include "Option.oc.h"
 /* import Commands */
-#include "Com.h"
+#include "Com.oc.h"
 /* import Failures */
-#include "UnixFailures.h"
+#include "UnixFailures.oc.h"
 
 
 /* type for collecting directory entries */

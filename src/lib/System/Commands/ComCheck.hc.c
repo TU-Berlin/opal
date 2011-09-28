@@ -9,7 +9,7 @@
 #include <unixconfig.h>
 /* only stdio */
 
-#include "Com.h"
+#include "Com.oc.h"
 
 extern char ** start_argv;
 

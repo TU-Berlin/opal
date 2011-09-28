@@ -8,7 +8,7 @@
 */
 
 #include <unixconfig.h>
-#include "ProcessCtrl.h"
+#include "ProcessCtrl.oc.h"
 
 
 extern OBJ _AProcessCtrlConv_Ahc_Aconvprocess(OBJ x1) /* hc_convprocess */

@@ -6,8 +6,8 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "Com.h"
-#include "ProcessInterrupt.h"
+#include "Com.oc.h"
+#include "ProcessInterrupt.oc.h"
 
 static int break_counter;
 static OBJ (*old_monitor)(OBJ);

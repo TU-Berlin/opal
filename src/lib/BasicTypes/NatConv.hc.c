@@ -6,9 +6,9 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "Nat.h"
-#include "Int.h"
-#include "Real.h"
+#include "Nat.oc.h"
+#include "Int.oc.h"
+#include "Real.oc.h"
 #include <string.h> //used for memset
 
 /* maximum length of text representation of a natural number */

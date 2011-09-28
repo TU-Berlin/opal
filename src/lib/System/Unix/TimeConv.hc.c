@@ -12,9 +12,9 @@
 
 /* import Time */
 #ifdef OCS_FILENAMES_CASEFOLD
-#include "Time_ocs.h"
+#include "Time_ocs.oc.h"
 #else
-#include "Time.h"
+#include "Time.oc.h"
 #endif
 
 

@@ -7,8 +7,8 @@
    $Date$ ($Revision$)
 */
 #include "unixconfig.h"
-#include "Nat.h"
-#include "Com.h"
+#include "Nat.oc.h"
+#include "Com.oc.h"
 
 static void (*oldhandler)();
 static volatile int interrupted = 0;

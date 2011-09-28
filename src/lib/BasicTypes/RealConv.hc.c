@@ -8,9 +8,9 @@
 */
 #include <unixconfig.h>
 
-#include "Nat.h"
-#include "Int.h"
-#include "Real.h"
+#include "Nat.oc.h"
+#include "Int.oc.h"
+#include "Real.oc.h"
 
 
 #ifndef iszero

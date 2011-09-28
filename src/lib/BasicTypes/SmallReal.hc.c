@@ -12,7 +12,7 @@
 /* vgl. Real.hc.c (kd) */
 /* extern double strtod(const char*, char **); */
 
-#include "Real.h"
+#include "Real.oc.h"
 
 extern OBJ _ASmallReal_Apack(OBJ x1) /* pack */
 {OBJ r;

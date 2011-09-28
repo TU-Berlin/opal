@@ -9,10 +9,10 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "Nat.h"
-#include "Seq.h"
-#include "Com.h"
-#include "Pair.h"
+#include "Nat.oc.h"
+#include "Seq.oc.h"
+#include "Com.oc.h"
+#include "Pair.oc.h"
 
 
 static OBJ ClosSymId;

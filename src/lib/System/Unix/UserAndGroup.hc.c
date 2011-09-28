@@ -19,13 +19,13 @@
 /* #include <grp.h> */
 
 /* import Option */
-#include "Option.h"
+#include "Option.oc.h"
 /* import Commands */
-#include "Com.h"
+#include "Com.oc.h"
 /* import Failures */
-#include "UnixFailures.h"
+#include "UnixFailures.oc.h"
 /* import Arrays */
-#include "Array.h"
+#include "Array.oc.h"
 
 
 static OBJ convert_chararray(char **car)

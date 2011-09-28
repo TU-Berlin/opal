@@ -16,7 +16,7 @@ extern char *strerror(int);
 #include <unixconfig.h>
 
 
-#include "Com.h"
+#include "Com.oc.h"
 
 
 OBJ unix_failure_cache[cached_unix_failure_codes];

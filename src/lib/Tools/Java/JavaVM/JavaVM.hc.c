@@ -1,9 +1,9 @@
 /* hand-coded implementation part of JavaVM */
 /* coding scheme version acc-2.1 */
 
-#include "unixconfig.h"
-#include "Array.h"
-#include "Denotation.h"
+#include "unixconfig.oc.h"
+#include "Array.oc.h"
+#include "Denotation.oc.h"
 
 #include <stdio.h>
 

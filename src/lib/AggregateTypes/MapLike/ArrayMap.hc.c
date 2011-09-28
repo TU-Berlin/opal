@@ -7,8 +7,8 @@
    $Date$ ($Revision$)
 */
 
-#include "Nat.h"
-#include "Array.h"
+#include "Nat.oc.h"
+#include "Array.oc.h"
 
 
 extern OBJ _AArrayMap_S8(OBJ f,OBJ a){

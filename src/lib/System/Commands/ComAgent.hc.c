@@ -10,10 +10,10 @@
 
 #include <unixconfig.h>
 
-#include "Nat.h"
-#include "Void.h"
-#include "Seq.h"
-#include "Com.h"
+#include "Nat.oc.h"
+#include "Void.oc.h"
+#include "Seq.oc.h"
+#include "Com.oc.h"
 
 #ifndef NULL
 #define NULL ((void*)0)

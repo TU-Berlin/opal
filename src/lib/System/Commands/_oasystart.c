@@ -12,7 +12,7 @@
 */
 
 #include "BUILTIN.h"
-#include "Com.h"
+#include "Com.oc.h"
 #include <stdlib.h>
 
 extern int (*ocs_top_exec)(OBJ);/* how to execute the top-level command;

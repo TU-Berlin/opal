@@ -9,8 +9,8 @@
 
 #include <unixconfig.h>
 
-#include "Nat.h"
-#include "Option.h"
+#include "Nat.oc.h"
+#include "Option.oc.h"
 
 #ifndef max
 #define max(a,b) ((a) < (b) ? (b) : (a))

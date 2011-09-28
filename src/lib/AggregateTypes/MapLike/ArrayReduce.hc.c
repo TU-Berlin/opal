@@ -7,8 +7,8 @@
    $Date$ ($Revision$)
 */
 
-#include "Nat.h"
-#include "Array.h"
+#include "Nat.oc.h"
+#include "Array.oc.h"
 
 
 extern OBJ _AArrayReduce_Ss_O1(OBJ f,OBJ e,OBJ a) /* /,1 */ {

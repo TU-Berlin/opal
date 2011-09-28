@@ -7,8 +7,8 @@
    $Date$ ($Revision$)
 */
 
-#include "Com.h"
-#include "ComState.h"
+#include "Com.oc.h"
+#include "ComState.oc.h"
 
 extern OBJ _AComStateWith_AWith(OBJ Id,OBJ Trans,OBJ Dummy) /* With */ {
     STATEID id = unpack_id(Id);

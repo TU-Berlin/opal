@@ -8,7 +8,7 @@
 */
 
 #include <unixconfig.h>
-#include "FileSystem.h"
+#include "FileSystem.oc.h"
 
 
 extern OBJ _AFileSystemConv_Ahc_Aconvinode(OBJ x1) /* hc_convinode */

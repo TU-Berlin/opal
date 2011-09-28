@@ -10,9 +10,9 @@
 #include <fcntl.h>
 #include <signal.h>
 
-#include "Com.h"
-#include "UnixFailures.h"
-#include "File.h"
+#include "Com.oc.h"
+#include "UnixFailures.oc.h"
+#include "File.oc.h"
 
 static int mkFifo(char * name){
     int res;

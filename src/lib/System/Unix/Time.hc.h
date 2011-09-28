@@ -11,7 +11,7 @@
 #include <unixconfig.h>
 
 /* import Reals */
-#include "Real.h"
+#include "Real.oc.h"
 
 
 /* DATA time == */

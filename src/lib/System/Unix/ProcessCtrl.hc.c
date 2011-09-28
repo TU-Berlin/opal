@@ -21,21 +21,21 @@
 /* #include <errno.h> */
 
 /* import Failures */
-#include "UnixFailures.h"
+#include "UnixFailures.oc.h"
 /* import Nats */
-#include "Nat.h"
+#include "Nat.oc.h"
 /* import Reals */
-#include "Real.h"
+#include "Real.oc.h"
 /* import Option */
-#include "Option.h"
+#include "Option.oc.h"
 /* import Arrays */
-#include "Array.h"
+#include "Array.oc.h"
 /* import Commands */
-#include "Com.h"
+#include "Com.oc.h"
 /* import Filesystem */
-#include "FileSystem.h"
+#include "FileSystem.oc.h"
 /* import Users and Groups */
-#include "UserAndGroup.h"
+#include "UserAndGroup.oc.h"
 
 #ifndef CLK_TCK
   #define CLK_TCK sysconf(_SC_CLK_TCK)

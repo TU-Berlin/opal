@@ -6,7 +6,7 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "ComAgent.h"
+#include "ComAgent.oc.h"
 
 
 extern OBJ _AComService_AsapProc(OBJ x1) 

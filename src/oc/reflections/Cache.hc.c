@@ -2,10 +2,10 @@
 /* coding scheme version acc-2.1 */
 
 
-#include "Com.h"
-#include "ComState.h"
-#include "Map.h"
-#include "Option.h"
+#include "Com.oc.h"
+#include "ComState.oc.h"
+#include "Map.oc.h"
+#include "Option.oc.h"
 
 
 extern OBJ _ACache_Acache(OBJ x1,OBJ x2) /* cache */

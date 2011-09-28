@@ -8,7 +8,7 @@
 */
 #include <unixconfig.h>
 
-#include "Nat.h"
+#include "Nat.oc.h"
 
 
 extern int get_string(OBJ string, char * buf, int bufsize){

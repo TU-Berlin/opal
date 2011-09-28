@@ -8,8 +8,8 @@
 */
 #include <unixconfig.h>
 
-#include "String.h"
-#include "Nat.h"
+#include "String.oc.h"
+#include "Nat.oc.h"
 
 extern int start_argc;
 extern char ** start_argv;

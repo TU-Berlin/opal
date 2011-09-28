@@ -9,8 +9,8 @@
 
 #include <stdio.h>
 
-#include "Nat.h"
-#include "Void.h"
+#include "Nat.oc.h"
+#include "Void.oc.h"
 
 OBJ ans_okay_nil;
 static OBJ (*com_ans_func)(OBJ);

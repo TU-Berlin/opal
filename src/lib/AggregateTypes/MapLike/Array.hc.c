@@ -8,7 +8,7 @@
 */
 
 #include <unixconfig.h>
-#include "Nat.h"
+#include "Nat.oc.h"
 
 
 #define check_rc(h,n,origin){\

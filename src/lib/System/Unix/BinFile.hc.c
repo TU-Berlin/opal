@@ -9,9 +9,9 @@
 
 #include <unixconfig.h>
 
-#include "Com.h"
-#include "File.h"
-#include "UnixFailures.h"
+#include "Com.oc.h"
+#include "File.oc.h"
+#include "UnixFailures.oc.h"
 
 #define DPRINT
 

@@ -13,7 +13,7 @@
 */
 
 #include "BUILTIN.h"
-#include "Com.h"
+#include "Com.oc.h"
 #include include
 
 extern int (*ocs_top_exec)(OBJ);	

@@ -11,10 +11,10 @@
 
 #include <unixconfig.h>
 
-#include "Nat.h"
-#include "Com.h"
-#include "Seq.h"
-#include "UnixFailures.h"
+#include "Nat.oc.h"
+#include "Com.oc.h"
+#include "Seq.oc.h"
+#include "UnixFailures.oc.h"
 
 extern int start_argc;           /* defined ... */
 extern char **start_argv;        /* ... in _ostart.c */

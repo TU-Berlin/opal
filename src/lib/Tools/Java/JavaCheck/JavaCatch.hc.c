@@ -6,8 +6,8 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "JavaVM.h"
-#include "Com.h"
+#include "JavaVM.oc.h"
+#include "Com.oc.h"
 
 
 extern OBJ _AJavaCatch_AisJavaExcept(OBJ x1) /* isJavaExcept */

@@ -7,12 +7,12 @@
    $Date$ ($Revision$)
 */
 
-#include "Nat.h"
-#include "Int.h"
-#include "Real.h"
-#include "String.h"
-#include "Seq.h"
-#include "Com.h"
+#include "Nat.oc.h"
+#include "Int.oc.h"
+#include "Real.oc.h"
+#include "String.oc.h"
+#include "Seq.oc.h"
+#include "Com.oc.h"
 
 #include <stdlib.h>
 #include <stdio.h>

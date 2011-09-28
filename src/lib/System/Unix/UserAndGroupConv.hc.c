@@ -10,7 +10,7 @@
 /* import prototypes */
 #include <unixconfig.h>
 /* import Users and Groups */
-#include "UserAndGroup.h"
+#include "UserAndGroup.oc.h"
 
 
 extern OBJ _AUserAndGroupConv_Ahc_Aconvuserid(OBJ x1) /* hc_convuserid */

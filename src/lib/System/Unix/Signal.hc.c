@@ -15,15 +15,15 @@
 /* #include <unistd.h> */
 
 /* import Commands */
-#include "Com.h"
+#include "Com.oc.h"
 /* import Failures */
-#include "UnixFailures.h"
+#include "UnixFailures.oc.h"
 /* import Option */
-#include "Option.h"
+#include "Option.oc.h"
 /* import Nats */
-#include "Nat.h"
+#include "Nat.oc.h"
 /* import Processes */
-#include "ProcessCtrl.h"
+#include "ProcessCtrl.oc.h"
 
 
 static int convert_signal(OBJ osig)

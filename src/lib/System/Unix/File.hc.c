@@ -9,12 +9,12 @@
 
 #include <unixconfig.h>
 
-#include "Nat.h"
-#include "Int.h"
-#include "Char.h"
-#include "String.h"
-#include "Com.h"
-#include "UnixFailures.h"
+#include "Nat.oc.h"
+#include "Int.oc.h"
+#include "Char.oc.h"
+#include "String.oc.h"
+#include "Com.oc.h"
+#include "UnixFailures.oc.h"
 
 #define READMONOLITHICSIZE	1024
 

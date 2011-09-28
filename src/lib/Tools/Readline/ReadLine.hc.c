@@ -12,9 +12,9 @@
 
 #include "readline/readline.h"
 
-#include "Nat.h"
-#include "Seq.h"
-#include "Com.h"
+#include "Nat.oc.h"
+#include "Seq.oc.h"
+#include "Com.oc.h"
 
 extern char **start_argv;	/* defined in _ostart.c */
 

@@ -6,7 +6,7 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "ComAgent.h"
+#include "ComAgent.oc.h"
 
 
 extern OBJ _AComTimeout_AtimeoutProc(OBJ x1,OBJ x2) /* timeoutProc */ {

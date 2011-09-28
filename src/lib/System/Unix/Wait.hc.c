@@ -19,20 +19,20 @@
 
 
 /* import Commands */
-#include "Com.h"
+#include "Com.oc.h"
 /* import Failures */
-#include "UnixFailures.h"
+#include "UnixFailures.oc.h"
 /* import Option */
-#include "Option.h"
+#include "Option.oc.h"
 /* import Pair */
-#include "Pair.h"
+#include "Pair.oc.h"
 /* import ProcessCtrl */
-#include "ProcessCtrl.h"
+#include "ProcessCtrl.oc.h"
 /* import Signals */
 #ifdef OCS_FILENAMES_CASEFOLD
-#include "Signal_ocs.h"
+#include "Signal_ocs.oc.h"
 #else
-#include "Signal.h"
+#include "Signal.oc.h"
 #endif
 
 static int make_signal( int sig, OBJ * res )

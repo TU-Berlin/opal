@@ -6,7 +6,7 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "JavaVM.h"
+#include "JavaVM.oc.h"
 
 
 extern OBJ _AJavaNull_Anull_(OBJ x1) /* null? */

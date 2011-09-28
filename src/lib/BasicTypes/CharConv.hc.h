@@ -6,7 +6,7 @@
    $Date$ ($Revision$)
 */
 
-#include "Nat.h"
-#include "Char.h"
+#include "Nat.oc.h"
+#include "Char.oc.h"
 
 #define ACharConv_AasNat(x1,x2) {x2=pack_nat(unpack_char(x1));}

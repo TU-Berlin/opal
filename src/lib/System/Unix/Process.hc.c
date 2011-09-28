@@ -8,12 +8,12 @@
 */
 
 #include <unixconfig.h>
-#include "Nat.h"
-#include "Array.h"
-#include "Com.h"
-#include "File.h"
-#include "UnixFailures.h"
-#include "Option.h"
+#include "Nat.oc.h"
+#include "Array.oc.h"
+#include "Com.oc.h"
+#include "File.oc.h"
+#include "UnixFailures.oc.h"
+#include "Option.oc.h"
 
 extern char ** start_env;
 

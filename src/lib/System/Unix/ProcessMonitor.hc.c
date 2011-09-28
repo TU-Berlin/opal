@@ -6,9 +6,9 @@
    http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
    $Date$ ($Revision$)
 */
-#include "Com.h"
-#include "ProcessConnect.h"
-#include "ProcessInterrupt.h"
+#include "Com.oc.h"
+#include "ProcessConnect.oc.h"
+#include "ProcessInterrupt.oc.h"
 
 extern OBJ _AProcessMonitor_Amonitor(OBJ Chan, OBJ Env, 
 				     OBJ MonChan, OBJ MonSig) {

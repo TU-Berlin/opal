@@ -3,9 +3,9 @@
 
 
 
-#include "Nat.h"
-#include "Com.h"
-#include "Seq.h"
+#include "Nat.oc.h"
+#include "Com.oc.h"
+#include "Seq.oc.h"
 
 #ifndef NULL
 #define NULL (void*)0

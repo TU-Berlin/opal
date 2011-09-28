@@ -7,9 +7,9 @@
    $Date$ ($Revision$)
 */
 
-#include "Com.h"
-#include "ComAgent.h"
-#include "OCS/Tcl.h"
+#include "Com.oc.h"
+#include "ComAgent.oc.h"
+#include "OCS/Tcl.oc.h"
 #include "tk.h"
 
 #define TK_STANDALONE 
