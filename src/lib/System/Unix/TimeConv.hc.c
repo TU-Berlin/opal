@@ -11,11 +11,7 @@
 #include <unixconfig.h>
 
 /* import Time */
-#ifdef OCS_FILENAMES_CASEFOLD
-#include "Time_ocs.oc.h"
-#else
 #include "Time.oc.h"
-#endif
 
 
 extern OBJ _ATimeConv_Ahc_Actime(OBJ x1) /* hc_ctime */

@@ -29,11 +29,7 @@
 /* import ProcessCtrl */
 #include "ProcessCtrl.oc.h"
 /* import Signals */
-#ifdef OCS_FILENAMES_CASEFOLD
-#include "Signal_ocs.oc.h"
-#else
 #include "Signal.oc.h"
-#endif
 
 static int make_signal( int sig, OBJ * res )
 {

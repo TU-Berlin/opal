@@ -24,11 +24,7 @@
 /* import Users and Groups */
 #include "UserAndGroup.oc.h"
 /* import Time */
-#ifdef OCS_FILENAMES_CASEFOLD
-#include "Time_ocs.oc.h"
-#else
 #include "Time.oc.h"
-#endif
 /* import Arrays */
 #include "Array.oc.h"
 /* import Options */
