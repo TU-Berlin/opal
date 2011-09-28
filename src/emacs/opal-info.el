@@ -297,7 +297,7 @@ by syntactic transformation.
 
 These short-circuit conditions should only be used
 for semantical reasons. The optimizer will 
-optimize the evaluation of and'BOOL and or'BOOL.
+optimize the evaluation of and'PREDEF_BOOL and or'PREDEF_BOOL.
 ")
 ;; /* */ --
 ("^\\(/\\*\\|\\*/\\|--\\)$" .

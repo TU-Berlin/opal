@@ -788,7 +788,7 @@
   '(
 ; Internal/Compiler
       ("ABORT" nil)
-      ("BOOL" nil)
+      ("PREDEF_BOOL" nil)
       ("DENOTATION" nil)
 ; Internal/Strange
       ("CAST" nil)
