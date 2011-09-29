@@ -24,7 +24,7 @@ cp config.status config.status.bak
 
 . src/om/specs/ShSpecs.basic
 
-tmpdir=`mktemp -d ocsdistXXXXXX`
+tmpdir=`mktemp -d`
 
 echo Using temporary directory $tmpdir
 
@@ -39,11 +39,7 @@ ocs
 # Use tar to copy files (excluding subversion files) to keep file
 # timestamps untouched.
 echo "Copying files to temporary directory..."
-if [ `uname -s` = "Darwin" ]; then
-  tar c --exclude $tarball --exclude ".svn" -f - . | tar x -C $distdir -f -
-else
-  tar c --exclude=$tarball --exclude=".svn" -f - . | tar x -C $distdir -f -
-fi
+tar c --exclude=$tarball --exclude=".svn" -f - . | tar x -C $distdir -f -
 
 # Delete object and archive files.
 echo "Remove objects and archives..."
@@ -86,15 +82,9 @@ find $distdir -name \*~ -exec rm {} \;
 # Write dummy intermediate files for bootstrapping.
 echo "Writing dummy intermediate files..."
 for f in `find $distdir -name \*.inter -o -name \*.opt`; do
-    if [ `uname -s` = "Darwin" ]; then
-      mtime="`stat -f \"%m\" $f`"
-      echo "Dummy intermediate file to enable bootstrapping. Do not change its mtime!" > $f
-      touch -m "$mtime" $f
-    else
-      mtime="`stat -c \"%y\" $f`"
-      echo "Dummy intermediate file to enable bootstrapping. Do not change its mtime!" > $f
-      touch -d "$mtime" $f
-    fi
+    mtime="`stat -c \"%y\" $f`"
+    echo "Dummy intermediate file to enable bootstrapping. Do not change its mtime!" > $f
+    touch -d "$mtime" $f
 done
 
 # Delete config.status.bak
