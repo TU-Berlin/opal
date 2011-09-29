@@ -16,7 +16,7 @@ void genfile(int rank, char *fn){
       perror("genmttab");
       exit(1);
   }
-  fprintf(file,"#include \"BUILTIN.h\"\n");
+  fprintf(file,"\n#include \"BUILTIN.h\"\n");
   
   /* evaluation table */
 #ifdef NeXT

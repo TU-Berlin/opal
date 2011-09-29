@@ -3,6 +3,8 @@
  * version: $Id$
  */
     
+#ifndef BUILTIN_H_INCLUDED
+#define BUILTIN_H_INCLUDED
 
 /* #define _MEMSTAT_  */
 
@@ -818,3 +820,4 @@ extern int _data_start__ ;
 extern void init_ABUILTIN();
 extern OBJ soname_ABUILTIN;
 
+#endif /* BUILTIN_H_INCLUDED */
