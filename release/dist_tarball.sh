@@ -103,7 +103,7 @@ tar czf $tarball -C $tmpdir ocs-$VERSION
 
 # Delete temporary directory.
 echo "Deleting temporary firectory... $tmpdir"
-#rm -rf $tmpdir
+rm -rf $tmpdir
 
 cd $owd
 
