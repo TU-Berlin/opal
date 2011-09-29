@@ -98,7 +98,7 @@ for f in `find $distdir -name \*.inter -o -name \*.opt`; do
 done
 
 # Delete config.status.bak
-rm $tmpdir/config.status.bak
+rm $tmpdir/ocs-$VERSION/config.status.bak
 
 # Create tarball.
 echo "Creating tarball $tarball..."
@@ -110,5 +110,5 @@ rm -rf $tmpdir
 
 cd $owd
 
-cp config.status.bak config.status
+mv config.status.bak config.status
 ./config.status
