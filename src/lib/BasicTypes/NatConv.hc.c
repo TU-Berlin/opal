@@ -10,9 +10,10 @@
 #include "Int.oc.h"
 #include "Real.oc.h"
 #include <string.h> //used for memset
+#include <stdio.h>  //used for sprintf
 
 /* maximum length of text representation of a natural number */
-#define MAX_LEN_OF_NAT (10)
+#define MAX_LEN_OF_NAT (20)
 
 
 extern OBJ _ANatConv_Sq(OBJ x1) /* ` */
@@ -20,18 +21,10 @@ extern OBJ _ANatConv_Sq(OBJ x1) /* ` */
  NAT n = unpack_nat(x1);
 
  static char b[MAX_LEN_OF_NAT];
- char *p = b + 9; 
 
- memset(b, '\0', MAX_LEN_OF_NAT);
- if(n == 0)
-   { *p-- = '0' ;}
- else
-   { for(; n != 0; n = n /10)
-       { *p-- = '0' + (n % 10); };
-   }
- *p++;
- 
- return make_denotation(p);
+ sprintf(b, "%u", n);
+
+ return make_denotation(b);
 }
 
 
