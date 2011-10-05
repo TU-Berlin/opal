@@ -10,7 +10,7 @@ PKGNAME = pkg.emacs
 PKGDESCR = emacs mode for editing of Opal and Opal-related files
 
 ## version
-PKGVERSION = 2.4_pre1
+PKGVERSION = 2.4
 
 ## Package base
 PKGBASE = $OCSSRC/emacs
