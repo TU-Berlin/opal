@@ -22,7 +22,7 @@ extern OBJ _ANatConv_Sq(OBJ x1) /* ` */
 
  static char b[MAX_LEN_OF_NAT];
 
- sprintf(b, "%u", n);
+ snprintf(b, MAX_LEN_OF_NAT, "%lu", n);
 
  return make_denotation(b);
 }
