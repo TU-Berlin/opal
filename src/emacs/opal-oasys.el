@@ -165,110 +165,105 @@ current buffer after the last output."
   (comint-send-input)
   (setq opal-oasys-send-end (marker-position comint-last-input-end)))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun opal-oasys-go (load-command cd)
   "Save the current buffer and load its file into the Oasys process.
 The first argument LOAD-COMMAND specifies how the file should be
-loaded: as a new file (\":load \") or as a reload (\":reload \").
+loaded: as a new file (\"a \") or as a reload (\"c \").
 
-If the second argument CD is non-nil, change directory in the GHCi
+If the second argument CD is non-nil, change directory in the Oasys
 process to the current buffer's directory before loading the file.
 
-If the variable `haskell-ghci-command' is set then its value will be
-sent to the GHCi process after the load command. This can be used for a
+If the variable `opal-oasys-command' is set then its value will be
+sent to the Oasys process after the load command. This can be used for a
 top-level expression to evaluate."
   (hack-local-variables)		; in case they've changed
   (save-buffer)
-  (let ((file (if (string-equal load-command ":load ")
+  (let ((file (if (string-equal load-command "a ")
+		  ;; TODO: Structure name instead of file name
 		  (concat "\"" buffer-file-name "\"")
 		""))
 	(dir (expand-file-name default-directory))
-	(cmd (and (boundp 'haskell-ghci-command)
-		  haskell-ghci-command
-		  (if (stringp haskell-ghci-command)
-		      haskell-ghci-command
-		    (symbol-name haskell-ghci-command)))))
-    (if (and haskell-ghci-process-buffer
-	     (eq (process-status haskell-ghci-process) 'run))
-	;; Ensure the GHCi buffer is selected.
-	(set-buffer haskell-ghci-process-buffer) 
-      ;; Start Haskell-GHCi process.
-      (haskell-ghci-start-process nil))
+	(cmd (and (boundp 'opal-oasys-command)
+		  opal-oasys-command
+		  (if (stringp opal-oasys-command)
+		      opal-oasys-command
+		    (symbol-name opal-oasys-command)))))
+    (if (and opal-oasys-process-buffer
+	     (eq (process-status opal-oasys-process) 'run))
+	;; Ensure the Oasys buffer is selected.
+	(set-buffer opal-oasys-process-buffer) 
+      ;; Start Oasys process.
+      (opal-oasys-start-process nil))
 
-    (if cd (haskell-ghci-send (concat ":cd " dir)))
     ;; Wait until output arrives and go to the last input.
-    (haskell-ghci-wait-for-output)
-    (haskell-ghci-send load-command file)
+    (opal-oasys-wait-for-output)
+    (opal-oasys-send load-command file)
     ;; Error message search starts from last load command.
-    (setq haskell-ghci-load-end (marker-position comint-last-input-end))
-    (setq haskell-ghci-error-pos haskell-ghci-load-end)
-    (if cmd (haskell-ghci-send cmd))
+    (setq opal-oasys-load-end (marker-position comint-last-input-end))
+    (setq opal-oasys-error-pos opal-oasys-load-end)
+    (if cmd (opal-oasys-send cmd))
     ;; Wait until output arrives and go to the last input.
-    (haskell-ghci-wait-for-output)))
+    (opal-oasys-wait-for-output)))
 
 (defun haskell-ghci-load-file (cd)
-  "Save a ghci buffer file and load its file.
+  "Save an oasys buffer file and load its file.
 If CD (prefix argument if interactive) is non-nil, change directory in
-the GHCi process to the current buffer's directory before loading the
+the Oasys process to the current buffer's directory before loading the
 file. If there is an error, set the cursor at the error line otherwise
-show the *ghci* buffer."
+show the *oasys* buffer."
   (interactive "P")
-  (haskell-ghci-gen-load-file ":load " cd))
+  (opal-oasys-gen-load-file "a " cd))
 
 (defun haskell-ghci-reload-file (cd)
-  "Save a ghci buffer file and load its file.
-If CD (prefix argument if interactive) is non-nil, change the GHCi
+  "Save an oasys buffer file and load its file.
+If CD (prefix argument if interactive) is non-nil, change the Oasys
 process to the current buffer's directory before loading the file.
 If there is an error, set the cursor at the error line otherwise show
-the *ghci* buffer."
+the *oasys* buffer."
   (interactive "P")
-  (haskell-ghci-gen-load-file ":reload " cd))
+  (opal-oasys-gen-load-file "c " cd))
 
-(defun haskell-ghci-gen-load-file (cmd cd)
-  "Save a ghci buffer file and load its file or reload depending on CMD.
+(defun opal-oasys-gen-load-file (cmd cd)
+  "Save an oasys buffer file and load its file or reload depending on CMD.
 If CD is non-nil, change the process to the current buffer's directory
 before loading the file. If there is an error, set the cursor at the
-error line otherwise show the *ghci* buffer."
+error line otherwise show the *oasys* buffer."
 
   ;; Execute (re)load command.
-  (save-excursion (haskell-ghci-go cmd cd))
+  (save-excursion (opal-oasys-go cmd cd))
 
-  ;; Show *ghci* buffer.
-  (pop-to-buffer haskell-ghci-process-buffer)
-  (goto-char haskell-ghci-load-end)
+  ;; Show *oasys* buffer.
+  (pop-to-buffer opal-oasys-process-buffer)
+  (goto-char opal-oasys-load-end)
 
-  ;; Did we finish loading without error?
-  (if (re-search-forward
-       "^Ok, modules loaded" nil t)
-      (progn (goto-char (point-max))
-             (recenter 2)
-             (message "There were no errors."))
-
-    ;; Something went wrong. If possible, be helpful and pinpoint the
+  ;; Something went wrong. If possible, be helpful and pinpoint the
     ;; first error in the file whilst leaving the error visible in the
-    ;; *ghci* buffer.
-    (goto-char haskell-ghci-load-end)
-    (haskell-ghci-locate-next-error)))
+    ;; *oasys* buffer.
+  (if (re-search-forward
+       "^ERROR" nil t)
+       (goto-char opal-oasys-load-end)
+       (opal-oasys-locate-next-error)))
 
 
-(defun haskell-ghci-locate-next-error () 
-  "Go to the next error shown in the *ghci* buffer."
+(defun opal-oasys-locate-next-error () 
+  "Go to the next error shown in the *oasys* buffer."
   (interactive)
-  (if (buffer-live-p haskell-ghci-process-buffer)
-      (progn (pop-to-buffer haskell-ghci-process-buffer)
-	     (goto-char haskell-ghci-error-pos)
+  (if (buffer-live-p opal-oasys-process-buffer)
+      (progn (pop-to-buffer opal-oasys-process-buffer)
+	     (goto-char opal-oasys-error-pos)
 	     (if (re-search-forward
+		  ;; TODO: Regexp for Oasys error messages
 		  "^[^\/]*\\([^:\n]+\\):\\([0-9]+\\)" nil t)
 		 (let ((efile (buffer-substring (match-beginning 1)
 						(match-end 1)))
-		       (eline (string-to-int 
+		       (eline (string-to-number 
 			       (buffer-substring (match-beginning 2)
 						 (match-end 2)))))
 
 		   (recenter 2)
-		   (setq haskell-ghci-error-pos (point))
-		   (message "GHCi error on line %d of %s."
+		   (setq opal-oasys-error-pos (point))
+		   (message "Oasys error on line %d of %s."
                    eline (file-name-nondirectory efile))
 		   (if (file-exists-p efile)
 		       (progn (find-file-other-window efile)
@@ -276,21 +271,19 @@ error line otherwise show the *ghci* buffer."
 			      (recenter))))
 
       ;; We got an error without a file and line number, so put the
-      ;; point at end of the *ghci* buffer ready to deal with it.
+      ;; point at end of the *oasys* buffer ready to deal with it.
                (goto-char (point-max))
                (recenter -2)
 	       (message "No more errors found.")))
-    (message "No *ghci* buffer found.")))     
+    (message "No *oasys* buffer found.")))     
 
-(defun haskell-ghci-show-ghci-buffer ()
-  "Go to the *ghci* buffer."
+(defun opal-oasys-show-oasys-buffer ()
+  "Go to the *oasys* buffer."
   (interactive)
-  (if (or (not haskell-ghci-process-buffer)
-          (not (buffer-live-p haskell-ghci-process-buffer)))
-      (haskell-ghci-start-process nil))
-  (pop-to-buffer  haskell-ghci-process-buffer))
+  (if (or (not opal-oasys-process-buffer)
+          (not (buffer-live-p opal-oasys-process-buffer)))
+      (opal-oasys-start-process nil))
+  (pop-to-buffer  opal-oasys-process-buffer))
 
-(provide 'haskell-ghci)			
 
-;; arch-tag: f0bade4b-288d-4329-9791-98c1e24167ac
-;;; haskell-ghci.el ends here
+(provide 'opal-oasys)
