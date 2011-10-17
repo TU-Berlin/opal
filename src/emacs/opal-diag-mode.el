@@ -392,15 +392,6 @@
 ;; $$Keymap to be used in FSF Emacs
 (defun opal-mode-diag-keymap ()
   "Set the opal-mode diag keymap."
-;; changed by ralfi
-;; shortkeys
-  (define-key opal-mode-map "\M-n" 'opal-diag-next-main-error)
-  (define-key opal-mode-map "\M-p" 'opal-diag-prev-main-error)
-  (define-key opal-mode-map "\M-u" 'opal-diag-update)
-  (define-key opal-mode-map "\M-v" 'opal-diag-update-silent)
-  (define-key opal-mode-map "\M-h" 'opal-diag-toggle-extended-flag)
-  (define-key opal-mode-map "\M-m" 'opal-diag-insert-missing-item)
-  (define-key opal-mode-map "\M-0" 'opal-diag-clear-diags)
 ;;longkeys
   (define-key opal-mode-map "\C-c\C-d\C-n" 'opal-diag-next-main-error)
   (define-key opal-mode-map "\C-c\C-d\C-p" 'opal-diag-prev-main-error)
