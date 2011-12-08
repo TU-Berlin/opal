@@ -536,6 +536,8 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
 ;  Syntax-Entries for comments
   (modify-syntax-entry ?/ "w-14")
   (modify-syntax-entry ?* "w-23")
+  (make-local-variable 'comment-start)
+  (make-local-variable 'comment-end)
   (setq comment-start "/* ")
   (setq comment-end " */")
 ;  (auto-fill-mode)
