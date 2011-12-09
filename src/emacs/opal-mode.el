@@ -2,6 +2,9 @@
 
 ;;; Code:
 
+;;(require 'opal-oasys)
+
+
 (defgroup opal nil
   "Major mode for editing Opal programs."
   :group 'languages
@@ -12,13 +15,13 @@
 ;;;###autoload
 (add-to-list 'load-path
    (or (file-name-directory load-file-name) (car load-path)))
-
+(load "/home/rohloff/work/opal1/ocs/branches/emacs-mode/src/emacs/opal-oasys.el")
 
 ;; Mode maps.
 (defvar opal-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map [?\C-c ?\C-z] 'switch-to-oasys)
-    (define-key map [?\C-c ?\C-l] 'oasys-load-file)
+    (define-key map [?\C-c ?\C-l] 'opal-oasys-load-file)
 
     ;;(define-key map (kbd "C-c C-t") 'inferior-haskell-type)
     ;;(define-key map (kbd "C-c C-i") 'inferior-haskell-info)
@@ -39,15 +42,15 @@
     ["(Un)Comment region" comment-region mark-active]
     "---"
     ["Start interpreter" switch-to-oasys]
-    ["Load file" oasys-load-file]
+    ["Load file" opal-oasys-load-file]
     "---"
     ["Customize" (customize-group 'opal)]
     ))
 
 ;; Syntax table.
-(defvar opal-mode-syntax-table
-  ()
-  "Syntax table used in Opal mode.")
+;; (defvar opal-mode-syntax-table
+;;  ()
+;;  "Syntax table used in Opal mode.")
 
 
 ;; Delete indentation.
@@ -60,15 +63,21 @@
   "Hook run after entering Opal mode."
   :type 'hook
   :group 'opal
-  :options `(turn-on-haskell-indent
+  :options `(turn-on-opal-indent
 	     turn-on-font-lock))
 
+;;(add-hook 'opal-mode-hook 'opal-oasys-set-prompt)
+
+
+;;;###autoload
+(add-to-list 'auto-mode-alist '("\\.impl\\'" . opal-mode))
+(add-to-list 'auto-mode-alist '("\\.sign\\'" . opal-mode))
 
 
 ;; The main mode functions
 ;;;###autoload
 (define-derived-mode opal-mode fundamental-mode "Opal"
-  "Major mode for editing Haskell programs.
+  "Major mode for editing Opal programs.
 Blank lines separate paragraphs, comments start with `-- '.
 \\<opal-mode-map>
 
@@ -105,6 +114,7 @@ Invokes `opal-mode-hook'."
 	 ;; Get help from font-lock-syntactic-keywords.
 	 ;;(parse-sexp-lookup-properties . t)))
   (set (make-local-variable 'tab-width) 4))
+
 
 
 ;; Provide ourselves:
