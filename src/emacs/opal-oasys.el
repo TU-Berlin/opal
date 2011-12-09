@@ -128,7 +128,7 @@ Prompt for a list of args if called with an argument."
   ;;(add-hook 'comint-input-filter-functions 'shell-directory-tracker nil 'local)
 
   ;; Oasys prompt should be of the form `ModuleName> '.
-  (setq comint-prompt-regexp "^.*\\(\\.impl\\)?>")
+  (setq comint-prompt-regexp "^\\(.*\\(\\.impl\\)\\)?>")
 
   ;; History syntax of comint conflicts with Haskell, e.g. !!, so better
   ;; turn it off.
@@ -138,6 +138,11 @@ Prompt for a list of args if called with an argument."
   
   ;; Clear message area.
   (message ""))
+
+
+(defun opal-oasys-split-focusname (path)
+  (car (split-string path "\\(?:/[^/]*\\)*/\\(.*\\.\\(?:impl\\|sign\\)\\)"))
+)
 
 (defun opal-oasys-wait-for-start ()
   "Wait until output arrives and go to the last input."
@@ -180,7 +185,7 @@ sent to the Oasys process after the load command. This can be used for a
 top-level expression to evaluate."
   (hack-local-variables)		; in case they've changed
   (save-buffer)
-  (let ((file (concat "\"" buffer-file-name "\""))
+  (let ((file (concat "\"" buffer-file-name "\""))	
 	(dir (expand-file-name default-directory))
 	(cmd (and (boundp 'opal-oasys-command)
 		  opal-oasys-command
@@ -199,7 +204,8 @@ top-level expression to evaluate."
     ;; load
     (opal-oasys-send "a " file)
     (opal-oasys-wait-for-output)
-    (opal-oasys-send "f " "test.impl")
+    (let ((focus (concat "\"" (car (reverse (split-string file "/"))))))
+    (opal-oasys-send "f " focus))
     ;; ;; Error message search starts from last load command.
     (setq opal-oasys-load-end (marker-position comint-last-input-end))
     (setq opal-oasys-error-pos opal-oasys-load-end)
