@@ -39,8 +39,6 @@ Maps the following commands in the opal keymap:
     \\[opal-oasys-show-oasys-buffer] to show the Oasys buffer and go to it."
   (local-set-key "\C-c\C-s" 'opal-oasys-start-process)
   (local-set-key "\C-c\C-l" 'opal-oasys-load-file)
-  ;(local-set-key "\C-c\C-r" 'opal-oasys-reload-file)
-  ;;(local-set-key "\C-c\C-n" 'opal-oasys-locate-next-error)
   (local-set-key "\C-c\C-b" 'opal-oasys-show-oasys-buffer))
 
 (defun turn-off-opal-oasys ()
@@ -130,22 +128,28 @@ Prompt for a list of args if called with an argument."
   ;;(add-hook 'comint-input-filter-functions 'shell-directory-tracker nil 'local)
 
   ;; Oasys prompt should be of the form `ModuleName> '.
-  ;;(setq comint-prompt-regexp
-  ;;	"^\\*?[[:upper:]][\\._[:alnum:]]*\\( \\*?[[:upper:]][\\._[:alnum:]]*\\)*> ")
+  (setq comint-prompt-regexp "^.*\\(\\.impl\\)?>")
 
   ;; History syntax of comint conflicts with Haskell, e.g. !!, so better
   ;; turn it off.
   ;;(setq comint-input-autoexpand nil)
   ;;(setq comint-process-echoes nil)
   (run-hooks 'opal-oasys-hook)
-
+  
   ;; Clear message area.
   (message ""))
+
+(defun opal-oasys-wait-for-start ()
+  "Wait until output arrives and go to the last input."
+  (while (progn			
+	   (goto-char (point-min))
+	   (not (re-search-forward comint-prompt-regexp nil t)))
+    (accept-process-output opal-oasys-process)))
 
 (defun opal-oasys-wait-for-output ()
   "Wait until output arrives and go to the last input."
   (while (progn			
-	   (goto-char comint-last-input-end)
+	   (goto-char opal-oasys-send-end)
 	   (not (re-search-forward comint-prompt-regexp nil t)))
     (accept-process-output opal-oasys-process)))
 
@@ -153,54 +157,17 @@ Prompt for a list of args if called with an argument."
   "Send `opal-oasys-process' the arguments (one or more strings).
 A newline is sent after the strings and they are inserted into the
 current buffer after the last output."
-  (opal-oasys-wait-for-output)          ; wait for prompt
+ ;; (opal-oasys-wait-for-output)          ; wait for prompt
   (goto-char (point-max))               ; position for this input
   (apply 'insert string)
   (comint-send-input)
-  (setq opal-oasys-send-end (marker-position comint-last-input-end)))
+  (setq opal-oasys-send-end (marker-position comint-last-input-end))
+  (opal-oasys-wait-for-output))
 
-
-;; (defun opal-oasys-go (load-command cd)
-;;   "Save the current buffer and load its file into the Oasys process.
-;; The first argument LOAD-COMMAND specifies how the file should be
-;; loaded: as a new file (\"a \") or as a reload (\"c \").
-
-;; If the second argument CD is non-nil, change directory in the Oasys
-;; process to the current buffer's directory before loading the file.
-
-;; If the variable `opal-oasys-command' is set then its value will be
-;; sent to the Oasys process after the load command. This can be used for a
-;; top-level expression to evaluate."
-;;   (hack-local-variables)		; in case they've changed
-;;   (save-buffer)
-;;   (let ((file (if (string-equal load-command "a ")
-;; 		  (concat "\"" buffer-file-name "\"")
-;; 		""))
-;; 	(dir (expand-file-name default-directory))
-;; 	(cmd (and (boundp 'opal-oasys-command)
-;; 		  opal-oasys-command
-;; 		  (if (stringp opal-oasys-command)
-;; 		      opal-oasys-command
-;; 		    (symbol-name opal-oasys-command)))))
-;;     (if (and opal-oasys-process-buffer
-;; 	     (eq (process-status opal-oasys-process) 'run))
-;; 	;; Ensure the Oasys buffer is selected.
-;; 	(set-buffer opal-oasys-process-buffer) 
-;;       ;; Start Oasys process.
-;;       (opal-oasys-start-process nil))
-
-;;     ;; Wait until output arrives and go to the last input.
-;;     (opal-oasys-wait-for-output)
-;;     (opal-oasys-send load-command file)
-;;     ;; Error message search starts from last load command.
-;;     (setq opal-oasys-load-end (marker-position comint-last-input-end))
-;;     (setq opal-oasys-error-pos opal-oasys-load-end)
-;;     (if cmd (opal-oasys-send cmd))
-;;     ;; Wait until output arrives and go to the last input.
-;;     (opal-oasys-wait-for-output)))
-
-
-
+(defun opal-oasys-start-load ()
+  (switch-to-oasys)
+  (opal-oasys-wait-for-start)
+)
 
 (defun opal-oasys-go-load (cd)
   "Save the current buffer and load its file into the Oasys process.
@@ -225,33 +192,21 @@ top-level expression to evaluate."
 	;; Ensure the Oasys buffer is selected.
 	(set-buffer opal-oasys-process-buffer) 
       ;; Start Oasys process.
-      (opal-oasys-start-process nil))
+      (opal-oasys-start-load))
 
     ;; Wait until output arrives and go to the last input.
-    (opal-oasys-wait-for-output)
+    ;;(opal-oasys-wait-for-output)
     ;; load
     (opal-oasys-send "a " file)
+    (opal-oasys-wait-for-output)
+    (opal-oasys-send "f " "test.impl")
     ;; ;; Error message search starts from last load command.
-    ;; (setq opal-oasys-load-end (marker-position comint-last-input-end))
-    ;; (setq opal-oasys-error-pos opal-oasys-load-end)
-    ;; ;; wait
-    ;; (opal-oasys-wait-for-output)
-    ;; ;; set focus
-    ;; (opal-oasys-send "f " "test.impl")
-    ;; Error message search starts from last load command.
     (setq opal-oasys-load-end (marker-position comint-last-input-end))
     (setq opal-oasys-error-pos opal-oasys-load-end)
     ;;(if cmd (opal-oasys-send cmd))
     ;; Wait until output arrives and go to the last input.
     (opal-oasys-wait-for-output)))
 
-(defun opal-oasys-set-focus (name)
-  (opal-oasys-wait-for-output)
-  (opal-oasys-send "f " "test.impl")
-  (setq opal-oasys-load-end (marker-position comint-last-input-end))
-  (setq opal-oasys-error-pos opal-oasys-load-end)
-  (opal-oasys-wait-for-output)
-)
 
 (defun opal-oasys-load-file (cd)
   "Save an oasys buffer file and load its file.
@@ -260,8 +215,7 @@ the Oasys process to the current buffer's directory before loading the
 file. If there is an error, set the cursor at the error line otherwise
 show the *oasys* buffer."
   (interactive "P")
-  (opal-oasys-gen-load-file "a " cd)
-  (opal-oasys-set-focus "test.impl")
+  (opal-oasys-gen-load-file cd)
   )
 
 ;; (defun opal-oasys-reload-file (cd)
@@ -273,7 +227,7 @@ show the *oasys* buffer."
 ;;   (interactive "P")
 ;;   (opal-oasys-gen-load-file "c " cd))
 
-(defun opal-oasys-gen-load-file (cmd cd)
+(defun opal-oasys-gen-load-file (cd)
   "Save an oasys buffer file and load its file or reload depending on CMD.
 If CD is non-nil, change the process to the current buffer's directory
 before loading the file. If there is an error, set the cursor at the
@@ -284,7 +238,7 @@ error line otherwise show the *oasys* buffer."
 
   ;; Show *oasys* buffer.
   (pop-to-buffer opal-oasys-process-buffer)
-  (goto-char opal-oasys-load-end)
+  (goto-char (point-max))
 
   ;; Something went wrong. If possible, be helpful and pinpoint the
     ;; first error in the file whilst leaving the error visible in the
@@ -295,37 +249,7 @@ error line otherwise show the *oasys* buffer."
        ;;(opal-oasys-locate-next-error)
     ))
 
-
-;; (defun opal-oasys-locate-next-error () 
-;;   "Go to the next error shown in the *oasys* buffer."
-;;   (interactive)
-;;   (if (buffer-live-p opal-oasys-process-buffer)
-;;       (progn (pop-to-buffer opal-oasys-process-buffer)
-;; 	     (goto-char opal-oasys-error-pos)
-;; 	     (if (re-search-forward
-;; 		  ;; TODO: Regexp for Oasys error messages
-;; 		  "^[^\/]*\\([^:\n]+\\):\\([0-9]+\\)" nil t)
-;; 		 (let ((efile (buffer-substring (match-beginning 1)
-;; 						(match-end 1)))
-;; 		       (eline (string-to-number 
-;; 			       (buffer-substring (match-beginning 2)
-;; 						 (match-end 2)))))
-
-;; 		   (recenter 2)
-;; 		   (setq opal-oasys-error-pos (point))
-;; 		   (message "Oasys error on line %d of %s."
-;;                    eline (file-name-nondirectory efile))
-;; 		   (if (file-exists-p efile)
-;; 		       (progn (find-file-other-window efile)
-;; 			      (goto-line eline)
-;; 			      (recenter))))
-
-;;       ;; We got an error without a file and line number, so put the
-;;       ;; point at end of the *oasys* buffer ready to deal with it.
-;;                (goto-char (point-max))
-;;                (recenter -2)
-;; 	       (message "No more errors found.")))
-;;     (message "No *oasys* buffer found.")))     
+ 
 
 (defun opal-oasys-show-oasys-buffer ()
   "Go to the *oasys* buffer."
