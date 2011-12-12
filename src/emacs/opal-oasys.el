@@ -90,7 +90,7 @@ The commands available from within an Opal program are:
 (defvar opal-oasys-error-pos nil
   "Position of the end of the last load command.")
 
-(defvar opal-oasys-send-end nil
+(defvar opal-oasys-send-end (point-min)
   "Position of the end of the last send command.")
 
 
@@ -128,7 +128,7 @@ Prompt for a list of args if called with an argument."
   ;;(add-hook 'comint-input-filter-functions 'shell-directory-tracker nil 'local)
 
   ;; Oasys prompt should be of the form `ModuleName> '.
-  (setq comint-prompt-regexp "^\\(.*\\(\\.impl\\)\\)?>")
+  (setq comint-prompt-regexp "^\\(.*\\(\\.impl\\|.sign\\)\\)?>")
 
   ;; History syntax of comint conflicts with Haskell, e.g. !!, so better
   ;; turn it off.
@@ -139,17 +139,6 @@ Prompt for a list of args if called with an argument."
   ;; Clear message area.
   (message ""))
 
-
-(defun opal-oasys-split-focusname (path)
-  (car (split-string path "\\(?:/[^/]*\\)*/\\(.*\\.\\(?:impl\\|sign\\)\\)"))
-)
-
-(defun opal-oasys-wait-for-start ()
-  "Wait until output arrives and go to the last input."
-  (while (progn			
-	   (goto-char (point-min))
-	   (not (re-search-forward comint-prompt-regexp nil t)))
-    (accept-process-output opal-oasys-process)))
 
 (defun opal-oasys-wait-for-output ()
   "Wait until output arrives and go to the last input."
@@ -171,7 +160,7 @@ current buffer after the last output."
 
 (defun opal-oasys-start-load ()
   (switch-to-oasys)
-  (opal-oasys-wait-for-start)
+  (opal-oasys-wait-for-output)
 )
 
 (defun opal-oasys-go-load (cd)
@@ -200,7 +189,6 @@ top-level expression to evaluate."
       (opal-oasys-start-load))
 
     ;; Wait until output arrives and go to the last input.
-    ;;(opal-oasys-wait-for-output)
     ;; load
     (opal-oasys-send "a " file)
     (opal-oasys-wait-for-output)
@@ -209,7 +197,6 @@ top-level expression to evaluate."
     ;; ;; Error message search starts from last load command.
     (setq opal-oasys-load-end (marker-position comint-last-input-end))
     (setq opal-oasys-error-pos opal-oasys-load-end)
-    ;;(if cmd (opal-oasys-send cmd))
     ;; Wait until output arrives and go to the last input.
     (opal-oasys-wait-for-output)))
 
@@ -224,14 +211,7 @@ show the *oasys* buffer."
   (opal-oasys-gen-load-file cd)
   )
 
-;; (defun opal-oasys-reload-file (cd)
-;;   "Save an oasys buffer file and load its file.
-;; If CD (prefix argument if interactive) is non-nil, change the Oasys
-;; process to the current buffer's directory before loading the file.
-;; If there is an error, set the cursor at the error line otherwise show
-;; the *oasys* buffer."
-;;   (interactive "P")
-;;   (opal-oasys-gen-load-file "c " cd))
+
 
 (defun opal-oasys-gen-load-file (cd)
   "Save an oasys buffer file and load its file or reload depending on CMD.
