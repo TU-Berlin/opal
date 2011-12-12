@@ -5,7 +5,9 @@
 ;; To send an Opal buffer to another buffer running an Oasys
 ;; interpreter.
 ;;
-;;
+;; Installation:
+;; add to your .emacs:
+;; (add-hook 'opal-mode-hook 'turn-on-opal-oasys)
 ;;
 ;; Customisation:
 ;;
