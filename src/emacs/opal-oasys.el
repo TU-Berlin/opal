@@ -39,13 +39,13 @@ Maps the following commands in the opal keymap:
     \\[opal-oasys-load-file] to save the current buffer and load and focus it in Oasys.
     \\[opal-oasys-reload-file] to send the :eload command to Oasys without saving the buffer.
     \\[opal-oasys-show-oasys-buffer] to show the Oasys buffer and go to it."
-  (local-set-key "\C-c\C-s" 'opal-oasys-start-process)
+  (local-set-key "\C-c\C-z" 'opal-oasys-start-process)
   (local-set-key "\C-c\C-l" 'opal-oasys-load-file)
   (local-set-key "\C-c\C-b" 'opal-oasys-show-oasys-buffer))
 
 (defun turn-off-opal-oasys ()
   "Turn off Opal interaction mode with an oasys interpreter within a buffer."
-  (local-unset-key  "\C-c\C-s")
+  (local-unset-key  "\C-c\C-z")
   (local-unset-key  "\C-c\C-l")
   (local-unset-key  "\C-c\C-b"))
 
