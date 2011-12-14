@@ -16,13 +16,13 @@
 (add-to-list 'load-path
    (or (file-name-directory load-file-name) (car load-path)))
 (load "/home/rohloff/work/opal1/ocs/branches/emacs-mode/src/emacs/opal-oasys.el")
+(load "/home/rohloff/work/opal1/ocs/branches/emacs-mode/src/emacs/opal-indent.el")
 
 ;; Mode maps.
 (defvar opal-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map [?\C-c ?\C-z] 'switch-to-oasys)
     (define-key map [?\C-c ?\C-l] 'opal-oasys-load-file)
-
     ;;(define-key map (kbd "C-c C-t") 'inferior-haskell-type)
     ;;(define-key map (kbd "C-c C-i") 'inferior-haskell-info)
     ;;(define-key map (kbd "C-c M-.") 'inferior-haskell-find-definition)
@@ -63,7 +63,7 @@
   "Hook run after entering Opal mode."
   :type 'hook
   :group 'opal
-  :options `(turn-on-opal-indent
+  :options `(turn-on-opal-indentation
 	     turn-on-font-lock))
 
 ;;(add-hook 'opal-mode-hook 'opal-oasys-set-prompt)

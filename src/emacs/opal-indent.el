@@ -14,34 +14,75 @@
 ;;
 ;; None supported.
 
+(require 'syntax nil t)			; Emacs 21 add-on
 
-(defun opal-indent ()
-  ""
+(defgroup opal-indentation nil
+  "Opal indentation."
+  :group 'opal
+  :prefix "opal-indentation-")
+
+(defcustom opal-indentation-layout-offset 2
+  "Extra indentation to add before expressions in a opal layout list."
+  :type 'integer
+  :group 'opal-indentation)
+
+(defcustom opal-indentation-starter-offset 1
+  "Extra indentation after an opening keyword (e.g. let)."
+  :type 'integer
+  :group 'opal-indentation)
+
+(defcustom opal-indentation-left-offset 2
+  "Extra indentation after an indentation to the left (e.g. after do)."
+  :type 'integer
+  :group 'opal-indentation)
+
+(defcustom  opal-indentation-ifte-offset 2
+  "Extra indentation after the keywords `IF' `THEN' or `ELSE'."
+  :type 'integer
+  :group 'opal-indentation)
+
+(defun opal-indent-if ()
+  (forward-line -1)
+  (beginning-of-line)
+  (if (looking-at "^[ \t]*IF")
+      ()
+    ()
+)
+)
+
+(defun opal-current-column ()
+  "Compute current column according to haskell syntax rules,
+  correctly ignoring composition."
+  (save-excursion
+    (let ((start (point))
+          (cc 0))
+      (beginning-of-line)
+      (while (< (point) start)
+        (if (= (char-after) ?\t)
+            (setq cc (* 8 (+ 1 (/ cc 8))))
+          (incf cc))
+        (forward-char))
+      cc)))
+
+(defun opal-indent-start ()
+  (or (bobp) (looking-at "^[ \t]*\\(IMPLEMENTATION\\|SIGNATURE\\|DEF\\|FUN\\|DATA\\|SORT\\|TYPE\\|IMPORT\\)")))
+
+(defun opal-indent-line ()
+  "Indent current line as Opal code"
   (interactive)
-  ())
+  (beginning-of-line)
+  (let (cur-line line-number-at-pos)
+  (if (opal-indent-start) ; Check for block start
+      (indent-line-to 0)
+    (let ((not-indented t) cur-indent)
+      (if (looking-at "^[ \t]*IF") ; Check for IF
+	  ()
+	()
+      )))))
 
+(defun turn-on-opal-indentation ()
+  (set (make-local-variable 'indent-line-function) 'opal-indent-line)
+)
 
-(defvar opal-indent-old)
-
-
-;; The main functions.
-(defun turn-on-opal-indent ()
-  "Set `indent-line-function' to the Opal indentation function.
-TAB will now move the cursor to the next indent point in the previous
-nonblank line.  An indent point is a non-whitespace character following
-whitespace.
-
-Runs `opal-indent-hook'."
-  (set (make-local-variable 'opal-indent-old) indent-line-function)
-  (set (make-local-variable 'indent-line-function) 'opal-indent)
-  (run-hooks 'opal-indent-hook))
-
-(defun turn-off-opal-indent ()
-  "Return `indent-line-function' to original value.
-I.e. the value before `turn-on-opal-indent' was called."
-  (when (local-variable-p 'opal-indent-old)
-    (setq indent-line-function opal-indent-old)
-    (kill-local-variable 'opal-indent-old)))
-
-
-(provide 'haskell-simple-indent)
+(provide 'opal-indentation)
+;;; opal-indentation.el ends here
