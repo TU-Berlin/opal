@@ -160,6 +160,19 @@ current buffer after the last output."
   (setq opal-oasys-send-end (marker-position comint-last-input-end))
   (opal-oasys-wait-for-output))
 
+(defun opal-oasys-send-no-history (&rest string)
+  "Send `opal-oasys-process' the arguments (one or more strings).
+A newline is sent after the strings and they are inserted into the
+current buffer after the last output. The input send to the process
+is not recorded in the input history."
+ ;; (opal-oasys-wait-for-output)          ; wait for prompt
+  (goto-char (point-max))               ; position for this input
+  (apply 'insert string)
+  (let ((comint-input-filter (lambda (str) nil)))
+    (comint-send-input))
+  (setq opal-oasys-send-end (marker-position comint-last-input-end))
+  (opal-oasys-wait-for-output))
+
 (defun opal-oasys-start-load ()
   (switch-to-oasys)
   (opal-oasys-wait-for-output)
@@ -192,10 +205,12 @@ top-level expression to evaluate."
 
     ;; Wait until output arrives and go to the last input.
     ;; load
-    (opal-oasys-send "a " file)
+    (opal-oasys-send-no-history "a " file)
     (opal-oasys-wait-for-output)
     (let ((focus (concat "\"" (car (reverse (split-string file "/"))))))
-    (opal-oasys-send "f " focus))
+    (opal-oasys-send-no-history "f " focus))
+    (opal-oasys-wait-for-output)
+    (opal-oasys-send-no-history "c")
     ;; ;; Error message search starts from last load command.
     (setq opal-oasys-load-end (marker-position comint-last-input-end))
     (setq opal-oasys-error-pos opal-oasys-load-end)
