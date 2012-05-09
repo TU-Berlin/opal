@@ -13,6 +13,7 @@ IMPORT ABORT      COMPLETELY
        Compose    COMPLETELY
        Denotation COMPLETELY
        Dotfix     COMPLETELY
+       Identity   COMPLETELY
        Nat        COMPLETELY
        NatConv    COMPLETELY
        Predicate  COMPLETELY
@@ -21,103 +22,253 @@ IMPORT ABORT      COMPLETELY
        StringConv COMPLETELY
 
 
-DATA scanner == scanner(scanner: input -> input)
+/* ****************************************************************** */
+/* %$Variable convention$                                            */
+/* ****************************************************************** */
+
+/* % In the following implementation, we use the following variable
+   names or decorations thereof:
+@code
+s:       ()->scanner -- Scanners
+st:      input       -- Scanner states
+inp:     string      -- Input of a scanner state
+lex:     string      -- Currently recognized lexeme
+len:     nat         -- Lenght of current lexeme
+tok:     token       -- Current token
+ran:     range       -- Ranges
+pos:     pos         -- Positions
+col,lin: nat         -- Columns and lines
+c:       char        -- Character
+cs:      string      -- String of characters
+act: range**string->token,     -- Token building actions
+     string->token,
+     range**denotation->token,
+     denotation -> token
+@end code
+*/
+
 
 /* ****************************************************************** */
 /* %$Input data type$                                                 */
 /* ****************************************************************** */
 
+/* % The data type @code{input} represents the scanner's state. It is
+   named @code{input} to give better mnemonics in the interface
+   because from outside this is the only relevant issue.
 
-DATA input == scanning(input:string,lexeme:string,length:nat,range:range)
-              committed(input:string,token:token,length:nat,range:range)
-              fail
+   A scanner can be in state @code{failed}, @code{scanning}, or
+   @code{committed}. A failed scanner was not able to recognize any
+   prefix of the input and cannot recover from that state. A scanning
+   scanner is in the process of accumulating characters of the
+   lexeme. A scanner in state committed has just translated the
+   current lexeme into a token. We have the following state
+   transitions:
 
+@verbatim
+scanning ---> failed
+  ^ |
+  | v
+committed
+@verbatim code
+
+   When a scanner changes from @code{committed} to @code{scanning},
+   the token of the @code{committed} state is forgotten. */
+DATA input ==
+   scanning(        -- State `scanning'
+     input:string,  -- Input to be scanned
+     lexeme:string, -- Recognized characters in reverse order
+     length:nat,    -- Number of characters recognized
+     range:range)   -- Range in the input of currently recognized characters
+   committed(       -- State `committed'
+     input:string,  -- Input to be scanned
+     token:token,   -- Current token
+     length:nat,    -- Length of lexeme the token originated from
+     range:range)   -- Range in the input the token originated from
+   failed           -- State `failed'
+
+
+-- ---------------------------------------------------------------------
+-- %$$Functions on the scanner state$
+-- ---------------------------------------------------------------------
+
+/* % The following functions manipulate the scanner state. We usually
+   apply them with the @code{.}-operator from @code{Dotfix}. */
+
+/* % Return the first character of the input. Aborts in all states but
+   @code{scanning} and if all input has been consumed. */
 FUN ft: input -> char
-DEF ft(scanning(inp,lex,len,ran)) == ft(inp)
-DEF ft(st) == ABORT("ft: invalid in input " ++ `(st))
+DEF ft(scanning(c::cs,lex,len,ran)) == c
+DEF ft(st) == ABORT(internalErrMsg("ft",st))
 
+/* % Check if there is still input. Aborts in all but the
+   @code{scanning} state. */
 FUN avail?: input -> bool
 DEF avail?(scanning(inp,lex,len,ran)) == inp ::?
-DEF avail?(st) == ABORT("avail?: invalid in input " ++ `(st))
+DEF avail?(st) == ABORT(internalErrMsg("avail?",st))
 
-FUN add: input ** char -> input
-DEF add(scanning(inp,lex,len,ran),c) == scanning(inp,c::lex,len+1,ran)
-DEF add(st,c) == ABORT("+:=_lexeme: not in input scanning")
+/* % Add a character to the current lexeme. Aborts in all but the
+   @code{scanning} state. */
+FUN add: input -> char -> input
+DEF add(scanning(inp,lex,len,ran))(c) == scanning(inp,c::lex,len+1,ran)
+DEF add(st,c) == ABORT(internalErrMsg("add",st))
 
+/* % Drop the first character of the input. Aborts in all but the
+   @code{scanning} state and if all input has been consumed. */
 FUN drop: input -> input
 DEF drop(scanning(c::cs,lex,len,ran)) == scanning(cs,lex,len,ran)
-DEF drop(st) == ABORT("drop: invalid in input " ++ `(st))
+DEF drop(st) == ABORT(internalErrMsg("drop",st))
 
-
-FUN ` : input -> denotation
-DEF `(scanning(inp,lex,len,ran)) == "scanning(" ++ `(inp) ++ "," ++ `(lex) ++ "," ++ `(len) ++ ")"
-DEF `(committed(inp,tok,len,ran)) == "committed(" ++ `(inp) ++ ",<tok>," ++ `(len) ++ ")"
-DEF `(fail) == "fail"
-
-
-
-DATA range == -(from:pos,to:pos)
-
-DATA pos == ;(line:nat,column:nat)
-
-FUN zero: range
-DEF zero == origin-(1;0)
-
-FUN origin: pos
-DEF origin == (1;1)
-
-FUN advance: input ** char -> input
-DEF advance(scanning(inp,lex,len,ran),c) ==
+/* % Advance the current range by the given character @code{c}. If
+   @code{c} is a newline this is respected accordingly. Aborts in all
+   but the scanning state. */
+FUN advance: input -> char -> input
+DEF advance(scanning(inp,lex,len,ran))(c) ==
     LET ran1 ==
       IF c =  newline THEN from(ran)-(to(ran)++_line)
       IF c |= newline THEN from(ran)-(to(ran)++_col)
       FI
     IN scanning(inp,lex,len,ran1)
+DEF advance(st)(c) == ABORT(internalErrMsg("advance",st))
 
-FUN ++_col: pos -> pos
-DEF (lin;col)++_col == (lin;col+1)
+/* % Show a state. */
+FUN ` : input -> denotation
+DEF `(scanning(inp,lex,len,ran)) ==
+    "State: scanning" +%+(newline)
+    "  Input:  " ++ take(50,inp) +%+(newline)
+    "  Lexeme: " ++ `(lex) ++ "(" ++ `(len) ++ ")" +%+(newline)
+    "  Range:  " ++ `(ran)
+DEF `(committed(inp,tok,len,ran)) == "committed(" ++ `(inp) ++ ",<tok>," ++ `(len) ++ ")"
+    "State: scanning" +%+(newline)
+    "  Input: " ++ take(50,inp) +%+(newline)
+    "  Token: <tok> " ++ "(" ++ `(len) ++ ")" +%+(newline)
+    "  Range: " ++ `(ran)
+DEF `(failed) == "State: failed"
 
-FUN ++_line: pos -> pos
-DEF (lin;col)++_line == (lin+1;0)
 
-FUN --_col: pos -> pos
-DEF (lin;col)--_col ==
-    IF col = 0 THEN ABORT("--_col: column is 0")
-    IF col |= 0 THEN (lin;col-1)
-    FI
+/* ****************************************************************** */
+/* %$Scanner data type$                                               */
+/* ****************************************************************** */
 
+/* % A scanner transforms from input to input, i. e. from scanning
+state to scanning state.*/
+DATA scanner == scanner(scanner: input -> input)
+
+
+/* ****************************************************************** */
+/* %$Positions and ranges$                                            */
+/* ****************************************************************** */
+
+/* % A position contains of a line and column number starting at
+   @code{1}. A range consists of the positions of the first and last
+   character of the input region. */
+DATA pos == ;(line:nat,column:nat)
+DATA range == -(from:pos,to:pos)
+
+/* % The position of the first character in the input. */
+FUN origin: pos
+DEF origin == (1;1)
+
+/* % The range containing no characters at the beginning of the
+   input. */
+FUN zero: range
+DEF zero == origin-(1;0)
+
+/* % Advance column or line of a position. When advancing a line,
+   column is reset to zero. */
+FUN ++_col ++_line: pos -> pos
+DEF (lin;col)++_col == (lin; col+1)
+DEF (lin;col)++_line == (lin+1; 0)
+
+/* % Reset a range @code{ran} to the empty range starting directly
+   after @code{to(ran)}. For example: @code{reset((3;5)-(4;10))}
+   yields @code{(4;11)-(4;10)}. */
+FUN reset: range -> range
+DEF reset(from-to) == (to++_col)-to
+
+
+/* ****************************************************************** */
+/* %$Basic scanners$                                                  */
+/* ****************************************************************** */
+
+/* % The most basic scanner that recognizes the given character
+   @code{c}. It fails if the first character of the input is not
+   @code{c}, or if the input is empty. If in state @code{committed},
+   the token is dropped and scanning restarts.
+
+   If the first character is @code{c} then @code{c} is added to the
+   lexeme, removed from the input and the current recognized range is
+   advanced. */
 DEF char(c) == \\ .
     scanner(\\st.
       IF st scanning? THEN
         IF st avail? THEN
           IF st.ft = c THEN
-            LET st1 == st :+=_lexeme c
+            LET st1 == st.add(c)
                 st2 == st1.drop
-                st3 == advance(st2,c)
+                st3 == st2.advance(c)
             IN st3
-          IF st.ft |= c THEN fail
+          IF st.ft |= c THEN failed
           FI
-        IF ~(st avail?) THEN fail
+        IF ~(st avail?) THEN failed
         FI
       IF st committed? THEN
         LET ran1 == reset(st.range)
-            st1 == scanning(st.input,<>,0,ran1)
+            st1  == scanning(st.input,<>,0,ran1)
         IN scanner(char(c)())(st1)
-      IF st fail? THEN st
+      IF st failed? THEN st
       FI
     )
 
+/* % Perform the given token building action and go to state
+   @code{committed}. The function aborts if the current state is
+   @code{commited}, this is a user error. If teh current state is
+   @code{failed}, it aborts with an internal error because this should
+   not be possible. */
+DEF action(act:string**range->token) == \\ .
+    scanner(\\st.
+      IF st scanning? THEN
+        committed(st.input,act(st.range,revert(st.lexeme)),st.length,st.range)
+      IF st committed? THEN
+        LET msg == "You probably called `action' twice without any intervening scanning," +%+(newline)
+                   "like in `action(act1);action(act2)'."
+        IN ABORT(userErrMsg("action",msg))
+      IF st failed? THEN
+        ABORT(internalErrMsg("action",st))
+      FI
+    )
+
+/* % The other versions of @code{action}. */
+DEF action(act:string->token) == action(\\ran,lex. act(lex))
+DEF action(act:range**denotation->token) == action(\\ran,lex. act(ran,lex!))
+DEF action(act:denotation->token) == action(\\ran,lex. act(lex))
+
+/* % Drop the current lexeme or token and go to state @code{scanning}
+   with an empty lexeme. */
+DEF drop == \\ .
+    scanner(\\st.
+      IF st.(scanning? or committed?) THEN scanning(st.input,<>,0,reset(st.range))
+      IF st failed?                   THEN st
+      FI
+    )
+
+/* % The identity scanner that does nothing. */
+DEF success == \\ . scanner(id)
+
+
+-- ---------------------------------------------------------------------
+-- %$$Combining scanners$
+-- ---------------------------------------------------------------------
+
+/* % Sequential composition. */
 DEF s1 ; s2 == \\ .
     scanner(\\st.
       LET st1 == scanner(s1())(st)
       IN IF st1.(scanning? or committed?) THEN
            scanner(s2())(st1)
-         IF st1 fail? THEN st1
+         IF st1 failed? THEN st1
          FI
     )
 
-FUN reset: range -> range
-DEF reset(from-to) == (to++_col)-to
 
 DEF next(s)(st) ==
     IF input(st) <>? THEN (eof,st)
@@ -125,36 +276,23 @@ DEF next(s)(st) ==
       LET st1 == scanner(s())(st)
       IN IF st1 committed? THEN (st1.token,scanning(st1.input,<>,0,reset(st1.range)))
          IF st1 scanning?  THEN next(s)(st1)
--- (ABORT("next: missing action in input " ++ `(st1)),fail)
-         IF st1 fail?      THEN (ABORT("next: scanning failed"),fail)
+-- (ABORT("next: missing action in input " ++ `(st1)),failed)
+         IF st1 failed?      THEN (ABORT("next: scanning failed"),failed)
          FI
     FI
 
-DEF action(act) == \\ .
-    scanner(\\st.
-      IF st committed? THEN ABORT("action: already performed an action in input " ++ `(st))
-      IF st scanning?  THEN committed(st.input,act(st.range,st.lexeme.revert),st.length,st.range)
-      IF st fail?      THEN ABORT("action: scanning failed")
-      FI
-    )
 
-DEF drop == \\ .
-    scanner(\\st.
-      IF st.(scanning? or committed?) THEN scanning(st.input,<>,0,reset(st.range))
-      IF st fail?                     THEN st
-      FI
-    )
 
 DEF init(inp) == scanning(inp,<>,0,zero)
 
 DEF s1 | s2 == \\ .
     scanner(\\st.
       LET st1 == scanner(s1())(st)
-      IN IF st1 fail? THEN
+      IN IF st1 failed? THEN
            scanner(s2())(st)
          IF st1.(scanning? or committed?) THEN
            LET st2 == scanner(s2())(st)
-           IN IF st2 fail? THEN
+           IN IF st2 failed? THEN
                 st1
               IF st2.(scanning? or committed?) THEN
                 longest(st1,st2)
@@ -174,7 +312,7 @@ DEF tokenize(next,st) ==
        FI
 
 
-DEF success == \\ . scanner(\\st.st)
+
 
 DEF s* == s; ((s*) | success)
 
@@ -184,7 +322,7 @@ DEF s+ == s;(s*)
 FUN # : input -> nat
 DEF #(scanning(inp,lex,len,ran)) == len
 DEF #(committed(inp,tok,len,ran)) == len
-DEF #(fail) == ABORT("#: a failed input has no length")
+DEF #(failed) == ABORT("#: a failed input has no length")
 
 -- If inputs have same length, left is preferred.
 FUN longest: input ** input -> input
@@ -192,6 +330,22 @@ DEF longest(st1,st2) ==
     IF #(st1) <  #(st2) THEN st2
     IF #(st1) >= #(st2) THEN st1
     FI
+
+
+
+FUN internalErrMsg: denotation ** input -> denotation
+DEF internalErrMsg(fn,st) ==
+    "An internal error occured in ScannerCombinator." +/+(newline)
+    "This is a bug. Please send a bug report to" +/+(newline)
+    "opal-users@projects.uebb.tu-berlin.de including the" +/+(newline)
+    "following output." +/+(`(newline) ++ `(newline))
+    fn ++ ": invalid call in state" +/+(newline)
+    `(st)
+
+FUN userErrMsg: denotation ** denotation -> denotation
+DEF userErrMsg(fn,msg) ==
+    "An error occured in `" ++ fn ++ "'. The reason might be the following:" +%+(newline)
+    msg
 
 
 -- %@ignore
