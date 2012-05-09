@@ -1,0 +1,202 @@
+/* %
+   Combinator library to build lexical scanners.
+*/
+IMPLEMENTATION ScannerCombinator
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/doc/LICENSE or
+      http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
+*/
+-- % $Date: 2011-01-04T14:44:45.667619Z $ ($Revision: 8623 $)
+
+IMPORT ABORT      COMPLETELY
+       Char       COMPLETELY
+       Compose    COMPLETELY
+       Denotation COMPLETELY
+       Dotfix     COMPLETELY
+       Nat        COMPLETELY
+       NatConv    COMPLETELY
+       Predicate  COMPLETELY
+       Seq        COMPLETELY
+       String     COMPLETELY
+       StringConv COMPLETELY
+
+
+DATA scanner == scanner(scanner: input -> input)
+
+/* ****************************************************************** */
+/* %$Input data type$                                                 */
+/* ****************************************************************** */
+
+
+DATA input == scanning(input:string,lexeme:string,length:nat,range:range)
+              committed(input:string,token:token,length:nat,range:range)
+              fail
+
+FUN ft: input -> char
+DEF ft(scanning(inp,lex,len,ran)) == ft(inp)
+DEF ft(st) == ABORT("ft: invalid in input " ++ `(st))
+
+FUN avail?: input -> bool
+DEF avail?(scanning(inp,lex,len,ran)) == inp ::?
+DEF avail?(st) == ABORT("avail?: invalid in input " ++ `(st))
+
+FUN add: input ** char -> input
+DEF add(scanning(inp,lex,len,ran),c) == scanning(inp,c::lex,len+1,ran)
+DEF add(st,c) == ABORT("+:=_lexeme: not in input scanning")
+
+FUN drop: input -> input
+DEF drop(scanning(c::cs,lex,len,ran)) == scanning(cs,lex,len,ran)
+DEF drop(st) == ABORT("drop: invalid in input " ++ `(st))
+
+
+FUN ` : input -> denotation
+DEF `(scanning(inp,lex,len,ran)) == "scanning(" ++ `(inp) ++ "," ++ `(lex) ++ "," ++ `(len) ++ ")"
+DEF `(committed(inp,tok,len,ran)) == "committed(" ++ `(inp) ++ ",<tok>," ++ `(len) ++ ")"
+DEF `(fail) == "fail"
+
+
+
+DATA range == -(from:pos,to:pos)
+
+DATA pos == ;(line:nat,column:nat)
+
+FUN zero: range
+DEF zero == origin-(1;0)
+
+FUN origin: pos
+DEF origin == (1;1)
+
+FUN advance: input ** char -> input
+DEF advance(scanning(inp,lex,len,ran),c) ==
+    LET ran1 ==
+      IF c =  newline THEN from(ran)-(to(ran)++_line)
+      IF c |= newline THEN from(ran)-(to(ran)++_col)
+      FI
+    IN scanning(inp,lex,len,ran1)
+
+FUN ++_col: pos -> pos
+DEF (lin;col)++_col == (lin;col+1)
+
+FUN ++_line: pos -> pos
+DEF (lin;col)++_line == (lin+1;0)
+
+FUN --_col: pos -> pos
+DEF (lin;col)--_col ==
+    IF col = 0 THEN ABORT("--_col: column is 0")
+    IF col |= 0 THEN (lin;col-1)
+    FI
+
+DEF char(c) == \\ .
+    scanner(\\st.
+      IF st scanning? THEN
+        IF st avail? THEN
+          IF st.ft = c THEN
+            LET st1 == st :+=_lexeme c
+                st2 == st1.drop
+                st3 == advance(st2,c)
+            IN st3
+          IF st.ft |= c THEN fail
+          FI
+        IF ~(st avail?) THEN fail
+        FI
+      IF st committed? THEN
+        LET ran1 == reset(st.range)
+            st1 == scanning(st.input,<>,0,ran1)
+        IN scanner(char(c)())(st1)
+      IF st fail? THEN st
+      FI
+    )
+
+DEF s1 ; s2 == \\ .
+    scanner(\\st.
+      LET st1 == scanner(s1())(st)
+      IN IF st1.(scanning? or committed?) THEN
+           scanner(s2())(st1)
+         IF st1 fail? THEN st1
+         FI
+    )
+
+FUN reset: range -> range
+DEF reset(from-to) == (to++_col)-to
+
+DEF next(s)(st) ==
+    IF input(st) <>? THEN (eof,st)
+    IF input(st) ::? THEN
+      LET st1 == scanner(s())(st)
+      IN IF st1 committed? THEN (st1.token,scanning(st1.input,<>,0,reset(st1.range)))
+         IF st1 scanning?  THEN next(s)(st1)
+-- (ABORT("next: missing action in input " ++ `(st1)),fail)
+         IF st1 fail?      THEN (ABORT("next: scanning failed"),fail)
+         FI
+    FI
+
+DEF action(act) == \\ .
+    scanner(\\st.
+      IF st committed? THEN ABORT("action: already performed an action in input " ++ `(st))
+      IF st scanning?  THEN committed(st.input,act(st.range,st.lexeme.revert),st.length,st.range)
+      IF st fail?      THEN ABORT("action: scanning failed")
+      FI
+    )
+
+DEF drop == \\ .
+    scanner(\\st.
+      IF st.(scanning? or committed?) THEN scanning(st.input,<>,0,reset(st.range))
+      IF st fail?                     THEN st
+      FI
+    )
+
+DEF init(inp) == scanning(inp,<>,0,zero)
+
+DEF s1 | s2 == \\ .
+    scanner(\\st.
+      LET st1 == scanner(s1())(st)
+      IN IF st1 fail? THEN
+           scanner(s2())(st)
+         IF st1.(scanning? or committed?) THEN
+           LET st2 == scanner(s2())(st)
+           IN IF st2 fail? THEN
+                st1
+              IF st2.(scanning? or committed?) THEN
+                longest(st1,st2)
+              FI
+         FI
+    )
+
+DEF tokenize(s)(inp) ==
+    LET st == init(inp)
+    IN tokenize(next(s),st)
+
+FUN tokenize: (input -> token ** input) ** input -> seq[token]
+DEF tokenize(next,st) ==
+    LET (tok,st1) == next(st)
+    IN IF tok eof?    THEN %(tok)
+       IF ~(tok eof?) THEN tok::tokenize(next,st1)
+       FI
+
+
+DEF success == \\ . scanner(\\st.st)
+
+DEF s* == s; ((s*) | success)
+
+DEF s+ == s;(s*)
+
+
+FUN # : input -> nat
+DEF #(scanning(inp,lex,len,ran)) == len
+DEF #(committed(inp,tok,len,ran)) == len
+DEF #(fail) == ABORT("#: a failed input has no length")
+
+-- If inputs have same length, left is preferred.
+FUN longest: input ** input -> input
+DEF longest(st1,st2) ==
+    IF #(st1) <  #(st2) THEN st2
+    IF #(st1) >= #(st2) THEN st1
+    FI
+
+
+-- %@ignore
+-- Local variables:
+-- coding: latin-1-unix
+-- mode: opal
+-- End:
+-- %@end ignore
