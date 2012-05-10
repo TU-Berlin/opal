@@ -13,6 +13,7 @@ IMPORT ABORT      COMPLETELY
        Compose    COMPLETELY
        Denotation COMPLETELY
        Dotfix     COMPLETELY
+       Fmt        COMPLETELY
        Identity   COMPLETELY
        Nat        COMPLETELY
        NatConv    COMPLETELY
@@ -118,6 +119,14 @@ FUN drop: input -> input
 DEF drop(scanning(c::cs,lex,len,ran)) == scanning(cs,lex,len,ran)
 DEF drop(st) == ABORT(internalErrMsg("drop",st))
 
+/* % Return length of lexeme of state. This function is practically
+   identical to selector @code{length} but produces a better error
+   message if called on a @code{failed} state. */
+FUN len: input -> nat
+DEF len(scanning(inp,lex,len,ran)) == len
+DEF len(committed(inp,tok,len,ran)) == len
+DEF len(st) == ABORT(internalErrMsg("len",st))
+
 /* % Advance the current range by the given character @code{c}. If
    @code{c} is a newline this is respected accordingly. Aborts in all
    but the scanning state. */
@@ -130,17 +139,29 @@ DEF advance(scanning(inp,lex,len,ran))(c) ==
     IN scanning(inp,lex,len,ran1)
 DEF advance(st)(c) == ABORT(internalErrMsg("advance",st))
 
-/* % Show a state. */
-FUN ` : input -> denotation
-DEF `(scanning(inp,lex,len,ran)) ==
-    "State: scanning" +%+(newline)
-    "  Input:  " ++ take(50,inp) +%+(newline)
-    "  Lexeme: " ++ `(lex) ++ "(" ++ `(len) ++ ")" +%+(newline)
+/* % Return the state with the longer lexeme, prefers the left
+   argument in case of equal length */
+FUN longest: input ** input -> input
+DEF longest(st1,st2) ==
+    IF st1.len <  st2.len THEN st2
+    IF st1.len >= st2.len THEN st1
+    FI
+
+/* % Format a state. */
+FUN fmtInput: input -> denotation
+DEF fmtInput(scanning(inp,lex,len,ran)) ==
+    !"State: scanning" .. |<<- ..
+    (<_> x 2 |.|
+      !"Input:  " .. !!(take(50,inp)) .. |<<- ..
+      !"Lexeme: " .. !!(lex) .. !"(" ++ `(len) ++ ")" +%+(newline)
+    )
+
+    
     "  Range:  " ++ `(ran)
 DEF `(committed(inp,tok,len,ran)) == "committed(" ++ `(inp) ++ ",<tok>," ++ `(len) ++ ")"
     "State: scanning" +%+(newline)
-    "  Input: " ++ take(50,inp) +%+(newline)
-    "  Token: <tok> " ++ "(" ++ `(len) ++ ")" +%+(newline)
+    "  Input: " ++ take(50,inp) <_|
+    "  Token: <tok> " ++ "(" ++ `(len) ++ ")" <_|
     "  Range: " ++ `(ran)
 DEF `(failed) == "State: failed"
 
@@ -150,8 +171,53 @@ DEF `(failed) == "State: failed"
 /* ****************************************************************** */
 
 /* % A scanner transforms from input to input, i. e. from scanning
-state to scanning state.*/
+   state to scanning state.*/
 DATA scanner == scanner(scanner: input -> input)
+
+
+/* ****************************************************************** */
+/* %$Setting up and running scanners$                                 */
+/* ****************************************************************** */
+
+/* % Set up an initial scanner state. */
+DEF init(inp:string) == scanning(inp,<>,0,zero)
+DEF init(inp:denotation) == init(`(inp))
+
+/* % Drive the scanner into the @code{committed} or @code{failed}
+   state as long as input is available. If the input has been consumed
+   completely, an @code{eof} token is returned. */
+DEF next(s)(st) ==
+    IF input(st) <>? THEN (eof,st)
+    IF input(st) ::? THEN
+      LET st1 == scanner(s())(st)
+      IN IF st1 committed? THEN (st1.token,scanning(st1.input,<>,0,reset(st1.range)))
+         IF st1 scanning?  THEN next(s)(st1)
+         IF st1 failed?    THEN
+           LET msg == "The scanner failed. This is most likely to invalid" <_|
+                      "input. You should include a `catch-all' scanner" <_|
+                      "that produces an `invalid' token or similar."
+           IN (ABORT(userErrMsg("next",msg)),st1)
+         FI
+    FI
+
+/* % Scan the entire input and return a sequence of tokens terminated
+   by @code{eof}. */
+DEF tokenize(s)(st:input) ==
+    tokenize(next(s),st)
+DEF tokenize(s)(inp:string) ==
+    LET st == init(inp)
+    IN tokenize(next(s),st)
+DEF tokenize(s)(inp:denotation) ==
+    LET st == init(inp)
+    IN tokenize(next(s),st)
+
+/* % This function drives the scanner until it return @code{eof}. */
+FUN tokenize: (input -> token ** input) ** input -> seq[token]
+DEF tokenize(next,st) ==
+    LET (tok,st1) == next(st)
+    IN IF tok eof?    THEN %(tok)
+       IF ~(tok eof?) THEN tok::tokenize(next,st1)
+       FI
 
 
 /* ****************************************************************** */
@@ -229,7 +295,8 @@ DEF action(act:string**range->token) == \\ .
       IF st scanning? THEN
         committed(st.input,act(st.range,revert(st.lexeme)),st.length,st.range)
       IF st committed? THEN
-        LET msg == "You probably called `action' twice without any intervening scanning," +%+(newline)
+        LET msg == "You probably called `action' twice without any " ++
+                   "intervening scanning," <_|
                    "like in `action(act1);action(act2)'."
         IN ABORT(userErrMsg("action",msg))
       IF st failed? THEN
@@ -259,7 +326,8 @@ DEF success == \\ . scanner(id)
 -- %$$Combining scanners$
 -- ---------------------------------------------------------------------
 
-/* % Sequential composition. */
+/* % Sequential composition: only run the second scanner if the first
+   did not fail. */
 DEF s1 ; s2 == \\ .
     scanner(\\st.
       LET st1 == scanner(s1())(st)
@@ -269,22 +337,7 @@ DEF s1 ; s2 == \\ .
          FI
     )
 
-
-DEF next(s)(st) ==
-    IF input(st) <>? THEN (eof,st)
-    IF input(st) ::? THEN
-      LET st1 == scanner(s())(st)
-      IN IF st1 committed? THEN (st1.token,scanning(st1.input,<>,0,reset(st1.range)))
-         IF st1 scanning?  THEN next(s)(st1)
--- (ABORT("next: missing action in input " ++ `(st1)),failed)
-         IF st1 failed?      THEN (ABORT("next: scanning failed"),failed)
-         FI
-    FI
-
-
-
-DEF init(inp) == scanning(inp,<>,0,zero)
-
+/* % Parallel composition with longest match rule. */
 DEF s1 | s2 == \\ .
     scanner(\\st.
       LET st1 == scanner(s1())(st)
@@ -300,52 +353,56 @@ DEF s1 | s2 == \\ .
          FI
     )
 
-DEF tokenize(s)(inp) ==
-    LET st == init(inp)
-    IN tokenize(next(s),st)
-
-FUN tokenize: (input -> token ** input) ** input -> seq[token]
-DEF tokenize(next,st) ==
-    LET (tok,st1) == next(st)
-    IN IF tok eof?    THEN %(tok)
-       IF ~(tok eof?) THEN tok::tokenize(next,st1)
-       FI
-
+/* % Alternative composition with first fit rule from left to
+   right. */
+DEF s1 <| s2 == \\ .
+    scanner(\\st.
+      LET st1 == scanner(s1())(s1)
+      IN IF st1 failed?                  THEN scanner(s2())(st)
+         IF st1.(scanning? or comitted?) THEN st1
+         FI
+    )
 
 
+/* ****************************************************************** */
+/* %$Complex scanners$                                                */
+/* ****************************************************************** */
 
+/* % Zero or more repetitions. */
 DEF s* == s; ((s*) | success)
 
+/* % One or more repetitions. */
 DEF s+ == s;(s*)
 
 
-FUN # : input -> nat
-DEF #(scanning(inp,lex,len,ran)) == len
-DEF #(committed(inp,tok,len,ran)) == len
-DEF #(failed) == ABORT("#: a failed input has no length")
+/* ****************************************************************** */
+/* %$Error messages$                                                  */
+/* ****************************************************************** */
 
--- If inputs have same length, left is preferred.
-FUN longest: input ** input -> input
-DEF longest(st1,st2) ==
-    IF #(st1) <  #(st2) THEN st2
-    IF #(st1) >= #(st2) THEN st1
-    FI
-
-
-
+/* % @code{internalErrMsg(fn,st)} produces an error message containg
+   function name @code{fn} and a dump of the state @code{st}. It is
+   called on internal errors that only appear in case of a bug in the
+   library. */
 FUN internalErrMsg: denotation ** input -> denotation
 DEF internalErrMsg(fn,st) ==
-    "An internal error occured in ScannerCombinator." +/+(newline)
-    "This is a bug. Please send a bug report to" +/+(newline)
-    "opal-users@projects.uebb.tu-berlin.de including the" +/+(newline)
-    "following output." +/+(`(newline) ++ `(newline))
-    fn ++ ": invalid call in state" +/+(newline)
-    `(st)
+    !"An internal error occured in ScannerCombinator." .. |<<- ..
+    !"This is a bug. Please send a bug report to" .. |<<- ..
+    !"opal-users@projects.uebb.tu-berlin.de including the" .. |<<- ..
+    !"following output." .. |<<- ..
+    !(fn) .. !": invalid call in state" .. |<<- ..
+    fmtInput(st)
 
+/* % @code{userErrMsg(fn,msg)} produces an error message containing
+   the function name @code{fn} and message @code{msg}. It is called if
+   the client code performs something invalid. */
 FUN userErrMsg: denotation ** denotation -> denotation
 DEF userErrMsg(fn,msg) ==
-    "An error occured in `" ++ fn ++ "'. The reason might be the following:" +%+(newline)
+    "An error occured in " ++ fn ++ " of ScannerCombinator." ++
+    "The reason might be the following:" <_|
     msg
+
+FUN <_| : denotation ** denotation -> denotation
+DEF <_| == +%+(newline)
 
 
 -- %@ignore
