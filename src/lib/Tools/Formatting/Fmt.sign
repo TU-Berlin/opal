@@ -1,10 +1,5 @@
 /* %
-The structure @code{Fmt} provides a mechanism for generic textual
-formatting resp. ``pretty printing''. See also @code{FmtDebug} 
-for functions in the style of structure @code{DEBUG} working on 
-formats (@ref{@Overview{FmtDebug}}),  @code{FmtSeq} for formatting
-sequences (@ref{@Overview{FmtSeq}}), @code{FmtOption} for formatting
-option types and @code{FmtBasicTypes} for formatting basic types.
+   Mechanism for generic textual formatting resp. ``pretty printing''
 */
 SIGNATURE Fmt
 /* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
@@ -13,113 +8,196 @@ SIGNATURE Fmt
 */
 -- % $Date$ ($Revision$)
 
-
-IMPORT
-  Void                ONLY void
-  Nat                 ONLY nat
-  String              ONLY string
-  Seq[denotation]     ONLY seq
-  Seq[string]         ONLY seq
-  Seq[fmt]            ONLY seq
+IMPORT Void            ONLY void
+       Nat             ONLY nat
+       String          ONLY string
+       Seq[denotation] ONLY seq
+       Seq[fmt]        ONLY seq
+       Seq[string]     ONLY seq
 
 
-/* %
-The sort of possible formats is opaque:
-*/
+/* %-**************************************************************** */
+/* %$Formatting primitives$                                           */
+/* %-**************************************************************** */
+
+/* % The sort of possible formats is opaque: */
 SORT fmt
 
-/* %
-These functions provide a more graphical and functional interface to the
-pretty printer.
-
-White space is not output when the last literal ended with space, when the
-last action output white space or at the beginning of a new line. It is
-mapped to a single line break when the right margin is reached.
-
-There are two general kinds of literals supported. The first is considered
-to be atomic and can not be broken down under any circumstances. The second
-is considered to consist of tokens and white space, where the white space
-seperates the tokens but is not treated literally, and the whole literal
-may be broken down to tokens at any point.
-
-For glued blocks, the first parameter specifies the indentation used when
-the block must be broken down to pieces. The unbreakable block needs no
-indentation, for obvious reasons.
-*/
-FUN
-  <>     :                    fmt  -- empty output
-  <_>    :                    fmt  -- white space (usually one blank)
-  <__>   : nat             -> fmt  -- white space (usually N blanks)
-  <~>    :                    fmt  -- single literal blank
-  |<<-   :                    fmt  -- force new line
-  ->|    :                    fmt  -- tabulator (every 8 columns)
-  ->!    : nat             -> fmt  -- proceed to specified column (1 .. margin)
-  x      : fmt ** nat      -> fmt  -- n-fold repetition
-  !      : denotation      -> fmt  -- denotation, unbreakable
-  !-     : denotation      -> fmt  -- denotation, \t and \n recognized
-  !_     : denotation      -> fmt  -- tokenized denotation, breakable
-  !!     : string          -> fmt  -- string, unbreakable
-  !!-    : string          -> fmt  -- string, \t and \n recognized
-  !!_    : string          -> fmt  -- tokenized string, breakable
-  ..     : fmt ** fmt      -> fmt  -- concatenation
-  ..*    : seq[fmt]        -> fmt  -- n-fold concatenation
-  ..|..* : fmt ** seq[fmt] -> fmt  -- same with interleaving output
-  >.<    : fmt ** fmt      -> fmt  -- glued block (weak)
-  >>.<   : fmt ** fmt      -> fmt  -- glued block (moderate)
-  >>>.<  : fmt ** fmt      -> fmt  -- glued block (strong)
-  >>>>.< : fmt             -> fmt  -- glued block (unbreakable)
-  |.|    : fmt ** fmt      -> fmt  -- add indentation for block
-  |!     : fmt             -> fmt  -- indent block to current column
+/* % The library provides to interfaces to the pretty printer: a
+   functional and a more imperative one. Functions of both interfaces
+   may be used at any time and even mixed up. However, you are
+   encouraged to stick to one variant. */
 
 
-/* %
-These functions provide a more descriptive and imperative interface to the
-pretty printer.
+-- %--------------------------------------------------------------------
+-- %$$Functional interface$
+-- %--------------------------------------------------------------------
 
-Functions of both interfaces may be used at any time and even mixed up.
-However, you are encouraged to stick to one variant.
+/* % These functions provide a more graphical and functional interface
+   to the pretty printer.
 
-COMPATIBILITY NOTE: The behaviour of spc(N) differs slightly from the
-previous implementation. If the previously output character was a blank
-then no blanks are output. In practice, such cases should rarely occur
-and are easily corrected.
-*/
-FUN
-  none   :                    fmt  -- empty output
-  spc    : nat             -> fmt  -- white space (usually N blanks)
-  brk    :                    fmt  -- force new line
-  lit    : denotation      -> fmt  -- denotation, \t and \n recognized
-  lit    : string          -> fmt  -- string, \t and \n recognized
-  ;      : fmt ** fmt      -> fmt  -- concatenation
-  beg    : nat             -> fmt  -- begin strong glued block,set break indent
-  end    :                    fmt  -- end glued block
-  block  : nat ** fmt      -> fmt  -- glued block, set indentation on break
-  inc    : nat             -> fmt  -- increase left margin
-  dec    : nat             -> fmt  -- decrease left margin
+   White space is not output when the last literal ended with space,
+   when the last action output white space or at the beginning of a
+   new line. It is mapped to a single line break when the right margin
+   is reached.
 
+   There are two general kinds of literals supported. The first is
+   considered to be atomic and can not be broken down under any
+   circumstances. The second is considered to consist of tokens and
+   white space, where the white space seperates the tokens but is not
+   treated literally, and the whole literal may be broken down to
+   tokens at any point.
 
-/* %
-These functions generate output from a given format.
-
-The full interface allows for specification of the initial indentation
-(arbitrary format or left margin (1 .. margin)), the right margin
-(left_margin .. max_columns) and the format to be output. A sequence of
-strings is returned, each representing one physical line and not
-terminated by a newline character.
-
-A second pair of functions provides the same functionality, but returns a
-single string where a newline character is appended to every line including
-the last.
-
-For convenience, two more functions are provided, which assume columns 1 to
-70 and return a single string or denotation.
-*/
-FUN
-  pretty : fmt ** nat ** fmt -> seq[string]
-  pretty : nat ** nat ** fmt -> seq[string]
-  pretty : fmt ** nat ** fmt -> string
-  pretty : nat ** nat ** fmt -> string
-  pretty : fmt               -> string
-  pretty : fmt               -> denotation
+   For glued blocks, the first parameter specifies the indentation
+   used when the block must be broken down to pieces. The unbreakable
+   block needs no indentation, for obvious reasons. */
+FUN <>     :                    fmt -- Empty output
+FUN <_>    :                    fmt -- White space (usually one blank)
+FUN <__>   : nat             -> fmt -- White space (usually N blanks)
+FUN <~>    :                    fmt -- Single literal blank
+FUN |<<-   :                    fmt -- Force new line
+FUN ->|    :                    fmt -- Tabulator (every 8 columns)
+FUN ->!    : nat             -> fmt -- Proceed to specified column (1 .. margin)
+FUN x      : fmt ** nat      -> fmt -- N-fold repetition
+FUN !      : denotation      -> fmt -- denotation, unbreakable
+FUN !-     : denotation      -> fmt -- denotation, \t and \n recognized
+FUN !_     : denotation      -> fmt -- Tokenized denotation, breakable
+FUN !!     : string          -> fmt -- string, unbreakable
+FUN !!-    : string          -> fmt -- string, \t and \n recognized
+FUN !!_    : string          -> fmt -- Tokenized string, breakable
+FUN ..     : fmt ** fmt      -> fmt -- Concatenation
+FUN ..*    : seq[fmt]        -> fmt -- N-fold concatenation
+FUN ..|..* : fmt ** seq[fmt] -> fmt -- Same with interleaving output
+FUN >.<    : fmt ** fmt      -> fmt -- Glued block (weak)
+FUN >>.<   : fmt ** fmt      -> fmt -- Glued block (moderate)
+FUN >>>.<  : fmt ** fmt      -> fmt -- Glued block (strong)
+FUN >>>>.< : fmt             -> fmt -- Glued block (unbreakable)
+FUN |.|    : fmt ** fmt      -> fmt -- Add indentation for block
+FUN |!     : fmt             -> fmt -- Indent block to current column
 
 
+-- %--------------------------------------------------------------------
+-- %$$Imperative interface$
+-- %--------------------------------------------------------------------
+
+/* % These functions provide a more descriptive and imperative
+   interface to the pretty printer. */
+FUN none  :               fmt -- Empty output
+FUN spc   : nat        -> fmt -- White space (usually N blanks)
+FUN brk   :               fmt -- Force new line
+FUN lit   : denotation -> fmt -- denotation, \t and \n recognized
+FUN lit   : string     -> fmt -- string, \t and \n recognized
+FUN ;     : fmt ** fmt -> fmt -- Concatenation
+FUN beg   : nat        -> fmt -- Begin strong glued block,set break indent
+FUN end   :               fmt -- End glued block
+FUN block : nat ** fmt -> fmt -- Glued block, set indentation on break
+FUN inc   : nat        -> fmt -- Increase left margin
+FUN dec   : nat        -> fmt -- Decrease left margin
+
+
+/* %-**************************************************************** */
+/* %$Predefined formats$                                              */
+/* %-**************************************************************** */
+
+/* % Punctuation characters. */
+FUN dot                   -- .
+    comma                 -- ,
+    colon                 -- :
+    exclamationmark       -- !
+    questionmark          -- ?
+    semicolon             -- ;
+    backtick              -- `
+    apostrophe            -- '
+    quote           : fmt -- Upright double quote
+
+/* % Other symbols. */
+FUN at               -- @
+    hash             -- #
+    dollar           -- $
+    percent          -- Percent sign
+    caret            -- ^
+    ampersand        -- &
+    tilde            -- ~
+    asterisk         -- *
+    minus            -- -
+    plus             -- +
+    slash            -- /
+    equal            -- =
+    backslash        -- \
+    pipe             -- |
+    underscore : fmt -- _
+
+/* % Grouping characters. */
+FUN lparen   rparen   : fmt -- (, )
+FUN lbracket rbracket : fmt -- [, ]
+FUN lbrace   rbrace   : fmt -- {, }
+FUN langle   rangle   : fmt -- <, >
+
+/* % These functions enclose their argument in the corresponding
+   grouping characters. */
+FUN parens   : fmt -> fmt
+FUN brackets : fmt -> fmt
+FUN braces   : fmt -> fmt
+FUN angles   : fmt -> fmt
+
+/* % Quoting: these functions enclose their arguments with the
+   corresponding quotes. */
+FUN dupquote : fmt -> fmt -- "..."   (double upright quote)
+FUN supquote : fmt -> fmt -- '...'   (single upright quote)
+FUN dslquote : fmt -> fmt -- ``...'' (double slanted quote)
+FUN sslquote : fmt -> fmt -- `...'   (single slanted quote)
+
+
+/* %-**************************************************************** */
+/* %$Generating output from a format$                                 */
+/* %-**************************************************************** */
+
+/* % These functions generate output, i. e. a string or denotation,
+   from a given format. */
+
+/* % The full interface allows for specification of the initial
+   indentation (arbitrary format or left margin (1 .. left_margin)),
+   the right margin (left_margin .. max_columns) and the format to be
+   output. max_columns hardwired to 250. A sequence of strings is
+   returned, each representing one physical line and not terminated by
+   a newline character. */
+FUN pretty : fmt ** nat ** fmt -> seq[string]
+FUN pretty : nat ** nat ** fmt -> seq[string]
+
+/* % A second pair of functions provides the same functionality, but
+   returns a single string where a newline character is appended to
+   every line including the last. */
+FUN pretty : fmt ** nat ** fmt -> string
+FUN pretty : nat ** nat ** fmt -> string
+
+/* % For convenience, two more functions are provided, which assume
+   columns 1 to 70 and return a single string or denotation. */
+FUN pretty : fmt -> string
+FUN pretty : fmt -> denotation
+
+
+/* %-**************************************************************** */
+/* %$Related structures$                                              */
+/* %-**************************************************************** */
+
+/* % See also the following structures for pretty printing of specific
+   data types:
+@itemize @bullet
+@item @ref{@Overview{FmtArray}} to format @ref{@Overview{Array}}s
+@item @ref{@Overview{FmtBasicTypes}} to format basic types
+@item @ref{@Overview{FmtDebug}} for functions in the style of
+  structure @ref{@Overview{DEBUG}} working on formats
+@item @ref{@Overview{FmtMap}} to format @ref{@Overview{Map}}s
+@item @ref{@Overview{FmtOption}} to format @ref{@Overview{Option}}s
+@item @ref{@Overview{FmtPair}} to format @ref{@Overview{Pair}}s
+@item @ref{@Overview{FmtSeq}} to format @ref{@Overview{Seq}}s
+@item @ref{@Overview{FmtSet}} to format @ref{@Overview{Set}}s
+@end itemize */     
+
+
+-- %@ignore
+-- Local variables:
+-- coding: latin-1-unix
+-- mode: opal
+-- End:
+-- %@end ignore
