@@ -83,8 +83,8 @@ DEF pOneExpr(M) == parser(\\Arg. \\ . pOneE(M,Arg))
     DEF pOneE(M,TS AS token(ide,_,_) :: _)       == modify(pMixFix(M) @ TS,M)
     DEF pOneE(M,TS AS token(ignPat,_,_) :: _)    == modify(pMixFix(M) @ TS,M)
     DEF pOneE(M,TS AS token(denotation,_,_) :: _)== modify(pMixFix(M) @ TS,M)
-    DEF pOneE(M,TS AS token(force,_,_) :: _)== pForce(pInnExpr(M)) @ TS
-    DEF pOneE(M,TS AS token(suspend,_,_) :: _)== pSuspend(pInnExpr(M)) @ TS
+    DEF pOneE(M,TS AS token(force,_,_) :: _)     == modify(pMixFix(M) @ TS,M)
+    DEF pOneE(M,TS AS token(suspend,_,_) :: _)   == modify(pMixFix(M) @ TS,M)
     DEF pOneE(_,Arg) ==fail(eExp(pos(ft(Arg)))) @ Arg
 
 FUN pMixFix: modifier -> parser
@@ -94,23 +94,27 @@ DEF pMixFix (M) ==
                         ELSE fail(ok)    FI
 
 DEF pSimpleExpr(M) == 
-    ((isA(denotation) <|> IdePars) + )(modExpr)
+    ((isA(denotation) <|> (IdePars <|> (pSuspend(M) <|> pForce(M)))) + )(modExpr)
     WHERE  
           IdePars  == ((isA?(ide) <&.> pName) 
                            <|> ((isA?(ignPat) <&.> pSecPat)
                            <|> ((isA?(openBr) <&.> pTuple(pInnExpr(M))))))
+
 --TODO Postion ist derzeit ) 
-FUN pForce : parser -> parser 
-DEF pForce (Pars) == parser(\\Arg . \\ .
-            LET P == (isA(force) <&.>(isA(openBr) <&.> Pars)) <.&> isA(closeBr)
-            IN modify(P @ Arg,mkForce))
-
-FUN pSuspend : parser -> parser 
-DEF pSuspend (Pars) == parser(\\Arg . \\ .
-            LET P == (isA(suspend) <&.>(isA(openBr) <&.> Pars)) <.&> isA(closeBr)
-            IN modify(P @ Arg,mkSuspend))
+FUN pForce : modifier -> parser 
+DEF pForce (M) == isA?(force) <&.> 
+                    parser(\\Arg . \\ .
+                            LET P == (isA(force) <&.>(isA(openBr) <&.> pInnExpr(M))) <.&> isA(closeBr)
+                            IN modify(P @ Arg,mkForce))
 
 
+
+FUN pSuspend : modifier -> parser 
+DEF pSuspend (M) == isA?(suspend) <&.> 
+                    parser(\\Arg . \\ .
+                            LET P == (isA(suspend) <&.> (isA(openBr) <&.> pInnExpr(M))) <.&> isA(closeBr)
+                            IN modify(P @ Arg,mkSuspend))
+                  
 
 
 -- --------------------------------------------------------------------------
