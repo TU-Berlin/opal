@@ -30,7 +30,7 @@ IMPORT  Nat             COMPLETELY
         Rep             ONLY rep `
 
         PartName        ONLY partName:SORT tPos
-        Fct[name]       ONLY fct
+        Fct[name]       ONLY fct funct cart cart? elems `
         Impl[partName]  COMPLETELY
         Impl[name]      COMPLETELY
 
@@ -48,7 +48,8 @@ IMPORT  Nat             COMPLETELY
         Substitution    ONLY subst unify:globSig
                                          ->fct[name]**fct[name]**subst**nat
                                          ->seq[subst]**nat
-        Reason          ONLY reason wronglyTypedImplementation
+                             apply:subst**fct->fct**bool
+        Reason          ONLY reason wronglyTypedImplementation missingForce missingSuspend
         Candidates      ONLY cands eval none?:cands->bool errors
                              combine split bestOf
                              mode eager 
@@ -56,6 +57,8 @@ IMPORT  Nat             COMPLETELY
         TypeIndepExprAnalysis   COMPLETELY
         TypeDepExprAnalysis     COMPLETELY
         LhsAnalysis             COMPLETELY
+        Name             COMPLETELY
+        Denotation             COMPLETELY
         DEBUG COMPLETELY
 
 DEF target(eq(left,right,pos)) == target(left)
@@ -119,15 +122,56 @@ DEF typeDepAna(eq(left,right,pos),sig,knowl,nextLocal) ==
       combFct == \\leftFct,rightFct,subst,var.
                    LET (newSubsts,free) ==
                                         unify(sig)(leftFct,rightFct,subst,var)
-                   IN IF newSubsts <>? THEN (leftFct,subst%,var,
-                                             wronglyTypedImplementation
-                                                     (leftFct,rightFct,subst)%)
+                   IN IF newSubsts <>? THEN 
+                        IF cSuspend(sig)(leftFct,rightFct,subst,var) THEN
+                            (leftFct,subst%,var,
+                            %(missingSuspend(leftFct,rightFct,subst),
+                                wronglyTypedImplementation(leftFct,rightFct,subst)))
+                        IF cForce(sig)(leftFct,rightFct,subst,var) THEN
+                            (leftFct,subst%,var,
+                            %(missingForce(leftFct,rightFct,subst),
+                                wronglyTypedImplementation(leftFct,rightFct,subst)))
+                        ELSE 
+                            (leftFct,subst%,var,wronglyTypedImplementation(leftFct,rightFct,subst)%)
+                        FI
                       IF newSubsts ::? THEN (leftFct,newSubsts,free,<>)
                       FI
       (cands,freeVar) == combine(eager)(sig,pos,interVar)(combFct)
                                                         (leftCands2,rightCands)
       (finalCands,_) == eval(sig,freeVar)(cands)
   IN (finalCands,freeLocal)
+
+
+
+-- Checking if it would work with FORCE
+FUN cForce : globSig->fct[name]**fct[name]**subst**nat->bool
+DEF cForce(sig)(fct1,fct2,subst,v) == 
+ LET  (f1,_) == apply(subst,fct1)
+      (f2,_) == apply(subst,fct2) 
+      f2_ == IF f2 cart? THEN 
+                cart(removeUnit * elems(f2))
+             ELSE removeUnit(f1) FI 
+      (newSubsts,freeVar) == unify(sig)(f1,f2_,subst,v)
+  IN IF newSubsts <>? THEN false
+     IF newSubsts ::? THEN true 
+     FI
+
+FUN cSuspend : globSig->fct[name]**fct[name]**subst**nat->bool
+DEF cSuspend(sig)(fct1,fct2,subst,v) ==
+ LET  (f1,_) == apply(subst,fct1)
+      (f2,_) == apply(subst,fct2) 
+      f1_ == IF f1 cart? THEN 
+                cart(removeUnit * elems(f1))
+             ELSE removeUnit(f1) FI 
+      (newSubsts,freeVar) == unify(sig)(f1_,f2,subst,v)
+  IN IF newSubsts <>? THEN false
+     IF newSubsts ::? THEN true 
+     FI
+
+
+FUN removeUnit : fct[name] -> fct[name]
+DEF removeUnit(funct(cart(<>),f)) == f
+DEF removeUnit(f) == f
 
 FUN identFunctions: globSig -> cands -> cands
 -- reduziert Menge von Kandidatenfunktionen zur Menge der Identifizierungen

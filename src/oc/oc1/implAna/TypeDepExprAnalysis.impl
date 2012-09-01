@@ -62,6 +62,7 @@ IMPORT  Nat             COMPLETELY
         Substitution    ONLY subst empty
                                 unify
                                 apply:subst**name->name**bool
+                                apply:subst**fct->fct**bool
         Reason          COMPLETELY
         Candidates      COMPLETELY
         NameAnalysis    ONLY matchingOp selectName selectDeclaredName
@@ -69,6 +70,7 @@ IMPORT  Nat             COMPLETELY
         PrioTab         COMPLETELY
         DEBUG           ONLY FIELD? PRINT
         GlobSig         COMPLETELY
+        Name            COMPLETELY
 
 FUN infix? lassoc? rassoc?: bool
 DEF rassoc?                 == FIELD?[bool]("-znorassoc") ~
@@ -283,10 +285,52 @@ DEF combApply(sig)(funFct,argFct,subst,v) ==
   LET resFct == var(v)
       (newSubsts,free) == unify(sig)
                                (funFct,funct(argFct,resFct),subst,succ(v))
-  IN IF newSubsts <>? THEN (resFct,subst%,succ(v),
-                            wronglyTypedApplOrInfix(funFct,argFct,subst)%)
+  IN IF newSubsts <>? THEN 
+        IF cForce(sig)(funFct,argFct,subst,v) THEN
+        (resFct,subst%,succ(v), 
+        %(missingForce(funFct,argFct,subst), wronglyTypedApplOrInfix(funFct,argFct,subst)))
+        IF cSuspend(sig)(funFct,argFct,subst,v) THEN
+        (resFct,subst%,succ(v), 
+        %(missingSuspend(funFct,argFct,subst), wronglyTypedApplOrInfix(funFct,argFct,subst)))
+        ELSE (resFct,subst%,succ(v), wronglyTypedApplOrInfix(funFct,argFct,subst)%) FI
      IF newSubsts ::? THEN (resFct,newSubsts,free,<>)
      FI
+
+
+
+
+FUN cSuspend : globSig->fct[name]**fct[name]**subst**nat->bool
+DEF cSuspend(sig)(funct(fct1,_),fct2,subst,v) ==
+ LET  (f1,_) == apply(subst,fct1)
+      (f2,_) == apply(subst,fct2) 
+      f1_ == IF f1 cart? THEN 
+                cart(removeUnit * elems(f1))
+             ELSE removeUnit(f1) FI 
+      (newSubsts,freeVar) == unify(sig)(f1_,f2,subst,v)
+  IN IF newSubsts <>? THEN false
+     IF newSubsts ::? THEN true 
+     FI
+DEF cSuspend(sig)(fct1,fct2,subst,v) == false
+
+-- Checking if it would work with FORCE
+FUN cForce : globSig->fct[name]**fct[name]**subst**nat->bool
+DEF cForce(sig)(fct1,fct2,subst,v) == 
+ LET  (f1,_) == apply(subst,fct1)
+      (f2,_) == apply(subst,fct2) 
+      f2_ == IF f2 cart? THEN 
+                cart(removeUnit * elems(f2))
+             ELSE removeUnit(f2) FI 
+      resFct == var(v)
+      (newSubsts,freeVar) == unify(sig)(f1,funct(f2_,resFct),subst,v)
+  IN IF newSubsts <>? THEN false
+     IF newSubsts ::? THEN true 
+     FI
+
+
+FUN removeUnit : fct[name] -> fct[name]
+DEF removeUnit(funct(cart(<>),f)) == f
+DEF removeUnit(f) == f
+
 
 DEF substitute(apply(fun,arg,pos),cands,sig,offset) ==
   LET (newFun,newArg,newSig,newLSig,errors) ==

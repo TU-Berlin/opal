@@ -49,8 +49,8 @@ IMPORT  Nat             COMPLETELY
         OcError           ONLY err:SORT ok + err errKind error
 
         Rep             ONLY rep `
-        PartName        ONLY partName:SORT
-        Fct[name]       ONLY fct = cart var var? ` noFct
+        PartName        ONLY partName:SORT 
+        Fct[name]       ONLY fct = cart var var? ` noFct funct
 
         AnalyzedGlobSig ONLY globSig name local? no:name->nat globalSet?
                                 rep fct origInst:globSig**name->seq[name]
@@ -64,8 +64,9 @@ IMPORT  Nat             COMPLETELY
         PartialSignatures ONLY partSig {} addLocal addGlobal combine getLocal
                                 hideLocal isLocal getLocalFct
         PrioTab COMPLETELY
-       GlobSig COMPLETELY
-       SeqConv ONLY `
+        GlobSig COMPLETELY
+        Name COMPLETELY
+        SeqConv ONLY `
 
 -- 
 -- ----------------------------------------------------------------------------
@@ -623,8 +624,34 @@ FUN equalize: globSig->fct**fct**subst**nat->fct**seq[subst]**nat**seq[reason]
 
 DEF equalize(sig)(fct1,fct2,subst,minVar) ==
   LET (newSubsts,freeVar) == unify(sig)(fct1,fct2,subst,minVar)
-  IN IF newSubsts <>? THEN (fct1,subst%,minVar,unexpectedFct(fct1,fct2,subst)%)
+  IN IF newSubsts <>? THEN 
+        IF cForce(sig)(fct1,fct2,subst,minVar) THEN
+             (fct1,subst%,minVar,
+            %(unexpectedFct(fct1,fct2,subst),missingForce(fct1,fct2,subst)))
+        IF cSuspend(sig)(fct1,fct2,subst,minVar) THEN
+             (fct1,subst%,minVar,
+            %(unexpectedFct(fct1,fct2,subst),missingSuspend(fct1,fct2,subst)))
+        ELSE (fct1,subst%,minVar,unexpectedFct(fct1,fct2,subst)%) FI
      IF newSubsts ::? THEN (fct1,newSubsts,freeVar,<>)
+     FI
+
+-- Checking if it would work with FORCE
+FUN cForce : globSig->fct**fct**subst**nat->bool
+
+DEF cForce(sig)(fct1,fct2,subst,minVar) == 
+  LET (newSubsts,freeVar) == unify(sig)((funct(cart(<>),fct1)),fct2,subst,minVar)
+  IN IF newSubsts <>? THEN false
+     IF newSubsts ::? THEN true 
+     FI
+
+
+-- Checking if it would work with SUSPEND 
+FUN cSuspend : globSig->fct**fct**subst**nat->bool
+
+DEF cSuspend(sig)(fct1,fct2,subst,minVar) ==
+  LET (newSubsts,freeVar) == unify(sig)(fct1,(funct(cart(<>),fct2)),subst,minVar)
+  IN IF newSubsts <>? THEN false
+     IF newSubsts ::? THEN true
      FI
 
 -- 
