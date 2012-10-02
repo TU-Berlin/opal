@@ -529,19 +529,17 @@ Turning on opal-mode runs the hook 'opal-mode-hook'."
   (kill-all-local-variables)
   (opal-mode-set-nonexist-keymap)
   (use-local-map opal-mode-map)         ; This provides the local keymap
-  (setq mode-name "Opal(v4)")
+  (setq mode-name "Opal")
   (setq major-mode 'opal-mode)
-;  (setq indent-tabs-mode nil)  ;; no TABs
+  (setq indent-tabs-mode nil)  ;; no TABs
   (line-number-mode 1)  ;; show line numbers
 ;  Syntax-Entries for comments
   (modify-syntax-entry ?/ "w-14")
   (modify-syntax-entry ?* "w-23")
   (make-local-variable 'comment-start)
   (make-local-variable 'comment-end)
-  (setq comment-start "/* ")
-  (setq comment-end " */")
-;  (auto-fill-mode)
-;  (setq auto-fill-function 'opal-mode-auto-fill)
+  (setq comment-start "--")
+  (setq comment-end "")
   (setq opal-compile-projectdefsfile (getenv "OCSPROJECT"))
   (opal-toolbar-install)
   (if opal-running-xemacs
