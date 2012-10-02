@@ -204,6 +204,10 @@ It was these considerations that motivated the following design choices:
         --- as far as we are aware --- make eager
         evaluation mandatory. In other words, we employ
         a {\em call-by-value} mechanism.
+
+        We have, however, included support for lazy evaluation using
+        explicit force and suspend primitives, see
+        Chap. \ref{sec:lazyeval}.
   \item Input and output are realized by means of
         referentially transparent input/output {\em continuations}.
 \end{itemize}
@@ -351,7 +355,7 @@ The two components of a signature are:
 \begin{itemize}
   \item a set S of {\em sorts}, where a sort is a name for a set of values;
   \item a set O of {\em operations}, where an operation is a name for
-    a constant or a function. Each operation $o\in$ ) has a
+    a constant or a function. Each operation $o\in$ O has a
     {\em functionality}.
 \end{itemize}
 
@@ -1643,6 +1647,56 @@ same identifier in overlapping scopes is forbidden.
 \end{verbatim}
 \end{examples}
 
+\chapter{Lazy evaluation}
+\label{sec:lazy-eval}
+
+Programming with lazy evaluation using explicit force and suspend is
+suported in Opal.
+
+An expression \vb{SUSPEND(}\nt{expression}\vb{)} is not evaluated
+until explicitly requested using the \vb{FORCE} primitive. A suspended
+expression that is forced more than once is only evaluated once, later
+calls to \vb{FORCE} use the previously obtained value. That is, we
+employ a \emph{call-by-need} evaluation strategy.
+
+If \nt{expression} has functionality \nt{fct}, then
+\vb{SUSPEND(}\nt{expression}\vb{)} is of functionality
+\vb{LAZY[}\nt{fct}\vb{]}. Vice versa, if \nt{expression} has
+functionality \vb{LAZY[}\nt{fct}\vb{]} then
+\vb{FORCE(}\nt{expression}\vb{)} has functionality \nt{fct}.
+
+The following example implements a lazy (i.\,e. potentially infinite)
+list and a (monomorphic) map function on these lists:
+
+\begin{verbatim}
+    SIGNATURE LazyList[data]
+    SORT data
+
+    TYPE lazylist == <>
+                     ::(ft: data, rt: LAZY[lazylist])
+
+    FUN map: (data -> data) ** lazylist -> lazylist
+
+    IMPLEMENTATION LazyList[data]
+
+    DATA lazylist == <>
+                     ::(ft: data, rt: LAZY[lazylist])
+
+    DEF map(f, <>) == <>
+    DEF map(f, x::X) == f(x) :: SUSPEND(map(f,FORCE(X)))
+\end{verbatim}
+Using this list implementation, we can write the list of all natural
+numbers as follows:
+
+\begin{verbatim}
+    IMPORT LazyList[nat] COMPLETELY
+           Nat           COMPLETELY
+
+    FUN allNats: LAZY[lazylist[nat]]
+    DEF allNats == SUSPEND(1 :: SUSPEND(map(_ + 1, FORCE(allNats))))
+\end{verbatim}
+
+
 \chapter{Programming in {\sc Opal}}
 
 This section describes some of the questions arising when running an
@@ -2136,14 +2190,15 @@ external signature. Repeated declarations and imports are possible.
 \end{concon}
 
 \begin{synrule}
-  \begin{tabular}{lll}
+  \begin{tabular}{lcl}
     \nt{Functionality} &\ms{::=}& \nt{ProductFct} \ms{$|$} \nt{FunctionFct}\\
     \nt{ProductFct}   &\ms{::=}& \nt{SimpleFct} \ms{$\|$} \tm{**} \ms{$|$}
       \tm{(} \nt{ProductFct} \tm{)}\\
     \nt{FunctionFct} &\ms{::=}& \nt{ProductFct} \tm{->} \nt{Functionality}
       \ms{$|$} \tm{(} \tm{)} \tm{->} \nt{Functionality}\\
     \nt{SimpleFct} &\ms{::=}& \nt{Name} \ms{$|$} \tm{(}
-      \nt{FunctionFct} \tm{)} \ms{$|$} \tm{(} \nt{SimpleFct} \tm{)}
+      \nt{FunctionFct} \tm{)} \ms{$|$} \tm{(} \nt{SimpleFct} \tm{)} \\
+      &\ms{$|$}& \tm{LAZY[} \nt{Name} \tm{]}
   \end{tabular}
 \end{synrule}
 \begin{concon}
@@ -2438,7 +2493,10 @@ Expressions are used to define the right-hand side of function definitions.
 \end{concon}
 
 \begin{synrule}
-  \nt{Application}      \ms{::=}        \nt{SimpleExpression} \ms{(} \nt{Tuple} \ms{$|$} \tm{(} \tm{)} )
+  \begin{tabular}{lcl}
+    \nt{Application}      &\ms{::=}&        \nt{SimpleExpression} \ms{(} \nt{Tuple} \ms{$|$} \tm{(} \tm{)} )\\
+    &\ms{$|$}& \tm{FORCE(} \nt{Expression} \tm{)} \ms{$|$} \tm{SUSPEND(} \nt{Expression} \tm{)}
+  \end{tabular}
 \end{synrule}
 \begin{concon}
   \item \dul{wrongly typed application}: The functionality of
