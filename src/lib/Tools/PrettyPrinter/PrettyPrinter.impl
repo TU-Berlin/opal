@@ -1,0 +1,92 @@
+IMPLEMENTATION PrettyPrinter
+/* %- Copyright 1989 - 1998 by the Opal Group, TU Berlin. All rights reserved
+      See OCSHOME/doc/LICENSE or
+      http://projects.uebb.tu-berlin.de/opal/trac/wiki/License for details
+*/
+-- % $Date: 2012-10-02 14:17:54 +0200 (Tue, 02 Oct 2012) $ ($Revision: 838 $)
+
+/* %
+
+*/
+
+IMPORT Char COMPLETELY
+       CharConv COMPLETELY
+       Constant COMPLETELY
+       
+       Int COMPLETELY
+       Nat COMPLETELY
+       NatConv COMPLETELY
+       Pair COMPLETELY
+       Seq COMPLETELY
+       String COMPLETELY
+
+DATA doc == nil
+            :<>(left:doc,right:doc)
+            nest(indent:nat,doc:doc)
+            text(text:string)
+            line
+            :<|>(left:doc,right:doc)
+
+
+DATA DOC == EMPTY
+            TEXT(left:string,right:DOC)
+            LINE(indent:nat,doc:DOC)
+
+
+DEF empty == nil
+DEF <> == :<>
+DEF text(den:denotation) == text(den!)
+
+DEF group(doc) == flatten(doc) :<|> doc
+
+DEF pretty(w,doc) == layout(best(asInt(w),0,doc))
+
+FUN flatten: doc -> doc
+DEF flatten(nil) == nil
+DEF flatten(left :<> right) == flatten(left) :<> flatten(right)
+DEF flatten(nest(i,doc)) == nest(i,flatten(doc))
+DEF flatten(text(txt)) == text(txt)
+DEF flatten(line) == text(blank`):string
+DEF flatten(left :<|> right) == flatten(left)
+
+FUN layout: DOC -> string
+DEF layout(EMPTY) == ""!
+DEF layout(left TEXT right) == left ++ layout(right)
+DEF layout(i LINE doc) == newline :: ((1 .. i)(const(blank)) ++ layout(doc))
+
+FUN best: int ** nat ** doc -> DOC
+DEF best(w,k,doc) == best(w,k,%(0&doc))
+
+FUN best: int ** nat ** seq[pair[nat,doc]] -> DOC
+DEF best(w,k,<>) == EMPTY
+DEF best(w,k,(i&nil)::pairs) == best(w,k,pairs)
+DEF best(w,k,(i & left:<>right)::pairs) == best(w,k,((i&left)::(i&right)::pairs))
+DEF best(w,k,(i & nest(j,doc))::pairs) == best(w,k,(i+j&doc)::pairs)
+DEF best(w,k,(i & text(txt))::pairs) == txt TEXT best(w, k + #(txt), pairs)
+DEF best(w,k,(i & line)::pairs) == i LINE best(w,k,pairs)
+DEF best(w,k,(i & left:<|>right)::pairs) ==
+    better(w,k,best(w,k,(i&left)::pairs),SUSPEND(best(w,k,(i&right)::pairs)))
+
+FUN better: int ** nat ** DOC ** LAZY[DOC] -> DOC
+DEF better(w,k,doc1,doc2) ==
+    IF fits(w-asInt(k),doc1) THEN doc1 ELSE FORCE(doc2) FI
+
+FUN fits: int ** DOC -> bool
+DEF fits(w,doc) ==
+    IF w < 0 THEN false
+    OTHERWISE
+    IF doc EMPTY? THEN true
+    IF doc TEXT? THEN fits(w - asInt(#(left(doc))), right(doc))
+    IF doc LINE? THEN true
+    FI
+
+FUN ` : char -> string
+DEF `(ch) == !(`(ch))
+
+
+-- %@ignore
+-- Local variables:
+-- coding: latin-1-unix
+-- mode: opal
+-- End:
+-- %@end ignore
