@@ -5,21 +5,159 @@ IMPLEMENTATION PrettyPrinter
 */
 -- % $Date: 2012-10-02 14:17:54 +0200 (Tue, 02 Oct 2012) $ ($Revision: 838 $)
 
-/* %
+/* This structure implements the algorithm of
+Wadler, Philip: A prettier printer. In: The Fun of Programming (2003) */
 
-*/
+IMPORT BoolConv      COMPLETELY
+       Char          COMPLETELY
+       CharConv      COMPLETELY
+       Constant      COMPLETELY
+       Denotation    COMPLETELY
+       Int           COMPLETELY
+       IntConv       COMPLETELY
+       Nat           COMPLETELY
+       NatConv       COMPLETELY
+       Pair          COMPLETELY
+       PrintableChar COMPLETELY
+       Real          COMPLETELY
+       RealConv      COMPLETELY
+       Seq           COMPLETELY
+       SeqMap        COMPLETELY
+       SeqReduce     COMPLETELY
+       String        COMPLETELY
+       StringConv    COMPLETELY
 
-IMPORT Char COMPLETELY
-       CharConv COMPLETELY
-       Constant COMPLETELY
-       
-       Int COMPLETELY
-       Nat COMPLETELY
-       NatConv COMPLETELY
-       Pair COMPLETELY
-       Seq COMPLETELY
-       String COMPLETELY
 
+/* %-**************************************************************** */
+/* %$Pretty printing basic types$                                     */
+/* %-**************************************************************** */
+
+DEF num(n:nat) == text(`(n))
+DEF num(i:int) == text(`(i))
+DEF num(x:real) == text(`(x))
+DEF bool(b) == text(`(b))
+DEF char(ch) == text(`(ch)):string
+DEF text(den:denotation) == text(den!):string
+DEF $ == text:denotation->doc
+
+
+/* %-**************************************************************** */
+/* %$Common characters$                                               */
+/* %-**************************************************************** */
+
+-- Whitespace
+DEF blank == text(blank`):string
+DEF tab == text(tab`):string
+
+-- Punctuation
+DEF quote == text(dblquote`):string
+DEF apostrophe == text(lsngquote`):string
+DEF backtick == text(rsngquote`):string
+DEF colon == text(colon`):string
+DEF comma == text(comma`):string
+DEF semi == text(; `):string
+DEF bang == text(! `):string
+DEF question == text(? `):string
+DEF dot == text(dot`):string
+
+-- Grouping characters
+DEF lparen == text(lbrace`):string
+DEF rparen == text(rbrace`):string
+DEF lbrace == text({ `):string
+DEF rbrace == text(} `):string
+DEF lbrack == text(lsqbrace`):string
+DEF rbrack == text(rsqbrace`):string
+DEF langle == text(< `):string
+DEF rangle == text(> `):string
+
+-- Other characters
+DEF slash == text(/ `):string
+DEF minus == text(- `):string
+DEF plus == text(+ `):string
+DEF star == text(* `):string
+DEF equal == text(= `):string
+DEF pipe == text(| `):string
+DEF backslash == text(\ `):string
+DEF underscore == text(underscore `):string
+DEF caret == text(^ `):string
+DEF ampersand == text(& `):string
+DEF at == text(@ `):string
+DEF tilde == text(~ `):string
+DEF hash == text(# `):string
+DEF dollar == text($ `):string
+DEF percent == text(% `):string
+
+
+/* %-**************************************************************** */
+/* %$Wrapping documents in delimiters$                                */
+/* %-**************************************************************** */
+
+DEF parens(doc) == lparen <> doc <> rparen
+DEF braces(doc) == lbrace <> doc <> rbrace
+DEF brackets(doc) == lbrack <> doc <> rbrack
+DEF angles(doc) == langle <> doc <> rangle
+DEF quotes(doc) == quote <> doc <> quote
+DEF squotes(doc) == apostrophe <> doc <> apostrophe
+DEF squoteslr(doc) == backtick <> doc <> apostrophe
+
+
+/* %-**************************************************************** */
+/* %$Combining documents$                                             */
+/* %-**************************************************************** */
+
+DEF empty == nil
+DEF <> == :<>
+DEF left <+> right == left <> blank <> right
+DEF hcat == <> / empty
+DEF hsep == <+> / empty
+DEF top ^^ bot == top <> line <> bot
+DEF vcat == ^^ / empty
+
+DEF sep(<>) == nil
+DEF sep(doc :: <>) == doc
+DEF sep(doc1 :: doc2 :: docs) ==
+    flatten(hsep(doc1::doc2::docs)) :<|> vcat(doc1::doc2::docs)
+
+DEF cat(<>) == nil
+DEF cat(doc :: <>) == doc
+DEF cat(doc1 :: doc2 :: docs) ==
+    flatten(hcat(doc1::doc2::docs)) :<|> vcat(doc1::doc2::docs)
+
+DEF punctuate(p,<>) == <>
+DEF punctuate(p,doc :: <>) == doc :: <>
+DEF punctuate(p,doc1 :: doc2 :: docs) ==
+    doc1 <> p :: punctuate(p,doc2::docs)
+
+DEF fill(<>) == nil
+DEF fill(doc :: <>) == doc
+DEF fill(doc1 :: doc2 :: docs) ==
+    (flatten(doc1) <+> fill(flatten(doc2)::docs))
+    :<|>
+    (doc1 ^^ fill(doc2::docs))
+
+
+/* %-**************************************************************** */
+/* %$Converting documents to text$                                    */
+/* %-**************************************************************** */
+
+FUN defaultWidth: nat
+DEF defaultWidth == "80"!
+
+DEF pretty(w,doc) == (layout(best(asInt(w),0,doc))):string
+DEF pretty(w,doc) == (`(pretty(w,doc))):denotation
+DEF pretty(doc) == (pretty(defaultWidth,doc)):string
+DEF pretty(doc) == (pretty(defaultWidth,doc)):denotation
+DEF pretty(w,doc) == (layout(best(asInt(w),0,doc))):seq[string]
+DEF pretty(w,doc) == (` * pretty(w,doc)):seq[denotation]
+DEF pretty(doc) == (pretty(defaultWidth,doc)):seq[string]
+DEF pretty(doc) == (pretty(defaultWidth,doc)):seq[denotation]
+
+
+/* %-**************************************************************** */
+/* %$Pretty printing engine$                                          */
+/* %-**************************************************************** */
+
+-- Documents as produced by the pretty printing combinators
 DATA doc == nil
             :<>(left:doc,right:doc)
             nest(indent:nat,doc:doc)
@@ -27,19 +165,29 @@ DATA doc == nil
             line
             :<|>(left:doc,right:doc)
 
+FUN show: doc -> denotation
+DEF show(nil) == "nil"
+DEF show(left :<> right) == show(left) ++ " :<> " ++ show(right)
+DEF show(nest(i,doc)) == "nest(" ++ `(i) ++ "," ++ show(doc) ++ ")"
+DEF show(text(txt)) == "text(" ++ `(txt) ++ ")"
+DEF show(line) == "line"
+DEF show(left :<|> right) == show(left) ++ " :<|> " ++ show(right)
 
+-- "Normalized" documents
 DATA DOC == EMPTY
             TEXT(left:string,right:DOC)
             LINE(indent:nat,doc:DOC)
 
+FUN show: DOC -> denotation
+DEF show(EMPTY) == "EMPTY"
+DEF show(TEXT(left,right)) == "TEXT(" ++ `(left) ++ "," ++ show(right) ++ ")"
+DEF show(LINE(i,doc)) == "LINE(" ++ `(i) ++ "," ++ show(doc) ++ ")"
 
-DEF empty == nil
-DEF <> == :<>
-DEF text(den:denotation) == text(den!)
 
+-- The following definitions are from Wadler's paper.
+
+FUN group: doc -> doc
 DEF group(doc) == flatten(doc) :<|> doc
-
-DEF pretty(w,doc) == layout(best(asInt(w),0,doc))
 
 FUN flatten: doc -> doc
 DEF flatten(nil) == nil
@@ -50,9 +198,19 @@ DEF flatten(line) == text(blank`):string
 DEF flatten(left :<|> right) == flatten(left)
 
 FUN layout: DOC -> string
-DEF layout(EMPTY) == ""!
+DEF layout(EMPTY) == <> : string
 DEF layout(left TEXT right) == left ++ layout(right)
 DEF layout(i LINE doc) == newline :: ((1 .. i)(const(blank)) ++ layout(doc))
+
+-- Additional layouting function to produce a sequence of lines
+FUN layout: DOC -> seq[string]
+DEF layout(doc) == layout(<>,doc)
+FUN layout: string ** DOC -> seq[string]
+DEF layout(line,EMPTY) == line :: <>
+DEF layout(line,left TEXT right) == layout(line ++ left, right)
+DEF layout(line,i LINE doc) == line :: layout((1 .. i)(const(blank)), doc)
+
+-- Calculate the "best" layout
 
 FUN best: int ** nat ** doc -> DOC
 DEF best(w,k,doc) == best(w,k,%(0&doc))
@@ -67,6 +225,8 @@ DEF best(w,k,(i & line)::pairs) == i LINE best(w,k,pairs)
 DEF best(w,k,(i & left:<|>right)::pairs) ==
     better(w,k,best(w,k,(i&left)::pairs),SUSPEND(best(w,k,(i&right)::pairs)))
 
+-- As noted in Wadler's paper, it is crucial for efficiency that
+-- the second argument (i. e. the second layout) is evaluated lazily.
 FUN better: int ** nat ** DOC ** LAZY[DOC] -> DOC
 DEF better(w,k,doc1,doc2) ==
     IF fits(w-asInt(k),doc1) THEN doc1 ELSE FORCE(doc2) FI
@@ -79,6 +239,8 @@ DEF fits(w,doc) ==
     IF doc TEXT? THEN fits(w - asInt(#(left(doc))), right(doc))
     IF doc LINE? THEN true
     FI
+
+-- Auxiliaries
 
 FUN ` : char -> string
 DEF `(ch) == !(`(ch))
