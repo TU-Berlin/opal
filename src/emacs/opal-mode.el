@@ -221,6 +221,7 @@ or OCSDIR are defined these are used otherwise /usr/ocs is taken as default.")
    (list (concat
 	  "\\(^\\|[^0-9a-zA-Z_]\\|\\b\\)"
 	  "\\("
+          "LAZY\\|SUSPEND\\|FORCE\\|"
 	  "ALL\\|AND\\|ANDIF\\|AS\\|COMPLETELY\\|DFD\\|ELSE\\|EX\\|"
 	  "FI\\|IF\\|IN\\|LET\\|NOT\\|ONLY\\|ORIF\\|OR\\|OTHERWISE\\|"
 	  "THEN\\|WHERE\\|FUN\\|DEF\\|SORT\\|TYPE\\|DATA\\|IMPORT"
