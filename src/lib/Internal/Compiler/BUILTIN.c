@@ -87,7 +87,7 @@ CELL _smallAlloc(WORD s) {	/* allocate small cell */
     #endif
 
     /* try to realloc none-flat cell */
-    if ( p = _freeList[s] ) {
+    if ( (p = _freeList[s]) ) {
 	/* none-flat cell avail: unlink, free components, and return */
         #ifdef _MEMSTAT_
 	    _ms_reallocs[s]++;
@@ -125,7 +125,7 @@ CELL _smallAlloc(WORD s) {	/* allocate small cell */
     if (chunksSinceForce >= maxChunksUntilForce){
         /* free all none-flat cells */
 	_forceAllNoneFlats(); 
-	if ( p = _freeList[make_flat_ssize(s)] ){
+	if ( (p = _freeList[make_flat_ssize(s)]) ){
 	    _freeList[make_flat_ssize(s)] = _getLink(_header(p));
 	    return p;
 	}
@@ -166,7 +166,7 @@ void _forceAllNoneFlats(){ /* force free of all none-flat cells */
 
     while (s <= big_escape_ssize){
 	WORD nexts = s+1;
-	while (p = _freeList[s]){
+	while ((p = _freeList[s])){
 	    _freeList[s] = _getLink(_header(p));	/* unlink ... */
 	    _setLink(_header(p),_freeList[make_flat_ssize(s)]);
 	    _freeList[make_flat_ssize(s)] = p;	/* ... link to flat list */
@@ -202,7 +202,7 @@ void _forceAllNoneFlats(){ /* force free of all none-flat cells */
     }
     
     /* also force free of foreign cells here */
-    while (p = _freeList[foreign_escape_ssize]){
+    while ((p = _freeList[foreign_escape_ssize])){
 	_freeList[foreign_escape_ssize] = _getLink(_header(p));	/* unlink */
 	foreign_dispose((OBJ)p);
     }
@@ -224,7 +224,7 @@ BCELL _bigAlloc(WORD s){	/* allocate big cell */
 
     /* search for matching flat-big, on the fly freeing none-matching
        flat-bigs */
-    while (p = (BCELL)_freeList[make_flat_ssize(big_escape_ssize)]){
+    while ((p = (BCELL)_freeList[make_flat_ssize(big_escape_ssize)])){
 	_freeList[make_flat_ssize(big_escape_ssize)] = _getLink(_header(p));
 	if (bigWrap(unpack_word(p->size)) == ws){
 	    return p;
@@ -234,7 +234,7 @@ BCELL _bigAlloc(WORD s){	/* allocate big cell */
 	
     /* search for matching none-flat-big, on the fly freeing none-matching
        none-flat-bigs */
-    while (p = (BCELL)_freeList[big_escape_ssize]){
+    while ((p = (BCELL)_freeList[big_escape_ssize])){
 	register OBJ *l, *r;
 	_freeList[big_escape_ssize] = _getLink(_header(p));
 	l = _bdata(p); r = l + unpack_word(p->size);
@@ -271,13 +271,13 @@ void _forceAllBigs(){	/* force free of all big cells */
         _ms_big_forces++;
     #endif
     /* first free all flat bigs */
-    while (p = (BCELL)_freeList[make_flat_ssize(big_escape_ssize)]){
+    while ((p = (BCELL)_freeList[make_flat_ssize(big_escape_ssize)])){
 	_freeList[make_flat_ssize(big_escape_ssize)] = _getLink(_header(p));
 	free((void*)p);
     }
 
     /* now free all none-flat bigs */
-    while (p = (BCELL)_freeList[big_escape_ssize]){
+    while ((p = (BCELL)_freeList[big_escape_ssize])){
 	register OBJ *l, *r;
 	_freeList[big_escape_ssize] = _getLink(_header(p));
 	l = _bdata(p); r = l + unpack_word(p->size);
@@ -584,13 +584,14 @@ void *ocs_dl_link_and_resolve(char *sym){
 
 
 void * ocs_dl_def_method(void *(*resolve)(char *),
-			 int   (*link)(char *),
+                  	 int   (*link)(char *),
 			 int   (*unlink)(char *),
 			 char *(*error)(void)){
     dl_resolve = resolve;
     dl_link = link;
     dl_unlink = unlink;
     dl_error = error;
+    return 0; //fulfill interface, dont want to break it
 }
 
 /* parsing symbols */
@@ -659,6 +660,7 @@ extern int ocs_dl_make_init_entry(char *structure,
 				  char *sym, int symmaxlen){
     strncpy(sym, "init_A", symmaxlen-1);
     strncat(sym, structure, symmaxlen-7);
+    return 0;
 }
 
 
@@ -961,7 +963,7 @@ int ocs_dl_closure(OBJ Clos){
     WORD info = unpack_word(clos->info);
     CODE fun;
 
-    fun = ocs_dl_link_and_resolve(data_denotation(clos->symbolid));
+    fun = ocs_dl_link_and_resolve((char*)data_denotation(clos->symbolid));
     if (!fun) {
 	return 0;
     } else {
@@ -1397,7 +1399,7 @@ static void default_trace_msg(char *m){
     if (trace < 0) trace = getenv("OCS_TRACE") != NULL;
     if (trace) {
 	level--;
-	fprintf(stderr,m);
+	fprintf(stderr, "%s", m);
     }
 }
 
@@ -1551,6 +1553,7 @@ extern OBJ _ABUILTIN_Atl(OBJ d){
 	return r;
     } else {
 	HLT("tl'DENOTATION: denotation is empty");
+	return 0;
     }
 }
 
@@ -1583,6 +1586,7 @@ OBJ __ABUILTIN_AABORT;
 extern OBJ _ABUILTIN_AABORT(OBJ msg){
     get_denotation(msg,charbuf,CHARBUFSIZE);
     HLT(charbuf);
+    return 0; //never reached?
 }
 
 static void init_ABORT_const(){

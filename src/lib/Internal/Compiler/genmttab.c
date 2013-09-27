@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "BUILTIN.h"	/* get MAXRANK  -- thats the reason we use C ... */
 
@@ -31,7 +32,7 @@ void genfile(int rank, char *fn){
   fclose(file);
 }
 
-main(){
+int main() {
   int r; 
   for (r = 1; r <= MAXRANK; r++){
       char fn[256];

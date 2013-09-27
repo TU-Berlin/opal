@@ -6,6 +6,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "BUILTIN.h"	/* get MAXRANK  */
 
@@ -59,7 +60,7 @@ int main(int argc, char *argv[]){
 	      a,a,a);
   }
   fprintf(file,
-"  }\n"
+"  }\n return 0; //never happens, make clang happy\n"
 "}\n");
 
 
