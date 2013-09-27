@@ -246,5 +246,5 @@ extern OBJ _AArray_AuncheckedSwap(OBJ x1,OBJ x2,OBJ x3) /* uncheckedSwap */
  AArray_AuncheckedSwap(x1,x2,x3,r); 
  return r;}
 
-static init_const_AArray()
+static void init_const_AArray()
 {}

@@ -148,8 +148,11 @@ static char * null_generator(char * text, int state){
     return NULL;
 }
 
+extern void init_ANat();
+extern void init_ASeq();
+extern void init_ACom();
 
-static init_const_AReadLine()
+static void init_const_AReadLine()
 {
   init_ANat();
   init_ASeq();

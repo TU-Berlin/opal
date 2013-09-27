@@ -18,6 +18,7 @@ extern OBJ _AComService_ArequestProc(OBJ x1, OBJ x2, OBJ x3)
 extern OBJ _AComService_AprovideProc(OBJ x1, OBJ x2, OBJ x3, OBJ x4) 
 { return agent_provideProc(x1, x2, x3); }
 
+extern void init_AComAgent();
 
-static init_const_AComService()
+static void init_const_AComService()
 { init_AComAgent(); }

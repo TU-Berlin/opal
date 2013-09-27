@@ -330,8 +330,12 @@ extern OBJ _ARUNTIMEENV_35_c(OBJ x1,OBJ x2,OBJ x3,OBJ x4,OBJ x5) /* internapply 
   FLD1(r,2)=t.c2;}
  return r;}
 
+extern void init_ANat();
+extern void init_ACom();
+extern void init_ASeq();
+extern void init_APair();
 
-static init_const_ARUNTIMEENV() {
+static void init_const_ARUNTIMEENV() {
     init_ANat();
     init_ACom();
     init_ASeq();

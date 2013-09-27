@@ -119,7 +119,13 @@ extern OBJ _AProcess_Axpclose(OBJ file,OBJ unit) /* xpclose */ {
     }
 }
 
-static init_const_AProcess()
+extern void init_ANat();
+extern void init_AArray();
+extern void init_ACom();
+extern void init_AFile();
+extern void init_AUnixFailures();
+
+static void init_const_AProcess()
 {
   init_ANat();
   init_AArray();

@@ -93,5 +93,5 @@ extern OBJ _AEQUALITY_AwEqual(OBJ x1, OBJ x2){
     return pack_clean_bool(r);
 }
 		
-static init_const_AEQUALITY()
+static void init_const_AEQUALITY()
 {}

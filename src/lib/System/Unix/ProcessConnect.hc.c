@@ -170,8 +170,11 @@ extern OBJ _AProcessConnect_AoutFile(OBJ Chan) {
     return pack_file(chan->outFile);
 }
 
+extern void init_ACom();
+extern void init_AUnixFailures();
+extern void init_AFile();
 
-static init_const_AProcessConnect(){
+static void init_const_AProcessConnect(){
     init_ACom();
     init_AUnixFailures();
     init_AFile();

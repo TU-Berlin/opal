@@ -209,7 +209,14 @@ extern OBJ _AWait_Ahc_Awaitgrp_Anb(OBJ x1,OBJ x2) /* hc_waitgrp_nb */
   r=hc_wait(-tmppid,WNOHANG);
  return r;}
 
-static init_const_AWait()
+extern void init_ACom();
+extern void  init_AUnixFailures();
+extern void  init_AOption();
+extern void  init_APair();
+extern void  init_AProcessCtrl();
+extern void  init_ASignal();
+
+static void init_const_AWait()
 {
  init_ACom();
  init_AUnixFailures();

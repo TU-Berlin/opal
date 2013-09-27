@@ -65,5 +65,5 @@ extern OBJ _AArrayFold_Sb(OBJ f,OBJ a) /* \ */ {
     return r;
 }
 
-static init_const_AArrayFold()
+static void init_const_AArrayFold()
 {}

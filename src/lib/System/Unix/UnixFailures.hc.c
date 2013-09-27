@@ -37,7 +37,9 @@ static OBJ init_failure(code){
 }
 
 
-static init_const_AUnixFailures()
+extern void init_ACom();
+
+static void init_const_AUnixFailures()
 { int i; OBJ notavail;
   init_ACom();
 

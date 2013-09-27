@@ -302,7 +302,13 @@ extern OBJ _ASignal_Ahc_Asigsuspend(OBJ x1,OBJ x2) /* hc_sigsuspend */
  return_okay_nil;
 }
 
-static init_const_ASignal()
+extern void init_ACom();
+extern void init_AUnixFailures();
+extern void init_AOption();
+extern void init_ANat();
+extern void init_AProcessCtrl();
+
+static void init_const_ASignal()
 {
 sigset_t tmpsigset;
  init_ACom();

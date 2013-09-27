@@ -18,7 +18,9 @@ extern OBJ _AProcessCtrlConv_Ahc_Aconvprocess(OBJ x1) /* hc_convprocess */
   r=make_denotation(charbuf);
  return r;}
 
-static init_const_AProcessCtrlConv()
+extern void init_AProcessCtrl();
+
+static void init_const_AProcessCtrlConv()
 {
  init_AProcessCtrl();
 }

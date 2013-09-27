@@ -42,7 +42,9 @@ extern OBJ _ATimeConv_Ahc_Astrftime(OBJ x1,OBJ x2) /* hc_strftime */
   r=make_denotation(charbuf);
  return r;}
 
-static init_const_ATimeConv()
+extern void init_ATime();
+
+static void init_const_ATimeConv()
 {
   init_ATime();
 }

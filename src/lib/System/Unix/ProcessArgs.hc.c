@@ -65,7 +65,7 @@ extern OBJ _AProcessArgs_AcPutEnv(OBJ Def,OBJ Unit){
     }
 }
     
-static init_const_AProcessArgs(){
+static void init_const_AProcessArgs(){
     /* build up the initial argument sequence */
     int i;
     Args = VARs(Seq,lg);

@@ -16,5 +16,5 @@ extern OBJ _AJavaNullArray_Anull_(OBJ x1) /* null? */
   return pack_bool(res);
 }
 
-static init_const_AJavaNullArray()
+static void init_const_AJavaNullArray()
 {}

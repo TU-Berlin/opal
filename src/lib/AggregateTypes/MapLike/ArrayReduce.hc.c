@@ -63,5 +63,5 @@ extern OBJ _AArrayReduce_Sb_O1(OBJ f,OBJ e,OBJ a) /* \,1 */ {
     return e;
 }
 
-static init_const_AArrayReduce()
+static void init_const_AArrayReduce()
 {}

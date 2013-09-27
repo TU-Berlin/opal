@@ -68,7 +68,7 @@ extern OBJ _AStopwatch_AiElapsed(OBJ x1, OBJ x2) /* iElapsed */
  return r;}
 
 
-static init_const_AStopwatch()
+static void init_const_AStopwatch()
 {
   gettimeofday(&start, &tz);
   gettimeofday(&iStart, &tz);

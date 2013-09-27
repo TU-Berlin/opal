@@ -168,7 +168,7 @@ extern OBJ _AInt_S1(OBJ d) /* ! */ {
     return pack_int(n);
 }
 
-static init_const_AInt()
+static void init_const_AInt()
 {
  /* __AInt_A0 */
  __AInt_A0 = pack_int(0);

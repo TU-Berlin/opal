@@ -77,6 +77,8 @@ static OBJ com_ans_default_func(OBJ Ans){
 
 extern int (*ocs_top_exec)(OBJ);
 
+extern void init_ANat();
+
 static init_const_ACom() { 
     init_ANat();
     ans_okay_nil = _ACom_Aokay(__AVoid_Anil);

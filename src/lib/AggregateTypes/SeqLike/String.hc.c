@@ -191,6 +191,6 @@ extern OBJ _AString_SSe(OBJ x1,OBJ x2) /* |= */
 }
 
 
-static init_const_AString()
+static void init_const_AString()
 {}
 

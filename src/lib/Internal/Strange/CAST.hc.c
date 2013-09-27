@@ -13,5 +13,5 @@ extern OBJ _ACAST_Acast(OBJ x1) /* cast */
  ACAST_Acast(x1,r);
  return r;}
 
-static init_const_ACAST()
+static void init_const_ACAST()
 {}

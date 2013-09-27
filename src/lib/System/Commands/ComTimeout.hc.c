@@ -13,6 +13,7 @@ extern OBJ _AComTimeout_AtimeoutProc(OBJ x1,OBJ x2) /* timeoutProc */ {
     return agent_timeoutProc(x1);
 }
 
+extern void init_AComAgent();
 
-static init_const_AComTimeout()
+static void init_const_AComTimeout()
 { init_AComAgent(); }

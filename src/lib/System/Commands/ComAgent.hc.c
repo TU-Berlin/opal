@@ -1051,8 +1051,12 @@ static int top_exec(OBJ topCom){
 
 extern int (*ocs_top_exec)(OBJ);
 
+extern void init_AVoid();
+extern void init_ANat();
+extern void init_ACom();
+extern void init_ASeq();
 
-static init_const_AComAgent()
+static void init_const_AComAgent()
 { 
     init_AVoid();
     init_ANat();

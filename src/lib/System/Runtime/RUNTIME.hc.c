@@ -136,8 +136,11 @@ HLT("sel\'RUNTIME:obj**nat->obj: applied to 0-ary constructed value");
     }
 }
 
+extern void init_ANat();
+extern void init_ACom();
+extern void init_ASeq();
 
-static init_const_ARUNTIME() {
+static void init_const_ARUNTIME() {
     init_ANat();
     init_ACom();
     init_ASeq();

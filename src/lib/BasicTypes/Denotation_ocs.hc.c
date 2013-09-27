@@ -146,5 +146,5 @@ extern OBJ _ADenotation_Ainsert(OBJ x1,OBJ x2, OBJ x3) /* insert */ {
 }
 
 
-static init_const_ADenotation()
+static void init_const_ADenotation()
 {}

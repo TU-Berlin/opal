@@ -429,7 +429,16 @@ extern OBJ _AProcessCtrl_Ahc_Agetlogin(OBJ x1) /* hc_getlogin */
  return_okay(r);
 }
 
-static init_const_AProcessCtrl()
+extern void init_AUnixFailures();
+extern void init_AOption();
+extern void init_ANat();
+extern void init_AReal();
+extern void init_AArray();
+extern void init_ACom();
+extern void init_AFileSystem();
+extern void init_AUserAndGroup();
+
+static void init_const_AProcessCtrl()
 {
  init_AUnixFailures();
  init_AOption();

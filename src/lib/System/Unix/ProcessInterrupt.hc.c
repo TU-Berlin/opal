@@ -29,7 +29,10 @@ static void handler(int sig){
     signal(SIGINT, handler);
 }
 
-static init_const_AProcessInterrupt(){
+extern void init_ANat();
+extern void init_ACom();
+
+static void init_const_AProcessInterrupt(){
     init_ANat();
     init_ACom();
     oldhandler = signal(SIGINT, handler);

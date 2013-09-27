@@ -249,5 +249,5 @@ extern OBJ _ARealConv_AasInt(OBJ x1) /* asInt */
   return r;
 }
 
-static init_const_ARealConv()
+static void init_const_ARealConv()
 {}

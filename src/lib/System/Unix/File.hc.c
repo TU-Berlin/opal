@@ -308,7 +308,14 @@ extern OBJ _AFile_AxwriteLine(OBJ file,OBJ str,OBJ unit) {
  * initialization
  */
 
-static init_const_AFile()
+extern void init_ANat();
+extern void init_AInt();
+extern void init_AChar();
+extern void init_AString();
+extern void init_ACom();
+extern void init_AUnixFailures();
+
+static void init_const_AFile()
 {
  init_ANat();
  init_AInt();

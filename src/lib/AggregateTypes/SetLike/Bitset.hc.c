@@ -305,7 +305,7 @@ extern OBJ _ABitset_Ain(OBJ x2,OBJ x3) /* in */
  ABitset_Ain(x2,x3,r);
  return r;}
 
-static init_const_ABitset(){
+static void init_const_ABitset(){
     __ABitset_SOC = alloc_bitset(1);
     data_bitset(__ABitset_SOC)[0] = 0;
 }

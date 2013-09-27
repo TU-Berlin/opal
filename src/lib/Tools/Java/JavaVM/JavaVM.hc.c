@@ -44,7 +44,7 @@ static void vmAborts(){
     abort();
 }
 
-static init_const_AJavaVM(){
+static void init_const_AJavaVM(){
     JDK1_1InitArgs vm_args;
     jint res;
     JNI_GetDefaultJavaVMInitArgs(&vm_args);

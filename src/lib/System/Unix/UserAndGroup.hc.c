@@ -214,7 +214,12 @@ extern OBJ _AUserAndGroup_Ahc_Agetgroups(OBJ x1) /* hc_getgroups */
  return_okay(r);
 }
 
-static init_const_AUserAndGroup()
+extern void init_AOption();
+extern void init_AArray();
+extern void init_ACom();
+extern void init_AUnixFailures();
+
+static void init_const_AUserAndGroup()
 {
   init_AOption();
   init_AArray();

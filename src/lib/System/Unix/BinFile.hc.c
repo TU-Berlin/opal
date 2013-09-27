@@ -391,7 +391,11 @@ OBJ _ABinFile_AreadData(OBJ file,OBJ unit)
   }
 }
 
-static init_const_ABinFile()
+extern void init_ACom();
+extern void init_AFile();
+extern void init_AUnixFailures();
+
+static void init_const_ABinFile()
 {
  init_ACom();
  init_AFile();

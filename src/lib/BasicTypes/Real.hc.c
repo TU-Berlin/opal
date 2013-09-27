@@ -181,7 +181,7 @@ extern OBJ inline_c_real(double d){
   return r;
 }
 
-static init_const_AReal()
+static void init_const_AReal()
 {
  make_real(0.0,__AReal_A0);
  make_real(acos(-1.0),__AReal_Api);

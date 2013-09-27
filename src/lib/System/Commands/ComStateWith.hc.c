@@ -32,5 +32,5 @@ extern OBJ _AComStateWith_AGet(OBJ Id,OBJ Fun,OBJ Dummy) /* Get */ {
     return_okay(Res);
 }
 
-static init_const_AComStateWith()
+static void init_const_AComStateWith()
 {}

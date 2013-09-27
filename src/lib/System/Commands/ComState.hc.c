@@ -47,8 +47,9 @@ extern OBJ _AComState_ADelete(OBJ Id,OBJ Unit) /* Delete */ {
     return_okay_nil;
 }
 
+extern void init_ACom();
 
-static init_const_AComState(){
+static void init_const_AComState(){
     init_ACom();
 }
     

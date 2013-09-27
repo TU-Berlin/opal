@@ -629,8 +629,14 @@ extern OBJ _ATcl_AsetArrGlob(OBJ Interp,OBJ Var,OBJ Val,OBJ Key, OBJ Unit)
     }
 }
 
+extern void init_ANat();
+extern void init_AInt();
+extern void init_AReal();
+extern void init_AString();
+extern void init_ASeq();
+extern void init_ACom();
 
-static init_const_ATcl(){
+static void init_const_ATcl(){
     init_ANat();
     init_AInt();
     init_AReal();

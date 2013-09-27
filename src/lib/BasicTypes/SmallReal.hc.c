@@ -216,7 +216,7 @@ extern OBJ inline_c_sreal(float d){
 }
 #endif
 
-static init_const_ASmallReal()
+static void init_const_ASmallReal()
 {
  make_sreal(0.0,__ASmallReal_S_A0);
  make_sreal(acos(-1.0),__ASmallReal_S_Api);

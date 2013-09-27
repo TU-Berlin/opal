@@ -70,5 +70,5 @@ extern OBJ _ACache_S1(OBJ x1,OBJ x2,OBJ x3) /* ! */
    HLT("Cache at <unknown> : missing else in !\'Cache:cache**dom->codom");}}
  return r;}
 
-static init_const_ACache()
+static void init_const_ACache()
 {}

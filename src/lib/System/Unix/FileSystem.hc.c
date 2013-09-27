@@ -598,7 +598,14 @@ extern OBJ _AFileSystem_Ahc_Atmpnam(OBJ x1) /* hc_tmpnam */
   return_okay( make_denotation(tmpn) );
 }
 
-static init_const_AFileSystem()
+extern void init_AUserAndGroup();
+extern void init_ATime();
+extern void init_AArray();
+extern void init_AOption();
+extern void init_ACom();
+extern void init_AUnixFailures();
+
+static void init_const_AFileSystem()
 {
  init_AUserAndGroup();
  init_ATime();
