@@ -1583,7 +1583,7 @@ static void init_denotation_const(){
 
 OBJ __ABUILTIN_AABORT;
 
-extern OBJ _ABUILTIN_AABORT(OBJ msg){
+OBJ _ABUILTIN_AABORT(OBJ msg) {
     get_denotation(msg,charbuf,CHARBUFSIZE);
     HLT(charbuf);
     return 0; //never reached?
