@@ -34,7 +34,7 @@ extern OBJ _ATimeConv_Ahc_Astrftime(OBJ x1,OBJ x2) /* hc_strftime */
  size_t tmpsize;
   tmp=localtime(&(((TIME)(x2))->value));
   free_time(x2,1);
-  tmpsize=strftime(charbuf,sizeof(charbuf),data_denotation(x1),tmp);
+  tmpsize=strftime(charbuf,sizeof(charbuf),(char*)data_denotation(x1),tmp);
   free_denotation(x1,1);
   if(tmpsize==0){
     HLT("hc_strftime\'TimeConv: strftime result too long");
