@@ -37,7 +37,7 @@ extern OBJ _AProcessArgs_AcSetArgs(OBJ NewArgs,OBJ Unit){
 
 extern OBJ _AProcessArgs_AcEnv(OBJ Var,OBJ Unit) {
     char *val;
-    val = getenv(data_denotation(Var));
+    val = getenv((char*)data_denotation(Var));
     free_denotation(Var, 1);
     if (val != NULL){
 	return_okay(make_denotation(val));
@@ -55,7 +55,7 @@ extern OBJ _AProcessArgs_AcPutEnv(OBJ Def,OBJ Unit){
     if (buf == NULL) {
       HLT("cPutEnv'ProcessArgs.hc.c: out of memory");
     };
-    strncpy(buf, data_denotation(Def), leng_denotation(Def) + 1);
+    strncpy(buf, (char*)data_denotation(Def), leng_denotation(Def) + 1);
     res = putenv(buf);
     free_denotation(Def, 1);
     if (res == 0){
