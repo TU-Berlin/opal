@@ -7,11 +7,11 @@
    $Date$ ($Revision$)
 */
 #include <unixconfig.h>
+#include <ctype.h>
 
 #include "Nat.oc.h"
 #include "Int.oc.h"
 #include "Real.oc.h"
-
 
 #ifndef iszero
 #define iszero(r) ((r) == 0.0)
