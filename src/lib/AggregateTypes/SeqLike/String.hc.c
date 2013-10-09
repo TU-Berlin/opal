@@ -42,8 +42,8 @@ extern int get_string(OBJ string, char * buf, int bufsize){
    frees strings itself
 */
 static int cmpString(OBJ str1, OBJ str2)  
-{	OBJ data1, rest1; NAT start1, leng1; char *d1; WORD l1, i1;
-	OBJ data2, rest2; NAT start2, leng2; char *d2; WORD l2, i2;
+{	OBJ data1, rest1; NAT start1, leng1; unsigned char *d1; WORD l1, i1;
+	OBJ data2, rest2; NAT start2, leng2; unsigned char *d2; WORD l2, i2;
 	int delta;
 	int newfirst = 1, newsecond = 1, breakflag, e1, e2;
 
