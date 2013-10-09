@@ -427,7 +427,7 @@ extern OBJ _ATcl_AasString(OBJ Seq) /* asString */ {
 }
 
 extern OBJ _ATcl_AcommandCompleteDen(OBJ Den) {
-    int res = Tcl_CommandComplete(data_denotation(Den));
+  int res = Tcl_CommandComplete((char*)data_denotation(Den));
     free_denotation(Den, 1);
     return pack_bool(res);
 }
@@ -494,7 +494,7 @@ extern OBJ _ATcl_Aget(OBJ Interp,OBJ Var) /* get */ {
 
     get_denotation(Var, charbuf, CHARBUFSIZE);
 
-    val = Tcl_GetVar(interp->tcl, charbuf, TCL_LEAVE_ERR_MSG);
+    val = (char*)Tcl_GetVar(interp->tcl, charbuf, TCL_LEAVE_ERR_MSG);
 
     if ( val != NULL ) {
 	Tcl_ResetResult(interp->tcl);
@@ -510,7 +510,7 @@ extern OBJ _ATcl_AgetGlob(OBJ Interp,OBJ Var) /* getGlob */ {
 
     get_denotation(Var, charbuf, CHARBUFSIZE);
 
-    val = Tcl_GetVar(interp->tcl, charbuf, TCL_GLOBAL_ONLY|TCL_LEAVE_ERR_MSG);
+    val = (char*)Tcl_GetVar(interp->tcl, charbuf, TCL_GLOBAL_ONLY|TCL_LEAVE_ERR_MSG);
 
     if ( val != NULL ) {
 	Tcl_ResetResult(interp->tcl);
@@ -527,7 +527,7 @@ extern OBJ _ATcl_AgetArr(OBJ Interp,OBJ Var,OBJ Key) /* getArr */ {
     get_denotation(Var, charbuf, CHARBUFSIZE/2);
     get_denotation(Key, charbuf + CHARBUFSIZE/2, CHARBUFSIZE/2 - 1);
 
-    val == Tcl_GetVar2(interp->tcl, charbuf, charbuf + CHARBUFSIZE/2,
+    val = (char*)Tcl_GetVar2(interp->tcl, charbuf, charbuf + CHARBUFSIZE/2,
     		       TCL_LEAVE_ERR_MSG);
 
     if ( val != NULL ) {
@@ -545,7 +545,7 @@ extern OBJ _ATcl_AgetArrGlob(OBJ Interp,OBJ Var,OBJ Key) /* getArr */ {
     get_denotation(Var, charbuf, CHARBUFSIZE/2);
     get_denotation(Key, charbuf + CHARBUFSIZE/2, CHARBUFSIZE/2 - 1);
 
-    val = Tcl_GetVar2(interp->tcl, charbuf, charbuf + CHARBUFSIZE/2,
+    val = (char*)Tcl_GetVar2(interp->tcl, charbuf, charbuf + CHARBUFSIZE/2,
     		       TCL_GLOBAL_ONLY|TCL_LEAVE_ERR_MSG);
 
     if ( val != NULL ) {
