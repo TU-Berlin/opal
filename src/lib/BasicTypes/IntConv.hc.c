@@ -34,7 +34,7 @@ extern OBJ _AIntConv_Sq(OBJ x1) /* ` */
  if(negative)
    *p = '-';
  else
-   *p++;
+   p++;
  
  return make_denotation(p);
 }
