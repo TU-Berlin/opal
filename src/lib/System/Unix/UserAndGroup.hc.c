@@ -107,7 +107,7 @@ extern OBJ _AUserAndGroup_Ahc_Agetpwnam(OBJ x1,OBJ x2) /* hc_getpwnam */
  struct passwd *pwp;
  OBJ tmpuser;
   free_some(x2,1);
-  pwp=getpwnam(data_denotation(x1));
+  pwp=getpwnam((char*)data_denotation(x1));
   free_denotation(x1,1);
   if(pwp==NULL){
     copy_some(__AOption_Anil,1);
@@ -165,7 +165,7 @@ extern OBJ _AUserAndGroup_Ahc_Agetgrnam(OBJ x1,OBJ x2) /* hc_getgrnam */
  struct group *grp;
  OBJ tmpgroup;
   free_some(x2,1);
-  grp=getgrnam(data_denotation(x1));
+  grp=getgrnam((char*)data_denotation(x1));
   free_denotation(x1,1);
   if(grp==NULL){
     copy_some(__AOption_Anil,1);
