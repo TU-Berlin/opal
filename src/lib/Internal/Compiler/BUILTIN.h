@@ -802,6 +802,8 @@ extern int get_denotation(OBJ,char *,int);
 
 #define ABUILTIN_AABORT(x,r) _ABUILTIN_AABORT(x)
 
+/* prevent implicit function definition */
+extern OBJ _ABUILTIN_AABORT(OBJ msg);
 
 extern OBJ __ABUILTIN_AABORT;
 
