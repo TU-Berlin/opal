@@ -76,6 +76,7 @@ extern OBJ _AProcess_Axexecve(OBJ name,OBJ argv,OBJ envp,OBJ unit) {
 	return_unix_failure(errno);
     } 
     HLT("execve'Process: internal error");
+    return 0; //never happens, make clang happy
 }
 
 extern OBJ _AProcess_Axkill(OBJ p,OBJ s,OBJ unit) /* xkill */
@@ -104,7 +105,7 @@ extern OBJ _AProcess_Axpopen(OBJ name,OBJ type,OBJ unit) /* xpopen */ {
        | ! get_denotation(type,tbuf,sizeof(tbuf)) ) {
 	return_fail(__AUnixFailures_AnameTooLong);
     }
-    if (f = popen(charbuf,tbuf)){
+    if ((f = popen(charbuf,tbuf))){
 	return_okay(pack_file(f));
     } else {
 	return_unix_failure(errno);
