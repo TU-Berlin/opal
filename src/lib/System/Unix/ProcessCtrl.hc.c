@@ -55,7 +55,7 @@ char ** opal2c_array_deno(OBJ array)
   tmplen = leng_array(array);
   tmpargv=(char**)malloc_aux((tmplen+1)*sizeof(char*));
   for(i = 0; i < tmplen; i++) {
-    tmpargv[i] = data_denotation(data_array(array)[i]);
+tmpargv[i] = (char*)data_denotation(data_array(array)[i]);
   };
   tmpargv[tmplen]=(char*)0;
   return tmpargv;
@@ -124,7 +124,7 @@ extern OBJ _AProcessCtrl_Ahc_Aexecv(OBJ x1,OBJ x2,OBJ x3) /* hc_execv */
   free_some(x3,1);
   tmpargv = opal2c_array_deno(x2);
   free_array(x2,1);
-  (void)execv(data_denotation(x1),tmpargv);
+  execv((char*)data_denotation(x1),tmpargv);
   free_aux(tmpargv);
   free_denotation(x1,1);
   return_unix_failure(errno);
@@ -139,7 +139,7 @@ extern OBJ _AProcessCtrl_Ahc_Aexecve(OBJ x1,OBJ x2,OBJ x3,OBJ x4) /* hc_execve *
   tmpenv  = opal2c_array_deno(x3);
   free_array(x2,1);
   free_array(x3,1);
-  (void)execve(data_denotation(x1),tmpargv,tmpenv);
+  execve((char*)data_denotation(x1),tmpargv,tmpenv);
   free_aux(tmpargv);
   free_aux(tmpenv);
   free_denotation(x1,1);
@@ -152,7 +152,7 @@ extern OBJ _AProcessCtrl_Ahc_Aexecvp(OBJ x1,OBJ x2,OBJ x3) /* hc_execvp */
   free_some(x3,1);
   tmpargv = opal2c_array_deno(x2);
   free_array(x2,1);
-  (void)execvp(data_denotation(x1),tmpargv);
+execvp((char*)data_denotation(x1),tmpargv);
   free_aux(tmpargv);
   free_denotation(x1,1);
   return_unix_failure(errno);
@@ -242,7 +242,7 @@ extern OBJ _AProcessCtrl_Ahc_Asleep(OBJ x1,OBJ x2) /* hc_sleep */
 extern OBJ _AProcessCtrl_Ahc_Achdir(OBJ x1,OBJ x2) /* hc_chdir */
 {int cdstat;
   free_some(x2,1);
-  cdstat=chdir(data_denotation(x1));
+cdstat=chdir((char*)data_denotation(x1));
   free_denotation(x1,1);
   if(cdstat) {
     return_unix_failure(errno);
@@ -294,7 +294,7 @@ extern OBJ _AProcessCtrl_Ahc_Aaccess(OBJ x1,OBJ x2,OBJ x3) /* hc_access */
   if((((FILEMODE)(x2))->value)&S_IWUSR) amode |= W_OK;
   if((((FILEMODE)(x2))->value)&S_IXUSR) amode |= X_OK;
   free_filemode(x2,1);
-  acstat=access(data_denotation(x1),amode);
+  acstat=access((char*)data_denotation(x1),amode);
   free_denotation(x1,1);
   if(acstat) {
     if(errno==EACCES) {
