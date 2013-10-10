@@ -13,8 +13,6 @@
 #include "File.oc.h"
 #include "UnixFailures.oc.h"
 
-#define DPRINT
-
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  * Object descriptors
  */
@@ -246,8 +244,6 @@ static OBJ parse(FILE *f, HASHTAB t, OBJ *ep){
 	    }
 	}
 	/* Format error. */
-	DPRINT(
-	    "parse'BinFile: inconsistency: got refToCell but no hashed label");
 	copy_some(__ABinFile_AinvalidFormat,1);
 	*ep = __ABinFile_AinvalidFormat;
 	return NIL;
@@ -260,8 +256,6 @@ static OBJ parse(FILE *f, HASHTAB t, OBJ *ep){
 	    lab = (WORD)read_obj(f,ep);
 	    if (*ep) return NIL;
 	    if (!isRefToCell(lab)){
-		DPRINT(
-	"parse'BinFile: inconsistency: expected refToCell after shared");
 		copy_some(__ABinFile_AinvalidFormat,1);
 		*ep = __ABinFile_AinvalidFormat;
 		return NIL;
@@ -323,9 +317,9 @@ static OBJ parse(FILE *f, HASHTAB t, OBJ *ep){
 	    char msgbuf[128];
 	    char * msg = link_closure(ob);
 	    if (msg){
-		strcpy(msgbuf,
+	      strcpy(msgbuf, (char*)
 		       data_denotation(__ABinFile_AlinkErrorPrefix));
-		strcat(msgbuf,
+	      strcat(msgbuf, (char*)
 		       data_denotation(((CLOSURE)ob)->symbolid));
 		strcat(msgbuf,"': ");
 		strcat(msgbuf,msg);
@@ -337,7 +331,6 @@ static OBJ parse(FILE *f, HASHTAB t, OBJ *ep){
 	return ob;
 
     } else {
-	DPRINT("parse'BinFile: inconsistency: no legal start");
 	copy_some(__ABinFile_AinvalidFormat,1);
 	*ep = __ABinFile_AinvalidFormat;
 	return NIL;
@@ -391,7 +384,11 @@ OBJ _ABinFile_AreadData(OBJ file,OBJ unit)
   }
 }
 
-static init_const_ABinFile()
+extern void init_ACom();
+extern void init_AFile();
+extern void init_AUnixFailures();
+
+static void init_const_ABinFile()
 {
  init_ACom();
  init_AFile();

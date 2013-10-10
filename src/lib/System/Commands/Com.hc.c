@@ -32,8 +32,9 @@ extern OBJ _ACom_AEXEC(OBJ com){
     if (_ACom_Aokay_(ans) == pack_clean_bool(1)) {
 	return _ACom_Adata(ans);
     } else {
-	fprintf(stderr, data_denotation(_ACom_Aerror(ans)));
+        fprintf(stderr, "%s", data_denotation(_ACom_Aerror(ans)));
 	ocs_exit(1);
+	return 0; //never happens, make clang happy
     }
 }
 
@@ -77,7 +78,9 @@ static OBJ com_ans_default_func(OBJ Ans){
 
 extern int (*ocs_top_exec)(OBJ);
 
-static init_const_ACom() { 
+extern void init_ANat();
+
+static void init_const_ACom() { 
     init_ANat();
     ans_okay_nil = _ACom_Aokay(__AVoid_Anil);
     ocs_com_ans_monitor_def_method(com_ans_default_func);

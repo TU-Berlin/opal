@@ -13,5 +13,5 @@ extern OBJ _ACharConv_AasNat(OBJ x1) /* asNat */
  ACharConv_AasNat(x1,r);
  return r;}
 
-static init_const_ACharConv()
+static void init_const_ACharConv()
 {}

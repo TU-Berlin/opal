@@ -41,7 +41,10 @@ extern OBJ _AProcessComInterrupt_AcDisableBreak(OBJ x1){
     return_okay_nil;
 }
 
-static init_const_AProcessComInterrupt(){
+extern void init_ACom();
+extern void init_AProcessInterrupt();
+
+static void init_const_AProcessComInterrupt(){
     init_ACom();
     init_AProcessInterrupt();
     break_counter = 0;

@@ -27,5 +27,5 @@ extern OBJ _AJavaCatch_AjavaGetExcept(OBJ x1) /* javaGetExcept */
   return_okay(ob);
 }
 
-static init_const_AJavaCatch()
+static void init_const_AJavaCatch()
 {}

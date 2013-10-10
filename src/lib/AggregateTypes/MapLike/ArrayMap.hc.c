@@ -35,5 +35,5 @@ extern OBJ _AArrayMap_S8(OBJ f,OBJ a){
     }
 }
 
-static init_const_AArrayMap()
+static void init_const_AArrayMap()
 {}

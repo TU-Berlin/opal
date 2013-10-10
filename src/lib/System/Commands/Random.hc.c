@@ -78,7 +78,7 @@ static double internal_random(void)
   return (double) internal_seed / m;
 }
   
-static init_const_ARandom()
+static void init_const_ARandom()
 {
   internal_seed = (int) time(NULL);
 }

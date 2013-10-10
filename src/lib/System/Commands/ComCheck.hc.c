@@ -20,5 +20,5 @@ extern OBJ _AComCheck_AcheckAbort(OBJ x1,OBJ x2) /* checkAbort */
  return_okay_nil;
 }
 
-static init_const_AComCheck()
+static void init_const_AComCheck()
 {}

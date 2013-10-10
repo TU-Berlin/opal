@@ -25,7 +25,9 @@ extern OBJ _AFileSystemConv_Ahc_Aconvdevice(OBJ x1) /* hc_convdevice */
   r=make_denotation(charbuf);
  return r;}
 
-static init_const_AFileSystemConv()
+extern void init_AFileSystem();
+
+static void init_const_AFileSystemConv()
 {
  init_AFileSystem();
 }

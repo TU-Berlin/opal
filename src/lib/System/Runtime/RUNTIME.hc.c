@@ -22,7 +22,7 @@ extern OBJ _ARUNTIME_AcLink(OBJ Struct, OBJ Void) {
 
     int (*old_exec)(OBJ) = ocs_top_exec;
 
-    if (ocs_dl_link(data_denotation(Struct))) {
+    if (ocs_dl_link((char*)data_denotation(Struct))) {
         if (ocs_top_exec != old_exec){
 	  char buf[256];
 	  sprintf(buf, "usage of structure `%s' eventually changes command execution model (not supported currently)",
@@ -44,7 +44,7 @@ extern OBJ _ARUNTIME_AcLookup(OBJ Sym, OBJ Void) {
     
     OBJ * var; 
 
-    var = ocs_dl_link_and_resolve(data_denotation(Sym));
+    var = ocs_dl_link_and_resolve((char*)data_denotation(Sym));
     
     if (var != NULL) {
         /* fprintf(stderr, "lookup %s = %x\n", data_denotation(Sym), *var); */
@@ -63,7 +63,7 @@ extern OBJ _ARUNTIME_AcRedefine(OBJ Sym, OBJ Obj, OBJ Void) {
 
     OBJ * var;
 
-    var = ocs_dl_link_and_resolve(data_denotation(Sym));
+    var = ocs_dl_link_and_resolve((char*)data_denotation(Sym));
     free_denotation(Sym, 1);
     
     if (var != NULL) {
@@ -126,7 +126,8 @@ extern OBJ _ARUNTIME_Atag(OBJ Obj) {
 
 extern OBJ _ARUNTIME_Asel(OBJ Obj, OBJ Inx) {
     if (is_primitive(Obj)) {
-HLT("sel\'RUNTIME:obj**nat->obj: applied to 0-ary constructed value");
+      HLT("sel\'RUNTIME:obj**nat->obj: applied to 0-ary constructed value");
+      return 0; //never happens, make clang happy
     } else {
 	OBJ Res = data_small(Obj)[unpack_nat(Inx)+1];
 	/* FIXME: exploit uniqueness for efficiency */
@@ -136,8 +137,11 @@ HLT("sel\'RUNTIME:obj**nat->obj: applied to 0-ary constructed value");
     }
 }
 
+extern void init_ANat();
+extern void init_ACom();
+extern void init_ASeq();
 
-static init_const_ARUNTIME() {
+static void init_const_ARUNTIME() {
     init_ANat();
     init_ACom();
     init_ASeq();

@@ -87,6 +87,7 @@ static mode_t convert_permission(OBJ operm)
   AFileSystem_AworldExec_(operm,r);
   if(unpack_bool(r)) return S_IXOTH;
   HLT("convert_permission'FileSystem: Internal error (unknown permission constructor)");
+  return 0; //never happens, make clang happy
 }
 
 static OBJ convert_filetype(mode_t fmode)
@@ -306,7 +307,7 @@ extern OBJ _AFileSystem_Ahc_Astat(OBJ x1,OBJ x2) /* hc_stat */
  struct stat stb;
  int ststat;
   free_some(x2,1);
-  ststat=stat(data_denotation(x1),&stb);
+  ststat=stat((char*)data_denotation(x1),&stb);
   free_denotation(x1,1);
   if(ststat) {
     return_unix_failure(errno);
@@ -318,7 +319,7 @@ extern OBJ _AFileSystem_Ahc_Astat(OBJ x1,OBJ x2) /* hc_stat */
 extern OBJ _AFileSystem_Ahc_Alink(OBJ x1,OBJ x2,OBJ x3) /* hc_link */
 {int lnstat;
   free_some(x3,1);
-  lnstat=link(data_denotation(x1),data_denotation(x2));
+  lnstat=link((char*)data_denotation(x1), (char*)data_denotation(x2));
   free_denotation(x1,1);
   free_denotation(x2,1);
   if(lnstat) {
@@ -330,7 +331,7 @@ extern OBJ _AFileSystem_Ahc_Alink(OBJ x1,OBJ x2,OBJ x3) /* hc_link */
 extern OBJ _AFileSystem_Ahc_Aunlink(OBJ x1,OBJ x2) /* hc_unlink */
 {int ulstat;
   free_some(x2,1);
-  ulstat=unlink(data_denotation(x1));
+  ulstat=unlink((char*)data_denotation(x1));
   free_denotation(x1,1);
   if(ulstat) {
     return_unix_failure(errno);
@@ -341,7 +342,7 @@ extern OBJ _AFileSystem_Ahc_Aunlink(OBJ x1,OBJ x2) /* hc_unlink */
 extern OBJ _AFileSystem_Ahc_Arename(OBJ x1,OBJ x2,OBJ x3) /* hc_rename */
 {int rnstat;
   free_some(x3,1);
-  rnstat=rename(data_denotation(x1),data_denotation(x2));
+  rnstat=rename((char*)data_denotation(x1), (char*)data_denotation(x2));
   free_denotation(x1,1);
   free_denotation(x2,1);
   if(rnstat) {
@@ -368,7 +369,7 @@ struct utimbuf utb;
     if(unpack_bool(r)) {
       free_some(x3,1);
 # ifdef HAVE_UTIME_NULL
-      utstat=utime(data_denotation(x1),NULL);
+      utstat=utime((char*)data_denotation(x1),NULL);
 # else 
       return_fail(__AUnixFailures_AnotImplemented);
 # endif
@@ -389,7 +390,7 @@ struct utimbuf utb;
     AOption_Acont(x3,r);
     utb.modtime = ((TIME)(r))->value;
     free_time(r,1);
-    utstat=utime(data_denotation(x1),&utb);
+    utstat=utime((char*)data_denotation(x1),&utb);
   }
   free_denotation(x1,1);
   if(utstat) {
@@ -405,7 +406,7 @@ extern OBJ _AFileSystem_Ahc_Achmod(OBJ x1,OBJ x2,OBJ x3) /* hc_chmod */
   free_some(x3,1);
   md=((FILEMODE)(x2))->value;
   free_filemode(x2,1);
-  cmstat=chmod(data_denotation(x1),md);
+  cmstat=chmod((char*)data_denotation(x1),md);
   free_denotation(x1,1);
   if(cmstat) {
     return_unix_failure(errno);
@@ -441,7 +442,7 @@ extern OBJ _AFileSystem_Ahc_Achown(OBJ x1,OBJ x2,OBJ x3,OBJ x4) /* hc_chown */
     grp=((GROUPID)(r))->value;
     free_groupid(r,1);
   }
-  costat=chown(data_denotation(x1),usr,grp);
+  costat=chown((char*)data_denotation(x1),usr,grp);
   free_denotation(x1,1);
   if(costat) {
     return_unix_failure(errno);
@@ -460,7 +461,7 @@ extern OBJ _AFileSystem_Ahc_Amkdir(OBJ x1,OBJ x2,OBJ x3) /* hc_mkdir */
   free_some(x3,1);
   md=((FILEMODE)(x2))->value;
   free_filemode(x2,1);
-  mdstat=mkdir(data_denotation(x1),md);
+  mdstat=mkdir((char*)data_denotation(x1),md);
   free_denotation(x1,1);
   if(mdstat) {
     return_unix_failure(errno);
@@ -476,7 +477,7 @@ extern OBJ _AFileSystem_Ahc_Armdir(OBJ x1,OBJ x2) /* hc_rmdir */
 #else
   int rmstat;
   free_some(x2,1);
-  rmstat=rmdir(data_denotation(x1));
+  rmstat=rmdir((char*)data_denotation(x1));
   free_denotation(x1,1);
   if(rmstat) {
     return_unix_failure(errno);
@@ -494,7 +495,7 @@ extern OBJ _AFileSystem_Ahc_Areaddir(OBJ x1,OBJ x2) /* hc_readdir */
  int i;
  OBJ r;
   free_some(x2,1);
-  dirp=opendir(data_denotation(x1));
+  dirp=opendir((char*)data_denotation(x1));
   free_denotation(x1,1);
   if(dirp==NULL) {
     return_unix_failure(errno);
@@ -540,7 +541,7 @@ extern OBJ _AFileSystem_Ahc_Areaddir(OBJ x1,OBJ x2) /* hc_readdir */
 extern OBJ _AFileSystem_Ahc_Asymlink(OBJ x1,OBJ x2,OBJ x3) /* hc_symlink */
 {int slstat;
   free_some(x3,1);
-  slstat=symlink(data_denotation(x1),data_denotation(x2));
+  slstat=symlink((char*)data_denotation(x1), (char*)data_denotation(x2));
   free_denotation(x1,1);
   free_denotation(x2,1);
   if(slstat) {
@@ -553,7 +554,7 @@ extern OBJ _AFileSystem_Ahc_Areadlink(OBJ x1,OBJ x2) /* hc_readlink */
 {int rlstat;
  OBJ r;
   free_some(x2,1);
-  rlstat=readlink(data_denotation(x1),charbuf,CHARBUFSIZE);
+  rlstat=readlink((char*)data_denotation(x1),charbuf,CHARBUFSIZE);
   free_denotation(x1,1);
   if(rlstat<0) {
     return_unix_failure(errno);
@@ -574,7 +575,7 @@ extern OBJ _AFileSystem_Ahc_Amkfifo(OBJ x1,OBJ x2,OBJ x3) /* hc_mkfifo */
   free_some(x3,1);
   md=((FILEMODE)(x2))->value;
   free_filemode(x2,1);
-  mfstat=mkfifo(data_denotation(x1),md);
+  mfstat=mkfifo((char*)data_denotation(x1),md);
   free_denotation(x1,1);
   if(mfstat) {
     return_unix_failure(errno);
@@ -598,7 +599,14 @@ extern OBJ _AFileSystem_Ahc_Atmpnam(OBJ x1) /* hc_tmpnam */
   return_okay( make_denotation(tmpn) );
 }
 
-static init_const_AFileSystem()
+extern void init_AUserAndGroup();
+extern void init_ATime();
+extern void init_AArray();
+extern void init_AOption();
+extern void init_ACom();
+extern void init_AUnixFailures();
+
+static void init_const_AFileSystem()
 {
  init_AUserAndGroup();
  init_ATime();

@@ -6,5 +6,5 @@
 extern OBJ _ADynamic_AreflectSort(OBJ x1) /* reflectSort */
 {return x1;}
 
-static init_const_ADynamic()
+static void init_const_ADynamic()
 {}

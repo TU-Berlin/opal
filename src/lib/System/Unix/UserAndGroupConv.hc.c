@@ -27,7 +27,9 @@ extern OBJ _AUserAndGroupConv_Ahc_Aconvgroupid(OBJ x1) /* hc_convgroupid */
   r=make_denotation(charbuf);
  return r;}
 
-static init_const_AUserAndGroupConv()
+extern void init_AUserAndGroup();
+
+static void init_const_AUserAndGroupConv()
 {
  init_AUserAndGroup();
 }

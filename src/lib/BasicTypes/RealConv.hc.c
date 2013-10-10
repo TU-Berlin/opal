@@ -7,11 +7,11 @@
    $Date$ ($Revision$)
 */
 #include <unixconfig.h>
+#include <ctype.h>
 
 #include "Nat.oc.h"
 #include "Int.oc.h"
 #include "Real.oc.h"
-
 
 #ifndef iszero
 #define iszero(r) ((r) == 0.0)
@@ -249,5 +249,5 @@ extern OBJ _ARealConv_AasInt(OBJ x1) /* asInt */
   return r;
 }
 
-static init_const_ARealConv()
+static void init_const_ARealConv()
 {}

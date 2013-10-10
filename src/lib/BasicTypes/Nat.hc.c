@@ -133,7 +133,7 @@ extern OBJ inline_opal_nat(OBJ d)
   return pack_nat(n);
 }
 
-static init_const_ANat()
+static void init_const_ANat()
 {
  __ANat_A0 = pack_nat(0);
  __ANat_Amax = pack_nat(max_word);

@@ -14,14 +14,14 @@
 #include "UnixFailures.oc.h"
 #include "File.oc.h"
 
-static int mkFifo(char * name){
+static int mkFifo(unsigned char * name){
     int res;
 #ifndef HAVE_MKFIFO
     char buf[1024];
     sprintf(buf, "mkfifo %s", name);
     res = system(buf);
 #else
-    res = mkfifo(name, 0666);
+    res = mkfifo((char*)name, 0666);
 #endif
     return !res || errno == EEXIST; 
 }
@@ -40,14 +40,14 @@ extern OBJ _AProcessConnect_AcOpen(OBJ InName, OBJ OutName, OBJ Swap, OBJ Void) 
     }
 
     if (unpack_bool(Swap)){
-        out = open(data_denotation(OutName), O_WRONLY); /* FIXME O_TRUNC, O_SYNC? */
+      out = open((char*)data_denotation(OutName), O_WRONLY); /* FIXME O_TRUNC, O_SYNC? */
         if (out != -1) {
-            in = open(data_denotation(InName), O_RDONLY);
+	  in = open((char*)data_denotation(InName), O_RDONLY);
 	}
     } else {
-        in = open(data_denotation(InName), O_RDONLY);
+      in = open((char*)data_denotation(InName), O_RDONLY);
         if (in != -1) {
-	    out = open(data_denotation(OutName), O_WRONLY); /* FIXME O_TRUNC, O_SYNC? */
+	  out = open((char*)data_denotation(OutName), O_WRONLY); /* FIXME O_TRUNC, O_SYNC? */
 	}
     }
     if (in == -1 || out == -1) {
@@ -93,8 +93,8 @@ extern OBJ _AProcessConnect_AcClose(OBJ Chan,OBJ Void) {
     fclose((FILE*)chan->outFile);
     close(chan->in);       /* FIXME: really necessary?? */
     close(chan->out);
-    unlink(data_denotation(chan->inName));
-    unlink(data_denotation(chan->outName));
+    unlink((char*)data_denotation(chan->inName));
+    unlink((char*)data_denotation(chan->outName));
     free_denotation(chan->inName,1);
     free_denotation(chan->outName,1);
     chan->inName = chan->outName = NULL;
@@ -170,8 +170,11 @@ extern OBJ _AProcessConnect_AoutFile(OBJ Chan) {
     return pack_file(chan->outFile);
 }
 
+extern void init_ACom();
+extern void init_AUnixFailures();
+extern void init_AFile();
 
-static init_const_AProcessConnect(){
+static void init_const_AProcessConnect(){
     init_ACom();
     init_AUnixFailures();
     init_AFile();

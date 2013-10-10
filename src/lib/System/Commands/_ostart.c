@@ -33,11 +33,13 @@ extern void _endInitStat();
 extern void _printStat();
 #endif
 
+extern void init();
+
 #ifdef _ENVIRON_
 extern char ** environ;
-main(int argc, char** argv){
+int main(int argc, char** argv){
 #else
-main(int argc, char** argv, char** environ){
+int main(int argc, char** argv, char** environ){
 #endif
 
     OBJ ans;

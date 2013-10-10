@@ -117,7 +117,12 @@ extern OBJ _ATime_Ahc_AasTm(OBJ t1) /* hc_asTm */
   );
  return r;}
 
-static init_const_ATime()
+extern void init_ANat();
+extern void init_AReal();
+extern void init_AOption();
+extern void init_ACom();
+
+static void init_const_ATime()
 {
   init_ANat();
   init_AReal();

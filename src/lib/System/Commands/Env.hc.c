@@ -38,5 +38,5 @@ extern OBJ _AEnv_Axenv(OBJ den,OBJ unit) /* xenv */ {
     }
 }
 
-static init_const_AEnv()
+static void init_const_AEnv()
 {}

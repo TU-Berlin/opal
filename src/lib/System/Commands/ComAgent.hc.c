@@ -22,7 +22,6 @@
 static int debugComm;
 static int debugTerm;
 
-
 /* ------------------------------------------------------------------------ */
 /* Failures */
 
@@ -361,7 +360,7 @@ active. It frees all its expects.
 
 static void activate_agent(AGENT agent, OBJ nextCom){
     if (debugComm) {
-	fprintf(stderr, "agent %x activated\n", agent);
+       fprintf(stderr, "agent %x activated\n", (unsigned int)agent);
     }
     dequeue(agent);
     free_expects(agent);
@@ -813,7 +812,7 @@ static void rendezvous(AGENT server, OBJ service, OBJ serverCont,
     OBJ serviceCom;
 
     if (debugComm) {
-	fprintf(stderr, "server %x meets client %x\n", server, client);
+      fprintf(stderr, "server %x meets client %x\n", (unsigned int)server, (unsigned int)client);
     }
 
     /* free expects of both agents */
@@ -1051,8 +1050,12 @@ static int top_exec(OBJ topCom){
 
 extern int (*ocs_top_exec)(OBJ);
 
+extern void init_AVoid();
+extern void init_ANat();
+extern void init_ACom();
+extern void init_ASeq();
 
-static init_const_AComAgent()
+static void init_const_AComAgent()
 { 
     init_AVoid();
     init_ANat();

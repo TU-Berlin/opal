@@ -12,5 +12,5 @@ extern OBJ _AComCompose_AmkContCom(OBJ cont) /* mkContCom */ {
     return cont;
 }
 
-static init_const_AComCompose()
+static void init_const_AComCompose()
 {}

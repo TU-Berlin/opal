@@ -151,7 +151,7 @@ extern OBJ _ABitset_Aarb(OBJ s) /* arb */ {
     int words = calc_words(s), i,b;
     BITWORD w, m;
     for (i = 0; i < words; i++){
-	if (w = data_bitset(s)[i]){
+        if ((w = data_bitset(s)[i])){
 	    for (b = 0,m = 1; ; b++, m <<= 1){
 		if (w & m){
 		    free_bitset(s,1);
@@ -161,6 +161,7 @@ extern OBJ _ABitset_Aarb(OBJ s) /* arb */ {
 	}
     }
     HLT("arb'Bitset: set is empty");
+    return 0; //never happens, makes clang happy
 }
 
 
@@ -195,7 +196,7 @@ extern OBJ _ABitset_Aexist_(OBJ p,OBJ s) /* exist? */ {
     int words = words_bitset(s), i,b,m;
     BITWORD w;
     for (i = 0; i < words; i++){
-        if (w = data_bitset(s)[i]){
+        if ((w = data_bitset(s)[i])){
             for (b = 0, m = 1; b < bits_bitset; b++, m <<= 1){
                 if (w & m){
                     CPCLS(p,1);
@@ -218,7 +219,7 @@ extern OBJ _ABitset_Afind_(OBJ p,OBJ s) /* find? */ {
     int words = words_bitset(s), i,b,m;
     BITWORD w;
     for (i = 0; i < words; i++){
-        if (w = data_bitset(s)[i]){
+      if ((w = data_bitset(s)[i])){
             for (b = 0, m = 1; b < bits_bitset; b++, m <<= 1){
                 if (w & m){
                     CPCLS(p,1);
@@ -305,7 +306,7 @@ extern OBJ _ABitset_Ain(OBJ x2,OBJ x3) /* in */
  ABitset_Ain(x2,x3,r);
  return r;}
 
-static init_const_ABitset(){
+static void init_const_ABitset(){
     __ABitset_SOC = alloc_bitset(1);
     data_bitset(__ABitset_SOC)[0] = 0;
 }

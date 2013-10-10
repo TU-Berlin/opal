@@ -48,5 +48,5 @@ extern OBJ _ANatConv_AasReal(OBJ x1) /* asReal */
   return r;
 }
 
-static init_const_ANatConv()
+static void init_const_ANatConv()
 {}

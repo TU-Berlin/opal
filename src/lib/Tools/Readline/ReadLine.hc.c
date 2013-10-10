@@ -10,7 +10,8 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "readline/readline.h"
+#include <readline/readline.h>
+#include <readline/history.h>
 
 #include "Nat.oc.h"
 #include "Seq.oc.h"
@@ -77,7 +78,7 @@ extern OBJ _AReadLine_AReadLineCompleter(OBJ Prompt,OBJ Compl,OBJ Unit) {
 }
 
 static char ** no_completion(char * word, int start, int end){
-    return completion_matches(word, null_generator);
+    return rl_completion_matches(word, null_generator);
 }
 
 static char ** opal_completion(char * word, int start, int end){
@@ -106,7 +107,7 @@ static char ** opal_completion(char * word, int start, int end){
 
 	Completions = _ACom_Adata(Ans);
 
-	return completion_matches(word, opal_generator);
+	return rl_completion_matches(word, opal_generator);
     }
 }
 
@@ -148,8 +149,11 @@ static char * null_generator(char * text, int state){
     return NULL;
 }
 
+extern void init_ANat();
+extern void init_ASeq();
+extern void init_ACom();
 
-static init_const_AReadLine()
+static void init_const_AReadLine()
 {
   init_ANat();
   init_ASeq();

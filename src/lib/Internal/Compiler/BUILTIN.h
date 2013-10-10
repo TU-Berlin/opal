@@ -11,7 +11,7 @@
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* general types
+ * general types
  */
 
 /* some object */
@@ -194,7 +194,7 @@ typedef struct sCLOSURE {
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* basic memory management
+ * basic memory management
  */
 
 
@@ -239,7 +239,7 @@ extern void _deAllocClos(OBJ);
 
 #ifndef _MEMSTAT_
 #define _alloc(s,r) {\
-	if (r = (OBJ)_freeList[make_flat_ssize(s)])		\
+    if ((r = (OBJ)_freeList[make_flat_ssize(s)]))	   \
 	     _freeList[make_flat_ssize(s)] = _getLink(_header(r)); \
 	else r = (OBJ)_smallAlloc(s);}
 #define _deAlloc(o) {\
@@ -395,7 +395,7 @@ extern void free_aux(void *);
 #define free_closure(o,n) FRCLS(o,n)
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* foreign closures for handcoding
+ * foreign closures for handcoding
  */
 
 #define NUMVARMETHODTABLES 3
@@ -409,7 +409,7 @@ OBJ ocs_var_eval(OBJ Closure, int argc, OBJ argv[]);
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* types used by the compiler
+ * types used by the compiler
  */
 
 typedef int FLAG;			/* boolean flag */
@@ -471,7 +471,7 @@ typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* compiler macros for data types
+ * compiler macros for data types
  */
 
 #define PRM(t,r) 	r=pack_word(t)
@@ -519,7 +519,7 @@ typedef struct{OBJ c1; OBJ c2; OBJ c3; OBJ c4; OBJ c5; OBJ c6; OBJ c7;
 #define RPRDF(o,r)      {r=(o);_size(_header(r)) |= flat_offset_ssize;}
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* compiler macros for closures
+ * compiler macros for closures
  */
 
 #define MAXRANK		24
@@ -601,7 +601,7 @@ extern CODE _lmttab[];
    (* (OBJ (*)(OBJ,OBJ,OBJ,OBJ,OBJ,OBJ,OBJ,OBJ,OBJ))METHOD(c,8))(c,a1,a2,a3,a4,a5,a6,a7,a8)
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* compiler macros for arbitrary objects
+ * compiler macros for arbitrary objects
  */
 
 #define FREE(o,n) {if(_isRef(o) && _decTstRc(_header(o),n)) _deAlloc(o);}
@@ -611,7 +611,7 @@ extern CODE _lmttab[];
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* compiler macros for debugging 
+ * compiler macros for debugging 
  */
 
 extern void ocs_halt(char*), 
@@ -648,7 +648,7 @@ extern void ocs_trace_def_method(void (*enter)(char *),
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* tuples from Ac unit BUILTIN
+ * tuples from Ac unit BUILTIN
  */
 
 #define	__ABUILTIN_Atup0 pack_word(0)
@@ -658,7 +658,7 @@ extern void ocs_trace_def_method(void (*enter)(char *),
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* boolean type from Ac unit BUILTIN
+ * boolean type from Ac unit BUILTIN
  */
 
   /* aliases */
@@ -735,7 +735,7 @@ extern OBJ __ABUILTIN_Atrue_,__ABUILTIN_Afalse_,__ABUILTIN_Aand,
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* denotation type from Ac unit BUILTIN 
+ * denotation type from Ac unit BUILTIN 
  */
 
   /* aliases */
@@ -793,7 +793,7 @@ extern int get_denotation(OBJ,char *,int);
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* function ABORT from Ac unit BUILTIN
+ * function ABORT from Ac unit BUILTIN
  */
 
 #define ABUILTIN_12 ABUILTIN_AABORT
@@ -802,6 +802,8 @@ extern int get_denotation(OBJ,char *,int);
 
 #define ABUILTIN_AABORT(x,r) _ABUILTIN_AABORT(x)
 
+/* prevent implicit function definition */
+extern OBJ _ABUILTIN_AABORT(OBJ msg);
 
 extern OBJ __ABUILTIN_AABORT;
 
@@ -814,7 +816,7 @@ extern int _data_start__ ;
 #endif
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-/* initialization
+ * initialization
  */
 
 extern void init_ABUILTIN();

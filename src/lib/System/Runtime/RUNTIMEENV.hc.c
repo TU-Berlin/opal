@@ -291,8 +291,8 @@ extern TUP2 _ARUNTIMEENV_Acontents(OBJ Clos) {
 	i--;
     }
     r.c2 = Args;
-    if (strcmp(data_denotation(((CLOSURE)Clos)->symbolid), 
-	       data_denotation(ClosSymId)) == 0){
+    if (strcmp((char*)data_denotation(((CLOSURE)Clos)->symbolid), 
+	       (char*)data_denotation(ClosSymId)) == 0){
 	OBJ  Repr = data_small(((CLOSURE)Clos)->entry)[0];
 	copy_some(Repr, 1);
 	r.c1 = ENT(RUNTIMEENV,dyn)(Repr);
@@ -330,8 +330,12 @@ extern OBJ _ARUNTIMEENV_35_c(OBJ x1,OBJ x2,OBJ x3,OBJ x4,OBJ x5) /* internapply 
   FLD1(r,2)=t.c2;}
  return r;}
 
+extern void init_ANat();
+extern void init_ACom();
+extern void init_ASeq();
+extern void init_APair();
 
-static init_const_ARUNTIMEENV() {
+static void init_const_ARUNTIMEENV() {
     init_ANat();
     init_ACom();
     init_ASeq();

@@ -32,7 +32,11 @@ extern OBJ _AProcessMonitor_AmonitorForce(OBJ Env, OBJ Mon) {
     return _ACom_AEXEC(EVAL1(Mon, Env));
 }
 
-static init_const_AProcessMonitor(){
+extern void init_ACom();
+extern void init_AProcessConnect();
+extern void init_AProcessInterrupt();
+
+static void init_const_AProcessMonitor(){
     init_ACom();
     init_AProcessConnect();
     init_AProcessInterrupt();

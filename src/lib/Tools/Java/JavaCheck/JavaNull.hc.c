@@ -23,5 +23,5 @@ extern OBJ _AJavaNull_Anull__O1(OBJ x1) /* null?,1 */
   return pack_bool(res);
 }
 
-static init_const_AJavaNull()
+static void init_const_AJavaNull()
 {}

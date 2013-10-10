@@ -34,7 +34,7 @@ extern OBJ _AIntConv_Sq(OBJ x1) /* ` */
  if(negative)
    *p = '-';
  else
-   *p++;
+   p++;
  
  return make_denotation(p);
 }
@@ -53,5 +53,5 @@ extern OBJ _AIntConv_AasReal(OBJ x1) /* asReal */
   return r;
 }
 
-static init_const_AIntConv()
+static void init_const_AIntConv()
 {}

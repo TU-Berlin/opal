@@ -158,8 +158,12 @@ static int top_exec(OBJ topCom){
 
 
 extern int (*ocs_top_exec)(OBJ);
-    
-static init_const_ATk(){
+
+extern void init_ACom();
+extern void init_AComAgent();
+extern void init_ATcl();
+
+static void init_const_ATk(){
     init_ACom();
     init_AComAgent();
     init_ATcl();

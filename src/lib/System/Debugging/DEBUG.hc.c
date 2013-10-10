@@ -38,5 +38,5 @@ extern OBJ _ADEBUG_Aprint(OBJ x,OBJ str) /* print */ {
     return x;
 }
 
-static init_const_ADEBUG()
+static void init_const_ADEBUG()
 {}

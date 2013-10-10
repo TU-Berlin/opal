@@ -129,7 +129,7 @@ extern OBJ _AChar_AdenCharCode(OBJ d) /* denCharCode */ {
 }
 
 
-static init_const_AChar()
+static void init_const_AChar()
 {
  __AChar_Amin = pack_char(0);
  __AChar_Amax = pack_char(UCHAR_MAX);
