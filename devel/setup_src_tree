@@ -1,0 +1,50 @@
+#!/bin/bash
+# ocs is production compiler, e.g. 2.4a distribution
+
+if [ $# -ne 2 ]; then
+  echo "usage: $0 <prefix> <ocs>"
+  exit 1
+fi
+
+prefix=$1
+ocs=$2
+
+autoconf
+./configure --prefix=$prefix --enable-dosfop
+
+make init
+make pkg.opalimports
+
+# Build library
+cd src/lib
+$ocs
+cd ../..
+
+# Install base lib
+make lib.opal_base
+
+# Build compiler, will fail
+cd src/oc
+$ocs   ### failure is ok
+cd ../..
+
+# Install compiler
+make lib.oc_shared
+make lib.oc_oc1
+cd src/oc/oc2
+$ocs   ### failure is ok
+cd ../../..
+make lib.oc_oc2
+
+# Build and install genmake
+cd src/om
+$ocs   ### failure is ok
+cd ../..
+make pkg.genmake
+
+# Install compiler
+make pkg.oc1
+make pkg.oc2
+
+# Pull the rest
+make reinstall
