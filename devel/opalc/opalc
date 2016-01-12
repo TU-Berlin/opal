@@ -1,0 +1,353 @@
+#!/bin/bash
+#
+# Copyright (c) 2011, UEBB Group
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above
+#     copyright notice, this list of conditions and the following
+#     disclaimer in the documentation and/or other materials provided
+#     with the distribution.
+#   * Neither the name of the TU Berlin nor the names of its
+#     contributors may be used to endorse or promote products derived
+#     from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# Paths to oc1, oc2, opalimports.
+PATH_LIBEXEC=/home/florenz/sw/opt/ocs-2.4/bin
+PATH_SHARE=/home/florenz/sw/opt/ocs-2.4/lib/opal_base
+
+OC1=$PATH_LIBEXEC/oc1
+OC2=$PATH_LIBEXEC/oc2
+
+CC=gcc
+CC_FLAG_ALIGN_FUNS="-falign-functions"
+CC_FLAG_PIC="-fPIC"
+CC_FLAG_COMPILE="-c"
+CC_FLAG_DEFINE="-D"
+CC_FLAG_OUTPUT="-o"
+CC_FLAG_LIB="-l"
+CC_FLAG_LIB_DIR="-L"
+CC_FLAG_INCLUDE_DIR="-I"
+
+OPALIMPORTS=$PATH_LIBEXEC/opalimports
+GETOPALNAME=$PATH_LIBEXEC/getopalname
+
+errCommandLine=1
+errNotYetImplemented=2
+
+
+function printUsage {
+    cat <<EOF
+Usage: $0 {-s|-i|-t|-m|-c} STRUCT DEP...
+
+  -s   STRUCT.sign       -> STRUCT.sign.inter
+  -i   STRUCT.impl       -> STRUCT.impl.inter
+  -t   STRUCT.impl.inter -> STRUCT.oc.c
+  -m   STRUCT.hc.c       -> STRUCT.o
+  -c   STRUCT            -> STRUCT.o
+
+  DEP is either -I DIR or STRUCT. All structures following
+  a -I DIR are assumed to reside in DIR.
+
+
+Usage: $0 -e COM STRUCTS... LIB...
+       $0 -l STRUCTS... LIB...
+
+  -e   Link executable from STRUCTS with COM as entry on first STRUCT
+  -d   Link dynamic library from STRUCTS
+
+  LIB is either -L DIR or -l NAME. All libs following -L DIR
+  are assumed to reside in DIR.
+
+Usage: $0 -r STRUCT.{sign|impl}
+
+  -r   Print imports of signature or implementation part of STRUCT
+
+
+Usage: $0 -h
+
+  -h   Print this help message
+
+EOF
+}
+
+function abort {
+    exit $1
+}
+
+function errMsg {
+    echo "ERROR: $1" > /dev/stderr
+}
+
+function finish {
+    exit
+}
+
+function notYetImplemented {
+    errMsg "Not yet implemented"
+    abort $errNotYetImplemented
+}
+
+function checkFail {
+    if [ $1 -ne 0 ]; then
+	abort $1
+    fi
+}
+
+function checkArgs {
+    if [ $# -eq 0 ]; then
+	printUsage
+	abort $errCommandLine
+    fi
+}
+
+function checkStruct {
+    if [ $# -eq 0 ]; then
+	errMsg "No structure given"
+	abort $errCommandLine
+    else
+	echo $1
+    fi
+}
+
+function checkDeps {
+    deps=""
+    if [ $# -gt 0 ]; then
+	dep=$1
+	while shift; do
+	    case $dep in
+		-I)
+		    if [ $# -eq 0 ]; then
+			errMsg "-I must be followed by directory"
+			abort $errCommandLine
+		    else
+			deps="$deps -e$1"
+			shift
+		    fi
+		    ;;
+		*)
+		    deps="$deps $dep"
+		    ;;
+	    esac
+	    dep=$1
+	done
+    fi
+    echo "$deps"
+}
+
+function signToInter {
+    struct=$1; shift
+    deps=$@
+
+    echo $OC1 -s $struct $deps
+    $OC1 -s -e. $struct $deps
+}
+
+function implToInter {
+    struct=$1; shift
+    deps=$@
+
+    echo $OC1 -i $struct $deps
+    $OC1 -i -e. $struct $deps
+}
+
+function interToC {
+    struct=$1; shift
+    deps=$@
+
+    echo $OC2 -zgForeignInterface -i -e. $struct $deps
+    $OC2 -zgForeignInterface -i -e. $struct $deps
+}
+
+function cToObj {
+    struct=$1; shift
+    deps=$@
+
+    includes=""
+    for dep in $deps; do
+	case $dep in
+	    -e*)
+		incl=`echo $dep | sed s/^-e/$CC_FLAG_INCLUDE_DIR/`
+		includes="$includes $incl"
+		;;
+	esac
+    done
+    
+    echo $CC $CC_COMPILE_FLAG \
+	$CC_FLAG_ALIGN_FUNS \
+	$CC_FLAGS_PIC \
+	$struct.oc.c \
+	$CC_FLAG_OUTPUT $struct.o \
+	$includes
+    $CC $CC_FLAG_COMPILE \
+	$CC_FLAG_ALIGN_FUNS \
+	$CC_FLAGS_PIC \
+	$struct.oc.c \
+	$CC_FLAG_OUTPUT $struct.o \
+	$includes
+}
+
+function compile {
+    target=$1
+    shift
+    case $target in
+	-s)
+	    signToInter $@
+	    ;;
+	-i)
+	    implToInter $@
+	    ;;
+	-t)
+	    interToC $@
+	    ;;
+	-m)
+	    cToObj $@
+	    ;;
+	-c)
+            signToInter $@
+	    implToInter $@
+	    interToC $@
+	    cToObj $@
+	    ;;
+    esac
+}
+
+function printImports {
+    if [ $# -ne 1 ]; then
+	errMsg "-r takes exactly one argument"
+	abort $errCommandLine
+    else
+	$OPALIMPORTS < $1
+    fi
+}
+
+function linkExecutable {
+    if [ $# -lt 2 ]; then
+	errMsg "-e requires at least two arguments"
+	abort $errCommandLine
+    fi
+    topcom=$1; shift
+    topstruct=$1; shift
+
+    structs=""
+    libs=""
+
+    currLibdir="."
+    arg=$1
+    while shift; do
+	case $arg in
+	    -L)
+		if [ $# -eq 0 ]; then
+		    errMsg "-L must be followed by directory"
+		    abort $errCommandLine
+		else
+		    currLibdir="$1"
+		    libs="$libs $CC_FLAG_LIB_DIR$1"
+		    shift
+		fi
+		;;
+	    -l)
+		if [ $# -eq 0 ]; then
+		    errMsg "-l must be followed by library name"
+		    abort $errCommandLine
+		else
+		    linkFlags=`cat $currLibdir/$1.link`
+		    libs="$libs $CC_FLAG_LIB$1 $linkFlags"
+		    shift
+		fi
+		;;
+	    *)
+		structs="$structs $arg.o"
+		;;
+	esac
+	arg=$1
+    done
+
+    foreignInclude=`dirname $topstruct`
+    command="__`$GETOPALNAME $topstruct`_`$GETOPALNAME $topcom`"
+    init="init_`$GETOPALNAME $topstruct`"
+    include="\"$topstruct.oc.h\""
+
+    echo $CC ${CC_FLAG_DEFINE}command=$command \
+	${CC_FLAG_DEFINE}init=$init \
+	${CC_FLAG_DEFINE}include=$include \
+	$CC_FLAG_ALIGN_FUNS \
+	$CC_FLAG_PIC \
+	${CC_FLAG_COMPILE} \
+	$CC_FLAG_INCLUDE_DIR$foreignInclude \
+	$PATH_SHARE/_ostart.c
+
+    $CC ${CC_FLAG_DEFINE}command=$command \
+    	${CC_FLAG_DEFINE}init=$init \
+    	${CC_FLAG_DEFINE}include=$include \
+	$CC_FLAG_ALIGN_FUNS \
+	$CC_FLAG_PIC \
+    	$CC_FLAG_COMPILE \
+	$CC_FLAG_INCLUDE_DIR$foreignInclude \
+	$PATH_SHARE/_ostart.c \
+	$CC_FLAG_OUTPUT _ostart.o
+
+    echo $CC $CC_FLAG_OUTPUT $topcom \
+	_ostart.o $topstruct.o \
+	$structs $libs
+    $CC $CC_FLAG_OUTPUT $topcom \
+	_ostart.o $topstruct.o \
+	$structs $libs
+
+    rm _ostart.o
+}
+
+function dispatch {
+    case $1 in
+	-h)
+	    printUsage
+            finish
+            ;;
+	-s|-i|-t|-m|-c)
+	    target=$1
+	    shift
+	    struct=`checkStruct $@`; checkFail $?
+	    shift
+	    deps=`checkDeps $@`; checkFail $?
+	    compile $target $struct $deps
+	    ;;
+	-e)
+	    shift
+	    linkExecutable $@
+	    ;;
+	-l)
+	    notYetImplemented
+	    ;;
+	-r)
+	    shift
+	    printImports $@
+	    ;;
+	*)
+	    errMsg "Unknown option: $1"
+	    abort $errCommandLine
+    esac
+}
+
+function main {
+    checkArgs $@
+    dispatch $@
+}
+
+main $@

@@ -1,0 +1,320 @@
+-- Copyright (c) 2011, UEBB Group
+-- All rights reserved.
+--
+-- Redistribution and use in source and binary forms, with or without
+-- modification, are permitted provided that the following conditions are
+-- met:
+--
+--   * Redistributions of source code must retain the above copyright
+--     notice, this list of conditions and the following disclaimer.
+--   * Redistributions in binary form must reproduce the above
+--     copyright notice, this list of conditions and the following
+--     disclaimer in the documentation and/or other materials provided
+--     with the distribution.
+--   * Neither the name of the TU Berlin nor the names of its
+--     contributors may be used to endorse or promote products derived
+--     from this software without specific prior written permission.
+--
+-- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+-- "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+-- LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+-- A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+-- HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+-- SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+-- LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+-- DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+-- THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+-- (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+-- OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-- Set up configuration from command line
+
+IMPLEMENTATION Configure
+
+IMPORT ABORT       COMPLETELY
+       Bool        COMPLETELY
+       Char        COMPLETELY
+       CharConv    COMPLETELY
+       Denotation  COMPLETELY
+       Nat         COMPLETELY
+       Option      COMPLETELY
+       Seq         COMPLETELY
+       SeqMap      COMPLETELY
+
+IMPORT Auxiliary ONLY ` +\+ addSuffix
+       Config    ONLY sfxObj libDir includeDir libOpalBase workingDir
+
+
+DATA config == config(call : denotation,
+                      mode : mode,
+                      structs : seq[denotation],
+		      includeDirs : seq[denotation],
+		      libDirs : seq[denotation],
+		      libs : seq[denotation],
+		      topCom : option[denotation],
+		      topStruct : option[denotation],
+		      output : option[denotation])
+	       error(msg : denotation)
+
+
+-- Functions to augment a configuration.
+
+FUN call : config ** denotation -> config
+DEF call(config(_,m,s,id,ld,l,tc,ts,o), c) == config(c,m,s,id,ld,l,tc,ts,o)
+
+FUN mode : config ** mode -> config
+DEF mode(config(c,_,s,id,ld,l,tc,ts,o), m) == config(c,m,s,id,ld,l,tc,ts,o)
+
+FUN structs : config ** denotation -> config
+DEF structs(config(c,m,s,id,ld,l,tc,ts,o), s1) == config(c,m,s+%s1,id,ld,l,tc,ts,o)
+
+FUN structs : config ** seq[denotation] -> config
+DEF structs(config(c,m,s,id,ld,l,tc,ts,o), s1) == config(c,m,s1,id,ld,l,tc,ts,o)
+
+FUN includeDirs : config ** denotation -> config
+DEF includeDirs(config(c,m,s,id,ld,l,tc,ts,o), id1) == config(c,m,s,id+%id1,ld,l,tc,ts,o)
+
+FUN includeDirs : config ** seq[denotation] -> config
+DEF includeDirs(config(c,m,s,id,ld,l,tc,ts,o), id1) == config(c,m,s,id1,ld,l,tc,ts,o)
+
+FUN libDirs : config ** denotation -> config
+DEF libDirs(config(c,m,s,id,ld,l,tc,ts,o), ld1) == config(c,m,s,id,ld+%ld1,l,tc,ts,o)
+
+FUN libDirs : config ** seq[denotation] -> config
+DEF libDirs(config(c,m,s,id,ld,l,tc,ts,o), ld1) == config(c,m,s,id,ld1,l,tc,ts,o)
+
+FUN libs : config ** denotation -> config
+DEF libs(config(c,m,s,id,ld,l,tc,ts,o), l1) == config(c,m,s,id,ld,l+%l1,tc,ts,o)
+
+FUN topCom : config ** denotation -> config
+DEF topCom(config(c,m,s,id,ld,l,tc,ts,o), tc1) == config(c,m,s,id,ld,l,avail(tc1),ts,o)
+
+FUN topCom : config ** option[denotation] -> config
+DEF topCom(config(c,m,s,id,ld,l,tc,ts,o), tc1) == config(c,m,s,id,ld,l,tc1,ts,o)
+
+FUN topStruct : config ** denotation -> config
+DEF topStruct(config(c,m,s,id,ld,l,tc,ts,o), ts1) == config(c,m,s,id,ld,l,tc,avail(ts1),o)
+
+FUN topStruct : config ** option[denotation] -> config
+DEF topStruct(config(c,m,s,id,ld,l,tc,ts,o), ts1) == config(c,m,s,id,ld,l,tc,ts1,o)
+
+FUN output : config ** denotation -> config
+DEF output(config(c,m,s,id,ld,l,tc,ts,o), o1) == config(c,m,s,id,ld,l,tc,ts,avail(o1))
+
+
+DATA mode == compile executable
+
+
+-- Configuration (comes out if no switches are passed).
+FUN defaultCfg : config
+DEF defaultCfg == config("",
+                         executable,
+                         <>,
+                         <>,
+                         <>,
+                         <>,
+                         nil,
+                         nil,
+			 nil)
+
+
+-- String of compiler switches.
+FUN swCompile swEntryCom swEntryStruct swIncludeDir swLibDir swLib swOutput : denotation
+DEF swCompile == "-c"
+DEF swEntryCom == "-e"
+DEF swEntryStruct == "-E"
+DEF swIncludeDir == "-I"
+DEF swLibDir == "-L"
+DEF swLib == "-l"
+DEF swOutput == "-o"
+
+
+-- Set up configuration, i. e. parse command line.
+
+DEF configure(c:: <>) == error("Missing arguments")
+DEF configure(c::args) ==
+    LET cfg  == configure(args, call(defaultCfg, c))
+        cfg1 == IF cfg config? ANDIF mode(cfg) executable? THEN checkExecutable(cfg)
+                IF cfg config? ANDIF mode(cfg) compile? THEN checkCompile(cfg)
+                IF cfg error? THEN cfg
+                FI
+    IN adjustFileNames(cfg1)
+
+FUN configure : seq[denotation] ** config -> config
+DEF configure(<>, cfg) == cfg
+DEF configure(arg::args, cfg) ==
+    IF arg simpleSwitch? THEN
+        configure(args, arg into cfg)
+    IF (arg paramSwitch?) /\ (arg onlySwitch?) THEN
+        IF args <>? THEN error(arg ++ " must be followed by an argument")
+	IF args ::? THEN configure(rt(args), (arg, ft(args)) into cfg)
+	FI
+    IF (arg paramSwitch?) /\ not(arg onlySwitch?) THEN
+        LET sw == slice(arg,0,1)
+	    par == slice(arg, 2, #(arg)-1)
+        IN configure(args, (sw, par) into cfg)
+    IF not(arg switch?) THEN
+        configure(args, cfg structs arg)
+    ELSE error("Unknown switch: " ++ arg)
+    FI
+
+
+-- Represent a command line switch in the configuration.
+
+FUN into : denotation ** config -> config
+DEF into(sw, cfg) == IF sw = swCompile THEN cfg mode compile
+                     FI
+
+FUN into : denotation ** denotation ** config -> config
+DEF into(sw, par, cfg) ==
+    IF sw = swEntryCom THEN cfg topCom par
+    IF sw = swEntryStruct THEN cfg topStruct par
+    IF sw = swLibDir THEN cfg libDirs par
+    IF sw = swIncludeDir THEN cfg includeDirs par
+    IF sw = swLib THEN cfg libs par
+    IF sw = swOutput THEN cfg output par
+    FI
+
+
+-- Predicates to test potential switches.
+FUN switch? simpleSwitch? paramSwitch? onlySwitch? : denotation -> bool
+DEF switch?(d) == #(d) > 1 /\ d beginsWith "-"
+DEF simpleSwitch?(d) == d = swCompile
+DEF paramSwitch?(d) ==
+    d beginsWith swEntryCom \/ d beginsWith swEntryStruct \/
+    d beginsWith swIncludeDir \/ d beginsWith swLibDir \/
+    d beginsWith swLib \/ d beginsWith swOutput
+DEF onlySwitch?(d) == (d switch?) /\ #(d) = 2
+
+
+-- Check if denotation starts with given prefix.
+FUN beginsWith : denotation ** denotation -> bool
+DEF d beginsWith c == slice(d,0,#(c)-1) = c
+
+
+-- Check for required options and add some defaults.
+
+FUN checkExecutable : config -> config
+DEF checkExecutable(cfg) ==
+    LET cfg1 == checkOutputTopCom(cfg)
+        cfg2 == checkTopStruct(cfg1)
+	cfg3 == checkLibDirs(cfg2)
+	cfg4 == checkLibs(cfg3)
+	cfg5 == checkIncludeDirs(cfg4)
+    IN cfg5
+
+FUN checkCompile : config -> config
+DEF checkCompile(cfg) ==
+    LET cfg1 == checkStructs(cfg)
+        cfg2 == checkOutput(cfg1)
+	cfg3 == checkOutputSuffix(cfg2)
+	cfg4 == checkIncludeDirs(cfg3)
+	cfg5 == checkTopComStruct(cfg4)
+    IN cfg5
+
+FUN checkTopStruct checkOutputTopCom
+    checkLibDirs checkLibs checkOutput checkTopComStruct
+    checkStructs checkIncludeDirs checkOutputSuffix: config -> config
+
+DEF checkOutputTopCom(error(msg)) == error(msg)
+DEF checkOutputTopCom(cfg) ==
+    IF (output(cfg) nil?) /\ (topCom(cfg) nil?) THEN error("Either -o or -e must be set")
+    IF (output(cfg) nil?) /\ not(topCom(cfg) nil?) THEN cfg output cont(topCom(cfg))
+    IF not(output(cfg) nil?) /\ (topCom(cfg) nil?) THEN cfg topCom cont(output(cfg))
+    ELSE cfg
+    FI
+
+DEF checkTopStruct(error(msg)) == error(msg)
+DEF checkTopStruct(cfg) ==
+    IF (topStruct(cfg) nil?) /\ (structs(cfg) ::?) THEN
+        LET cfg1 == cfg topStruct ft(structs(cfg))
+	    cfg2 == cfg1 structs rt(structs(cfg))
+        IN cfg2
+    IF (topStruct(cfg) nil?) /\ (structs(cfg) <>?) THEN
+        error("At least one structure must be given")
+    ELSE cfg
+    FI
+
+DEF checkLibDirs(error(msg)) == error(msg)
+DEF checkLibDirs(cfg) == cfg libDirs libDir
+
+DEF checkLibs(error(msg)) == error(msg)
+DEF checkLibs(cfg) == cfg libs libOpalBase
+
+DEF checkOutput(error(msg)) == error(msg)
+DEF checkOutput(cfg) ==
+    IF (output(cfg) nil?) /\ (structs(cfg) ::?) THEN
+        LET out == ft(structs(cfg))
+        IN cfg output out
+    ELSE cfg
+    FI
+
+DEF checkTopComStruct(error(msg)) == error(msg)
+DEF checkTopComStruct(cfg) ==
+    LET cfg1 == cfg topCom nil
+        cfg2 == cfg1 topStruct nil
+    IN cfg2
+
+DEF checkStructs(error(msg)) == error(msg)
+DEF checkStructs(cfg) ==
+    IF structs(cfg) <>? THEN error("Structure name missing")
+    IF structs(cfg) ::? THEN cfg structs %(ft(structs(cfg)))
+    FI
+
+DEF checkIncludeDirs(error(msg)) == error(msg)
+DEF checkIncludeDirs(cfg) == cfg includeDirs (includeDir ++ "/" ++ libOpalBase)
+
+DEF checkOutputSuffix(error(msg)) == error(msg)
+DEF checkOutputSuffix(cfg) == cfg output (addSuffix(cont(output(cfg)), sfxObj))
+
+
+-- Make all file and directory names in a configuration absolute.
+
+FUN adjustFileNames : config -> config
+DEF adjustFileNames(error(msg)) == error(msg)
+DEF adjustFileNames(cfg) ==
+    LET cfg1 == adjustStructs(cfg)
+        cfg2 == adjustIncludeDirs(cfg1)
+	cfg3 == adjustLibDirs(cfg2)
+	cfg4 == adjustOutput(cfg3)
+        adjustStructs == \\c. c structs map(makeAbsolute, structs(c))
+        adjustIncludeDirs == \\c. c includeDirs map(makeAbsolute, includeDirs(c))
+      	adjustLibDirs == \\c. c libDirs map(makeAbsolute, libDirs(c))
+      	adjustOutput == \\c. c output makeAbsolute(cont(output(c)))
+      	makeAbsolute == \\fn. IF (fn!0) = !"/" THEN fn
+                              ELSE workingDir ++ "/" ++ fn FI
+    IN cfg4
+
+
+
+-- Convert configuration into denotation (multiple lines)
+
+FUN ` : config -> denotation
+
+DEF `(config(c,m,s,id,ld,l,tc,ts,o)) ==
+    "Call:          " ++ c +\+
+    "Mode:          " ++ `(m) +\+
+    "Structures:    " ++ ``(s) +\+
+    "Include dirs:  " ++ ``(id) +\+
+    "library dirs:  " ++ ``(ld) +\+
+    "Libraries:     " ++ ``(l) +\+
+    "Top command:   " ++ `(tc) +\+
+    "Top structure: " ++ `(ts) +\+
+    "Output:        " ++ `(o)
+    WHERE
+      `` == \\xs. `(xs,15,blank`)
+
+DEF `(error(msg)) == "ERROR: " ++ msg
+
+
+FUN ` : mode -> denotation
+DEF `(compile) == "compile"
+DEF `(executable) == "executable"
+
+
+-- %@ignore
+-- Local Variables:
+-- mode: opal
+-- coding: latin-1-unix
+-- End:
+-- %@end ignore

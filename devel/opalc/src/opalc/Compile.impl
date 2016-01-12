@@ -1,0 +1,393 @@
+-- Copyright (c) 2011, UEBB Group
+-- All rights reserved.
+--
+-- Redistribution and use in source and binary forms, with or without
+-- modification, are permitted provided that the following conditions are
+-- met:
+--
+--   * Redistributions of source code must retain the above copyright
+--     notice, this list of conditions and the following disclaimer.
+--   * Redistributions in binary form must reproduce the above
+--     copyright notice, this list of conditions and the following
+--     disclaimer in the documentation and/or other materials provided
+--     with the distribution.
+--   * Neither the name of the TU Berlin nor the names of its
+--     contributors may be used to endorse or promote products derived
+--     from this software without specific prior written permission.
+--
+-- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+-- "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+-- LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+-- A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+-- HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+-- SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+-- LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+-- DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+-- THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+-- (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+-- OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-- Call compiler binaries
+
+IMPLEMENTATION Compile
+
+IMPORT BasicIO     COMPLETELY
+       Bool        COMPLETELY
+       Char        COMPLETELY
+       CharConv    COMPLETELY
+       Com         COMPLETELY
+       ComCompose  COMPLETELY
+       Denotation  COMPLETELY
+       File        COMPLETELY
+       FileName    COMPLETELY
+       FileSystem  COMPLETELY
+       Nat         COMPLETELY
+       NatConv     COMPLETELY
+       Identity    COMPLETELY
+       Pair        COMPLETELY
+       Option      COMPLETELY
+       Process     COMPLETELY
+       ProcessCtrl COMPLETELY
+       Seq         COMPLETELY
+       SeqConv     COMPLETELY
+       SeqOfSeq    COMPLETELY
+       SeqMap      COMPLETELY
+       StringConv  COMPLETELY
+       Void        COMPLETELY
+
+IMPORT Auxiliary   ONLY ` +\+
+       Config      ONLY sfxSign sfxImpl sfxSignInter sfxImplInter sfxObj
+                        sfxOpt sfxHeader sfxSignDiag sfxImplDiag sfxCode
+                        prgOc1 prgOc2
+			prgCc ccFlagAlignFuns ccFlagPic ccFlagCompile
+                        ccFlagOutput ccFlagIncludeDir
+       Configure   ONLY compile? executable? error includeDirs
+       OpalImports ONLY opalImports
+       Stop        ONLY stop
+
+
+DATA import == import(dir : denotation, struct : seq[denotation])
+
+DATA imports == imports(imports : seq[import])
+
+
+FUN + : imports ** denotation ** denotation -> imports
+
+DEF (imports(<>), dir) + struct == imports(%(import(dir, %(struct))))
+
+DEF (imports(import(dir1,structs) :: imps), dir) + struct ==
+    IF dir1 = dir ANDIF not((_ = struct) exist? structs) THEN
+        imports(import(dir1,structs+%struct)::imps)
+    IF dir1 |= dir THEN
+        LET imps1 == (imports(imps),dir)+struct
+	IN imports(import(dir1,structs) :: imports(imps1))
+    ELSE imports(import(dir1,structs)::imps)
+    FI
+
+
+FUN asOcArgs : imports -> seq[denotation]
+DEF asOcArgs(imports(imps)) == flat(map(asArgs,imps))
+    WHERE
+      asArgs == \\imp. IF struct(imp) <>? THEN <>
+                                          ELSE "-e" ++ dir(imp) :: struct(imp) FI
+
+
+FUN asCcArgs : imports -> seq[denotation]
+DEF asCcArgs(imports(imps)) == flat(map(asArgs,imps))
+    WHERE
+      asArgs == \\imp. IF struct(imp) <>? THEN <>
+                                          ELSE %(ccFlagIncludeDir ++ dir(imp)) FI
+
+
+FUN ` : imports -> denotation
+DEF `(imports(imps)) == `(imps)
+
+FUN ` : seq[import] -> denotation
+DEF `(<>) == ""
+DEF `(import(dir,<>) :: imps) == `(imps)
+DEF `(import(dir,structs) :: imps) ==
+    dir ++ ": " ++ `(structs,10,blank`) +\+ `(imps)
+
+
+-- Generate empty import map from list of include directories.
+FUN emptyImports : seq[denotation] -> imports
+DEF emptyImports(includeDirs) ==
+    imports(map(makeEmptyImport, includeDirs))
+    WHERE
+      makeEmptyImport == \\includeDir. import(includeDir,<>)
+
+
+-- Dispatch on compile mode.
+DEF compile(cfg) ==
+    IF mode(cfg) compile? THEN makeObject(cfg)
+    IF mode(cfg) executable? THEN makeExecutable(cfg)
+    FI
+
+
+-- Translate one structure to an object.
+FUN makeObject : config -> com[void]
+DEF makeObject(cfg) ==
+    LET struct == ft(structs(cfg)) IN
+    opalImports(struct ++ sfxSign)                          & (\\signImpNames.
+    opalImports(struct ++ sfxImpl)                          & (\\implImpNames.
+    findImports(signImpNames,includeDirs(cfg))              ; (\\signImports?.
+    IF signImports? okay? THEN
+        writeLine("SIGNATURE imports in order of -I flags:" +\+
+                  `(data(signImports?)))                               ; (\\ _ .
+        findImports(implImpNames,includeDirs(cfg),data(signImports?))  ; (\\implImports?.
+        IF implImports? okay? THEN
+            writeLine("IMPLEMENTATION imports in order of -I flags:" +\+
+                      `(data(implImports?)))                              & (\\ _ .
+            (LET outdir == dirName(cont(output(cfg)))
+                 (outname,_) == splitSuffix(baseName(cont(output(cfg))),".") IN
+             signToSignInter(struct,outdir,outname,data(signImports?))    & (\\exitCode0.
+	     implToImplInter(struct,outdir,outname,data(implImports?))    & (\\exitCode1.
+	     implInterToC(struct,outdir,outname,data(implImports?))       & (\\exitCode2.
+	     cToObj(struct,outdir,outname,data(implImports?))             & (\\exitCode3.
+             writeLine(exitCode3)
+	     ))))
+	    )
+	    )
+	    
+            -- &
+            -- 
+	    -- implToImplInter(struct,data(implImports?))  &
+	    -- implInterToC(struct,data(implImports?))     &
+	    -- cToObj(struct,data(implImports?))
+	ELSE
+            stop("Could not find structure " ++ error(implImports?) ++
+	         " imported by IMPLEMENTATION of " ++ struct ++ " in" +\+ "" +\+
+	         `(includeDirs(cfg),6,blank`))
+	FI
+	))
+    ELSE
+        stop("Could not find structure " ++ error(signImports?) ++
+	     " imported by SIGNATURE of " ++ struct ++ " in" +\+ "" +\+
+	     `(includeDirs(cfg),6,blank`))
+    FI
+    )))
+
+
+-- Produces .sign.inter file at output location
+FUN signToSignInter : denotation ** denotation ** denotation ** imports -> com[nat]
+DEF signToSignInter(struct,outdir,outname,imports) ==
+    LET args == "-s" :: "-e." :: structName :: (imports asOcArgs)
+        structDir == dirName1(struct)
+	structName == baseName(struct)
+	structFile == struct++sfxSign
+    IN writeLine(prgOc1 ++ " " ++ `(id)(args))  & (\\ _ .
+       tmpDir                                   & (\\tmpdir.
+       writeLine("Running oc1 in "++tmpdir)     & (\\ _ .
+       copyFile(structFile, tmpdir++"/"++structName++sfxSign)  & (\\ _ .
+       runProgram(prgOc1,tmpdir,args)                          & (\\exitCode.
+       (IF exitCode=0 THEN
+          moveFile(tmpdir++"/"++structName++sfxSignInter, outdir++"/"++outname++sfxSignInter)
+        ELSE
+          succeed(nil)
+        FI)                                                                              & (\\ _ .
+       moveFile(tmpdir++"/"++structName++sfxSignDiag,outdir++"/"++outname++sfxSignDiag)  & (\\ _ .
+       unlink(tmpdir++"/"++structName++sfxSign)                                          & (\\ _ .
+       rmDir(tmpdir)                                                                     & (\\ _ .
+       succeed(exitCode)
+       )))))))))
+
+
+-- Requires .sign.inter file to exist at output (!) location
+-- Produces .impl.inter, .impl.diag at output location
+FUN implToImplInter : denotation ** denotation ** denotation ** imports -> com[nat]
+DEF implToImplInter(struct,outdir,outname,imports) ==
+    LET args == "-i" :: "-e." :: structName :: (imports asOcArgs)
+        structDir == dirName1(struct)
+	structName == baseName(struct)
+	structSignInterFile == outdir++"/"++outname++sfxSignInter
+	structFile == struct++sfxImpl
+    IN writeLine(prgOc1 ++ " " ++ `(id)(args))  & (\\ _ .
+       tmpDir                                   & (\\tmpdir.
+       writeLine("Running oc1 in "++tmpdir)     & (\\ _ .
+       copyFile(structFile, tmpdir++"/"++structName++sfxImpl)                & (\\ _ .
+       copyFile(structSignInterFile, tmpdir++"/"++outname++sfxSignInter)     & (\\ _ .
+       runProgram(prgOc1,tmpdir,args)                                        & (\\exitCode.
+       (IF exitCode=0 THEN
+          moveFile(tmpdir++"/"++structName++sfxImplInter, outdir++"/"++outname++sfxImplInter)
+        ELSE
+          succeed(nil)
+        FI)                                                                              & (\\ _ .
+       moveFile(tmpdir++"/"++structName++sfxImplDiag,outdir++"/"++outname++sfxImplDiag)  & (\\ _ .
+       unlink(tmpdir++"/"++structName++sfxImpl)                                          & (\\ _ .
+       unlink(tmpdir++"/"++outname++sfxSignInter)                                        & (\\ _ .
+       rmDir(tmpdir)                                                                     & (\\ _ .
+       succeed(exitCode)
+       )))))))))))
+
+
+-- Requires .impl.inter file to exist at output (!) location
+-- Produces .oc.c, .oc.h, .opt file at output location
+FUN implInterToC : denotation ** denotation ** denotation ** imports -> com[nat]
+DEF implInterToC(struct,outdir,outname,imports) ==
+    LET args == "-i" :: "-zgForeignInterface" :: "-e." :: structName :: (imports asOcArgs)
+        structDir == dirName1(struct)
+	structName == baseName(struct)
+	structImplInterFile == outdir++"/"++outname++sfxImplInter
+    IN writeLine(prgOc2 ++ " " ++ `(id)(args))  & (\\ _ .
+       tmpDir                                   & (\\tmpdir.
+       writeLine("Running oc2 in "++tmpdir)     & (\\ _ .
+       copyFile(structImplInterFile, tmpdir++"/"++outname++sfxImplInter)  & (\\ _ .
+       runProgram(prgOc2,tmpdir,args)                                     & (\\exitCode.
+       (IF exitCode=0 THEN
+          moveFile(tmpdir++"/"++structName++sfxCode, outdir++"/"++outname++sfxCode)     & (\\ _ .
+	  moveFile(tmpdir++"/"++structName++sfxHeader, outdir++"/"++outname++sfxHeader) & (\\ _ .
+          moveFile(tmpdir++"/"++structName++sfxOpt,outdir++"/"++outname++sfxOpt)))
+        ELSE
+          succeed(nil)
+        FI)                                                                 & (\\ _ .
+       unlink(tmpdir++"/"++outname++sfxImplInter)                           & (\\ _ .
+       unlink(tmpdir++"/"++structName++sfxImplDiag)                         & (\\ _ .
+       rmDir(tmpdir)                                                        & (\\ _ .
+       succeed(exitCode)
+       )))))))))
+
+
+FUN cToObj : denotation ** denotation ** denotation ** imports -> com[nat]
+DEF cToObj(struct,outdir,outname,imports) ==
+    LET args == ccFlagCompile :: ccFlagAlignFuns :: ccFlagPic ::
+                outdir++"/"++outname++sfxCode ::
+		ccFlagOutput :: outdir++"/"++outname++sfxObj ::
+                (imports asCcArgs)
+    IN writeLine(prgCc ++ " " ++ `(id)(args)) & succeed(10)
+	
+
+
+
+-- Create temporary directory only accessible by owner.
+FUN tmpDir : com[denotation]
+DEF tmpDir ==
+    tmpName                                    & (\\tmp.
+    mkDir(tmp,ownerRead+ownerWrite+ownerExec)  & (\\ _ .
+    succeed(tmp)
+    ))
+
+
+-- Move a file.
+FUN moveFile : denotation ** denotation -> com[void]
+DEF moveFile(from,to) == copyFile(from,to) & unlink(from)
+
+
+-- Copy a file.
+FUN copyFile : denotation ** denotation -> com[void]
+DEF copyFile(from,to) ==
+    open(from,"rb")     & (\\in.
+    open(to, "wb")      & (\\out.
+    size(in)            & (\\size.
+    read(in,size)       & (\\content.
+    write(out,content)  & (\\ _ .
+    close(in)           & (\\ _ .
+    close(out)
+    ))))))
+
+
+-- Run a program and return exit code
+
+FUN runProgram : denotation ** denotation ** seq[denotation] -> com[nat]
+DEF runProgram(cmd,wdir,args) ==
+    fork  & (\\fission.
+    IF fission child? THEN
+        chDir(wdir) & (exec(cmd,cmd::args) & succeed(0))
+    IF fission parent? THEN
+        wait & (\\status. succeed(2nd(status)))
+    FI
+    )
+
+FUN runProgram : denotation ** seq[denotation] -> com[nat]
+DEF runProgram(cmd,args) ==
+    getCWD & (\\wdir. runProgram(cmd,wdir,args))
+
+
+
+-- Find imported structures (set up import map).
+
+FUN findImports : seq[denotation] ** seq[denotation] -> com[imports]
+DEF findImports(structs,dirs) ==
+    findImports(structs,dirs,emptyImports(dirs))
+
+
+FUN findImports : seq[denotation] ** seq[denotation] ** imports -> com[imports]
+DEF findImports(<>,includeDirs,imports) == succeed(imports)
+DEF findImports(struct::structs,includeDirs,imports) ==
+    LET struct1 == translate(struct) IN
+    findImports(struct1,includeDirs,imports)  & (\\imports1.
+    findImports(structs,includeDirs,imports1)
+    )
+
+
+FUN findImports : denotation ** seq[denotation] ** imports -> com[imports]
+DEF findImports(struct,<>,imports) == yield(fail(struct))
+DEF findImports(struct,id::ids,imports) ==
+    -- writeLine("Looking for " ++ struct ++ " in " ++ id) & (\\ _ .
+    regularFiles(id)  & (\\regFiles.
+    -- writeLine("Found regular files: " ++ `(\\x.x)(regFiles)) & (\\ _ .
+    LET signInter == struct ++ sfxSignInter
+        sign == struct ++ sfxSign IN
+    IF (_ = signInter) exist? regFiles \/
+       (_ = sign) exist? regFiles THEN
+        -- writeLine("Found " ++ struct +\+ `((imports, id) + struct)) & 
+        succeed((imports, id) + retranslate(struct))
+    ELSE
+       findImports(struct,ids,imports)
+    FI
+    )
+    -- ))
+
+
+-- Return all regular files in a directory.
+
+FUN regularFiles : denotation -> com[seq[denotation]]
+DEF regularFiles(dir) ==
+    readDir(dir)  & (\\list.
+    filterDirList(dir,regular?,list)
+    )
+
+FUN filterDirList : denotation ** (filetype -> bool) ** seq[denotation] -> com[seq[denotation]]
+DEF filterDirList(dir,p?,<>) == succeed(<>)
+DEF filterDirList(dir,p?,f::fs) ==
+    stat(dir defaultPath f)  & (\\stat.
+    IF type(stat) regular? THEN
+        filterDirList(dir,p?,fs)  & (\\fs1.
+        succeed(f::fs1)
+	)
+    IF not(type(stat) regular?) THEN
+        filterDirList(dir,p?,fs)
+    FI
+    )
+
+
+-- The ugly name mapping (Bool_ocs, Denotation_ocs)
+
+FUN translate : denotation -> denotation
+DEF translate(struct) ==
+    IF struct = "Bool" THEN "Bool_ocs"
+    IF struct = "Denotation" THEN "Denotation_ocs"
+    ELSE struct
+    FI
+
+FUN retranslate : denotation -> denotation
+DEF retranslate(struct) ==
+    IF struct = "Bool_ocs" THEN "Bool"
+    IF struct = "Denotation_ocs" THEN "Denotation"
+    ELSE struct
+    FI
+
+
+
+FUN makeExecutable : config -> com[void]
+DEF makeExecutable(cfg) == writeLine("this is makeExecutable")
+
+
+
+
+
+-- %@ignore
+-- Local Variables:
+-- mode: opal
+-- coding: latin-1-unix
+-- End:
+-- %@end ignore
